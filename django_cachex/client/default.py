@@ -56,11 +56,12 @@ _exception_list: list[type[Exception]] = [socket.timeout]
 try:
     import redis
     from redis.exceptions import ConnectionError as RedisConnectionError
+    from redis.exceptions import RedisClusterException
     from redis.exceptions import ResponseError as RedisResponseError
     from redis.exceptions import TimeoutError as RedisTimeoutError
 
     _REDIS_AVAILABLE = True
-    _exception_list.extend([RedisConnectionError, RedisTimeoutError, RedisResponseError])
+    _exception_list.extend([RedisConnectionError, RedisTimeoutError, RedisResponseError, RedisClusterException])
 except ImportError:
     redis = None  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
 
@@ -528,6 +529,10 @@ class KeyValueCacheClient:
             results = client.mget(keys)
             return {k: self.decode(v) for k, v in zip(keys, results, strict=False) if v is not None}
         except _main_exceptions as e:
+            if self._ignore_exceptions:
+                if self._log_ignored_exceptions and self._logger is not None:
+                    self._logger.exception("Exception ignored")
+                return {}
             raise ConnectionInterruptedError(connection=client) from e
 
     async def aget_many(self, keys: Iterable[KeyT]) -> dict[KeyT, Any]:
@@ -542,6 +547,10 @@ class KeyValueCacheClient:
             results = await client.mget(keys)
             return {k: self.decode(v) for k, v in zip(keys, results, strict=False) if v is not None}
         except _main_exceptions as e:
+            if self._ignore_exceptions:
+                if self._log_ignored_exceptions and self._logger is not None:
+                    self._logger.exception("Exception ignored")
+                return {}
             raise ConnectionInterruptedError(connection=client) from e
 
     def has_key(self, key: KeyT) -> bool:

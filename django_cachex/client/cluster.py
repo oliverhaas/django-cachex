@@ -165,9 +165,8 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         if not keys:
             return {}
 
-        client = self.get_client(write=False)
-
         try:
+            client = self.get_client(write=False)
             # mget_nonatomic handles slot splitting
             results = cast(
                 "list[bytes | None]",
@@ -180,7 +179,11 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
                     recovered_data[key] = self.decode(value)
 
         except _main_exceptions as e:
-            raise ConnectionInterruptedError(connection=client) from e
+            if self._ignore_exceptions:
+                if self._log_ignored_exceptions and self._logger is not None:
+                    self._logger.exception("Exception ignored")
+                return {}
+            raise ConnectionInterruptedError(connection=None) from e
 
         return recovered_data
 
