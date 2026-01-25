@@ -18,9 +18,7 @@ class TestDefaultClientSerializerConfig:
         """Test that a single string config still works (backwards compatibility)."""
         client = RedisCacheClient(
             servers=["redis://localhost:6379/0"],
-            options={
-                "serializer": "django_cachex.serializers.pickle.PickleSerializer",
-            },
+            serializer="django_cachex.serializers.pickle.PickleSerializer",
         )
 
         assert len(client._serializers) == 1
@@ -30,12 +28,10 @@ class TestDefaultClientSerializerConfig:
         """Test that a list config creates multiple serializers."""
         client = RedisCacheClient(
             servers=["redis://localhost:6379/0"],
-            options={
-                "serializer": [
-                    "django_cachex.serializers.json.JSONSerializer",
-                    "django_cachex.serializers.pickle.PickleSerializer",
-                ],
-            },
+            serializer=[
+                "django_cachex.serializers.json.JSONSerializer",
+                "django_cachex.serializers.pickle.PickleSerializer",
+            ],
         )
 
         assert len(client._serializers) == 2
@@ -99,12 +95,10 @@ class TestDeserializeFallback:
         """Test that _deserialize correctly deserializes JSON data."""
         client = RedisCacheClient(
             servers=["redis://localhost:6379/0"],
-            options={
-                "serializer": [
-                    "django_cachex.serializers.json.JSONSerializer",
-                    "django_cachex.serializers.pickle.PickleSerializer",
-                ],
-            },
+            serializer=[
+                "django_cachex.serializers.json.JSONSerializer",
+                "django_cachex.serializers.pickle.PickleSerializer",
+            ],
         )
 
         data = {"key": "value", "number": 42}
@@ -116,12 +110,10 @@ class TestDeserializeFallback:
         """Test that _deserialize falls back to pickle for pickle-serialized data."""
         client = RedisCacheClient(
             servers=["redis://localhost:6379/0"],
-            options={
-                "serializer": [
-                    "django_cachex.serializers.json.JSONSerializer",
-                    "django_cachex.serializers.pickle.PickleSerializer",
-                ],
-            },
+            serializer=[
+                "django_cachex.serializers.json.JSONSerializer",
+                "django_cachex.serializers.pickle.PickleSerializer",
+            ],
         )
 
         data = {"key": "value", "number": 42}
@@ -134,11 +126,9 @@ class TestDeserializeFallback:
         """Test that _deserialize raises SerializerError when all serializers fail."""
         client = RedisCacheClient(
             servers=["redis://localhost:6379/0"],
-            options={
-                "serializer": [
-                    "django_cachex.serializers.json.JSONSerializer",
-                ],
-            },
+            serializer=[
+                "django_cachex.serializers.json.JSONSerializer",
+            ],
         )
 
         # Invalid data that can't be deserialized as JSON
@@ -151,12 +141,10 @@ class TestDeserializeFallback:
         """Test that _deserialize continues to next serializer on failure."""
         client = RedisCacheClient(
             servers=["redis://localhost:6379/0"],
-            options={
-                "serializer": [
-                    "django_cachex.serializers.json.JSONSerializer",
-                    "django_cachex.serializers.pickle.PickleSerializer",
-                ],
-            },
+            serializer=[
+                "django_cachex.serializers.json.JSONSerializer",
+                "django_cachex.serializers.pickle.PickleSerializer",
+            ],
         )
 
         # Data that is valid pickle but not valid JSON

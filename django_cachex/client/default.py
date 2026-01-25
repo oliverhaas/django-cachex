@@ -190,9 +190,11 @@ class KeyValueCacheClient:
         self._compressors = self._create_compressors(compressor_config)
 
         # Setup multi-serializer fallback (extension beyond Django)
-        serializer_config = options.get(
-            "serializer",
-            "django_cachex.serializers.pickle.PickleSerializer",
+        # Use the explicit serializer parameter if provided, otherwise check options
+        serializer_config = (
+            serializer
+            if serializer is not None
+            else options.get("serializer", "django_cachex.serializers.pickle.PickleSerializer")
         )
         self._serializers = self._create_serializers(serializer_config)
 
