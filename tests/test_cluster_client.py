@@ -233,11 +233,11 @@ class TestRedisClusterCacheClient:
         call_kwargs = mock_cluster.keys.call_args.kwargs
         assert call_kwargs.get("target_nodes") == "primaries"
 
-        # Should return decoded keys
+        # Should return decoded keys (full keys, not reversed - reversal happens at cache backend level)
         assert len(result) == 3
-        assert "foo_1" in result
-        assert "foo_2" in result
-        assert "foo_3" in result
+        assert "prefix:1:foo_1" in result
+        assert "prefix:1:foo_2" in result
+        assert "prefix:1:foo_3" in result
 
     def test_keys_empty_result(self):
         """Test keys() with no matching keys."""
@@ -295,11 +295,11 @@ class TestRedisClusterCacheClient:
         call_kwargs = mock_cluster.scan_iter.call_args.kwargs
         assert call_kwargs.get("target_nodes") == "primaries"
 
-        # Should return decoded keys
+        # Should return decoded keys (full keys, not reversed - reversal happens at cache backend level)
         assert len(result) == 3
-        assert "bar_1" in result
-        assert "bar_2" in result
-        assert "bar_3" in result
+        assert "prefix:1:bar_1" in result
+        assert "prefix:1:bar_2" in result
+        assert "prefix:1:bar_3" in result
 
     def test_iter_keys_with_itersize(self):
         """Test iter_keys() passes itersize to scan_iter."""

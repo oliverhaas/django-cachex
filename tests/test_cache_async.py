@@ -219,11 +219,13 @@ class TestAsyncSetMany:
     @pytest.mark.asyncio
     async def test_aset_many_stores_multiple(self, cache: KeyValueCache):
         """Test aset_many stores multiple values."""
-        await cache.aset_many({
-            "async_set_many_x": 1,
-            "async_set_many_y": 2,
-            "async_set_many_z": 3,
-        })
+        await cache.aset_many(
+            {
+                "async_set_many_x": 1,
+                "async_set_many_y": 2,
+                "async_set_many_z": 3,
+            },
+        )
 
         assert cache.get("async_set_many_x") == 1
         assert cache.get("async_set_many_y") == 2

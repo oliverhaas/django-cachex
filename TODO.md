@@ -103,13 +103,23 @@ We provide true async using native async clients (`redis.asyncio` / `valkey.asyn
   - `aget_many`, `aset_many`, `adelete_many`
   - `ahas_key`, `aincr`, `adecr`, `aclear`, `aclose`
 - Async wrapper methods in `KeyValueCache` with key prefixing/versioning
+- Async versions of extended methods:
+  - TTL/expiry: `attl`, `apttl`, `aexpire`, `apexpire`, `aexpireat`, `apexpireat`, `apersist`
+  - Keys: `akeys`, `aiter_keys`, `adelete_pattern`, `arename`, `arenamenx`
+  - Hashes: `ahset`, `ahsetnx`, `ahget`, `ahmset`, `ahmget`, `ahgetall`, `ahdel`, `ahexists`, `ahlen`, `ahkeys`, `ahvals`, `ahincrby`, `ahincrbyfloat`
+  - Lists: `alpush`, `arpush`, `alpop`, `arpop`, `allen`, `alpos`, `almove`, `alrange`, `alindex`, `alset`, `alrem`, `altrim`, `alinsert`, `ablpop`, `abrpop`, `ablmove`
+  - Sets: `asadd`, `asrem`, `asmembers`, `asismember`, `ascard`, `aspop`, `asrandmember`, `asmove`, `asdiff`, `asdiffstore`, `asinter`, `asinterstore`, `asunion`, `asunionstore`, `asmismember`, `asscan`, `asscan_iter`
+  - Sorted sets: `azadd`, `azrem`, `azscore`, `azrank`, `azrevrank`, `azcard`, `azcount`, `azincrby`, `azrange`, `azrevrange`, `azrangebyscore`, `azrevrangebyscore`, `azremrangebyrank`, `azremrangebyscore`, `azpopmin`, `azpopmax`, `azmscore`
+- `get_or_set`, `aget_or_set`, `aincr_version`, `adecr_version`
+- Async support for cluster clients (`RedisClusterCacheClient`, `ValkeyClusterCacheClient`)
+  - Async cluster management with per-event-loop caching
+  - Cluster-specific async methods: `aget_many`, `aset_many`, `adelete_many`, `aclear`, `akeys`, `aiter_keys`, `adelete_pattern`, `aclose`
+- Async support for sentinel clients (`RedisSentinelCacheClient`)
+  - Async sentinel pool management with per-event-loop caching
 - Tests in `tests/test_cache_async.py`
 
 ⏳ **Pending:**
-- [ ] Add async pool classes to cluster clients (`RedisClusterCacheClient`, `ValkeyClusterCacheClient`)
-- [ ] Add async pool classes to sentinel clients (`RedisSentinelCacheClient`, `ValkeySentinelCacheClient`)
-- [ ] Async versions of extended methods (TTL, expiry, keys, hashes, lists, sets, sorted sets)
-- [ ] `aget_or_set`, `aincr_version`
+- (none currently - all async methods implemented)
 
 **Architecture:**
 
@@ -191,13 +201,13 @@ Extended operations are implemented directly on the CacheClient class:
 - Lists: lpush, rpush, lpop, rpop, lrange, lindex, llen, lrem, ltrim, lset, linsert, lpos, lmove, blpop, brpop, blmove
 - Sets: sadd, scard, sdiff, sdiffstore, sinter, sinterstore, sismember, smembers, smove, spop, srandmember, srem, sscan, sscan_iter, sunion, sunionstore
 - Sorted Sets: zadd, zcard, zcount, zincrby, zpopmax, zpopmin, zrange, zrangebyscore, zrank, zrem, zremrangebyscore, zrevrange, zrevrangebyscore, zscore, zrevrank, zmscore, zremrangebyrank
+- Streams (sync + async):
+  - Basic: xadd, xlen, xrange, xrevrange, xread, xtrim, xdel
+  - Info: xinfo_stream, xinfo_groups, xinfo_consumers
+  - Consumer groups: xgroup_create, xgroup_destroy, xgroup_setid, xgroup_delconsumer, xreadgroup, xack, xpending, xclaim, xautoclaim
+- Lua scripting (sync + async): eval, evalsha, script_load, script_exists, script_flush, script_kill
 
 Pipeline support exists for all these operations in `client/pipeline/`.
-
-### Future Data Structure Features
-
-- [ ] Investigate Streams support (xadd, xread, xrange, consumer groups)
-- [ ] Investigate Lua scripting support (eval, evalsha, script_load)
 
 ---
 
@@ -222,4 +232,3 @@ Current features:
 - [ ] Review `[[tool.mypy.overrides]]` for optional dependencies as libraries improve
 - [ ] Add docstrings incrementally (start with public API)
 - [ ] Enable more ruff rules (review ignored rules and fix violations)
-

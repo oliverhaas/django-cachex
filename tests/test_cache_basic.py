@@ -216,7 +216,7 @@ class TestDeleteOperations:
 
     def test_delete_many_with_generator(self, cache: KeyValueCache):
         cache.set_many({"gen1": 1, "gen2": 2, "gen3": 3})
-        result = cache.delete_many(k for k in ["gen1", "gen2"])
+        result = cache.delete_many(k for k in ["gen1", "gen2"])  # type: ignore[arg-type]
         assert bool(result) is True
         remaining = cache.get_many(["gen1", "gen2", "gen3"])
         assert remaining == {"gen3": 3}
@@ -224,7 +224,7 @@ class TestDeleteOperations:
     def test_delete_many_empty_generator(self, cache: KeyValueCache):
         from typing import cast
 
-        result = cache.delete_many(k for k in cast("list[str]", []))
+        result = cache.delete_many(k for k in cast("list[str]", []))  # type: ignore[arg-type]
         assert bool(result) is False
 
 

@@ -54,8 +54,10 @@ def skip_if_no_async_support(request, cache):
     This fixture auto-skips tests marked with @pytest.mark.asyncio when the
     cache client doesn't have async support (i.e., _async_pool_class is None).
     """
-    # Only check for async tests
-    if request.node.get_closest_marker("asyncio") is not None:
-        # Check if the cache client supports async
-        if hasattr(cache, "_cache") and cache._cache._async_pool_class is None:
-            pytest.skip("Async not supported for this client type")
+    # Only check for async tests, and skip if async not supported
+    if (
+        request.node.get_closest_marker("asyncio") is not None
+        and hasattr(cache, "_cache")
+        and cache._cache._async_pool_class is None
+    ):
+        pytest.skip("Async not supported for this client type")

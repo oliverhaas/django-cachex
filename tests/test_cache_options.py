@@ -6,6 +6,7 @@ import pytest
 from django.core.cache import caches
 from pytest import LogCaptureFixture
 from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import RedisClusterException
 
 from django_cachex.cache import KeyValueCache
 
@@ -22,16 +23,15 @@ def reverse_key(key: str) -> str:
 def ignore_exceptions_cache(settings) -> KeyValueCache:
     caches_setting = copy.deepcopy(settings.CACHES)
     caches_setting["doesnotexist"]["OPTIONS"]["ignore_exceptions"] = True
+    caches_setting["doesnotexist"]["OPTIONS"]["log_ignored_exceptions"] = True
     settings.CACHES = caches_setting
-    settings.DJANGO_REDIS_IGNORE_EXCEPTIONS = True
-    settings.DJANGO_REDIS_LOG_IGNORED_EXCEPTIONS = True
     return cast("KeyValueCache", caches["doesnotexist"])
 
 
 def test_get_django_omit_exceptions_many_returns_default_arg(
     ignore_exceptions_cache: KeyValueCache,
 ):
-    assert ignore_exceptions_cache._ignore_exceptions is True
+    assert ignore_exceptions_cache._cache._ignore_exceptions is True
     assert ignore_exceptions_cache.get_many(["key1", "key2", "key3"]) == {}
 
 
@@ -39,8 +39,8 @@ def test_get_django_omit_exceptions(
     caplog: LogCaptureFixture,
     ignore_exceptions_cache: KeyValueCache,
 ):
-    assert ignore_exceptions_cache._ignore_exceptions is True
-    assert ignore_exceptions_cache._log_ignored_exceptions is True
+    assert ignore_exceptions_cache._cache._ignore_exceptions is True
+    assert ignore_exceptions_cache._cache._log_ignored_exceptions is True
 
     assert ignore_exceptions_cache.get("key") is None
     assert ignore_exceptions_cache.get("key", "default") == "default"
@@ -50,29 +50,29 @@ def test_get_django_omit_exceptions(
     assert all(record.levelname == "ERROR" and record.msg == "Exception ignored" for record in caplog.records)
 
 
-def test_get_django_omit_exceptions_priority_1(settings):
+def test_ignore_exceptions_enabled(settings):
+    """Test that ignore_exceptions=True returns None instead of raising."""
     caches_setting = copy.deepcopy(settings.CACHES)
     caches_setting["doesnotexist"]["OPTIONS"]["ignore_exceptions"] = True
     settings.CACHES = caches_setting
-    settings.DJANGO_REDIS_IGNORE_EXCEPTIONS = False
     cache = cast("KeyValueCache", caches["doesnotexist"])
-    assert cache._ignore_exceptions is True
+    assert cache._cache._ignore_exceptions is True
     assert cache.get("key") is None
 
 
-def test_get_django_omit_exceptions_priority_2(settings):
+def test_ignore_exceptions_disabled(settings):
+    """Test that ignore_exceptions=False raises ConnectionError."""
     caches_setting = copy.deepcopy(settings.CACHES)
     caches_setting["doesnotexist"]["OPTIONS"]["ignore_exceptions"] = False
     settings.CACHES = caches_setting
-    settings.DJANGO_REDIS_IGNORE_EXCEPTIONS = True
     cache = cast("KeyValueCache", caches["doesnotexist"])
-    assert cache._ignore_exceptions is False
-    with pytest.raises(RedisConnectionError):
+    assert cache._cache._ignore_exceptions is False
+    with pytest.raises((RedisConnectionError, RedisClusterException)):
         cache.get("key")
 
 
 @pytest.fixture
-def key_prefix_cache(cache: KeyValueCache, settings) -> Iterable[KeyValueCache]:
+def key_prefix_cache(cache: KeyValueCache, settings) -> KeyValueCache:
     caches_setting = copy.deepcopy(settings.CACHES)
     caches_setting["default"]["KEY_PREFIX"] = "*"
     settings.CACHES = caches_setting
@@ -138,4 +138,4 @@ def test_custom_key_function(cache: KeyValueCache, settings):
         raw_keys = client.keys("*", target_nodes=RedisCluster.PRIMARIES)
     else:
         raw_keys = client.keys("*")
-    assert {k.decode() for k in raw_keys} == {"#1#foo-bc", "#1#foo-bb"}
+    assert {k.decode() for k in raw_keys} == {"#1#foo-bc", "#1#foo-bb"}  # type: ignore[union-attr]

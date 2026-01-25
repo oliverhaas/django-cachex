@@ -1,7 +1,7 @@
 """Cache fixture and configuration builders."""
 
 from collections.abc import Iterator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from django.test import override_settings
@@ -16,6 +16,7 @@ COMPRESSORS = {
     None: None,
     "gzip": "django_cachex.compressors.gzip.GzipCompressor",
     "lz4": "django_cachex.compressors.lz4.Lz4Compressor",
+    "lzma": "django_cachex.compressors.lzma.LzmaCompressor",
     "zlib": "django_cachex.compressors.zlib.ZlibCompressor",
     "zstd": "django_cachex.compressors.zstd.ZStdCompressor",
 }
@@ -38,7 +39,6 @@ BACKENDS = {
     ("default", "redis"): "django_cachex.client.RedisCache",
     ("sentinel", "redis"): "django_cachex.client.RedisSentinelCache",
     ("cluster", "redis"): "django_cachex.client.RedisClusterCache",
-
 }
 
 # Client library configurations: maps client_library -> (pool_class, parser_class)
@@ -58,13 +58,13 @@ CLIENT_LIBRARY_CONFIGS = {
 
 
 # Parametrized fixtures - tests opt-in by requesting these
-@pytest.fixture(params=[None, "gzip", "lz4", "zlib", "zstd"])
+@pytest.fixture(params=[None, "gzip", "lz4", "lzma", "zlib", "zstd"])
 def compressors(request) -> str | None:
     """Parametrized compressor fixture. Request this to test all compressors."""
     return request.param
 
 
-@pytest.fixture(params=[None, "json", "msgpack"])
+@pytest.fixture(params=[None, "json", "msgpack"])  # None is default pickle
 def serializers(request) -> str | None:
     """Parametrized serializer fixture. Request this to test all serializers."""
     return request.param
@@ -135,7 +135,7 @@ def build_cache_config(
         redis_host: Redis server host
         redis_port: Redis server port
         backend: django-cachex backend ("default", "sentinel", "cluster")
-        compressor: Compressor name (None, "gzip", "lz4", "zlib", "zstd")
+        compressor: Compressor name (None, "gzip", "lz4", "lzma", "zlib", "zstd")
         serializer: Serializer name (None, "json", "msgpack")
         client_library: Python client library ("redis" or "valkey")
         native_parser: If True, use native parser (hiredis/libvalkey)
@@ -318,7 +318,7 @@ def _make_cache(
             from django.core.cache import cache as default_cache
 
             default_cache.clear()  # Clear before test
-            yield default_cache
+            yield cast("KeyValueCache", default_cache)
             default_cache.clear()  # Clear after test
         return
 
@@ -337,7 +337,7 @@ def _make_cache(
             from django.core.cache import cache as default_cache
 
             default_cache.clear()  # Clear before test
-            yield default_cache
+            yield cast("KeyValueCache", default_cache)
             default_cache.clear()  # Clear after test
         return
 
@@ -358,7 +358,7 @@ def _make_cache(
         from django.core.cache import cache as default_cache
 
         default_cache.clear()  # Clear before test
-        yield default_cache
+        yield cast("KeyValueCache", default_cache)
         default_cache.clear()  # Clear after test
 
 
