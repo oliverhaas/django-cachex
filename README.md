@@ -17,8 +17,8 @@ pip install django-cachex
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.ValkeyCache",
-        "LOCATION": "valkey://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.ValkeyCache", # or django_cachex.cache.RedisCache
+        "LOCATION": "valkey://127.0.0.1:6379/1", # or redis://127.0.0.1:6379/1
     }
 }
 ```
