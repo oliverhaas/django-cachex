@@ -178,12 +178,12 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
                 if value is not None:
                     recovered_data[key] = self.decode(value)
 
-        except _main_exceptions as e:
+        except _main_exceptions:
             if self._ignore_exceptions:
                 if self._log_ignored_exceptions and self._logger is not None:
                     self._logger.exception("Exception ignored")
                 return {}
-            raise ConnectionInterruptedError(connection=None) from e
+            raise
 
         return recovered_data
 

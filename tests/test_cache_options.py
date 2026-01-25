@@ -6,6 +6,7 @@ import pytest
 from django.core.cache import caches
 from pytest import LogCaptureFixture
 from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import RedisClusterException
 
 from django_cachex.cache import KeyValueCache
 
@@ -66,7 +67,7 @@ def test_ignore_exceptions_disabled(settings):
     settings.CACHES = caches_setting
     cache = cast("KeyValueCache", caches["doesnotexist"])
     assert cache._cache._ignore_exceptions is False
-    with pytest.raises(RedisConnectionError):
+    with pytest.raises((RedisConnectionError, RedisClusterException)):
         cache.get("key")
 
 
