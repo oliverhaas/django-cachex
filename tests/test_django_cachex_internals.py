@@ -41,7 +41,7 @@ class TestRedisCacheInternals:
     def test_cache_client_class(self, cache: KeyValueCache):
         """Verify RedisCacheClient class is used."""
         # Check _class attribute points to correct client class
-        assert cache._class == RedisCacheClient or issubclass(cache._class, RedisCacheClient.__class__.__bases__)
+        assert cache._class == RedisCacheClient or issubclass(cache._class, RedisCacheClient.__class__.__bases__)  # type: ignore[attr-defined]
         # Check _cache is an instance of the client
         assert isinstance(cache._cache, cache._class)
 
@@ -135,7 +135,7 @@ class TestRedisCacheInternals:
 
         with override_settings(CACHES=caches_config):
             cache = caches["default"]
-            pool = cache._cache._get_connection_pool(write=False)
+            pool = cache._cache._get_connection_pool(write=False)  # type: ignore[attr-defined]
 
             # db is parsed from URL path
             assert pool.connection_kwargs["db"] == 5
@@ -191,11 +191,11 @@ class TestRedisCacheClientMethods:
             cache = caches["default"]
 
             # Write should always use index 0
-            write_idx = cache._cache._get_connection_pool_index(write=True)
+            write_idx = cache._cache._get_connection_pool_index(write=True)  # type: ignore[attr-defined]
             assert write_idx == 0
 
             # Read can use any index
-            read_idx = cache._cache._get_connection_pool_index(write=False)
+            read_idx = cache._cache._get_connection_pool_index(write=False)  # type: ignore[attr-defined]
             assert 0 <= read_idx < 3
 
         # Clean up
@@ -258,7 +258,7 @@ class TestConnectionCleanup:
 
         with override_settings(CACHES=caches_config):
             cache = caches["default"]
-            client = cache._cache
+            client = cache._cache  # type: ignore[attr-defined]  # type: ignore[attr-defined]
 
             # Create first event loop and get pool
             loop1 = asyncio.new_event_loop()
@@ -321,7 +321,7 @@ class TestConnectionCleanup:
 
         with override_settings(CACHES=caches_config):
             cache = caches["default"]
-            client = cache._cache
+            client = cache._cache  # type: ignore[attr-defined]
 
             # Create a pool
             pool = client._get_connection_pool(write=True)
@@ -382,7 +382,7 @@ class TestConnectionCleanup:
 
         with override_settings(CACHES=caches_config):
             cache = caches["default"]
-            client = cache._cache
+            client = cache._cache  # type: ignore[attr-defined]
 
             # Create two event loops and get pools in each
             loop1 = asyncio.new_event_loop()
@@ -439,7 +439,7 @@ class TestConnectionCleanup:
 
         with override_settings(CACHES=caches_config):
             cache = caches["default"]
-            client = cache._cache
+            client = cache._cache  # type: ignore[attr-defined]
 
             # Create a new event loop and get a pool in it
             loop = asyncio.new_event_loop()

@@ -87,12 +87,12 @@ class TestTTLOperations:
         cache.set("already_gone", "value", timeout=-1)
         # Key doesn't exist, so ttl returns -2 (Redis convention)
         ttl = cache.ttl("already_gone")
-        assert ttl < 0  # -2 means key doesn't exist
+        assert ttl is not None and ttl < 0  # -2 means key doesn't exist
 
     def test_ttl_negative_for_nonexistent_key(self, cache: KeyValueCache):
         # Missing keys return -2 (Redis convention)
         ttl = cache.ttl("key_does_not_exist")
-        assert ttl < 0
+        assert ttl is not None and ttl < 0
 
 
 class TestPTTLOperations:
@@ -116,11 +116,11 @@ class TestPTTLOperations:
         # Setting with timeout=-1 immediately deletes the key
         cache.set("pttl_expired", "data", timeout=-1)
         pttl = cache.pttl("pttl_expired")
-        assert pttl < 0  # -2 means key doesn't exist
+        assert pttl is not None and pttl < 0  # -2 means key doesn't exist
 
     def test_pttl_negative_for_nonexistent_key(self, cache: KeyValueCache):
         pttl = cache.pttl("pttl_missing")
-        assert pttl < 0  # Missing keys return -2
+        assert pttl is not None and pttl < 0  # Missing keys return -2
 
 
 class TestPersistOperation:

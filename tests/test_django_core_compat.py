@@ -200,7 +200,7 @@ class TestDjangoCoreRedisCompatibility:
         keys = ["many_1", "many_2", "many_3", "many_missing"]
 
         django_result = django_core_cache.get_many(keys)
-        cachex_result = cachex_cache.get_many(keys)
+        cachex_result = cachex_cache.get_many(keys)  # type: ignore[arg-type]
 
         # Both should return same dict (excluding missing keys)
         assert django_result == cachex_result
@@ -231,7 +231,7 @@ class TestDjangoCoreRedisCompatibility:
         for key in data:
             django_core_cache.delete(key)
 
-        cachex_cache.set_many(data)
+        cachex_cache.set_many(data)  # type: ignore[arg-type]
 
         # Verify both can read what cachex set
         for key, expected in data.items():

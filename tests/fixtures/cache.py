@@ -1,7 +1,7 @@
 """Cache fixture and configuration builders."""
 
 from collections.abc import Iterator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from django.test import override_settings
@@ -317,7 +317,7 @@ def _make_cache(
             from django.core.cache import cache as default_cache
 
             default_cache.clear()  # Clear before test
-            yield default_cache
+            yield cast("KeyValueCache", default_cache)
             default_cache.clear()  # Clear after test
         return
 
@@ -336,7 +336,7 @@ def _make_cache(
             from django.core.cache import cache as default_cache
 
             default_cache.clear()  # Clear before test
-            yield default_cache
+            yield cast("KeyValueCache", default_cache)
             default_cache.clear()  # Clear after test
         return
 
@@ -357,7 +357,7 @@ def _make_cache(
         from django.core.cache import cache as default_cache
 
         default_cache.clear()  # Clear before test
-        yield default_cache
+        yield cast("KeyValueCache", default_cache)
         default_cache.clear()  # Clear after test
 
 

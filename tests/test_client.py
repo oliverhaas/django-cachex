@@ -11,10 +11,10 @@ from tests.settings_wrapper import SettingsWrapper
 
 
 @pytest.fixture
-def cache_client(cache: KeyValueCache) -> KeyValueCacheClient:
+def cache_client(cache: KeyValueCache):
     """Fixture that returns the internal cache client for testing client-level behavior."""
     cache.set("TestClientClose", 0)
-    yield cache._cache  # Return the internal client, not the cache backend
+    yield cache._cache  # Return the internal client
     cache.delete("TestClientClose")
 
 
@@ -28,9 +28,9 @@ class TestClientClose:
         # With new architecture, close() disconnects pools directly
         # ClusterCacheClient uses _clusters instead of _pools
         if "ClusterCacheClient" in type(cache_client).__name__:
-            if cache_client._clusters:
-                url = list(cache_client._clusters.keys())[0]
-                mock = mocker.patch.object(cache_client._clusters[url], "close", create=True)
+            if cache_client._clusters:  # type: ignore[attr-defined]  # type: ignore[attr-defined]
+                url = list(cache_client._clusters.keys())[0]  # type: ignore[attr-defined]  # type: ignore[attr-defined]
+                mock = mocker.patch.object(cache_client._clusters[url], "close", create=True)  # type: ignore[attr-defined]
             else:
                 mock = Mock()
         elif cache_client._pools:
@@ -53,16 +53,16 @@ class TestClientClose:
             # ClusterCacheClient uses _clusters, others use _pools
             # Use class name check since _pools is a class variable shared across instances
             if "ClusterCacheClient" in type(cache_client).__name__:
-                if cache_client._clusters:
-                    url = list(cache_client._clusters.keys())[0]
-                    mock = mocker.patch.object(cache_client._clusters[url], "close")
+                if cache_client._clusters:  # type: ignore[attr-defined]
+                    url = list(cache_client._clusters.keys())[0]  # type: ignore[attr-defined]
+                    mock = mocker.patch.object(cache_client._clusters[url], "close")  # type: ignore[attr-defined]
                     cache_client.close()
                     assert mock.called
             else:
                 # Find pools owned by this server (not from previous tests)
                 server_url = cache_client._servers[0] if cache_client._servers else None
                 if server_url and server_url in cache_client._pools:
-                    mock = mocker.patch.object(cache_client._pools[server_url], "disconnect")
+                    mock = mocker.patch.object(cache_client._pools[server_url], "disconnect")  # type: ignore[index]
                     cache_client.close()
                     assert mock.called
 
@@ -75,18 +75,18 @@ class TestClientClose:
         caches = settings.CACHES
         caches[DEFAULT_CACHE_ALIAS]["OPTIONS"]["close_connection"] = True
         with override_settings(CACHES=caches):
-            cache_client.set("TestClientClose", 0)
+            cache_client.set("TestClientClose", 0, None)
             # Use class name check since _pools is a class variable
             if "ClusterCacheClient" in type(cache_client).__name__:
-                if cache_client._clusters:
-                    url = list(cache_client._clusters.keys())[0]
-                    mock = mocker.patch.object(cache_client._clusters[url], "close")
+                if cache_client._clusters:  # type: ignore[attr-defined]
+                    url = list(cache_client._clusters.keys())[0]  # type: ignore[attr-defined]
+                    mock = mocker.patch.object(cache_client._clusters[url], "close")  # type: ignore[attr-defined]
                     cache_client.close()
                     assert mock.called
             else:
                 server_url = cache_client._servers[0] if cache_client._servers else None
                 if server_url and server_url in cache_client._pools:
-                    mock = mocker.patch.object(cache_client._pools[server_url], "disconnect")
+                    mock = mocker.patch.object(cache_client._pools[server_url], "disconnect")  # type: ignore[index]
                     cache_client.close()
                     assert mock.called
 
@@ -98,15 +98,15 @@ class TestClientClose:
         cache_client._options["close_connection"] = True
         # Use class name check since _pools is a class variable
         if "ClusterCacheClient" in type(cache_client).__name__:
-            if cache_client._clusters:
-                url = list(cache_client._clusters.keys())[0]
-                mock = mocker.patch.object(cache_client._clusters[url], "close")
+            if cache_client._clusters:  # type: ignore[attr-defined]
+                url = list(cache_client._clusters.keys())[0]  # type: ignore[attr-defined]
+                mock = mocker.patch.object(cache_client._clusters[url], "close")  # type: ignore[attr-defined]
                 cache_client.close()
                 assert mock.called
         else:
             server_url = cache_client._servers[0] if cache_client._servers else None
             if server_url and server_url in cache_client._pools:
-                mock = mocker.patch.object(cache_client._pools[server_url], "disconnect")
+                mock = mocker.patch.object(cache_client._pools[server_url], "disconnect")  # type: ignore[index]
                 cache_client.close()
                 assert mock.called
 

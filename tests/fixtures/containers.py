@@ -263,6 +263,7 @@ def cluster_container_factory() -> Generator[tuple[ContainerFactory, ContainerIn
             base_port = CLUSTER_BASE_PORT + (worker_id * CLUSTER_PORT_SPACING)
             cached_info[0] = _start_cluster_container(base_port)
         info = cached_info[0]
+        assert info is not None
         return info.host, info.port
 
     yield get_container, cached_info[0]
@@ -279,7 +280,7 @@ def cluster_container(
 ) -> tuple[str, int]:
     """Get a Redis Cluster container."""
     factory, _ = cluster_container_factory
-    host, port = factory()
+    host, port = factory("")  # Empty string - cluster ignores image param
     environ["CLUSTER_HOST"] = host
     environ["CLUSTER_PORT"] = str(port)
     return host, port

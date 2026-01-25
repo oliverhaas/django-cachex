@@ -193,6 +193,17 @@ include = ["django_cachex/compressors/zstd.py"]
 # zstd uses conditional imports (compression on 3.14+, backports otherwise)
 unresolved-import = "ignore"
 
+[[tool.ty.overrides]]
+include = ["tests/**"]
+
+[tool.ty.overrides.rules]
+# Tests intentionally access private attributes for verification
+unresolved-attribute = "ignore"
+# Tests verify edge cases with generators and None values
+invalid-argument-type = "ignore"
+# Tests patch timezone.now for expiry testing
+invalid-assignment = "ignore"
+
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "settings.base"
 addopts = "--cov=django_cachex --cov-report=term-missing --cov-report=xml --no-cov-on-fail"

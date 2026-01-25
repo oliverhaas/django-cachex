@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
 
     from django_cachex.client.pipeline import Pipeline
-    from django_cachex.types import EncodableT, KeyT
+    from django_cachex.types import KeyT
 
 # Known options that shouldn't be passed to the cluster client
 _KNOWN_OPTIONS = frozenset(
@@ -181,7 +181,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
         return recovered_data
 
-    def set_many(self, data: Mapping[KeyT, EncodableT], timeout: float | None = None) -> list[KeyT]:
+    def set_many(self, data: Mapping[KeyT, Any], timeout: float | None = None) -> list[KeyT]:
         """Set multiple values, handling cross-slot keys."""
         if not data:
             return []
@@ -346,7 +346,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
         return recovered_data
 
-    async def aset_many(self, data: Mapping[KeyT, EncodableT], timeout: float | None = None) -> list[KeyT]:
+    async def aset_many(self, data: Mapping[KeyT, Any], timeout: float | None = None) -> list[KeyT]:
         """Set multiple values asynchronously, handling cross-slot keys."""
         if not data:
             return []

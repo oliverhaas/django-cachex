@@ -31,7 +31,7 @@ def ignore_exceptions_cache(settings) -> KeyValueCache:
 def test_get_django_omit_exceptions_many_returns_default_arg(
     ignore_exceptions_cache: KeyValueCache,
 ):
-    assert ignore_exceptions_cache._ignore_exceptions is True
+    assert ignore_exceptions_cache._ignore_exceptions is True  # type: ignore[attr-defined]
     assert ignore_exceptions_cache.get_many(["key1", "key2", "key3"]) == {}
 
 
@@ -39,8 +39,8 @@ def test_get_django_omit_exceptions(
     caplog: LogCaptureFixture,
     ignore_exceptions_cache: KeyValueCache,
 ):
-    assert ignore_exceptions_cache._ignore_exceptions is True
-    assert ignore_exceptions_cache._log_ignored_exceptions is True
+    assert ignore_exceptions_cache._ignore_exceptions is True  # type: ignore[attr-defined]
+    assert ignore_exceptions_cache._log_ignored_exceptions is True  # type: ignore[attr-defined]
 
     assert ignore_exceptions_cache.get("key") is None
     assert ignore_exceptions_cache.get("key", "default") == "default"
@@ -72,7 +72,7 @@ def test_get_django_omit_exceptions_priority_2(settings):
 
 
 @pytest.fixture
-def key_prefix_cache(cache: KeyValueCache, settings) -> Iterable[KeyValueCache]:
+def key_prefix_cache(cache: KeyValueCache, settings) -> KeyValueCache:
     caches_setting = copy.deepcopy(settings.CACHES)
     caches_setting["default"]["KEY_PREFIX"] = "*"
     settings.CACHES = caches_setting
@@ -138,4 +138,4 @@ def test_custom_key_function(cache: KeyValueCache, settings):
         raw_keys = client.keys("*", target_nodes=RedisCluster.PRIMARIES)
     else:
         raw_keys = client.keys("*")
-    assert {k.decode() for k in raw_keys} == {"#1#foo-bc", "#1#foo-bb"}
+    assert {k.decode() for k in raw_keys} == {"#1#foo-bc", "#1#foo-bb"}  # type: ignore[union-attr]
