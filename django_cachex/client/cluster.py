@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import weakref
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast, override
 
 from django.conf import settings
 
@@ -93,6 +93,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         assert self._async_cluster_class is not None, "Subclasses must set _async_cluster_class"  # noqa: S101
         return self._async_cluster_class
 
+    @override
     def get_client(self, key: KeyT | None = None, *, write: bool = False) -> Any:
         """Get the Cluster client."""
         url = self._servers[0]
@@ -114,6 +115,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         self._clusters[url] = cluster
         return cluster
 
+    @override
     def get_async_client(self, key: KeyT | None = None, *, write: bool = False) -> Any:
         """Get the async Cluster client for the current event loop."""
         loop = asyncio.get_running_loop()
@@ -156,6 +158,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
     # Override methods that need cluster-specific handling
 
+    @override
     def get_many(self, keys: Iterable[KeyT]) -> dict[KeyT, Any]:
         """Retrieve many keys, handling cross-slot keys."""
         keys = list(keys)
@@ -181,6 +184,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
         return recovered_data
 
+    @override
     def set_many(self, data: Mapping[KeyT, Any], timeout: float | None = None) -> list[KeyT]:
         """Set multiple values, handling cross-slot keys."""
         if not data:
@@ -208,6 +212,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
         return []
 
+    @override
     def delete_many(self, keys: Sequence[KeyT]) -> int:
         """Remove multiple keys, grouping by slot."""
         if not keys:
@@ -227,6 +232,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         else:
             return total_deleted
 
+    @override
     def clear(self) -> bool:
         """Flush all primary nodes in the cluster."""
         client = self.get_client(write=True)
@@ -239,6 +245,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
         return True
 
+    @override
     def keys(self, pattern: str) -> list[str]:
         """Execute KEYS command across all primary nodes (pattern is already prefixed)."""
         client = self.get_client(write=False)
@@ -252,6 +259,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
+    @override
     def iter_keys(
         self,
         pattern: str,
@@ -270,6 +278,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         ):
             yield item.decode()
 
+    @override
     def delete_pattern(
         self,
         pattern: str,
@@ -305,6 +314,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
         return total_deleted
 
+    @override
     def close(self, **kwargs: Any) -> None:
         """Close the cluster connection if configured to do so."""
         close_flag = self._options.get(
@@ -321,6 +331,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
     # Async Override Methods
     # =========================================================================
 
+    @override
     async def aget_many(self, keys: Iterable[KeyT]) -> dict[KeyT, Any]:
         """Retrieve many keys asynchronously, handling cross-slot keys."""
         keys = list(keys)
@@ -346,6 +357,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
         return recovered_data
 
+    @override
     async def aset_many(self, data: Mapping[KeyT, Any], timeout: float | None = None) -> list[KeyT]:
         """Set multiple values asynchronously, handling cross-slot keys."""
         if not data:
@@ -373,6 +385,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
         return []
 
+    @override
     async def adelete_many(self, keys: Sequence[KeyT]) -> int:
         """Remove multiple keys asynchronously, grouping by slot."""
         if not keys:
@@ -392,6 +405,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         else:
             return total_deleted
 
+    @override
     async def aclear(self) -> bool:
         """Flush all primary nodes in the cluster asynchronously."""
         client = self.get_async_client(write=True)
@@ -404,6 +418,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
         return True
 
+    @override
     async def akeys(self, pattern: str) -> list[str]:
         """Execute KEYS command asynchronously across all primary nodes."""
         client = self.get_async_client(write=False)
@@ -417,6 +432,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
+    @override
     async def aiter_keys(
         self,
         pattern: str,
@@ -435,6 +451,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         ):
             yield item.decode()
 
+    @override
     async def adelete_pattern(
         self,
         pattern: str,
@@ -471,6 +488,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
         return total_deleted
 
+    @override
     async def aclose(self, **kwargs: Any) -> None:
         """Close the async cluster connection if configured to do so."""
         close_flag = self._options.get(
@@ -484,6 +502,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
                 await self._async_clusters[loop][url].aclose()
                 del self._async_clusters[loop][url]
 
+    @override
     def pipeline(
         self,
         *,

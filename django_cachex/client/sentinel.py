@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import weakref
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, override
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from django.core.exceptions import ImproperlyConfigured
@@ -83,6 +83,7 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
     # Options that shouldn't be passed to the connection pool
     _SENTINEL_ONLY_OPTIONS = frozenset({"sentinels", "sentinel_kwargs"})
 
+    @override
     def __init__(
         self,
         servers: list[str],
@@ -136,6 +137,7 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
 
         return [replace_query(url, q) for q in (primary_query, replica_query)]
 
+    @override
     def _get_connection_pool(self, *, write: bool) -> ConnectionPool:
         """Get a sentinel-managed connection pool."""
         index = self._get_connection_pool_index(write=write)
@@ -200,6 +202,7 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
         self._async_sentinels[loop] = async_sentinel
         return async_sentinel
 
+    @override
     def _get_async_connection_pool(self, *, write: bool) -> Any:
         """Get an async sentinel-managed connection pool."""
         loop = asyncio.get_running_loop()
