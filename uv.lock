@@ -444,12 +444,12 @@ dev = [
     { name = "pytest-django" },
     { name = "pytest-mock" },
     { name = "pytest-xdist" },
-    { name = "redis" },
+    { name = "redis", extra = ["hiredis"] },
     { name = "ruff" },
     { name = "testcontainers" },
     { name = "ty" },
     { name = "types-docker" },
-    { name = "valkey" },
+    { name = "valkey", extra = ["libvalkey"] },
 ]
 docs = [
     { name = "mike" },
@@ -484,12 +484,12 @@ dev = [
     { name = "pytest-django", specifier = "==4.11.1" },
     { name = "pytest-mock", specifier = "==3.15.1" },
     { name = "pytest-xdist", specifier = "==3.8.0" },
-    { name = "redis", specifier = ">=6,<8" },
+    { name = "redis", extras = ["hiredis"], specifier = ">=6,<8" },
     { name = "ruff", specifier = "==0.14.14" },
     { name = "testcontainers", specifier = "==4.14.0" },
     { name = "ty", specifier = ">=0.0.1a13" },
     { name = "types-docker", specifier = "==7.1.0.20260109" },
-    { name = "valkey", specifier = ">=6.1.0,<7" },
+    { name = "valkey", extras = ["libvalkey"], specifier = ">=6.1.0,<7" },
 ]
 docs = [
     { name = "mike", specifier = "==2.1.3" },
