@@ -3763,6 +3763,212 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
+    # =========================================================================
+    # Lua Scripting Operations
+    # =========================================================================
+
+    def eval(
+        self,
+        script: str,
+        numkeys: int,
+        *keys_and_args: Any,
+    ) -> Any:
+        """Execute a Lua script server-side.
+
+        Args:
+            script: The Lua script to execute
+            numkeys: Number of keys in keys_and_args
+            *keys_and_args: Keys followed by arguments
+
+        Returns:
+            The result of the script execution
+        """
+        client = self.get_client(write=True)
+        try:
+            return client.eval(script, numkeys, *keys_and_args)
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def aeval(
+        self,
+        script: str,
+        numkeys: int,
+        *keys_and_args: Any,
+    ) -> Any:
+        """Execute a Lua script server-side asynchronously.
+
+        Args:
+            script: The Lua script to execute
+            numkeys: Number of keys in keys_and_args
+            *keys_and_args: Keys followed by arguments
+
+        Returns:
+            The result of the script execution
+        """
+        client = self.get_async_client(write=True)
+        try:
+            return await client.eval(script, numkeys, *keys_and_args)
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def evalsha(
+        self,
+        sha: str,
+        numkeys: int,
+        *keys_and_args: Any,
+    ) -> Any:
+        """Execute a cached Lua script by its SHA1 hash.
+
+        Args:
+            sha: The SHA1 hash of the script
+            numkeys: Number of keys in keys_and_args
+            *keys_and_args: Keys followed by arguments
+
+        Returns:
+            The result of the script execution
+        """
+        client = self.get_client(write=True)
+        try:
+            return client.evalsha(sha, numkeys, *keys_and_args)
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def aevalsha(
+        self,
+        sha: str,
+        numkeys: int,
+        *keys_and_args: Any,
+    ) -> Any:
+        """Execute a cached Lua script by its SHA1 hash asynchronously.
+
+        Args:
+            sha: The SHA1 hash of the script
+            numkeys: Number of keys in keys_and_args
+            *keys_and_args: Keys followed by arguments
+
+        Returns:
+            The result of the script execution
+        """
+        client = self.get_async_client(write=True)
+        try:
+            return await client.evalsha(sha, numkeys, *keys_and_args)
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def script_load(self, script: str) -> str:
+        """Load a Lua script into the script cache.
+
+        Args:
+            script: The Lua script to load
+
+        Returns:
+            The SHA1 hash of the script
+        """
+        client = self.get_client(write=True)
+        try:
+            return cast("str", client.script_load(script))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def ascript_load(self, script: str) -> str:
+        """Load a Lua script into the script cache asynchronously.
+
+        Args:
+            script: The Lua script to load
+
+        Returns:
+            The SHA1 hash of the script
+        """
+        client = self.get_async_client(write=True)
+        try:
+            return cast("str", await client.script_load(script))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def script_exists(self, *shas: str) -> list[bool]:
+        """Check if scripts exist in the script cache.
+
+        Args:
+            *shas: SHA1 hashes to check
+
+        Returns:
+            List of booleans indicating existence
+        """
+        client = self.get_client(write=False)
+        try:
+            return cast("list[bool]", client.script_exists(*shas))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def ascript_exists(self, *shas: str) -> list[bool]:
+        """Check if scripts exist in the script cache asynchronously.
+
+        Args:
+            *shas: SHA1 hashes to check
+
+        Returns:
+            List of booleans indicating existence
+        """
+        client = self.get_async_client(write=False)
+        try:
+            return cast("list[bool]", await client.script_exists(*shas))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def script_flush(self, sync_type: str = "SYNC") -> bool:
+        """Remove all scripts from the script cache.
+
+        Args:
+            sync_type: SYNC or ASYNC flush mode
+
+        Returns:
+            True if successful
+        """
+        client = self.get_client(write=True)
+        try:
+            return cast("bool", client.script_flush(sync_type))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def ascript_flush(self, sync_type: str = "SYNC") -> bool:
+        """Remove all scripts from the script cache asynchronously.
+
+        Args:
+            sync_type: SYNC or ASYNC flush mode
+
+        Returns:
+            True if successful
+        """
+        client = self.get_async_client(write=True)
+        try:
+            return cast("bool", await client.script_flush(sync_type))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def script_kill(self) -> bool:
+        """Kill the currently executing Lua script.
+
+        Returns:
+            True if successful
+        """
+        client = self.get_client(write=True)
+        try:
+            return cast("bool", client.script_kill())
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def ascript_kill(self) -> bool:
+        """Kill the currently executing Lua script asynchronously.
+
+        Returns:
+            True if successful
+        """
+        client = self.get_async_client(write=True)
+        try:
+            return cast("bool", await client.script_kill())
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
 
 # =============================================================================
 # RedisCacheClient - concrete implementation for redis-py

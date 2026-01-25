@@ -205,12 +205,9 @@ Extended operations are implemented directly on the CacheClient class:
   - Basic: xadd, xlen, xrange, xrevrange, xread, xtrim, xdel
   - Info: xinfo_stream, xinfo_groups, xinfo_consumers
   - Consumer groups: xgroup_create, xgroup_destroy, xgroup_setid, xgroup_delconsumer, xreadgroup, xack, xpending, xclaim, xautoclaim
+- Lua scripting (sync + async): eval, evalsha, script_load, script_exists, script_flush, script_kill
 
 Pipeline support exists for all these operations in `client/pipeline/`.
-
-### Future Data Structure Features
-
-- [ ] Investigate Lua scripting support (eval, evalsha, script_load)
 
 ---
 
