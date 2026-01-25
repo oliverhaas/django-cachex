@@ -24,34 +24,35 @@ COMPRESSORS = {
 SERIALIZERS = {
     None: None,
     "json": "django_cachex.serializers.json.JSONSerializer",
-    "msgpack": "django_cachex.serializers.msgpack.MSGPackSerializer",
+    "msgpack": "django_cachex.serializers.msgpack.MessagePackSerializer",
 }
 
 # Available cache backends - keyed by (backend_type, client_library)
 # These are Cache classes (extend BaseCache) - used as BACKEND in Django settings
 BACKENDS = {
-    # Redis backends (new Django-aligned architecture)
-    ("default", "redis"): "django_cachex.client.RedisCache",
-    ("sentinel", "redis"): "django_cachex.client.RedisSentinelCache",
-    ("cluster", "redis"): "django_cachex.client.RedisClusterCache",
-    # Valkey backends (new Django-aligned architecture)
+    # Valkey backends
     ("default", "valkey"): "django_cachex.client.ValkeyCache",
     ("sentinel", "valkey"): "django_cachex.client.ValkeySentinelCache",
     ("cluster", "valkey"): "django_cachex.client.ValkeyClusterCache",
+    # Redis backends
+    ("default", "redis"): "django_cachex.client.RedisCache",
+    ("sentinel", "redis"): "django_cachex.client.RedisSentinelCache",
+    ("cluster", "redis"): "django_cachex.client.RedisClusterCache",
+
 }
 
 # Client library configurations: maps client_library -> (pool_class, parser_class)
 # parser_class is the Python parser, native_parser_class is hiredis/libvalkey parser
 CLIENT_LIBRARY_CONFIGS = {
-    "redis": {
-        "pool_class": "redis.connection.ConnectionPool",
-        "parser_class": "redis._parsers.resp2._RESP2Parser",  # Python parser
-        "native_parser_class": "redis._parsers.hiredis._HiredisParser",
-    },
     "valkey": {
         "pool_class": "valkey.connection.ConnectionPool",
         "parser_class": "valkey._parsers.resp2._RESP2Parser",  # Python parser
         "native_parser_class": "valkey._parsers.libvalkey._LibvalkeyParser",
+    },
+    "redis": {
+        "pool_class": "redis.connection.ConnectionPool",
+        "parser_class": "redis._parsers.resp2._RESP2Parser",  # Python parser
+        "native_parser_class": "redis._parsers.hiredis._HiredisParser",
     },
 }
 

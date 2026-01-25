@@ -143,10 +143,33 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return self._cache.add(key, value, self.get_backend_timeout(timeout))
 
+    async def aadd(
+        self, key: KeyT, value: EncodableT, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None
+    ) -> bool:
+        """Set a value only if the key doesn't exist, asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.aadd(key, value, self.get_backend_timeout(timeout))
+
     def get(self, key: KeyT, default: Any = None, version: int | None = None) -> Any:
         """Fetch a value from the cache."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.get(key, default)
+
+    async def aget(self, key: KeyT, default: Any = None, version: int | None = None) -> Any:
+        """Fetch a value from the cache asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.aget(key, default)
+
+    async def aset(
+        self,
+        key: KeyT,
+        value: EncodableT,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+    ) -> None:
+        """Set a value in the cache asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        await self._cache.aset(key, value, self.get_backend_timeout(timeout))
 
     def set(  # type: ignore[override]
         self,
@@ -188,10 +211,20 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return self._cache.touch(key, self.get_backend_timeout(timeout))
 
+    async def atouch(self, key: KeyT, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
+        """Update the timeout on a key asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.atouch(key, self.get_backend_timeout(timeout))
+
     def delete(self, key: KeyT, version: int | None = None) -> bool:
         """Remove a key from the cache."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.delete(key)
+
+    async def adelete(self, key: KeyT, version: int | None = None) -> bool:
+        """Remove a key from the cache asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.adelete(key)
 
     def get_many(self, keys: list[KeyT], version: int | None = None) -> dict[KeyT, Any]:  # type: ignore[override]
         """Retrieve many keys."""
@@ -199,15 +232,35 @@ class KeyValueCache(BaseCache):
         ret = self._cache.get_many(key_map.keys())
         return {key_map[k]: v for k, v in ret.items()}  # type: ignore[index]
 
+    async def aget_many(self, keys: list[KeyT], version: int | None = None) -> dict[KeyT, Any]:
+        """Retrieve many keys asynchronously."""
+        key_map = {self.make_and_validate_key(key, version=version): key for key in keys}
+        ret = await self._cache.aget_many(key_map.keys())
+        return {key_map[k]: v for k, v in ret.items()}  # type: ignore[index]
+
     def has_key(self, key: KeyT, version: int | None = None) -> bool:
         """Check if a key exists."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.has_key(key)
 
+    async def ahas_key(self, key: KeyT, version: int | None = None) -> bool:
+        """Check if a key exists asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.ahas_key(key)
+
     def incr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
         """Increment a value."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.incr(key, delta)
+
+    async def aincr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
+        """Increment a value asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.aincr(key, delta)
+
+    async def adecr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
+        """Decrement a value asynchronously."""
+        return await self.aincr(key, -delta, version)
 
     def set_many(
         self, data: Mapping[KeyT, EncodableT], timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None
@@ -217,6 +270,16 @@ class KeyValueCache(BaseCache):
             return []
         safe_data = {self.make_and_validate_key(key, version=version): value for key, value in data.items()}
         self._cache.set_many(safe_data, self.get_backend_timeout(timeout))  # type: ignore[arg-type]
+        return []
+
+    async def aset_many(
+        self, data: Mapping[KeyT, EncodableT], timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None
+    ) -> list:
+        """Set multiple values asynchronously."""
+        if not data:
+            return []
+        safe_data = {self.make_and_validate_key(key, version=version): value for key, value in data.items()}
+        await self._cache.aset_many(safe_data, self.get_backend_timeout(timeout))  # type: ignore[arg-type]
         return []
 
     def delete_many(self, keys: list[KeyT], version: int | None = None) -> int:  # type: ignore[override]
@@ -230,9 +293,21 @@ class KeyValueCache(BaseCache):
         safe_keys = [self.make_and_validate_key(key, version=version) for key in keys]
         return self._cache.delete_many(safe_keys)
 
+    async def adelete_many(self, keys: list[KeyT], version: int | None = None) -> int:
+        """Delete multiple keys from the cache asynchronously."""
+        keys = list(keys)  # Convert generator to list
+        if not keys:
+            return 0
+        safe_keys = [self.make_and_validate_key(key, version=version) for key in keys]
+        return await self._cache.adelete_many(safe_keys)
+
     def clear(self) -> bool:  # type: ignore[override]
         """Flush the database."""
         return self._cache.clear()
+
+    async def aclear(self) -> bool:
+        """Flush the database asynchronously."""
+        return await self._cache.aclear()
 
     def close(self, **kwargs: Any) -> None:
         """Close all connection pools."""

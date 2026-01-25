@@ -28,8 +28,10 @@ Extended attributes (our additions):
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import socket
+import weakref
 from typing import TYPE_CHECKING, Any, cast
 
 from django.utils.module_loading import import_string
@@ -98,8 +100,8 @@ class KeyValueCacheClient:
     attributes to allow subclasses to swap the underlying library.
 
     Subclasses must set:
-    - _lib: The library module (e.g., redis or valkey)
-    - _client_class: The client class (e.g., redis.Redis)
+    - _lib: The library module (e.g., valkey or redis)
+    - _client_class: The client class (e.g., valkey.Valkey)
     - _pool_class: The connection pool class
 
     Internal attributes match Django's RedisCacheClient for compatibility.
@@ -107,11 +109,13 @@ class KeyValueCacheClient:
 
     # Class attributes - subclasses override these
     _lib: Any = None  # The library module
-    _client_class: type | None = None  # e.g., redis.Redis
-    _pool_class: type | None = None  # e.g., redis.ConnectionPool
+    _client_class: type | None = None  # e.g., valkey.Valkey
+    _pool_class: type | None = None  # e.g., valkey.ConnectionPool
+    _async_client_class: type | None = None  # e.g., valkey.asyncio.Valkey
+    _async_pool_class: type | None = None  # e.g., valkey.asyncio.ConnectionPool
 
     # Default scan iteration batch size
-    _default_scan_itersize: int = 10
+    _default_scan_itersize: int = 100
 
     # Options that shouldn't be passed to the connection pool
     _CLIENT_ONLY_OPTIONS = frozenset(
@@ -123,6 +127,7 @@ class KeyValueCacheClient:
             "close_connection",
             "sentinels",
             "sentinel_kwargs",
+            "async_pool_class",
         }
     )
 
@@ -132,6 +137,7 @@ class KeyValueCacheClient:
         serializer: str | list | type | None = None,
         pool_class: str | type | None = None,
         parser_class: str | type | None = None,
+        async_pool_class: str | type | None = None,
         **options: Any,
     ) -> None:
         """Initialize the cache client.
@@ -141,16 +147,28 @@ class KeyValueCacheClient:
             serializer: Serializer instance or import path (Django compatibility)
             pool_class: Connection pool class or import path
             parser_class: Parser class or import path
+            async_pool_class: Async connection pool class or import path
             **options: Additional options passed to connection pool
         """
         # Store servers
         self._servers = servers
         self._pools: dict[int, Any] = {}
 
+        # Async pools: WeakKeyDictionary keyed by event loop -> {server_index: pool}
+        # Using WeakKeyDictionary ensures automatic cleanup when the event loop is GC'd
+        self._async_pools: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[int, Any]] = (
+            weakref.WeakKeyDictionary()
+        )
+
         # Set up pool class (can be overridden via argument)
         if isinstance(pool_class, str):
             pool_class = import_string(pool_class)
         self._pool_class = pool_class or self.__class__._pool_class  # type: ignore[assignment]
+
+        # Set up async pool class (can be overridden via argument)
+        if isinstance(async_pool_class, str):
+            async_pool_class = import_string(async_pool_class)
+        self._async_pool_class = async_pool_class or self.__class__._async_pool_class  # type: ignore[assignment]
 
         # Set up parser class
         if isinstance(parser_class, str):
@@ -263,7 +281,7 @@ class KeyValueCacheClient:
         index = self._get_connection_pool_index(write=write)
         if index not in self._pools:
             assert self._pool_class is not None, "Subclasses must set _pool_class"  # noqa: S101
-            self._pools[index] = self._pool_class.from_url(  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self._pools[index] = self._pool_class.from_url(  # type: ignore[attr-defined]
                 self._servers[index],
                 **self._pool_options,
             )
@@ -279,6 +297,69 @@ class KeyValueCacheClient:
         pool = self._get_connection_pool(write=write)
         assert self._client_class is not None, "Subclasses must set _client_class"  # noqa: S101
         return self._client_class(connection_pool=pool)
+
+    # =========================================================================
+    # Async Connection Pool Management
+    # =========================================================================
+
+    def _get_async_connection_pool(self, *, write: bool) -> Any:
+        """Get an async connection pool for the given operation type.
+
+        Async pools are cached per event loop to ensure proper asyncio semantics.
+        Each event loop gets its own set of connection pools. Using WeakKeyDictionary
+        ensures automatic cleanup when the event loop is garbage collected.
+
+        Args:
+            write: Whether this is a write operation
+
+        Returns:
+            An async connection pool for the current event loop
+
+        Raises:
+            RuntimeError: If no event loop is running or async pool class is not set
+        """
+        loop = asyncio.get_running_loop()
+        index = self._get_connection_pool_index(write=write)
+
+        # Check instance-level cache first
+        if loop in self._async_pools and index in self._async_pools[loop]:
+            return self._async_pools[loop][index]
+
+        if self._async_pool_class is None:
+            msg = "Async operations require _async_pool_class to be set. Use RedisCacheClient or ValkeyCacheClient."
+            raise RuntimeError(msg)
+
+        # Filter out parser_class from pool options for async - it's sync-specific
+        async_pool_options = {k: v for k, v in self._pool_options.items() if k != "parser_class"}
+        pool = self._async_pool_class.from_url(  # type: ignore[attr-defined]
+            self._servers[index],
+            **async_pool_options,
+        )
+
+        # Cache on instance for fast access
+        if loop not in self._async_pools:
+            self._async_pools[loop] = {}
+        self._async_pools[loop][index] = pool
+        return pool
+
+    def get_async_client(self, key: KeyT | None = None, *, write: bool = False) -> Any:
+        """Get an async client connection.
+
+        Args:
+            key: Optional key (for sharding implementations)
+            write: Whether this is a write operation
+
+        Returns:
+            An async Redis/Valkey client for the current event loop
+
+        Raises:
+            RuntimeError: If no event loop is running or async client class is not set
+        """
+        pool = self._get_async_connection_pool(write=write)
+        if self._async_client_class is None:
+            msg = "Async operations require _async_client_class to be set. Use RedisCacheClient or ValkeyCacheClient."
+            raise RuntimeError(msg)
+        return self._async_client_class(connection_pool=pool)
 
     # =========================================================================
     # Core Cache Operations
@@ -298,12 +379,43 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
+    async def aadd(self, key: KeyT, value: EncodableT, timeout: int | None) -> bool:
+        """Set a value only if the key doesn't exist, asynchronously."""
+        client = self.get_async_client(key, write=True)
+        nvalue = self.encode(value)
+
+        try:
+            if timeout == 0:
+                if ret := bool(await client.set(key, nvalue, nx=True)):
+                    await client.delete(key)
+                return ret
+            return bool(await client.set(key, nvalue, nx=True, ex=timeout))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
     def get(self, key: KeyT, default: Any = None) -> Any:
         """Fetch a value from the cache."""
         client = self.get_client(key, write=False)
 
         try:
             val = client.get(key)
+        except _main_exceptions as e:
+            if self._ignore_exceptions:
+                if self._log_ignored_exceptions and self._logger is not None:
+                    self._logger.exception("Exception ignored")
+                return default
+            raise ConnectionInterruptedError(connection=client) from e
+
+        if val is None:
+            return default
+        return self.decode(val)
+
+    async def aget(self, key: KeyT, default: Any = None) -> Any:
+        """Fetch a value from the cache asynchronously."""
+        client = self.get_async_client(key, write=False)
+
+        try:
+            val = await client.get(key)
         except _main_exceptions as e:
             if self._ignore_exceptions:
                 if self._log_ignored_exceptions and self._logger is not None:
@@ -325,6 +437,19 @@ class KeyValueCacheClient:
                 client.delete(key)
             else:
                 client.set(key, nvalue, ex=timeout)
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def aset(self, key: KeyT, value: EncodableT, timeout: int | None) -> None:
+        """Set a value in the cache asynchronously."""
+        client = self.get_async_client(key, write=True)
+        nvalue = self.encode(value)
+
+        try:
+            if timeout == 0:
+                await client.delete(key)
+            else:
+                await client.set(key, nvalue, ex=timeout)
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
@@ -354,12 +479,32 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
+    async def atouch(self, key: KeyT, timeout: int | None) -> bool:
+        """Update the timeout on a key asynchronously."""
+        client = self.get_async_client(key, write=True)
+
+        try:
+            if timeout is None:
+                return bool(await client.persist(key))
+            return bool(await client.expire(key, timeout))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
     def delete(self, key: KeyT) -> bool:
         """Remove a key from the cache."""
         client = self.get_client(key, write=True)
 
         try:
             return bool(client.delete(key))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def adelete(self, key: KeyT) -> bool:
+        """Remove a key from the cache asynchronously."""
+        client = self.get_async_client(key, write=True)
+
+        try:
+            return bool(await client.delete(key))
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
@@ -377,12 +522,35 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
+    async def aget_many(self, keys: Iterable[KeyT]) -> dict[KeyT, Any]:
+        """Retrieve many keys asynchronously."""
+        keys = list(keys)
+        if not keys:
+            return {}
+
+        client = self.get_async_client(write=False)
+
+        try:
+            results = await client.mget(keys)
+            return {k: self.decode(v) for k, v in zip(keys, results, strict=False) if v is not None}
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
     def has_key(self, key: KeyT) -> bool:
         """Check if a key exists."""
         client = self.get_client(key, write=False)
 
         try:
             return bool(client.exists(key))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def ahas_key(self, key: KeyT) -> bool:
+        """Check if a key exists asynchronously."""
+        client = self.get_async_client(key, write=False)
+
+        try:
+            return bool(await client.exists(key))
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
@@ -419,6 +587,39 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
+    async def aincr(self, key: KeyT, delta: int = 1) -> int:
+        """Increment a value asynchronously.
+
+        Uses Redis INCR for atomic increments, but falls back to GET+SET
+        for values that would overflow Redis's 64-bit signed integer limit
+        or for non-integer (serialized) values.
+        """
+        client = self.get_async_client(key, write=True)
+
+        try:
+            if not await client.exists(key):
+                raise ValueError(f"Key {key!r} not found.")
+            return await client.incr(key, delta)
+        except _ResponseError as e:
+            # Handle overflow or non-integer by falling back to GET + SET
+            err_msg = str(e).lower()
+            if "overflow" in err_msg or "not an integer" in err_msg:
+                try:
+                    val = await client.get(key)
+                    if val is None:
+                        raise ValueError(f"Key {key!r} not found.")
+                    # Decode the value, add delta, and set back
+                    new_value = self.decode(val) + delta
+                    nvalue = self.encode(new_value)
+                    await client.set(key, nvalue, keepttl=True)
+                except _main_exceptions as e2:
+                    raise ConnectionInterruptedError(connection=client) from e2
+                else:
+                    return new_value
+            raise ConnectionInterruptedError(connection=client) from e
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
     def set_many(self, data: Mapping[KeyT, EncodableT], timeout: int | None) -> list:
         """Set multiple values."""
         if not data:
@@ -443,6 +644,30 @@ class KeyValueCacheClient:
 
         return []
 
+    async def aset_many(self, data: Mapping[KeyT, EncodableT], timeout: int | None) -> list:
+        """Set multiple values asynchronously."""
+        if not data:
+            return []
+
+        client = self.get_async_client(write=True)
+        prepared = {k: self.encode(v) for k, v in data.items()}
+
+        try:
+            if timeout == 0:
+                await client.delete(*prepared.keys())
+            elif timeout is None:
+                await client.mset(prepared)
+            else:
+                pipe = client.pipeline()
+                pipe.mset(prepared)
+                for key in prepared:
+                    pipe.expire(key, timeout)
+                await pipe.execute()
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+        return []
+
     def delete_many(self, keys: Sequence[KeyT]) -> int:
         """Remove multiple keys."""
         if not keys:
@@ -455,6 +680,18 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
+    async def adelete_many(self, keys: Sequence[KeyT]) -> int:
+        """Remove multiple keys asynchronously."""
+        if not keys:
+            return 0
+
+        client = self.get_async_client(write=True)
+
+        try:
+            return await client.delete(*keys)
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
     def clear(self) -> bool:
         """Flush the database."""
         client = self.get_client(write=True)
@@ -464,12 +701,39 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
+    async def aclear(self) -> bool:
+        """Flush the database asynchronously."""
+        client = self.get_async_client(write=True)
+
+        try:
+            return bool(await client.flushdb())
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
     def close(self, **kwargs: Any) -> None:
         """Close connections if configured."""
         if self._options.get("close_connection", False):
             for pool in self._pools.values():
                 pool.disconnect()
             self._pools.clear()
+            # Also clear async pool references (actual disconnection happens via aclose)
+            self._async_pools.clear()
+
+    async def aclose(self, **kwargs: Any) -> None:
+        """Async close - disconnect async pools for current event loop."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No running event loop
+            return
+
+        pool_dict = self._async_pools.get(loop)
+        if pool_dict is not None:
+            for pool in pool_dict.values():
+                await pool.disconnect()
+            # Remove from tracking
+            if loop in self._async_pools:
+                del self._async_pools[loop]
 
     # =========================================================================
     # Extended Operations (beyond Django's BaseCache)
@@ -1542,6 +1806,8 @@ class KeyValueCacheClient:
 # =============================================================================
 
 if _REDIS_AVAILABLE:
+    from redis.asyncio import ConnectionPool as RedisAsyncConnectionPool
+    from redis.asyncio import Redis as RedisAsyncClient
 
     class RedisCacheClient(KeyValueCacheClient):
         """Redis cache client using redis-py."""
@@ -1549,6 +1815,8 @@ if _REDIS_AVAILABLE:
         _lib = redis
         _client_class = redis.Redis
         _pool_class = redis.ConnectionPool
+        _async_client_class = RedisAsyncClient
+        _async_pool_class = RedisAsyncConnectionPool
 
 else:
 
@@ -1565,6 +1833,8 @@ else:
 # =============================================================================
 
 if _VALKEY_AVAILABLE:
+    from valkey.asyncio import ConnectionPool as ValkeyAsyncConnectionPool
+    from valkey.asyncio import Valkey as ValkeyAsyncClient
 
     class ValkeyCacheClient(KeyValueCacheClient):
         """Valkey cache client using valkey-py."""
@@ -1572,6 +1842,8 @@ if _VALKEY_AVAILABLE:
         _lib = valkey
         _client_class = valkey.Valkey
         _pool_class = valkey.ConnectionPool
+        _async_client_class = ValkeyAsyncClient
+        _async_pool_class = ValkeyAsyncConnectionPool
 
 else:
 

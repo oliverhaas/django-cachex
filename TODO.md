@@ -91,152 +91,51 @@ django_cachex/
 ### Async Support
 
 Django 4.0+ added async methods to `BaseCache` with the `a` prefix (e.g., `aget`, `aset`, `adelete`).
-The default implementations just wrap sync methods or re-implement using `aget`/`aset`, losing native
-Redis/Valkey async support. We want true async using native async clients.
+We provide true async using native async clients (`redis.asyncio` / `valkey.asyncio`).
 
-**Architecture Overview:**
+**Implementation Status:**
 
-The async implementation requires separate connection pools because:
-- Sync clients (redis.Redis / valkey.Valkey) use blocking sockets
-- Async clients (redis.asyncio.Redis / valkey.asyncio.Valkey) use asyncio sockets
-- Each event loop needs its own async connection pool (asyncio objects can't be shared across loops)
+✅ **Completed:**
+- Async connection pool management with per-event-loop caching
+- `WeakKeyDictionary` keyed by event loop for automatic cleanup when loops are GC'd
+- All Django official async cache methods for standard clients:
+  - `aadd`, `aget`, `aset`, `atouch`, `adelete`
+  - `aget_many`, `aset_many`, `adelete_many`
+  - `ahas_key`, `aincr`, `adecr`, `aclear`, `aclose`
+- Async wrapper methods in `KeyValueCache` with key prefixing/versioning
+- Tests in `tests/test_cache_async.py`
 
-**Connection Pool Strategy:**
+⏳ **Pending:**
+- [ ] Add async pool classes to cluster clients (`RedisClusterCacheClient`, `ValkeyClusterCacheClient`)
+- [ ] Add async pool classes to sentinel clients (`RedisSentinelCacheClient`, `ValkeySentinelCacheClient`)
+- [ ] Async versions of extended methods (TTL, expiry, keys, hashes, lists, sets, sorted sets)
+- [ ] `aget_or_set`, `aincr_version`
+
+**Architecture:**
 
 ```python
 # In KeyValueCacheClient:
 _pools: dict[int, SyncConnectionPool]           # Sync pools (keyed by server index)
-_async_pools: WeakValueDictionary[int, dict]    # Async pools (keyed by event loop id -> {index: pool})
+_async_pools: WeakKeyDictionary[EventLoop, dict[int, AsyncPool]]  # Per-loop async pools
 ```
 
-The async pools use a `WeakValueDictionary` keyed by `id(asyncio.get_running_loop())`.
-This ensures pools are automatically cleaned up when their event loop is garbage collected.
+Async pools use `WeakKeyDictionary` with the event loop as key. This ensures pools are
+automatically cleaned up when their event loop is garbage collected.
 
-**Configuration Options:**
+**Configuration:**
 
-Users can configure async pool class via Django settings:
 ```python
 CACHES = {
     "default": {
         "BACKEND": "django_cachex.cache.RedisCache",
         "LOCATION": "redis://127.0.0.1:6379/1",
         "OPTIONS": {
-            # Optional: custom async pool class (defaults to library's async pool)
+            # Optional: custom async pool class
             "async_pool_class": "myapp.pools.CustomAsyncConnectionPool",
         }
     }
 }
 ```
-
-**Implementation Plan:**
-
-1. **Add async client class attributes and configuration to KeyValueCacheClient**
-   ```python
-   # Class attributes - subclasses override these
-   _async_client_class: type = None  # e.g., redis.asyncio.Redis
-   _async_pool_class: type = None    # e.g., redis.asyncio.ConnectionPool
-
-   # Add to _CLIENT_ONLY_OPTIONS
-   _CLIENT_ONLY_OPTIONS = frozenset({
-       ...,
-       "async_pool_class",  # Don't pass to sync pool
-   })
-
-   def __init__(self, servers, ..., async_pool_class=None, **options):
-       ...
-       # Set up async pool class (can be overridden via argument)
-       if isinstance(async_pool_class, str):
-           async_pool_class = import_string(async_pool_class)
-       self._async_pool_class = async_pool_class or self.__class__._async_pool_class
-   ```
-
-2. **Add async pool management methods**
-   ```python
-   def _get_async_connection_pool(self, write: bool) -> AsyncConnectionPool:
-       """Get async pool for current event loop, creating if needed."""
-       loop_id = id(asyncio.get_running_loop())
-       # Lazily create pool dict for this loop
-       # Store in WeakValueDictionary for automatic cleanup
-
-   async def get_async_client(self, key=None, *, write=False) -> AsyncClient:
-       """Get an async client connection."""
-   ```
-
-3. **Implement Django's official async cache methods in KeyValueCacheClient**
-   - `aadd(key, value, timeout)` - async add
-   - `aget(key, default=None)` - async get
-   - `aset(key, value, timeout)` - async set
-   - `atouch(key, timeout)` - async touch
-   - `adelete(key)` - async delete
-   - `aget_many(keys)` - async get_many
-   - `ahas_key(key)` - async has_key
-   - `aincr(key, delta=1)` - async incr
-   - `adecr(key, delta=1)` - async decr (calls aincr with -delta)
-   - `aset_many(data, timeout)` - async set_many
-   - `adelete_many(keys)` - async delete_many
-   - `aclear()` - async clear
-   - `aclose()` - async close (cleanup async pools for current loop)
-
-4. **Implement async wrappers in KeyValueCache (backend class)**
-   - Same methods as above, but with key prefixing/versioning
-   - `aget_or_set(key, default, timeout, version)` - async get_or_set
-   - `aincr_version(key, delta, version)` - async incr_version
-
-5. **Add async versions of all extended methods**
-   - TTL: `attl`, `apttl`
-   - Expiry: `aexpire`, `apexpire`, `aexpireat`, `apexpireat`, `apersist`
-   - Keys: `akeys`, `aiter_keys`, `adelete_pattern`
-   - Hashes: `ahset`, `ahget`, `ahgetall`, `ahmget`, `ahdel`, `ahexists`, `ahlen`, `ahkeys`, `ahvals`, `ahincrby`, `ahincrbyfloat`, `ahsetnx`
-   - Lists: `alpush`, `arpush`, `alpop`, `arpop`, `alrange`, `alindex`, `allen`, `alpos`, `almove`, `alrem`, `altrim`, `alset`, `alinsert`, `ablpop`, `abrpop`, `ablmove`
-   - Sets: `asadd`, `asrem`, `asmembers`, `asismember`, `ascard`, `aspop`, `asrandmember`, `asmove`, `asdiff`, `asdiffstore`, `asinter`, `asinterstore`, `asunion`, `asunionstore`, `asmismember`, `asscan`, `asscan_iter`
-   - Sorted Sets: `azadd`, `azrem`, `azscore`, `azrank`, `azrevrank`, `azcard`, `azcount`, `azincrby`, `azrange`, `azrevrange`, `azrangebyscore`, `azrevrangebyscore`, `azremrangebyrank`, `azremrangebyscore`, `azpopmin`, `azpopmax`, `azmscore`
-
-6. **Update close() to also cleanup async pools**
-   ```python
-   def close(self, **kwargs):
-       # ... existing sync pool cleanup ...
-       # Also cleanup async pools for all tracked event loops
-       self._async_pools.clear()
-
-   async def aclose(self, **kwargs):
-       """Async close - disconnect async pools for current event loop."""
-       loop_id = id(asyncio.get_running_loop())
-       if loop_id in self._async_pools:
-           for pool in self._async_pools[loop_id].values():
-               await pool.disconnect()
-           del self._async_pools[loop_id]
-   ```
-
-7. **Handle finalization / cleanup**
-   - Use `weakref.finalize` or `__del__` to ensure async pools are cleaned up
-   - Note: Can't await in finalizers, so just call `pool.disconnect()` synchronously
-     or rely on WeakValueDictionary garbage collection
-
-**Concrete Client Classes:**
-
-```python
-# In RedisCacheClient:
-if _REDIS_AVAILABLE:
-    from redis.asyncio import Redis as AsyncRedis
-    from redis.asyncio import ConnectionPool as AsyncConnectionPool
-
-    class RedisCacheClient(KeyValueCacheClient):
-        _lib = redis
-        _client_class = redis.Redis
-        _pool_class = redis.ConnectionPool
-        _async_client_class = AsyncRedis
-        _async_pool_class = AsyncConnectionPool
-
-# Similarly for ValkeyCacheClient with valkey.asyncio
-```
-
-**Testing Considerations:**
-
-- Test async methods work correctly with pytest-asyncio
-- Test that each event loop gets its own pool
-- Test that pools are cleaned up when event loops are garbage collected
-- Test concurrent async operations from multiple coroutines
-- Test mixing sync and async operations
 
 **Documentation Required:**
 
