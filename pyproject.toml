@@ -27,7 +27,7 @@ classifiers = [
   "Topic :: Utilities",
   "Typing :: Typed",
 ]
-dependencies = ["Django>=5.2,<6.1"]
+dependencies = ["Django>=5.2,<7"]
 
 [project.optional-dependencies]
 valkey = ["valkey>=6.1.0,<7"]
