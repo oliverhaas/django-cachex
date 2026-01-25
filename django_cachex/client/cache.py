@@ -42,7 +42,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
     from django_cachex.client.pipeline import Pipeline
-    from django_cachex.types import AbsExpiryT, EncodableT, ExpiryT, KeyT
+    from django_cachex.types import AbsExpiryT, ExpiryT, KeyT
 
 from django_cachex.client.default import (
     KeyValueCacheClient,
@@ -137,14 +137,22 @@ class KeyValueCache(BaseCache):
     # =========================================================================
 
     def add(
-        self, key: KeyT, value: EncodableT, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None
+        self,
+        key: KeyT,
+        value: Any,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
     ) -> bool:
         """Set a value only if the key doesn't exist."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.add(key, value, self.get_backend_timeout(timeout))
 
     async def aadd(
-        self, key: KeyT, value: EncodableT, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None
+        self,
+        key: KeyT,
+        value: Any,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
     ) -> bool:
         """Set a value only if the key doesn't exist, asynchronously."""
         key = self.make_and_validate_key(key, version=version)
@@ -163,7 +171,7 @@ class KeyValueCache(BaseCache):
     async def aset(
         self,
         key: KeyT,
-        value: EncodableT,
+        value: Any,
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
     ) -> None:
@@ -174,7 +182,7 @@ class KeyValueCache(BaseCache):
     def set(  # type: ignore[override]
         self,
         key: KeyT,
-        value: EncodableT,
+        value: Any,
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         **kwargs: Any,
@@ -232,7 +240,7 @@ class KeyValueCache(BaseCache):
         ret = self._cache.get_many(key_map.keys())
         return {key_map[k]: v for k, v in ret.items()}  # type: ignore[index]
 
-    async def aget_many(self, keys: list[KeyT], version: int | None = None) -> dict[KeyT, Any]:
+    async def aget_many(self, keys: list[KeyT], version: int | None = None) -> dict[KeyT, Any]:  # type: ignore[override]
         """Retrieve many keys asynchronously."""
         key_map = {self.make_and_validate_key(key, version=version): key for key in keys}
         ret = await self._cache.aget_many(key_map.keys())
@@ -313,7 +321,10 @@ class KeyValueCache(BaseCache):
         return val
 
     def set_many(
-        self, data: Mapping[KeyT, EncodableT], timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None
+        self,
+        data: Mapping[KeyT, Any],
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
     ) -> list:
         """Set multiple values."""
         if not data:
@@ -323,7 +334,10 @@ class KeyValueCache(BaseCache):
         return []
 
     async def aset_many(
-        self, data: Mapping[KeyT, EncodableT], timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None
+        self,
+        data: Mapping[KeyT, Any],
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
     ) -> list:
         """Set multiple values asynchronously."""
         if not data:
@@ -343,7 +357,7 @@ class KeyValueCache(BaseCache):
         safe_keys = [self.make_and_validate_key(key, version=version) for key in keys]
         return self._cache.delete_many(safe_keys)
 
-    async def adelete_many(self, keys: list[KeyT], version: int | None = None) -> int:
+    async def adelete_many(self, keys: list[KeyT], version: int | None = None) -> int:  # type: ignore[override]
         """Delete multiple keys from the cache asynchronously."""
         keys = list(keys)  # Convert generator to list
         if not keys:
@@ -355,7 +369,7 @@ class KeyValueCache(BaseCache):
         """Flush the database."""
         return self._cache.clear()
 
-    async def aclear(self) -> bool:
+    async def aclear(self) -> bool:  # type: ignore[override]
         """Flush the database asynchronously."""
         return await self._cache.aclear()
 
@@ -498,7 +512,7 @@ class KeyValueCache(BaseCache):
         self,
         key: KeyT,
         field: str,
-        value: EncodableT,
+        value: Any,
         version: int | None = None,
     ) -> int:
         """Set field in hash at key to value."""
@@ -567,7 +581,7 @@ class KeyValueCache(BaseCache):
     def hmset(
         self,
         key: KeyT,
-        mapping: Mapping[str, EncodableT],
+        mapping: Mapping[str, Any],
         version: int | None = None,
     ) -> bool:
         """Set multiple hash fields to multiple values."""
@@ -600,7 +614,7 @@ class KeyValueCache(BaseCache):
         self,
         key: KeyT,
         field: str,
-        value: EncodableT,
+        value: Any,
         version: int | None = None,
     ) -> bool:
         """Set field in hash only if it doesn't exist."""
@@ -623,7 +637,7 @@ class KeyValueCache(BaseCache):
     def lpush(
         self,
         key: KeyT,
-        *values: EncodableT,
+        *values: Any,
         version: int | None = None,
     ) -> int:
         """Push values onto head of list at key."""
@@ -633,7 +647,7 @@ class KeyValueCache(BaseCache):
     def rpush(
         self,
         key: KeyT,
-        *values: EncodableT,
+        *values: Any,
         version: int | None = None,
     ) -> int:
         """Push values onto tail of list at key."""
@@ -707,7 +721,7 @@ class KeyValueCache(BaseCache):
     def lpos(
         self,
         key: KeyT,
-        value: EncodableT,
+        value: Any,
         rank: int | None = None,
         count: int | None = None,
         maxlen: int | None = None,
@@ -757,7 +771,7 @@ class KeyValueCache(BaseCache):
         self,
         key: KeyT,
         count: int,
-        value: EncodableT,
+        value: Any,
         version: int | None = None,
     ) -> int:
         """Remove elements equal to value from list."""
@@ -779,7 +793,7 @@ class KeyValueCache(BaseCache):
         self,
         key: KeyT,
         index: int,
-        value: EncodableT,
+        value: Any,
         version: int | None = None,
     ) -> bool:
         """Set element at index in list."""
@@ -790,8 +804,8 @@ class KeyValueCache(BaseCache):
         self,
         key: KeyT,
         where: str,
-        pivot: EncodableT,
-        value: EncodableT,
+        pivot: Any,
+        value: Any,
         version: int | None = None,
     ) -> int:
         """Insert value before or after pivot in list."""
@@ -883,7 +897,7 @@ class KeyValueCache(BaseCache):
     def sadd(
         self,
         key: KeyT,
-        *members: EncodableT,
+        *members: Any,
         version: int | None = None,
     ) -> int:
         """Add members to a set."""
@@ -964,7 +978,7 @@ class KeyValueCache(BaseCache):
     def sismember(
         self,
         key: KeyT,
-        member: EncodableT,
+        member: Any,
         version: int | None = None,
     ) -> bool:
         """Check if member is in set."""
@@ -984,7 +998,7 @@ class KeyValueCache(BaseCache):
         self,
         src: KeyT,
         dst: KeyT,
-        member: EncodableT,
+        member: Any,
         version: int | None = None,
     ) -> bool:
         """Move member from one set to another."""
@@ -1015,7 +1029,7 @@ class KeyValueCache(BaseCache):
     def srem(
         self,
         key: KeyT,
-        *members: EncodableT,
+        *members: Any,
         version: int | None = None,
     ) -> int:
         """Remove members from a set."""
@@ -1058,7 +1072,7 @@ class KeyValueCache(BaseCache):
     def smismember(
         self,
         key: KeyT,
-        *members: EncodableT,
+        *members: Any,
         version: int | None = None,
     ) -> list[bool]:
         """Check if multiple values are members of a set."""
@@ -1116,7 +1130,7 @@ class KeyValueCache(BaseCache):
     def zadd(
         self,
         key: KeyT,
-        mapping: Mapping[EncodableT, float],
+        mapping: Mapping[Any, float],
         *,
         nx: bool = False,
         xx: bool = False,
@@ -1149,7 +1163,7 @@ class KeyValueCache(BaseCache):
         self,
         key: KeyT,
         amount: float,
-        member: EncodableT,
+        member: Any,
         version: int | None = None,
     ) -> float:
         """Increment the score of a member."""
@@ -1207,7 +1221,7 @@ class KeyValueCache(BaseCache):
     def zrank(
         self,
         key: KeyT,
-        member: EncodableT,
+        member: Any,
         version: int | None = None,
     ) -> int | None:
         """Get the rank of a member (0-based, lowest score first)."""
@@ -1217,7 +1231,7 @@ class KeyValueCache(BaseCache):
     def zrem(
         self,
         key: KeyT,
-        *members: EncodableT,
+        *members: Any,
         version: int | None = None,
     ) -> int:
         """Remove members from a sorted set."""
@@ -1277,7 +1291,7 @@ class KeyValueCache(BaseCache):
     def zscore(
         self,
         key: KeyT,
-        member: EncodableT,
+        member: Any,
         version: int | None = None,
     ) -> float | None:
         """Get the score of a member."""
@@ -1287,7 +1301,7 @@ class KeyValueCache(BaseCache):
     def zrevrank(
         self,
         key: KeyT,
-        member: EncodableT,
+        member: Any,
         version: int | None = None,
     ) -> int | None:
         """Get the rank of a member (0-based, highest score first)."""
@@ -1297,7 +1311,7 @@ class KeyValueCache(BaseCache):
     def zmscore(
         self,
         key: KeyT,
-        *members: EncodableT,
+        *members: Any,
         version: int | None = None,
     ) -> list[float | None]:
         """Get the scores of multiple members."""

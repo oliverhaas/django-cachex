@@ -201,12 +201,15 @@ Extended operations are implemented directly on the CacheClient class:
 - Lists: lpush, rpush, lpop, rpop, lrange, lindex, llen, lrem, ltrim, lset, linsert, lpos, lmove, blpop, brpop, blmove
 - Sets: sadd, scard, sdiff, sdiffstore, sinter, sinterstore, sismember, smembers, smove, spop, srandmember, srem, sscan, sscan_iter, sunion, sunionstore
 - Sorted Sets: zadd, zcard, zcount, zincrby, zpopmax, zpopmin, zrange, zrangebyscore, zrank, zrem, zremrangebyscore, zrevrange, zrevrangebyscore, zscore, zrevrank, zmscore, zremrangebyrank
+- Streams (sync + async):
+  - Basic: xadd, xlen, xrange, xrevrange, xread, xtrim, xdel
+  - Info: xinfo_stream, xinfo_groups, xinfo_consumers
+  - Consumer groups: xgroup_create, xgroup_destroy, xgroup_setid, xgroup_delconsumer, xreadgroup, xack, xpending, xclaim, xautoclaim
 
 Pipeline support exists for all these operations in `client/pipeline/`.
 
 ### Future Data Structure Features
 
-- [ ] Investigate Streams support (xadd, xread, xrange, consumer groups)
 - [ ] Investigate Lua scripting support (eval, evalsha, script_load)
 
 ---

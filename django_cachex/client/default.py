@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
 
     from django_cachex.client.pipeline import Pipeline
-    from django_cachex.types import AbsExpiryT, EncodableT, ExpiryT, KeyT
+    from django_cachex.types import AbsExpiryT, ExpiryT, KeyT
 
 # Try to import redis-py and/or valkey-py
 _REDIS_AVAILABLE = False
@@ -128,7 +128,7 @@ class KeyValueCacheClient:
             "sentinels",
             "sentinel_kwargs",
             "async_pool_class",
-        }
+        },
     )
 
     def __init__(
@@ -246,21 +246,21 @@ class KeyValueCacheClient:
     # Encoding/Decoding
     # =========================================================================
 
-    def encode(self, value: EncodableT) -> bytes | int:
+    def encode(self, value: Any) -> bytes | int:
         """Encode a value for storage (serialize + compress)."""
         if isinstance(value, bool) or not isinstance(value, int):
             value = self._serializers[0].dumps(value)
             if self._compressors:
                 return self._compressors[0].compress(value)
-            return value  # type: ignore[return-value]
+            return value
         return value
 
-    def decode(self, value: EncodableT) -> Any:
+    def decode(self, value: Any) -> Any:
         """Decode a value from storage (decompress + deserialize)."""
         try:
             return int(value)
         except (ValueError, TypeError):
-            value = self._decompress(value)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            value = self._decompress(value)
             return self._deserialize(value)
 
     # =========================================================================
@@ -281,7 +281,7 @@ class KeyValueCacheClient:
         index = self._get_connection_pool_index(write=write)
         if index not in self._pools:
             assert self._pool_class is not None, "Subclasses must set _pool_class"  # noqa: S101
-            self._pools[index] = self._pool_class.from_url(  # type: ignore[attr-defined]
+            self._pools[index] = self._pool_class.from_url(  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
                 self._servers[index],
                 **self._pool_options,
             )
@@ -331,7 +331,7 @@ class KeyValueCacheClient:
 
         # Filter out parser_class from pool options for async - it's sync-specific
         async_pool_options = {k: v for k, v in self._pool_options.items() if k != "parser_class"}
-        pool = self._async_pool_class.from_url(  # type: ignore[attr-defined]
+        pool = self._async_pool_class.from_url(  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
             self._servers[index],
             **async_pool_options,
         )
@@ -365,7 +365,7 @@ class KeyValueCacheClient:
     # Core Cache Operations
     # =========================================================================
 
-    def add(self, key: KeyT, value: EncodableT, timeout: int | None) -> bool:
+    def add(self, key: KeyT, value: Any, timeout: int | None) -> bool:
         """Set a value only if the key doesn't exist."""
         client = self.get_client(key, write=True)
         nvalue = self.encode(value)
@@ -379,7 +379,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    async def aadd(self, key: KeyT, value: EncodableT, timeout: int | None) -> bool:
+    async def aadd(self, key: KeyT, value: Any, timeout: int | None) -> bool:
         """Set a value only if the key doesn't exist, asynchronously."""
         client = self.get_async_client(key, write=True)
         nvalue = self.encode(value)
@@ -427,7 +427,7 @@ class KeyValueCacheClient:
             return default
         return self.decode(val)
 
-    def set(self, key: KeyT, value: EncodableT, timeout: int | None) -> None:
+    def set(self, key: KeyT, value: Any, timeout: int | None) -> None:
         """Set a value in the cache (standard Django interface)."""
         client = self.get_client(key, write=True)
         nvalue = self.encode(value)
@@ -440,7 +440,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    async def aset(self, key: KeyT, value: EncodableT, timeout: int | None) -> None:
+    async def aset(self, key: KeyT, value: Any, timeout: int | None) -> None:
         """Set a value in the cache asynchronously."""
         client = self.get_async_client(key, write=True)
         nvalue = self.encode(value)
@@ -454,7 +454,13 @@ class KeyValueCacheClient:
             raise ConnectionInterruptedError(connection=client) from e
 
     def set_with_flags(
-        self, key: KeyT, value: EncodableT, timeout: int | None, *, nx: bool = False, xx: bool = False
+        self,
+        key: KeyT,
+        value: Any,
+        timeout: int | None,
+        *,
+        nx: bool = False,
+        xx: bool = False,
     ) -> bool:
         """Set a value with nx/xx flags, returning success status."""
         client = self.get_client(key, write=True)
@@ -620,7 +626,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    def set_many(self, data: Mapping[KeyT, EncodableT], timeout: int | None) -> list:
+    def set_many(self, data: Mapping[KeyT, Any], timeout: int | None) -> list:
         """Set multiple values."""
         if not data:
             return []
@@ -644,7 +650,7 @@ class KeyValueCacheClient:
 
         return []
 
-    async def aset_many(self, data: Mapping[KeyT, EncodableT], timeout: int | None) -> list:
+    async def aset_many(self, data: Mapping[KeyT, Any], timeout: int | None) -> list:
         """Set multiple values asynchronously."""
         if not data:
             return []
@@ -1101,7 +1107,7 @@ class KeyValueCacheClient:
     # Hash Operations
     # =========================================================================
 
-    def hset(self, key: KeyT, field: str, value: EncodableT) -> int:
+    def hset(self, key: KeyT, field: str, value: Any) -> int:
         """Set a hash field."""
         client = self.get_client(key, write=True)
         nvalue = self.encode(value)
@@ -1111,7 +1117,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    def hsetnx(self, key: KeyT, field: str, value: EncodableT) -> bool:
+    def hsetnx(self, key: KeyT, field: str, value: Any) -> bool:
         """Set a hash field only if it doesn't exist."""
         client = self.get_client(key, write=True)
         nvalue = self.encode(value)
@@ -1131,7 +1137,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    def hmset(self, key: KeyT, mapping: Mapping[str, EncodableT]) -> bool:
+    def hmset(self, key: KeyT, mapping: Mapping[str, Any]) -> bool:
         """Set multiple hash fields."""
         client = self.get_client(key, write=True)
         nmap = {f: self.encode(v) for f, v in mapping.items()}
@@ -1229,7 +1235,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    async def ahset(self, key: KeyT, field: str, value: EncodableT) -> int:
+    async def ahset(self, key: KeyT, field: str, value: Any) -> int:
         """Set a hash field asynchronously."""
         client = self.get_async_client(key, write=True)
         nvalue = self.encode(value)
@@ -1239,7 +1245,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    async def ahsetnx(self, key: KeyT, field: str, value: EncodableT) -> bool:
+    async def ahsetnx(self, key: KeyT, field: str, value: Any) -> bool:
         """Set a hash field only if it doesn't exist, asynchronously."""
         client = self.get_async_client(key, write=True)
         nvalue = self.encode(value)
@@ -1259,7 +1265,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    async def ahmset(self, key: KeyT, mapping: Mapping[str, EncodableT]) -> bool:
+    async def ahmset(self, key: KeyT, mapping: Mapping[str, Any]) -> bool:
         """Set multiple hash fields asynchronously."""
         client = self.get_async_client(key, write=True)
         nmap = {f: self.encode(v) for f, v in mapping.items()}
@@ -1361,7 +1367,7 @@ class KeyValueCacheClient:
     # List Operations
     # =========================================================================
 
-    def lpush(self, key: KeyT, *values: EncodableT) -> int:
+    def lpush(self, key: KeyT, *values: Any) -> int:
         """Push values to the left of a list."""
         client = self.get_client(key, write=True)
         nvalues = [self.encode(v) for v in values]
@@ -1371,7 +1377,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    def rpush(self, key: KeyT, *values: EncodableT) -> int:
+    def rpush(self, key: KeyT, *values: Any) -> int:
         """Push values to the right of a list."""
         client = self.get_client(key, write=True)
         nvalues = [self.encode(v) for v in values]
@@ -1435,7 +1441,7 @@ class KeyValueCacheClient:
     def lpos(
         self,
         key: KeyT,
-        value: EncodableT,
+        value: Any,
         rank: int | None = None,
         count: int | None = None,
         maxlen: int | None = None,
@@ -1514,7 +1520,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    def lset(self, key: KeyT, index: int, value: EncodableT) -> bool:
+    def lset(self, key: KeyT, index: int, value: Any) -> bool:
         """Set an element in a list by index."""
         client = self.get_client(key, write=True)
         nvalue = self.encode(value)
@@ -1526,7 +1532,7 @@ class KeyValueCacheClient:
         else:
             return True
 
-    def lrem(self, key: KeyT, count: int, value: EncodableT) -> int:
+    def lrem(self, key: KeyT, count: int, value: Any) -> int:
         """Remove elements from a list."""
         client = self.get_client(key, write=True)
         nvalue = self.encode(value)
@@ -1551,8 +1557,8 @@ class KeyValueCacheClient:
         self,
         key: KeyT,
         where: str,
-        pivot: EncodableT,
-        value: EncodableT,
+        pivot: Any,
+        value: Any,
     ) -> int:
         """Insert an element before or after another element."""
         client = self.get_client(key, write=True)
@@ -1650,7 +1656,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    async def alpush(self, key: KeyT, *values: EncodableT) -> int:
+    async def alpush(self, key: KeyT, *values: Any) -> int:
         """Push values to the left of a list asynchronously."""
         client = self.get_async_client(key, write=True)
         nvalues = [self.encode(v) for v in values]
@@ -1660,7 +1666,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    async def arpush(self, key: KeyT, *values: EncodableT) -> int:
+    async def arpush(self, key: KeyT, *values: Any) -> int:
         """Push values to the right of a list asynchronously."""
         client = self.get_async_client(key, write=True)
         nvalues = [self.encode(v) for v in values]
@@ -1724,7 +1730,7 @@ class KeyValueCacheClient:
     async def alpos(
         self,
         key: KeyT,
-        value: EncodableT,
+        value: Any,
         rank: int | None = None,
         count: int | None = None,
         maxlen: int | None = None,
@@ -1803,7 +1809,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    async def alset(self, key: KeyT, index: int, value: EncodableT) -> bool:
+    async def alset(self, key: KeyT, index: int, value: Any) -> bool:
         """Set an element in a list by index asynchronously."""
         client = self.get_async_client(key, write=True)
         nvalue = self.encode(value)
@@ -1815,7 +1821,7 @@ class KeyValueCacheClient:
         else:
             return True
 
-    async def alrem(self, key: KeyT, count: int, value: EncodableT) -> int:
+    async def alrem(self, key: KeyT, count: int, value: Any) -> int:
         """Remove elements from a list asynchronously."""
         client = self.get_async_client(key, write=True)
         nvalue = self.encode(value)
@@ -1840,8 +1846,8 @@ class KeyValueCacheClient:
         self,
         key: KeyT,
         where: str,
-        pivot: EncodableT,
-        value: EncodableT,
+        pivot: Any,
+        value: Any,
     ) -> int:
         """Insert an element before or after another element asynchronously."""
         client = self.get_async_client(key, write=True)
@@ -1943,7 +1949,7 @@ class KeyValueCacheClient:
     # Set Operations
     # =========================================================================
 
-    def sadd(self, key: KeyT, *members: EncodableT) -> int:
+    def sadd(self, key: KeyT, *members: Any) -> int:
         """Add members to a set."""
         client = self.get_client(key, write=True)
         nmembers = [self.encode(m) for m in members]
@@ -1953,7 +1959,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    def srem(self, key: KeyT, *members: EncodableT) -> int:
+    def srem(self, key: KeyT, *members: Any) -> int:
         """Remove members from a set."""
         client = self.get_client(key, write=True)
         nmembers = [self.encode(m) for m in members]
@@ -1973,7 +1979,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    def sismember(self, key: KeyT, member: EncodableT) -> bool:
+    def sismember(self, key: KeyT, member: Any) -> bool:
         """Check if a value is a member of a set."""
         client = self.get_client(key, write=False)
         nmember = self.encode(member)
@@ -2018,7 +2024,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    def smove(self, src: KeyT, dst: KeyT, member: EncodableT) -> bool:
+    def smove(self, src: KeyT, dst: KeyT, member: Any) -> bool:
         """Move a member from one set to another."""
         client = self.get_client(write=True)
         nmember = self.encode(member)
@@ -2085,7 +2091,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    def smismember(self, key: KeyT, *members: EncodableT) -> list[bool]:
+    def smismember(self, key: KeyT, *members: Any) -> list[bool]:
         """Check if multiple values are members of a set."""
         client = self.get_client(key, write=False)
         nmembers = [self.encode(m) for m in members]
@@ -2143,7 +2149,7 @@ class KeyValueCacheClient:
         for member in client.sscan_iter(key, match=match, count=count):
             yield self.decode(member)
 
-    async def asadd(self, key: KeyT, *members: EncodableT) -> int:
+    async def asadd(self, key: KeyT, *members: Any) -> int:
         """Add members to a set asynchronously."""
         client = self.get_async_client(key, write=True)
         nmembers = [self.encode(m) for m in members]
@@ -2153,7 +2159,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    async def asrem(self, key: KeyT, *members: EncodableT) -> int:
+    async def asrem(self, key: KeyT, *members: Any) -> int:
         """Remove members from a set asynchronously."""
         client = self.get_async_client(key, write=True)
         nmembers = [self.encode(m) for m in members]
@@ -2173,7 +2179,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    async def asismember(self, key: KeyT, member: EncodableT) -> bool:
+    async def asismember(self, key: KeyT, member: Any) -> bool:
         """Check if a value is a member of a set asynchronously."""
         client = self.get_async_client(key, write=False)
         nmember = self.encode(member)
@@ -2218,7 +2224,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    async def asmove(self, src: KeyT, dst: KeyT, member: EncodableT) -> bool:
+    async def asmove(self, src: KeyT, dst: KeyT, member: Any) -> bool:
         """Move a member from one set to another asynchronously."""
         client = self.get_async_client(write=True)
         nmember = self.encode(member)
@@ -2285,7 +2291,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    async def asmismember(self, key: KeyT, *members: EncodableT) -> list[bool]:
+    async def asmismember(self, key: KeyT, *members: Any) -> list[bool]:
         """Check if multiple values are members of a set asynchronously."""
         client = self.get_async_client(key, write=False)
         nmembers = [self.encode(m) for m in members]
@@ -2350,7 +2356,7 @@ class KeyValueCacheClient:
     def zadd(
         self,
         key: KeyT,
-        mapping: Mapping[EncodableT, float],
+        mapping: Mapping[Any, float],
         *,
         nx: bool = False,
         xx: bool = False,
@@ -2367,7 +2373,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    def zrem(self, key: KeyT, *members: EncodableT) -> int:
+    def zrem(self, key: KeyT, *members: Any) -> int:
         """Remove members from a sorted set."""
         client = self.get_client(key, write=True)
         nmembers = [self.encode(m) for m in members]
@@ -2377,7 +2383,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    def zscore(self, key: KeyT, member: EncodableT) -> float | None:
+    def zscore(self, key: KeyT, member: Any) -> float | None:
         """Get the score of a member."""
         client = self.get_client(key, write=False)
         nmember = self.encode(member)
@@ -2388,7 +2394,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    def zrank(self, key: KeyT, member: EncodableT) -> int | None:
+    def zrank(self, key: KeyT, member: Any) -> int | None:
         """Get the rank of a member (0-based)."""
         client = self.get_client(key, write=False)
         nmember = self.encode(member)
@@ -2398,7 +2404,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    def zrevrank(self, key: KeyT, member: EncodableT) -> int | None:
+    def zrevrank(self, key: KeyT, member: Any) -> int | None:
         """Get the reverse rank of a member."""
         client = self.get_client(key, write=False)
         nmember = self.encode(member)
@@ -2426,7 +2432,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    def zincrby(self, key: KeyT, amount: float, member: EncodableT) -> float:
+    def zincrby(self, key: KeyT, amount: float, member: Any) -> float:
         """Increment the score of a member."""
         client = self.get_client(key, write=True)
         nmember = self.encode(member)
@@ -2568,7 +2574,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    def zmscore(self, key: KeyT, *members: EncodableT) -> list[float | None]:
+    def zmscore(self, key: KeyT, *members: Any) -> list[float | None]:
         """Get scores for multiple members."""
         client = self.get_client(key, write=False)
         nmembers = [self.encode(m) for m in members]
@@ -2582,7 +2588,7 @@ class KeyValueCacheClient:
     async def azadd(
         self,
         key: KeyT,
-        mapping: Mapping[EncodableT, float],
+        mapping: Mapping[Any, float],
         *,
         nx: bool = False,
         xx: bool = False,
@@ -2599,7 +2605,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    async def azrem(self, key: KeyT, *members: EncodableT) -> int:
+    async def azrem(self, key: KeyT, *members: Any) -> int:
         """Remove members from a sorted set asynchronously."""
         client = self.get_async_client(key, write=True)
         nmembers = [self.encode(m) for m in members]
@@ -2609,7 +2615,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    async def azscore(self, key: KeyT, member: EncodableT) -> float | None:
+    async def azscore(self, key: KeyT, member: Any) -> float | None:
         """Get the score of a member asynchronously."""
         client = self.get_async_client(key, write=False)
         nmember = self.encode(member)
@@ -2620,7 +2626,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    async def azrank(self, key: KeyT, member: EncodableT) -> int | None:
+    async def azrank(self, key: KeyT, member: Any) -> int | None:
         """Get the rank of a member (0-based) asynchronously."""
         client = self.get_async_client(key, write=False)
         nmember = self.encode(member)
@@ -2630,7 +2636,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    async def azrevrank(self, key: KeyT, member: EncodableT) -> int | None:
+    async def azrevrank(self, key: KeyT, member: Any) -> int | None:
         """Get the reverse rank of a member asynchronously."""
         client = self.get_async_client(key, write=False)
         nmember = self.encode(member)
@@ -2658,7 +2664,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    async def azincrby(self, key: KeyT, amount: float, member: EncodableT) -> float:
+    async def azincrby(self, key: KeyT, amount: float, member: Any) -> float:
         """Increment the score of a member asynchronously."""
         client = self.get_async_client(key, write=True)
         nmember = self.encode(member)
@@ -2800,7 +2806,7 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    async def azmscore(self, key: KeyT, *members: EncodableT) -> list[float | None]:
+    async def azmscore(self, key: KeyT, *members: Any) -> list[float | None]:
         """Get scores for multiple members asynchronously."""
         client = self.get_async_client(key, write=False)
         nmembers = [self.encode(m) for m in members]
@@ -2808,6 +2814,952 @@ class KeyValueCacheClient:
         try:
             results = await client.zmscore(key, nmembers)
             return [float(r) if r is not None else None for r in results]
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    # =========================================================================
+    # Streams Operations (Sync)
+    # =========================================================================
+
+    def xadd(
+        self,
+        key: KeyT,
+        fields: dict[str, Any],
+        entry_id: str = "*",
+        maxlen: int | None = None,
+        approximate: bool = True,
+        nomkstream: bool = False,
+        minid: str | None = None,
+        limit: int | None = None,
+    ) -> str:
+        """Add an entry to a stream.
+
+        Args:
+            key: Stream key
+            fields: Dictionary of field-value pairs
+            entry_id: Entry ID ("*" for auto-generated)
+            maxlen: Maximum stream length (trim after adding)
+            approximate: Use "~" for approximate trimming (more efficient)
+            nomkstream: Don't create stream if it doesn't exist
+            minid: Trim entries with IDs lower than this
+            limit: Maximum entries to trim in one call
+
+        Returns:
+            The entry ID of the added entry
+        """
+        client = self.get_client(key, write=True)
+        encoded_fields = {k: self.encode(v) for k, v in fields.items()}
+
+        try:
+            result = client.xadd(
+                key,
+                encoded_fields,
+                id=entry_id,
+                maxlen=maxlen,
+                approximate=approximate,
+                nomkstream=nomkstream,
+                minid=minid,
+                limit=limit,
+            )
+            return result.decode() if isinstance(result, bytes) else result
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def xlen(self, key: KeyT) -> int:
+        """Get the number of entries in a stream."""
+        client = self.get_client(key, write=False)
+
+        try:
+            return cast("int", client.xlen(key))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def xrange(
+        self,
+        key: KeyT,
+        start: str = "-",
+        end: str = "+",
+        count: int | None = None,
+    ) -> list[tuple[str, dict[str, Any]]]:
+        """Get entries from a stream in ascending order.
+
+        Args:
+            key: Stream key
+            start: Minimum entry ID ("-" for beginning)
+            end: Maximum entry ID ("+" for end)
+            count: Maximum number of entries to return
+
+        Returns:
+            List of (entry_id, fields_dict) tuples
+        """
+        client = self.get_client(key, write=False)
+
+        try:
+            results = client.xrange(key, min=start, max=end, count=count)
+            return [
+                (
+                    entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
+                    {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
+                )
+                for entry_id, fields in results
+            ]
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def xrevrange(
+        self,
+        key: KeyT,
+        end: str = "+",
+        start: str = "-",
+        count: int | None = None,
+    ) -> list[tuple[str, dict[str, Any]]]:
+        """Get entries from a stream in descending order.
+
+        Args:
+            key: Stream key
+            end: Maximum entry ID ("+" for end)
+            start: Minimum entry ID ("-" for beginning)
+            count: Maximum number of entries to return
+
+        Returns:
+            List of (entry_id, fields_dict) tuples
+        """
+        client = self.get_client(key, write=False)
+
+        try:
+            results = client.xrevrange(key, max=end, min=start, count=count)
+            return [
+                (
+                    entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
+                    {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
+                )
+                for entry_id, fields in results
+            ]
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def xread(
+        self,
+        streams: dict[KeyT, str],
+        count: int | None = None,
+        block: int | None = None,
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+        """Read entries from one or more streams.
+
+        Args:
+            streams: Dict mapping stream keys to last-seen entry IDs
+                    (use "0" or "$" for beginning/end)
+            count: Maximum entries per stream
+            block: Block for N milliseconds (None = don't block, 0 = block forever)
+
+        Returns:
+            Dict mapping stream keys to list of (entry_id, fields) tuples,
+            or None if blocking timed out
+        """
+        client = self.get_client(write=False)
+
+        try:
+            results = client.xread(streams=streams, count=count, block=block)
+            if results is None:
+                return None
+
+            return {
+                (stream_key.decode() if isinstance(stream_key, bytes) else stream_key): [
+                    (
+                        entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
+                        {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
+                    )
+                    for entry_id, fields in entries
+                ]
+                for stream_key, entries in results
+            }
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def xtrim(
+        self,
+        key: KeyT,
+        maxlen: int | None = None,
+        approximate: bool = True,
+        minid: str | None = None,
+        limit: int | None = None,
+    ) -> int:
+        """Trim a stream to a maximum length or minimum ID.
+
+        Args:
+            key: Stream key
+            maxlen: Maximum stream length
+            approximate: Use "~" for approximate trimming (more efficient)
+            minid: Remove entries with IDs lower than this
+            limit: Maximum entries to trim in one call
+
+        Returns:
+            Number of entries removed
+        """
+        client = self.get_client(key, write=True)
+
+        try:
+            return cast(
+                "int",
+                client.xtrim(key, maxlen=maxlen, approximate=approximate, minid=minid, limit=limit),
+            )
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def xdel(self, key: KeyT, *entry_ids: str) -> int:
+        """Delete entries from a stream.
+
+        Args:
+            key: Stream key
+            entry_ids: Entry IDs to delete
+
+        Returns:
+            Number of entries deleted
+        """
+        client = self.get_client(key, write=True)
+
+        try:
+            return cast("int", client.xdel(key, *entry_ids))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def xinfo_stream(self, key: KeyT, full: bool = False) -> dict[str, Any]:
+        """Get information about a stream.
+
+        Args:
+            key: Stream key
+            full: Return full stream info including entries
+
+        Returns:
+            Dictionary with stream information
+        """
+        client = self.get_client(key, write=False)
+
+        try:
+            if full:
+                return client.xinfo_stream(key, full=True)
+            return client.xinfo_stream(key)
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def xinfo_groups(self, key: KeyT) -> list[dict[str, Any]]:
+        """Get information about consumer groups for a stream.
+
+        Args:
+            key: Stream key
+
+        Returns:
+            List of dictionaries with group information
+        """
+        client = self.get_client(key, write=False)
+
+        try:
+            return client.xinfo_groups(key)
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def xinfo_consumers(self, key: KeyT, group: str) -> list[dict[str, Any]]:
+        """Get information about consumers in a group.
+
+        Args:
+            key: Stream key
+            group: Consumer group name
+
+        Returns:
+            List of dictionaries with consumer information
+        """
+        client = self.get_client(key, write=False)
+
+        try:
+            return client.xinfo_consumers(key, group)
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def xgroup_create(
+        self,
+        key: KeyT,
+        group: str,
+        entry_id: str = "$",
+        mkstream: bool = False,
+        entries_read: int | None = None,
+    ) -> bool:
+        """Create a consumer group.
+
+        Args:
+            key: Stream key
+            group: Group name
+            entry_id: ID from which to start reading ("$" for new entries only, "0" for all)
+            mkstream: Create stream if it doesn't exist
+            entries_read: Set the group's entries-read counter
+
+        Returns:
+            True if successful
+        """
+        client = self.get_client(key, write=True)
+
+        try:
+            client.xgroup_create(key, group, id=entry_id, mkstream=mkstream, entries_read=entries_read)
+            return True
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def xgroup_destroy(self, key: KeyT, group: str) -> int:
+        """Destroy a consumer group.
+
+        Args:
+            key: Stream key
+            group: Group name
+
+        Returns:
+            Number of destroyed groups (0 or 1)
+        """
+        client = self.get_client(key, write=True)
+
+        try:
+            return cast("int", client.xgroup_destroy(key, group))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def xgroup_setid(
+        self,
+        key: KeyT,
+        group: str,
+        entry_id: str,
+        entries_read: int | None = None,
+    ) -> bool:
+        """Set the last delivered ID for a consumer group.
+
+        Args:
+            key: Stream key
+            group: Group name
+            entry_id: New last delivered ID
+            entries_read: Set the group's entries-read counter
+
+        Returns:
+            True if successful
+        """
+        client = self.get_client(key, write=True)
+
+        try:
+            client.xgroup_setid(key, group, id=entry_id, entries_read=entries_read)
+            return True
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def xgroup_delconsumer(self, key: KeyT, group: str, consumer: str) -> int:
+        """Remove a consumer from a group.
+
+        Args:
+            key: Stream key
+            group: Group name
+            consumer: Consumer name
+
+        Returns:
+            Number of pending messages that were deleted
+        """
+        client = self.get_client(key, write=True)
+
+        try:
+            return cast("int", client.xgroup_delconsumer(key, group, consumer))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def xreadgroup(
+        self,
+        group: str,
+        consumer: str,
+        streams: dict[KeyT, str],
+        count: int | None = None,
+        block: int | None = None,
+        noack: bool = False,
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+        """Read entries from streams as a consumer group member.
+
+        Args:
+            group: Consumer group name
+            consumer: Consumer name
+            streams: Dict mapping stream keys to entry IDs (">" for new messages)
+            count: Maximum entries per stream
+            block: Block for N milliseconds (None = don't block, 0 = block forever)
+            noack: Don't add messages to pending list
+
+        Returns:
+            Dict mapping stream keys to list of (entry_id, fields) tuples,
+            or None if blocking timed out
+        """
+        client = self.get_client(write=True)
+
+        try:
+            results = client.xreadgroup(
+                groupname=group,
+                consumername=consumer,
+                streams=streams,
+                count=count,
+                block=block,
+                noack=noack,
+            )
+            if results is None:
+                return None
+
+            return {
+                (stream_key.decode() if isinstance(stream_key, bytes) else stream_key): [
+                    (
+                        entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
+                        {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
+                    )
+                    for entry_id, fields in entries
+                ]
+                for stream_key, entries in results
+            }
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def xack(self, key: KeyT, group: str, *entry_ids: str) -> int:
+        """Acknowledge message processing.
+
+        Args:
+            key: Stream key
+            group: Consumer group name
+            entry_ids: Entry IDs to acknowledge
+
+        Returns:
+            Number of messages acknowledged
+        """
+        client = self.get_client(key, write=True)
+
+        try:
+            return cast("int", client.xack(key, group, *entry_ids))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def xpending(
+        self,
+        key: KeyT,
+        group: str,
+        start: str | None = None,
+        end: str | None = None,
+        count: int | None = None,
+        consumer: str | None = None,
+        idle: int | None = None,
+    ) -> dict[str, Any] | list[dict[str, Any]]:
+        """Get pending entries information.
+
+        Without start/end/count: returns summary info.
+        With start/end/count: returns detailed list of pending entries.
+
+        Args:
+            key: Stream key
+            group: Consumer group name
+            start: Minimum entry ID (for detailed query)
+            end: Maximum entry ID (for detailed query)
+            count: Maximum entries (for detailed query)
+            consumer: Filter by consumer name
+            idle: Filter by minimum idle time in ms
+
+        Returns:
+            Summary dict or list of pending entry details
+        """
+        client = self.get_client(key, write=False)
+
+        try:
+            if start is not None and end is not None and count is not None:
+                return client.xpending_range(
+                    key,
+                    group,
+                    min=start,
+                    max=end,
+                    count=count,
+                    consumername=consumer,
+                    idle=idle,
+                )
+            return client.xpending(key, group)
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def xclaim(
+        self,
+        key: KeyT,
+        group: str,
+        consumer: str,
+        min_idle_time: int,
+        entry_ids: list[str],
+        idle: int | None = None,
+        time: int | None = None,
+        retrycount: int | None = None,
+        force: bool = False,
+        justid: bool = False,
+    ) -> list[tuple[str, dict[str, Any]]] | list[str]:
+        """Claim pending messages.
+
+        Args:
+            key: Stream key
+            group: Consumer group name
+            consumer: Consumer name to claim for
+            min_idle_time: Minimum idle time in ms
+            entry_ids: Entry IDs to claim
+            idle: Set idle time (ms)
+            time: Set idle time as Unix timestamp (ms)
+            retrycount: Set retry counter
+            force: Create entry in PEL even if it doesn't exist
+            justid: Return only entry IDs, not full entries
+
+        Returns:
+            List of (entry_id, fields) tuples, or list of entry IDs if justid=True
+        """
+        client = self.get_client(key, write=True)
+
+        try:
+            results = client.xclaim(
+                key,
+                group,
+                consumer,
+                min_idle_time,
+                entry_ids,
+                idle=idle,
+                time=time,
+                retrycount=retrycount,
+                force=force,
+                justid=justid,
+            )
+            if justid:
+                return [r.decode() if isinstance(r, bytes) else r for r in results]
+            return [
+                (
+                    entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
+                    {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
+                )
+                for entry_id, fields in results
+            ]
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def xautoclaim(
+        self,
+        key: KeyT,
+        group: str,
+        consumer: str,
+        min_idle_time: int,
+        start_id: str = "0-0",
+        count: int | None = None,
+        justid: bool = False,
+    ) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
+        """Auto-claim pending messages that have been idle.
+
+        Args:
+            key: Stream key
+            group: Consumer group name
+            consumer: Consumer name to claim for
+            min_idle_time: Minimum idle time in ms
+            start_id: Start scanning from this ID
+            count: Maximum messages to claim
+            justid: Return only entry IDs, not full entries
+
+        Returns:
+            Tuple of (next_start_id, claimed_entries, deleted_ids)
+        """
+        client = self.get_client(key, write=True)
+
+        try:
+            result = client.xautoclaim(
+                key,
+                group,
+                consumer,
+                min_idle_time,
+                start_id=start_id,
+                count=count,
+                justid=justid,
+            )
+            next_id = result[0].decode() if isinstance(result[0], bytes) else result[0]
+            deleted = [d.decode() if isinstance(d, bytes) else d for d in result[2]] if len(result) > 2 else []
+
+            if justid:
+                claimed = [r.decode() if isinstance(r, bytes) else r for r in result[1]]
+            else:
+                claimed = [
+                    (
+                        entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
+                        {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
+                    )
+                    for entry_id, fields in result[1]
+                ]
+            return (next_id, claimed, deleted)
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    # =========================================================================
+    # Streams Operations (Async)
+    # =========================================================================
+
+    async def axadd(
+        self,
+        key: KeyT,
+        fields: dict[str, Any],
+        entry_id: str = "*",
+        maxlen: int | None = None,
+        approximate: bool = True,
+        nomkstream: bool = False,
+        minid: str | None = None,
+        limit: int | None = None,
+    ) -> str:
+        """Add an entry to a stream asynchronously."""
+        client = self.get_async_client(key, write=True)
+        encoded_fields = {k: self.encode(v) for k, v in fields.items()}
+
+        try:
+            result = await client.xadd(
+                key,
+                encoded_fields,
+                id=entry_id,
+                maxlen=maxlen,
+                approximate=approximate,
+                nomkstream=nomkstream,
+                minid=minid,
+                limit=limit,
+            )
+            return result.decode() if isinstance(result, bytes) else result
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def axlen(self, key: KeyT) -> int:
+        """Get the number of entries in a stream asynchronously."""
+        client = self.get_async_client(key, write=False)
+
+        try:
+            return cast("int", await client.xlen(key))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def axrange(
+        self,
+        key: KeyT,
+        start: str = "-",
+        end: str = "+",
+        count: int | None = None,
+    ) -> list[tuple[str, dict[str, Any]]]:
+        """Get entries from a stream in ascending order asynchronously."""
+        client = self.get_async_client(key, write=False)
+
+        try:
+            results = await client.xrange(key, min=start, max=end, count=count)
+            return [
+                (
+                    entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
+                    {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
+                )
+                for entry_id, fields in results
+            ]
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def axrevrange(
+        self,
+        key: KeyT,
+        end: str = "+",
+        start: str = "-",
+        count: int | None = None,
+    ) -> list[tuple[str, dict[str, Any]]]:
+        """Get entries from a stream in descending order asynchronously."""
+        client = self.get_async_client(key, write=False)
+
+        try:
+            results = await client.xrevrange(key, max=end, min=start, count=count)
+            return [
+                (
+                    entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
+                    {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
+                )
+                for entry_id, fields in results
+            ]
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def axread(
+        self,
+        streams: dict[KeyT, str],
+        count: int | None = None,
+        block: int | None = None,
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+        """Read entries from one or more streams asynchronously."""
+        client = self.get_async_client(write=False)
+
+        try:
+            results = await client.xread(streams=streams, count=count, block=block)
+            if results is None:
+                return None
+
+            return {
+                (stream_key.decode() if isinstance(stream_key, bytes) else stream_key): [
+                    (
+                        entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
+                        {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
+                    )
+                    for entry_id, fields in entries
+                ]
+                for stream_key, entries in results
+            }
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def axtrim(
+        self,
+        key: KeyT,
+        maxlen: int | None = None,
+        approximate: bool = True,
+        minid: str | None = None,
+        limit: int | None = None,
+    ) -> int:
+        """Trim a stream asynchronously."""
+        client = self.get_async_client(key, write=True)
+
+        try:
+            return cast(
+                "int",
+                await client.xtrim(key, maxlen=maxlen, approximate=approximate, minid=minid, limit=limit),
+            )
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def axdel(self, key: KeyT, *entry_ids: str) -> int:
+        """Delete entries from a stream asynchronously."""
+        client = self.get_async_client(key, write=True)
+
+        try:
+            return cast("int", await client.xdel(key, *entry_ids))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def axinfo_stream(self, key: KeyT, full: bool = False) -> dict[str, Any]:
+        """Get information about a stream asynchronously."""
+        client = self.get_async_client(key, write=False)
+
+        try:
+            if full:
+                return await client.xinfo_stream(key, full=True)
+            return await client.xinfo_stream(key)
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def axinfo_groups(self, key: KeyT) -> list[dict[str, Any]]:
+        """Get information about consumer groups for a stream asynchronously."""
+        client = self.get_async_client(key, write=False)
+
+        try:
+            return await client.xinfo_groups(key)
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def axinfo_consumers(self, key: KeyT, group: str) -> list[dict[str, Any]]:
+        """Get information about consumers in a group asynchronously."""
+        client = self.get_async_client(key, write=False)
+
+        try:
+            return await client.xinfo_consumers(key, group)
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def axgroup_create(
+        self,
+        key: KeyT,
+        group: str,
+        entry_id: str = "$",
+        mkstream: bool = False,
+        entries_read: int | None = None,
+    ) -> bool:
+        """Create a consumer group asynchronously."""
+        client = self.get_async_client(key, write=True)
+
+        try:
+            await client.xgroup_create(key, group, id=entry_id, mkstream=mkstream, entries_read=entries_read)
+            return True
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def axgroup_destroy(self, key: KeyT, group: str) -> int:
+        """Destroy a consumer group asynchronously."""
+        client = self.get_async_client(key, write=True)
+
+        try:
+            return cast("int", await client.xgroup_destroy(key, group))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def axgroup_setid(
+        self,
+        key: KeyT,
+        group: str,
+        entry_id: str,
+        entries_read: int | None = None,
+    ) -> bool:
+        """Set the last delivered ID for a consumer group asynchronously."""
+        client = self.get_async_client(key, write=True)
+
+        try:
+            await client.xgroup_setid(key, group, id=entry_id, entries_read=entries_read)
+            return True
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def axgroup_delconsumer(self, key: KeyT, group: str, consumer: str) -> int:
+        """Remove a consumer from a group asynchronously."""
+        client = self.get_async_client(key, write=True)
+
+        try:
+            return cast("int", await client.xgroup_delconsumer(key, group, consumer))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def axreadgroup(
+        self,
+        group: str,
+        consumer: str,
+        streams: dict[KeyT, str],
+        count: int | None = None,
+        block: int | None = None,
+        noack: bool = False,
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+        """Read entries from streams as a consumer group member asynchronously."""
+        client = self.get_async_client(write=True)
+
+        try:
+            results = await client.xreadgroup(
+                groupname=group,
+                consumername=consumer,
+                streams=streams,
+                count=count,
+                block=block,
+                noack=noack,
+            )
+            if results is None:
+                return None
+
+            return {
+                (stream_key.decode() if isinstance(stream_key, bytes) else stream_key): [
+                    (
+                        entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
+                        {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
+                    )
+                    for entry_id, fields in entries
+                ]
+                for stream_key, entries in results
+            }
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def axack(self, key: KeyT, group: str, *entry_ids: str) -> int:
+        """Acknowledge message processing asynchronously."""
+        client = self.get_async_client(key, write=True)
+
+        try:
+            return cast("int", await client.xack(key, group, *entry_ids))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def axpending(
+        self,
+        key: KeyT,
+        group: str,
+        start: str | None = None,
+        end: str | None = None,
+        count: int | None = None,
+        consumer: str | None = None,
+        idle: int | None = None,
+    ) -> dict[str, Any] | list[dict[str, Any]]:
+        """Get pending entries information asynchronously."""
+        client = self.get_async_client(key, write=False)
+
+        try:
+            if start is not None and end is not None and count is not None:
+                return await client.xpending_range(
+                    key,
+                    group,
+                    min=start,
+                    max=end,
+                    count=count,
+                    consumername=consumer,
+                    idle=idle,
+                )
+            return await client.xpending(key, group)
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def axclaim(
+        self,
+        key: KeyT,
+        group: str,
+        consumer: str,
+        min_idle_time: int,
+        entry_ids: list[str],
+        idle: int | None = None,
+        time: int | None = None,
+        retrycount: int | None = None,
+        force: bool = False,
+        justid: bool = False,
+    ) -> list[tuple[str, dict[str, Any]]] | list[str]:
+        """Claim pending messages asynchronously."""
+        client = self.get_async_client(key, write=True)
+
+        try:
+            results = await client.xclaim(
+                key,
+                group,
+                consumer,
+                min_idle_time,
+                entry_ids,
+                idle=idle,
+                time=time,
+                retrycount=retrycount,
+                force=force,
+                justid=justid,
+            )
+            if justid:
+                return [r.decode() if isinstance(r, bytes) else r for r in results]
+            return [
+                (
+                    entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
+                    {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
+                )
+                for entry_id, fields in results
+            ]
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def axautoclaim(
+        self,
+        key: KeyT,
+        group: str,
+        consumer: str,
+        min_idle_time: int,
+        start_id: str = "0-0",
+        count: int | None = None,
+        justid: bool = False,
+    ) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
+        """Auto-claim pending messages asynchronously."""
+        client = self.get_async_client(key, write=True)
+
+        try:
+            result = await client.xautoclaim(
+                key,
+                group,
+                consumer,
+                min_idle_time,
+                start_id=start_id,
+                count=count,
+                justid=justid,
+            )
+            next_id = result[0].decode() if isinstance(result[0], bytes) else result[0]
+            deleted = [d.decode() if isinstance(d, bytes) else d for d in result[2]] if len(result) > 2 else []
+
+            if justid:
+                claimed = [r.decode() if isinstance(r, bytes) else r for r in result[1]]
+            else:
+                claimed = [
+                    (
+                        entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
+                        {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
+                    )
+                    for entry_id, fields in result[1]
+                ]
+            return (next_id, claimed, deleted)
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
