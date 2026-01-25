@@ -1,0 +1,199 @@
+[project]
+name = "django-cachex"
+version = "0.1.0a1"
+description = "Full featured Valkey and Redis cache backend for Django"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12"
+keywords = ["django", "valkey", "redis", "cache", "backend"]
+authors = [
+  { name = "Oliver Haas", email = "ohaas@e1plus.de" },
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Web Environment",
+  "Framework :: Django",
+  "Framework :: Django :: 5.2",
+  "Framework :: Django :: 6.0",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Internet :: WWW/HTTP",
+  "Topic :: Software Development :: Libraries",
+  "Topic :: Utilities",
+  "Typing :: Typed",
+]
+dependencies = ["Django>=5.2,<6.1"]
+
+[project.optional-dependencies]
+valkey = ["valkey>=6.1.0,<7"]
+libvalkey = ["valkey[libvalkey]>=6.1.0,<7"]
+redis = ["redis>=6,<8"]
+hiredis = ["redis[hiredis]>=6,<8"]
+
+[project.urls]
+Homepage = "https://github.com/oliverhaas/django-cachex"
+Documentation = "https://oliverhaas.github.io/django-cachex/"
+Repository = "https://github.com/oliverhaas/django-cachex.git"
+Changelog = "https://oliverhaas.github.io/django-cachex/reference/changelog/"
+
+[dependency-groups]
+dev = [
+  "valkey>=6.1.0,<7",
+  "redis>=6,<8",
+  "backports-zstd==1.3.0; python_version < '3.14'",
+  "django-stubs==5.2.9",
+  "lz4==4.4.5",
+  "msgpack==1.1.2",
+  "mypy==1.19.1",
+  "pre-commit==4.5.1",
+  "pytest-asyncio>=1.3.0",
+  "pytest-cov==7.0.0",
+  "pytest-django==4.11.1",
+  "pytest-mock==3.15.1",
+  "pytest-xdist==3.8.0",
+  "pytest==9.0.2",
+  "ruff==0.14.14",
+  "testcontainers==4.14.0",
+  "ty>=0.0.1a13",
+]
+docs = ["mkdocs==1.6.1", "mkdocs-material==9.7.1", "mike==2.1.3"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["django_cachex"]
+
+[tool.hatch.build.targets.sdist]
+include = ["django_cachex", "LICENSE", "README.md"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 120
+fix = true
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "A002",    # min/max params match Redis API naming (ZCOUNT key min max, etc.)
+  "ANN401",  # Any is correct for cache values (arbitrary Python objects)
+  "ARG002",  # Unused args: API compat (key in get_client), stub classes (*args, **kwargs)
+  "COM812",  # Conflicts with ruff-format
+  "D",       # Docstrings - will add incrementally
+  "E501",    # Line length handled by config
+  "EM",      # Exception strings inline are fine
+  "PERF203", # try/except in loop is fine here
+  "PLC0415", # Dynamic imports intentional
+  "PLR0913", # Too many args - Redis commands have many options (zadd, lock, lpos, blmove)
+  "PLR2004", # Magic values like -2 for TTL are Redis-documented return codes
+  "SLF001",  # Private member access needed for Cache/CacheClient delegation
+  "TRY003",  # Long exception messages are helpful for debugging
+  "SIM108",  # Ternary not always clearer
+]
+
+[tool.ruff.lint.flake8-annotations]
+allow-star-arg-any = true      # Allow Any for *args and **kwargs
+suppress-none-returning = true # Don't require -> None on functions
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+  "ANN",     # Type annotations not required in tests
+  "ARG",     # Unused arguments common in fixtures
+  "DTZ005",  # Timezone-naive datetime okay in tests
+  "F841",    # Unused variables okay in tests
+  "FBT",     # Boolean args fine in test fixtures and test calls
+  "PT006",   # Parametrize tuple style is preference
+  "PT011",   # Broad pytest.raises okay in some tests
+  "PT013",   # pytest import style is preference
+  "PT018",   # Compound assertions okay in tests
+  "RUF002",  # Unicode in docstrings is fine
+  "RUF015",  # next(iter()) vs slice is preference
+  "S101",    # assert in tests
+  "S105",    # Hardcoded passwords in test settings
+  "S301",    # pickle in tests is fine
+  "S311",    # random is fine for tests
+]
+
+[tool.mypy]
+python_version = "3.13"
+plugins = ["mypy_django_plugin.main"]
+pretty = true
+show_error_codes = true
+show_error_context = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unreachable = false
+
+[tool.django-stubs]
+django_settings_module = "tests.settings.base"
+
+[[tool.mypy.overrides]]
+module = "lz4.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "xdist.scheduler"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "backports.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["compression", "compression.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "msgpack"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "valkey.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "redis.*"
+ignore_missing_imports = true
+
+[tool.ty.rules]
+# Disable rules that conflict with intentional Django extensions:
+# - We extend return types (set returns bool|None, delete_many returns int)
+# - Parameter types widened/narrowed for better API
+invalid-method-override = "ignore"
+
+[tool.ty.environment]
+python-version = "3.13"
+
+[tool.ty.analysis]
+# Ignore `# type: ignore` comments (those are for mypy)
+# ty uses `# ty: ignore` for its own suppressions
+respect-type-ignore-comments = false
+
+[[tool.ty.overrides]]
+include = ["django_cachex/compressors/zstd.py"]
+
+[tool.ty.overrides.rules]
+# zstd uses conditional imports (compression on 3.14+, backports otherwise)
+unresolved-import = "ignore"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "settings.base"
+addopts = "--cov=django_cachex --cov-report=term-missing --cov-report=xml --no-cov-on-fail"
+pythonpath = ["tests"]
+testpaths = ["tests"]
+xfail_strict = true
+
+[tool.coverage.run]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+precision = 2
+skip_covered = true
