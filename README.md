@@ -4,7 +4,7 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/django-cachex.svg)](https://pypi.org/project/django-cachex/)
 [![CI](https://github.com/oliverhaas/django-cachex/actions/workflows/ci.yml/badge.svg)](https://github.com/oliverhaas/django-cachex/actions/workflows/ci.yml)
 
-A Redis cache backend for Django with extended features.
+Full featured Valkey and Redis cache backend for Django.
 
 ## Installation
 
@@ -17,18 +17,18 @@ pip install django-cachex
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
     }
 }
 ```
 
 ## Features
 
-- Native redis-py URL connection strings
+- Native valkey-py/redis-py URL connection strings
 - Pluggable clients, serializers, and compressors
 - Primary/replica replication support
-- Redis Sentinel and Cluster support
+- Valkey/Redis Sentinel and Cluster support
 - Extended data structure operations (hashes, lists, sets, sorted sets)
 - Distributed locks
 - Comprehensive test suite
@@ -40,9 +40,9 @@ Full documentation at [oliverhaas.github.io/django-cachex](https://oliverhaas.gi
 ## Requirements
 
 - Python 3.12+
-- Django 4.2.8+
-- redis-py 5.0+ or valkey-py 6.0+
+- Django 5.2+
+- valkey-py 6.0+ or redis-py 6.0+
 
 ## License
 
-BSD-3-Clause
+MIT

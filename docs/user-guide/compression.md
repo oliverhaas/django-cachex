@@ -7,8 +7,8 @@ django-cachex supports several compression backends to reduce memory usage.
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
             "COMPRESSOR": "django_cachex.compressors.zlib.ZlibCompressor",
         }
@@ -21,8 +21,8 @@ CACHES = {
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
             "COMPRESSOR": "django_cachex.compressors.gzip.GzipCompressor",
         }
@@ -35,8 +35,8 @@ CACHES = {
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
             "COMPRESSOR": "django_cachex.compressors.lzma.LzmaCompressor",
         }
@@ -49,14 +49,14 @@ CACHES = {
 Requires the `lz4` library:
 
 ```console
-pip install lz4
+uv add lz4
 ```
 
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
             "COMPRESSOR": "django_cachex.compressors.lz4.Lz4Compressor",
         }
@@ -72,8 +72,8 @@ On older Python versions, it falls back to `backports-zstd`.
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
             "COMPRESSOR": "django_cachex.compressors.zstd.ZStdCompressor",
         }
@@ -92,8 +92,8 @@ This allows safe migration between compression formats without data loss:
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
             # First compressor used for writing, all tried for reading
             "COMPRESSOR": [

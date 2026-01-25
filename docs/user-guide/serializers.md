@@ -1,6 +1,6 @@
 # Serializers
 
-django-cachex supports pluggable serializers for data before sending to Redis.
+django-cachex supports pluggable serializers for data before sending to Valkey/Redis.
 
 ## Pickle Serializer (Default)
 
@@ -9,8 +9,8 @@ The default serializer uses Python's `pickle` module:
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
             "CLIENT_CLASS": "django_cachex.client.DefaultClient",
             # Uses pickle by default
@@ -24,8 +24,8 @@ CACHES = {
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
             "PICKLE_VERSION": -1  # Highest protocol available
         }
@@ -40,8 +40,8 @@ For JSON-serializable data only:
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
             "CLIENT_CLASS": "django_cachex.client.DefaultClient",
             "SERIALIZER": "django_cachex.serializers.json.JSONSerializer",
@@ -55,14 +55,14 @@ CACHES = {
 Requires the `msgpack` library:
 
 ```console
-pip install msgpack
+uv add msgpack
 ```
 
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
             "CLIENT_CLASS": "django_cachex.client.DefaultClient",
             "SERIALIZER": "django_cachex.serializers.msgpack.MessagePackSerializer",
@@ -82,8 +82,8 @@ This allows safe migration between serialization formats without data loss:
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
             # First serializer used for writing, all tried for reading
             "SERIALIZER": [
@@ -149,8 +149,8 @@ Then configure:
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
             "SERIALIZER": "myapp.serializers.MySerializer",
         }

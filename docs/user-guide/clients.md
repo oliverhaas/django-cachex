@@ -9,10 +9,10 @@ The default client supports primary/replica replication:
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
         "LOCATION": [
-            "redis://127.0.0.1:6379/1",  # Primary
-            "redis://127.0.0.1:6378/1",  # Replica
+            "valkey://127.0.0.1:6379/1",  # Primary
+            "valkey://127.0.0.1:6378/1",  # Replica
         ],
         "OPTIONS": {
             "CLIENT_CLASS": "django_cachex.client.DefaultClient",
@@ -26,13 +26,13 @@ CACHES = {
 
 ## Sentinel Client
 
-For Redis Sentinel high availability setups. See [Sentinel](sentinel.md) for detailed configuration.
+For Valkey/Redis Sentinel high availability setups. See [Sentinel](sentinel.md) for detailed configuration.
 
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://service_name/db",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://service_name/db",
         "OPTIONS": {
             "CLIENT_CLASS": "django_cachex.client.SentinelClient",
             "SENTINELS": [
@@ -46,13 +46,13 @@ CACHES = {
 
 ## Cluster Client
 
-For Redis Cluster deployments with server-side sharding across multiple nodes. See [Cluster](cluster.md) for detailed configuration and slot handling.
+For Valkey/Redis Cluster deployments with server-side sharding across multiple nodes. See [Cluster](cluster.md) for detailed configuration and slot handling.
 
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:7000",  # Any cluster node
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:7000",  # Any cluster node
         "OPTIONS": {
             "CLIENT_CLASS": "django_cachex.client.ClusterClient",
             "CONNECTION_FACTORY": "django_cachex.pool.ClusterConnectionFactory",
@@ -63,5 +63,5 @@ CACHES = {
 
 !!! note "Cluster Behavior"
     - Django cache interface methods (`get_many`, `set_many`, `delete_many`, `keys`, `clear`, etc.) are cluster-aware and handle cross-slot keys automatically
-    - Direct Redis method wrappers (sets, lists, hashes) pass through to Redis - use hash tags for multi-key operations
+    - Direct Valkey/Redis method wrappers (sets, lists, hashes) pass through to the server - use hash tags for multi-key operations
     - See the [Cluster documentation](cluster.md) for details on slot handling and hash tags

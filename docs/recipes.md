@@ -240,7 +240,7 @@ post_delete.connect(invalidate_product_cache, sender=Product)
 ### Using fakeredis
 
 For situations where a container isn't practical, [fakeredis](https://github.com/cunla/fakeredis-py)
-provides an in-memory fake that implements most Redis commands.
+provides an in-memory fake that implements most Valkey/Redis commands.
 
 Configure via connection pool class:
 
@@ -279,7 +279,7 @@ def fake_cache_settings(settings):
 
 ### Using Django's LocMemCache
 
-For simple tests that don't need Redis-specific features:
+For simple tests that don't need Valkey/Redis-specific features:
 
 ```python
 # tests/settings.py

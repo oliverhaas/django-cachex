@@ -7,8 +7,8 @@ Complete reference for all django-cachex configuration options.
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",  # or ValkeyCache
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.ValkeyCache",  # or RedisCache
+        "LOCATION": "valkey://127.0.0.1:6379/1",
         "TIMEOUT": 300,              # Default timeout in seconds
         "KEY_PREFIX": "myapp",       # Prefix for all keys
         "VERSION": 1,                # Key version number
@@ -23,38 +23,41 @@ CACHES = {
 
 | Backend | Description |
 |---------|-------------|
-| `django_cachex.cache.RedisCache` | Standard Redis (redis-py) |
 | `django_cachex.cache.ValkeyCache` | Standard Valkey (valkey-py) |
-| `django_cachex.cache.RedisSentinelCache` | Redis with Sentinel |
+| `django_cachex.cache.RedisCache` | Standard Redis (redis-py) |
 | `django_cachex.cache.ValkeySentinelCache` | Valkey with Sentinel |
-| `django_cachex.cache.RedisClusterCache` | Redis Cluster |
+| `django_cachex.cache.RedisSentinelCache` | Redis with Sentinel |
 | `django_cachex.cache.ValkeyClusterCache` | Valkey Cluster |
+| `django_cachex.cache.RedisClusterCache` | Redis Cluster |
 
 ## LOCATION
 
 Server URL(s). Supports multiple formats:
 
 ```python
-# Single server
+# Single server (Valkey)
+"LOCATION": "valkey://127.0.0.1:6379/1"
+
+# Single server (Redis)
 "LOCATION": "redis://127.0.0.1:6379/1"
 
 # With authentication
-"LOCATION": "redis://user:password@127.0.0.1:6379/1"
+"LOCATION": "valkey://user:password@127.0.0.1:6379/1"
 
 # SSL/TLS
-"LOCATION": "rediss://127.0.0.1:6379/1"
+"LOCATION": "valkeys://127.0.0.1:6379/1"  # or rediss://
 
 # Unix socket
 "LOCATION": "unix:///path/to/socket?db=1"
 
 # Multiple servers (read replicas)
 "LOCATION": [
-    "redis://127.0.0.1:6379/1",  # Primary (writes)
-    "redis://127.0.0.1:6380/1",  # Replica (reads)
+    "valkey://127.0.0.1:6379/1",  # Primary (writes)
+    "valkey://127.0.0.1:6380/1",  # Replica (reads)
 ]
 
 # Or comma/semicolon separated
-"LOCATION": "redis://127.0.0.1:6379/1,redis://127.0.0.1:6380/1"
+"LOCATION": "valkey://127.0.0.1:6379/1,valkey://127.0.0.1:6380/1"
 ```
 
 ## OPTIONS Reference
@@ -113,8 +116,8 @@ Compression is only applied to values larger than `min_length` bytes (default: 2
 
 ```python
 "OPTIONS": {
-    # Custom pool class
-    "pool_class": "redis.ConnectionPool",
+    # Custom pool class (use valkey.ConnectionPool for Valkey)
+    "pool_class": "valkey.ConnectionPool",
 
     # Pool size and options (passed to pool constructor)
     "max_connections": 100,
@@ -130,7 +133,10 @@ Compression is only applied to values larger than `min_length` bytes (default: 2
 
 ```python
 "OPTIONS": {
-    "parser_class": "redis.connection.HiredisParser",  # Faster parsing
+    # For Valkey with libvalkey
+    "parser_class": "valkey.connection.LibvalkeyParser",
+    # For Redis with hiredis
+    # "parser_class": "redis.connection.HiredisParser",
 }
 ```
 
@@ -174,7 +180,7 @@ DJANGO_REDIS_CLOSE_CONNECTION = True
 ### Password in URL
 
 ```python
-"LOCATION": "redis://user:password@127.0.0.1:6379/1"
+"LOCATION": "valkey://user:password@127.0.0.1:6379/1"
 ```
 
 ### Password with Special Characters
@@ -182,16 +188,16 @@ DJANGO_REDIS_CLOSE_CONNECTION = True
 For passwords with special characters, pass separately:
 
 ```python
-"LOCATION": "redis://127.0.0.1:6379/1",
+"LOCATION": "valkey://127.0.0.1:6379/1",
 "OPTIONS": {
     "password": "my$pecial!password",
 }
 ```
 
-### Redis ACLs
+### Valkey/Redis ACLs
 
 ```python
-"LOCATION": "redis://username@127.0.0.1:6379/1",
+"LOCATION": "valkey://username@127.0.0.1:6379/1",
 "OPTIONS": {
     "password": "password",
 }
@@ -202,13 +208,13 @@ For passwords with special characters, pass separately:
 ### Basic SSL
 
 ```python
-"LOCATION": "rediss://127.0.0.1:6379/1"
+"LOCATION": "valkeys://127.0.0.1:6379/1"  # or rediss://
 ```
 
 ### Self-Signed Certificates
 
 ```python
-"LOCATION": "rediss://127.0.0.1:6379/1",
+"LOCATION": "valkeys://127.0.0.1:6379/1",
 "OPTIONS": {
     "ssl_cert_reqs": None,  # Disable verification
 }
@@ -217,7 +223,7 @@ For passwords with special characters, pass separately:
 ### Custom Certificates
 
 ```python
-"LOCATION": "rediss://127.0.0.1:6379/1",
+"LOCATION": "valkeys://127.0.0.1:6379/1",
 "OPTIONS": {
     "ssl_ca_certs": "/path/to/ca.crt",
     "ssl_certfile": "/path/to/client.crt",
@@ -230,8 +236,8 @@ For passwords with special characters, pass separately:
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisSentinelCache",
-        "LOCATION": "redis://mymaster/0",  # Master name
+        "BACKEND": "django_cachex.cache.ValkeySentinelCache",  # or RedisSentinelCache
+        "LOCATION": "valkey://mymaster/0",  # Master name
         "OPTIONS": {
             "sentinels": [
                 ("sentinel1.example.com", 26379),
@@ -251,8 +257,8 @@ CACHES = {
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisClusterCache",
-        "LOCATION": "redis://127.0.0.1:7000",
+        "BACKEND": "django_cachex.cache.ValkeyClusterCache",  # or RedisClusterCache
+        "LOCATION": "valkey://127.0.0.1:7000",
     }
 }
 ```
@@ -307,8 +313,8 @@ CACHES = {
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
         "TIMEOUT": 300,
         "KEY_PREFIX": "myapp",
         "VERSION": 1,

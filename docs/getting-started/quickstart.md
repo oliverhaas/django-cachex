@@ -2,34 +2,44 @@
 
 ## Configure as Cache Backend
 
-To start using django-cachex-ng, configure your Django cache settings:
+To start using django-cachex, configure your Django cache settings:
+
+```python
+CACHES = {
+    "default": {
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
+    }
+}
+```
+
+For Redis instead of Valkey:
 
 ```python
 CACHES = {
     "default": {
         "BACKEND": "django_cachex.cache.RedisCache",
         "LOCATION": "redis://127.0.0.1:6379/1",
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_cachex.client.DefaultClient",
-        }
     }
 }
 ```
 
 ## Connection URL Formats
 
-django-cachex uses the redis-py native URL notation for connection strings:
+django-cachex uses the valkey-py/redis-py native URL notation for connection strings:
 
-- `redis://[[username]:[password]]@localhost:6379/0` - TCP connection
-- `rediss://[[username]:[password]]@localhost:6379/0` - SSL/TLS connection
+- `valkey://[[username]:[password]]@localhost:6379/0` - Valkey TCP connection
+- `redis://[[username]:[password]]@localhost:6379/0` - Redis TCP connection
+- `valkeys://[[username]:[password]]@localhost:6379/0` - Valkey SSL/TLS connection
+- `rediss://[[username]:[password]]@localhost:6379/0` - Redis SSL/TLS connection
 - `unix://[[username]:[password]]@/path/to/socket.sock?db=0` - Unix socket
 
 ### Database Selection
 
 There are two ways to specify the database number:
 
-1. Query string: `redis://localhost?db=0`
-2. Path (for `redis://` scheme): `redis://localhost/0`
+1. Query string: `valkey://localhost?db=0`
+2. Path (for `valkey://` or `redis://` scheme): `valkey://localhost/0`
 
 ## Configure as Session Backend
 
@@ -61,9 +71,9 @@ cache.set_many({"key1": "value1", "key2": "value2"})
 values = cache.get_many(["key1", "key2"])
 ```
 
-## Raw Redis Access
+## Raw Client Access
 
-For advanced Redis features not exposed by Django's cache interface:
+For advanced features not exposed by Django's cache interface:
 
 ```python
 from django_cachex import get_redis_connection

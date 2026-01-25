@@ -4,29 +4,33 @@
 
 - Python 3.12+
 - Django 5.2+
-- redis-py 6+
-- Redis server 6+
+- valkey-py 6+ or redis-py 6+
+- Valkey server 7+ or Redis server 6+
 
-## Install with pip
-
-```console
-pip install django-cachex-ng
-```
-
-## Install with hiredis (recommended)
-
-For better performance, install with the hiredis parser:
+## Install with uv
 
 ```console
-pip install django-cachex-ng[hiredis]
+uv add django-cachex
 ```
 
-The hiredis package provides a C-based parser that can significantly improve performance when parsing Redis replies.
+## Install with libvalkey/hiredis (recommended)
+
+For better performance, install with the libvalkey (for Valkey) or hiredis (for Redis) parser:
+
+```console
+# For Valkey
+uv add django-cachex[libvalkey]
+
+# For Redis
+uv add django-cachex[hiredis]
+```
+
+These packages provide C-based parsers that can significantly improve performance when parsing replies.
 
 ## Verify Installation
 
 ```python
 >>> import django_cachex
 >>> django_cachex.__version__
-'6.0.0'
+'1.0.0'
 ```

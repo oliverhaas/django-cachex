@@ -22,7 +22,7 @@ All standard Django cache methods are supported:
 
 ### Extended Methods
 
-django-cachex adds these Redis-specific methods:
+django-cachex adds these extended methods:
 
 | Method | Description |
 |--------|-------------|
@@ -40,7 +40,7 @@ django-cachex adds these Redis-specific methods:
 
 ### Hash Methods
 
-Redis hash operations for field-value data structures:
+Hash operations for field-value data structures:
 
 | Method | Description |
 |--------|-------------|
@@ -59,7 +59,7 @@ Redis hash operations for field-value data structures:
 
 ### Sorted Set Methods
 
-Redis sorted set operations for scored, ordered collections:
+Sorted set operations for scored, ordered collections:
 
 | Method | Description |
 |--------|-------------|
@@ -78,7 +78,7 @@ Redis sorted set operations for scored, ordered collections:
 
 ### List Methods
 
-Redis list operations for ordered, indexable collections:
+List operations for ordered, indexable collections:
 
 | Method | Description |
 |--------|-------------|
@@ -121,7 +121,7 @@ conn = get_redis_connection(alias="default", write=True)
 | `alias` | Cache alias from settings (default: `"default"`) |
 | `write` | Get write connection for primary (default: `True`) |
 
-Returns the underlying `redis.Redis` client instance.
+Returns the underlying `valkey.Valkey` or `redis.Redis` client instance.
 
 ## Lock Interface
 
@@ -162,7 +162,7 @@ if lock.acquire():
 | `CLIENT_CLASS` | Client implementation class |
 | `SERIALIZER` | Serializer class |
 | `COMPRESSOR` | Compressor class |
-| `PASSWORD` | Redis password |
+| `PASSWORD` | Server password |
 | `SOCKET_CONNECT_TIMEOUT` | Connection timeout |
 | `SOCKET_TIMEOUT` | Read/write timeout |
 | `IGNORE_EXCEPTIONS` | Ignore connection errors |

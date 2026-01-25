@@ -7,8 +7,8 @@ By default, django-cachex uses `pickle.DEFAULT_PROTOCOL`. To set a specific vers
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
             "PICKLE_VERSION": -1  # Highest protocol available
         }
@@ -87,7 +87,7 @@ cache.ttl("foo")  # Returns None (no expiration)
 
 ## Locks
 
-Redis distributed locks with the same interface as `threading.Lock`:
+Distributed locks with the same interface as `threading.Lock`:
 
 ```python
 from django.core.cache import cache
@@ -154,9 +154,9 @@ cache.incr("counter", delta=5)  # Returns 6
 cache.decr("counter")  # Returns 5
 ```
 
-## Redis Data Structures
+## Data Structures
 
-django-cachex provides direct access to Redis data structures through the cache interface.
+django-cachex provides direct access to Valkey/Redis data structures through the cache interface.
 
 ### Hashes
 
@@ -272,16 +272,16 @@ cache.ltrim("queue", 0, 99)  # Keep first 100 elements
 # Get length
 cache.llen("queue")
 
-# Find element position (Redis 6.0.6+)
+# Find element position
 cache.lpos("queue", "target")  # Returns index or None
 
-# Move element between lists atomically (Redis 6.2+)
+# Move element between lists atomically
 cache.lmove("source", "dest", "LEFT", "RIGHT")  # LPOP source, RPUSH dest
 ```
 
 ## Raw Client Access
 
-Access the underlying redis-py client:
+Access the underlying valkey-py/redis-py client:
 
 ```python
 from django_cachex import get_redis_connection

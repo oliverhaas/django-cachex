@@ -1,47 +1,35 @@
 # Changelog
 
-## 6.0.0 (Unreleased)
+## 0.1.0 (January 2026)
 
-This is the first release of django-cachex-ng, a fork of django-cachex.
+Initial release of django-cachex.
 
-### Changes from django-cachex
+### Features
 
-- Minimum Python version raised to 3.12
-- Minimum Django version raised to 5.2
-- Minimum redis-py version raised to 6.0 (released April 2025)
-- Migrated to `pyproject.toml` with hatchling build system
-- Switched to UV for package management
-- Modernized CI/CD with GitHub Actions
-- Added MkDocs documentation with Material theme
-- Package name changed to `django-cachex-ng` (import namespace remains `django_cachex`)
-- Removed ShardClient and HerdClient (not commonly used, untested)
-- Tests now use testcontainers instead of docker-compose
+- **Unified Valkey + Redis support** in one package
+- **Full-featured cache backend** for Django
+- **Session backend support** via Django's cache sessions
+- **Pluggable clients** (Default, Sentinel, Cluster)
+- **Pluggable serializers** (Pickle, JSON, MsgPack)
+- **Pluggable compressors** (Zlib, Gzip, LZMA, LZ4, Zstandard)
+- **Multi-serializer/compressor fallback** for safe migrations
+- **Connection pooling** with configurable options
+- **Primary/replica replication** support
+- **Valkey/Redis Sentinel support** for high availability
+- **Valkey/Redis Cluster support** with automatic slot handling
+- **Distributed locks** compatible with `threading.Lock`
+- **TTL operations** (`ttl()`, `pttl()`, `expire()`, `persist()`)
+- **Pattern operations** (`keys()`, `iter_keys()`, `delete_pattern()`)
+- **Pipelines** for batched operations
 
-### New Features
+### Data Structure Operations
 
-- **ClusterClient**: New client for Redis Cluster deployments with server-side sharding
 - **Hash operations**: `hset`, `hdel`, `hexists`, `hget`, `hgetall`, `hincrby`, `hincrbyfloat`, `hlen`, `hmget`, `hmset`, `hsetnx`, `hvals`
 - **Sorted set operations**: `zadd`, `zcard`, `zcount`, `zincrby`, `zrange`, `zrangebyscore`, `zrank`, `zrevrank`, `zrem`, `zremrangebyrank`, `zscore`, `zmscore`
 - **List operations**: `llen`, `lpush`, `rpush`, `lpop`, `rpop`, `lindex`, `lrange`, `lset`, `ltrim`, `lpos`, `lmove`
 
-### Features
+### Requirements
 
-All features from django-cachex 5.x are included:
-
-- Full-featured Redis cache backend
-- Session backend support
-- Pluggable clients (Default, Sentinel, Cluster)
-- Pluggable serializers (Pickle, JSON, MsgPack)
-- Pluggable compressors (Zlib, Gzip, LZMA, LZ4, Zstandard)
-- Connection pooling
-- Primary/replica replication
-- Redis Sentinel support
-- Distributed locks
-- TTL operations
-- Bulk key operations
-
----
-
-## Previous Releases
-
-For the changelog of the original django-cachex project, see the [django-cachex repository](https://github.com/jazzband/django-cachex/blob/master/CHANGELOG.rst).
+- Python 3.12+
+- Django 5.2+
+- valkey-py 6+ or redis-py 6+

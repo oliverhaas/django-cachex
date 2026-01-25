@@ -1,6 +1,6 @@
-# Redis Sentinel
+# Valkey/Redis Sentinel
 
-django-cachex includes built-in support for [Redis Sentinel](https://redis.io/topics/sentinel) for high availability.
+django-cachex includes built-in support for [Valkey Sentinel](https://valkey.io/topics/sentinel/) and [Redis Sentinel](https://redis.io/topics/sentinel) for high availability.
 
 ## Basic Setup
 
@@ -17,8 +17,8 @@ SENTINELS = [
 
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://service_name/db",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://service_name/db",
         "OPTIONS": {
             "CLIENT_CLASS": "django_cachex.client.SentinelClient",
             "SENTINELS": SENTINELS,
@@ -41,20 +41,20 @@ SENTINELS = [
 CACHES = {
     # Full configuration with SentinelClient
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://service_name/db",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://service_name/db",
         "OPTIONS": {
             "CLIENT_CLASS": "django_cachex.client.SentinelClient",
             "SENTINELS": SENTINELS,
             "SENTINEL_KWARGS": {},  # Optional kwargs for Sentinel
-            "CONNECTION_POOL_CLASS": "redis.sentinel.SentinelConnectionPool",
+            "CONNECTION_POOL_CLASS": "valkey.sentinel.SentinelConnectionPool",
         },
     },
 
     # Minimal example with SentinelClient
     "minimal": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://minimal_service_name/db",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://minimal_service_name/db",
         "OPTIONS": {
             "CLIENT_CLASS": "django_cachex.client.SentinelClient",
             "SENTINELS": SENTINELS,
@@ -63,18 +63,18 @@ CACHES = {
 
     # Using DefaultClient with primary/replica
     "other": {
-        "BACKEND": "django_cachex.cache.RedisCache",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
         "LOCATION": [
-            "redis://other_service_name/db?is_master=1",
-            "redis://other_service_name/db?is_master=0",
+            "valkey://other_service_name/db?is_master=1",
+            "valkey://other_service_name/db?is_master=0",
         ],
         "OPTIONS": {"SENTINELS": SENTINELS},
     },
 
     # Read-only replicas
     "readonly": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://readonly_service_name/db?is_master=0",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://readonly_service_name/db?is_master=0",
         "OPTIONS": {"SENTINELS": SENTINELS},
     },
 }
@@ -94,20 +94,20 @@ SENTINELS = [
 CACHES = {
     # Sentinel-based cache
     "sentinel": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://service_name/db",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://service_name/db",
         "OPTIONS": {
             "CLIENT_CLASS": "django_cachex.client.SentinelClient",
             "SENTINELS": SENTINELS,
-            "CONNECTION_POOL_CLASS": "redis.sentinel.SentinelConnectionPool",
+            "CONNECTION_POOL_CLASS": "valkey.sentinel.SentinelConnectionPool",
             "CONNECTION_FACTORY": "django_cachex.pool.SentinelConnectionFactory",
         },
     },
 
-    # Standard Redis cache
+    # Standard Valkey cache
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
             "CLIENT_CLASS": "django_cachex.client.DefaultClient",
         },

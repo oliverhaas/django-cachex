@@ -1,16 +1,16 @@
-# Redis Cluster
+# Valkey/Redis Cluster
 
-django-cachex includes built-in support for [Redis Cluster](https://redis.io/docs/latest/operate/oss_and_stack/management/scaling/) with server-side sharding across multiple nodes.
+django-cachex includes built-in support for [Valkey Cluster](https://valkey.io/topics/cluster-tutorial/) and [Redis Cluster](https://redis.io/docs/latest/operate/oss_and_stack/management/scaling/) with server-side sharding across multiple nodes.
 
 ## Basic Setup
 
-Use `RedisClusterCacheClient` (or `ValkeyClusterCacheClient` for Valkey):
+Use `ValkeyClusterCacheClient` (or `RedisClusterCacheClient` for Redis):
 
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.client.RedisClusterCacheClient",
-        "LOCATION": "redis://127.0.0.1:7000",  # Any cluster node
+        "BACKEND": "django_cachex.client.ValkeyClusterCacheClient",
+        "LOCATION": "valkey://127.0.0.1:7000",  # Any cluster node
     }
 }
 ```
@@ -20,10 +20,10 @@ CACHES = {
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.client.RedisClusterCacheClient",
-        "LOCATION": "redis://127.0.0.1:7000",
+        "BACKEND": "django_cachex.client.ValkeyClusterCacheClient",
+        "LOCATION": "valkey://127.0.0.1:7000",
         "OPTIONS": {
-            # Connection options (passed to RedisCluster)
+            # Connection options (passed to ValkeyCluster)
             "socket_timeout": 5,
             "socket_connect_timeout": 3,
         }
@@ -31,12 +31,12 @@ CACHES = {
 }
 ```
 
-For Valkey Cluster:
+For Redis Cluster:
 
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.client.ValkeyClusterCacheClient",
+        "BACKEND": "django_cachex.client.RedisClusterCacheClient",
         "LOCATION": "redis://127.0.0.1:7000",
     }
 }
@@ -44,7 +44,7 @@ CACHES = {
 
 ## Understanding Cluster Slot Handling
 
-Redis Cluster distributes keys across 16384 hash slots. When using multi-key operations, Redis requires all keys to be on the same slot for atomicity. django-cachex handles this automatically for standard Django cache operations, but you need to understand the distinction between two types of methods:
+Valkey/Redis Cluster distributes keys across 16384 hash slots. When using multi-key operations, the server requires all keys to be on the same slot for atomicity. django-cachex handles this automatically for standard Django cache operations, but you need to understand the distinction between two types of methods:
 
 ### Django Cache Interface Methods (Automatic Handling)
 
@@ -61,11 +61,11 @@ These methods are part of the standard Django cache interface and are **cluster-
 | `clear()` | Flushes all primary nodes in the cluster |
 
 !!! info "Non-Atomic Operations"
-    Operations like `get_many` and `set_many` use redis-py's `_nonatomic` variants which split keys across slots. This means these operations are **not atomic** across the entire key set, but each slot group is processed atomically.
+    Operations like `get_many` and `set_many` use valkey-py/redis-py's `_nonatomic` variants which split keys across slots. This means these operations are **not atomic** across the entire key set, but each slot group is processed atomically.
 
-### Direct Redis Method Wrappers (Pass-Through)
+### Direct Method Wrappers (Pass-Through)
 
-Methods from the Redis data structure mixins (sets, lists, hashes, sorted sets) are **direct wrappers** around Redis commands. They pass through to Redis without special cluster handling:
+Methods from the data structure mixins (sets, lists, hashes, sorted sets) are **direct wrappers** around commands. They pass through to the server without special cluster handling:
 
 | Category | Methods |
 |----------|---------|
@@ -79,7 +79,7 @@ Methods from the Redis data structure mixins (sets, lists, hashes, sorted sets) 
 
 ## Hash Tags for Slot Co-location
 
-Redis Cluster uses hash tags to force keys to the same slot. A hash tag is the substring between the first `{` and the following `}` in a key:
+Valkey/Redis Cluster uses hash tags to force keys to the same slot. A hash tag is the substring between the first `{` and the following `}` in a key:
 
 ```python
 # These keys will be on the SAME slot (hash tag is "user:123")
@@ -172,12 +172,12 @@ The cluster client follows these principles:
 
 1. **Django cache interface should "just work"**: Methods like `get_many()`, `set_many()`, `clear()`, etc. should work without users needing to think about cluster topology or slot distribution.
 
-2. **Redis method wrappers stay true to Redis**: Direct Redis commands (set operations, list operations, etc.) behave exactly as they would with a regular Redis client. This means no hidden magic, but also no hidden safety nets.
+2. **Method wrappers stay true to the protocol**: Direct commands (set operations, list operations, etc.) behave exactly as they would with a regular client. This means no hidden magic, but also no hidden safety nets.
 
-3. **Explicit over implicit for advanced operations**: When using Redis-specific features in cluster mode, you're expected to understand cluster constraints and use hash tags appropriately.
+3. **Explicit over implicit for advanced operations**: When using Valkey/Redis-specific features in cluster mode, you're expected to understand cluster constraints and use hash tags appropriately.
 
 This design ensures that:
 
 - Simple Django caching works seamlessly with clusters
-- Power users get full Redis functionality without unexpected behavior
+- Power users get full functionality without unexpected behavior
 - There's no confusion about which methods handle slots and which don't
