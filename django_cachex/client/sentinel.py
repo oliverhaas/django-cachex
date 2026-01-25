@@ -38,8 +38,8 @@ except ImportError:
 _VALKEY_AVAILABLE = False
 try:
     import valkey
-    from valkey.sentinel import Sentinel as ValkeySentinel
-    from valkey.sentinel import SentinelConnectionPool as ValkeySentinelConnectionPool
+    from valkey.sentinel import Sentinel as ValkeySentinel  # noqa: F401
+    from valkey.sentinel import SentinelConnectionPool as ValkeySentinelConnectionPool  # noqa: F401
 
     _VALKEY_AVAILABLE = True
 except ImportError:

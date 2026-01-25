@@ -281,7 +281,7 @@ class KeyValueCacheClient:
         if write or len(self._servers) == 1:
             return 0
         import random
-        return random.randint(1, len(self._servers) - 1)
+        return random.randint(1, len(self._servers) - 1)  # noqa: S311
 
     def _get_connection_pool(self, write: bool):
         """Get a connection pool for the given operation type."""

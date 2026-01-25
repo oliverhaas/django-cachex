@@ -273,8 +273,8 @@ wheels = [
 ]
 
 [[package]]
-name = "django-redis-ng"
-version = "6.0.0b2"
+name = "django-cachex"
+version = "0.1.0a1"
 source = { editable = "." }
 dependencies = [
     { name = "django" },
@@ -327,7 +327,7 @@ requires-dist = [
     { name = "valkey", marker = "extra == 'valkey'", specifier = ">=6.1.0,<7" },
     { name = "valkey", extras = ["libvalkey"], marker = "extra == 'libvalkey'", specifier = ">=6.1.0,<7" },
 ]
-provides-extras = ["redis", "hiredis", "valkey", "libvalkey"]
+provides-extras = ["valkey", "libvalkey", "redis", "hiredis"]
 
 [package.metadata.requires-dev]
 dev = [

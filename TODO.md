@@ -136,4 +136,5 @@ Current features:
 
 - [ ] Review `[[tool.mypy.overrides]]` for optional dependencies as libraries improve
 - [ ] Add docstrings incrementally (start with public API)
+- [ ] Enable more ruff rules (review ignored rules and fix violations)
 

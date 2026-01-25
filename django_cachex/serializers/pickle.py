@@ -34,6 +34,6 @@ class PickleSerializer(BaseSerializer):
         try:
             if isinstance(data, int):
                 return data
-            return pickle.loads(data)
+            return pickle.loads(data)  # noqa: S301
         except Exception as e:
             raise SerializerError from e

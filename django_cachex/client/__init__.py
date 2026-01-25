@@ -5,13 +5,6 @@ from django_cachex.client.cache import (
     ValkeyCache,
 )
 
-# Cache clients (do actual Redis operations) - internal use
-from django_cachex.client.default import (
-    KeyValueCacheClient,
-    RedisCacheClient,
-    ValkeyCacheClient,
-)
-
 # Cluster implementations
 from django_cachex.client.cluster import (
     KeyValueClusterCache,
@@ -20,6 +13,13 @@ from django_cachex.client.cluster import (
     RedisClusterCacheClient,
     ValkeyClusterCache,
     ValkeyClusterCacheClient,
+)
+
+# Cache clients (do actual Redis operations) - internal use
+from django_cachex.client.default import (
+    KeyValueCacheClient,
+    RedisCacheClient,
+    ValkeyCacheClient,
 )
 
 # Sentinel implementations

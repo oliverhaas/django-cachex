@@ -9,7 +9,6 @@ Reference: https://github.com/django/django/blob/main/tests/cache/tests.py
 from typing import TYPE_CHECKING
 from unittest import mock
 
-import pytest
 from django.core.cache import caches
 from django.test import override_settings
 
@@ -114,7 +113,6 @@ class TestRedisCacheInternals:
         """Test that pool OPTIONS are passed to connection pool."""
         from contextlib import suppress
 
-        import redis
 
         host = redis_container.host
         port = redis_container.port

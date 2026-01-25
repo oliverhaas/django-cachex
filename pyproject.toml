@@ -1,17 +1,16 @@
 [project]
 name = "django-cachex"
 version = "0.1.0a1"
-description = "Full featured Redis and Valkey cache backend for Django"
+description = "Full featured Valkey and Redis cache backend for Django"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.12"
-keywords = ["django", "redis", "valkey", "cache", "session", "backend"]
+keywords = ["django", "valkey", "redis", "cache", "backend"]
 authors = [
-  { name = "Andrei Antoukh", email = "niwi@niwi.nz" },
   { name = "Oliver Haas", email = "ohaas@e1plus.de" },
 ]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 3 - Alpha",
   "Environment :: Web Environment",
   "Framework :: Django",
   "Framework :: Django :: 5.2",
@@ -33,10 +32,10 @@ classifiers = [
 dependencies = ["Django>=5.2,<6.1"]
 
 [project.optional-dependencies]
-redis = ["redis>=6,<8"]
-hiredis = ["redis[hiredis]>=6,<8"]
 valkey = ["valkey>=6.1.0,<7"]
 libvalkey = ["valkey[libvalkey]>=6.1.0,<7"]
+redis = ["redis>=6,<8"]
+hiredis = ["redis[hiredis]>=6,<8"]
 
 [project.urls]
 Homepage = "https://github.com/oliverhaas/django-cachex"
@@ -46,8 +45,8 @@ Changelog = "https://oliverhaas.github.io/django-cachex/reference/changelog/"
 
 [dependency-groups]
 dev = [
-  "redis>=6,<8",
   "valkey>=6.1.0,<7",
+  "redis>=6,<8",
   "backports-zstd==1.3.0; python_version < '3.14'",
   "django-stubs==5.2.9",
   "lz4==4.4.5",
@@ -83,52 +82,45 @@ fix = true
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
-  "COM812", # Conflicts with ruff-format
-  "D1",     # Missing docstrings - too many to add at once
-  "E501",   # Line too long - line-length config handles this
-  "N818",   # Exception naming - ConnectionInterrupted is established name
-  "SLF001", # Private member access needed for Django/redis-py internals
+  "A002",    # min/max params match Redis API naming
+  "ANN",     # Type annotations - mypy handles this
+  "ARG002",  # Unused args for API compatibility
+  "COM812",  # Conflicts with ruff-format
+  "D",       # Docstrings - will add incrementally
+  "E501",    # Line length handled by config
+  "EM101",   # Exception strings inline are fine
+  "FBT",     # Boolean args common in cache/Redis APIs
+  "N818",    # ConnectionInterrupted is established name
+  "PERF203", # try/except in loop is fine here
+  "PERF403", # Manual list comprehension is intentional
+  "PLC0415", # Dynamic imports intentional
+  "PLR0913", # Many args needed for Redis operations
+  "PLR2004", # Magic values like -2 for TTL are domain-specific
+  "RET504",  # Unnecessary assignment - readability
+  "RUF022",  # __all__ is intentionally grouped, not sorted
+  "SLF001",  # Private member access needed for internals
+  "TC001",   # Type checking import style preference
+  "TC003",   # Type checking import style preference
+  "TRY003",  # Long exception messages are fine
+  "TRY300",  # try/except/return pattern is fine
+  "UP031",   # % format is fine
+  "SIM108",  # Ternary not always clearer
 ]
-
-[tool.ruff.lint.flake8-tidy-imports]
-ban-relative-imports = "all"
 
 [tool.ruff.lint.per-file-ignores]
-"django_cachex/**" = [
-  "A002",    # min/max parameters match Redis API naming
-  "ANN",     # Type annotations handled by mypy with stricter checking
-  "ARG002",  # Unused arguments in method overrides for API compatibility
-  "D",       # Docstrings - will add incrementally
-  "FBT",     # Boolean traps are common in cache/Redis APIs
-  "PGH003",  # Type ignores are validated by mypy, not ruff
-  "PLC0415", # Dynamic imports are intentional (e.g., get_redis_connection)
-  "PLR0913", # Many arguments needed for Redis operations
-  "PLR2004", # Magic values like -2 for Redis TTL are domain-specific
-  "S311",    # Random is fine for non-cryptographic key generation
-  "UP046",   # Generic[T] style still valid, will migrate to PEP 695 later
-]
-"django_cachex/serializers/pickle.py" = ["A005", "S301"] # Pickle is intentional
-"django_cachex/serializers/json.py" = ["A005"] # Named to match format
-"django_cachex/compressors/gzip.py" = ["A005"] # Named to match format
-"django_cachex/compressors/lzma.py" = ["A005"] # Named to match format
-"django_cachex/compressors/zlib.py" = ["A005"] # Named to match format
 "tests/**" = [
-  "ANN",     # Type annotations not required in tests
   "ARG",     # Unused arguments common in fixtures
-  "D",       # Docstrings not required in tests
   "DTZ005",  # Timezone-naive datetime okay in tests
-  "FBT",     # Boolean arguments common in test helpers
-  "PLC0415", # Conditional/lazy imports are common in tests
-  "PLR0913", # Many arguments in test fixtures
-  "PLR2004", # Magic values in tests are fine
+  "F841",    # Unused variables okay in tests
   "PT006",   # Parametrize tuple style is preference
-  "PT011",   # Broad pytest.raises is okay in some tests
+  "PT011",   # Broad pytest.raises okay in some tests
   "PT013",   # pytest import style is preference
-  "PT018",   # Composite assertions okay in tests
-  "RUF002",  # Unicode characters in docstrings are fine
+  "PT018",   # Compound assertions okay in tests
+  "RUF002",  # Unicode in docstrings is fine
   "RUF015",  # next(iter()) vs slice is preference
   "S101",    # assert in tests
   "S105",    # Hardcoded passwords in test settings
+  "S301",    # pickle in tests is fine
   "S311",    # random is fine for tests
 ]
 
@@ -174,11 +166,11 @@ module = "msgpack"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "redis.*"
+module = "valkey.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "valkey.*"
+module = "redis.*"
 ignore_missing_imports = true
 
 [tool.ty.rules]
