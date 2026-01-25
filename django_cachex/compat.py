@@ -47,17 +47,13 @@ def create_serializer(config: str | type | Any | None, **kwargs: Any) -> Any:
     return cls(**kwargs)
 
 
-def create_compressor(config: str | type | Any | None, **kwargs: Any) -> Any:
+def create_compressor(config: str | type | Any, **kwargs: Any) -> Any:
     """Create a compressor instance from config.
 
     Args:
-        config: A dotted path string, a class, an instance, or None for identity compressor
+        config: A dotted path string, a class, or an instance
         **kwargs: Keyword arguments to pass to compressor constructor
     """
-    # None means identity compressor (no compression)
-    if config is None:
-        config = "django_cachex.compressors.identity.IdentityCompressor"
-
     # Already an instance
     if is_compressor_instance(config):
         return config

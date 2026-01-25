@@ -218,7 +218,7 @@ class KeyValueCacheClient:
     def _create_compressors(self, config: str | list | type | Any | None) -> list:
         """Create compressor instance(s) from config."""
         if config is None:
-            return [create_compressor("django_cachex.compressors.identity.IdentityCompressor")]
+            return []
         if isinstance(config, list):
             return [create_compressor(item) for item in config]
         return [create_compressor(config)]
@@ -248,10 +248,7 @@ class KeyValueCacheClient:
 
     def _has_compression_enabled(self) -> bool:
         """Check if compression is enabled."""
-        if not self._compressors:
-            return False
-        primary = self._compressors[0]
-        return primary.__class__.__name__ != "IdentityCompressor"
+        return bool(self._compressors)
 
     # =========================================================================
     # Encoding/Decoding
@@ -261,7 +258,9 @@ class KeyValueCacheClient:
         """Encode a value for storage (serialize + compress)."""
         if isinstance(value, bool) or not isinstance(value, int):
             value = self._serializers[0].dumps(value)
-            return self._compressors[0].compress(value)
+            if self._compressors:
+                return self._compressors[0].compress(value)
+            return value
         return value
 
     def decode(self, value: EncodableT) -> Any:

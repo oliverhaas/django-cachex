@@ -62,6 +62,7 @@ nav:
       - Compression: user-guide/compression.md
       - Sentinel: user-guide/sentinel.md
       - Cluster: user-guide/cluster.md
+  - Recipes: recipes.md
   - Reference:
       - API: reference/api.md
       - Changelog: reference/changelog.md

@@ -39,9 +39,9 @@ Full documentation at [oliverhaas.github.io/django-cachex](https://oliverhaas.gi
 
 ## Requirements
 
-- Python 3.10+
-- Django 4.2+
-- redis-py 5.0+
+- Python 3.12+
+- Django 4.2.8+
+- redis-py 5.0+ or valkey-py 6.0+
 
 ## License
 

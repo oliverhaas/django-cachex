@@ -100,7 +100,6 @@ class TestRedisClusterCacheClient:
         # Setup mocks for encoding/decoding
         client._serializers[0].loads.side_effect = lambda x: pickle.loads(x)
         client._compressors[0].decompress.side_effect = lambda x: x
-        client._compressors[0].__class__.__name__ = "IdentityCompressor"
 
         # Mock mget_nonatomic response with pickled data
         mock_cluster.mget_nonatomic.return_value = [

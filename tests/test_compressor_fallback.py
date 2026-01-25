@@ -43,7 +43,7 @@ class TestDefaultClientCompressorConfig:
                 "OPTIONS": {
                     "compressor": [
                         "django_cachex.compressors.gzip.GzipCompressor",
-                        None,  # Identity compressor
+                        "django_cachex.compressors.zlib.ZlibCompressor",
                     ],
                 },
             },
@@ -88,7 +88,6 @@ class TestDefaultClientCompressorConfig:
                     "compressor": [
                         "django_cachex.compressors.gzip.GzipCompressor",
                         "django_cachex.compressors.zlib.ZlibCompressor",
-                        None,
                     ],
                 },
             },
@@ -109,17 +108,28 @@ class TestDefaultClientCompressorConfig:
 
 
 class TestHasCompressionEnabled:
-    """Tests for _has_compression_enabled() with list config."""
+    """Tests for _has_compression_enabled() with various configs."""
 
-    def test_string_identity_returns_false(self):
-        """Test that identity compressor string returns False."""
+    def test_none_config_returns_false(self):
+        """Test that None compressor config returns False."""
         from django_cachex.client import RedisCacheClient
 
         client = RedisCacheClient(
             servers=["redis://localhost:6379"],
             options={
-                "compressor": "django_cachex.compressors.identity.IdentityCompressor",
+                "compressor": None,
             },
+        )
+
+        assert client._has_compression_enabled() is False
+
+    def test_no_compressor_option_returns_false(self):
+        """Test that missing compressor option returns False."""
+        from django_cachex.client import RedisCacheClient
+
+        client = RedisCacheClient(
+            servers=["redis://localhost:6379"],
+            options={},
         )
 
         assert client._has_compression_enabled() is False
@@ -137,38 +147,6 @@ class TestHasCompressionEnabled:
 
         assert client._has_compression_enabled() is True
 
-    def test_list_with_identity_first_returns_false(self):
-        """Test that list with identity first returns False."""
-        from django_cachex.client import RedisCacheClient
-
-        client = RedisCacheClient(
-            servers=["redis://localhost:6379"],
-            options={
-                "compressor": [
-                        "django_cachex.compressors.identity.IdentityCompressor",
-                        "django_cachex.compressors.gzip.GzipCompressor",
-                    ],
-            },
-        )
-
-        assert client._has_compression_enabled() is False
-
-    def test_list_with_none_first_returns_false(self):
-        """Test that list with None first returns False."""
-        from django_cachex.client import RedisCacheClient
-
-        client = RedisCacheClient(
-            servers=["redis://localhost:6379"],
-            options={
-                "compressor": [
-                        None,
-                        "django_cachex.compressors.gzip.GzipCompressor",
-                    ],
-            },
-        )
-
-        assert client._has_compression_enabled() is False
-
     def test_list_with_gzip_first_returns_true(self):
         """Test that list with gzip first returns True."""
         from django_cachex.client import RedisCacheClient
@@ -177,9 +155,9 @@ class TestHasCompressionEnabled:
             servers=["redis://localhost:6379"],
             options={
                 "compressor": [
-                        "django_cachex.compressors.gzip.GzipCompressor",
-                        None,
-                    ],
+                    "django_cachex.compressors.gzip.GzipCompressor",
+                    "django_cachex.compressors.zlib.ZlibCompressor",
+                ],
             },
         )
 
@@ -197,10 +175,9 @@ class TestDecompressFallback:
             servers=["redis://localhost:6379"],
             options={
                 "compressor": [
-                        "django_cachex.compressors.gzip.GzipCompressor",
-                        "django_cachex.compressors.zlib.ZlibCompressor",
-                        None,
-                    ],
+                    "django_cachex.compressors.gzip.GzipCompressor",
+                    "django_cachex.compressors.zlib.ZlibCompressor",
+                ],
             },
         )
 
@@ -217,10 +194,9 @@ class TestDecompressFallback:
             servers=["redis://localhost:6379"],
             options={
                 "compressor": [
-                        "django_cachex.compressors.gzip.GzipCompressor",
-                        "django_cachex.compressors.zlib.ZlibCompressor",
-                        None,
-                    ],
+                    "django_cachex.compressors.gzip.GzipCompressor",
+                    "django_cachex.compressors.zlib.ZlibCompressor",
+                ],
             },
         )
 
@@ -234,36 +210,17 @@ class TestDecompressFallback:
         """Test that _decompress returns raw bytes when all compressors fail."""
         from django_cachex.client import RedisCacheClient
 
-        # Only gzip, no identity fallback
         client = RedisCacheClient(
             servers=["redis://localhost:6379"],
             options={
                 "compressor": [
-                        "django_cachex.compressors.gzip.GzipCompressor",
-                    ],
+                    "django_cachex.compressors.gzip.GzipCompressor",
+                ],
             },
         )
 
         # Plain data that isn't gzip
         data = b"Plain uncompressed data"
-        assert client._decompress(data) == data
-
-    def test_decompress_with_identity_catches_all(self):
-        """Test that identity compressor at end catches uncompressed data."""
-        from django_cachex.client import RedisCacheClient
-
-        client = RedisCacheClient(
-            servers=["redis://localhost:6379"],
-            options={
-                "compressor": [
-                        "django_cachex.compressors.gzip.GzipCompressor",
-                        None,  # Identity
-                    ],
-            },
-        )
-
-        data = b"Plain uncompressed data"
-        # gzip fails, identity returns as-is
         assert client._decompress(data) == data
 
     def test_decompress_continues_on_failure(self):
@@ -274,13 +231,27 @@ class TestDecompressFallback:
             servers=["redis://localhost:6379"],
             options={
                 "compressor": [
-                        "django_cachex.compressors.gzip.GzipCompressor",
-                        None,
-                    ],
+                    "django_cachex.compressors.gzip.GzipCompressor",
+                    "django_cachex.compressors.zlib.ZlibCompressor",
+                ],
             },
         )
 
         # Data that looks like it could be gzip but isn't valid
         fake_gzip = b"\x1f\x8bNot actually valid gzip data"
-        # gzip fails, falls through to identity
+        # Both gzip and zlib fail, returns raw data
         assert client._decompress(fake_gzip) == fake_gzip
+
+    def test_decompress_with_no_compressors_returns_raw(self):
+        """Test that _decompress returns raw data when no compressors configured."""
+        from django_cachex.client import RedisCacheClient
+
+        client = RedisCacheClient(
+            servers=["redis://localhost:6379"],
+            options={
+                "compressor": None,
+            },
+        )
+
+        data = b"Plain uncompressed data"
+        assert client._decompress(data) == data
