@@ -1,224 +1,331 @@
-# Configuration
+# Configuration Reference
 
-## Authentication
+Complete reference for all django-cachex configuration options.
 
-### Using Redis ACLs
-
-When using Redis ACLs, add the username to the URL:
+## Basic Configuration
 
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://django@localhost:6379/0",
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_cachex.client.DefaultClient",
-            "PASSWORD": "mysecret"
-        }
-    }
-}
-```
-
-Or include both in the URL:
-
-```python
-CACHES = {
-    "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://django:mysecret@localhost:6379/0",
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_cachex.client.DefaultClient",
-        }
-    }
-}
-```
-
-### Non-URL-Safe Passwords
-
-For passwords with special characters, use the `PASSWORD` option:
-
-```python
-CACHES = {
-    "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
+        "BACKEND": "django_cachex.cache.RedisCache",  # or ValkeyCache
         "LOCATION": "redis://127.0.0.1:6379/1",
+        "TIMEOUT": 300,              # Default timeout in seconds
+        "KEY_PREFIX": "myapp",       # Prefix for all keys
+        "VERSION": 1,                # Key version number
         "OPTIONS": {
-            "CLIENT_CLASS": "django_cachex.client.DefaultClient",
-            "PASSWORD": "my$ecret!password"
+            # See options below
         }
     }
 }
 ```
 
-!!! note
-    The `PASSWORD` option is ignored if a password is already in the URL.
+## Backend Classes
 
-## Timeouts
+| Backend | Description |
+|---------|-------------|
+| `django_cachex.cache.RedisCache` | Standard Redis (redis-py) |
+| `django_cachex.cache.ValkeyCache` | Standard Valkey (valkey-py) |
+| `django_cachex.cache.RedisSentinelCache` | Redis with Sentinel |
+| `django_cachex.cache.ValkeySentinelCache` | Valkey with Sentinel |
+| `django_cachex.cache.RedisClusterCache` | Redis Cluster |
+| `django_cachex.cache.ValkeyClusterCache` | Valkey Cluster |
 
-### Socket Timeouts
+## LOCATION
+
+Server URL(s). Supports multiple formats:
 
 ```python
-CACHES = {
-    "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
-        "OPTIONS": {
-            "SOCKET_CONNECT_TIMEOUT": 5,  # Connection timeout in seconds
-            "SOCKET_TIMEOUT": 5,          # Read/write timeout in seconds
-        }
-    }
+# Single server
+"LOCATION": "redis://127.0.0.1:6379/1"
+
+# With authentication
+"LOCATION": "redis://user:password@127.0.0.1:6379/1"
+
+# SSL/TLS
+"LOCATION": "rediss://127.0.0.1:6379/1"
+
+# Unix socket
+"LOCATION": "unix:///path/to/socket?db=1"
+
+# Multiple servers (read replicas)
+"LOCATION": [
+    "redis://127.0.0.1:6379/1",  # Primary (writes)
+    "redis://127.0.0.1:6380/1",  # Replica (reads)
+]
+
+# Or comma/semicolon separated
+"LOCATION": "redis://127.0.0.1:6379/1,redis://127.0.0.1:6380/1"
+```
+
+## OPTIONS Reference
+
+### Serialization
+
+```python
+"OPTIONS": {
+    # Single serializer (string path, class, or instance)
+    "serializer": "django_cachex.serializers.pickle.PickleSerializer",
+
+    # Or with fallback for migration
+    "serializer": [
+        "django_cachex.serializers.msgpack.MsgPackSerializer",  # Write
+        "django_cachex.serializers.pickle.PickleSerializer",    # Fallback read
+    ],
 }
 ```
 
-### Infinite Timeout
+Available serializers:
 
-django-cachex supports infinite timeouts:
+| Serializer | Description |
+|------------|-------------|
+| `django_cachex.serializers.pickle.PickleSerializer` | Python pickle (default) |
+| `django_cachex.serializers.json.JSONSerializer` | JSON |
+| `django_cachex.serializers.msgpack.MsgPackSerializer` | MessagePack (requires msgpack) |
 
-- `timeout=0` - Expires immediately
-- `timeout=None` - Never expires
+### Compression
 
 ```python
-cache.set("key", "value", timeout=None)
+"OPTIONS": {
+    # Single compressor
+    "compressor": "django_cachex.compressors.zstd.ZstdCompressor",
+
+    # Or with fallback for migration
+    "compressor": [
+        "django_cachex.compressors.zstd.ZstdCompressor",  # Write
+        "django_cachex.compressors.zlib.ZlibCompressor",  # Fallback read
+    ],
+}
 ```
 
-## Exception Handling
+Available compressors:
 
-### Ignore Exceptions (Memcached-like behavior)
+| Compressor | Description |
+|------------|-------------|
+| `django_cachex.compressors.zlib.ZlibCompressor` | zlib compression |
+| `django_cachex.compressors.gzip.GzipCompressor` | gzip compression |
+| `django_cachex.compressors.lz4.Lz4Compressor` | LZ4 (requires lz4) |
+| `django_cachex.compressors.lzma.LzmaCompressor` | LZMA |
+| `django_cachex.compressors.zstd.ZstdCompressor` | Zstandard (requires zstd) |
 
-To ignore connection exceptions (useful when Redis is optional):
+Compression is only applied to values larger than `min_length` bytes (default: 256).
+
+### Connection Pool
 
 ```python
-CACHES = {
-    "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
-        "OPTIONS": {
-            "IGNORE_EXCEPTIONS": True,
-        }
-    }
+"OPTIONS": {
+    # Custom pool class
+    "pool_class": "redis.ConnectionPool",
+
+    # Pool size and options (passed to pool constructor)
+    "max_connections": 100,
+    "retry_on_timeout": True,
+
+    # Socket timeouts
+    "socket_connect_timeout": 5,
+    "socket_timeout": 5,
+}
+```
+
+### Parser
+
+```python
+"OPTIONS": {
+    "parser_class": "redis.connection.HiredisParser",  # Faster parsing
+}
+```
+
+### Exception Handling
+
+```python
+"OPTIONS": {
+    # Ignore connection errors (return default/None instead)
+    "ignore_exceptions": True,
+
+    # Log ignored exceptions
+    "log_ignored_exceptions": True,
+}
+```
+
+Or globally via settings:
+
+```python
+DJANGO_REDIS_IGNORE_EXCEPTIONS = True
+DJANGO_REDIS_LOG_IGNORED_EXCEPTIONS = True
+DJANGO_REDIS_LOGGER = "myapp.cache"  # Custom logger name
+```
+
+### Connection Lifecycle
+
+```python
+"OPTIONS": {
+    # Close connections after each request
+    "close_connection": True,
 }
 ```
 
 Or globally:
 
 ```python
-DJANGO_REDIS_IGNORE_EXCEPTIONS = True
-```
-
-### Log Ignored Exceptions
-
-```python
-DJANGO_REDIS_LOG_IGNORED_EXCEPTIONS = True
-DJANGO_REDIS_LOGGER = "some.specified.logger"  # Optional, defaults to __name__
-```
-
-## Connection Pools
-
-### Configure Pool Size
-
-```python
-CACHES = {
-    "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
-        "OPTIONS": {
-            "CONNECTION_POOL_KWARGS": {"max_connections": 100}
-        }
-    }
-}
-```
-
-### Additional Pool Options
-
-```python
-CACHES = {
-    "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
-        "OPTIONS": {
-            "CONNECTION_POOL_KWARGS": {
-                "max_connections": 100,
-                "retry_on_timeout": True
-            }
-        }
-    }
-}
-```
-
-### Custom Connection Pool Class
-
-```python
-CACHES = {
-    "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
-        "OPTIONS": {
-            "CONNECTION_POOL_CLASS": "myproj.mypool.MyOwnPool",
-        }
-    }
-}
-```
-
-### Verify Pool Connections
-
-```python
-from django_cachex import get_redis_connection
-
-r = get_redis_connection("default")
-connection_pool = r.connection_pool
-print(f"Created connections: {connection_pool._created_connections}")
-```
-
-## Connection Closing
-
-By default, connections are kept open. To close connections:
-
-```python
-# Per-cache setting
-CACHES = {
-    "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
-        "OPTIONS": {
-            "CLOSE_CONNECTION": True,
-        }
-    }
-}
-
-# Or globally
 DJANGO_REDIS_CLOSE_CONNECTION = True
+```
+
+## Authentication
+
+### Password in URL
+
+```python
+"LOCATION": "redis://user:password@127.0.0.1:6379/1"
+```
+
+### Password with Special Characters
+
+For passwords with special characters, pass separately:
+
+```python
+"LOCATION": "redis://127.0.0.1:6379/1",
+"OPTIONS": {
+    "password": "my$pecial!password",
+}
+```
+
+### Redis ACLs
+
+```python
+"LOCATION": "redis://username@127.0.0.1:6379/1",
+"OPTIONS": {
+    "password": "password",
+}
 ```
 
 ## SSL/TLS
 
-### Basic SSL Connection
+### Basic SSL
 
-Use `rediss://` scheme:
+```python
+"LOCATION": "rediss://127.0.0.1:6379/1"
+```
+
+### Self-Signed Certificates
+
+```python
+"LOCATION": "rediss://127.0.0.1:6379/1",
+"OPTIONS": {
+    "ssl_cert_reqs": None,  # Disable verification
+}
+```
+
+### Custom Certificates
+
+```python
+"LOCATION": "rediss://127.0.0.1:6379/1",
+"OPTIONS": {
+    "ssl_ca_certs": "/path/to/ca.crt",
+    "ssl_certfile": "/path/to/client.crt",
+    "ssl_keyfile": "/path/to/client.key",
+}
+```
+
+## Sentinel Configuration
 
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "rediss://127.0.0.1:6379/1",
+        "BACKEND": "django_cachex.cache.RedisSentinelCache",
+        "LOCATION": "redis://mymaster/0",  # Master name
         "OPTIONS": {
-            "CLIENT_CLASS": "django_cachex.client.DefaultClient",
+            "sentinels": [
+                ("sentinel1.example.com", 26379),
+                ("sentinel2.example.com", 26379),
+                ("sentinel3.example.com", 26379),
+            ],
+            "sentinel_kwargs": {
+                "password": "sentinel-password",
+            },
         }
     }
 }
 ```
 
-### Self-Signed Certificates
+## Cluster Configuration
 
-To disable certificate verification:
+```python
+CACHES = {
+    "default": {
+        "BACKEND": "django_cachex.cache.RedisClusterCache",
+        "LOCATION": "redis://127.0.0.1:7000",
+    }
+}
+```
+
+## Timeouts
+
+### Default Timeout
+
+```python
+"TIMEOUT": 300  # 5 minutes, None for no expiry
+```
+
+### Special Values
+
+```python
+cache.set("key", "value", timeout=0)     # Delete immediately
+cache.set("key", "value", timeout=None)  # Never expires
+```
+
+## Key Configuration
+
+### Key Prefix
+
+```python
+"KEY_PREFIX": "myapp"
+# Keys become: myapp:1:keyname
+```
+
+### Key Version
+
+```python
+"VERSION": 1
+# Keys become: prefix:1:keyname
+```
+
+### Custom Key Function
+
+```python
+def my_key_func(key, key_prefix, version):
+    return f"{key_prefix}:v{version}:{key}"
+
+CACHES = {
+    "default": {
+        ...
+        "KEY_FUNCTION": "myapp.cache.my_key_func",
+    }
+}
+```
+
+## Complete Example
 
 ```python
 CACHES = {
     "default": {
         "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "rediss://127.0.0.1:6379/1",
+        "LOCATION": "redis://127.0.0.1:6379/1",
+        "TIMEOUT": 300,
+        "KEY_PREFIX": "myapp",
+        "VERSION": 1,
         "OPTIONS": {
-            "CLIENT_CLASS": "django_cachex.client.DefaultClient",
-            "CONNECTION_POOL_KWARGS": {"ssl_cert_reqs": None}
+            # Serialization
+            "serializer": "django_cachex.serializers.pickle.PickleSerializer",
+
+            # Compression
+            "compressor": "django_cachex.compressors.zstd.ZstdCompressor",
+
+            # Connection pool
+            "max_connections": 50,
+            "socket_connect_timeout": 5,
+            "socket_timeout": 5,
+
+            # Exception handling
+            "ignore_exceptions": False,
         }
     }
 }

@@ -82,3 +82,10 @@ jobs:
 
       - name: Run tests
         run: uv run pytest -n auto
+
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.13' && matrix.django-version == '5.2' && matrix.redis-py-version == 'latest'
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false

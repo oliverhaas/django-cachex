@@ -111,7 +111,6 @@ Pipeline support exists for all these operations in `client/pipeline/`.
 
 ### Future Data Structure Features
 
-- [ ] Investigate Pub/Sub support
 - [ ] Investigate Streams support (xadd, xread, xrange, consumer groups)
 - [ ] Investigate Lua scripting support (eval, evalsha, script_load)
 
@@ -129,8 +128,6 @@ Current features:
 
 ## Testing
 
-- [ ] Performance/benchmark tests
-- [ ] Edge case coverage review (large values, unicode, connection failures)
 - [ ] Integration tests with real multi-node cluster
 
 ---
@@ -140,24 +137,3 @@ Current features:
 - [ ] Review `[[tool.mypy.overrides]]` for optional dependencies as libraries improve
 - [ ] Add docstrings incrementally (start with public API)
 
----
-
-## Documentation
-
-- [ ] Migration guide from django-redis
-- [ ] Migration guide from django-valkey
-- [ ] Migration guide from Django's builtin redis backend
-- [ ] Compare features with competing packages (django-redis, django-valkey, Django builtin)
-- [ ] Performance tuning guide
-- [ ] Troubleshooting guide
-- [ ] Document all configuration options in one place
-- [ ] Document release process (versioning, changelog, PyPI publishing)
-
----
-
-## API
-
-- [ ] API stability policy
-  - Document what is public API vs internal
-  - Semantic versioning guarantees
-  - Deprecation policy
