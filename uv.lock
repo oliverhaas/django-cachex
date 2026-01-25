@@ -476,7 +476,7 @@ dev = [
     { name = "ruff", specifier = "==0.14.14" },
     { name = "testcontainers", specifier = "==4.14.0" },
     { name = "ty", specifier = ">=0.0.1a13" },
-    { name = "types-docker", specifier = ">=7.1.0" },
+    { name = "types-docker", specifier = "==7.1.0.20260109" },
     { name = "valkey", specifier = ">=6.1.0,<7" },
 ]
 docs = [
