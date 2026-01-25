@@ -37,9 +37,10 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Any, override
 
 from django.core.cache.backends.base import DEFAULT_TIMEOUT, BaseCache
+from django.utils.module_loading import import_string
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Callable, Iterator, Mapping
 
     from django_cachex.client.pipeline import Pipeline
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT
@@ -102,6 +103,18 @@ class KeyValueCache(BaseCache):
 
         self._options = params.get("OPTIONS", {})
 
+        # Handle reverse_key_function option (mirrors Django's KEY_FUNCTION handling)
+        reverse_key_func = self._options.get("reverse_key_function")
+        if reverse_key_func is not None:
+            if isinstance(reverse_key_func, str):
+                self._reverse_key_func: Callable[[str], str] | None = import_string(
+                    reverse_key_func
+                )
+            else:
+                self._reverse_key_func = reverse_key_func
+        else:
+            self._reverse_key_func = None
+
     @cached_property
     def _cache(self) -> KeyValueCacheClient:
         """Get the CacheClient instance (matches Django's pattern)."""
@@ -127,6 +140,8 @@ class KeyValueCache(BaseCache):
 
     def reverse_key(self, key: str) -> str:
         """Reverse a made key back to original (strip prefix:version:)."""
+        if self._reverse_key_func is not None:
+            return self._reverse_key_func(key)
         parts = key.split(":", 2)
         if len(parts) == 3:
             return parts[2]
