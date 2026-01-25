@@ -6,7 +6,7 @@ from pytest_mock import MockerFixture
 
 from django_cachex.cache import KeyValueCache
 from django_cachex.serializers.json import JSONSerializer
-from django_cachex.serializers.msgpack import MSGPackSerializer
+from django_cachex.serializers.msgpack import MessagePackSerializer
 from tests.settings_wrapper import SettingsWrapper
 
 
@@ -79,7 +79,7 @@ class TestDataTypePersistence:
         assert result == "café résumé"
 
     def test_dictionary_with_datetime(self, cache: KeyValueCache):
-        if isinstance(cache._cache._serializers[0], JSONSerializer | MSGPackSerializer):
+        if isinstance(cache._cache._serializers[0], JSONSerializer | MessagePackSerializer):
             timestamp: str | datetime.datetime = datetime.datetime.now().isoformat()
         else:
             timestamp = datetime.datetime.now()

@@ -6,7 +6,7 @@ from django_cachex.exceptions import SerializerError
 from django_cachex.serializers.base import BaseSerializer
 
 
-class MSGPackSerializer(BaseSerializer):
+class MessagePackSerializer(BaseSerializer):
     def dumps(self, obj: Any) -> bytes | int:
         return msgpack.dumps(obj)
 

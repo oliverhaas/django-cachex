@@ -68,7 +68,7 @@ Server URL(s). Supports multiple formats:
 
     # Or with fallback for migration
     "serializer": [
-        "django_cachex.serializers.msgpack.MsgPackSerializer",  # Write
+        "django_cachex.serializers.msgpack.MessagePackSerializer",  # Write
         "django_cachex.serializers.pickle.PickleSerializer",    # Fallback read
     ],
 }
@@ -80,7 +80,7 @@ Available serializers:
 |------------|-------------|
 | `django_cachex.serializers.pickle.PickleSerializer` | Python pickle (default) |
 | `django_cachex.serializers.json.JSONSerializer` | JSON |
-| `django_cachex.serializers.msgpack.MsgPackSerializer` | MessagePack (requires msgpack) |
+| `django_cachex.serializers.msgpack.MessagePackSerializer` | MessagePack (requires msgpack) |
 
 ### Compression
 
