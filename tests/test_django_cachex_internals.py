@@ -33,9 +33,7 @@ class TestRedisCacheInternals:
     def test_incr_write_connection(self, cache: KeyValueCache):
         """Verify incr uses write connection."""
         cache.set("number", 42)
-        with mock.patch.object(
-            cache._cache, "get_client", wraps=cache._cache.get_client
-        ) as mocked_get_client:
+        with mock.patch.object(cache._cache, "get_client", wraps=cache._cache.get_client) as mocked_get_client:
             cache.incr("number")
             # incr should use write=True
             assert mocked_get_client.call_args.kwargs.get("write") is True
@@ -116,7 +114,6 @@ class TestRedisCacheInternals:
     def test_redis_pool_options(self, redis_container: "RedisContainerInfo"):
         """Test that pool OPTIONS are passed to connection pool."""
         from contextlib import suppress
-
 
         host = redis_container.host
         port = redis_container.port

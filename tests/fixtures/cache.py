@@ -38,7 +38,6 @@ BACKENDS = {
     ("default", "redis"): "django_cachex.client.RedisCache",
     ("sentinel", "redis"): "django_cachex.client.RedisSentinelCache",
     ("cluster", "redis"): "django_cachex.client.RedisClusterCache",
-
 }
 
 # Client library configurations: maps client_library -> (pool_class, parser_class)

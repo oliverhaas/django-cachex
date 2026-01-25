@@ -103,13 +103,23 @@ We provide true async using native async clients (`redis.asyncio` / `valkey.asyn
   - `aget_many`, `aset_many`, `adelete_many`
   - `ahas_key`, `aincr`, `adecr`, `aclear`, `aclose`
 - Async wrapper methods in `KeyValueCache` with key prefixing/versioning
+- Async versions of extended methods:
+  - TTL/expiry: `attl`, `apttl`, `aexpire`, `apexpire`, `aexpireat`, `apexpireat`, `apersist`
+  - Keys: `akeys`, `aiter_keys`, `adelete_pattern`, `arename`, `arenamenx`
+  - Hashes: `ahset`, `ahsetnx`, `ahget`, `ahmset`, `ahmget`, `ahgetall`, `ahdel`, `ahexists`, `ahlen`, `ahkeys`, `ahvals`, `ahincrby`, `ahincrbyfloat`
+  - Lists: `alpush`, `arpush`, `alpop`, `arpop`, `allen`, `alpos`, `almove`, `alrange`, `alindex`, `alset`, `alrem`, `altrim`, `alinsert`, `ablpop`, `abrpop`, `ablmove`
+  - Sets: `asadd`, `asrem`, `asmembers`, `asismember`, `ascard`, `aspop`, `asrandmember`, `asmove`, `asdiff`, `asdiffstore`, `asinter`, `asinterstore`, `asunion`, `asunionstore`, `asmismember`, `asscan`, `asscan_iter`
+  - Sorted sets: `azadd`, `azrem`, `azscore`, `azrank`, `azrevrank`, `azcard`, `azcount`, `azincrby`, `azrange`, `azrevrange`, `azrangebyscore`, `azrevrangebyscore`, `azremrangebyrank`, `azremrangebyscore`, `azpopmin`, `azpopmax`, `azmscore`
+- `get_or_set`, `aget_or_set`, `aincr_version`, `adecr_version`
+- Async support for cluster clients (`RedisClusterCacheClient`, `ValkeyClusterCacheClient`)
+  - Async cluster management with per-event-loop caching
+  - Cluster-specific async methods: `aget_many`, `aset_many`, `adelete_many`, `aclear`, `akeys`, `aiter_keys`, `adelete_pattern`, `aclose`
+- Async support for sentinel clients (`RedisSentinelCacheClient`)
+  - Async sentinel pool management with per-event-loop caching
 - Tests in `tests/test_cache_async.py`
 
 ⏳ **Pending:**
-- [ ] Add async pool classes to cluster clients (`RedisClusterCacheClient`, `ValkeyClusterCacheClient`)
-- [ ] Add async pool classes to sentinel clients (`RedisSentinelCacheClient`, `ValkeySentinelCacheClient`)
-- [ ] Async versions of extended methods (TTL, expiry, keys, hashes, lists, sets, sorted sets)
-- [ ] `aget_or_set`, `aincr_version`
+- (none currently - all async methods implemented)
 
 **Architecture:**
 
@@ -222,4 +232,3 @@ Current features:
 - [ ] Review `[[tool.mypy.overrides]]` for optional dependencies as libraries improve
 - [ ] Add docstrings incrementally (start with public API)
 - [ ] Enable more ruff rules (review ignored rules and fix violations)
-

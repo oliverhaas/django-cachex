@@ -32,9 +32,9 @@ class TestDefaultClientSerializerConfig:
             servers=["redis://localhost:6379/0"],
             options={
                 "serializer": [
-                        "django_cachex.serializers.json.JSONSerializer",
-                        "django_cachex.serializers.pickle.PickleSerializer",
-                    ],
+                    "django_cachex.serializers.json.JSONSerializer",
+                    "django_cachex.serializers.pickle.PickleSerializer",
+                ],
             },
         )
 
@@ -101,9 +101,9 @@ class TestDeserializeFallback:
             servers=["redis://localhost:6379/0"],
             options={
                 "serializer": [
-                        "django_cachex.serializers.json.JSONSerializer",
-                        "django_cachex.serializers.pickle.PickleSerializer",
-                    ],
+                    "django_cachex.serializers.json.JSONSerializer",
+                    "django_cachex.serializers.pickle.PickleSerializer",
+                ],
             },
         )
 
@@ -118,9 +118,9 @@ class TestDeserializeFallback:
             servers=["redis://localhost:6379/0"],
             options={
                 "serializer": [
-                        "django_cachex.serializers.json.JSONSerializer",
-                        "django_cachex.serializers.pickle.PickleSerializer",
-                    ],
+                    "django_cachex.serializers.json.JSONSerializer",
+                    "django_cachex.serializers.pickle.PickleSerializer",
+                ],
             },
         )
 
@@ -136,8 +136,8 @@ class TestDeserializeFallback:
             servers=["redis://localhost:6379/0"],
             options={
                 "serializer": [
-                        "django_cachex.serializers.json.JSONSerializer",
-                    ],
+                    "django_cachex.serializers.json.JSONSerializer",
+                ],
             },
         )
 
@@ -153,9 +153,9 @@ class TestDeserializeFallback:
             servers=["redis://localhost:6379/0"],
             options={
                 "serializer": [
-                        "django_cachex.serializers.json.JSONSerializer",
-                        "django_cachex.serializers.pickle.PickleSerializer",
-                    ],
+                    "django_cachex.serializers.json.JSONSerializer",
+                    "django_cachex.serializers.pickle.PickleSerializer",
+                ],
             },
         )
 

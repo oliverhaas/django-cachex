@@ -12,6 +12,8 @@ Architecture (matching Django's RedisCache structure):
 
 from __future__ import annotations
 
+import asyncio
+import weakref
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
@@ -27,6 +29,8 @@ if TYPE_CHECKING:
 _REDIS_AVAILABLE = False
 try:
     import redis
+    from redis.asyncio.sentinel import Sentinel as AsyncRedisSentinel
+    from redis.asyncio.sentinel import SentinelConnectionPool as AsyncRedisSentinelConnectionPool
     from redis.sentinel import Sentinel as RedisSentinel
     from redis.sentinel import SentinelConnectionPool as RedisSentinelConnectionPool
 
@@ -63,11 +67,18 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
     - _pool_class: The connection pool class (typically SentinelConnectionPool)
     - _sentinel_class: The Sentinel class
     - _sentinel_pool_class: The SentinelConnectionPool class
+    - _async_sentinel_class: The async Sentinel class (optional, for async support)
+    - _async_sentinel_pool_class: The async SentinelConnectionPool class (optional)
     """
 
     # Subclasses must set these to the appropriate sentinel classes
     _sentinel_class: type[Any] | None = None
     _sentinel_pool_class: type[Any] | None = None
+    _async_sentinel_class: type[Any] | None = None
+    _async_sentinel_pool_class: type[Any] | None = None
+
+    # Async sentinels: WeakKeyDictionary keyed by event loop
+    _async_sentinels: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, Any]
 
     # Options that shouldn't be passed to the connection pool
     _SENTINEL_ONLY_OPTIONS = frozenset({"sentinels", "sentinel_kwargs"})
@@ -86,6 +97,9 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
             servers = self._transform_sentinel_urls(servers[0])
 
         super().__init__(servers, serializer, pool_class, parser_class, **options)
+
+        # Initialize async sentinels dict
+        self._async_sentinels = weakref.WeakKeyDictionary()
 
         # Clean up _pool_options to remove sentinel-specific options
         # These should not be passed to the connection pool
@@ -165,6 +179,79 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
 
         return pool
 
+    def _get_async_sentinel(self) -> Any:
+        """Get or create an async sentinel instance for the current event loop."""
+        loop = asyncio.get_running_loop()
+
+        if loop in self._async_sentinels:
+            return self._async_sentinels[loop]
+
+        assert self._async_sentinel_class is not None, "Subclasses must set _async_sentinel_class"  # noqa: S101
+
+        sentinels = self._options.get("sentinels")
+        sentinel_kwargs = self._options.get("sentinel_kwargs", {})
+        pool_options = dict(self._pool_options) if hasattr(self, "_pool_options") else {}
+
+        async_sentinel = self._async_sentinel_class(
+            sentinels,
+            sentinel_kwargs=sentinel_kwargs,
+            **pool_options,
+        )
+        self._async_sentinels[loop] = async_sentinel
+        return async_sentinel
+
+    def _get_async_connection_pool(self, *, write: bool) -> Any:
+        """Get an async sentinel-managed connection pool."""
+        loop = asyncio.get_running_loop()
+        index = self._get_connection_pool_index(write=write)
+        url = self._servers[index]
+        parsed = urlparse(url)
+
+        # Check if we already have an async pool for this loop
+        if loop in self._async_pools and index in self._async_pools[loop]:
+            return self._async_pools[loop][index]
+
+        # Parse service name and is_master from URL
+        service_name = parsed.hostname
+        query_params = parse_qs(parsed.query)
+        is_master = True
+        if "is_master" in query_params:
+            is_master = query_params["is_master"][0] in ("1", "true", "True")
+
+        # Get the async sentinel for this event loop
+        async_sentinel = self._get_async_sentinel()
+
+        # Use _pool_options from parent class (already cleaned in __init__)
+        pool_options: dict[str, Any] = dict(self._pool_options) if hasattr(self, "_pool_options") else {}
+        pool_options.update(
+            service_name=service_name,
+            sentinel_manager=async_sentinel,
+            is_master=is_master,
+        )
+
+        # Create pool (strip is_master from URL for from_url)
+        new_query = {k: v for k, v in query_params.items() if k != "is_master"}
+        clean_url = urlunparse(
+            (
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path,
+                parsed.params,
+                urlencode(new_query, doseq=True),
+                parsed.fragment,
+            ),
+        )
+
+        assert self._async_sentinel_pool_class is not None, "Subclasses must set _async_sentinel_pool_class"  # noqa: S101
+        pool = self._async_sentinel_pool_class.from_url(clean_url, **pool_options)
+
+        # Cache the pool for this event loop
+        if loop not in self._async_pools:
+            self._async_pools[loop] = {}
+        self._async_pools[loop][index] = pool
+
+        return pool
+
 
 # =============================================================================
 # Cache Classes (extend BaseCache, delegate to CacheClient)
@@ -199,6 +286,8 @@ if _REDIS_AVAILABLE:
         _pool_class = RedisSentinelConnectionPool
         _sentinel_class = RedisSentinel
         _sentinel_pool_class = RedisSentinelConnectionPool
+        _async_sentinel_class = AsyncRedisSentinel
+        _async_sentinel_pool_class = AsyncRedisSentinelConnectionPool
 
     class RedisSentinelCache(KeyValueSentinelCache):
         """Redis Sentinel cache backend.
