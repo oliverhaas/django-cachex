@@ -1,4 +1,4 @@
-name: Tag and Publish
+name: Tag
 
 on:
   workflow_run:
