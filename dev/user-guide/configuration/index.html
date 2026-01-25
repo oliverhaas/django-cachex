@@ -672,10 +672,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#redis-acls" class="md-nav__link">
+  <a href="#valkeyredis-acls" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Redis ACLs
+        Valkey/Redis ACLs
       
     </span>
   </a>
@@ -1391,10 +1391,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#redis-acls" class="md-nav__link">
+  <a href="#valkeyredis-acls" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Redis ACLs
+        Valkey/Redis ACLs
       
     </span>
   </a>
@@ -1603,8 +1603,8 @@
 <h2 id="basic-configuration">Basic Configuration<a class="headerlink" href="#basic-configuration" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.RedisCache&quot;</span><span class="p">,</span>  <span class="c1"># or ValkeyCache</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;redis://127.0.0.1:6379/1&quot;</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.ValkeyCache&quot;</span><span class="p">,</span>  <span class="c1"># or RedisCache</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey://127.0.0.1:6379/1&quot;</span><span class="p">,</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>        <span class="s2">&quot;TIMEOUT&quot;</span><span class="p">:</span> <span class="mi">300</span><span class="p">,</span>              <span class="c1"># Default timeout in seconds</span>
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>        <span class="s2">&quot;KEY_PREFIX&quot;</span><span class="p">:</span> <span class="s2">&quot;myapp&quot;</span><span class="p">,</span>       <span class="c1"># Prefix for all keys</span>
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>        <span class="s2">&quot;VERSION&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>                <span class="c1"># Key version number</span>
@@ -1624,53 +1624,56 @@
 </thead>
 <tbody>
 <tr>
-<td><code>django_cachex.cache.RedisCache</code></td>
-<td>Standard Redis (redis-py)</td>
-</tr>
-<tr>
 <td><code>django_cachex.cache.ValkeyCache</code></td>
 <td>Standard Valkey (valkey-py)</td>
 </tr>
 <tr>
-<td><code>django_cachex.cache.RedisSentinelCache</code></td>
-<td>Redis with Sentinel</td>
+<td><code>django_cachex.cache.RedisCache</code></td>
+<td>Standard Redis (redis-py)</td>
 </tr>
 <tr>
 <td><code>django_cachex.cache.ValkeySentinelCache</code></td>
 <td>Valkey with Sentinel</td>
 </tr>
 <tr>
-<td><code>django_cachex.cache.RedisClusterCache</code></td>
-<td>Redis Cluster</td>
+<td><code>django_cachex.cache.RedisSentinelCache</code></td>
+<td>Redis with Sentinel</td>
 </tr>
 <tr>
 <td><code>django_cachex.cache.ValkeyClusterCache</code></td>
 <td>Valkey Cluster</td>
 </tr>
+<tr>
+<td><code>django_cachex.cache.RedisClusterCache</code></td>
+<td>Redis Cluster</td>
+</tr>
 </tbody>
 </table>
 <h2 id="location">LOCATION<a class="headerlink" href="#location" title="Permanent link">&para;</a></h2>
 <p>Server URL(s). Supports multiple formats:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Single server</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;redis://127.0.0.1:6379/1&quot;</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Single server (Valkey)</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey://127.0.0.1:6379/1&quot;</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># With authentication</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;redis://user:password@127.0.0.1:6379/1&quot;</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Single server (Redis)</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;redis://127.0.0.1:6379/1&quot;</span>
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="c1"># SSL/TLS</span>
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;rediss://127.0.0.1:6379/1&quot;</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="c1"># With authentication</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey://user:password@127.0.0.1:6379/1&quot;</span>
 </span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
-</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="c1"># Unix socket</span>
-</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;unix:///path/to/socket?db=1&quot;</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="c1"># SSL/TLS</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkeys://127.0.0.1:6379/1&quot;</span>  <span class="c1"># or rediss://</span>
 </span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
-</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="c1"># Multiple servers (read replicas)</span>
-</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="p">[</span>
-</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>    <span class="s2">&quot;redis://127.0.0.1:6379/1&quot;</span><span class="p">,</span>  <span class="c1"># Primary (writes)</span>
-</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>    <span class="s2">&quot;redis://127.0.0.1:6380/1&quot;</span><span class="p">,</span>  <span class="c1"># Replica (reads)</span>
-</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="p">]</span>
-</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>
-</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="c1"># Or comma/semicolon separated</span>
-</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;redis://127.0.0.1:6379/1,redis://127.0.0.1:6380/1&quot;</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="c1"># Unix socket</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;unix:///path/to/socket?db=1&quot;</span>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="c1"># Multiple servers (read replicas)</span>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="p">[</span>
+</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>    <span class="s2">&quot;valkey://127.0.0.1:6379/1&quot;</span><span class="p">,</span>  <span class="c1"># Primary (writes)</span>
+</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>    <span class="s2">&quot;valkey://127.0.0.1:6380/1&quot;</span><span class="p">,</span>  <span class="c1"># Replica (reads)</span>
+</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="p">]</span>
+</span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>
+</span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="c1"># Or comma/semicolon separated</span>
+</span><span id="__span-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey://127.0.0.1:6379/1,valkey://127.0.0.1:6380/1&quot;</span>
 </span></code></pre></div>
 <h2 id="options-reference">OPTIONS Reference<a class="headerlink" href="#options-reference" title="Permanent link">&para;</a></h2>
 <h3 id="serialization">Serialization<a class="headerlink" href="#serialization" title="Permanent link">&para;</a></h3>
@@ -1754,8 +1757,8 @@
 <p>Compression is only applied to values larger than <code>min_length</code> bytes (default: 256).</p>
 <h3 id="connection-pool">Connection Pool<a class="headerlink" href="#connection-pool" title="Permanent link">&para;</a></h3>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="c1"># Custom pool class</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="s2">&quot;pool_class&quot;</span><span class="p">:</span> <span class="s2">&quot;redis.ConnectionPool&quot;</span><span class="p">,</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="c1"># Custom pool class (use valkey.ConnectionPool for Valkey)</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="s2">&quot;pool_class&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey.ConnectionPool&quot;</span><span class="p">,</span>
 </span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
 </span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="c1"># Pool size and options (passed to pool constructor)</span>
 </span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="s2">&quot;max_connections&quot;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span>
@@ -1768,8 +1771,11 @@
 </span></code></pre></div>
 <h3 id="parser">Parser<a class="headerlink" href="#parser" title="Permanent link">&para;</a></h3>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="s2">&quot;parser_class&quot;</span><span class="p">:</span> <span class="s2">&quot;redis.connection.HiredisParser&quot;</span><span class="p">,</span>  <span class="c1"># Faster parsing</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="p">}</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="c1"># For Valkey with libvalkey</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="s2">&quot;parser_class&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey.connection.LibvalkeyParser&quot;</span><span class="p">,</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="c1"># For Redis with hiredis</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="c1"># &quot;parser_class&quot;: &quot;redis.connection.HiredisParser&quot;,</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="p">}</span>
 </span></code></pre></div>
 <h3 id="exception-handling">Exception Handling<a class="headerlink" href="#exception-handling" title="Permanent link">&para;</a></h3>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>
@@ -1796,33 +1802,33 @@
 </span></code></pre></div>
 <h2 id="authentication">Authentication<a class="headerlink" href="#authentication" title="Permanent link">&para;</a></h2>
 <h3 id="password-in-url">Password in URL<a class="headerlink" href="#password-in-url" title="Permanent link">&para;</a></h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;redis://user:password@127.0.0.1:6379/1&quot;</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey://user:password@127.0.0.1:6379/1&quot;</span>
 </span></code></pre></div>
 <h3 id="password-with-special-characters">Password with Special Characters<a class="headerlink" href="#password-with-special-characters" title="Permanent link">&para;</a></h3>
 <p>For passwords with special characters, pass separately:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;redis://127.0.0.1:6379/1&quot;</span><span class="p">,</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey://127.0.0.1:6379/1&quot;</span><span class="p">,</span>
 </span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    <span class="s2">&quot;password&quot;</span><span class="p">:</span> <span class="s2">&quot;my$pecial!password&quot;</span><span class="p">,</span>
 </span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="p">}</span>
 </span></code></pre></div>
-<h3 id="redis-acls">Redis ACLs<a class="headerlink" href="#redis-acls" title="Permanent link">&para;</a></h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;redis://username@127.0.0.1:6379/1&quot;</span><span class="p">,</span>
+<h3 id="valkeyredis-acls">Valkey/Redis ACLs<a class="headerlink" href="#valkeyredis-acls" title="Permanent link">&para;</a></h3>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey://username@127.0.0.1:6379/1&quot;</span><span class="p">,</span>
 </span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>    <span class="s2">&quot;password&quot;</span><span class="p">:</span> <span class="s2">&quot;password&quot;</span><span class="p">,</span>
 </span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="p">}</span>
 </span></code></pre></div>
 <h2 id="ssltls">SSL/TLS<a class="headerlink" href="#ssltls" title="Permanent link">&para;</a></h2>
 <h3 id="basic-ssl">Basic SSL<a class="headerlink" href="#basic-ssl" title="Permanent link">&para;</a></h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;rediss://127.0.0.1:6379/1&quot;</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkeys://127.0.0.1:6379/1&quot;</span>  <span class="c1"># or rediss://</span>
 </span></code></pre></div>
 <h3 id="self-signed-certificates">Self-Signed Certificates<a class="headerlink" href="#self-signed-certificates" title="Permanent link">&para;</a></h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;rediss://127.0.0.1:6379/1&quot;</span><span class="p">,</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkeys://127.0.0.1:6379/1&quot;</span><span class="p">,</span>
 </span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>    <span class="s2">&quot;ssl_cert_reqs&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># Disable verification</span>
 </span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="p">}</span>
 </span></code></pre></div>
 <h3 id="custom-certificates">Custom Certificates<a class="headerlink" href="#custom-certificates" title="Permanent link">&para;</a></h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;rediss://127.0.0.1:6379/1&quot;</span><span class="p">,</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkeys://127.0.0.1:6379/1&quot;</span><span class="p">,</span>
 </span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>    <span class="s2">&quot;ssl_ca_certs&quot;</span><span class="p">:</span> <span class="s2">&quot;/path/to/ca.crt&quot;</span><span class="p">,</span>
 </span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>    <span class="s2">&quot;ssl_certfile&quot;</span><span class="p">:</span> <span class="s2">&quot;/path/to/client.crt&quot;</span><span class="p">,</span>
@@ -1832,8 +1838,8 @@
 <h2 id="sentinel-configuration">Sentinel Configuration<a class="headerlink" href="#sentinel-configuration" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
 </span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>    <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.RedisSentinelCache&quot;</span><span class="p">,</span>
-</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;redis://mymaster/0&quot;</span><span class="p">,</span>  <span class="c1"># Master name</span>
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.ValkeySentinelCache&quot;</span><span class="p">,</span>  <span class="c1"># or RedisSentinelCache</span>
+</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey://mymaster/0&quot;</span><span class="p">,</span>  <span class="c1"># Master name</span>
 </span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>        <span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-16-6"><a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>            <span class="s2">&quot;sentinels&quot;</span><span class="p">:</span> <span class="p">[</span>
 </span><span id="__span-16-7"><a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>                <span class="p">(</span><span class="s2">&quot;sentinel1.example.com&quot;</span><span class="p">,</span> <span class="mi">26379</span><span class="p">),</span>
@@ -1850,8 +1856,8 @@
 <h2 id="cluster-configuration">Cluster Configuration<a class="headerlink" href="#cluster-configuration" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
 </span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>    <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.RedisClusterCache&quot;</span><span class="p">,</span>
-</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;redis://127.0.0.1:7000&quot;</span><span class="p">,</span>
+</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.ValkeyClusterCache&quot;</span><span class="p">,</span>  <span class="c1"># or RedisClusterCache</span>
+</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey://127.0.0.1:7000&quot;</span><span class="p">,</span>
 </span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>    <span class="p">}</span>
 </span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="p">}</span>
 </span></code></pre></div>
@@ -1886,8 +1892,8 @@
 <h2 id="complete-example">Complete Example<a class="headerlink" href="#complete-example" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
 </span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>    <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-23-3"><a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.RedisCache&quot;</span><span class="p">,</span>
-</span><span id="__span-23-4"><a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;redis://127.0.0.1:6379/1&quot;</span><span class="p">,</span>
+</span><span id="__span-23-3"><a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.ValkeyCache&quot;</span><span class="p">,</span>
+</span><span id="__span-23-4"><a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey://127.0.0.1:6379/1&quot;</span><span class="p">,</span>
 </span><span id="__span-23-5"><a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a>        <span class="s2">&quot;TIMEOUT&quot;</span><span class="p">:</span> <span class="mi">300</span><span class="p">,</span>
 </span><span id="__span-23-6"><a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a>        <span class="s2">&quot;KEY_PREFIX&quot;</span><span class="p">:</span> <span class="s2">&quot;myapp&quot;</span><span class="p">,</span>
 </span><span id="__span-23-7"><a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a>        <span class="s2">&quot;VERSION&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>

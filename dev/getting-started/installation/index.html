@@ -416,10 +416,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#install-with-pip" class="md-nav__link">
+  <a href="#install-with-uv" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install with pip
+        Install with uv
       
     </span>
   </a>
@@ -427,10 +427,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#install-with-hiredis-recommended" class="md-nav__link">
+  <a href="#install-with-libvalkeyhiredis-recommended" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install with hiredis (recommended)
+        Install with libvalkey/hiredis (recommended)
       
     </span>
   </a>
@@ -958,10 +958,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#install-with-pip" class="md-nav__link">
+  <a href="#install-with-uv" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install with pip
+        Install with uv
       
     </span>
   </a>
@@ -969,10 +969,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#install-with-hiredis-recommended" class="md-nav__link">
+  <a href="#install-with-libvalkeyhiredis-recommended" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install with hiredis (recommended)
+        Install with libvalkey/hiredis (recommended)
       
     </span>
   </a>
@@ -1015,21 +1015,25 @@
 <ul>
 <li>Python 3.12+</li>
 <li>Django 5.2+</li>
-<li>redis-py 6+</li>
-<li>Redis server 6+</li>
+<li>valkey-py 6+ or redis-py 6+</li>
+<li>Valkey server 7+ or Redis server 6+</li>
 </ul>
-<h2 id="install-with-pip">Install with pip<a class="headerlink" href="#install-with-pip" title="Permanent link">&para;</a></h2>
-<div class="language-console highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="go">pip install django-cachex-ng</span>
+<h2 id="install-with-uv">Install with uv<a class="headerlink" href="#install-with-uv" title="Permanent link">&para;</a></h2>
+<div class="language-console highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="go">uv add django-cachex</span>
 </span></code></pre></div>
-<h2 id="install-with-hiredis-recommended">Install with hiredis (recommended)<a class="headerlink" href="#install-with-hiredis-recommended" title="Permanent link">&para;</a></h2>
-<p>For better performance, install with the hiredis parser:</p>
-<div class="language-console highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="go">pip install django-cachex-ng[hiredis]</span>
+<h2 id="install-with-libvalkeyhiredis-recommended">Install with libvalkey/hiredis (recommended)<a class="headerlink" href="#install-with-libvalkeyhiredis-recommended" title="Permanent link">&para;</a></h2>
+<p>For better performance, install with the libvalkey (for Valkey) or hiredis (for Redis) parser:</p>
+<div class="language-console highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="gp"># </span>For<span class="w"> </span>Valkey
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="go">uv add django-cachex[libvalkey]</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="gp"># </span>For<span class="w"> </span>Redis
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="go">uv add django-cachex[hiredis]</span>
 </span></code></pre></div>
-<p>The hiredis package provides a C-based parser that can significantly improve performance when parsing Redis replies.</p>
+<p>These packages provide C-based parsers that can significantly improve performance when parsing replies.</p>
 <h2 id="verify-installation">Verify Installation<a class="headerlink" href="#verify-installation" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="o">&gt;&gt;&gt;</span> <span class="kn">import</span><span class="w"> </span><span class="nn">django_cachex</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">django_cachex</span><span class="o">.</span><span class="n">__version__</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="s1">&#39;6.0.0&#39;</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="s1">&#39;1.0.0&#39;</span>
 </span></code></pre></div>
 
 

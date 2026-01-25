@@ -994,10 +994,10 @@
 <p>The default client supports primary/replica replication:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.RedisCache&quot;</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.ValkeyCache&quot;</span><span class="p">,</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="p">[</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>            <span class="s2">&quot;redis://127.0.0.1:6379/1&quot;</span><span class="p">,</span>  <span class="c1"># Primary</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>            <span class="s2">&quot;redis://127.0.0.1:6378/1&quot;</span><span class="p">,</span>  <span class="c1"># Replica</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>            <span class="s2">&quot;valkey://127.0.0.1:6379/1&quot;</span><span class="p">,</span>  <span class="c1"># Primary</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>            <span class="s2">&quot;valkey://127.0.0.1:6378/1&quot;</span><span class="p">,</span>  <span class="c1"># Replica</span>
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>        <span class="p">],</span>
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>        <span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>            <span class="s2">&quot;CLIENT_CLASS&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.client.DefaultClient&quot;</span><span class="p">,</span>
@@ -1010,11 +1010,11 @@
 <p>Replication setup is not heavily tested in production environments.</p>
 </div>
 <h2 id="sentinel-client">Sentinel Client<a class="headerlink" href="#sentinel-client" title="Permanent link">&para;</a></h2>
-<p>For Redis Sentinel high availability setups. See <a href="../sentinel/">Sentinel</a> for detailed configuration.</p>
+<p>For Valkey/Redis Sentinel high availability setups. See <a href="../sentinel/">Sentinel</a> for detailed configuration.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.RedisCache&quot;</span><span class="p">,</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;redis://service_name/db&quot;</span><span class="p">,</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.ValkeyCache&quot;</span><span class="p">,</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey://service_name/db&quot;</span><span class="p">,</span>
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>        <span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>            <span class="s2">&quot;CLIENT_CLASS&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.client.SentinelClient&quot;</span><span class="p">,</span>
 </span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>            <span class="s2">&quot;SENTINELS&quot;</span><span class="p">:</span> <span class="p">[</span>
@@ -1026,11 +1026,11 @@
 </span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="p">}</span>
 </span></code></pre></div>
 <h2 id="cluster-client">Cluster Client<a class="headerlink" href="#cluster-client" title="Permanent link">&para;</a></h2>
-<p>For Redis Cluster deployments with server-side sharding across multiple nodes. See <a href="../cluster/">Cluster</a> for detailed configuration and slot handling.</p>
+<p>For Valkey/Redis Cluster deployments with server-side sharding across multiple nodes. See <a href="../cluster/">Cluster</a> for detailed configuration and slot handling.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.RedisCache&quot;</span><span class="p">,</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;redis://127.0.0.1:7000&quot;</span><span class="p">,</span>  <span class="c1"># Any cluster node</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.ValkeyCache&quot;</span><span class="p">,</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey://127.0.0.1:7000&quot;</span><span class="p">,</span>  <span class="c1"># Any cluster node</span>
 </span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>        <span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>            <span class="s2">&quot;CLIENT_CLASS&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.client.ClusterClient&quot;</span><span class="p">,</span>
 </span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>            <span class="s2">&quot;CONNECTION_FACTORY&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.pool.ClusterConnectionFactory&quot;</span><span class="p">,</span>
@@ -1042,7 +1042,7 @@
 <p class="admonition-title">Cluster Behavior</p>
 <ul>
 <li>Django cache interface methods (<code>get_many</code>, <code>set_many</code>, <code>delete_many</code>, <code>keys</code>, <code>clear</code>, etc.) are cluster-aware and handle cross-slot keys automatically</li>
-<li>Direct Redis method wrappers (sets, lists, hashes) pass through to Redis - use hash tags for multi-key operations</li>
+<li>Direct Valkey/Redis method wrappers (sets, lists, hashes) pass through to the server - use hash tags for multi-key operations</li>
 <li>See the <a href="../cluster/">Cluster documentation</a> for details on slot handling and hash tags</li>
 </ul>
 </div>

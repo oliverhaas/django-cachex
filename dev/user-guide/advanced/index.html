@@ -772,15 +772,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#redis-data-structures" class="md-nav__link">
+  <a href="#data-structures" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Redis Data Structures
+        Data Structures
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Redis Data Structures">
+    <nav class="md-nav" aria-label="Data Structures">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1408,15 +1408,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#redis-data-structures" class="md-nav__link">
+  <a href="#data-structures" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Redis Data Structures
+        Data Structures
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Redis Data Structures">
+    <nav class="md-nav" aria-label="Data Structures">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1493,8 +1493,8 @@
 <p>By default, django-cachex uses <code>pickle.DEFAULT_PROTOCOL</code>. To set a specific version:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.RedisCache&quot;</span><span class="p">,</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;redis://127.0.0.1:6379/1&quot;</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.ValkeyCache&quot;</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey://127.0.0.1:6379/1&quot;</span><span class="p">,</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>        <span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>            <span class="s2">&quot;PICKLE_VERSION&quot;</span><span class="p">:</span> <span class="o">-</span><span class="mi">1</span>  <span class="c1"># Highest protocol available</span>
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>        <span class="p">}</span>
@@ -1548,7 +1548,7 @@
 </span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">cache</span><span class="o">.</span><span class="n">ttl</span><span class="p">(</span><span class="s2">&quot;foo&quot;</span><span class="p">)</span>  <span class="c1"># Returns None (no expiration)</span>
 </span></code></pre></div>
 <h2 id="locks">Locks<a class="headerlink" href="#locks" title="Permanent link">&para;</a></h2>
-<p>Redis distributed locks with the same interface as <code>threading.Lock</code>:</p>
+<p>Distributed locks with the same interface as <code>threading.Lock</code>:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
 </span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
 </span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">&quot;somekey&quot;</span><span class="p">):</span>
@@ -1588,8 +1588,8 @@
 </span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="n">cache</span><span class="o">.</span><span class="n">incr</span><span class="p">(</span><span class="s2">&quot;counter&quot;</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>  <span class="c1"># Returns 6</span>
 </span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="n">cache</span><span class="o">.</span><span class="n">decr</span><span class="p">(</span><span class="s2">&quot;counter&quot;</span><span class="p">)</span>  <span class="c1"># Returns 5</span>
 </span></code></pre></div>
-<h2 id="redis-data-structures">Redis Data Structures<a class="headerlink" href="#redis-data-structures" title="Permanent link">&para;</a></h2>
-<p>django-cachex provides direct access to Redis data structures through the cache interface.</p>
+<h2 id="data-structures">Data Structures<a class="headerlink" href="#data-structures" title="Permanent link">&para;</a></h2>
+<p>django-cachex provides direct access to Valkey/Redis data structures through the cache interface.</p>
 <h3 id="hashes">Hashes<a class="headerlink" href="#hashes" title="Permanent link">&para;</a></h3>
 <p>Hashes are maps of field-value pairs, useful for storing objects:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
@@ -1693,14 +1693,14 @@
 </span><span id="__span-18-23"><a id="__codelineno-18-23" name="__codelineno-18-23" href="#__codelineno-18-23"></a><span class="c1"># Get length</span>
 </span><span id="__span-18-24"><a id="__codelineno-18-24" name="__codelineno-18-24" href="#__codelineno-18-24"></a><span class="n">cache</span><span class="o">.</span><span class="n">llen</span><span class="p">(</span><span class="s2">&quot;queue&quot;</span><span class="p">)</span>
 </span><span id="__span-18-25"><a id="__codelineno-18-25" name="__codelineno-18-25" href="#__codelineno-18-25"></a>
-</span><span id="__span-18-26"><a id="__codelineno-18-26" name="__codelineno-18-26" href="#__codelineno-18-26"></a><span class="c1"># Find element position (Redis 6.0.6+)</span>
+</span><span id="__span-18-26"><a id="__codelineno-18-26" name="__codelineno-18-26" href="#__codelineno-18-26"></a><span class="c1"># Find element position</span>
 </span><span id="__span-18-27"><a id="__codelineno-18-27" name="__codelineno-18-27" href="#__codelineno-18-27"></a><span class="n">cache</span><span class="o">.</span><span class="n">lpos</span><span class="p">(</span><span class="s2">&quot;queue&quot;</span><span class="p">,</span> <span class="s2">&quot;target&quot;</span><span class="p">)</span>  <span class="c1"># Returns index or None</span>
 </span><span id="__span-18-28"><a id="__codelineno-18-28" name="__codelineno-18-28" href="#__codelineno-18-28"></a>
-</span><span id="__span-18-29"><a id="__codelineno-18-29" name="__codelineno-18-29" href="#__codelineno-18-29"></a><span class="c1"># Move element between lists atomically (Redis 6.2+)</span>
+</span><span id="__span-18-29"><a id="__codelineno-18-29" name="__codelineno-18-29" href="#__codelineno-18-29"></a><span class="c1"># Move element between lists atomically</span>
 </span><span id="__span-18-30"><a id="__codelineno-18-30" name="__codelineno-18-30" href="#__codelineno-18-30"></a><span class="n">cache</span><span class="o">.</span><span class="n">lmove</span><span class="p">(</span><span class="s2">&quot;source&quot;</span><span class="p">,</span> <span class="s2">&quot;dest&quot;</span><span class="p">,</span> <span class="s2">&quot;LEFT&quot;</span><span class="p">,</span> <span class="s2">&quot;RIGHT&quot;</span><span class="p">)</span>  <span class="c1"># LPOP source, RPUSH dest</span>
 </span></code></pre></div>
 <h2 id="raw-client-access">Raw Client Access<a class="headerlink" href="#raw-client-access" title="Permanent link">&para;</a></h2>
-<p>Access the underlying redis-py client:</p>
+<p>Access the underlying valkey-py/redis-py client:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_redis_connection</span>
 </span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>
 </span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="n">conn</span> <span class="o">=</span> <span class="n">get_redis_connection</span><span class="p">(</span><span class="s2">&quot;default&quot;</span><span class="p">)</span>

@@ -859,38 +859,16 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#600-unreleased" class="md-nav__link">
+  <a href="#010-january-2026" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6.0.0 (Unreleased)
+        0.1.0 (January 2026)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="6.0.0 (Unreleased)">
+    <nav class="md-nav" aria-label="0.1.0 (January 2026)">
       <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#changes-from-django-cachex" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Changes from django-cachex
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#new-features" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        New Features
-      
-    </span>
-  </a>
-  
-</li>
         
           <li class="md-nav__item">
   <a href="#features" class="md-nav__link">
@@ -903,19 +881,30 @@
   
 </li>
         
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#previous-releases" class="md-nav__link">
+          <li class="md-nav__item">
+  <a href="#data-structure-operations" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Previous Releases
+        Data Structure Operations
       
     </span>
   </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -962,38 +951,16 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#600-unreleased" class="md-nav__link">
+  <a href="#010-january-2026" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6.0.0 (Unreleased)
+        0.1.0 (January 2026)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="6.0.0 (Unreleased)">
+    <nav class="md-nav" aria-label="0.1.0 (January 2026)">
       <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#changes-from-django-cachex" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Changes from django-cachex
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#new-features" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        New Features
-      
-    </span>
-  </a>
-  
-</li>
         
           <li class="md-nav__item">
   <a href="#features" class="md-nav__link">
@@ -1006,19 +973,30 @@
   
 </li>
         
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#previous-releases" class="md-nav__link">
+          <li class="md-nav__item">
+  <a href="#data-structure-operations" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Previous Releases
+        Data Structure Operations
       
     </span>
   </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1043,46 +1021,38 @@
 
 
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
-<h2 id="600-unreleased">6.0.0 (Unreleased)<a class="headerlink" href="#600-unreleased" title="Permanent link">&para;</a></h2>
-<p>This is the first release of django-cachex-ng, a fork of django-cachex.</p>
-<h3 id="changes-from-django-cachex">Changes from django-cachex<a class="headerlink" href="#changes-from-django-cachex" title="Permanent link">&para;</a></h3>
+<h2 id="010-january-2026">0.1.0 (January 2026)<a class="headerlink" href="#010-january-2026" title="Permanent link">&para;</a></h2>
+<p>Initial release of django-cachex.</p>
+<h3 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h3>
 <ul>
-<li>Minimum Python version raised to 3.12</li>
-<li>Minimum Django version raised to 5.2</li>
-<li>Minimum redis-py version raised to 6.0 (released April 2025)</li>
-<li>Migrated to <code>pyproject.toml</code> with hatchling build system</li>
-<li>Switched to UV for package management</li>
-<li>Modernized CI/CD with GitHub Actions</li>
-<li>Added MkDocs documentation with Material theme</li>
-<li>Package name changed to <code>django-cachex-ng</code> (import namespace remains <code>django_cachex</code>)</li>
-<li>Removed ShardClient and HerdClient (not commonly used, untested)</li>
-<li>Tests now use testcontainers instead of docker-compose</li>
+<li><strong>Unified Valkey + Redis support</strong> in one package</li>
+<li><strong>Full-featured cache backend</strong> for Django</li>
+<li><strong>Session backend support</strong> via Django's cache sessions</li>
+<li><strong>Pluggable clients</strong> (Default, Sentinel, Cluster)</li>
+<li><strong>Pluggable serializers</strong> (Pickle, JSON, MsgPack)</li>
+<li><strong>Pluggable compressors</strong> (Zlib, Gzip, LZMA, LZ4, Zstandard)</li>
+<li><strong>Multi-serializer/compressor fallback</strong> for safe migrations</li>
+<li><strong>Connection pooling</strong> with configurable options</li>
+<li><strong>Primary/replica replication</strong> support</li>
+<li><strong>Valkey/Redis Sentinel support</strong> for high availability</li>
+<li><strong>Valkey/Redis Cluster support</strong> with automatic slot handling</li>
+<li><strong>Distributed locks</strong> compatible with <code>threading.Lock</code></li>
+<li><strong>TTL operations</strong> (<code>ttl()</code>, <code>pttl()</code>, <code>expire()</code>, <code>persist()</code>)</li>
+<li><strong>Pattern operations</strong> (<code>keys()</code>, <code>iter_keys()</code>, <code>delete_pattern()</code>)</li>
+<li><strong>Pipelines</strong> for batched operations</li>
 </ul>
-<h3 id="new-features">New Features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h3>
+<h3 id="data-structure-operations">Data Structure Operations<a class="headerlink" href="#data-structure-operations" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>ClusterClient</strong>: New client for Redis Cluster deployments with server-side sharding</li>
 <li><strong>Hash operations</strong>: <code>hset</code>, <code>hdel</code>, <code>hexists</code>, <code>hget</code>, <code>hgetall</code>, <code>hincrby</code>, <code>hincrbyfloat</code>, <code>hlen</code>, <code>hmget</code>, <code>hmset</code>, <code>hsetnx</code>, <code>hvals</code></li>
 <li><strong>Sorted set operations</strong>: <code>zadd</code>, <code>zcard</code>, <code>zcount</code>, <code>zincrby</code>, <code>zrange</code>, <code>zrangebyscore</code>, <code>zrank</code>, <code>zrevrank</code>, <code>zrem</code>, <code>zremrangebyrank</code>, <code>zscore</code>, <code>zmscore</code></li>
 <li><strong>List operations</strong>: <code>llen</code>, <code>lpush</code>, <code>rpush</code>, <code>lpop</code>, <code>rpop</code>, <code>lindex</code>, <code>lrange</code>, <code>lset</code>, <code>ltrim</code>, <code>lpos</code>, <code>lmove</code></li>
 </ul>
-<h3 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h3>
-<p>All features from django-cachex 5.x are included:</p>
+<h3 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h3>
 <ul>
-<li>Full-featured Redis cache backend</li>
-<li>Session backend support</li>
-<li>Pluggable clients (Default, Sentinel, Cluster)</li>
-<li>Pluggable serializers (Pickle, JSON, MsgPack)</li>
-<li>Pluggable compressors (Zlib, Gzip, LZMA, LZ4, Zstandard)</li>
-<li>Connection pooling</li>
-<li>Primary/replica replication</li>
-<li>Redis Sentinel support</li>
-<li>Distributed locks</li>
-<li>TTL operations</li>
-<li>Bulk key operations</li>
+<li>Python 3.12+</li>
+<li>Django 5.2+</li>
+<li>valkey-py 6+ or redis-py 6+</li>
 </ul>
-<hr />
-<h2 id="previous-releases">Previous Releases<a class="headerlink" href="#previous-releases" title="Permanent link">&para;</a></h2>
-<p>For the changelog of the original django-cachex project, see the <a href="https://github.com/jazzband/django-cachex/blob/master/CHANGELOG.rst">django-cachex repository</a>.</p>
 
 
 

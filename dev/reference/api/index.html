@@ -1303,7 +1303,7 @@
 </tbody>
 </table>
 <h3 id="extended-methods">Extended Methods<a class="headerlink" href="#extended-methods" title="Permanent link">&para;</a></h3>
-<p>django-cachex adds these Redis-specific methods:</p>
+<p>django-cachex adds these extended methods:</p>
 <table>
 <thead>
 <tr>
@@ -1359,7 +1359,7 @@
 </tbody>
 </table>
 <h3 id="hash-methods">Hash Methods<a class="headerlink" href="#hash-methods" title="Permanent link">&para;</a></h3>
-<p>Redis hash operations for field-value data structures:</p>
+<p>Hash operations for field-value data structures:</p>
 <table>
 <thead>
 <tr>
@@ -1419,7 +1419,7 @@
 </tbody>
 </table>
 <h3 id="sorted-set-methods">Sorted Set Methods<a class="headerlink" href="#sorted-set-methods" title="Permanent link">&para;</a></h3>
-<p>Redis sorted set operations for scored, ordered collections:</p>
+<p>Sorted set operations for scored, ordered collections:</p>
 <table>
 <thead>
 <tr>
@@ -1479,7 +1479,7 @@
 </tbody>
 </table>
 <h3 id="list-methods">List Methods<a class="headerlink" href="#list-methods" title="Permanent link">&para;</a></h3>
-<p>Redis list operations for ordered, indexable collections:</p>
+<p>List operations for ordered, indexable collections:</p>
 <table>
 <thead>
 <tr>
@@ -1583,7 +1583,7 @@
 </tr>
 </tbody>
 </table>
-<p>Returns the underlying <code>redis.Redis</code> client instance.</p>
+<p>Returns the underlying <code>valkey.Valkey</code> or <code>redis.Redis</code> client instance.</p>
 <h2 id="lock-interface">Lock Interface<a class="headerlink" href="#lock-interface" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sleep</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">blocking_timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 </span></code></pre></div>
@@ -1654,7 +1654,7 @@
 </tr>
 <tr>
 <td><code>PASSWORD</code></td>
-<td>Redis password</td>
+<td>Server password</td>
 </tr>
 <tr>
 <td><code>SOCKET_CONNECT_TIMEOUT</code></td>

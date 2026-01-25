@@ -76,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#django-redis-ng" class="md-skip">
+        <a href="#django-cachex" class="md-skip">
           Skip to content
         </a>
       
@@ -322,10 +322,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#why-django-cachex-ng" class="md-nav__link">
+  <a href="#why-django-cachex" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Why django-cachex-ng?
+        Why django-cachex?
       
     </span>
   </a>
@@ -348,17 +348,6 @@
     <span class="md-ellipsis">
       
         Quick Start
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#about-this-fork" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        About This Fork
       
     </span>
   </a>
@@ -956,10 +945,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#why-django-cachex-ng" class="md-nav__link">
+  <a href="#why-django-cachex" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Why django-cachex-ng?
+        Why django-cachex?
       
     </span>
   </a>
@@ -982,17 +971,6 @@
     <span class="md-ellipsis">
       
         Quick Start
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#about-this-fork" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        About This Fork
       
     </span>
   </a>
@@ -1030,52 +1008,46 @@
   
 
 
-<h1 id="django-redis-ng">Django Redis NG<a class="headerlink" href="#django-redis-ng" title="Permanent link">&para;</a></h1>
-<p>Full featured Redis cache and session backend for Django (Next Generation fork).</p>
-<p><a href="https://pypi.org/project/django-cachex-ng/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/django-cachex-ng.svg?style=flat" /></a>
-<a href="https://pypi.org/project/django-cachex-ng/"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/django-cachex-ng.svg" /></a>
-<a href="https://pypi.org/project/django-cachex-ng/"><img alt="Django versions" src="https://img.shields.io/pypi/frameworkversions/django/django-cachex-ng.svg" /></a></p>
-<h2 id="why-django-cachex-ng">Why django-cachex-ng?<a class="headerlink" href="#why-django-cachex-ng" title="Permanent link">&para;</a></h2>
+<h1 id="django-cachex">django-cachex<a class="headerlink" href="#django-cachex" title="Permanent link">&para;</a></h1>
+<p>Full featured Valkey and Redis cache backend for Django.</p>
+<p><a href="https://pypi.org/project/django-cachex/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/django-cachex.svg?style=flat" /></a>
+<a href="https://pypi.org/project/django-cachex/"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/django-cachex.svg" /></a>
+<a href="https://pypi.org/project/django-cachex/"><img alt="Django versions" src="https://img.shields.io/pypi/frameworkversions/django/django-cachex.svg" /></a></p>
+<h2 id="why-django-cachex">Why django-cachex?<a class="headerlink" href="#why-django-cachex" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Uses native redis-py URL notation connection strings</li>
+<li>Uses native valkey-py/redis-py URL notation connection strings</li>
 <li>Pluggable clients</li>
-<li>Pluggable parsers</li>
 <li>Pluggable serializers</li>
+<li>Pluggable compressors</li>
 <li>Primary/replica support in the default client</li>
+<li>Valkey/Redis Sentinel and Cluster support</li>
 <li>Comprehensive test suite</li>
-<li>Used in production in several projects as cache and session storage</li>
+<li>Used in production as cache and session storage</li>
 <li>Supports infinite timeouts</li>
-<li>Facilities for raw access to Redis client/connection pool</li>
+<li>Facilities for raw access to Valkey/Redis client/connection pool</li>
 <li>Highly configurable (can emulate memcached exception behavior, for example)</li>
 <li>Unix sockets supported by default</li>
 </ul>
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Python 3.9+</li>
-<li>Django 4.2+</li>
-<li>redis-py 4.0.2+</li>
-<li>Redis server 2.8+</li>
+<li>Python 3.12+</li>
+<li>Django 5.2+</li>
+<li>valkey-py 6.0+ or redis-py 6.0+</li>
 </ul>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <p>Install with pip:</p>
-<div class="language-console highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="go">pip install django-cachex-ng</span>
+<div class="language-console highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="go">pip install django-cachex</span>
 </span></code></pre></div>
 <p>Configure as cache backend:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.RedisCache&quot;</span><span class="p">,</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;redis://127.0.0.1:6379/1&quot;</span><span class="p">,</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>        <span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>            <span class="s2">&quot;CLIENT_CLASS&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.client.DefaultClient&quot;</span><span class="p">,</span>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>        <span class="p">}</span>
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="p">}</span>
-</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="p">}</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.ValkeyCache&quot;</span><span class="p">,</span> <span class="c1"># or django_cachex.cache.RedisCache</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey://127.0.0.1:6379/1&quot;</span><span class="p">,</span> <span class="c1"># or redis://127.0.0.1:6379/1</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="p">}</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="p">}</span>
 </span></code></pre></div>
-<h2 id="about-this-fork">About This Fork<a class="headerlink" href="#about-this-fork" title="Permanent link">&para;</a></h2>
-<p>django-cachex-ng is a "Next Generation" fork of the original <a href="https://github.com/jazzband/django-cachex">django-cachex</a> project. It aims to be a drop-in replacement while allowing for faster iteration on new features and improvements.</p>
-<p>The goal is to eventually merge changes back upstream when possible.</p>
 <h2 id="license">License<a class="headerlink" href="#license" title="Permanent link">&para;</a></h2>
-<p>BSD-3-Clause License. See <a href="https://github.com/oliverhaas/django-cachex-ng/blob/main/LICENSE">LICENSE</a> for details.</p>
+<p>MIT License. See <a href="https://github.com/oliverhaas/django-cachex/blob/main/LICENSE">LICENSE</a> for details.</p>
 
 
 

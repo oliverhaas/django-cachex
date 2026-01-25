@@ -1391,7 +1391,7 @@ They're lightweight (~10MB memory) and give you accurate behavior:</p>
 </div>
 <h3 id="using-fakeredis">Using fakeredis<a class="headerlink" href="#using-fakeredis" title="Permanent link">&para;</a></h3>
 <p>For situations where a container isn't practical, <a href="https://github.com/cunla/fakeredis-py">fakeredis</a>
-provides an in-memory fake that implements most Redis commands.</p>
+provides an in-memory fake that implements most Valkey/Redis commands.</p>
 <p>Configure via connection pool class:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># settings.py (development/testing)</span>
 </span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
@@ -1422,7 +1422,7 @@ provides an in-memory fake that implements most Redis commands.</p>
 </span><span id="__span-11-15"><a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a>    <span class="p">}</span>
 </span></code></pre></div>
 <h3 id="using-djangos-locmemcache">Using Django's LocMemCache<a class="headerlink" href="#using-djangos-locmemcache" title="Permanent link">&para;</a></h3>
-<p>For simple tests that don't need Redis-specific features:</p>
+<p>For simple tests that don't need Valkey/Redis-specific features:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># tests/settings.py</span>
 </span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
 </span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>    <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="p">{</span>
