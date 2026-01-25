@@ -1,0 +1,204 @@
+[project]
+name = "django-cachex"
+version = "0.1.0a1"
+description = "Full featured Redis and Valkey cache backend for Django"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12"
+keywords = ["django", "redis", "valkey", "cache", "session", "backend"]
+authors = [
+  { name = "Andrei Antoukh", email = "niwi@niwi.nz" },
+  { name = "Oliver Haas", email = "ohaas@e1plus.de" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Web Environment",
+  "Framework :: Django",
+  "Framework :: Django :: 5.2",
+  "Framework :: Django :: 6.0",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Internet :: WWW/HTTP",
+  "Topic :: Software Development :: Libraries",
+  "Topic :: Utilities",
+  "Typing :: Typed",
+]
+dependencies = ["Django>=5.2,<6.1"]
+
+[project.optional-dependencies]
+redis = ["redis>=6,<8"]
+hiredis = ["redis[hiredis]>=6,<8"]
+valkey = ["valkey>=6.1.0,<7"]
+libvalkey = ["valkey[libvalkey]>=6.1.0,<7"]
+
+[project.urls]
+Homepage = "https://github.com/oliverhaas/django-cachex"
+Documentation = "https://oliverhaas.github.io/django-cachex/"
+Repository = "https://github.com/oliverhaas/django-cachex.git"
+Changelog = "https://oliverhaas.github.io/django-cachex/reference/changelog/"
+
+[dependency-groups]
+dev = [
+  "django-stubs==5.2.9",
+  "lz4==4.4.5",
+  "msgpack==1.1.2",
+  "mypy==1.19.1",
+  "pre-commit==4.5.1",
+  "pytest==9.0.2",
+  "pytest-cov==7.0.0",
+  "pytest-django==4.11.1",
+  "pytest-mock==3.15.1",
+  "pytest-xdist==3.8.0",
+  "backports-zstd==1.3.0; python_version < '3.14'",
+  "ruff==0.14.13",
+  "testcontainers==4.14.0",
+  "redis>=6,<8",
+  "valkey>=6.1.0,<7",
+  "pytest-asyncio>=1.3.0",
+]
+docs = ["mkdocs==1.6.1", "mkdocs-material==9.6.3", "mike==2.1.3"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["django_cachex"]
+
+[tool.hatch.build.targets.sdist]
+include = ["django_cachex", "LICENSE", "README.md"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 120
+fix = true
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "COM812", # Conflicts with ruff-format
+  "D1",     # Missing docstrings - too many to add at once
+  "E501",   # Line too long - line-length config handles this
+  "N818",   # Exception naming - ConnectionInterrupted is established name
+  "SLF001", # Private member access needed for Django/redis-py internals
+]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.per-file-ignores]
+"django_cachex/**" = [
+  "A002",    # min/max parameters match Redis API naming
+  "ANN",     # Type annotations handled by mypy with stricter checking
+  "ARG002",  # Unused arguments in method overrides for API compatibility
+  "D",       # Docstrings - will add incrementally
+  "FBT",     # Boolean traps are common in cache/Redis APIs
+  "PGH003",  # Type ignores are validated by mypy, not ruff
+  "PLC0415", # Dynamic imports are intentional (e.g., get_redis_connection)
+  "PLR0913", # Many arguments needed for Redis operations
+  "PLR2004", # Magic values like -2 for Redis TTL are domain-specific
+  "S311",    # Random is fine for non-cryptographic key generation
+  "UP046",   # Generic[T] style still valid, will migrate to PEP 695 later
+]
+"django_cachex/serializers/pickle.py" = ["A005", "S301"] # Pickle is intentional
+"django_cachex/serializers/json.py" = ["A005"] # Named to match format
+"django_cachex/compressors/gzip.py" = ["A005"] # Named to match format
+"django_cachex/compressors/lzma.py" = ["A005"] # Named to match format
+"django_cachex/compressors/zlib.py" = ["A005"] # Named to match format
+"tests/**" = [
+  "ANN",     # Type annotations not required in tests
+  "ARG",     # Unused arguments common in fixtures
+  "D",       # Docstrings not required in tests
+  "DTZ005",  # Timezone-naive datetime okay in tests
+  "FBT",     # Boolean arguments common in test helpers
+  "PLC0415", # Conditional/lazy imports are common in tests
+  "PLR0913", # Many arguments in test fixtures
+  "PLR2004", # Magic values in tests are fine
+  "PT006",   # Parametrize tuple style is preference
+  "PT011",   # Broad pytest.raises is okay in some tests
+  "PT013",   # pytest import style is preference
+  "PT018",   # Composite assertions okay in tests
+  "RUF002",  # Unicode characters in docstrings are fine
+  "RUF015",  # next(iter()) vs slice is preference
+  "S101",    # assert in tests
+  "S105",    # Hardcoded passwords in test settings
+  "S311",    # random is fine for tests
+]
+
+[tool.mypy]
+python_version = "3.13"
+plugins = ["mypy_django_plugin.main"]
+pretty = true
+show_error_codes = true
+show_error_context = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unreachable = false
+# These error codes are disabled due to redis-py type annotation issues.
+# See: https://github.com/redis/redis-py/issues/3497
+# See: https://github.com/redis/redis-py/issues/3107
+disable_error_code = [
+  "arg-type",   # redis-py expects str keys but we use KeyT (str | bytes | memoryview)
+  "assignment", # Redis vs RedisCluster type assignments in cluster client
+  "type-var",   # TypeVar issues with redis-py generics (e.g., zadd)
+]
+
+[tool.django-stubs]
+django_settings_module = "tests.settings.base"
+
+[[tool.mypy.overrides]]
+module = "lz4.frame"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "xdist.scheduler"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "backports.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["compression", "compression.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "msgpack"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "redis.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "valkey.*"
+ignore_missing_imports = true
+
+[tool.ty.rules]
+# Error on unused ty: ignore comments
+unused-ignore-comment = "error"
+
+[tool.ty.analysis]
+# Ignore standard `# type: ignore` comments - only respect `# ty: ignore`
+respect-type-ignore-comments = false
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "settings.base"
+addopts = "--cov=django_cachex --cov-report=term-missing --no-cov-on-fail"
+pythonpath = ["tests"]
+testpaths = ["tests"]
+xfail_strict = true
+
+[tool.coverage.run]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+precision = 1
+skip_covered = true

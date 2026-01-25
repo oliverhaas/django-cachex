@@ -1,0 +1,67 @@
+site_name: Django CacheX
+site_description: Full featured Redis and Valkey cache backend for Django
+site_url: https://oliverhaas.github.io/django-cachex/
+repo_url: https://github.com/oliverhaas/django-cachex
+repo_name: oliverhaas/django-cachex
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: red
+      accent: red
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: red
+      accent: red
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - content.code.annotate
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.details
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+extra:
+  version:
+    provider: mike
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quick Start: getting-started/quickstart.md
+  - User Guide:
+      - Configuration: user-guide/configuration.md
+      - Advanced Usage: user-guide/advanced.md
+      - Pluggable Clients: user-guide/clients.md
+      - Serializers: user-guide/serializers.md
+      - Compression: user-guide/compression.md
+      - Sentinel: user-guide/sentinel.md
+      - Cluster: user-guide/cluster.md
+  - Reference:
+      - API: reference/api.md
+      - Changelog: reference/changelog.md
