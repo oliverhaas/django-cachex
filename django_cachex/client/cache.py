@@ -107,9 +107,7 @@ class KeyValueCache(BaseCache):
         reverse_key_func = self._options.get("reverse_key_function")
         if reverse_key_func is not None:
             if isinstance(reverse_key_func, str):
-                self._reverse_key_func: Callable[[str], str] | None = import_string(
-                    reverse_key_func
-                )
+                self._reverse_key_func: Callable[[str], str] | None = import_string(reverse_key_func)
             else:
                 self._reverse_key_func = reverse_key_func
         else:
