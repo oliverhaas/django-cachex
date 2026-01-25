@@ -25,13 +25,15 @@ CACHES = {
 
 ## Features
 
-- Native valkey-py/redis-py URL connection strings
-- Pluggable clients, serializers, and compressors
-- Primary/replica replication support
-- Valkey/Redis Sentinel and Cluster support
-- Extended data structure operations (hashes, lists, sets, sorted sets)
-- Distributed locks
-- Comprehensive test suite
+- **Unified Valkey and Redis support** - Single package for both backends
+- **Async support** - Async versions of all extended methods
+- **Drop-in Django cache backend** - Easy migration
+- **Extended data structures** - Hashes, lists, sets, sorted sets, and streams
+- **TTL and pattern operations** - `ttl()`, `expire()`, `keys()`, `delete_pattern()`
+- **Distributed locking** - `cache.lock()` for cross-process synchronization
+- **Sentinel and Cluster** - High availability and horizontal scaling
+- **Serializer/compressor fallback** - Safe migrations between formats
+
 
 ## Documentation
 
