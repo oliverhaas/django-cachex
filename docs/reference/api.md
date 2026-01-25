@@ -106,19 +106,14 @@ cache.set(key, value, timeout=300, nx=False, xx=False)
 | `nx` | Only set if key doesn't exist (SETNX) |
 | `xx` | Only set if key exists |
 
-## Helper Functions
-
-### get_redis_connection
+## Raw Client Access
 
 ```python
-from django_cachex import get_redis_connection
-
-conn = get_redis_connection(alias="default", write=True)
+client = cache.get_client(write=True)
 ```
 
 | Parameter | Description |
 |-----------|-------------|
-| `alias` | Cache alias from settings (default: `"default"`) |
 | `write` | Get write connection for primary (default: `True`) |
 
 Returns the underlying `valkey.Valkey` or `redis.Redis` client instance.
@@ -159,27 +154,14 @@ if lock.acquire():
 
 | Option | Description |
 |--------|-------------|
-| `CLIENT_CLASS` | Client implementation class |
-| `SERIALIZER` | Serializer class |
-| `COMPRESSOR` | Compressor class |
-| `PASSWORD` | Server password |
-| `SOCKET_CONNECT_TIMEOUT` | Connection timeout |
-| `SOCKET_TIMEOUT` | Read/write timeout |
-| `IGNORE_EXCEPTIONS` | Ignore connection errors |
-| `PICKLE_VERSION` | Pickle protocol version |
-| `CONNECTION_POOL_CLASS` | Custom pool class |
-| `CONNECTION_POOL_KWARGS` | Pool configuration |
-| `CLOSE_CONNECTION` | Close connections on cache close |
-| `SENTINELS` | Sentinel server list |
-| `SENTINEL_KWARGS` | Sentinel configuration |
-
-### Global Settings
-
-| Setting | Description |
-|---------|-------------|
-| `DJANGO_REDIS_CONNECTION_FACTORY` | Connection factory class |
-| `DJANGO_REDIS_IGNORE_EXCEPTIONS` | Global exception handling |
-| `DJANGO_REDIS_LOG_IGNORED_EXCEPTIONS` | Log ignored exceptions |
-| `DJANGO_REDIS_LOGGER` | Logger name for exceptions |
-| `DJANGO_REDIS_CLOSE_CONNECTION` | Global close behavior |
-| `DJANGO_REDIS_SCAN_ITERSIZE` | Default scan batch size |
+| `serializer` | Serializer class or list for fallback |
+| `compressor` | Compressor class or list for fallback |
+| `password` | Server password |
+| `socket_connect_timeout` | Connection timeout |
+| `socket_timeout` | Read/write timeout |
+| `ignore_exceptions` | Ignore connection errors |
+| `log_ignored_exceptions` | Log ignored exceptions |
+| `pool_class` | Custom connection pool class |
+| `max_connections` | Maximum pool connections |
+| `sentinels` | Sentinel server list (for Sentinel backends) |
+| `sentinel_kwargs` | Sentinel configuration |

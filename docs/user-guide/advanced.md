@@ -129,12 +129,6 @@ For better performance with many keys:
 cache.delete_pattern("foo_*", itersize=100_000)
 ```
 
-Or set globally:
-
-```python
-DJANGO_REDIS_SCAN_ITERSIZE = 100_000
-```
-
 ## Atomic Operations
 
 ### SETNX (Set if Not Exists)
@@ -284,12 +278,6 @@ cache.lmove("source", "dest", "LEFT", "RIGHT")  # LPOP source, RPUSH dest
 Access the underlying valkey-py/redis-py client:
 
 ```python
-from django_cachex import get_redis_connection
-
-conn = get_redis_connection("default")
-conn.set("raw_key", "raw_value")
-conn.hset("hash_key", "field", "value")
+client = cache.get_client()
+client.publish("channel", "message")
 ```
-
-!!! warning
-    Not all pluggable clients support this feature.

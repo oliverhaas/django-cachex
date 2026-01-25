@@ -2,8 +2,6 @@
 
 ## Configure as Cache Backend
 
-To start using django-cachex, configure your Django cache settings:
-
 ```python
 CACHES = {
     "default": {
@@ -13,16 +11,23 @@ CACHES = {
 }
 ```
 
-For Redis instead of Valkey:
+## Backend Classes
 
-```python
-CACHES = {
-    "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
-    }
-}
-```
+| Backend | Description |
+|---------|-------------|
+| `ValkeyCache` | Standard Valkey connection |
+| `RedisCache` | Standard Redis connection |
+| `ValkeySentinelCache` | Valkey Sentinel high availability |
+| `RedisSentinelCache` | Redis Sentinel high availability |
+| `RedisClusterCache` | Redis Cluster sharding |
+
+!!! note "Valkey and Redis Compatibility"
+    Valkey and Redis are fully compatible - you can use either backend with either server.
+    We recommend Valkey as it remains fully open source.
+
+!!! warning "ValkeyClusterCache"
+    `ValkeyClusterCache` is currently unavailable due to an upstream bug in valkey-py.
+    Use `RedisClusterCache` with your Valkey cluster instead.
 
 ## Connection URL Formats
 
@@ -55,40 +60,24 @@ SESSION_CACHE_ALIAS = "default"
 ```python
 from django.core.cache import cache
 
-# Set a value
+# Standard Django cache methods
 cache.set("key", "value", timeout=300)
-
-# Get a value
 value = cache.get("key")
 
-# Delete a key
-cache.delete("key")
+# Extended data structure methods
+cache.hset("user:1", "name", "Alice")
+cache.zrange("leaderboard", 0, 10)
 
-# Set multiple values
-cache.set_many({"key1": "value1", "key2": "value2"})
-
-# Get multiple values
-values = cache.get_many(["key1", "key2"])
+# Async versions
+await cache.aget("key")
+await cache.ahset("user:1", "name", "Alice")
 ```
 
 ## Raw Client Access
 
-For advanced features not exposed by Django's cache interface:
+For operations not exposed by the cache interface:
 
 ```python
-from django_cachex import get_redis_connection
-
-conn = get_redis_connection("default")
-conn.set("raw_key", "raw_value")
-```
-
-## Testing
-
-To flush all cache data after tests:
-
-```python
-from django_cachex import get_redis_connection
-
-def tearDown(self):
-    get_redis_connection("default").flushall()
+client = cache.get_client()
+client.publish("channel", "message")
 ```

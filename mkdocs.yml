@@ -57,7 +57,6 @@ nav:
   - User Guide:
       - Configuration: user-guide/configuration.md
       - Advanced Usage: user-guide/advanced.md
-      - Pluggable Clients: user-guide/clients.md
       - Serializers: user-guide/serializers.md
       - Compression: user-guide/compression.md
       - Sentinel: user-guide/sentinel.md

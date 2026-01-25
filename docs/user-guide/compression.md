@@ -1,22 +1,8 @@
 # Compression
 
-django-cachex supports several compression backends to reduce memory usage.
+django-cachex supports pluggable compression to reduce memory usage. Compression is only applied to values larger than 256 bytes by default.
 
-## Zlib Compression
-
-```python
-CACHES = {
-    "default": {
-        "BACKEND": "django_cachex.cache.ValkeyCache",
-        "LOCATION": "valkey://127.0.0.1:6379/1",
-        "OPTIONS": {
-            "COMPRESSOR": "django_cachex.compressors.zlib.ZlibCompressor",
-        }
-    }
-}
-```
-
-## Gzip Compression
+## Configuration
 
 ```python
 CACHES = {
@@ -24,119 +10,40 @@ CACHES = {
         "BACKEND": "django_cachex.cache.ValkeyCache",
         "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
-            "COMPRESSOR": "django_cachex.compressors.gzip.GzipCompressor",
+            "compressor": "django_cachex.compressors.zstd.ZStdCompressor",
         }
     }
 }
 ```
 
-## LZMA Compression
+## Available Compressors
 
-```python
-CACHES = {
-    "default": {
-        "BACKEND": "django_cachex.cache.ValkeyCache",
-        "LOCATION": "valkey://127.0.0.1:6379/1",
-        "OPTIONS": {
-            "COMPRESSOR": "django_cachex.compressors.lzma.LzmaCompressor",
-        }
-    }
-}
-```
+| Compressor | Speed | Ratio | Dependency |
+|------------|-------|-------|------------|
+| `django_cachex.compressors.zlib.ZlibCompressor` | Medium | Good | Built-in |
+| `django_cachex.compressors.gzip.GzipCompressor` | Medium | Good | Built-in |
+| `django_cachex.compressors.lzma.LzmaCompressor` | Slow | Best | Built-in |
+| `django_cachex.compressors.lz4.Lz4Compressor` | Fast | Moderate | `django-cachex[lz4]` |
+| `django_cachex.compressors.zstd.ZStdCompressor` | Fast | Good | `django-cachex[zstd]` (Python < 3.14) |
 
-## LZ4 Compression
-
-Requires the `lz4` library:
+Install optional dependencies:
 
 ```console
-uv add lz4
+uv add django-cachex[lz4]   # For LZ4
+uv add django-cachex[zstd]  # For Zstandard (Python < 3.14 only)
 ```
+
+Zstandard uses the built-in `compression.zstd` module on Python 3.14+.
+
+## Fallback for Migration
+
+Specify a list of compressors to safely migrate between formats. The first is used for writing, all are tried for reading:
 
 ```python
-CACHES = {
-    "default": {
-        "BACKEND": "django_cachex.cache.ValkeyCache",
-        "LOCATION": "valkey://127.0.0.1:6379/1",
-        "OPTIONS": {
-            "COMPRESSOR": "django_cachex.compressors.lz4.Lz4Compressor",
-        }
-    }
+"OPTIONS": {
+    "compressor": [
+        "django_cachex.compressors.zstd.ZStdCompressor",  # Write with new format
+        "django_cachex.compressors.gzip.GzipCompressor",  # Read old format
+    ],
 }
 ```
-
-## Zstandard (zstd) Compression
-
-On Python 3.14+, zstd compression uses the built-in `compression.zstd` module.
-On older Python versions, it falls back to `backports-zstd`.
-
-```python
-CACHES = {
-    "default": {
-        "BACKEND": "django_cachex.cache.ValkeyCache",
-        "LOCATION": "valkey://127.0.0.1:6379/1",
-        "OPTIONS": {
-            "COMPRESSOR": "django_cachex.compressors.zstd.ZStdCompressor",
-        }
-    }
-}
-```
-
-## Compressor Fallback (Migration Support)
-
-When migrating from one compressor to another, you can specify a list of compressors.
-The first compressor is used for writing new data, while all compressors are tried
-in order when reading until one succeeds.
-
-This allows safe migration between compression formats without data loss:
-
-```python
-CACHES = {
-    "default": {
-        "BACKEND": "django_cachex.cache.ValkeyCache",
-        "LOCATION": "valkey://127.0.0.1:6379/1",
-        "OPTIONS": {
-            # First compressor used for writing, all tried for reading
-            "COMPRESSOR": [
-                "django_cachex.compressors.zstd.ZStdCompressor",  # New format
-                "django_cachex.compressors.gzip.GzipCompressor",  # Old format
-            ],
-        }
-    }
-}
-```
-
-### Migration Example
-
-1. **Before migration** - using gzip:
-   ```python
-   "COMPRESSOR": "django_cachex.compressors.gzip.GzipCompressor"
-   ```
-
-2. **During migration** - write zstd, read both:
-   ```python
-   "COMPRESSOR": [
-       "django_cachex.compressors.zstd.ZStdCompressor",
-       "django_cachex.compressors.gzip.GzipCompressor",
-   ]
-   ```
-
-3. **After migration** - all data refreshed with zstd:
-   ```python
-   "COMPRESSOR": "django_cachex.compressors.zstd.ZStdCompressor"
-   ```
-
-### How It Works
-
-When decompressing, each compressor is tried in order. If decompression fails,
-the next compressor is tried. This continues until one succeeds or all fail.
-If all compressors fail, the raw value is returned (allowing uncompressed data to pass through).
-
-## Compression Comparison
-
-| Compressor | Speed | Ratio | Dependencies |
-|------------|-------|-------|--------------|
-| Zlib | Medium | Good | Built-in |
-| Gzip | Medium | Good | Built-in |
-| LZMA | Slow | Best | Built-in |
-| LZ4 | Fast | Moderate | `lz4` |
-| Zstandard | Fast | Good | `pyzstd` |

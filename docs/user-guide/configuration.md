@@ -23,12 +23,21 @@ CACHES = {
 
 | Backend | Description |
 |---------|-------------|
-| `django_cachex.cache.ValkeyCache` | Standard Valkey (valkey-py) |
-| `django_cachex.cache.RedisCache` | Standard Redis (redis-py) |
-| `django_cachex.cache.ValkeySentinelCache` | Valkey with Sentinel |
-| `django_cachex.cache.RedisSentinelCache` | Redis with Sentinel |
-| `django_cachex.cache.ValkeyClusterCache` | Valkey Cluster |
-| `django_cachex.cache.RedisClusterCache` | Redis Cluster |
+| `ValkeyCache` | Standard Valkey connection |
+| `RedisCache` | Standard Redis connection |
+| `ValkeySentinelCache` | Valkey Sentinel high availability |
+| `RedisSentinelCache` | Redis Sentinel high availability |
+| `RedisClusterCache` | Redis/Valkey Cluster sharding |
+
+All backends are in `django_cachex.cache`.
+
+!!! note "Valkey and Redis Compatibility"
+    Valkey and Redis are fully compatible - you can use either backend with either server.
+    We recommend Valkey as it remains fully open source.
+
+!!! warning "ValkeyClusterCache"
+    `ValkeyClusterCache` is currently unavailable due to an upstream bug in valkey-py.
+    Use `RedisClusterCache` with your Valkey cluster instead.
 
 ## LOCATION
 
@@ -90,11 +99,11 @@ Available serializers:
 ```python
 "OPTIONS": {
     # Single compressor
-    "compressor": "django_cachex.compressors.zstd.ZstdCompressor",
+    "compressor": "django_cachex.compressors.zstd.ZStdCompressor",
 
     # Or with fallback for migration
     "compressor": [
-        "django_cachex.compressors.zstd.ZstdCompressor",  # Write
+        "django_cachex.compressors.zstd.ZStdCompressor",  # Write
         "django_cachex.compressors.zlib.ZlibCompressor",  # Fallback read
     ],
 }
@@ -108,7 +117,7 @@ Available compressors:
 | `django_cachex.compressors.gzip.GzipCompressor` | gzip compression |
 | `django_cachex.compressors.lz4.Lz4Compressor` | LZ4 (requires lz4) |
 | `django_cachex.compressors.lzma.LzmaCompressor` | LZMA |
-| `django_cachex.compressors.zstd.ZstdCompressor` | Zstandard (requires zstd) |
+| `django_cachex.compressors.zstd.ZStdCompressor` | Zstandard (requires zstd) |
 
 Compression is only applied to values larger than `min_length` bytes (default: 256).
 
@@ -152,14 +161,6 @@ Compression is only applied to values larger than `min_length` bytes (default: 2
 }
 ```
 
-Or globally via settings:
-
-```python
-DJANGO_REDIS_IGNORE_EXCEPTIONS = True
-DJANGO_REDIS_LOG_IGNORED_EXCEPTIONS = True
-DJANGO_REDIS_LOGGER = "myapp.cache"  # Custom logger name
-```
-
 ### Connection Lifecycle
 
 ```python
@@ -167,12 +168,6 @@ DJANGO_REDIS_LOGGER = "myapp.cache"  # Custom logger name
     # Close connections after each request
     "close_connection": True,
 }
-```
-
-Or globally:
-
-```python
-DJANGO_REDIS_CLOSE_CONNECTION = True
 ```
 
 ## Authentication
@@ -236,8 +231,8 @@ For passwords with special characters, pass separately:
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.ValkeySentinelCache",  # or RedisSentinelCache
-        "LOCATION": "valkey://mymaster/0",  # Master name
+        "BACKEND": "django_cachex.client.RedisSentinelCache",
+        "LOCATION": "redis://mymaster/0",  # Master name
         "OPTIONS": {
             "sentinels": [
                 ("sentinel1.example.com", 26379),
@@ -257,8 +252,8 @@ CACHES = {
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.ValkeyClusterCache",  # or RedisClusterCache
-        "LOCATION": "valkey://127.0.0.1:7000",
+        "BACKEND": "django_cachex.client.RedisClusterCache",
+        "LOCATION": "redis://127.0.0.1:7000",
     }
 }
 ```
@@ -323,7 +318,7 @@ CACHES = {
             "serializer": "django_cachex.serializers.pickle.PickleSerializer",
 
             # Compression
-            "compressor": "django_cachex.compressors.zstd.ZstdCompressor",
+            "compressor": "django_cachex.compressors.zstd.ZStdCompressor",
 
             # Connection pool
             "max_connections": 50,
