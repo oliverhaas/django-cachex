@@ -262,6 +262,56 @@ class KeyValueCache(BaseCache):
         """Decrement a value asynchronously."""
         return await self.aincr(key, -delta, version)
 
+    def get_or_set(
+        self,
+        key: KeyT,
+        default: Any,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+    ) -> Any:
+        """Fetch a given key from the cache. If the key does not exist,
+        add the key and set it to the default value.
+
+        The default value can also be any callable. If timeout is given,
+        use that timeout for the key; otherwise use the default cache timeout.
+
+        Return the value of the key stored or retrieved.
+        """
+        val = self.get(key, self._missing_key, version=version)
+        if val is self._missing_key:
+            if callable(default):
+                default = default()
+            self.add(key, default, timeout=timeout, version=version)
+            # Fetch the value again to avoid a race condition if another caller
+            # added a value between the first get() and the add() above.
+            return self.get(key, default, version=version)
+        return val
+
+    async def aget_or_set(
+        self,
+        key: KeyT,
+        default: Any,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+    ) -> Any:
+        """Fetch a given key from the cache asynchronously. If the key does not exist,
+        add the key and set it to the default value.
+
+        The default value can also be any callable. If timeout is given,
+        use that timeout for the key; otherwise use the default cache timeout.
+
+        Return the value of the key stored or retrieved.
+        """
+        val = await self.aget(key, self._missing_key, version=version)
+        if val is self._missing_key:
+            if callable(default):
+                default = default()
+            await self.aadd(key, default, timeout=timeout, version=version)
+            # Fetch the value again to avoid a race condition if another caller
+            # added a value between the first aget() and the aadd() above.
+            return await self.aget(key, default, version=version)
+        return val
+
     def set_many(
         self, data: Mapping[KeyT, EncodableT], timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None
     ) -> list:
@@ -1371,6 +1421,48 @@ class KeyValueCache(BaseCache):
             ValueError: If the key does not exist
         """
         return self.incr_version(key, -delta, version)
+
+    async def aincr_version(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
+        """Atomically increment the version of a key using RENAME asynchronously.
+
+        This is more efficient than Django's default implementation which uses
+        GET + SET + DELETE. RENAME is O(1), atomic, and preserves TTL.
+
+        Args:
+            key: The cache key
+            delta: Amount to increment version by (default 1)
+            version: Current version (defaults to cache's default version)
+
+        Returns:
+            The new version number
+
+        Raises:
+            ValueError: If the key does not exist
+        """
+        if version is None:
+            version = self.version
+        old_key = self.make_and_validate_key(key, version=version)
+        new_key = self.make_and_validate_key(key, version=version + delta)
+        await self._cache.arename(old_key, new_key)
+        return version + delta
+
+    async def adecr_version(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
+        """Atomically decrement the version of a key asynchronously.
+
+        This is a convenience method that calls aincr_version with a negative delta.
+
+        Args:
+            key: The cache key
+            delta: Amount to decrement version by (default 1)
+            version: Current version (defaults to cache's default version)
+
+        Returns:
+            The new version number
+
+        Raises:
+            ValueError: If the key does not exist
+        """
+        return await self.aincr_version(key, -delta, version)
 
 
 # =============================================================================

@@ -184,7 +184,7 @@ class TestClientSwitching:
     def test_primary_replica_switching(self, cache: KeyValueCache):
         from django_cachex.client import KeyValueClusterCache
 
-        cache = cast("RedisCache", caches["sample"])
+        cache = cast("KeyValueCache", caches["sample"])
         # Cluster cache doesn't support primary/replica switching - cluster handles routing
         if isinstance(cache, KeyValueClusterCache):
             pytest.skip("Cluster cache doesn't support primary/replica switching")
@@ -198,7 +198,7 @@ class TestClientSwitching:
     def test_primary_replica_switching_with_index(self, cache: KeyValueCache):
         from django_cachex.client import KeyValueClusterCache
 
-        cache = cast("RedisCache", caches["sample"])
+        cache = cast("KeyValueCache", caches["sample"])
         # Cluster cache doesn't support primary/replica switching - cluster handles routing
         if isinstance(cache, KeyValueClusterCache):
             pytest.skip("Cluster cache doesn't support primary/replica switching")

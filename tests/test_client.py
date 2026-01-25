@@ -1,4 +1,3 @@
-from collections.abc import Iterable
 from unittest.mock import Mock, call, patch
 
 import pytest

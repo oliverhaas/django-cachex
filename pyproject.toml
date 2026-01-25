@@ -86,6 +86,7 @@ ignore = [
   "A002",    # min/max params match Redis API naming (ZCOUNT key min max, etc.)
   "ANN401",  # Any is correct for cache values (arbitrary Python objects)
   "ARG002",  # Unused args: API compat (key in get_client), stub classes (*args, **kwargs)
+  "ASYNC109", # timeout param is cache TTL, not asyncio.timeout
   "COM812",  # Conflicts with ruff-format
   "D",       # Docstrings - will add incrementally
   "E501",    # Line length handled by config
