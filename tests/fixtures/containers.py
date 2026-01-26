@@ -284,3 +284,110 @@ def cluster_container(
     environ["CLUSTER_HOST"] = host
     environ["CLUSTER_PORT"] = str(port)
     return host, port
+
+
+# =============================================================================
+# Redis Master-Replica Setup (using bitnami/redis)
+# =============================================================================
+
+BITNAMI_REDIS_IMAGE = "bitnami/redis:latest"
+REPLICA_COUNT = 2  # Number of replicas to create
+
+
+class ReplicaSetContainerInfo(NamedTuple):
+    """Master-replica set connection info."""
+
+    master_host: str
+    master_port: int
+    replica_hosts: list[str]
+    replica_ports: list[int]
+    containers: list[DockerContainer]  # All containers for cleanup
+
+
+def _start_bitnami_master() -> ContainerInfo:
+    """Start a bitnami/redis master container."""
+    container = DockerContainer(BITNAMI_REDIS_IMAGE)
+    container.with_exposed_ports(6379)
+    container.with_env("REDIS_REPLICATION_MODE", "master")
+    container.with_env("ALLOW_EMPTY_PASSWORD", "yes")
+    container.start()
+    wait_for_logs(container, "Ready to accept connections", timeout=60)
+    return ContainerInfo(
+        host=container.get_container_host_ip(),
+        port=int(container.get_exposed_port(6379)),
+        container=container,
+    )
+
+
+def _start_bitnami_replica(master_internal_ip: str) -> ContainerInfo:
+    """Start a bitnami/redis replica container."""
+    container = DockerContainer(BITNAMI_REDIS_IMAGE)
+    container.with_exposed_ports(6379)
+    container.with_env("REDIS_REPLICATION_MODE", "slave")
+    container.with_env("REDIS_MASTER_HOST", master_internal_ip)
+    container.with_env("REDIS_MASTER_PORT_NUMBER", "6379")
+    container.with_env("ALLOW_EMPTY_PASSWORD", "yes")
+    container.start()
+    wait_for_logs(container, "Ready to accept connections", timeout=60)
+    return ContainerInfo(
+        host=container.get_container_host_ip(),
+        port=int(container.get_exposed_port(6379)),
+        container=container,
+    )
+
+
+@pytest.fixture(scope="session")
+def replica_container_factory() -> Generator[
+    tuple[Callable[[], ReplicaSetContainerInfo], ReplicaSetContainerInfo | None]
+]:
+    """Session-scoped factory for master-replica Redis setup.
+
+    Creates one master and multiple replicas using bitnami/redis image.
+    """
+    cached_info: list[ReplicaSetContainerInfo | None] = [None]
+
+    def get_containers() -> ReplicaSetContainerInfo:
+        if cached_info[0] is not None:
+            return cached_info[0]
+
+        containers: list[DockerContainer] = []
+
+        # Start master
+        master_info = _start_bitnami_master()
+        containers.append(master_info.container)
+        master_internal_ip = _get_container_internal_ip(master_info.container)
+
+        # Start replicas
+        replica_hosts: list[str] = []
+        replica_ports: list[int] = []
+        for _ in range(REPLICA_COUNT):
+            replica_info = _start_bitnami_replica(master_internal_ip)
+            containers.append(replica_info.container)
+            replica_hosts.append(replica_info.host)
+            replica_ports.append(replica_info.port)
+
+        cached_info[0] = ReplicaSetContainerInfo(
+            master_host=master_info.host,
+            master_port=master_info.port,
+            replica_hosts=replica_hosts,
+            replica_ports=replica_ports,
+            containers=containers,
+        )
+        return cached_info[0]
+
+    yield get_containers, cached_info[0]
+
+    # Cleanup all containers at session end
+    if cached_info[0] is not None:
+        for container in cached_info[0].containers:
+            with suppress(Exception):
+                container.stop()
+
+
+@pytest.fixture
+def replica_containers(
+    replica_container_factory: tuple[Callable[[], ReplicaSetContainerInfo], ReplicaSetContainerInfo | None],
+) -> ReplicaSetContainerInfo:
+    """Get a master-replica Redis setup."""
+    factory, _ = replica_container_factory
+    return factory()

@@ -223,7 +223,7 @@ Current features:
 
 ## Testing
 
-- [ ] Integration tests with real multi-node cluster
+- [x] Integration tests with real multi-node cluster (master-replica setup using bitnami/redis)
 
 ---
 
