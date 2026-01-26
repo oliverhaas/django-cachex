@@ -569,10 +569,53 @@ try:
         _key_slot_func = staticmethod(redis_key_slot)
 
     class RedisClusterCache(KeyValueClusterCache):
-        """Redis Cluster cache backend.
+        """Django cache backend for Redis Cluster mode.
 
-        Extends KeyValueClusterCache for Redis Cluster support.
-        Use as: BACKEND = "django_cachex.client.RedisClusterCache"
+        Redis Cluster provides automatic sharding across multiple Redis nodes,
+        enabling horizontal scaling. Data is automatically distributed across
+        nodes using hash slots.
+
+        Requirements:
+            Requires redis-py to be installed::
+
+                pip install redis
+
+        Key Differences from Standard Redis:
+            - Data is sharded across multiple nodes (16384 hash slots)
+            - Multi-key operations only work when all keys are on the same slot
+            - Transactions (MULTI/EXEC) are limited to single-slot operations
+            - The backend automatically handles cluster topology discovery
+
+        Example:
+            Configure with a single cluster node (topology is auto-discovered)::
+
+                CACHES = {
+                    "default": {
+                        "BACKEND": "django_cachex.client.RedisClusterCache",
+                        "LOCATION": "redis://cluster-node-1:6379",
+                    }
+                }
+
+            With options::
+
+                CACHES = {
+                    "default": {
+                        "BACKEND": "django_cachex.client.RedisClusterCache",
+                        "LOCATION": "redis://cluster-node-1:6379",
+                        "OPTIONS": {
+                            "skip_full_coverage_check": True,
+                            "serializer": "django_cachex.serializers.json.JSONSerializer",
+                        }
+                    }
+                }
+
+        Note:
+            Multi-key operations like ``get_many()`` and ``set_many()`` work across
+            slots but are not atomic - they execute as separate operations per slot.
+
+        See Also:
+            - ``RedisCache``: For standalone Redis servers
+            - ``RedisSentinelCache``: For Redis Sentinel high availability
         """
 
         _class = RedisClusterCacheClient
@@ -621,10 +664,40 @@ try:
         _key_slot_func = staticmethod(valkey_key_slot)
 
     class ValkeyClusterCache(KeyValueClusterCache):
-        """Valkey Cluster cache backend.
+        """Django cache backend for Valkey Cluster mode.
 
-        Extends KeyValueClusterCache for Valkey Cluster support.
-        Use as: BACKEND = "django_cachex.client.ValkeyClusterCache"
+        Valkey Cluster provides automatic sharding across multiple Valkey nodes,
+        enabling horizontal scaling. Data is automatically distributed across
+        nodes using hash slots.
+
+        Requirements:
+            Requires valkey-py to be installed::
+
+                pip install valkey
+
+        Key Differences from Standard Valkey:
+            - Data is sharded across multiple nodes (16384 hash slots)
+            - Multi-key operations only work when all keys are on the same slot
+            - Transactions (MULTI/EXEC) are limited to single-slot operations
+            - The backend automatically handles cluster topology discovery
+
+        Example:
+            Configure with a single cluster node (topology is auto-discovered)::
+
+                CACHES = {
+                    "default": {
+                        "BACKEND": "django_cachex.client.ValkeyClusterCache",
+                        "LOCATION": "valkey://cluster-node-1:6379",
+                    }
+                }
+
+        Note:
+            Valkey is wire-protocol compatible with Redis, so you can also use
+            ``RedisClusterCache`` with redis-py to connect to Valkey clusters.
+
+        See Also:
+            - ``ValkeyCache``: For standalone Valkey servers
+            - ``RedisClusterCache``: Alternative using redis-py library
         """
 
         _class = ValkeyClusterCacheClient

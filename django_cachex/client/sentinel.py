@@ -293,10 +293,67 @@ if _REDIS_AVAILABLE:
         _async_sentinel_pool_class = AsyncRedisSentinelConnectionPool
 
     class RedisSentinelCache(KeyValueSentinelCache):
-        """Redis Sentinel cache backend.
+        """Django cache backend for Redis Sentinel high availability.
 
-        Extends KeyValueSentinelCache for Redis Sentinel support.
-        Use as: BACKEND = "django_cachex.client.RedisSentinelCache"
+        Redis Sentinel provides automatic failover and service discovery for Redis.
+        When the primary server fails, Sentinel promotes a replica to primary and
+        updates clients automatically.
+
+        Requirements:
+            Requires redis-py to be installed::
+
+                pip install redis
+
+        How it Works:
+            - Sentinel monitors Redis primary and replica nodes
+            - On primary failure, Sentinel elects a new primary
+            - The cache backend automatically discovers the current primary
+            - Reads can be directed to replicas for better performance
+
+        Example:
+            Basic configuration with Sentinel service name::
+
+                CACHES = {
+                    "default": {
+                        "BACKEND": "django_cachex.client.RedisSentinelCache",
+                        "LOCATION": "redis://mymaster/0",  # Service name, not hostname
+                        "OPTIONS": {
+                            "sentinels": [
+                                ("sentinel1.example.com", 26379),
+                                ("sentinel2.example.com", 26379),
+                                ("sentinel3.example.com", 26379),
+                            ],
+                        }
+                    }
+                }
+
+            With authentication and additional options::
+
+                CACHES = {
+                    "default": {
+                        "BACKEND": "django_cachex.client.RedisSentinelCache",
+                        "LOCATION": "redis://mymaster/0",
+                        "OPTIONS": {
+                            "sentinels": [
+                                ("sentinel1.example.com", 26379),
+                                ("sentinel2.example.com", 26379),
+                            ],
+                            "sentinel_kwargs": {
+                                "password": "sentinel-password",
+                            },
+                            "password": "redis-password",
+                        }
+                    }
+                }
+
+        Note:
+            The ``LOCATION`` should use the Sentinel service name (e.g., "mymaster")
+            as the hostname, not the actual Redis server hostname. Sentinel will
+            resolve the service name to the current primary's address.
+
+        See Also:
+            - ``RedisCache``: For standalone Redis servers
+            - ``RedisClusterCache``: For Redis Cluster horizontal scaling
         """
 
         _class = RedisSentinelCacheClient

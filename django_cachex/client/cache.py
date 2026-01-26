@@ -69,25 +69,68 @@ def _glob_escape(s: str) -> str:
 
 
 class KeyValueCache(BaseCache):
-    """Generic cache backend base class.
+    """Django cache backend for Redis/Valkey with extended features.
 
-    Extends Django's BaseCache with Redis/Valkey specific features:
-    - Multi-serializer fallback support
-    - Compression support
-    - Extended Redis operations (hashes, lists, sets, sorted sets)
-    - TTL and expiry operations
-    - Pattern-based operations
-    - Distributed locking
-    - Pipeline support
+    This is the base class for all django-cachex cache backends. It extends
+    Django's ``BaseCache`` with Redis/Valkey specific features while maintaining
+    full compatibility with Django's cache API.
 
-    Internal structure matches Django's RedisCache for compatibility:
-    - _servers: List of server URLs
-    - _class: The CacheClient class (subclasses override)
-    - _options: Options dict
-    - _cache: Cached property for CacheClient instance
+    Features:
+        - **Full Django Cache API**: All standard methods (get, set, delete, etc.)
+          plus their async variants (aget, aset, adelete, etc.)
+        - **Multi-serializer fallback**: Safely migrate between serialization formats
+        - **Compression**: Optional compression with multiple algorithm support
+        - **Extended operations**: Redis data structures (hashes, lists, sets,
+          sorted sets) with automatic serialization
+        - **TTL operations**: Query and modify key expiration times
+        - **Pattern operations**: Find and delete keys by pattern
+        - **Distributed locking**: Redis-based locks for distributed systems
+        - **Pipeline support**: Batch operations for improved performance
+        - **Master-replica support**: Configure multiple servers for read scaling
 
-    Subclasses (RedisCache, ValkeyCache) specialize for their respective
-    libraries by overriding _class to point to the appropriate CacheClient.
+    Usage:
+        Don't use this class directly. Use ``RedisCache`` or ``ValkeyCache``::
+
+            # settings.py
+            CACHES = {
+                "default": {
+                    "BACKEND": "django_cachex.cache.RedisCache",
+                    "LOCATION": "redis://127.0.0.1:6379/1",
+                    "OPTIONS": {
+                        "serializer": "django_cachex.serializers.pickle.PickleSerializer",
+                        "compressor": "django_cachex.compressors.zstd.ZstdCompressor",
+                    }
+                }
+            }
+
+        Then use via Django's cache framework::
+
+            from django.core.cache import cache
+
+            # Standard operations
+            cache.set("key", {"data": "value"}, timeout=300)
+            value = cache.get("key")
+
+            # Async operations (Django 4.0+)
+            await cache.aset("key", "value")
+            value = await cache.aget("key")
+
+            # Extended operations
+            cache.hset("user:1", "name", "Alice")
+            cache.lpush("queue", "task1", "task2")
+            cache.sadd("tags", "python", "django")
+
+    Attributes:
+        _servers: List of server URLs (first is master, rest are replicas).
+        _options: Configuration options from Django's CACHES setting.
+        _class: The CacheClient class to use (set by subclasses).
+        _cache: Lazily-initialized CacheClient instance.
+
+    See Also:
+        - ``RedisCache``: For redis-py library
+        - ``ValkeyCache``: For valkey-py library
+        - ``RedisClusterCache``: For Redis Cluster mode
+        - ``RedisSentinelCache``: For Redis Sentinel mode
     """
 
     # Class attribute - subclasses override this
@@ -1528,10 +1571,58 @@ class KeyValueCache(BaseCache):
 
 
 class RedisCache(KeyValueCache):
-    """Redis cache backend.
+    """Django cache backend using the redis-py library.
 
-    Concrete implementation of KeyValueCache for redis-py.
-    Uses RedisCacheClient which uses redis-py library.
+    This is the primary cache backend for connecting to Redis servers.
+    It provides all features of ``KeyValueCache`` using the official
+    redis-py client library.
+
+    Requirements:
+        Requires redis-py to be installed::
+
+            pip install redis
+
+    Example:
+        Basic configuration::
+
+            CACHES = {
+                "default": {
+                    "BACKEND": "django_cachex.cache.RedisCache",
+                    "LOCATION": "redis://127.0.0.1:6379/1",
+                }
+            }
+
+        With authentication and options::
+
+            CACHES = {
+                "default": {
+                    "BACKEND": "django_cachex.cache.RedisCache",
+                    "LOCATION": "redis://username:password@hostname:6379/1",
+                    "OPTIONS": {
+                        "max_connections": 50,
+                        "socket_timeout": 5,
+                        "serializer": "django_cachex.serializers.json.JSONSerializer",
+                    }
+                }
+            }
+
+        Master-replica setup for read scaling::
+
+            CACHES = {
+                "default": {
+                    "BACKEND": "django_cachex.cache.RedisCache",
+                    "LOCATION": [
+                        "redis://master:6379/1",
+                        "redis://replica1:6379/1",
+                        "redis://replica2:6379/1",
+                    ],
+                }
+            }
+
+    See Also:
+        - ``ValkeyCache``: For Valkey servers using valkey-py
+        - ``RedisClusterCache``: For Redis Cluster mode
+        - ``RedisSentinelCache``: For Redis Sentinel high availability
     """
 
     _class = RedisCacheClient
@@ -1543,10 +1634,47 @@ class RedisCache(KeyValueCache):
 
 
 class ValkeyCache(KeyValueCache):
-    """Valkey cache backend.
+    """Django cache backend using the valkey-py library.
 
-    Concrete implementation of KeyValueCache for valkey-py.
-    Uses ValkeyCacheClient which uses valkey-py library.
+    This cache backend is for connecting to Valkey servers using the
+    official valkey-py client library. Valkey is an open-source,
+    Redis-compatible key-value store.
+
+    Requirements:
+        Requires valkey-py to be installed::
+
+            pip install valkey
+
+    Example:
+        Basic configuration::
+
+            CACHES = {
+                "default": {
+                    "BACKEND": "django_cachex.cache.ValkeyCache",
+                    "LOCATION": "valkey://127.0.0.1:6379/1",
+                }
+            }
+
+        With options::
+
+            CACHES = {
+                "default": {
+                    "BACKEND": "django_cachex.cache.ValkeyCache",
+                    "LOCATION": "valkey://hostname:6379/1",
+                    "OPTIONS": {
+                        "max_connections": 50,
+                        "serializer": "django_cachex.serializers.pickle.PickleSerializer",
+                    }
+                }
+            }
+
+    Note:
+        Valkey is wire-protocol compatible with Redis, so you can also use
+        ``RedisCache`` with redis-py to connect to Valkey servers if preferred.
+
+    See Also:
+        - ``RedisCache``: For Redis servers using redis-py
+        - ``ValkeyClusterCache``: For Valkey Cluster mode
     """
 
     _class = ValkeyCacheClient
