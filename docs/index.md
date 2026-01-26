@@ -8,6 +8,8 @@ Full featured Valkey and Redis cache backend for Django.
 
 ## Why django-cachex?
 
+**Drop-in replacement** for Django's built-in Redis cache backend (`django.core.cache.backends.redis`) with extended features:
+
 - Uses native valkey-py/redis-py URL notation connection strings
 - Pluggable clients
 - Pluggable serializers
