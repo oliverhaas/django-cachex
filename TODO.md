@@ -229,6 +229,6 @@ Current features:
 
 ## Code Quality
 
-- [ ] Review `[[tool.mypy.overrides]]` for optional dependencies as libraries improve
+- [x] Review `[[tool.mypy.overrides]]` for optional dependencies as libraries improve
 - [ ] Add docstrings incrementally (start with public API)
 - [x] Enable more ruff rules (review ignored rules and fix violations)
