@@ -40,6 +40,10 @@ Import paths: `django_valkey.*` → `django_cachex.*`
 
 For Sentinel: Use `django_cachex.cache.ValkeySentinelCache` instead of `CLIENT_CLASS`.
 
+!!! warning "ValkeySentinelCache"
+    `ValkeySentinelCache` is currently unavailable due to an upstream bug in valkey-py.
+    Use `RedisSentinelCache` with your Valkey server instead (protocol compatible).
+
 ## From django-redis
 
 ```python

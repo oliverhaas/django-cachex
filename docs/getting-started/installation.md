@@ -26,11 +26,3 @@ uv add django-cachex[hiredis]
 ```
 
 These packages provide C-based parsers that can significantly improve performance when parsing replies.
-
-## Verify Installation
-
-```python
->>> import django_cachex
->>> django_cachex.__version__
-'1.0.0'
-```

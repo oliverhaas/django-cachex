@@ -1,2 +1,6 @@
-VERSION = (6, 0, 0)
-__version__ = ".".join(map(str, VERSION))
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("django-cachex")
+except PackageNotFoundError:
+    __version__ = "0.0.0+unknown"

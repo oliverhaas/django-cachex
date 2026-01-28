@@ -23,7 +23,6 @@ Extended attributes (our additions):
 - _options: Full options dict
 - _compressors: List of compressor instances
 - _serializers: List of serializer instances (for fallback)
-- _ignore_exceptions, _log_ignored_exceptions, _logger: Exception handling
 """
 
 from __future__ import annotations
@@ -199,11 +198,6 @@ class KeyValueCacheClient:
             else options.get("serializer", "django_cachex.serializers.pickle.PickleSerializer")
         )
         self._serializers = self._create_serializers(serializer_config)
-
-        # Exception handling configuration
-        self._ignore_exceptions = options.get("ignore_exceptions", False)
-        self._log_ignored_exceptions = options.get("log_ignored_exceptions", False)
-        self._logger = logger if self._log_ignored_exceptions else None
 
     # =========================================================================
     # Serializer/Compressor Setup
@@ -397,36 +391,34 @@ class KeyValueCacheClient:
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
-    def get(self, key: KeyT, default: Any = None) -> Any:
-        """Fetch a value from the cache."""
+    def get(self, key: KeyT) -> Any:
+        """Fetch a value from the cache.
+
+        Returns the decoded value or None if not found.
+        """
+        client = self.get_client(key, write=False)
         try:
-            client = self.get_client(key, write=False)
             val = client.get(key)
-        except _main_exceptions:
-            if self._ignore_exceptions:
-                if self._log_ignored_exceptions and self._logger is not None:
-                    self._logger.exception("Exception ignored")
-                return default
-            raise
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
 
         if val is None:
-            return default
+            return None
         return self.decode(val)
 
-    async def aget(self, key: KeyT, default: Any = None) -> Any:
-        """Fetch a value from the cache asynchronously."""
+    async def aget(self, key: KeyT) -> Any:
+        """Fetch a value from the cache asynchronously.
+
+        Returns the decoded value or None if not found.
+        """
+        client = self.get_async_client(key, write=False)
         try:
-            client = self.get_async_client(key, write=False)
             val = await client.get(key)
-        except _main_exceptions:
-            if self._ignore_exceptions:
-                if self._log_ignored_exceptions and self._logger is not None:
-                    self._logger.exception("Exception ignored")
-                return default
-            raise
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
 
         if val is None:
-            return default
+            return None
         return self.decode(val)
 
     def set(self, key: KeyT, value: Any, timeout: int | None) -> None:
@@ -522,16 +514,12 @@ class KeyValueCacheClient:
         if not keys:
             return {}
 
+        client = self.get_client(write=False)
         try:
-            client = self.get_client(write=False)
             results = client.mget(keys)
             return {k: self.decode(v) for k, v in zip(keys, results, strict=False) if v is not None}
-        except _main_exceptions:
-            if self._ignore_exceptions:
-                if self._log_ignored_exceptions and self._logger is not None:
-                    self._logger.exception("Exception ignored")
-                return {}
-            raise
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
 
     async def aget_many(self, keys: Iterable[KeyT]) -> dict[KeyT, Any]:
         """Retrieve many keys asynchronously."""
@@ -539,16 +527,12 @@ class KeyValueCacheClient:
         if not keys:
             return {}
 
+        client = self.get_async_client(write=False)
         try:
-            client = self.get_async_client(write=False)
             results = await client.mget(keys)
             return {k: self.decode(v) for k, v in zip(keys, results, strict=False) if v is not None}
-        except _main_exceptions:
-            if self._ignore_exceptions:
-                if self._log_ignored_exceptions and self._logger is not None:
-                    self._logger.exception("Exception ignored")
-                return {}
-            raise
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
 
     def has_key(self, key: KeyT) -> bool:
         """Check if a key exists."""

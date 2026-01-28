@@ -10,18 +10,15 @@ Full featured Valkey and Redis cache backend for Django.
 
 **Drop-in replacement** for Django's built-in Redis cache backend (`django.core.cache.backends.redis`) with extended features:
 
-- Uses native valkey-py/redis-py URL notation connection strings
-- Pluggable clients
+- Uses native valkey-py/redis-py
+- Extended functionality of all typical commands for hashes, sets, lists, sorted sets, and streams
 - Pluggable serializers
 - Pluggable compressors
-- Primary/replica support in the default client
 - Valkey/Redis Sentinel and Cluster support
+- Primary/replica support
 - Comprehensive test suite
-- Used in production as cache and session storage
-- Supports infinite timeouts
 - Facilities for raw access to Valkey/Redis client/connection pool
-- Highly configurable (can emulate memcached exception behavior, for example)
-- Unix sockets supported by default
+- Highly configurable
 
 ## Requirements
 

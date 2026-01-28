@@ -95,7 +95,12 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
     @override
     def get_client(self, key: KeyT | None = None, *, write: bool = False) -> Any:
-        """Get the Cluster client."""
+        """Get the Cluster client.
+
+        Cluster topology discovery happens lazily on first access.
+        Connection failures are wrapped in ConnectionInterruptedError
+        so they can be handled by ignore_exceptions.
+        """
         url = self._servers[0]
         if url in self._clusters:
             return self._clusters[url]
@@ -111,13 +116,23 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         if parsed_url.port:
             cluster_options["port"] = parsed_url.port
 
-        cluster = self._cluster(**cluster_options)
+        try:
+            cluster = self._cluster(**cluster_options)
+        except _main_exceptions as e:
+            # Wrap cluster connection failures so ignore_exceptions can handle them
+            raise ConnectionInterruptedError(connection=None) from e
+
         self._clusters[url] = cluster
         return cluster
 
     @override
     def get_async_client(self, key: KeyT | None = None, *, write: bool = False) -> Any:
-        """Get the async Cluster client for the current event loop."""
+        """Get the async Cluster client for the current event loop.
+
+        Cluster topology discovery happens lazily on first access.
+        Connection failures are wrapped in ConnectionInterruptedError
+        so they can be handled by ignore_exceptions.
+        """
         loop = asyncio.get_running_loop()
         url = self._servers[0]
 
@@ -136,7 +151,11 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         if parsed_url.port:
             cluster_options["port"] = parsed_url.port
 
-        cluster = self._async_cluster(**cluster_options)
+        try:
+            cluster = self._async_cluster(**cluster_options)
+        except _main_exceptions as e:
+            # Wrap cluster connection failures so ignore_exceptions can handle them
+            raise ConnectionInterruptedError(connection=None) from e
 
         # Cache the cluster for this event loop
         if loop not in self._async_clusters:
@@ -165,8 +184,8 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         if not keys:
             return {}
 
+        client = self.get_client(write=False)
         try:
-            client = self.get_client(write=False)
             # mget_nonatomic handles slot splitting
             results = cast(
                 "list[bytes | None]",
@@ -178,12 +197,8 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
                 if value is not None:
                     recovered_data[key] = self.decode(value)
 
-        except _main_exceptions:
-            if self._ignore_exceptions:
-                if self._log_ignored_exceptions and self._logger is not None:
-                    self._logger.exception("Exception ignored")
-                return {}
-            raise
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
 
         return recovered_data
 

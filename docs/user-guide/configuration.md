@@ -39,6 +39,10 @@ All backends are in `django_cachex.cache`.
     `ValkeyClusterCache` is currently unavailable due to an upstream bug in valkey-py.
     Use `RedisClusterCache` with your Valkey cluster instead.
 
+!!! warning "ValkeySentinelCache"
+    `ValkeySentinelCache` is currently unavailable due to an upstream bug in valkey-py.
+    Use `RedisSentinelCache` with your Valkey server instead (protocol compatible).
+
 ## LOCATION
 
 Server URL(s). Supports multiple formats:
