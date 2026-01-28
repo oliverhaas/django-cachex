@@ -1016,18 +1016,15 @@
 <h2 id="why-django-cachex">Why django-cachex?<a class="headerlink" href="#why-django-cachex" title="Permanent link">&para;</a></h2>
 <p><strong>Drop-in replacement</strong> for Django's built-in Redis cache backend (<code>django.core.cache.backends.redis</code>) with extended features:</p>
 <ul>
-<li>Uses native valkey-py/redis-py URL notation connection strings</li>
-<li>Pluggable clients</li>
+<li>Uses native valkey-py/redis-py</li>
+<li>Extended functionality of all typical commands for hashes, sets, lists, sorted sets, and streams</li>
 <li>Pluggable serializers</li>
 <li>Pluggable compressors</li>
-<li>Primary/replica support in the default client</li>
 <li>Valkey/Redis Sentinel and Cluster support</li>
+<li>Primary/replica support</li>
 <li>Comprehensive test suite</li>
-<li>Used in production as cache and session storage</li>
-<li>Supports infinite timeouts</li>
 <li>Facilities for raw access to Valkey/Redis client/connection pool</li>
-<li>Highly configurable (can emulate memcached exception behavior, for example)</li>
-<li>Unix sockets supported by default</li>
+<li>Highly configurable</li>
 </ul>
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
 <ul>

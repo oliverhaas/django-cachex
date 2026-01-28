@@ -1656,6 +1656,11 @@ We recommend Valkey as it remains fully open source.</p>
 <p><code>ValkeyClusterCache</code> is currently unavailable due to an upstream bug in valkey-py.
 Use <code>RedisClusterCache</code> with your Valkey cluster instead.</p>
 </div>
+<div class="admonition warning">
+<p class="admonition-title">ValkeySentinelCache</p>
+<p><code>ValkeySentinelCache</code> is currently unavailable due to an upstream bug in valkey-py.
+Use <code>RedisSentinelCache</code> with your Valkey server instead (protocol compatible).</p>
+</div>
 <h2 id="location">LOCATION<a class="headerlink" href="#location" title="Permanent link">&para;</a></h2>
 <p>Server URL(s). Supports multiple formats:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Single server (Valkey)</span>

@@ -1063,6 +1063,11 @@
 </table>
 <p>Import paths: <code>django_valkey.*</code> → <code>django_cachex.*</code></p>
 <p>For Sentinel: Use <code>django_cachex.cache.ValkeySentinelCache</code> instead of <code>CLIENT_CLASS</code>.</p>
+<div class="admonition warning">
+<p class="admonition-title">ValkeySentinelCache</p>
+<p><code>ValkeySentinelCache</code> is currently unavailable due to an upstream bug in valkey-py.
+Use <code>RedisSentinelCache</code> with your Valkey server instead (protocol compatible).</p>
+</div>
 <h2 id="from-django-redis">From django-redis<a class="headerlink" href="#from-django-redis" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Before</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_redis.cache.RedisCache&quot;</span>
