@@ -3,10 +3,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
     from types import TracebackType
 
+    from django_cachex.script import LuaScript
     from django_cachex.types import KeyT
+
+from django_cachex.exceptions import ScriptNotRegisteredError
+from django_cachex.script import ScriptHelpers
 
 # Alias builtin set type to avoid shadowing by the set() method
 _Set = set
@@ -53,6 +57,9 @@ class Pipeline:
         self._version = version
         self._key_func = key_func
         self._decoders: list[Callable[[Any], Any]] = []
+        # Script support (set by KeyValueCache.pipeline())
+        self._scripts: dict[str, LuaScript] = {}
+        self._cache_version: int | None = None
 
     def __enter__(self) -> Self:
         return self
@@ -1098,6 +1105,95 @@ class Pipeline:
         self._pipeline.zmscore(nkey, encoded_members)
         self._decoders.append(self._noop)  # Returns list[float | None]
         return self
+
+    # -------------------------------------------------------------------------
+    # Lua Script Operations
+    # -------------------------------------------------------------------------
+
+    def eval_script(
+        self,
+        name: str,
+        keys: Sequence[Any] = (),
+        args: Sequence[Any] = (),
+        *,
+        version: int | None = None,
+    ) -> Self:
+        """Queue a registered Lua script for pipelined execution.
+
+        Args:
+            name: Name of the registered script.
+            keys: KEYS to pass to the script.
+            args: ARGV to pass to the script.
+            version: Key version for prefixing.
+
+        Returns:
+            Self for method chaining.
+
+        Raises:
+            ScriptNotRegisteredError: If script name is not registered.
+            AttributeError: If pipeline was not created from a cache with scripts.
+
+        Example:
+            Queue multiple script executions::
+
+                with cache.pipeline() as pipe:
+                    pipe.eval_script("rate_limit", keys=["user:1"], args=[60])
+                    pipe.eval_script("rate_limit", keys=["user:2"], args=[60])
+                    results = pipe.execute()  # [1, 1]
+        """
+        # Access scripts registry (set by KeyValueCache.pipeline())
+        scripts: dict[str, LuaScript] = getattr(self, "_scripts", {})
+        cache_version: int | None = getattr(self, "_cache_version", None)
+
+        if name not in scripts:
+            raise ScriptNotRegisteredError(name)
+
+        script = scripts[name]
+
+        # Determine version for key prefixing
+        v = version if version is not None else self._version
+        if v is None:
+            v = cache_version
+
+        # Create helpers for pre/post processing
+        helpers = ScriptHelpers(
+            make_key=self._make_key_with_version,
+            encode=self._client.encode,
+            decode=self._client.decode,
+            version=v,
+        )
+
+        # Process keys and args through pre_func
+        proc_keys: list[Any] = list(keys)
+        proc_args: list[Any] = list(args)
+        if script.pre_func is not None:
+            proc_keys, proc_args = script.pre_func(helpers, proc_keys, proc_args)
+
+        # Ensure SHA is cached (sync load - pipelines are sync only)
+        if script._sha is None:
+            script._sha = self._client.script_load(script.script)
+
+        # Queue evalsha command
+        self._pipeline.evalsha(script._sha, len(proc_keys), *proc_keys, *proc_args)
+
+        # Create decoder that applies post_func
+        if script.post_func is not None:
+
+            def make_decoder(pf: Any, h: ScriptHelpers) -> Any:
+                def decoder(result: Any) -> Any:
+                    return pf(h, result)
+
+                return decoder
+
+            self._decoders.append(make_decoder(script.post_func, helpers))
+        else:
+            self._decoders.append(self._noop)
+
+        return self
+
+    def _make_key_with_version(self, key: Any, version: int | None) -> KeyT:
+        """Make a key with explicit version (for ScriptHelpers compatibility)."""
+        return self._make_key(key, version)
 
 
 __all__ = ["Pipeline"]

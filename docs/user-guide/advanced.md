@@ -281,3 +281,131 @@ Access the underlying valkey-py/redis-py client:
 client = cache.get_client()
 client.publish("channel", "message")
 ```
+
+## Lua Scripts
+
+django-cachex provides a high-level interface for Lua scripts with automatic key prefixing and value encoding/decoding.
+
+### Registering Scripts
+
+Register scripts with `cache.register_script()`:
+
+```python
+from django.core.cache import cache
+from django_cachex import keys_only_pre
+
+# Simple script - only needs key prefixing
+cache.register_script(
+    "rate_limit",
+    """
+    local current = redis.call('INCR', KEYS[1])
+    if current == 1 then
+        redis.call('EXPIRE', KEYS[1], ARGV[1])
+    end
+    return current
+    """,
+    num_keys=1,
+    pre_func=keys_only_pre,
+)
+```
+
+### Executing Scripts
+
+Execute registered scripts with `cache.eval_script()`:
+
+```python
+# Execute the rate limiter
+count = cache.eval_script("rate_limit", keys=["user:123:requests"], args=[60])
+if count > 100:
+    raise RateLimitExceeded()
+```
+
+### Pre/Post Processing Hooks
+
+Scripts support hooks for transforming inputs and outputs:
+
+- **`pre_func`**: Transform keys and args before execution
+- **`post_func`**: Transform the result after execution
+
+#### Built-in Helpers
+
+```python
+from django_cachex import (
+    keys_only_pre,      # Prefix keys, leave args unchanged
+    full_encode_pre,    # Prefix keys AND encode args (serialize values)
+    decode_single_post, # Decode a single returned value
+    decode_list_post,   # Decode a list of returned values
+    noop_post,          # Return result unchanged
+)
+```
+
+#### Example with Encoding
+
+```python
+from django_cachex import full_encode_pre, decode_single_post
+
+cache.register_script(
+    "get_and_set",
+    """
+    local old = redis.call('GET', KEYS[1])
+    redis.call('SET', KEYS[1], ARGV[1])
+    return old
+    """,
+    pre_func=full_encode_pre,    # Encode the new value
+    post_func=decode_single_post, # Decode the old value
+)
+
+# Works with any serializable Python object
+old_session = cache.eval_script(
+    "get_and_set",
+    keys=["session:abc"],
+    args=[{"user_id": 123, "permissions": ["read", "write"]}],
+)
+```
+
+### Custom Processing Hooks
+
+Create custom hooks using `ScriptHelpers`:
+
+```python
+from django_cachex import ScriptHelpers
+
+def my_pre(helpers: ScriptHelpers, keys, args):
+    # First arg is a secondary key, rest are values
+    processed_args = [helpers.make_key(args[0], helpers.version)]
+    processed_args.extend(helpers.encode_values(args[1:]))
+    return helpers.make_keys(keys), processed_args
+
+def my_post(helpers: ScriptHelpers, result):
+    # Result is [count, list_of_values]
+    return {
+        "count": result[0],
+        "values": helpers.decode_values(result[1]) if result[1] else [],
+    }
+
+cache.register_script("custom_op", "...", pre_func=my_pre, post_func=my_post)
+```
+
+### Pipeline Support
+
+Scripts can be queued in pipelines:
+
+```python
+with cache.pipeline() as pipe:
+    pipe.set("key1", "value1")
+    pipe.eval_script("rate_limit", keys=["user:1"], args=[60])
+    pipe.eval_script("rate_limit", keys=["user:2"], args=[60])
+    results = pipe.execute()  # [True, 1, 1]
+```
+
+### Async Support
+
+Use `aeval_script()` for async execution:
+
+```python
+count = await cache.aeval_script("rate_limit", keys=["user:123"], args=[60])
+```
+
+### Script Caching
+
+Scripts are automatically cached by SHA hash. On first execution, the script is loaded and its SHA is stored. Subsequent executions use `EVALSHA` for better performance. If Redis returns `NOSCRIPT` (e.g., after a server restart), the script is automatically reloaded.

@@ -67,3 +67,29 @@ class SerializerError(Exception):
     When using serializer fallback, this error triggers fallback to the
     next serializer in the list, enabling safe migrations between formats.
     """
+
+
+class ScriptNotRegisteredError(KeyError):
+    """Raised when eval_script is called with an unregistered script name.
+
+    Attributes:
+        name: The script name that was not found.
+
+    Example:
+        Handling missing scripts::
+
+            from django.core.cache import cache
+            from django_cachex.exceptions import ScriptNotRegisteredError
+
+            try:
+                cache.eval_script("unknown_script", keys=["key1"])
+            except ScriptNotRegisteredError as e:
+                logger.error(f"Script not registered: {e.name}")
+    """
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        super().__init__(f"Script '{name}' is not registered")
+
+    def __str__(self) -> str:
+        return f"Script '{self.name}' is not registered"
