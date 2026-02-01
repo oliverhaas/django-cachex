@@ -63,8 +63,8 @@ dev = [
   "pytest-xdist==3.8.0",
   "pytest==9.0.2",
   "ruff==0.14.14",
-  "testcontainers==4.14.0",
-  "ty==0.0.13",
+  "testcontainers==4.14.1",
+  "ty==0.0.14",
   "types-docker==7.1.0.20260109",
 ]
 docs = ["mkdocs==1.6.1", "mkdocs-material==9.7.1", "mike==2.1.3"]
