@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.0b3 (January 2026)
+
+### New Features
+
+- **Lua Script Interface**: High-level API for registering and executing Lua scripts with automatic key prefixing and value encoding/decoding
+  - `cache.register_script()` to register scripts with pre/post processing hooks
+  - `cache.eval_script()` and `cache.aeval_script()` for sync/async execution
+  - `pipe.eval_script()` for pipeline support
+  - Pre-built helpers: `keys_only_pre`, `full_encode_pre`, `decode_single_post`, `decode_list_post`
+  - `ScriptHelpers` class exposes `make_key`, `encode`, `decode` for custom hooks
+  - Automatic SHA caching with NOSCRIPT fallback
+
+### New Classes
+
+- `LuaScript` - Dataclass for registered scripts with metadata
+- `ScriptHelpers` - Helper functions passed to pre/post processing hooks
+- `ScriptNotRegisteredError` - Exception for unregistered script names
+
 ## 0.1.0 (January 2026)
 
 Initial release of django-cachex.

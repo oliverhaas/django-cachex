@@ -94,6 +94,64 @@ List operations for ordered, indexable collections:
 | `lpos(key, element, ...)` | Find element position in list |
 | `lmove(src, dst, src_side, dst_side)` | Atomically move element between lists |
 
+### Lua Script Methods
+
+Lua script registration and execution:
+
+| Method | Description |
+|--------|-------------|
+| `register_script(name, script, ...)` | Register a Lua script |
+| `eval_script(name, keys=(), args=())` | Execute a registered script |
+| `aeval_script(name, keys=(), args=())` | Execute a registered script (async) |
+
+#### register_script
+
+```python
+cache.register_script(
+    name,           # Unique script name
+    script,         # Lua script source
+    num_keys=None,  # Expected KEYS count (documentation only)
+    pre_func=None,  # Pre-processing hook: (helpers, keys, args) -> (keys, args)
+    post_func=None, # Post-processing hook: (helpers, result) -> result
+)
+```
+
+#### eval_script / aeval_script
+
+```python
+result = cache.eval_script(
+    name,           # Registered script name
+    keys=(),        # KEYS to pass to script
+    args=(),        # ARGV to pass to script
+    version=None,   # Key version for prefixing
+)
+```
+
+#### Pre-built Helpers
+
+| Helper | Description |
+|--------|-------------|
+| `keys_only_pre` | Prefix keys, leave args unchanged |
+| `full_encode_pre` | Prefix keys AND encode all args |
+| `decode_single_post` | Decode a single returned value |
+| `decode_list_post` | Decode a list of returned values |
+| `decode_list_or_none_post` | Decode list or return None |
+| `noop_post` | Return result unchanged |
+
+#### ScriptHelpers
+
+The helpers object passed to pre/post functions:
+
+| Attribute/Method | Description |
+|------------------|-------------|
+| `make_key(key, version)` | Apply cache key prefix |
+| `make_keys(keys)` | Prefix multiple keys |
+| `encode(value)` | Encode a value (serialize + compress) |
+| `encode_values(values)` | Encode multiple values |
+| `decode(value)` | Decode a value |
+| `decode_values(values)` | Decode multiple values |
+| `version` | Current key version |
+
 ### Set Method Options
 
 ```python
