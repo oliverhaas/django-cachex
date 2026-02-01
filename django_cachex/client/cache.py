@@ -1763,7 +1763,9 @@ class KeyValueCache(BaseCache):
             result = self._cache.evalsha(script._sha, len(proc_keys), *proc_keys, *proc_args)
         except Exception as e:
             # Check for NOSCRIPT error and reload
-            if "NOSCRIPT" in str(e):
+            # NoScriptError may be wrapped in ConnectionInterruptedError
+            err_str = str(e)
+            if "NOSCRIPT" in err_str or "NoScriptError" in err_str:
                 script._sha = self._cache.script_load(script.script)
                 result = self._cache.evalsha(script._sha, len(proc_keys), *proc_keys, *proc_args)
             else:
@@ -1823,7 +1825,9 @@ class KeyValueCache(BaseCache):
             result = await self._cache.aevalsha(script._sha, len(proc_keys), *proc_keys, *proc_args)
         except Exception as e:
             # Check for NOSCRIPT error and reload
-            if "NOSCRIPT" in str(e):
+            # NoScriptError may be wrapped in ConnectionInterruptedError
+            err_str = str(e)
+            if "NOSCRIPT" in err_str or "NoScriptError" in err_str:
                 script._sha = await self._cache.ascript_load(script.script)
                 result = await self._cache.aevalsha(script._sha, len(proc_keys), *proc_keys, *proc_args)
             else:

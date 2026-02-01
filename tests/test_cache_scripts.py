@@ -147,23 +147,29 @@ class TestScriptExecution:
             "versioned_set",
             """
             redis.call('SET', KEYS[1], ARGV[1])
-            return 1
+            return redis.call('GET', KEYS[1])
             """,
-            pre_func=keys_only_pre,
+            pre_func=full_encode_pre,
+            post_func=decode_single_post,
         )
 
         # Set with version 1
-        cache.eval_script("versioned_set", keys=["vkey"], args=["v1"], version=1)
+        result1 = cache.eval_script("versioned_set", keys=["vkey"], args=["v1"], version=1)
         # Set with version 2
-        cache.eval_script("versioned_set", keys=["vkey"], args=["v2"], version=2)
+        result2 = cache.eval_script("versioned_set", keys=["vkey"], args=["v2"], version=2)
+
+        # Script results should be the values we stored
+        assert result1 == "v1"
+        assert result2 == "v2"
 
         # Get should return different values for different versions
+        # (values are properly encoded, so cache.get() can decode them)
         v1_val = cache.get("vkey", version=1)
         v2_val = cache.get("vkey", version=2)
 
         # Values should be different (different prefixed keys)
-        assert v1_val == b"v1"
-        assert v2_val == b"v2"
+        assert v1_val == "v1"
+        assert v2_val == "v2"
 
 
 class TestScriptHelpers:

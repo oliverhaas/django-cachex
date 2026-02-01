@@ -1169,12 +1169,12 @@ class Pipeline:
         if script.pre_func is not None:
             proc_keys, proc_args = script.pre_func(helpers, proc_keys, proc_args)
 
-        # Ensure SHA is cached (sync load - pipelines are sync only)
-        if script._sha is None:
-            script._sha = self._client.script_load(script.script)
-
-        # Queue evalsha command
-        self._pipeline.evalsha(script._sha, len(proc_keys), *proc_keys, *proc_args)
+        # Queue EVAL command using execute_command for cluster compatibility
+        # Note: We use EVAL instead of EVALSHA in pipelines because:
+        # 1. EVALSHA is blocked in Redis Cluster mode pipelines
+        # 2. ClusterPipeline.eval() has a different signature than regular Pipeline.eval()
+        # 3. execute_command works uniformly across both pipeline types
+        self._pipeline.execute_command("EVAL", script.script, len(proc_keys), *proc_keys, *proc_args)
 
         # Create decoder that applies post_func
         if script.post_func is not None:
