@@ -45,6 +45,10 @@ CACHES = {
 }
 ```
 
+## Acknowledgments
+
+This project was inspired by [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause. Thanks to the Django community for their continued work on the framework.
+
 ## License
 
 MIT License. See [LICENSE](https://github.com/oliverhaas/django-cachex/blob/main/LICENSE) for details.

@@ -1,3 +1,10 @@
+# Derived from django-redis (https://github.com/jazzband/django-redis)
+# Copyright (c) 2011-2016 Andrey Antukh <niwi@niwi.nz>
+# Copyright (c) 2011 Sean Bleier
+# Licensed under BSD-3-Clause
+#
+# django-redis was used as inspiration for this project.
+
 from typing import Any
 
 

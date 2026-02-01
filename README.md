@@ -49,6 +49,10 @@ Full documentation at [oliverhaas.github.io/django-cachex](https://oliverhaas.gi
 - Django 5.2+
 - valkey-py 6.0+ or redis-py 6.0+
 
+## Acknowledgments
+
+This project was inspired by [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause. Thanks to the Django community for their continued work on the framework.
+
 ## License
 
 MIT
