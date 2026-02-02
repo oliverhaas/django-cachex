@@ -10,31 +10,31 @@
       
       
       
-        <link rel="canonical" href="https://oliverhaas.github.io/django-cachex/dev/migration/">
+        <link rel="canonical" href="https://oliverhaas.github.io/django-cachex/dev/user-guide/admin/">
       
       
-        <link rel="prev" href="../recipes/">
+        <link rel="prev" href="../configuration/">
       
       
-        <link rel="next" href="../reference/api/">
+        <link rel="next" href="../async/">
       
       
         
       
       
-      <link rel="icon" href="../assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
     
     
       
-        <title>Migration - Django CacheX</title>
+        <title>Cache Admin - Django CacheX</title>
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -53,7 +53,7 @@
       
     
     
-    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#migration-guide" class="md-skip">
+        <a href="#cache-admin" class="md-skip">
           Skip to content
         </a>
       
@@ -98,7 +98,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href=".." title="Django CacheX" class="md-header__button md-logo" aria-label="Django CacheX" data-md-component="logo">
+    <a href="../.." title="Django CacheX" class="md-header__button md-logo" aria-label="Django CacheX" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Migration
+              Cache Admin
             
           </span>
         </div>
@@ -234,7 +234,7 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href=".." title="Django CacheX" class="md-nav__button md-logo" aria-label="Django CacheX" data-md-component="logo">
+    <a href="../.." title="Django CacheX" class="md-nav__button md-logo" aria-label="Django CacheX" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -264,7 +264,7 @@
   
   
     <li class="md-nav__item">
-      <a href=".." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -345,7 +345,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../getting-started/installation/" class="md-nav__link">
+      <a href="../../getting-started/installation/" class="md-nav__link">
         
   
   
@@ -373,7 +373,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../getting-started/quickstart/" class="md-nav__link">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
         
   
   
@@ -405,8 +405,10 @@
       
   
   
+    
   
   
+  
     
     
     
@@ -417,13 +419,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
           <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
@@ -444,7 +444,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -462,7 +462,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/configuration/" class="md-nav__link">
+      <a href="../configuration/" class="md-nav__link">
         
   
   
@@ -487,10 +487,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../user-guide/admin/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cache Admin
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -506,6 +533,131 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#support-levels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Support Levels
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#views" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Views
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Views">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cache-instances-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache Instances (Index)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-browser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Browser
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-detail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Detail
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#add-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Add Key
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backend-abilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backend Abilities
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tips" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tips
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -518,7 +670,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/async/" class="md-nav__link">
+      <a href="../async/" class="md-nav__link">
         
   
   
@@ -546,7 +698,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/advanced/" class="md-nav__link">
+      <a href="../advanced/" class="md-nav__link">
         
   
   
@@ -574,7 +726,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/serializers/" class="md-nav__link">
+      <a href="../serializers/" class="md-nav__link">
         
   
   
@@ -602,7 +754,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/compression/" class="md-nav__link">
+      <a href="../compression/" class="md-nav__link">
         
   
   
@@ -630,7 +782,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/sentinel/" class="md-nav__link">
+      <a href="../sentinel/" class="md-nav__link">
         
   
   
@@ -658,7 +810,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/cluster/" class="md-nav__link">
+      <a href="../cluster/" class="md-nav__link">
         
   
   
@@ -693,7 +845,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../recipes/" class="md-nav__link">
+      <a href="../../recipes/" class="md-nav__link">
         
   
   
@@ -717,37 +869,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Migration
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../migration/" class="md-nav__link">
         
   
   
@@ -763,70 +888,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#from-djangos-built-in-cache-backend" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        From Django's Built-in Cache Backend
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#from-django-valkey" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        From django-valkey
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#from-django-redis" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        From django-redis
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#new-features" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        New Features
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -892,7 +953,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/api/" class="md-nav__link">
+      <a href="../../reference/api/" class="md-nav__link">
         
   
   
@@ -920,7 +981,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/changelog/" class="md-nav__link">
+      <a href="../../reference/changelog/" class="md-nav__link">
         
   
   
@@ -975,10 +1036,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#from-djangos-built-in-cache-backend" class="md-nav__link">
+  <a href="#installation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        From Django's Built-in Cache Backend
+        Installation
       
     </span>
   </a>
@@ -986,10 +1047,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#from-django-valkey" class="md-nav__link">
+  <a href="#support-levels" class="md-nav__link">
     <span class="md-ellipsis">
       
-        From django-valkey
+        Support Levels
       
     </span>
   </a>
@@ -997,10 +1058,71 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#from-django-redis" class="md-nav__link">
+  <a href="#views" class="md-nav__link">
     <span class="md-ellipsis">
       
-        From django-redis
+        Views
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Views">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cache-instances-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache Instances (Index)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-browser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Browser
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-detail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Detail
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#add-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Add Key
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backend-abilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backend Abilities
       
     </span>
   </a>
@@ -1008,10 +1130,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#new-features" class="md-nav__link">
+  <a href="#tips" class="md-nav__link">
     <span class="md-ellipsis">
       
-        New Features
+        Tips
       
     </span>
   </a>
@@ -1038,115 +1160,149 @@
   
 
 
-<h1 id="migration-guide">Migration Guide<a class="headerlink" href="#migration-guide" title="Permanent link">&para;</a></h1>
-<h2 id="from-djangos-built-in-cache-backend">From Django's Built-in Cache Backend<a class="headerlink" href="#from-djangos-built-in-cache-backend" title="Permanent link">&para;</a></h2>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Before (Django&#39;s Redis backend)</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django.core.cache.backends.redis.RedisCache&quot;</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># After (Valkey)</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.ValkeyCache&quot;</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Or (Redis)</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.RedisCache&quot;</span>
+<h1 id="cache-admin">Cache Admin<a class="headerlink" href="#cache-admin" title="Permanent link">&para;</a></h1>
+<p>django-cachex provides a Django admin interface for inspecting and managing cache instances. It allows you to browse cache keys, view their values, and perform operations like adding, editing, and deleting cache entries.</p>
+<h2 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h2>
+<p>Add <code>django_cachex.admin</code> to your <code>INSTALLED_APPS</code>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">INSTALLED_APPS</span> <span class="o">=</span> <span class="p">[</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="c1"># ... other apps</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="s2">&quot;django.contrib.admin&quot;</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="s2">&quot;django_cachex&quot;</span><span class="p">,</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="s2">&quot;django_cachex.admin&quot;</span><span class="p">,</span>  <span class="c1"># Cache admin interface</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">]</span>
 </span></code></pre></div>
-<p>All Django options work unchanged. You gain extended features (data structures, TTL ops, locking, compression, unified Valkey/Redis support).</p>
-<h2 id="from-django-valkey">From django-valkey<a class="headerlink" href="#from-django-valkey" title="Permanent link">&para;</a></h2>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Before</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_valkey.cache.ValkeyCache&quot;</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;CLIENT_CLASS&quot;</span><span class="p">:</span> <span class="s2">&quot;django_valkey.client.DefaultClient&quot;</span><span class="p">}</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="c1"># After</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.ValkeyCache&quot;</span>
-</span></code></pre></div>
-<p><strong>Key changes:</strong></p>
+<p>The cache admin will appear in the Django admin sidebar under "Caches".</p>
+<h2 id="support-levels">Support Levels<a class="headerlink" href="#support-levels" title="Permanent link">&para;</a></h2>
+<p>Different cache backends have different levels of support in the Cache Admin:</p>
 <table>
 <thead>
 <tr>
-<th>django-valkey</th>
-<th>django-cachex</th>
+<th>Badge</th>
+<th>Level</th>
+<th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>CLIENT_CLASS</code></td>
-<td>Removed - use specific backend class</td>
+<td><strong>cachex</strong></td>
+<td>Full Support</td>
+<td>django-cachex backends (<code>ValkeyCache</code>, <code>RedisCache</code>, etc.) with full access to all features including key listing, pattern search, TTL inspection, and all data type operations.</td>
 </tr>
 <tr>
-<td><code>SERIALIZER</code></td>
-<td><code>serializer</code> (lowercase)</td>
+<td><strong>wrapped</strong></td>
+<td>Wrapped Support</td>
+<td>Django builtin backends (<code>LocMemCache</code>, <code>DatabaseCache</code>, etc.) and <code>django-redis</code>. Most features available through wrapper compatibility.</td>
 </tr>
 <tr>
-<td><code>COMPRESSOR</code></td>
-<td><code>compressor</code> (lowercase)</td>
-</tr>
-<tr>
-<td><code>CONNECTION_POOL_CLASS</code></td>
-<td><code>pool_class</code></td>
-</tr>
-<tr>
-<td><code>get_valkey_connection()</code></td>
-<td><code>cache.get_client()</code></td>
+<td><strong>limited</strong></td>
+<td>Limited Support</td>
+<td>Custom or unknown cache backends. Basic operations may work but key listing and advanced features may not be available.</td>
 </tr>
 </tbody>
 </table>
-<p>Import paths: <code>django_valkey.*</code> → <code>django_cachex.*</code></p>
-<p>For Sentinel: Use <code>django_cachex.cache.ValkeySentinelCache</code> instead of <code>CLIENT_CLASS</code>.</p>
-<div class="admonition warning">
-<p class="admonition-title">ValkeySentinelCache</p>
-<p><code>ValkeySentinelCache</code> is currently unavailable due to an upstream bug in valkey-py.
-Use <code>RedisSentinelCache</code> with your Valkey server instead (protocol compatible).</p>
-</div>
-<h2 id="from-django-redis">From django-redis<a class="headerlink" href="#from-django-redis" title="Permanent link">&para;</a></h2>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Before</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_redis.cache.RedisCache&quot;</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;CLIENT_CLASS&quot;</span><span class="p">:</span> <span class="s2">&quot;django_redis.client.DefaultClient&quot;</span><span class="p">}</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># After</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.RedisCache&quot;</span>
-</span></code></pre></div>
-<p><strong>Key changes:</strong></p>
-<table>
-<thead>
-<tr>
-<th>django-redis</th>
-<th>django-cachex</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>CLIENT_CLASS</code></td>
-<td>Removed - use specific backend class</td>
-</tr>
-<tr>
-<td><code>SERIALIZER</code></td>
-<td><code>serializer</code> (lowercase)</td>
-</tr>
-<tr>
-<td><code>COMPRESSOR</code></td>
-<td><code>compressor</code> (lowercase)</td>
-</tr>
-<tr>
-<td><code>CONNECTION_POOL_CLASS</code></td>
-<td><code>pool_class</code></td>
-</tr>
-<tr>
-<td><code>get_redis_connection()</code></td>
-<td><code>cache.get_client()</code></td>
-</tr>
-</tbody>
-</table>
-<p>Import paths: <code>django_redis.*</code> → <code>django_cachex.*</code></p>
-<p>For Sentinel: Use <code>django_cachex.cache.RedisSentinelCache</code> instead of <code>CLIENT_CLASS</code>.</p>
-<h2 id="new-features">New Features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h2>
-<p>After migrating, you gain:</p>
+<h2 id="views">Views<a class="headerlink" href="#views" title="Permanent link">&para;</a></h2>
+<h3 id="cache-instances-index">Cache Instances (Index)<a class="headerlink" href="#cache-instances-index" title="Permanent link">&para;</a></h3>
+<p>The main view lists all configured cache instances with:</p>
 <ul>
-<li><strong>Unified Valkey + Redis support</strong> in one package</li>
-<li><strong>Multi-serializer/compressor fallback</strong> for safe migrations</li>
-<li><strong>Extended data structures</strong> (hashes, lists, sets, sorted sets) directly on cache</li>
-<li><strong>TTL operations</strong> (<code>ttl()</code>, <code>pttl()</code>, <code>expire()</code>, <code>persist()</code>)</li>
-<li><strong>Pattern operations</strong> (<code>keys()</code>, <code>iter_keys()</code>, <code>delete_pattern()</code>)</li>
-<li><strong>Distributed locking</strong> (<code>cache.lock()</code>)</li>
-<li><strong>Pipelines</strong> (<code>cache.pipeline()</code>)</li>
+<li><strong>Cache Name</strong>: The alias used in <code>settings.CACHES</code></li>
+<li><strong>Backend</strong>: The full backend class path</li>
+<li><strong>Location</strong>: Connection string or path</li>
+<li><strong>Support Level</strong>: Badge indicating feature availability</li>
+</ul>
+<p><strong>Actions:</strong></p>
+<ul>
+<li><strong>Flush selected caches</strong>: Delete all entries from selected caches (available for backends that support it)</li>
+</ul>
+<h3 id="key-browser">Key Browser<a class="headerlink" href="#key-browser" title="Permanent link">&para;</a></h3>
+<p>Click on a cache name to browse its keys. Features include:</p>
+<ul>
+<li><strong>Search</strong>: Use wildcards (<code>*</code>) to filter keys (e.g., <code>user:*</code>, <code>*:session</code>)</li>
+<li><strong>Key Type</strong>: Shows Redis/Valkey data types (string, list, set, hash, zset)</li>
+<li><strong>TTL</strong>: Shows remaining time-to-live for each key</li>
+<li><strong>Pagination</strong>: Browse large key sets with configurable page size</li>
+</ul>
+<p><strong>Actions:</strong></p>
+<ul>
+<li><strong>Delete selected keys</strong>: Remove multiple keys at once</li>
+<li><strong>Add key</strong>: Create a new cache entry (top-right button)</li>
+</ul>
+<h3 id="key-detail">Key Detail<a class="headerlink" href="#key-detail" title="Permanent link">&para;</a></h3>
+<p>View and edit a specific key:</p>
+<ul>
+<li><strong>Value Display</strong>: Shows the key's value (formatted JSON for objects/arrays)</li>
+<li><strong>Type Information</strong>: For complex types (list, hash, set, zset), shows the data structure</li>
+<li><strong>TTL</strong>: Shows remaining expiry time</li>
+<li><strong>Edit</strong>: Modify value and timeout</li>
+<li><strong>Delete</strong>: Remove the key</li>
+</ul>
+<h3 id="add-key">Add Key<a class="headerlink" href="#add-key" title="Permanent link">&para;</a></h3>
+<p>Create a new cache entry:</p>
+<ul>
+<li><strong>Key Name</strong>: Unique identifier for the cache entry</li>
+<li><strong>Value</strong>: JSON objects/arrays are parsed automatically, plain text for strings</li>
+<li><strong>Timeout</strong>: Optional expiration time in seconds (leave empty for cache default)</li>
+</ul>
+<h2 id="backend-abilities">Backend Abilities<a class="headerlink" href="#backend-abilities" title="Permanent link">&para;</a></h2>
+<p>The admin adapts its interface based on what each backend supports:</p>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>cachex</th>
+<th>wrapped</th>
+<th>limited</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>List keys</td>
+<td>Yes</td>
+<td>Varies</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Get key</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Delete key</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Edit key</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Get TTL</td>
+<td>Yes</td>
+<td>Varies</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Get type</td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Flush cache</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Varies</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tips">Tips<a class="headerlink" href="#tips" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Pattern Search</strong>: Use <code>*</code> as a wildcard. For example, <code>user:*</code> finds all keys starting with "user:".</li>
+<li><strong>JSON Values</strong>: When editing, you can enter valid JSON to store objects or arrays.</li>
+<li><strong>Help Button</strong>: Each view has a help button (info icon) that shows context-specific tips.</li>
 </ul>
 
 
@@ -1199,10 +1355,10 @@ Use <code>RedisSentinelCache</code> with your Valkey server instead (protocol co
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.sections", "navigation.expand", "content.code.copy", "content.code.annotate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.sections", "navigation.expand", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
-      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>
