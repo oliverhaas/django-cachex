@@ -1,0 +1,234 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static "admin/css/changelists.css" %}">
+<style type="text/css">
+    {% include "admin/django_cachex/cache/styles.css" %}
+</style>
+{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle select all checkbox
+    const selectAll = document.getElementById('action-toggle');
+    if (selectAll) {
+        selectAll.addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('input[name="_selected_action"]');
+            checkboxes.forEach(cb => cb.checked = this.checked);
+            updateActionCounter();
+        });
+    }
+
+    // Handle individual checkboxes
+    document.querySelectorAll('input[name="_selected_action"]').forEach(function(cb) {
+        cb.addEventListener('change', updateActionCounter);
+    });
+
+    function updateActionCounter() {
+        const checked = document.querySelectorAll('input[name="_selected_action"]:checked').length;
+        const counter = document.querySelector('.action-counter');
+        if (counter) {
+            counter.textContent = checked + ' of ' + document.querySelectorAll('input[name="_selected_action"]').length + ' selected';
+        }
+    }
+});
+</script>
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }} app-django_cachex model-cache change-list{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo; <a href="{% url 'admin:django_cachex_cache_changelist' %}">{% trans 'Cache Instances' %}</a>
+    &rsaquo; <a href="{% url 'admin:django_cachex_cache_change' cache_name %}">{{ cache_name }}</a>
+    &rsaquo; {% trans 'Keys' %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    {% block object-tools %}
+    <ul class="object-tools">
+        {% block object-tools-items %}
+        <li>
+            <a href="?{% if not help_active %}help=1{% endif %}">{% trans 'Help' %}</a>
+        </li>
+        {% if abilities.info or abilities.slowlog %}
+        <li>
+            <a href="{% url 'admin:django_cachex_cache_change' cache_name %}">{% trans 'Cache Details' %}</a>
+        </li>
+        {% endif %}
+        {% if abilities.edit_key %}
+        <li>
+            <a href="{% url 'admin:django_cachex_key_add' %}?cache={{ cache_name }}" class="addlink">{% trans 'Add key' %}</a>
+        </li>
+        {% endif %}
+        {% endblock %}
+    </ul>
+    {% endblock %}
+
+    <div class="module" id="changelist">
+        <div class="changelist-form-container">
+            <div>
+                {% if error %}
+                <p class="errornote">
+                    <strong>Error:</strong> {{ error }}
+                </p>
+                {% endif %}
+
+                {% if error_message %}
+                <p class="errornote">{{ error_message }}</p>
+                {% endif %}
+
+                <!-- Warning messages for limited support -->
+                {% if not query_supported and not get_key_supported %}
+                <p class="errornote" style="background: var(--message-warning-bg); border-color: var(--body-quiet-color);">
+                    {% trans 'Key Operations Not Available: This cache backend does not support listing keys or performing exact key lookups.' %}
+                </p>
+                {% elif not query_supported %}
+                <p class="errornote" style="background: var(--message-warning-bg); border-color: var(--body-quiet-color);">
+                    {% trans 'Key Listing Not Available: This cache backend does not support listing all keys. You can still perform exact key lookups using the search box below.' %}
+                </p>
+                {% endif %}
+
+                {% if query_supported or get_key_supported %}
+                <!-- Search Form -->
+                <div id="toolbar">
+                    <form id="changelist-search" method="get" role="search">
+                        <div>
+                            <label for="searchbar"><img src="{% static "admin/img/search.svg" %}" alt="Search"></label>
+                            <input type="text" size="40" name="q" value="{{ search_query }}" id="searchbar">
+                            <input type="submit" value="{% trans 'Search' %}">
+                            {% if total_keys %}
+                            <span class="small quiet">{{ total_keys }} {% blocktrans count counter=total_keys %}result{% plural %}results{% endblocktrans %}</span>
+                            {% endif %}
+                        </div>
+                    </form>
+                </div>
+                {% endif %}
+
+                <form id="changelist-form" method="post">
+                {% csrf_token %}
+
+                {% if keys_data and abilities.delete_key %}
+                <!-- Actions -->
+                <div class="actions">
+                    <label>{% trans 'Action:' %}
+                        <select name="action">
+                            <option value="" selected>---------</option>
+                            <option value="delete_selected">{% trans 'Delete selected keys' %}</option>
+                        </select>
+                    </label>
+                    <button type="submit" class="button" onclick="return confirm('{% trans 'Are you sure you want to delete the selected keys?' %}');">{% trans 'Run' %}</button>
+                    <span class="action-counter">0 of {{ keys_data|length }} selected</span>
+                </div>
+                {% endif %}
+
+                {% if keys_data %}
+                <!-- Results Table -->
+                <div class="results">
+                    <table id="result_list">
+                        <thead>
+                            <tr>
+                                {% if abilities.delete_key %}
+                                <th scope="col" class="action-checkbox-column">
+                                    <div class="text"><span><input type="checkbox" id="action-toggle"></span></div>
+                                </th>
+                                {% endif %}
+                                <th scope="col">
+                                    <div class="text"><span>{% trans 'Key' %}</span></div>
+                                </th>
+                                {% if show_type %}
+                                <th scope="col">
+                                    <div class="text"><span>{% trans 'Type' %}</span></div>
+                                </th>
+                                {% endif %}
+                                {% if show_ttl %}
+                                <th scope="col">
+                                    <div class="text"><span>{% trans 'TTL' %}</span></div>
+                                </th>
+                                {% endif %}
+                                {% if show_size %}
+                                <th scope="col">
+                                    <div class="text"><span>{% trans 'Size' %}</span></div>
+                                </th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for key_info in keys_data %}
+                            <tr class="{% cycle 'row1' 'row2' %}">
+                                {% if abilities.delete_key %}
+                                <td class="action-checkbox">
+                                    <input type="checkbox" name="_selected_action" value="{{ key_info.key }}">
+                                </td>
+                                {% endif %}
+                                <th scope="row">
+                                    <a href="{% url 'admin:django_cachex_key_change' key_info.pk %}"><code>{{ key_info.key }}</code></a>
+                                </th>
+                                {% if show_type %}
+                                <td>
+                                    {% if key_info.type %}
+                                    <span class="type-badge type-{{ key_info.type }}">{{ key_info.type }}</span>
+                                    {% else %}
+                                    <span class="quiet">-</span>
+                                    {% endif %}
+                                </td>
+                                {% endif %}
+                                {% if show_ttl %}
+                                <td>
+                                    {% if key_info.ttl_expires_at %}
+                                    <code title="{{ key_info.ttl }}s">{{ key_info.ttl_expires_at|timeuntil }}</code>
+                                    {% else %}
+                                    <span class="quiet">-</span>
+                                    {% endif %}
+                                </td>
+                                {% endif %}
+                                {% if show_size %}
+                                <td>
+                                    {% if key_info.size is not None %}
+                                    <code>{{ key_info.size }}</code>
+                                    {% else %}
+                                    <span class="quiet">-</span>
+                                    {% endif %}
+                                </td>
+                                {% endif %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <nav class="paginator">
+                    <ul>
+                        {% if cursor > 0 %}
+                        <li><a href="?{% if search_query %}q={{ search_query|urlencode }}&{% endif %}count={{ count }}" class="button btn-small">{% trans 'Start' %}</a></li>
+                        {% endif %}
+                        {% if has_next %}
+                        <li><a href="?{% if search_query %}q={{ search_query|urlencode }}&{% endif %}count={{ count }}&cursor={{ next_cursor }}" class="button btn-small">{% trans 'Next' %}</a></li>
+                        {% endif %}
+                    </ul>
+                    {% if total_keys is not None %}
+                    {{ total_keys }} {% blocktrans count counter=total_keys %}key{% plural %}keys{% endblocktrans %}
+                    {% else %}
+                    {{ keys_count }} {% trans 'keys shown' %}
+                    {% endif %}
+                </nav>
+                {% elif query_supported %}
+                <nav class="paginator">
+                    0 {% trans 'keys' %}
+                </nav>
+                <p class="quiet" style="text-align: center; padding: 20px;">{% trans 'No keys found.' %}</p>
+                {% endif %}
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

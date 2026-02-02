@@ -1,0 +1,34 @@
+{% load i18n %}
+<!-- String Value Editor (default for string type or when type data not available) -->
+<fieldset class="module aligned">
+    <h2>{% trans 'Value' %}{% if value_is_editable %} <span class="quiet" style="font-weight: normal; font-size: 0.85em;">(JSON)</span>{% else %} <span class="quiet" style="font-weight: normal; font-size: 0.85em; color: #c4820e;">({% trans 'read-only' %})</span>{% endif %}</h2>
+    {% if not value_is_editable and backend_edit_supported %}
+    <div class="help" style="margin-bottom: 10px; padding: 8px; background: #fef3cd; border: 1px solid #ffc107; border-radius: 4px;">
+        <strong>{% trans 'Complex object detected.' %}</strong>
+        {% trans 'This value cannot be safely edited because it is not JSON-serializable. It may contain Python objects like datetime, bytes, or custom classes.' %}
+    </div>
+    {% endif %}
+    <form method="post" id="key-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update">
+        <div class="form-row">
+            <div>
+                <label for="id_value" class="{% if not edit_supported %}readonly{% endif %}">{% trans 'Value:' %}</label>
+                <textarea
+                    id="id_value"
+                    name="value"
+                    rows="12"
+                    class="vLargeTextField"
+                    {% if not edit_supported %}readonly{% endif %}
+                >{{ value_display }}</textarea>
+                {% if edit_supported %}
+                <div style="margin-top: 10px;">
+                    <button type="submit" class="button btn-small">{% trans 'Update' %}</button>
+                </div>
+                {% elif not backend_edit_supported %}
+                <p class="help">{% trans 'Editing is not supported for this cache backend.' %}</p>
+                {% endif %}
+            </div>
+        </div>
+    </form>
+</fieldset>

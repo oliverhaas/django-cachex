@@ -1,0 +1,328 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static "admin/css/forms.css" %}">
+<link rel="stylesheet" href="{% static "admin/css/changelists.css" %}">
+<style type="text/css">
+    {% include "admin/django_cachex/cache/styles.css" %}
+</style>
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }} app-django_cachex model-cache change-form{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo; <a href="{% url 'admin:django_cachex_cache_changelist' %}">{% trans 'Cache Instances' %}</a>
+    &rsaquo; {{ cache_name }}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    <!-- Object tools -->
+    <ul class="object-tools">
+        <li>
+            <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}">{% trans 'List Keys' %}</a>
+        </li>
+        <li>
+            <a href="?{% if not help_active %}help=1{% endif %}">{% trans 'Help' %}</a>
+        </li>
+    </ul>
+
+    {% if not info_supported and not slowlog_supported %}
+    <p class="errornote">
+        {% trans 'Cache info and slow log are not supported for this cache backend.' %}
+    </p>
+    {% endif %}
+
+    {% if info_data %}
+    <!-- Basic Configuration -->
+    <fieldset class="module aligned info-section">
+        <h2>{% trans 'Configuration' %}</h2>
+        <table class="info-table">
+            <tr>
+                <th>{% trans 'Backend' %}</th>
+                <td><code>{{ info_data.backend }}</code></td>
+            </tr>
+            <tr>
+                <th>{% trans 'Location' %}</th>
+                <td><code>{{ info_data.location|default:"-" }}</code></td>
+            </tr>
+            <tr>
+                <th>{% trans 'Key Prefix' %}</th>
+                <td><code>{{ info_data.key_prefix|default:"-" }}</code></td>
+            </tr>
+            <tr>
+                <th>{% trans 'Version' %}</th>
+                <td>{{ info_data.version }}</td>
+            </tr>
+            <tr>
+                <th>{% trans 'Support' %}</th>
+                <td><span class="support-badge support-badge-{{ cache_obj.support_level }}">{{ cache_obj.support_level }}</span></td>
+            </tr>
+        </table>
+    </fieldset>
+
+    {% if info_data.server %}
+    <!-- Server Information -->
+    <fieldset class="module aligned info-section">
+        <h2>{% trans 'Server' %}</h2>
+        <table class="info-table">
+            {% if info_data.server.redis_version %}
+            <tr>
+                <th>{% trans 'Redis/Valkey Version' %}</th>
+                <td>{{ info_data.server.redis_version }}</td>
+            </tr>
+            {% endif %}
+            {% if info_data.server.os %}
+            <tr>
+                <th>{% trans 'Operating System' %}</th>
+                <td>{{ info_data.server.os }}</td>
+            </tr>
+            {% endif %}
+            {% if info_data.server.arch_bits %}
+            <tr>
+                <th>{% trans 'Architecture' %}</th>
+                <td>{{ info_data.server.arch_bits }}-bit</td>
+            </tr>
+            {% endif %}
+            {% if info_data.server.tcp_port %}
+            <tr>
+                <th>{% trans 'TCP Port' %}</th>
+                <td>{{ info_data.server.tcp_port }}</td>
+            </tr>
+            {% endif %}
+            {% if info_data.server.uptime_in_days is not None %}
+            <tr>
+                <th>{% trans 'Uptime' %}</th>
+                <td>{{ info_data.server.uptime_in_days }} {% trans 'days' %} ({{ info_data.server.uptime_in_seconds }} {% trans 'seconds' %})</td>
+            </tr>
+            {% endif %}
+            {% if info_data.server.process_id %}
+            <tr>
+                <th>{% trans 'Process ID' %}</th>
+                <td>{{ info_data.server.process_id }}</td>
+            </tr>
+            {% endif %}
+        </table>
+    </fieldset>
+    {% endif %}
+
+    {% if info_data.memory %}
+    <!-- Memory Information -->
+    <fieldset class="module aligned info-section">
+        <h2>{% trans 'Memory' %}</h2>
+        <table class="info-table">
+            {% if info_data.memory.used_memory_human %}
+            <tr>
+                <th>{% trans 'Used Memory' %}</th>
+                <td>{{ info_data.memory.used_memory_human }} ({{ info_data.memory.used_memory }} bytes)</td>
+            </tr>
+            {% endif %}
+            {% if info_data.memory.used_memory_peak_human %}
+            <tr>
+                <th>{% trans 'Peak Memory' %}</th>
+                <td>{{ info_data.memory.used_memory_peak_human }} ({{ info_data.memory.used_memory_peak }} bytes)</td>
+            </tr>
+            {% endif %}
+            {% if info_data.memory.maxmemory %}
+            <tr>
+                <th>{% trans 'Max Memory' %}</th>
+                <td>{{ info_data.memory.maxmemory_human|default:info_data.memory.maxmemory }}</td>
+            </tr>
+            {% endif %}
+            {% if info_data.memory.maxmemory_policy %}
+            <tr>
+                <th>{% trans 'Eviction Policy' %}</th>
+                <td>{{ info_data.memory.maxmemory_policy }}</td>
+            </tr>
+            {% endif %}
+        </table>
+    </fieldset>
+    {% endif %}
+
+    {% if info_data.clients %}
+    <!-- Clients Information -->
+    <fieldset class="module aligned info-section">
+        <h2>{% trans 'Clients' %}</h2>
+        <table class="info-table">
+            {% if info_data.clients.connected_clients is not None %}
+            <tr>
+                <th>{% trans 'Connected Clients' %}</th>
+                <td>{{ info_data.clients.connected_clients }}</td>
+            </tr>
+            {% endif %}
+            {% if info_data.clients.blocked_clients is not None %}
+            <tr>
+                <th>{% trans 'Blocked Clients' %}</th>
+                <td>{{ info_data.clients.blocked_clients }}</td>
+            </tr>
+            {% endif %}
+        </table>
+    </fieldset>
+    {% endif %}
+
+    {% if info_data.stats %}
+    <!-- Statistics -->
+    <fieldset class="module aligned info-section">
+        <h2>{% trans 'Statistics' %}</h2>
+        <table class="info-table">
+            {% if info_data.stats.total_connections_received is not None %}
+            <tr>
+                <th>{% trans 'Total Connections' %}</th>
+                <td>{{ info_data.stats.total_connections_received }}</td>
+            </tr>
+            {% endif %}
+            {% if info_data.stats.total_commands_processed is not None %}
+            <tr>
+                <th>{% trans 'Total Commands' %}</th>
+                <td>{{ info_data.stats.total_commands_processed }}</td>
+            </tr>
+            {% endif %}
+            {% if info_data.stats.instantaneous_ops_per_sec is not None %}
+            <tr>
+                <th>{% trans 'Ops/sec' %}</th>
+                <td>{{ info_data.stats.instantaneous_ops_per_sec }}</td>
+            </tr>
+            {% endif %}
+            {% if info_data.stats.keyspace_hits is not None %}
+            <tr>
+                <th>{% trans 'Keyspace Hits' %}</th>
+                <td>{{ info_data.stats.keyspace_hits }}</td>
+            </tr>
+            {% endif %}
+            {% if info_data.stats.keyspace_misses is not None %}
+            <tr>
+                <th>{% trans 'Keyspace Misses' %}</th>
+                <td>{{ info_data.stats.keyspace_misses }}</td>
+            </tr>
+            {% endif %}
+            {% if info_data.stats.expired_keys is not None %}
+            <tr>
+                <th>{% trans 'Expired Keys' %}</th>
+                <td>{{ info_data.stats.expired_keys }}</td>
+            </tr>
+            {% endif %}
+            {% if info_data.stats.evicted_keys is not None %}
+            <tr>
+                <th>{% trans 'Evicted Keys' %}</th>
+                <td>{{ info_data.stats.evicted_keys }}</td>
+            </tr>
+            {% endif %}
+        </table>
+    </fieldset>
+    {% endif %}
+
+    {% if info_data.keyspace %}
+    <!-- Keyspace Information -->
+    <fieldset class="module aligned info-section">
+        <h2>{% trans 'Keyspace' %}</h2>
+        <div class="keyspace-grid">
+            {% for db_name, db_stats in info_data.keyspace.items %}
+            <div class="keyspace-card">
+                <h4>{{ db_name }}</h4>
+                {% if db_stats.keys is not None %}
+                <div class="stat">
+                    <span>{% trans 'Keys' %}</span>
+                    <span class="stat-value">{{ db_stats.keys }}</span>
+                </div>
+                {% endif %}
+                {% if db_stats.expires is not None %}
+                <div class="stat">
+                    <span>{% trans 'Expires' %}</span>
+                    <span class="stat-value">{{ db_stats.expires }}</span>
+                </div>
+                {% endif %}
+                {% if db_stats.avg_ttl is not None %}
+                <div class="stat">
+                    <span>{% trans 'Avg TTL' %}</span>
+                    <span class="stat-value">{{ db_stats.avg_ttl }}ms</span>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </fieldset>
+    {% endif %}
+
+    {% if raw_info_json %}
+    <!-- Raw Info -->
+    <fieldset class="module aligned">
+        <h2>{% trans 'Raw Info' %}</h2>
+        <textarea readonly rows="20" style="width: 100%; box-sizing: border-box; font-family: var(--font-family-monospace); font-size: 12px;">{{ raw_info_json }}</textarea>
+    </fieldset>
+    {% endif %}
+    {% endif %}
+
+    {% if slowlog_supported %}
+    <!-- Slow Log Section -->
+    <fieldset class="module aligned info-section">
+        <h2>{% trans 'Slow Log' %}</h2>
+
+        {% if slowlog_data %}
+        {% if slowlog_data.error %}
+        <p class="warningnote">{{ slowlog_data.error }}</p>
+        {% else %}
+        {% if slowlog_data.entries %}
+        <div class="results">
+            <table id="result_list" style="width: 100%;">
+                <thead>
+                    <tr>
+                        <th scope="col" style="width: 60px;">{% trans 'ID' %}</th>
+                        <th scope="col" style="width: 160px;">{% trans 'Time' %}</th>
+                        <th scope="col" style="width: 100px;">{% trans 'Duration' %}</th>
+                        <th scope="col">{% trans 'Command' %}</th>
+                        <th scope="col" style="width: 120px;">{% trans 'Client' %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in slowlog_data.entries %}
+                    <tr class="{% cycle 'row1' 'row2' %}">
+                        <td class="quiet">{{ entry.id }}</td>
+                        <td class="quiet">
+                            {% if entry.timestamp %}
+                            <code>{{ entry.timestamp|date:"Y-m-d H:i:s" }}</code>
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td class="{% if entry.duration_us >= 100000 %}duration-slow{% elif entry.duration_us >= 10000 %}duration-medium{% else %}duration-fast{% endif %}">
+                            {% if entry.duration_us >= 1000000 %}
+                            <code>{{ entry.duration_us|floatformat:0 }} &micro;s ({{ entry.duration_us|divisibleby:1000000 }}s)</code>
+                            {% elif entry.duration_us >= 1000 %}
+                            <code>{{ entry.duration_us }} &micro;s ({{ entry.duration_us|floatformat:0 }}ms)</code>
+                            {% else %}
+                            <code>{{ entry.duration_us }} &micro;s</code>
+                            {% endif %}
+                        </td>
+                        <td class="command-cell">
+                            <code>{% for arg in entry.command %}{{ arg }} {% endfor %}</code>
+                        </td>
+                        <td class="quiet">
+                            {% if entry.client %}{{ entry.client }}{% endif %}
+                            {% if entry.client_name %}<br><small>{{ entry.client_name }}</small>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="quiet" style="padding: 10px;">{% trans 'No slow queries recorded.' %}</p>
+        {% endif %}
+
+        {% endif %}
+        {% else %}
+        <p class="quiet" style="padding: 10px;">{% trans 'No slow log data available.' %}</p>
+        {% endif %}
+    </fieldset>
+    {% endif %}
+
+    <div class="submit-row">
+        <a role="button" href="{% url 'admin:django_cachex_cache_changelist' %}" class="closelink">{% trans 'Back' %}</a>
+    </div>
+</div>
+{% endblock %}

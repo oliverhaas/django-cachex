@@ -1,0 +1,60 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style type="text/css">
+    {% include "admin/django_cachex/cache/styles.css" %}
+</style>
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }} app-django_cachex model-cache{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo; <a href="{% url 'admin:django_cachex_cache_changelist' %}">{% trans 'Cache Instances' %}</a>
+    &rsaquo; {% trans 'Help' %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    <div class="module aligned">
+        <h2>{% trans 'Cache Admin Overview' %}</h2>
+        <p>
+            {% blocktrans %}
+            The Cache Admin provides a web interface for inspecting and managing your Django cache instances.
+            It allows you to browse cache keys, view their values, and perform operations like adding, editing,
+            and deleting cache entries.
+            {% endblocktrans %}
+        </p>
+
+        <h2>{% trans 'Support Levels' %}</h2>
+        <p>{% trans 'Different cache backends have different levels of support in the Cache Admin:' %}</p>
+
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr>
+                    <th style="text-align: left; padding: 8px; border-bottom: 1px solid var(--hairline-color);">{% trans 'Badge' %}</th>
+                    <th style="text-align: left; padding: 8px; border-bottom: 1px solid var(--hairline-color);">{% trans 'Description' %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid var(--hairline-color);"><span class="support-badge support-badge-cachex">cachex</span></td>
+                    <td style="padding: 8px; border-bottom: 1px solid var(--hairline-color);">{% trans 'Full support - django-cachex backends with full access to all features including key listing, pattern search, TTL inspection, and all data type operations.' %}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid var(--hairline-color);"><span class="support-badge support-badge-wrapped">wrapped</span></td>
+                    <td style="padding: 8px; border-bottom: 1px solid var(--hairline-color);">{% trans 'Wrapped support - Django builtin backends (LocMemCache, DatabaseCache, etc.) and django-redis. Most features available through wrapper compatibility.' %}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px;"><span class="support-badge support-badge-limited">limited</span></td>
+                    <td style="padding: 8px;">{% trans 'Limited support - Custom or unknown cache backends. Basic operations may work but key listing and advanced features may not be available.' %}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

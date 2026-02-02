@@ -1,0 +1,222 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static "admin/css/changelists.css" %}">
+<style type="text/css">
+    {% include "admin/django_cachex/cache/styles.css" %}
+</style>
+{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<script src="{% static 'admin/js/filters.js' %}" defer></script>
+{% if any_flush_supported %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle select all checkbox
+    const selectAll = document.getElementById('action-toggle');
+    if (selectAll) {
+        selectAll.addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('input[name="_selected_action"]');
+            checkboxes.forEach(cb => cb.checked = this.checked);
+            updateActionCounter();
+        });
+    }
+
+    // Handle individual checkboxes
+    document.querySelectorAll('input[name="_selected_action"]').forEach(function(cb) {
+        cb.addEventListener('change', updateActionCounter);
+    });
+
+    function updateActionCounter() {
+        const checked = document.querySelectorAll('input[name="_selected_action"]:checked').length;
+        const counter = document.querySelector('.action-counter');
+        if (counter) {
+            counter.textContent = checked + ' of ' + document.querySelectorAll('input[name="_selected_action"]').length + ' selected';
+        }
+    }
+});
+</script>
+{% endif %}
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }} app-django_cachex model-cache change-list{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo; {% trans 'Cache Instances' %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    {% block object-tools %}
+    <ul class="object-tools">
+        {% block object-tools-items %}
+        <li>
+            <a href="?{% if not help_active %}help=1{% endif %}">{% trans 'Help' %}</a>
+        </li>
+        {% endblock %}
+    </ul>
+    {% endblock %}
+
+    <div class="module filtered" id="changelist">
+        <div class="changelist-form-container">
+            {% block filters %}
+            <search id="changelist-filter" aria-labelledby="changelist-filter-header">
+                <h2 id="changelist-filter-header">{% trans 'Filter' %}</h2>
+                <details data-filter-title="support" open>
+                    <summary>{% trans 'By Support' %}</summary>
+                    <ul>
+                        <li{% if not support_filter %} class="selected"{% endif %}>
+                            <a href="?{% if search_query %}q={{ search_query|urlencode }}{% endif %}">{% trans 'All' %}</a>
+                        </li>
+                        <li{% if support_filter == "cachex" %} class="selected"{% endif %}>
+                            <a href="?support=cachex{% if search_query %}&q={{ search_query|urlencode }}{% endif %}">{% trans 'cachex' %}</a>
+                        </li>
+                        <li{% if support_filter == "wrapped" %} class="selected"{% endif %}>
+                            <a href="?support=wrapped{% if search_query %}&q={{ search_query|urlencode }}{% endif %}">{% trans 'wrapped' %}</a>
+                        </li>
+                        <li{% if support_filter == "limited" %} class="selected"{% endif %}>
+                            <a href="?support=limited{% if search_query %}&q={{ search_query|urlencode }}{% endif %}">{% trans 'limited' %}</a>
+                        </li>
+                    </ul>
+                </details>
+            </search>
+            {% endblock %}
+
+            <div>
+                {% block search %}
+                <div id="toolbar">
+                    <form id="changelist-search" method="get" role="search">
+                        {% if support_filter %}<input type="hidden" name="support" value="{{ support_filter }}">{% endif %}
+                        <div>
+                            <label for="searchbar"><img src="{% static "admin/img/search.svg" %}" alt="Search"></label>
+                            <input type="text" size="40" name="q" value="{{ search_query|default:'' }}" id="searchbar">
+                            <input type="submit" value="{% trans 'Search' %}">
+                        </div>
+                    </form>
+                </div>
+                {% endblock %}
+
+                <form id="changelist-form" method="post">
+                    {% csrf_token %}
+
+                    {% block result_list %}
+                    {% if caches_info %}
+                    <!-- Actions (matches admin actions bar) -->
+                    {% if any_flush_supported %}
+                    <div class="actions">
+                        <label>{% trans 'Action:' %}
+                            <select name="action">
+                                <option value="" selected>---------</option>
+                                <option value="flush_selected">{% trans 'Flush selected caches' %}</option>
+                            </select>
+                        </label>
+                        <button type="submit" class="button" onclick="return confirm('{% trans 'Are you sure you want to flush the selected caches? This will delete all entries in those caches.' %}');">{% trans 'Run' %}</button>
+                        <span class="action-counter">0 of {{ caches_info|length }} selected</span>
+                    </div>
+                    {% endif %}
+
+                    <!-- Results Table -->
+                    <div class="results">
+                        <table id="result_list">
+                            <thead>
+                                <tr>
+                                    {% if any_flush_supported %}
+                                    <th scope="col" class="action-checkbox-column">
+                                        <div class="text"><span><input type="checkbox" id="action-toggle"></span></div>
+                                    </th>
+                                    {% endif %}
+                                    <th scope="col">
+                                        <div class="text"><span>{% trans 'Cache Name' %}</span></div>
+                                    </th>
+                                    <th scope="col">
+                                        <div class="text"><span>{% trans 'Backend' %}</span></div>
+                                    </th>
+                                    <th scope="col">
+                                        <div class="text"><span>{% trans 'Location' %}</span></div>
+                                    </th>
+                                    <th scope="col">
+                                        <div class="text"><span>{% trans 'Support' %}</span></div>
+                                    </th>
+                                    <th scope="col">
+                                        <div class="text"><span>{% trans 'Actions' %}</span></div>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for cache_info in caches_info %}
+                                <tr class="{% cycle 'row1' 'row2' %}">
+                                    {% if any_flush_supported %}
+                                    <td class="action-checkbox">
+                                        <input type="checkbox" name="_selected_action" value="{{ cache_info.name }}"{% if not cache_info.flush_supported %} disabled title="{% trans 'Flush not supported for this backend' %}"{% endif %}>
+                                    </td>
+                                    {% endif %}
+                                    <th scope="row">
+                                        <a href="{% url 'admin:django_cachex_cache_change' cache_info.name %}">{{ cache_info.name }}</a>
+                                    </th>
+                                    <td>
+                                        <code>{{ cache_info.backend }}</code>
+                                        {% if cache_info.error %}
+                                        <br><span class="backend-error">{{ cache_info.error }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <code>{{ cache_info.location|default:"-" }}</code>
+                                    </td>
+                                    <td>
+                                        {% if cache_info.support_level == "cachex" %}
+                                        <span class="support-badge support-badge-cachex" title="{% trans 'Full support - django-cachex backend' %}">cachex</span>
+                                        {% elif cache_info.support_level == "wrapped" %}
+                                        <span class="support-badge support-badge-wrapped" title="{% trans 'Wrapped support - Django builtin backend' %}">wrapped</span>
+                                        {% else %}
+                                        <span class="support-badge support-badge-limited" title="{% trans 'Limited support - custom backend' %}">limited</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_info.name }}" class="list-keys-link">{% trans 'List Keys' %}</a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                    {% endblock %}
+
+                    {% block pagination %}
+                    <div class="changelist-footer">
+                        <nav class="paginator">
+                            {{ caches_info|length }} {% blocktrans count counter=caches_info|length %}cache instance{% plural %}cache instances{% endblocktrans %}
+                        </nav>
+                    </div>
+                    {% endblock %}
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {% if not has_caches_configured %}
+    <div class="module aligned">
+        <h2>{% trans 'Cache Configuration Required' %}</h2>
+        <div class="form-row">
+            <p>{% trans 'To use the Cache panel, you must configure cache instances in your Django settings.' %}</p>
+        </div>
+        <div class="form-row">
+            <h3>{% trans 'Example configuration:' %}</h3>
+            <pre class="literal-block">
+CACHES = {
+    "default": {
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/0",
+    }
+}</pre>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

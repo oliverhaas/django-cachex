@@ -1,0 +1,245 @@
+/* ===== DJANGO-CACHEX ADMIN STYLES ===== */
+/*
+ * Minimal custom CSS for django-cachex admin panel.
+ * Uses Django admin CSS variables and classes wherever possible.
+ * Only custom styles that aren't available in Django admin are defined here.
+ */
+
+/* ===== TYPE BADGES ===== */
+/* Redis data type indicators */
+
+.type-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.type-string { background: var(--primary); color: var(--primary-fg, white); }
+.type-list { background: var(--secondary); color: var(--primary-fg, white); }
+.type-set { background: #609060; color: white; }
+.type-hash { background: #9060a0; color: white; }
+.type-zset { background: #a06050; color: white; }
+.type-stream { background: #607090; color: white; }
+
+/* ===== SUPPORT LEVEL BADGES ===== */
+/* Cache backend support level indicators */
+
+.support-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.support-badge-cachex { background: var(--secondary); color: var(--primary-fg, white); }
+.support-badge-wrapped { background: var(--primary); color: var(--primary-fg, white); }
+.support-badge-limited { background: var(--close-button-bg); color: var(--button-fg, white); }
+
+/* ===== BUTTON VARIANTS ===== */
+/* Small button variant for inline table actions (matches vTextField height) */
+/* vTextField: padding 5px 6px + border 1px = 12px vertical extra */
+/* btn-small: padding 6px = 12px vertical extra (matching) */
+.button.btn-small {
+    padding: 6px 10px;
+    box-sizing: border-box;
+    vertical-align: middle;
+}
+
+/* Delete button in tables (uses Django admin delete colors) */
+.button.delete-btn {
+    background: var(--delete-button-bg);
+    color: var(--button-fg);
+}
+
+.button.delete-btn:hover,
+.button.delete-btn:focus {
+    background: var(--delete-button-hover-bg);
+}
+
+/* ===== CACHE INFO DISPLAY ===== */
+/* Two-column info table for cache details */
+
+.info-section {
+    margin-bottom: 20px;
+}
+
+.info-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.info-table th {
+    text-align: left;
+    padding: 8px 12px;
+    background: var(--darkened-bg);
+    border-bottom: 1px solid var(--hairline-color);
+    width: 200px;
+    font-weight: normal;
+    color: var(--body-quiet-color);
+}
+
+.info-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--hairline-color);
+}
+
+.info-table tr:last-child th,
+.info-table tr:last-child td {
+    border-bottom: none;
+}
+
+/* ===== KEYSPACE DISPLAY ===== */
+/* Dashboard cards for Redis keyspace info */
+
+.keyspace-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 15px;
+    padding: 15px;
+}
+
+.keyspace-card {
+    background: var(--darkened-bg);
+    padding: 15px;
+    border-radius: 4px;
+}
+
+.keyspace-card h4 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    text-transform: uppercase;
+    color: var(--body-quiet-color);
+}
+
+.keyspace-card .stat {
+    display: flex;
+    justify-content: space-between;
+    margin: 5px 0;
+}
+
+.keyspace-card .stat-value {
+    font-weight: bold;
+}
+
+/* ===== SLOWLOG DISPLAY ===== */
+/* Duration highlighting for slow queries */
+
+.duration-slow {
+    color: var(--error-fg);
+    font-weight: bold;
+}
+
+.duration-medium {
+    color: var(--message-warning-fg, #9d6b00);
+}
+
+.duration-fast {
+    color: var(--message-success-fg, #44aa44);
+}
+
+.command-cell {
+    max-width: 500px;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.count-form {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+/* ===== KEY ADD FORM ===== */
+/* Type-specific field visibility toggle */
+
+.type-field {
+    display: none;
+}
+
+.type-field.active {
+    display: block;
+}
+
+/* Monospace text for code-like textareas */
+#id_value,
+#id_list_values,
+#id_set_members,
+#id_hash_value,
+#id_zset_value {
+    font-family: var(--font-family-monospace);
+    width: 100%;
+    min-height: 200px;
+}
+
+/* ===== NOTES ===== */
+/* Warning note (uses Django's messagelist warning styling) */
+
+.warningnote {
+    display: block;
+    font-weight: 400;
+    font-size: 0.8125rem;
+    padding: 10px 10px 10px 65px;
+    margin: 0 0 10px 0;
+    color: var(--body-fg);
+    background-color: var(--message-warning-bg);
+    background-image: var(--message-warning-icon);
+    background-position: 40px 12px;
+    background-repeat: no-repeat;
+    background-size: 16px auto;
+}
+
+/* ===== PAGINATION ===== */
+/* Cursor-based pagination buttons */
+
+.paginator ul {
+    display: inline-flex;
+    gap: 8px;
+    list-style: none;
+    margin: 0 10px 0 0;
+    padding: 0;
+}
+
+.paginator .button {
+    text-decoration: none !important;
+}
+
+/* ===== LIST KEYS LINK ===== */
+/* Styled to match object-tools links */
+
+.list-keys-link {
+    display: inline-block;
+    padding: 2px 10px 3px;
+    background: var(--object-tools-bg);
+    color: var(--object-tools-fg) !important;
+    border: none;
+    border-radius: 15px;
+    font-size: 0.6875rem;
+    font-weight: 400;
+    text-decoration: none !important;
+    text-transform: uppercase;
+}
+
+.list-keys-link:hover,
+.list-keys-link:focus {
+    background: var(--object-tools-hover-bg);
+    text-decoration: none;
+}
+
+/* ===== MISC ===== */
+
+/* Backend error display */
+.backend-error {
+    color: var(--error-fg);
+    font-size: 0.85em;
+}
+
+/* Ensure full width table in results */
+#result_list {
+    width: 100%;
+}

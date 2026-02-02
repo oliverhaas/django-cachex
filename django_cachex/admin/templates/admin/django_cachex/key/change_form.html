@@ -1,0 +1,164 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static "admin/css/forms.css" %}">
+<link rel="stylesheet" href="{% static "admin/css/changelists.css" %}">
+<style type="text/css">
+    {% include "admin/django_cachex/cache/styles.css" %}
+</style>
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }} app-django_cachex model-key change-form{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo; <a href="{% url 'admin:django_cachex_cache_changelist' %}">{% trans 'Cache Instances' %}</a>
+    &rsaquo; <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}">{{ cache_name }}</a>
+    &rsaquo; {{ key }}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    <!-- Object tools -->
+    <ul class="object-tools">
+        <li>
+            <a href="?{% if not help_active %}help=1{% endif %}">{% trans 'Help' %}</a>
+        </li>
+    </ul>
+
+    <!-- Key Information -->
+    <fieldset class="module aligned">
+        <h2>{% trans 'Key Information' %}</h2>
+        <div class="form-row">
+            <label>{% trans 'Key:' %}</label>
+            <code>{{ key }}</code>
+        </div>
+        <div class="form-row">
+            <label>{% trans 'Cache:' %}</label>
+            <code>{{ cache_name }}</code>
+            {% if cache_metadata.location or cache_metadata.key_prefix or cache_metadata.version != 1 %}
+            <span class="quiet">({% if cache_metadata.location %}{{ cache_metadata.location }}{% if cache_metadata.key_prefix or cache_metadata.version != 1 %}, {% endif %}{% endif %}{% if cache_metadata.key_prefix %}prefix: {{ cache_metadata.key_prefix }}{% if cache_metadata.version != 1 %}, {% endif %}{% endif %}{% if cache_metadata.version != 1 %}version: {{ cache_metadata.version }}{% endif %})</span>
+            {% endif %}
+        </div>
+        <div class="form-row">
+            <label>{% trans 'Raw Key:' %}</label>
+            <code class="quiet">{{ raw_key }}</code>
+        </div>
+        {% if key_type %}
+        <div class="form-row">
+            <label>{% trans 'Type:' %}</label>
+            <span class="type-badge type-{{ key_type }}">{{ key_type }}</span>
+            {% if type_data.length is not None %}
+            <span class="quiet">({{ type_data.length }} {% if key_type == 'hash' %}{% trans 'fields' %}{% elif key_type == 'list' %}{% trans 'items' %}{% else %}{% trans 'members' %}{% endif %})</span>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% if set_ttl_supported %}
+        <div class="form-row">
+            <label for="id_ttl">{% trans 'TTL (s):' %}</label>
+            <form method="post" style="display: inline;">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="set_ttl">
+                <input
+                    type="number"
+                    id="id_ttl"
+                    name="ttl_value"
+                    class="vIntegerField"
+                    style="width: 100px;"
+                    step="1"
+                    min="0"
+                    value="{% if ttl is not None and ttl >= 0 %}{{ ttl }}{% endif %}"
+                    placeholder="{% trans 'no expiry' %}"
+                >
+                <button type="submit" class="button btn-small" style="margin-left: 10px;">{% trans 'Update' %}</button>
+            </form>
+        </div>
+        {% elif ttl is not None %}
+        <div class="form-row">
+            <label>{% trans 'TTL:' %}</label>
+            {% if ttl_expires_at %}
+            <code title="{{ ttl }}s">{{ ttl_expires_at|timeuntil }}</code>
+            {% else %}
+            <span class="quiet">{% trans 'No expiry' %}</span>
+            {% endif %}
+        </div>
+        {% endif %}
+    </fieldset>
+
+    {% if create_mode %}
+    <p class="help" style="margin-bottom: 15px; padding: 10px; background: #fffbe6; border: 1px solid #ffe58f; border-radius: 4px;">
+        {% trans 'This key does not exist yet. Use the operations below to add your first item and create the key.' %}
+    </p>
+    {% endif %}
+
+    {% if key_exists or create_mode %}
+
+    {% if key_type == 'list' %}
+    {% include "admin/django_cachex/key/key_detail_list.html" %}
+    <div class="submit-row">
+        <a role="button" href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="closelink">{% trans 'Back' %}</a>
+        {% if delete_supported %}
+        <a role="button" href="#" class="deletelink" onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); } return false;">{% trans 'Delete' %}</a>
+        {% endif %}
+    </div>
+
+    {% elif key_type == 'hash' %}
+    {% include "admin/django_cachex/key/key_detail_hash.html" %}
+    <div class="submit-row">
+        <a role="button" href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="closelink">{% trans 'Back' %}</a>
+        {% if delete_supported %}
+        <a role="button" href="#" class="deletelink" onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); } return false;">{% trans 'Delete' %}</a>
+        {% endif %}
+    </div>
+
+    {% elif key_type == 'set' %}
+    {% include "admin/django_cachex/key/key_detail_set.html" %}
+    <div class="submit-row">
+        <a role="button" href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="closelink">{% trans 'Back' %}</a>
+        {% if delete_supported %}
+        <a role="button" href="#" class="deletelink" onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); } return false;">{% trans 'Delete' %}</a>
+        {% endif %}
+    </div>
+
+    {% elif key_type == 'zset' %}
+    {% include "admin/django_cachex/key/key_detail_zset.html" %}
+    <div class="submit-row">
+        <a role="button" href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="closelink">{% trans 'Back' %}</a>
+        {% if delete_supported %}
+        <a role="button" href="#" class="deletelink" onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); } return false;">{% trans 'Delete' %}</a>
+        {% endif %}
+    </div>
+
+    {% elif key_type == 'stream' %}
+    {% include "admin/django_cachex/key/key_detail_stream.html" %}
+    <div class="submit-row">
+        <a role="button" href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="closelink">{% trans 'Back' %}</a>
+        {% if delete_supported %}
+        <a role="button" href="#" class="deletelink" onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); } return false;">{% trans 'Delete' %}</a>
+        {% endif %}
+    </div>
+
+    {% else %}
+    {% include "admin/django_cachex/key/key_detail_string.html" %}
+    <div class="submit-row">
+        <a role="button" href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="closelink">{% trans 'Back' %}</a>
+        {% if delete_supported %}
+        <a role="button" href="#" class="deletelink" onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); } return false;">{% trans 'Delete' %}</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% endif %}
+
+    {% if key_exists and delete_supported %}
+    <form id="delete-form" method="post" style="display: none;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete">
+    </form>
+    {% endif %}
+</div>
+{% endblock %}

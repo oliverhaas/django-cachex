@@ -1,0 +1,92 @@
+{% load i18n %}
+<!-- List Operations -->
+{% if list_ops_supported %}
+<fieldset class="module aligned">
+    <h2>{% trans 'Operations' %}</h2>
+    <div class="form-row">
+        <label>{% trans 'Push Left:' %}</label>
+        <form method="post" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="list_lpush">
+            <input type="text" name="push_value" placeholder="{% trans 'value' %}" style="width: 120px;">
+            <button type="submit" class="button btn-small">{% trans 'Push' %}</button>
+        </form>
+    </div>
+    <div class="form-row">
+        <label>{% trans 'Push Right:' %}</label>
+        <form method="post" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="list_rpush">
+            <input type="text" name="push_value" placeholder="{% trans 'value' %}" style="width: 120px;">
+            <button type="submit" class="button btn-small">{% trans 'Push' %}</button>
+        </form>
+    </div>
+    <div class="form-row">
+        <label>{% trans 'Pop Left:' %}</label>
+        <form method="post" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="list_lpop">
+            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" title="{% trans 'Count' %}">
+            <button type="submit" class="button btn-small">{% trans 'Pop' %}</button>
+        </form>
+    </div>
+    <div class="form-row">
+        <label>{% trans 'Pop Right:' %}</label>
+        <form method="post" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="list_rpop">
+            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" title="{% trans 'Count' %}">
+            <button type="submit" class="button btn-small">{% trans 'Pop' %}</button>
+        </form>
+    </div>
+    <div class="form-row">
+        <label>{% trans 'Trim:' %}</label>
+        <form method="post" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="list_ltrim">
+            <input type="number" name="trim_start" value="0" class="vIntegerField" style="width: 60px;" title="{% trans 'Start index' %}" placeholder="{% trans 'start' %}">
+            <input type="number" name="trim_stop" value="-1" class="vIntegerField" style="width: 60px;" title="{% trans 'Stop index (-1 for last)' %}" placeholder="{% trans 'stop' %}">
+            <button type="submit" class="button btn-small" onclick="return confirm('{% trans 'Trim list to this range? Elements outside the range will be removed.' %}');">{% trans 'Trim' %}</button>
+        </form>
+    </div>
+</fieldset>
+{% endif %}
+<!-- List Items -->
+<fieldset class="module aligned">
+    <h2>{% trans 'List Items' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
+    {% if type_data.items %}
+    <div class="results">
+        <table id="result_list" style="width: 100%;">
+            <thead>
+                <tr>
+                    <th scope="col" style="width: 60px;">{% trans 'Index' %}</th>
+                    <th scope="col">{% trans 'Value' %}</th>
+                    {% if list_ops_supported %}
+                    <th scope="col" style="width: 80px;">{% trans 'Actions' %}</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in type_data.items %}
+                <tr class="{% cycle 'row1' 'row2' %}">
+                    <td class="quiet">{{ forloop.counter0 }}</td>
+                    <td><code>{{ item }}</code></td>
+                    {% if list_ops_supported %}
+                    <td>
+                        <form method="post" style="display: inline;">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="list_lrem">
+                            <input type="hidden" name="item_value" value="{{ item }}">
+                            <button type="submit" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Remove this item?' %}');">{% trans 'Remove' %}</button>
+                        </form>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="quiet" style="padding: 10px;">{% trans 'List is empty.' %}</p>
+    {% endif %}
+</fieldset>
