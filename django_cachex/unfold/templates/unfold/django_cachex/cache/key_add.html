@@ -1,0 +1,162 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block title %}{% trans 'Add Key' %} | django-cachex{% endblock %}
+
+{% block breadcrumbs %}
+<div class="container mb-4 mx-auto px-4 lg:px-0">
+    <nav class="flex text-sm">
+        <a href="{% url 'admin:index' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Home' %}</a>
+        <span class="mx-2 text-base-400">/</span>
+        <a href="{% url 'django_cachex:index' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Cache Instances' %}</a>
+        <span class="mx-2 text-base-400">/</span>
+        <a href="{% url 'django_cachex:key_search' cache_name %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{{ cache_name }}</a>
+        <span class="mx-2 text-base-400">/</span>
+        <span class="text-font-important-light dark:text-font-important-dark font-medium">{% trans 'Add Key' %}</span>
+    </nav>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 lg:px-0">
+    <!-- Header with tools -->
+    <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+        <h1 class="text-2xl font-semibold text-font-important-light dark:text-font-important-dark">{% trans 'Add Key' %}</h1>
+        <div class="flex items-center gap-2">
+            <a href="?{% if not help_active %}help=1{% endif %}"
+               class="inline-flex items-center px-3 py-2 text-sm font-medium rounded-default
+                      bg-base-100 dark:bg-base-800 text-base-700 dark:text-base-200
+                      hover:bg-base-200 dark:hover:bg-base-700 transition-colors">
+                {% trans 'Help' %}
+            </a>
+        </div>
+    </div>
+
+    <!-- Not Supported Error -->
+    {% if not edit_supported %}
+    <div class="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-default">
+        <p class="text-red-700 dark:text-red-400">{% trans 'Adding keys is not supported for this cache backend.' %}</p>
+    </div>
+    {% endif %}
+
+    <!-- Add Key Form -->
+    <form method="post" id="key-form">
+        {% csrf_token %}
+
+        <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+            <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
+                <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">{% trans 'Key Details' %}</h2>
+            </div>
+            <div class="p-4 space-y-4">
+                <!-- Key Name -->
+                <div id="key-row">
+                    <label for="id_key" class="block text-sm font-medium text-base-700 dark:text-base-300 mb-2">
+                        {% trans 'Key Name:' %} <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" id="id_key" name="key"
+                           value="{{ prefill_key }}"
+                           class="w-full max-w-md px-3 py-2 text-sm font-mono border border-base-300 dark:border-base-600 rounded-default
+                                  bg-white dark:bg-base-800 text-base-900 dark:text-base-100
+                                  focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                           {% if not edit_supported %}disabled{% endif %}
+                           required>
+                    <p class="mt-1 text-sm text-base-500 dark:text-base-400">{% trans 'The unique identifier for this cache entry.' %}</p>
+                </div>
+
+                <!-- Type -->
+                <div>
+                    <label for="id_type" class="block text-sm font-medium text-base-700 dark:text-base-300 mb-2">
+                        {% trans 'Type:' %} <span class="text-red-500">*</span>
+                    </label>
+                    <select id="id_type" name="type"
+                            class="w-48 px-3 py-2 text-sm border border-base-300 dark:border-base-600 rounded-default
+                                   bg-white dark:bg-base-800 text-base-900 dark:text-base-100
+                                   focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                            {% if not edit_supported %}disabled{% endif %}>
+                        <option value="string" {% if prefill_type == "string" %}selected{% endif %}>{% trans 'String' %}</option>
+                        {% if list_ops_supported %}
+                        <option value="list" {% if prefill_type == "list" %}selected{% endif %}>{% trans 'List' %}</option>
+                        {% endif %}
+                        {% if set_ops_supported %}
+                        <option value="set" {% if prefill_type == "set" %}selected{% endif %}>{% trans 'Set' %}</option>
+                        {% endif %}
+                        {% if hash_ops_supported %}
+                        <option value="hash" {% if prefill_type == "hash" %}selected{% endif %}>{% trans 'Hash' %}</option>
+                        {% endif %}
+                        {% if zset_ops_supported %}
+                        <option value="zset" {% if prefill_type == "zset" %}selected{% endif %}>{% trans 'Sorted Set' %}</option>
+                        {% endif %}
+                    </select>
+                    <p class="mt-1 text-sm text-base-500 dark:text-base-400">{% trans 'Select the data type for this key.' %}</p>
+                </div>
+            </div>
+        </div>
+
+        {% if edit_supported %}
+        <!-- Actions bar -->
+        <div class="flex items-center justify-between">
+            <a href="{% url 'django_cachex:key_search' cache_name %}"
+               class="px-4 py-2 text-sm font-medium rounded-default bg-base-100 dark:bg-base-800
+                      text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700 transition-colors">
+                {% trans 'Cancel' %}
+            </a>
+            <button type="submit" name="_continue"
+                    class="px-4 py-2 text-sm font-medium rounded-default bg-primary-600 text-white hover:bg-primary-700 transition-colors">
+                {% trans 'Continue' %}
+            </button>
+        </div>
+        {% endif %}
+    </form>
+</div>
+
+<style>
+    .field-error input,
+    .field-error textarea {
+        border-color: #ef4444 !important;
+    }
+    .error-message {
+        color: #ef4444;
+        font-size: 0.875rem;
+        margin-top: 0.25rem;
+    }
+</style>
+
+<script>
+(function() {
+    const form = document.getElementById('key-form');
+    const keyInput = document.getElementById('id_key');
+
+    function showError(rowId, message) {
+        const row = document.getElementById(rowId);
+        if (row) {
+            row.classList.add('field-error');
+            const existing = row.querySelector('.error-message');
+            if (existing) existing.remove();
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = message;
+            row.appendChild(errorDiv);
+        }
+    }
+
+    function clearAllErrors() {
+        document.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
+        document.querySelectorAll('.error-message').forEach(el => el.remove());
+    }
+
+    form.addEventListener('submit', function(e) {
+        clearAllErrors();
+        let isValid = true;
+
+        if (!keyInput.value.trim()) {
+            showError('key-row', '{% trans "Key name is required" %}');
+            isValid = false;
+        }
+
+        if (!isValid) {
+            e.preventDefault();
+        }
+    });
+})();
+</script>
+{% endblock %}

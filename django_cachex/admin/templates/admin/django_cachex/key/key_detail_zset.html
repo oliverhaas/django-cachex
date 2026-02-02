@@ -1,0 +1,89 @@
+{% load i18n %}
+<!-- Sorted Set Operations -->
+{% if zset_ops_supported %}
+<fieldset class="module aligned">
+    <h2>{% trans 'Operations' %}</h2>
+    <div class="form-row">
+        <label>{% trans 'Add:' %}</label>
+        <form method="post" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="zset_zadd">
+            <input type="text" name="member_value" placeholder="{% trans 'member' %}" style="width: 100px; vertical-align: middle;">
+            <input type="number" name="score_value" placeholder="{% trans 'score' %}" style="width: 70px; vertical-align: middle;" step="any">
+            <label class="quiet" title="{% trans 'Only add new' %}" style="display: inline; vertical-align: middle;"><input type="checkbox" name="zadd_nx" style="vertical-align: middle;"> NX</label>
+            <label class="quiet" title="{% trans 'Only update existing' %}" style="display: inline; vertical-align: middle;"><input type="checkbox" name="zadd_xx" style="vertical-align: middle;"> XX</label>
+            <label class="quiet" title="{% trans 'Update if score > current' %}" style="display: inline; vertical-align: middle;"><input type="checkbox" name="zadd_gt" style="vertical-align: middle;"> GT</label>
+            <label class="quiet" title="{% trans 'Update if score < current' %}" style="display: inline; vertical-align: middle;"><input type="checkbox" name="zadd_lt" style="vertical-align: middle;"> LT</label>
+            <button type="submit" class="button btn-small" style="vertical-align: middle;">{% trans 'Add' %}</button>
+        </form>
+    </div>
+    <div class="form-row">
+        <label>{% trans 'Pop Min:' %}</label>
+        <form method="post" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="zset_zpopmin">
+            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" title="{% trans 'Count' %}">
+            <button type="submit" class="button btn-small">{% trans 'Pop' %}</button>
+        </form>
+    </div>
+    <div class="form-row">
+        <label>{% trans 'Pop Max:' %}</label>
+        <form method="post" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="zset_zpopmax">
+            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" title="{% trans 'Count' %}">
+            <button type="submit" class="button btn-small">{% trans 'Pop' %}</button>
+        </form>
+    </div>
+</fieldset>
+{% endif %}
+<!-- Sorted Set Members -->
+<fieldset class="module aligned">
+    <h2>{% trans 'Sorted Set Members' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
+    {% if type_data.members %}
+    <div class="results">
+        <table id="result_list" style="width: 100%;">
+            <thead>
+                <tr>
+                    <th scope="col">{% trans 'Member' %}</th>
+                    <th scope="col" style="width: 120px;">{% trans 'Score' %}</th>
+                    {% if zset_ops_supported %}
+                    <th scope="col" style="width: 150px;">{% trans 'Actions' %}</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for member, score in type_data.members %}
+                <tr class="{% cycle 'row1' 'row2' %}">
+                    <td><code>{{ member }}</code></td>
+                    <td>
+                        <input type="number" name="score_value" value="{{ score }}" step="any" class="vTextField" form="zset-update-{{ forloop.counter0 }}" style="width: 100%; box-sizing: border-box;">
+                    </td>
+                    {% if zset_ops_supported %}
+                    <td>
+                        <button type="submit" form="zset-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
+                        <button type="submit" form="zset-remove-{{ forloop.counter0 }}" class="button delete-btn btn-small">{% trans 'Remove' %}</button>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <!-- Forms for zset operations (outside table for valid HTML) -->
+    {% for member, score in type_data.members %}
+    <form id="zset-update-{{ forloop.counter0 }}" method="post" style="display: none;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="zset_zadd">
+        <input type="hidden" name="member_value" value="{{ member }}">
+    </form>
+    <form id="zset-remove-{{ forloop.counter0 }}" method="post" style="display: none;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="zset_zrem">
+        <input type="hidden" name="member" value="{{ member }}">
+    </form>
+    {% endfor %}
+    {% else %}
+    <p class="quiet" style="padding: 10px;">{% trans 'Sorted set is empty.' %}</p>
+    {% endif %}
+</fieldset>

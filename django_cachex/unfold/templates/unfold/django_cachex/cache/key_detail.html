@@ -1,0 +1,729 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block title %}{{ key }} | django-cachex{% endblock %}
+
+{% block breadcrumbs %}
+<div class="container mb-4 mx-auto px-4 lg:px-0">
+    <nav class="flex text-sm">
+        <a href="{% url 'admin:index' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Home' %}</a>
+        <span class="mx-2 text-base-400">/</span>
+        <a href="{% url 'django_cachex:index' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Cache Instances' %}</a>
+        <span class="mx-2 text-base-400">/</span>
+        <a href="{% url 'django_cachex:key_search' cache_name %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{{ cache_name }}</a>
+        <span class="mx-2 text-base-400">/</span>
+        <span class="text-font-important-light dark:text-font-important-dark font-medium font-mono text-xs">{{ key|truncatechars:50 }}</span>
+    </nav>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 lg:px-0">
+    <!-- Header with tools -->
+    <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+        <h1 class="text-2xl font-semibold text-font-important-light dark:text-font-important-dark font-mono break-all">{{ key }}</h1>
+        <div class="flex items-center gap-2">
+            <a href="?{% if not help_active %}help=1{% endif %}"
+               class="border cursor-pointer font-medium px-3 py-2 rounded-default text-center whitespace-nowrap
+                      bg-white border-base-200 hover:text-primary-600
+                      dark:bg-base-900 dark:border-base-700 dark:hover:text-primary-500
+                      shadow-xs text-sm transition-colors">
+                {% trans 'Help' %}
+            </a>
+        </div>
+    </div>
+
+    <!-- Key Does Not Exist Error -->
+    {% if not key_exists %}
+    <div class="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-default">
+        <p class="text-red-700 dark:text-red-400">{% trans 'This key does not exist in the cache.' %}</p>
+    </div>
+    {% endif %}
+
+    <!-- Key Information Card -->
+    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+        <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
+            <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">{% trans 'Key Information' %}</h2>
+        </div>
+        <div class="p-4 space-y-3">
+            <!-- Key -->
+            <div class="flex items-center gap-3">
+                <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Key:' %}</label>
+                <span class="font-mono text-sm text-base-900 dark:text-base-100">{{ key }}</span>
+            </div>
+            <!-- Cache -->
+            <div class="flex items-center gap-3">
+                <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Cache:' %}</label>
+                <span class="font-mono text-sm text-base-900 dark:text-base-100">{{ cache_name }}</span>
+                {% if cache_metadata.location or cache_metadata.key_prefix or cache_metadata.version != 1 %}
+                <span class="text-xs text-base-400">({% if cache_metadata.location %}{{ cache_metadata.location }}{% if cache_metadata.key_prefix or cache_metadata.version != 1 %}, {% endif %}{% endif %}{% if cache_metadata.key_prefix %}prefix: {{ cache_metadata.key_prefix }}{% if cache_metadata.version != 1 %}, {% endif %}{% endif %}{% if cache_metadata.version != 1 %}version: {{ cache_metadata.version }}{% endif %})</span>
+                {% endif %}
+            </div>
+            <!-- Raw Key -->
+            <div class="flex items-center gap-3">
+                <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Raw Key:' %}</label>
+                <span class="font-mono text-xs text-base-500 dark:text-base-400">{{ raw_key }}</span>
+            </div>
+            <!-- Type -->
+            {% if redis_type %}
+            <div class="flex items-center gap-3">
+                <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Type:' %}</label>
+                <span class="inline-block font-semibold h-6 leading-6 px-2 rounded-default text-[11px] uppercase whitespace-nowrap
+                    {% if redis_type == 'string' %}bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400
+                    {% elif redis_type == 'list' %}bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400
+                    {% elif redis_type == 'set' %}bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400
+                    {% elif redis_type == 'hash' %}bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400
+                    {% elif redis_type == 'zset' %}bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400
+                    {% elif redis_type == 'stream' %}bg-primary-100 text-primary-700 dark:bg-primary-500/20 dark:text-primary-400
+                    {% else %}bg-base-100 text-base-700 dark:bg-base-500/20 dark:text-base-200{% endif %}">
+                    {{ redis_type }}
+                </span>
+                {% if type_data.length is not None %}
+                <span class="text-xs text-base-400">({{ type_data.length }} {% if redis_type == 'hash' %}{% trans 'fields' %}{% elif redis_type == 'list' %}{% trans 'items' %}{% else %}{% trans 'members' %}{% endif %})</span>
+                {% endif %}
+            </div>
+            {% endif %}
+            <!-- TTL -->
+            {% if ttl is not None %}
+            <div class="flex items-center gap-3">
+                <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'TTL:' %}</label>
+                {% if ttl_expires_at %}
+                <span class="font-mono text-sm text-base-900 dark:text-base-100" title="{{ ttl }}s">{{ ttl_expires_at|timeuntil }}</span>
+                {% else %}
+                <span class="text-sm text-base-400">{% trans 'No expiry' %}</span>
+                {% endif %}
+                {% if set_ttl_supported %}
+                <form method="post" class="flex items-center gap-2 ml-4">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="set_ttl">
+                    <input type="number" name="ttl_value" placeholder="{% trans 'seconds' %}"
+                           class="w-20 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                                  bg-white dark:bg-base-800 text-base-900 dark:text-base-100" min="1">
+                    <button type="submit"
+                            class="px-2 py-1 text-xs font-medium rounded bg-base-100 dark:bg-base-700
+                                   text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-600">
+                        {% trans 'Set TTL' %}
+                    </button>
+                </form>
+                {% if ttl >= 0 %}
+                <form method="post" class="inline">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="persist">
+                    <button type="submit"
+                            onclick="return confirm('{% trans 'Remove TTL? Key will not expire.' %}');"
+                            class="px-2 py-1 text-xs font-medium rounded bg-base-100 dark:bg-base-700
+                                   text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-600">
+                        {% trans 'Persist' %}
+                    </button>
+                </form>
+                {% endif %}
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if create_mode %}
+    <div class="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-default">
+        <p class="text-yellow-700 dark:text-yellow-400">
+            {% trans 'This key does not exist yet. Use the operations below to add your first item and create the key.' %}
+        </p>
+    </div>
+    {% endif %}
+
+    {% if key_exists or create_mode %}
+
+    {% if redis_type == 'list' %}
+    <!-- List Operations -->
+    {% if list_ops_supported %}
+    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+        <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
+            <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">{% trans 'Operations' %}</h2>
+        </div>
+        <div class="p-4 space-y-3">
+            <div class="flex items-center gap-3">
+                <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Push Left:' %}</label>
+                <form method="post" class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="list_lpush">
+                    <input type="text" name="push_value" placeholder="{% trans 'value' %}"
+                           class="w-32 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                                  bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
+                    <button type="submit" class="px-3 py-1 text-sm font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                        {% trans 'Push' %}
+                    </button>
+                </form>
+            </div>
+            <div class="flex items-center gap-3">
+                <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Push Right:' %}</label>
+                <form method="post" class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="list_rpush">
+                    <input type="text" name="push_value" placeholder="{% trans 'value' %}"
+                           class="w-32 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                                  bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
+                    <button type="submit" class="px-3 py-1 text-sm font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                        {% trans 'Push' %}
+                    </button>
+                </form>
+            </div>
+            <div class="flex items-center gap-3">
+                <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Pop Left:' %}</label>
+                <form method="post" class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="list_lpop">
+                    <input type="number" name="pop_count" value="1" min="1"
+                           class="w-14 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                                  bg-white dark:bg-base-700 text-base-900 dark:text-base-100" title="{% trans 'Count' %}">
+                    <button type="submit" class="px-3 py-1 text-sm font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                        {% trans 'Pop' %}
+                    </button>
+                </form>
+            </div>
+            <div class="flex items-center gap-3">
+                <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Pop Right:' %}</label>
+                <form method="post" class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="list_rpop">
+                    <input type="number" name="pop_count" value="1" min="1"
+                           class="w-14 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                                  bg-white dark:bg-base-700 text-base-900 dark:text-base-100" title="{% trans 'Count' %}">
+                    <button type="submit" class="px-3 py-1 text-sm font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                        {% trans 'Pop' %}
+                    </button>
+                </form>
+            </div>
+            <div class="flex items-center gap-3">
+                <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Trim:' %}</label>
+                <form method="post" class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="list_ltrim">
+                    <input type="number" name="trim_start" value="0"
+                           class="w-14 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                                  bg-white dark:bg-base-700 text-base-900 dark:text-base-100" title="{% trans 'Start index' %}">
+                    <input type="number" name="trim_stop" value="-1"
+                           class="w-14 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                                  bg-white dark:bg-base-700 text-base-900 dark:text-base-100" title="{% trans 'Stop index (-1 for last)' %}">
+                    <button type="submit"
+                            onclick="return confirm('{% trans 'Trim list to this range? Elements outside the range will be removed.' %}');"
+                            class="px-3 py-1 text-sm font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                        {% trans 'Trim' %}
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    <!-- List Items -->
+    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+        <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
+            <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">
+                {% trans 'List Items' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}
+            </h2>
+        </div>
+        {% if type_data.items %}
+        <table class="w-full">
+            <thead class="bg-base-50 dark:bg-base-800 border-b border-base-200 dark:border-base-800">
+                <tr>
+                    <th class="w-16 px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase">{% trans 'Index' %}</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase">{% trans 'Value' %}</th>
+                    {% if list_ops_supported %}
+                    <th class="w-24 px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase">{% trans 'Actions' %}</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-base-200 dark:divide-base-800">
+                {% for item in type_data.items %}
+                <tr class="hover:bg-base-50 dark:hover:bg-base-800">
+                    <td class="px-4 py-3 text-sm text-base-400">{{ forloop.counter0 }}</td>
+                    <td class="px-4 py-3 font-mono text-sm text-base-900 dark:text-base-100">{{ item }}</td>
+                    {% if list_ops_supported %}
+                    <td class="px-4 py-3">
+                        <form method="post" class="inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="list_lrem">
+                            <input type="hidden" name="item_value" value="{{ item }}">
+                            <button type="submit"
+                                    onclick="return confirm('{% trans 'Remove this item?' %}');"
+                                    class="px-2 py-1 text-xs font-medium rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50">
+                                {% trans 'Remove' %}
+                            </button>
+                        </form>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="p-4 text-base-500 dark:text-base-400">{% trans 'List is empty.' %}</p>
+        {% endif %}
+    </div>
+
+    {% elif redis_type == 'hash' %}
+    <!-- Hash Operations -->
+    {% if hash_ops_supported %}
+    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+        <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
+            <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">{% trans 'Operations' %}</h2>
+        </div>
+        <div class="p-4 space-y-3">
+            <div class="flex items-center gap-3">
+                <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Set Field:' %}</label>
+                <form method="post" class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="hash_hset">
+                    <input type="text" name="field_name" placeholder="{% trans 'field' %}"
+                           class="w-28 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                                  bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
+                    <input type="text" name="field_value" placeholder="{% trans 'value' %}"
+                           class="w-40 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                                  bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
+                    <button type="submit" class="px-3 py-1 text-sm font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                        {% trans 'Set' %}
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    <!-- Hash Fields -->
+    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+        <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
+            <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">
+                {% trans 'Hash Fields' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}
+            </h2>
+        </div>
+        {% if type_data.fields %}
+        <table class="w-full">
+            <thead class="bg-base-50 dark:bg-base-800 border-b border-base-200 dark:border-base-800">
+                <tr>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase">{% trans 'Field' %}</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase">{% trans 'Value' %}</th>
+                    {% if hash_ops_supported %}
+                    <th class="w-32 px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase">{% trans 'Actions' %}</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-base-200 dark:divide-base-800">
+                {% for field, value in type_data.fields.items %}
+                <tr class="hover:bg-base-50 dark:hover:bg-base-800">
+                    <td class="px-4 py-3 font-mono text-sm text-base-900 dark:text-base-100">{{ field }}</td>
+                    <form method="post" class="contents">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="hash_hset">
+                        <input type="hidden" name="field_name" value="{{ field }}">
+                        <td class="px-4 py-3">
+                            <input type="text" name="field_value" value="{{ value }}"
+                                   class="w-full px-2 py-1 text-sm font-mono border border-base-300 dark:border-base-600 rounded
+                                          bg-white dark:bg-base-800 text-base-900 dark:text-base-100">
+                        </td>
+                        {% if hash_ops_supported %}
+                        <td class="px-4 py-3 whitespace-nowrap">
+                            <button type="submit" class="px-2 py-1 text-xs font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                                {% trans 'Update' %}
+                            </button>
+                    </form>
+                            <form method="post" class="inline ml-1">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="hash_hdel">
+                                <input type="hidden" name="field" value="{{ field }}">
+                                <button type="submit" class="px-2 py-1 text-xs font-medium rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50">
+                                    {% trans 'Delete' %}
+                                </button>
+                            </form>
+                        </td>
+                        {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="p-4 text-base-500 dark:text-base-400">{% trans 'Hash is empty.' %}</p>
+        {% endif %}
+    </div>
+
+    {% elif redis_type == 'set' %}
+    <!-- Set Operations -->
+    {% if set_ops_supported %}
+    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+        <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
+            <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">{% trans 'Operations' %}</h2>
+        </div>
+        <div class="p-4 space-y-3">
+            <div class="flex items-center gap-3">
+                <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Add:' %}</label>
+                <form method="post" class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="set_sadd">
+                    <input type="text" name="member_value" placeholder="{% trans 'member' %}"
+                           class="w-40 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                                  bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
+                    <button type="submit" class="px-3 py-1 text-sm font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                        {% trans 'Add' %}
+                    </button>
+                </form>
+            </div>
+            <div class="flex items-center gap-3">
+                <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Pop:' %}</label>
+                <form method="post" class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="set_spop">
+                    <input type="number" name="pop_count" value="1" min="1"
+                           class="w-14 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                                  bg-white dark:bg-base-700 text-base-900 dark:text-base-100" title="{% trans 'Count' %}">
+                    <button type="submit" class="px-3 py-1 text-sm font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                        {% trans 'Random' %}
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    <!-- Set Members -->
+    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+        <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
+            <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">
+                {% trans 'Set Members' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}
+            </h2>
+        </div>
+        {% if type_data.members %}
+        <table class="w-full">
+            <thead class="bg-base-50 dark:bg-base-800 border-b border-base-200 dark:border-base-800">
+                <tr>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase">{% trans 'Member' %}</th>
+                    {% if set_ops_supported %}
+                    <th class="w-24 px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase">{% trans 'Actions' %}</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-base-200 dark:divide-base-800">
+                {% for member in type_data.members %}
+                <tr class="hover:bg-base-50 dark:hover:bg-base-800">
+                    <td class="px-4 py-3 font-mono text-sm text-base-900 dark:text-base-100">{{ member }}</td>
+                    {% if set_ops_supported %}
+                    <td class="px-4 py-3">
+                        <form method="post" class="inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="set_srem">
+                            <input type="hidden" name="member" value="{{ member }}">
+                            <button type="submit" class="px-2 py-1 text-xs font-medium rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50">
+                                {% trans 'Remove' %}
+                            </button>
+                        </form>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="p-4 text-base-500 dark:text-base-400">{% trans 'Set is empty.' %}</p>
+        {% endif %}
+    </div>
+
+    {% elif redis_type == 'zset' %}
+    <!-- Sorted Set Operations -->
+    {% if zset_ops_supported %}
+    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+        <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
+            <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">{% trans 'Operations' %}</h2>
+        </div>
+        <div class="p-4 space-y-3">
+            <div class="flex items-center gap-3">
+                <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Add:' %}</label>
+                <form method="post" class="flex flex-wrap items-center gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="zset_zadd">
+                    <input type="text" name="member_value" placeholder="{% trans 'member' %}"
+                           class="w-28 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                                  bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
+                    <input type="number" name="score_value" placeholder="{% trans 'score' %}" step="any"
+                           class="w-20 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                                  bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
+                    <span class="text-xs text-base-400 flex items-center gap-2 whitespace-nowrap">
+                        <label title="{% trans 'Only add new' %}"><input type="checkbox" name="zadd_nx" class="mr-1"> NX</label>
+                        <label title="{% trans 'Only update existing' %}"><input type="checkbox" name="zadd_xx" class="mr-1"> XX</label>
+                        <label title="{% trans 'Update if score > current' %}"><input type="checkbox" name="zadd_gt" class="mr-1"> GT</label>
+                        <label title="{% trans 'Update if score < current' %}"><input type="checkbox" name="zadd_lt" class="mr-1"> LT</label>
+                    </span>
+                    <button type="submit" class="px-3 py-1 text-sm font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                        {% trans 'Add' %}
+                    </button>
+                </form>
+            </div>
+            <div class="flex items-center gap-3">
+                <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Pop Min:' %}</label>
+                <form method="post" class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="zset_zpopmin">
+                    <input type="number" name="pop_count" value="1" min="1"
+                           class="w-14 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                                  bg-white dark:bg-base-700 text-base-900 dark:text-base-100" title="{% trans 'Count' %}">
+                    <button type="submit" class="px-3 py-1 text-sm font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                        {% trans 'Pop' %}
+                    </button>
+                </form>
+            </div>
+            <div class="flex items-center gap-3">
+                <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Pop Max:' %}</label>
+                <form method="post" class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="zset_zpopmax">
+                    <input type="number" name="pop_count" value="1" min="1"
+                           class="w-14 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                                  bg-white dark:bg-base-700 text-base-900 dark:text-base-100" title="{% trans 'Count' %}">
+                    <button type="submit" class="px-3 py-1 text-sm font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                        {% trans 'Pop' %}
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    <!-- Sorted Set Members -->
+    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+        <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
+            <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">
+                {% trans 'Sorted Set Members' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}
+            </h2>
+        </div>
+        {% if type_data.members %}
+        <table class="w-full">
+            <thead class="bg-base-50 dark:bg-base-800 border-b border-base-200 dark:border-base-800">
+                <tr>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase">{% trans 'Member' %}</th>
+                    <th class="w-32 px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase">{% trans 'Score' %}</th>
+                    {% if zset_ops_supported %}
+                    <th class="w-36 px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase">{% trans 'Actions' %}</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-base-200 dark:divide-base-800">
+                {% for member, score in type_data.members %}
+                <tr class="hover:bg-base-50 dark:hover:bg-base-800">
+                    <td class="px-4 py-3 font-mono text-sm text-base-900 dark:text-base-100">{{ member }}</td>
+                    <form method="post" class="contents">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="zset_zadd">
+                        <input type="hidden" name="member_value" value="{{ member }}">
+                        <td class="px-4 py-3">
+                            <input type="number" name="score_value" value="{{ score }}" step="any"
+                                   class="w-full px-2 py-1 text-sm font-mono border border-base-300 dark:border-base-600 rounded
+                                          bg-white dark:bg-base-800 text-base-900 dark:text-base-100">
+                        </td>
+                        {% if zset_ops_supported %}
+                        <td class="px-4 py-3 whitespace-nowrap">
+                            <button type="submit" class="px-2 py-1 text-xs font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                                {% trans 'Update' %}
+                            </button>
+                    </form>
+                            <form method="post" class="inline ml-1">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="zset_zrem">
+                                <input type="hidden" name="member" value="{{ member }}">
+                                <button type="submit" class="px-2 py-1 text-xs font-medium rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50">
+                                    {% trans 'Remove' %}
+                                </button>
+                            </form>
+                        </td>
+                        {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="p-4 text-base-500 dark:text-base-400">{% trans 'Sorted set is empty.' %}</p>
+        {% endif %}
+    </div>
+
+    {% elif redis_type == 'stream' %}
+    <!-- Stream Operations -->
+    {% if stream_ops_supported %}
+    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+        <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
+            <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">{% trans 'Operations' %}</h2>
+        </div>
+        <div class="p-4 space-y-3">
+            <div class="flex items-center gap-3">
+                <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Add Entry:' %}</label>
+                <form method="post" class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="stream_xadd">
+                    <input type="text" name="field_name" placeholder="{% trans 'field' %}"
+                           class="w-24 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                                  bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
+                    <input type="text" name="field_value" placeholder="{% trans 'value' %}"
+                           class="w-32 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                                  bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
+                    <button type="submit" class="px-3 py-1 text-sm font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                        {% trans 'Add' %}
+                    </button>
+                </form>
+            </div>
+            <div class="flex items-center gap-3">
+                <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Trim:' %}</label>
+                <form method="post" class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="stream_xtrim">
+                    <input type="number" name="maxlen" placeholder="{% trans 'max length' %}" min="0"
+                           class="w-24 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                                  bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
+                    <button type="submit"
+                            onclick="return confirm('{% trans 'Trim stream to this length? Older entries will be removed.' %}');"
+                            class="px-3 py-1 text-sm font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                        {% trans 'Trim' %}
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    <!-- Stream Entries -->
+    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+        <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
+            <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">
+                {% trans 'Stream Entries' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}
+            </h2>
+        </div>
+        {% if type_data.entries %}
+        <table class="w-full">
+            <thead class="bg-base-50 dark:bg-base-800 border-b border-base-200 dark:border-base-800">
+                <tr>
+                    <th class="w-44 px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase">{% trans 'Entry ID' %}</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase">{% trans 'Fields' %}</th>
+                    {% if stream_ops_supported %}
+                    <th class="w-24 px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase">{% trans 'Actions' %}</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-base-200 dark:divide-base-800">
+                {% for entry_id, fields in type_data.entries %}
+                <tr class="hover:bg-base-50 dark:hover:bg-base-800">
+                    <td class="px-4 py-3 font-mono text-xs text-base-500 dark:text-base-400">{{ entry_id }}</td>
+                    <td class="px-4 py-3 font-mono text-sm text-base-900 dark:text-base-100">
+                        {% for field, value in fields.items %}{{ field }}: {{ value }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                    </td>
+                    {% if stream_ops_supported %}
+                    <td class="px-4 py-3">
+                        <form method="post" class="inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="stream_xdel">
+                            <input type="hidden" name="entry_id" value="{{ entry_id }}">
+                            <button type="submit"
+                                    onclick="return confirm('{% trans 'Delete this entry?' %}');"
+                                    class="px-2 py-1 text-xs font-medium rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50">
+                                {% trans 'Delete' %}
+                            </button>
+                        </form>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="p-4 text-base-500 dark:text-base-400">{% trans 'Stream is empty.' %}</p>
+        {% endif %}
+    </div>
+
+    {% else %}
+    <!-- String Value Editor -->
+    <form method="post" id="key-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update">
+
+        <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+            <div class="px-4 py-3 border-b border-base-200 dark:border-base-800 flex items-center gap-2">
+                <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">{% trans 'Value' %}</h2>
+                {% if value_is_editable %}
+                <span class="inline-block font-semibold h-6 leading-6 px-2 rounded-default text-[11px] uppercase whitespace-nowrap bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400">JSON</span>
+                {% else %}
+                <span class="inline-block font-semibold h-6 leading-6 px-2 rounded-default text-[11px] uppercase whitespace-nowrap bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400">{% trans 'read-only' %}</span>
+                {% endif %}
+            </div>
+            {% if not value_is_editable and backend_edit_supported %}
+            <div class="px-4 py-3 bg-yellow-50 dark:bg-yellow-900/20 border-b border-yellow-200 dark:border-yellow-800">
+                <p class="text-sm text-yellow-700 dark:text-yellow-400">
+                    <strong>{% trans 'Complex object detected.' %}</strong>
+                    {% trans 'This value cannot be safely edited because it is not JSON-serializable. It may contain Python objects like datetime, bytes, or custom classes.' %}
+                </p>
+            </div>
+            {% endif %}
+            <div class="p-4">
+                <label for="id_value" class="block text-sm font-medium text-base-700 dark:text-base-300 mb-2">{% trans 'Value:' %}</label>
+                <textarea id="id_value" name="value" rows="12"
+                          class="w-full px-3 py-2 text-sm font-mono border border-base-300 dark:border-base-600 rounded-default
+                                 bg-white dark:bg-base-800 text-base-900 dark:text-base-100
+                                 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                          {% if not edit_supported %}readonly{% endif %}>{{ value_display }}</textarea>
+                {% if not edit_supported and not backend_edit_supported %}
+                <p class="mt-2 text-sm text-base-500 dark:text-base-400">{% trans 'Editing is not supported for this cache backend.' %}</p>
+                {% endif %}
+            </div>
+            {% if edit_supported %}
+            <div class="px-4 pb-4">
+                <label for="id_timeout" class="block text-sm font-medium text-base-700 dark:text-base-300 mb-2">{% trans 'Timeout (seconds):' %}</label>
+                <input type="number" id="id_timeout" name="timeout" step="1" min="0"
+                       class="w-36 px-3 py-2 text-sm border border-base-300 dark:border-base-600 rounded-default
+                              bg-white dark:bg-base-800 text-base-900 dark:text-base-100
+                              focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                <p class="mt-1 text-sm text-base-500 dark:text-base-400">{% trans 'Leave empty to preserve existing TTL or use cache default.' %}</p>
+            </div>
+            {% endif %}
+        </div>
+
+        {% if edit_supported %}
+        <!-- Actions bar for string type -->
+        <div class="flex items-center justify-between">
+            <a href="{% url 'django_cachex:key_search' cache_name %}"
+               class="px-4 py-2 text-sm font-medium rounded-default bg-base-100 dark:bg-base-800
+                      text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700 transition-colors">
+                {% trans 'Close' %}
+            </a>
+            <div class="flex items-center gap-3">
+                {% if delete_supported %}
+                <button type="button"
+                        onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); }"
+                        class="px-4 py-2 text-sm font-medium rounded-default bg-red-600 text-white hover:bg-red-700 transition-colors">
+                    {% trans 'Delete' %}
+                </button>
+                {% endif %}
+                <button type="submit"
+                        class="px-4 py-2 text-sm font-medium rounded-default bg-primary-600 text-white hover:bg-primary-700 transition-colors">
+                    {% trans 'Save' %}
+                </button>
+            </div>
+        </div>
+        {% endif %}
+    </form>
+    {% endif %}
+
+    <!-- Actions bar for non-string types -->
+    {% if redis_type and redis_type != 'string' %}
+    <div class="flex items-center justify-between">
+        <a href="{% url 'django_cachex:key_search' cache_name %}"
+           class="px-4 py-2 text-sm font-medium rounded-default bg-base-100 dark:bg-base-800
+                  text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700 transition-colors">
+            {% trans 'Close' %}
+        </a>
+        {% if delete_supported %}
+        <button type="button"
+                onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); }"
+                class="px-4 py-2 text-sm font-medium rounded-default bg-red-600 text-white hover:bg-red-700 transition-colors">
+            {% trans 'Delete' %}
+        </button>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% endif %}
+
+    {% if key_exists and delete_supported %}
+    <form id="delete-form" method="post" style="display: none;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete">
+    </form>
+    {% endif %}
+</div>
+{% endblock %}

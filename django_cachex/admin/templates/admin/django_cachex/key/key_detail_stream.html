@@ -1,0 +1,65 @@
+{% load i18n %}
+<!-- Stream Operations -->
+{% if stream_ops_supported %}
+<fieldset class="module aligned">
+    <h2>{% trans 'Operations' %}</h2>
+    <div class="form-row">
+        <label>{% trans 'Add Entry:' %}</label>
+        <form method="post" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="stream_xadd">
+            <input type="text" name="field_name" placeholder="{% trans 'field' %}" style="width: 100px;">
+            <input type="text" name="field_value" placeholder="{% trans 'value' %}" style="width: 150px;">
+            <button type="submit" class="button btn-small">{% trans 'Add' %}</button>
+        </form>
+    </div>
+    <div class="form-row">
+        <label>{% trans 'Trim:' %}</label>
+        <form method="post" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="stream_xtrim">
+            <input type="number" name="maxlen" placeholder="{% trans 'max length' %}" class="vIntegerField" style="width: 100px;" min="0">
+            <button type="submit" class="button btn-small" onclick="return confirm('{% trans 'Trim stream to this length? Older entries will be removed.' %}');">{% trans 'Trim' %}</button>
+        </form>
+    </div>
+</fieldset>
+{% endif %}
+<!-- Stream Entries -->
+<fieldset class="module aligned">
+    <h2>{% trans 'Stream Entries' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
+    {% if type_data.entries %}
+    <div class="results">
+        <table id="result_list" style="width: 100%;">
+            <thead>
+                <tr>
+                    <th scope="col" style="width: 180px;">{% trans 'Entry ID' %}</th>
+                    <th scope="col">{% trans 'Fields' %}</th>
+                    {% if stream_ops_supported %}
+                    <th scope="col" style="width: 80px;">{% trans 'Actions' %}</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry_id, fields in type_data.entries %}
+                <tr class="{% cycle 'row1' 'row2' %}">
+                    <td><code class="quiet">{{ entry_id }}</code></td>
+                    <td><code>{% for field, value in fields.items %}{{ field }}: {{ value }}{% if not forloop.last %}, {% endif %}{% endfor %}</code></td>
+                    {% if stream_ops_supported %}
+                    <td>
+                        <form method="post" style="display: inline;">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="stream_xdel">
+                            <input type="hidden" name="entry_id" value="{{ entry_id }}">
+                            <button type="submit" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Delete this entry?' %}');">{% trans 'Delete' %}</button>
+                        </form>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="quiet" style="padding: 10px;">{% trans 'Stream is empty.' %}</p>
+    {% endif %}
+</fieldset>

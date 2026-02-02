@@ -41,6 +41,7 @@ from django.core.cache.backends.base import DEFAULT_TIMEOUT, BaseCache
 from django.utils.module_loading import import_string
 
 if TYPE_CHECKING:
+    import builtins
     from collections.abc import Callable, Iterator, Mapping, Sequence
 
     from django_cachex.client.pipeline import Pipeline
@@ -141,7 +142,7 @@ class KeyValueCache(BaseCache):
     """
 
     # Class attribute - subclasses override this
-    _class: type[KeyValueCacheClient] = KeyValueCacheClient
+    _class: builtins.type[KeyValueCacheClient] = KeyValueCacheClient
 
     def __init__(self, server: str, params: dict[str, Any]) -> None:
         super().__init__(params)
@@ -537,6 +538,31 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return self._cache.pttl(key)
 
+    def type(self, key: KeyT, version: int | None = None) -> str | None:
+        """Get the Redis data type of a key.
+
+        Returns the type of the value stored at key:
+        'string', 'list', 'set', 'zset', 'hash', 'stream', or None if
+        the key does not exist.
+
+        Args:
+            key: Cache key to check.
+            version: Key version (default: cache's version).
+
+        Returns:
+            Type string or None if key doesn't exist.
+
+        Example::
+
+            cache.set("mykey", "value")
+            cache.type("mykey")  # Returns "string"
+
+            cache.lpush("mylist", "a", "b")
+            cache.type("mylist")  # Returns "list"
+        """
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.type(key)
+
     def persist(self, key: KeyT, version: int | None = None) -> bool:
         """Remove the expiry from a key, making it persistent."""
         key = self.make_and_validate_key(key, version=version)
@@ -602,6 +628,29 @@ class KeyValueCache(BaseCache):
         full_pattern = self.make_pattern(pattern, version=version)
         for key in self._cache.iter_keys(full_pattern, itersize=itersize):
             yield self.reverse_key(key)
+
+    def scan(
+        self,
+        cursor: int = 0,
+        pattern: str = "*",
+        count: int | None = None,
+        version: int | None = None,
+    ) -> tuple[int, list[str]]:
+        """Perform a single SCAN iteration returning cursor and keys.
+
+        Args:
+            cursor: Cursor position (0 to start a new scan)
+            pattern: Pattern to match keys against
+            count: Hint for number of keys to return per call
+            version: Key version to use
+
+        Returns:
+            Tuple of (next_cursor, list of user keys). When next_cursor is 0,
+            the scan is complete.
+        """
+        full_pattern = self.make_pattern(pattern, version=version)
+        next_cursor, raw_keys = self._cache.scan(cursor=cursor, match=full_pattern, count=count)
+        return next_cursor, [self.reverse_key(k) for k in raw_keys]
 
     def delete_pattern(
         self,
@@ -1474,6 +1523,107 @@ class KeyValueCache(BaseCache):
     def get_client(self, key: KeyT | None = None, *, write: bool = False) -> Any:
         """Get the underlying Redis client."""
         return self._cache.get_client(key, write=write)
+
+    def info(self, section: str | None = None) -> dict[str, Any]:
+        """Get server information and statistics.
+
+        Returns additional backend-specific information as a JSON-serializable
+        dictionary with up to 2 levels of nesting.
+
+        For Redis/Valkey backends, this returns the INFO command output which
+        includes server version, memory usage, connected clients, statistics,
+        replication info, and keyspace information.
+
+        Args:
+            section: Optional section name to filter results (e.g., 'server',
+                'memory', 'stats', 'replication', 'clients', 'keyspace').
+                If not specified, returns all sections.
+
+        Returns:
+            A dictionary containing backend information. The structure varies
+            by backend but is guaranteed to be JSON-serializable with a maximum
+            nesting depth of 2 levels.
+
+            For Redis/Valkey, common top-level keys include:
+            - redis_version, redis_git_sha1: Server version info
+            - os, arch_bits: System info
+            - uptime_in_seconds, uptime_in_days: Uptime
+            - connected_clients, blocked_clients: Client stats
+            - used_memory, used_memory_human, used_memory_peak: Memory usage
+            - total_connections_received, total_commands_processed: Stats
+            - keyspace_hits, keyspace_misses: Cache hit ratio
+            - db0, db1, ...: Keyspace info (nested dicts with keys/expires/avg_ttl)
+
+        Example::
+
+            from django.core.cache import cache
+
+            # Get all info
+            info = cache.info()
+            print(f"Redis version: {info.get('redis_version')}")
+            print(f"Memory used: {info.get('used_memory_human')}")
+
+            # Get specific section
+            memory_info = cache.info('memory')
+            print(f"Peak memory: {memory_info.get('used_memory_peak_human')}")
+
+        Note:
+            This method returns the raw backend response. For backends that
+            don't support info (e.g., dummy cache), returns an empty dict.
+        """
+        if section:
+            return dict(self._cache.info(section))
+        return dict(self._cache.info())
+
+    def slowlog_get(self, count: int = 10) -> list[Any]:
+        """Get slow query log entries.
+
+        Returns the Redis SLOWLOG GET output - a list of slow query entries.
+        Each entry contains information about a slow command including its
+        ID, timestamp, execution time, and the command itself.
+
+        Args:
+            count: Maximum number of entries to retrieve (default 10).
+
+        Returns:
+            A list of slowlog entries. Each entry is typically a dict with:
+            - id: Unique entry identifier
+            - start_time: Unix timestamp when the command was logged
+            - duration: Execution time in microseconds
+            - command: List of command arguments
+            - client_address: Client IP:port (Redis 4.0+)
+            - client_name: Client name if set (Redis 4.0+)
+
+        Example::
+
+            from django.core.cache import cache
+
+            # Get last 10 slow queries
+            entries = cache.slowlog_get(10)
+            for entry in entries:
+                print(f"Command: {entry.get('command')}")
+                print(f"Duration: {entry.get('duration')} microseconds")
+
+        Note:
+            Requires slowlog-log-slower-than to be configured in Redis.
+            Returns empty list if slowlog is not supported.
+        """
+        return list(self._cache.slowlog_get(count))
+
+    def slowlog_len(self) -> int:
+        """Get the number of entries in the slow query log.
+
+        Returns:
+            The number of entries in the slowlog, or 0 if not supported.
+
+        Example::
+
+            from django.core.cache import cache
+
+            total = cache.slowlog_len()
+            print(f"Total slow queries logged: {total}")
+        """
+        return int(self._cache.slowlog_len())
 
     # =========================================================================
     # Key Operations

@@ -1,0 +1,62 @@
+{% load i18n %}
+<!-- Set Operations -->
+{% if set_ops_supported %}
+<fieldset class="module aligned">
+    <h2>{% trans 'Operations' %}</h2>
+    <div class="form-row">
+        <label>{% trans 'Add:' %}</label>
+        <form method="post" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="set_sadd">
+            <input type="text" name="member_value" placeholder="{% trans 'member' %}" style="width: 150px;">
+            <button type="submit" class="button btn-small">{% trans 'Add' %}</button>
+        </form>
+    </div>
+    <div class="form-row">
+        <label>{% trans 'Pop:' %}</label>
+        <form method="post" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="set_spop">
+            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" title="{% trans 'Count' %}">
+            <button type="submit" class="button btn-small">{% trans 'Random' %}</button>
+        </form>
+    </div>
+</fieldset>
+{% endif %}
+<!-- Set Members -->
+<fieldset class="module aligned">
+    <h2>{% trans 'Set Members' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
+    {% if type_data.members %}
+    <div class="results">
+        <table id="result_list" style="width: 100%;">
+            <thead>
+                <tr>
+                    <th scope="col">{% trans 'Member' %}</th>
+                    {% if set_ops_supported %}
+                    <th scope="col" style="width: 80px;">{% trans 'Actions' %}</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for member in type_data.members %}
+                <tr class="{% cycle 'row1' 'row2' %}">
+                    <td><code>{{ member }}</code></td>
+                    {% if set_ops_supported %}
+                    <td>
+                        <form method="post" style="display: inline;">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="set_srem">
+                            <input type="hidden" name="member" value="{{ member }}">
+                            <button type="submit" class="button delete-btn btn-small">{% trans 'Remove' %}</button>
+                        </form>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="quiet" style="padding: 10px;">{% trans 'Set is empty.' %}</p>
+    {% endif %}
+</fieldset>

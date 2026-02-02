@@ -1,0 +1,144 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static "admin/css/forms.css" %}">
+<style type="text/css">
+    {% include "admin/django_cachex/cache/styles.css" %}
+</style>
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }} app-django_cachex model-cache change-form{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo; <a href="{% url 'admin:django_cachex_cache_changelist' %}">{% trans 'Cache Instances' %}</a>
+    &rsaquo; <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}">{{ cache_name }}</a>
+    &rsaquo; {% trans 'Add Key' %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    <!-- Object tools -->
+    <ul class="object-tools">
+        <li>
+            <a href="?cache={{ cache_name }}{% if not help_active %}&help=1{% endif %}">{% trans 'Help' %}</a>
+        </li>
+    </ul>
+
+    <!-- Not Supported Error -->
+    {% if not edit_supported %}
+    <p class="errornote">
+        {% trans 'Adding keys is not supported for this cache backend.' %}
+    </p>
+    {% endif %}
+
+    <!-- Add Key Form -->
+    <form method="post" id="key-form">
+        {% csrf_token %}
+
+        <fieldset class="module aligned">
+            <h2>{% trans 'Key Details' %}</h2>
+            <div class="form-row" id="key-row">
+                <div>
+                    <label for="id_key" class="required">{% trans 'Key Name:' %}</label>
+                    <input
+                        type="text"
+                        id="id_key"
+                        name="key"
+                        class="vTextField"
+                        style="width: 400px;"
+                        value="{{ prefill_key }}"
+                        {% if not edit_supported %}disabled{% endif %}
+                        required
+                    >
+                    <p class="help">{% trans 'The unique identifier for this cache entry.' %}</p>
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label for="id_type" class="required">{% trans 'Type:' %}</label>
+                    <select
+                        id="id_type"
+                        name="type"
+                        class="vTextField"
+                        style="width: 200px;"
+                        {% if not edit_supported %}disabled{% endif %}
+                    >
+                        <option value="string" {% if prefill_type == "string" %}selected{% endif %}>{% trans 'String' %}</option>
+                        {% if list_ops_supported %}
+                        <option value="list" {% if prefill_type == "list" %}selected{% endif %}>{% trans 'List' %}</option>
+                        {% endif %}
+                        {% if set_ops_supported %}
+                        <option value="set" {% if prefill_type == "set" %}selected{% endif %}>{% trans 'Set' %}</option>
+                        {% endif %}
+                        {% if hash_ops_supported %}
+                        <option value="hash" {% if prefill_type == "hash" %}selected{% endif %}>{% trans 'Hash' %}</option>
+                        {% endif %}
+                        {% if zset_ops_supported %}
+                        <option value="zset" {% if prefill_type == "zset" %}selected{% endif %}>{% trans 'Sorted Set' %}</option>
+                        {% endif %}
+                    </select>
+                    <p class="help">{% trans 'Select the data type for this key.' %}</p>
+                </div>
+            </div>
+        </fieldset>
+
+        {% if edit_supported %}
+        <div class="submit-row">
+            <input type="submit" value="{% trans 'Continue' %}" class="default" name="_continue">
+            <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="closelink">{% trans 'Cancel' %}</a>
+        </div>
+        {% endif %}
+    </form>
+</div>
+{% endblock %}
+
+{% block extrascript %}
+{{ block.super }}
+<script>
+(function() {
+    const form = document.getElementById('key-form');
+    const keyInput = document.getElementById('id_key');
+
+    // Validation helper
+    function showError(rowId, message) {
+        const row = document.getElementById(rowId);
+        if (row) {
+            row.classList.add('field-error');
+            const existing = row.querySelector('.error-message');
+            if (existing) existing.remove();
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.style.color = '#ba2121';
+            errorDiv.style.marginTop = '5px';
+            errorDiv.textContent = message;
+            row.querySelector('div').appendChild(errorDiv);
+        }
+    }
+
+    function clearAllErrors() {
+        document.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
+        document.querySelectorAll('.error-message').forEach(el => el.remove());
+    }
+
+    // Form validation
+    form.addEventListener('submit', function(e) {
+        clearAllErrors();
+        let isValid = true;
+
+        if (!keyInput.value.trim()) {
+            showError('key-row', '{% trans "Key name is required" %}');
+            isValid = false;
+        }
+
+        if (!isValid) {
+            e.preventDefault();
+        }
+    });
+})();
+</script>
+{% endblock %}

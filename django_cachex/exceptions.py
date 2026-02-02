@@ -100,3 +100,40 @@ class ScriptNotRegisteredError(KeyError):
 
     def __str__(self) -> str:
         return f"Script '{self.name}' is not registered"
+
+
+class NotSupportedError(Exception):
+    """Raised when an operation is not supported by the cache backend.
+
+    This exception is used by the cache admin interface when a cache
+    backend (or its wrapper) does not support a particular operation.
+    Views catch this exception to display user-friendly warning messages.
+
+    Attributes:
+        operation: The operation that is not supported.
+        backend: Optional name of the backend that doesn't support it.
+
+    Example:
+        Handling unsupported operations::
+
+            from django_cachex.exceptions import NotSupportedError
+
+            try:
+                service.ttl(key)
+            except NotSupportedError:
+                messages.warning(request, "TTL not supported for this backend.")
+    """
+
+    def __init__(self, operation: str, backend: str | None = None) -> None:
+        self.operation = operation
+        self.backend = backend
+        msg = f"Operation '{operation}' is not supported"
+        if backend:
+            msg += f" by {backend}"
+        super().__init__(msg)
+
+    def __str__(self) -> str:
+        msg = f"Operation '{self.operation}' is not supported"
+        if self.backend:
+            msg += f" by {self.backend}"
+        return msg
