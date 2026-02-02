@@ -1,0 +1,277 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block title %}{{ cache_name }} - {% trans 'Keys' %} | django-cachex{% endblock %}
+
+{% block breadcrumbs %}
+<div class="container mb-4 mx-auto px-4 lg:px-0">
+    <nav class="flex text-sm">
+        <a href="{% url 'admin:index' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Home' %}</a>
+        <span class="mx-2 text-base-400">/</span>
+        <a href="{% url 'django_cachex:index' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Cache Instances' %}</a>
+        <span class="mx-2 text-base-400">/</span>
+        <span class="text-font-important-light dark:text-font-important-dark font-medium">{{ cache_name }}</span>
+    </nav>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 lg:px-0">
+    <!-- Header with tools -->
+    <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+        <h1 class="text-2xl font-semibold text-font-important-light dark:text-font-important-dark">{{ cache_name }}</h1>
+        <div class="flex flex-wrap items-center gap-2">
+            <a href="?{% if not help_active %}help=1{% endif %}"
+               class="border cursor-pointer font-medium px-3 py-2 rounded-default text-center whitespace-nowrap
+                      bg-white border-base-200 hover:text-primary-600
+                      dark:bg-base-900 dark:border-base-700 dark:hover:text-primary-500
+                      shadow-xs text-sm transition-colors">
+                {% trans 'Help' %}
+            </a>
+            {% if abilities.info or abilities.slowlog %}
+            <a href="{% url 'django_cachex:cache_info' cache_name %}"
+               class="border cursor-pointer font-medium px-3 py-2 rounded-default text-center whitespace-nowrap
+                      bg-white border-base-200 hover:text-primary-600
+                      dark:bg-base-900 dark:border-base-700 dark:hover:text-primary-500
+                      shadow-xs text-sm transition-colors">
+                {% trans 'Cache Details' %}
+            </a>
+            {% endif %}
+            {% if abilities.edit_key %}
+            <a href="{% url 'django_cachex:key_add' cache_name %}"
+               class="border cursor-pointer font-medium px-3 py-2 rounded-default text-center whitespace-nowrap
+                      bg-primary-600 border-transparent text-white
+                      shadow-xs text-sm transition-colors hover:bg-primary-700">
+                {% trans 'Add key' %}
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Error messages -->
+    {% if error %}
+    <div class="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-default">
+        <p class="text-red-700 dark:text-red-400"><strong>Error:</strong> {{ error }}</p>
+    </div>
+    {% endif %}
+
+    {% if error_message %}
+    <div class="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-default">
+        <p class="text-red-700 dark:text-red-400">{{ error_message }}</p>
+    </div>
+    {% endif %}
+
+    <!-- Warning messages for limited support -->
+    {% if not query_supported and not get_key_supported %}
+    <div class="mb-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-default">
+        <p class="text-yellow-700 dark:text-yellow-400">
+            {% trans 'Key Operations Not Available: This cache backend does not support listing keys or performing exact key lookups.' %}
+        </p>
+    </div>
+    {% elif not query_supported %}
+    <div class="mb-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-default">
+        <p class="text-yellow-700 dark:text-yellow-400">
+            {% trans 'Key Listing Not Available: This cache backend does not support listing all keys. You can still perform exact key lookups using the search box below.' %}
+        </p>
+    </div>
+    {% endif %}
+
+    <!-- Search form -->
+    {% if query_supported or get_key_supported %}
+    <div class="mb-6 flex flex-col gap-4 sm:flex-row lg:border lg:border-base-200 lg:dark:border-base-800 lg:-mb-8 lg:p-3 lg:pb-11 lg:rounded-t-default">
+        <form method="get" class="flex items-center gap-3 flex-1">
+            <div class="relative flex-1 max-w-md">
+                <input type="text" name="q" value="{{ search_query }}"
+                       placeholder="{% trans 'Search keys...' %}"
+                       class="w-full pl-10 pr-4 py-2 border border-base-200 bg-white font-medium placeholder-base-400 rounded-default shadow-xs text-font-default-light text-sm dark:bg-base-900 dark:border-base-700 dark:text-font-default-dark focus:outline-2 focus:-outline-offset-2 focus:outline-primary-600">
+                <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+            </div>
+            <button type="submit"
+                    class="border cursor-pointer font-medium px-3 py-2 rounded-default text-center whitespace-nowrap bg-primary-600 border-transparent text-white text-sm">
+                {% trans 'Search' %}
+            </button>
+            {% if total_keys %}
+            <span class="text-sm text-base-500 dark:text-base-400">
+                {{ total_keys }} {% blocktrans count counter=total_keys %}result{% plural %}results{% endblocktrans %}
+            </span>
+            {% endif %}
+        </form>
+    </div>
+    {% endif %}
+
+    {% if keys_data %}
+    <!-- Keys list card -->
+    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-b-default lg:shadow-xs lg:overflow-hidden">
+        <!-- Actions bar -->
+        {% if abilities.delete_key %}
+        <form id="changelist-form" method="post">
+            {% csrf_token %}
+            <div class="flex items-center gap-4 px-4 py-3 bg-base-50 dark:bg-white/[.04] border-b border-base-200 dark:border-base-800">
+                <select name="action" class="border border-base-200 bg-white font-medium min-w-20 placeholder-base-400 rounded-default shadow-xs text-font-default-light text-sm px-3 py-2 dark:bg-base-900 dark:border-base-700 dark:text-font-default-dark">
+                    <option value="">---------</option>
+                    <option value="delete_selected">{% trans 'Delete selected keys' %}</option>
+                </select>
+                <button type="submit"
+                        onclick="return confirm('{% trans 'Are you sure you want to delete the selected keys?' %}')"
+                        class="border cursor-pointer font-medium px-3 py-2 rounded-default text-center whitespace-nowrap bg-primary-600 border-transparent text-white text-sm">
+                    {% trans 'Run' %}
+                </button>
+                <span class="text-sm text-base-500 dark:text-base-400">
+                    <span id="action-counter">0</span> {% trans 'selected' %}
+                </span>
+            </div>
+        {% else %}
+        <div>
+        {% endif %}
+
+            <!-- Table -->
+            <table class="block border-spacing-none border-separate w-full lg:table">
+                <thead class="text-font-important-light dark:text-font-important-dark hidden lg:table-header-group">
+                    <tr class="bg-base-50 dark:bg-white/[.02]">
+                        {% if abilities.delete_key %}
+                        <th class="align-middle border-b border-base-200 font-semibold py-2 text-left whitespace-nowrap px-3 lg:table-cell dark:border-base-800 lg:w-10">
+                            <input type="checkbox" id="action-toggle"
+                                   class="appearance-none bg-white block border border-base-300 cursor-pointer h-4 min-w-4 relative rounded-[4px] shadow-xs w-4 hover:border-base-400 dark:bg-base-700 dark:border-base-500 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-primary-500 after:absolute after:content-['check\_small'] after:flex! after:h-4 after:items-center after:justify-center after:leading-none after:material-symbols-outlined after:-ml-px after:-mt-px after:text-white after:transition-all after:w-4 dark:after:text-base-700 checked:bg-primary-600 dark:checked:bg-primary-600 checked:border-primary-600 dark:checked:border-primary-600 checked:transition-all checked:hover:border-primary-600 dark:checked:after:text-white">
+                        </th>
+                        {% endif %}
+                        <th class="align-middle border-b border-base-200 font-semibold py-2 text-left whitespace-nowrap px-3 lg:table-cell dark:border-base-800">
+                            {% trans 'Key' %}
+                        </th>
+                        {% if show_type %}
+                        <th class="align-middle border-b border-base-200 font-semibold py-2 text-left whitespace-nowrap px-3 lg:table-cell dark:border-base-800">
+                            {% trans 'Type' %}
+                        </th>
+                        {% endif %}
+                        {% if show_ttl %}
+                        <th class="align-middle border-b border-base-200 font-semibold py-2 text-left whitespace-nowrap px-3 lg:table-cell dark:border-base-800">
+                            {% trans 'TTL' %}
+                        </th>
+                        {% endif %}
+                        {% if show_size %}
+                        <th class="align-middle border-b border-base-200 font-semibold py-2 text-left whitespace-nowrap px-3 lg:table-cell dark:border-base-800">
+                            {% trans 'Size' %}
+                        </th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody class="block relative lg:table-row-group">
+                    {% for key_info in keys_data %}
+                    <tr class="{% cycle '' 'bg-base-50 dark:bg-white/[.02]' %} block group {% if forloop.first %}first-row{% endif %} border border-base-200 mb-3 rounded-default shadow-xs lg:table-row lg:border-none lg:mb-0 lg:shadow-none dark:border-base-800 relative lg:hover:shadow-raised lg:dark:hover:shadow-raised-dark lg:hover:z-20">
+                        {% if abilities.delete_key %}
+                        <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800 lg:w-10" data-label="{% trans 'Select' %}">
+                            <input type="checkbox" name="_selected_action" value="{{ key_info.key }}"
+                                   class="appearance-none bg-white block border border-base-300 cursor-pointer h-4 min-w-4 relative rounded-[4px] shadow-xs w-4 hover:border-base-400 dark:bg-base-700 dark:border-base-500 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-primary-500 after:absolute after:content-['check\_small'] after:flex! after:h-4 after:items-center after:justify-center after:leading-none after:material-symbols-outlined after:-ml-px after:-mt-px after:text-white after:transition-all after:w-4 dark:after:text-base-700 checked:bg-primary-600 dark:checked:bg-primary-600 checked:border-primary-600 dark:checked:border-primary-600 checked:transition-all checked:hover:border-primary-600 dark:checked:after:text-white action-checkbox">
+                        </td>
+                        {% endif %}
+                        <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Key' %}">
+                            <a href="{% url 'django_cachex:key_detail' cache_name key_info.key|urlencode %}"
+                               class="font-mono text-sm text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-200">
+                                {{ key_info.key }}
+                            </a>
+                        </td>
+                        {% if show_type %}
+                        <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Type' %}">
+                            {% if key_info.type %}
+                            <span class="inline-block font-semibold h-6 leading-6 px-2 rounded-default text-[11px] uppercase whitespace-nowrap
+                                {% if key_info.type == 'string' %}bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400
+                                {% elif key_info.type == 'list' %}bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400
+                                {% elif key_info.type == 'set' %}bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400
+                                {% elif key_info.type == 'hash' %}bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400
+                                {% elif key_info.type == 'zset' %}bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400
+                                {% elif key_info.type == 'stream' %}bg-primary-100 text-primary-700 dark:bg-primary-500/20 dark:text-primary-400
+                                {% else %}bg-base-100 text-base-700 dark:bg-base-500/20 dark:text-base-200{% endif %}">
+                                {{ key_info.type }}
+                            </span>
+                            {% else %}
+                            <span class="text-base-400">-</span>
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                        {% if show_ttl %}
+                        <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'TTL' %}">
+                            {% if key_info.ttl_expires_at %}
+                            <span class="font-mono text-sm text-base-500 dark:text-base-400" title="{{ key_info.ttl }}s">{{ key_info.ttl_expires_at|timeuntil }}</span>
+                            {% else %}
+                            <span class="text-base-400">-</span>
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                        {% if show_size %}
+                        <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Size' %}">
+                            {% if key_info.size is not None %}
+                            <span class="font-mono text-sm text-base-500 dark:text-base-400">{{ key_info.size }}</span>
+                            {% else %}
+                            <span class="text-base-400">-</span>
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+        {% if abilities.delete_key %}
+        </form>
+        {% else %}
+        </div>
+        {% endif %}
+
+        <!-- Pagination -->
+        <div class="px-4 py-3 bg-base-50 dark:bg-white/[.04] border-t border-base-200 dark:border-base-800 flex items-center justify-between">
+            <div class="text-sm text-base-500 dark:text-base-400">
+                {% if total_keys is not None %}
+                {{ total_keys }} {% blocktrans count counter=total_keys %}key{% plural %}keys{% endblocktrans %}
+                {% else %}
+                {{ keys_count }} {% trans 'keys shown' %}
+                {% endif %}
+            </div>
+            <nav class="flex items-center gap-2">
+                {% if cursor > 0 %}
+                <a href="?{% if search_query %}q={{ search_query|urlencode }}&{% endif %}count={{ count }}"
+                   class="px-3 py-1 text-sm rounded-default hover:bg-base-200 dark:hover:bg-base-700">
+                    {% trans 'Start' %}
+                </a>
+                {% endif %}
+                {% if has_next %}
+                <a href="?{% if search_query %}q={{ search_query|urlencode }}&{% endif %}count={{ count }}&cursor={{ next_cursor }}"
+                   class="px-3 py-1 text-sm rounded-default hover:bg-base-200 dark:hover:bg-base-700">
+                    {% trans 'Next' %}
+                </a>
+                {% endif %}
+            </nav>
+        </div>
+    </div>
+    {% elif query_supported %}
+    <!-- No keys found -->
+    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs p-8 text-center">
+        <p class="text-base-500 dark:text-base-400">{% trans 'No keys found.' %}</p>
+    </div>
+    {% endif %}
+</div>
+
+{% if abilities.delete_key and keys_data %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const toggle = document.getElementById('action-toggle');
+    const checkboxes = document.querySelectorAll('.action-checkbox');
+    const counter = document.getElementById('action-counter');
+
+    function updateCounter() {
+        const checked = document.querySelectorAll('.action-checkbox:checked').length;
+        counter.textContent = checked;
+    }
+
+    if (toggle) {
+        toggle.addEventListener('change', function() {
+            checkboxes.forEach(cb => cb.checked = this.checked);
+            updateCounter();
+        });
+    }
+
+    checkboxes.forEach(cb => cb.addEventListener('change', updateCounter));
+});
+</script>
+{% endif %}
+{% endblock %}

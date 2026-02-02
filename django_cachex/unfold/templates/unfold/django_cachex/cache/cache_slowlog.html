@@ -1,0 +1,146 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block title %}{% trans 'Slow Log' %} - {{ cache_name }} | django-cachex{% endblock %}
+
+{% block breadcrumbs %}
+<div class="container mb-4 mx-auto px-4 lg:px-0">
+    <nav class="flex text-sm">
+        <a href="{% url 'admin:index' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Home' %}</a>
+        <span class="mx-2 text-base-400">/</span>
+        <a href="{% url 'django_cachex:index' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Cache Instances' %}</a>
+        <span class="mx-2 text-base-400">/</span>
+        <a href="{% url 'django_cachex:key_search' cache_name %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{{ cache_name }}</a>
+        <span class="mx-2 text-base-400">/</span>
+        <span class="text-font-important-light dark:text-font-important-dark font-medium">{% trans 'Slow Log' %}</span>
+    </nav>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 lg:px-0">
+    <!-- Header with tools -->
+    <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+        <h1 class="text-2xl font-semibold text-font-important-light dark:text-font-important-dark">{% trans 'Slow Log' %}: {{ cache_name }}</h1>
+        <div class="flex items-center gap-2">
+            <a href="{% url 'django_cachex:key_search' cache_name %}"
+               class="inline-flex items-center px-3 py-2 text-sm font-medium rounded-default
+                      bg-base-100 dark:bg-base-800 text-base-700 dark:text-base-200
+                      hover:bg-base-200 dark:hover:bg-base-700 transition-colors">
+                {% trans 'Back to Keys' %}
+            </a>
+            <a href="{% url 'django_cachex:cache_info' cache_name %}"
+               class="inline-flex items-center px-3 py-2 text-sm font-medium rounded-default
+                      bg-base-100 dark:bg-base-800 text-base-700 dark:text-base-200
+                      hover:bg-base-200 dark:hover:bg-base-700 transition-colors">
+                {% trans 'Info' %}
+            </a>
+            <a href="?{% if not help_active %}help=1{% endif %}"
+               class="inline-flex items-center px-3 py-2 text-sm font-medium rounded-default
+                      bg-base-100 dark:bg-base-800 text-base-700 dark:text-base-200
+                      hover:bg-base-200 dark:hover:bg-base-700 transition-colors">
+                {% trans 'Help' %}
+            </a>
+        </div>
+    </div>
+
+    {% if not slowlog_supported %}
+    <div class="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-default">
+        <p class="text-red-700 dark:text-red-400">{% trans 'Slow log is not supported for this cache backend.' %}</p>
+    </div>
+    {% endif %}
+
+    {% if slowlog_data %}
+
+    {% if slowlog_data.error %}
+    <div class="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-default">
+        <p class="text-red-700 dark:text-red-400">{{ slowlog_data.error }}</p>
+    </div>
+    {% else %}
+
+    <!-- Count selector -->
+    <div class="mb-6">
+        <form method="get" class="flex items-center gap-3">
+            <label for="count" class="text-sm text-base-700 dark:text-base-300">{% trans 'Show' %}</label>
+            <select name="count" id="count" onchange="this.form.submit()"
+                    class="px-3 py-2 text-sm border border-base-300 dark:border-base-600 rounded-default
+                           bg-white dark:bg-base-800 text-base-900 dark:text-base-100
+                           focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                <option value="10" {% if count == 10 %}selected{% endif %}>10</option>
+                <option value="25" {% if count == 25 %}selected{% endif %}>25</option>
+                <option value="50" {% if count == 50 %}selected{% endif %}>50</option>
+                <option value="100" {% if count == 100 %}selected{% endif %}>100</option>
+            </select>
+            <span class="text-sm text-base-500 dark:text-base-400">{% trans 'entries' %} ({{ slowlog_data.length }} {% trans 'total in log' %})</span>
+        </form>
+    </div>
+
+    <!-- Slow Log Table -->
+    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+        <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
+            <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">{% trans 'Slow Queries' %}</h2>
+        </div>
+        {% if slowlog_data.entries %}
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-base-50 dark:bg-base-800 border-b border-base-200 dark:border-base-800">
+                    <tr>
+                        <th class="w-16 px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase tracking-wider">{% trans 'ID' %}</th>
+                        <th class="w-40 px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase tracking-wider">{% trans 'Time' %}</th>
+                        <th class="w-28 px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase tracking-wider">{% trans 'Duration' %}</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase tracking-wider">{% trans 'Command' %}</th>
+                        <th class="w-32 px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase tracking-wider">{% trans 'Client' %}</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-base-200 dark:divide-base-800">
+                    {% for entry in slowlog_data.entries %}
+                    <tr class="hover:bg-base-50 dark:hover:bg-base-800">
+                        <td class="px-4 py-3 text-sm text-base-400">{{ entry.id }}</td>
+                        <td class="px-4 py-3 font-mono text-xs text-base-500 dark:text-base-400">
+                            {% if entry.timestamp %}
+                            {{ entry.timestamp|date:"Y-m-d H:i:s" }}
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 font-mono text-sm
+                            {% if entry.duration_us >= 100000 %}text-red-600 dark:text-red-400 font-semibold
+                            {% elif entry.duration_us >= 10000 %}text-orange-600 dark:text-orange-400
+                            {% else %}text-green-600 dark:text-green-400{% endif %}">
+                            {% if entry.duration_us >= 1000000 %}
+                            {{ entry.duration_us }} &micro;s
+                            {% elif entry.duration_us >= 1000 %}
+                            {{ entry.duration_us }} &micro;s
+                            {% else %}
+                            {{ entry.duration_us }} &micro;s
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 font-mono text-sm text-base-900 dark:text-base-100 max-w-lg truncate" title="{% for arg in entry.command %}{{ arg }} {% endfor %}">
+                            {% for arg in entry.command %}{{ arg }} {% endfor %}
+                        </td>
+                        <td class="px-4 py-3 text-sm text-base-500 dark:text-base-400">
+                            {% if entry.client %}{{ entry.client }}{% endif %}
+                            {% if entry.client_name %}<br><span class="text-xs">{{ entry.client_name }}</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="p-4 text-base-500 dark:text-base-400">{% trans 'No slow queries recorded.' %}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% endif %}
+
+    <!-- Back button -->
+    <div class="flex items-center">
+        <a href="{% url 'django_cachex:key_search' cache_name %}"
+           class="px-4 py-2 text-sm font-medium rounded-default bg-base-100 dark:bg-base-800
+                  text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700 transition-colors">
+            {% trans 'Back to Keys' %}
+        </a>
+    </div>
+</div>
+{% endblock %}
