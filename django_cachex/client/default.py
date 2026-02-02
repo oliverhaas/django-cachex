@@ -42,6 +42,7 @@ from django_cachex.exceptions import CompressorError, ConnectionInterruptedError
 _Set = set
 
 if TYPE_CHECKING:
+    import builtins
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
 
     from django_cachex.client.pipeline import Pipeline
@@ -109,10 +110,10 @@ class KeyValueCacheClient:
 
     # Class attributes - subclasses override these
     _lib: Any = None  # The library module
-    _client_class: type | None = None  # e.g., valkey.Valkey
-    _pool_class: type | None = None  # e.g., valkey.ConnectionPool
-    _async_client_class: type | None = None  # e.g., valkey.asyncio.Valkey
-    _async_pool_class: type | None = None  # e.g., valkey.asyncio.ConnectionPool
+    _client_class: builtins.type[Any] | None = None  # e.g., valkey.Valkey
+    _pool_class: builtins.type[Any] | None = None  # e.g., valkey.ConnectionPool
+    _async_client_class: builtins.type[Any] | None = None  # e.g., valkey.asyncio.Valkey
+    _async_pool_class: builtins.type[Any] | None = None  # e.g., valkey.asyncio.ConnectionPool
 
     # Default scan iteration batch size
     _default_scan_itersize: int = 100
@@ -135,10 +136,10 @@ class KeyValueCacheClient:
     def __init__(
         self,
         servers: list[str],
-        serializer: str | list | type | None = None,
-        pool_class: str | type | None = None,
-        parser_class: str | type | None = None,
-        async_pool_class: str | type | None = None,
+        serializer: str | list | builtins.type[Any] | None = None,
+        pool_class: str | builtins.type[Any] | None = None,
+        parser_class: str | builtins.type[Any] | None = None,
+        async_pool_class: str | builtins.type[Any] | None = None,
         **options: Any,
     ) -> None:
         """Initialize the cache client.
@@ -203,13 +204,13 @@ class KeyValueCacheClient:
     # Serializer/Compressor Setup
     # =========================================================================
 
-    def _create_serializers(self, config: str | list | type | Any) -> list:
+    def _create_serializers(self, config: str | list | builtins.type[Any] | Any) -> list:
         """Create serializer instance(s) from config."""
         if isinstance(config, list):
             return [create_serializer(item) for item in config]
         return [create_serializer(config)]
 
-    def _create_compressors(self, config: str | list | type | Any | None) -> list:
+    def _create_compressors(self, config: str | list | builtins.type[Any] | Any | None) -> list:
         """Create compressor instance(s) from config."""
         if config is None:
             return []
@@ -279,7 +280,7 @@ class KeyValueCacheClient:
         index = self._get_connection_pool_index(write=write)
         if index not in self._pools:
             assert self._pool_class is not None, "Subclasses must set _pool_class"  # noqa: S101
-            self._pools[index] = self._pool_class.from_url(  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self._pools[index] = self._pool_class.from_url(
                 self._servers[index],
                 **self._pool_options,
             )
@@ -329,7 +330,7 @@ class KeyValueCacheClient:
 
         # Filter out parser_class from pool options for async - it's sync-specific
         async_pool_options = {k: v for k, v in self._pool_options.items() if k != "parser_class"}
-        pool = self._async_pool_class.from_url(  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        pool = self._async_pool_class.from_url(
             self._servers[index],
             **async_pool_options,
         )
@@ -549,6 +550,35 @@ class KeyValueCacheClient:
 
         try:
             return bool(await client.exists(key))
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def type(self, key: KeyT) -> str | None:
+        """Get the Redis data type of a key.
+
+        Returns the type of the value stored at key as a string:
+        'string', 'list', 'set', 'zset', 'hash', 'stream', or None if
+        the key does not exist.
+        """
+        client = self.get_client(key, write=False)
+
+        try:
+            result = client.type(key)
+            if isinstance(result, bytes):
+                result = result.decode("utf-8")
+            return None if result == "none" else result
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    async def atype(self, key: KeyT) -> str | None:
+        """Get the Redis data type of a key asynchronously."""
+        client = self.get_async_client(key, write=False)
+
+        try:
+            result = await client.type(key)
+            if isinstance(result, bytes):
+                result = result.decode("utf-8")
+            return None if result == "none" else result
         except _main_exceptions as e:
             raise ConnectionInterruptedError(connection=client) from e
 
@@ -907,6 +937,35 @@ class KeyValueCacheClient:
         for item in client.scan_iter(match=pattern, count=itersize):
             yield item.decode() if isinstance(item, bytes) else item
 
+    def scan(
+        self,
+        cursor: int = 0,
+        match: str | None = None,
+        count: int | None = None,
+    ) -> tuple[int, list[str]]:
+        """Perform a single SCAN iteration returning cursor and keys.
+
+        Args:
+            cursor: Cursor position (0 to start a new scan)
+            match: Pattern to match keys against
+            count: Hint for number of keys to return per call
+
+        Returns:
+            Tuple of (next_cursor, list of keys). When next_cursor is 0,
+            the scan is complete.
+        """
+        client = self.get_client(write=False)
+
+        if count is None:
+            count = self._default_scan_itersize
+
+        try:
+            next_cursor, keys = client.scan(cursor=cursor, match=match, count=count)
+            decoded_keys = [k.decode() if isinstance(k, bytes) else k for k in keys]
+            return next_cursor, decoded_keys
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
     def delete_pattern(self, pattern: str, itersize: int | None = None) -> int:
         """Delete all keys matching pattern (already prefixed)."""
         client = self.get_client(write=True)
@@ -1094,6 +1153,81 @@ class KeyValueCacheClient:
         client = self.get_client(write=True)
         raw_pipeline = client.pipeline(transaction=transaction)
         return Pipeline(cache_client=self, pipeline=raw_pipeline, version=version)
+
+    # =========================================================================
+    # Server Operations
+    # =========================================================================
+
+    def info(self, section: str | None = None) -> dict[str, Any]:
+        """Get server information and statistics."""
+        client = self.get_client(write=False)
+
+        try:
+            if section:
+                return dict(client.info(section))
+            return dict(client.info())
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+    def slowlog_get(self, count: int = 10) -> list[dict[str, Any]]:
+        """Get slow query log entries with decoded bytes."""
+        client = self.get_client(write=False)
+
+        try:
+            raw_entries = client.slowlog_get(count)
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
+
+        def decode_bytes(value: Any) -> Any:
+            """Decode bytes to string."""
+            if isinstance(value, bytes):
+                return value.decode("utf-8", errors="replace")
+            return value
+
+        def decode_command(cmd: Any) -> list[str]:
+            """Decode command to list of strings."""
+            if isinstance(cmd, bytes):
+                return [cmd.decode("utf-8", errors="replace")]
+            if isinstance(cmd, (list, tuple)):
+                return [decode_bytes(arg) for arg in cmd]
+            return []
+
+        entries = []
+        for entry in raw_entries:
+            if isinstance(entry, dict):
+                entries.append(
+                    {
+                        "id": entry.get("id"),
+                        "start_time": entry.get("start_time"),
+                        "duration": entry.get("duration"),
+                        "command": decode_command(entry.get("command")),
+                        "client_address": decode_bytes(entry.get("client_address")),
+                        "client_name": decode_bytes(entry.get("client_name")),
+                    },
+                )
+            elif isinstance(entry, (list, tuple)) and len(entry) >= 4:
+                entries.append(
+                    {
+                        "id": entry[0],
+                        "start_time": entry[1],
+                        "duration": entry[2],
+                        "command": decode_command(entry[3]) if len(entry) > 3 else [],
+                        "client_address": decode_bytes(entry[4]) if len(entry) > 4 else None,
+                        "client_name": decode_bytes(entry[5]) if len(entry) > 5 else None,
+                    },
+                )
+            else:
+                entries.append(entry)
+        return entries
+
+    def slowlog_len(self) -> int:
+        """Get the number of entries in the slow query log."""
+        client = self.get_client(write=False)
+
+        try:
+            return int(client.slowlog_len())
+        except _main_exceptions as e:
+            raise ConnectionInterruptedError(connection=client) from e
 
     # =========================================================================
     # Hash Operations
