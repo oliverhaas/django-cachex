@@ -51,7 +51,13 @@ Full documentation at [oliverhaas.github.io/django-cachex](https://oliverhaas.gi
 
 ## Acknowledgments
 
-This project was inspired by [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause. Thanks to the Django community for their continued work on the framework.
+This project was inspired by [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause.
+
+The admin panel was inspired by [dj-cache-panel](https://github.com/yassi/dj-cache-panel) and [django-redisboard](https://github.com/ionelmc/django-redisboard). The Unfold theme integration uses [django-unfold](https://unfoldadmin.com/).
+
+AI tools (Claude) were used extensively during the initial development of this package. All AI-generated code was reviewed, tested, and refined by the maintainers.
+
+Thanks to the Django community for their continued work on the framework.
 
 ## License
 
