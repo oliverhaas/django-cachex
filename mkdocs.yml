@@ -56,6 +56,7 @@ nav:
       - Quick Start: getting-started/quickstart.md
   - User Guide:
       - Configuration: user-guide/configuration.md
+      - Cache Admin: user-guide/admin.md
       - Async Support: user-guide/async.md
       - Advanced Usage: user-guide/advanced.md
       - Serializers: user-guide/serializers.md

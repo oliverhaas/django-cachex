@@ -29,3 +29,4 @@ coverage.xml
 cobertura.xml
 CLAUDE.md
 site/
+*.sqlite3
