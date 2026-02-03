@@ -129,6 +129,18 @@ class TestIndexView:
         # Should have link to key browser (List Keys link)
         assert "List Keys" in content or "key" in content.lower()
 
+    def test_index_search_filters_caches(self, admin_client: Client, test_cache):
+        """Search should filter cache list by name."""
+        url = _cache_list_url()
+        # Search for "default" - should show default, hide others
+        response = admin_client.get(url + "?q=default")
+        assert response.status_code == 200
+        content = response.content.decode()
+        # Should show matching cache
+        assert "default" in content
+        # Should not show non-matching caches (with_prefix has different name)
+        assert "with_prefix" not in content
+
 
 class TestKeySearchView:
     """Tests for the key search/browser view (KeyAdmin changelist)."""
