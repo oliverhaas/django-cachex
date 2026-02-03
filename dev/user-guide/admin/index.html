@@ -569,6 +569,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Support Levels">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#using-redisvalkey" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Redis/Valkey?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1055,6 +1072,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Support Levels">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#using-redisvalkey" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Redis/Valkey?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1191,7 +1225,7 @@
 <tr>
 <td><strong>wrapped</strong></td>
 <td>Wrapped Support</td>
-<td>Django builtin backends (<code>LocMemCache</code>, <code>DatabaseCache</code>, etc.) and <code>django-redis</code>. Most features available through wrapper compatibility.</td>
+<td>Django builtin backends (<code>LocMemCache</code>, <code>DatabaseCache</code>, <code>RedisCache</code>, etc.). Most features available through wrapper compatibility.</td>
 </tr>
 <tr>
 <td><strong>limited</strong></td>
@@ -1200,6 +1234,15 @@
 </tr>
 </tbody>
 </table>
+<h3 id="using-redisvalkey">Using Redis/Valkey?<a class="headerlink" href="#using-redisvalkey" title="Permanent link">&para;</a></h3>
+<p>If you are using Django's builtin Redis backend (<code>django.core.cache.backends.redis.RedisCache</code>), consider switching to django-cachex's <code>ValkeyCache</code> or <code>RedisCache</code> backends for full admin functionality including:</p>
+<ul>
+<li>Key browsing and pattern search</li>
+<li>TTL inspection and modification</li>
+<li>Native Redis data type support (lists, sets, hashes, sorted sets)</li>
+<li>Server info and slow log access</li>
+</ul>
+<p>See the <a href="../../getting-started/quickstart/">quickstart guide</a> for migration instructions.</p>
 <h2 id="views">Views<a class="headerlink" href="#views" title="Permanent link">&para;</a></h2>
 <h3 id="cache-instances-index">Cache Instances (Index)<a class="headerlink" href="#cache-instances-index" title="Permanent link">&para;</a></h3>
 <p>The main view lists all configured cache instances with:</p>
@@ -1249,7 +1292,9 @@
 <tr>
 <th>Feature</th>
 <th>cachex</th>
-<th>wrapped</th>
+<th>LocMemCache</th>
+<th>DatabaseCache</th>
+<th>Django Redis</th>
 <th>limited</th>
 </tr>
 </thead>
@@ -1257,11 +1302,15 @@
 <tr>
 <td>List keys</td>
 <td>Yes</td>
-<td>Varies</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>No</td>
 <td>No</td>
 </tr>
 <tr>
 <td>Get key</td>
+<td>Yes</td>
+<td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
@@ -1271,9 +1320,13 @@
 <td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
 </tr>
 <tr>
 <td>Edit key</td>
+<td>Yes</td>
+<td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
@@ -1281,7 +1334,9 @@
 <tr>
 <td>Get TTL</td>
 <td>Yes</td>
-<td>Varies</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>No</td>
 <td>No</td>
 </tr>
 <tr>
@@ -1289,9 +1344,13 @@
 <td>Yes</td>
 <td>No</td>
 <td>No</td>
+<td>No</td>
+<td>No</td>
 </tr>
 <tr>
 <td>Flush cache</td>
+<td>Yes</td>
+<td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
 <td>Varies</td>
