@@ -8,6 +8,7 @@ doesn't support.
 
 from __future__ import annotations
 
+import contextlib
 import fnmatch
 import time
 from typing import TYPE_CHECKING, Any, cast
@@ -19,6 +20,7 @@ from django_cachex.exceptions import NotSupportedError
 
 if TYPE_CHECKING:
     from collections.abc import Set as AbstractSet
+    from pathlib import Path
 
     from django.core.cache.backends.base import BaseCache
 
@@ -239,6 +241,44 @@ class BaseCacheWrapper:
         raise NotSupportedError("zpopmax", self.__class__.__name__)
 
 
+def _format_bytes(size_bytes: int) -> str:
+    """Format bytes as human-readable string."""
+    size: float = float(size_bytes)
+    for unit in ("B", "K", "M", "G", "T"):
+        if abs(size) < 1024:
+            return f"{size:.1f}{unit}" if unit != "B" else f"{int(size)}B"
+        size = size / 1024
+    return f"{size:.1f}P"
+
+
+def _deep_getsizeof(obj: Any, seen: set[int] | None = None) -> int:
+    """Recursively calculate the deep size of an object in bytes.
+
+    Handles nested dicts, lists, tuples, sets, and other common types.
+    Uses object ids to avoid counting the same object twice.
+    """
+    import sys
+
+    if seen is None:
+        seen = set()
+
+    obj_id = id(obj)
+    if obj_id in seen:
+        return 0
+    seen.add(obj_id)
+
+    size = sys.getsizeof(obj)
+
+    if isinstance(obj, dict):
+        size += sum(_deep_getsizeof(k, seen) + _deep_getsizeof(v, seen) for k, v in obj.items())
+    elif isinstance(obj, (list, tuple, set, frozenset)):
+        size += sum(_deep_getsizeof(item, seen) for item in obj)
+    elif hasattr(obj, "__dict__"):
+        size += _deep_getsizeof(obj.__dict__, seen)
+
+    return size
+
+
 class LocMemCacheWrapper(BaseCacheWrapper):
     """Wrapper for Django's LocMemCache.
 
@@ -254,27 +294,49 @@ class LocMemCacheWrapper(BaseCacheWrapper):
         return getattr(self._cache, "_expire_info", {})
 
     def info(self) -> dict[str, Any]:
-        """Get LocMemCache info: key count, memory estimate, config."""
+        """Get LocMemCache info in structured format matching Redis INFO."""
         internal_cache = self._get_internal_cache()
+        expire_info = self._get_expire_info()
         key_count = len(internal_cache)
 
-        # Estimate memory usage (very rough - just serialized size)
-        import sys
+        # Count keys with TTL set
+        import time
 
+        current_time = time.time()
+        keys_with_expiry = sum(1 for exp in expire_info.values() if exp and exp > current_time)
+
+        # Estimate memory usage with deep size calculation
         try:
-            # Get rough size estimate of all cached values
-            total_size = sum(sys.getsizeof(v) for v in internal_cache.values())
+            # Calculate deep size of all cached values (includes nested objects)
+            total_size = sum(_deep_getsizeof(v) for v in internal_cache.values())
+            # Also include key strings and the cache dict overhead
+            total_size += sum(_deep_getsizeof(k) for k in internal_cache)
         except Exception:  # noqa: BLE001
             total_size = 0
 
+        max_entries = getattr(self._cache, "_max_entries", 300)
+        cull_frequency = getattr(self._cache, "_cull_frequency", 3)
+
+        # Return structured data matching template expectations
         return {
             "backend": "LocMemCache",
-            "key_count": key_count,
-            "memory_estimate_bytes": total_size,
-            "max_entries": getattr(self._cache, "_max_entries", "unknown"),
-            "cull_frequency": getattr(self._cache, "_cull_frequency", "unknown"),
-            "key_prefix": self.key_prefix or "(none)",
-            "version": self.version,
+            "server": {
+                "redis_version": "LocMemCache (in-process)",
+                "process_id": None,
+            },
+            "memory": {
+                "used_memory": total_size,
+                "used_memory_human": _format_bytes(total_size),
+                "maxmemory": max_entries,
+                "maxmemory_human": f"{max_entries} entries",
+                "maxmemory_policy": f"cull 1/{cull_frequency} when full",
+            },
+            "keyspace": {
+                "db0": {
+                    "keys": key_count,
+                    "expires": keys_with_expiry,
+                },
+            },
         }
 
     def keys(self, pattern: str = "*") -> list[str]:
@@ -284,7 +346,8 @@ class LocMemCacheWrapper(BaseCacheWrapper):
 
         all_keys = []
         for internal_key in internal_cache:
-            # Internal keys are formatted as ":{version}:{key_prefix}{key}"
+            # Internal keys are formatted as "{key_prefix}:{version}:{key}"
+            # e.g., ":1:mykey" (no prefix) or "myprefix:1:mykey" (with prefix)
             parts = internal_key.split(":", 2)
             if len(parts) >= 3:
                 user_key = parts[2]
@@ -404,9 +467,13 @@ class DatabaseCacheWrapper(BaseCacheWrapper):
             return int(ttl)
 
     def info(self) -> dict[str, Any]:
-        """Get DatabaseCache info: table name, row count, config."""
+        """Get DatabaseCache info in structured format matching Redis INFO."""
         table_name = self._get_table_name()
         quoted_table_name = connection.ops.quote_name(table_name)
+
+        total_count: int | str = 0
+        active_count: int | str = 0
+        expired_count: int | str = 0
 
         try:
             with connection.cursor() as cursor:
@@ -428,65 +495,105 @@ class DatabaseCacheWrapper(BaseCacheWrapper):
                     [current_time],
                 )
                 active_count = cursor.fetchone()[0]
+                expired_count = (
+                    total_count - active_count if isinstance(total_count, int) and isinstance(active_count, int) else 0
+                )
         except Exception:  # noqa: BLE001
             total_count = "error"
             active_count = "error"
 
+        # Return structured data matching template expectations
         return {
             "backend": "DatabaseCache",
-            "table_name": table_name,
-            "database": connection.vendor,
-            "total_rows": total_count,
-            "active_keys": active_count,
-            "key_prefix": self.key_prefix or "(none)",
-            "version": self.version,
+            "server": {
+                "redis_version": f"DatabaseCache ({connection.vendor})",
+                "os": f"table: {table_name}",
+            },
+            "keyspace": {
+                "db0": {
+                    "keys": active_count if active_count != "error" else 0,
+                    "expires": active_count if active_count != "error" else 0,  # All DB cache keys have expiry
+                },
+            },
+            "stats": {
+                "expired_keys": expired_count,
+            },
         }
 
 
 class FileCacheWrapper(BaseCacheWrapper):
     """Wrapper for Django's FileBasedCache.
 
-    Cannot list keys (stored as hashed filenames), but supports get/set/delete.
+    Lists keys as MD5 hash filenames (original keys cannot be recovered).
+    Individual key viewing is not supported since MD5 is one-way.
     """
 
-    # keys() raises NotSupportedError (inherited)
-    # All other operations use base class which raises NotSupportedError
-
-    def info(self) -> dict[str, Any]:
-        """Get FileBasedCache info: directory, file count, total size."""
+    def _get_cache_dir(self) -> Path | None:
+        """Get the cache directory path."""
         from pathlib import Path
 
         cache_dir = getattr(self._cache, "_dir", None)
+        return Path(cache_dir) if cache_dir else None
 
-        if not cache_dir:
-            return {
-                "backend": "FileBasedCache",
-                "directory": "unknown",
-                "error": "Could not determine cache directory",
-            }
+    def keys(self, pattern: str = "*") -> list[str]:
+        """List cache file hashes as keys.
 
-        cache_path = Path(cache_dir)
+        Note: These are MD5 hashes of the original keys. The original key
+        names cannot be recovered from the hashes.
+        """
+        cache_path = self._get_cache_dir()
+        if not cache_path or not cache_path.exists():
+            return []
 
         try:
+            # FileBasedCache stores files in subdirectories like: cache_dir/ab/cd/abcd1234...
+            # The filename (without path) is the MD5 hash
+            hashes = [fp.name for fp in cache_path.rglob("*") if fp.is_file()]
+
+            # Filter by pattern if not "*"
+            if pattern and pattern != "*":
+                hashes = [h for h in hashes if fnmatch.fnmatch(h, pattern)]
+
+            hashes.sort()
+            return hashes
+        except Exception:  # noqa: BLE001
+            return []
+
+    def info(self) -> dict[str, Any]:
+        """Get FileBasedCache info in structured format matching Redis INFO."""
+        cache_path = self._get_cache_dir()
+
+        if not cache_path:
+            return {
+                "backend": "FileBasedCache",
+                "server": {"redis_version": "FileBasedCache", "os": "unknown directory"},
+            }
+
+        file_count: int = 0
+        total_size: int = 0
+
+        with contextlib.suppress(Exception):
             if cache_path.exists():
-                # Count files and calculate total size
                 files = list(cache_path.rglob("*"))
                 file_count = sum(1 for f in files if f.is_file())
                 total_size = sum(f.stat().st_size for f in files if f.is_file())
-            else:
-                file_count = 0
-                total_size = 0
-        except Exception:  # noqa: BLE001
-            file_count = "error"
-            total_size = "error"
 
+        # Return structured data matching template expectations
         return {
             "backend": "FileBasedCache",
-            "directory": str(cache_dir),
-            "file_count": file_count,
-            "total_size_bytes": total_size,
-            "key_prefix": self.key_prefix or "(none)",
-            "version": self.version,
+            "server": {
+                "redis_version": "FileBasedCache",
+                "os": str(cache_path),
+            },
+            "memory": {
+                "used_memory": total_size,
+                "used_memory_human": _format_bytes(total_size),
+            },
+            "keyspace": {
+                "db0": {
+                    "keys": file_count,
+                },
+            },
         }
 
 
@@ -497,22 +604,41 @@ class MemcachedCacheWrapper(BaseCacheWrapper):
     """
 
     def info(self) -> dict[str, Any]:
-        """Get memcached stats."""
+        """Get memcached stats in structured format matching Redis INFO."""
         cache = cast("Any", self._cache)
-        result: dict[str, Any] = {
-            "backend": "Memcached",
-            "key_prefix": self.key_prefix or "(none)",
-            "version": self.version,
-        }
 
+        # Try to get memcached stats
+        mc_stats: dict[str, Any] = {}
         if hasattr(cache, "_cache") and hasattr(cache._cache, "stats"):
-            try:
-                stats = cache._cache.stats()
-                result["stats"] = stats
-            except Exception:  # noqa: BLE001
-                result["stats_error"] = "Could not retrieve memcached stats"
+            with contextlib.suppress(Exception):
+                mc_stats = cache._cache.stats() or {}
 
-        return result
+        # Extract relevant stats (memcached stats format varies by library)
+        # Common fields: bytes, curr_items, total_connections, cmd_get, cmd_set
+        bytes_used = 0
+        curr_items = 0
+        for server_stats in mc_stats.values() if mc_stats else []:
+            if isinstance(server_stats, dict):
+                bytes_used += int(server_stats.get("bytes", 0))
+                curr_items += int(server_stats.get("curr_items", 0))
+
+        return {
+            "backend": "Memcached",
+            "server": {
+                "redis_version": "Memcached",
+            },
+            "memory": {
+                "used_memory": bytes_used,
+                "used_memory_human": _format_bytes(bytes_used) if bytes_used else None,
+            },
+            "keyspace": {
+                "db0": {
+                    "keys": curr_items,
+                },
+            }
+            if curr_items
+            else None,
+        }
 
 
 class DjangoRedisCacheWrapper(BaseCacheWrapper):
@@ -528,12 +654,13 @@ class DjangoRedisCacheWrapper(BaseCacheWrapper):
     # full Redis features.
 
     def info(self) -> dict[str, Any]:
-        """Get Django Redis cache info."""
+        """Get Django Redis cache info in structured format."""
         return {
             "backend": "Django RedisCache",
-            "note": "For full Redis features, use django-cachex ValkeyCache or RedisCache",
-            "key_prefix": self.key_prefix or "(none)",
-            "version": self.version,
+            "server": {
+                "redis_version": "Django RedisCache (limited support)",
+                "os": "Use django-cachex ValkeyCache/RedisCache for full features",
+            },
         }
 
 
@@ -564,11 +691,18 @@ class DummyCacheWrapper(BaseCacheWrapper):
         return []
 
     def info(self) -> dict[str, Any]:
-        """Get DummyCache info."""
+        """Get DummyCache info in structured format."""
         return {
             "backend": "DummyCache",
-            "note": "DummyCache discards all data - used for development/testing",
-            "key_count": 0,
+            "server": {
+                "redis_version": "DummyCache (no storage)",
+                "os": "All data is discarded - used for development/testing",
+            },
+            "keyspace": {
+                "db0": {
+                    "keys": 0,
+                },
+            },
         }
 
 
