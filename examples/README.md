@@ -6,9 +6,9 @@ Example Django projects demonstrating django-cachex admin panel.
 
 | Example | Description |
 |---------|-------------|
-| [simple](simple/) | Minimal setup with single Valkey instance |
-| [full](full/) | Multiple cache backends (Valkey, Redis, LocMem, Database, File) |
-| [unfold](unfold/) | django-unfold admin theme integration |
+| [simple](simple/) | Minimal setup with single Valkey instance + locmem |
+| [unfold](unfold/) | Same as simple with django-unfold admin theme |
+| [full](full/) | **All backends**: standalone, cluster, sentinel, Django builtins |
 
 ## Quick Start
 
@@ -24,6 +24,25 @@ cd examples/simple  # or full, unfold
 Then visit: http://127.0.0.1:8000/admin/django_cachex/cache/
 
 Login: `admin` / `password`
+
+## Full Example Details
+
+The `full` example demonstrates all supported cache backends:
+
+**Standalone:**
+- Valkey (port 6379)
+- Redis (port 6380)
+
+**Cluster:**
+- Redis Cluster with 6 nodes (ports 7001-7006)
+
+**Sentinel:**
+- Redis Sentinel with 3 sentinels + master/replica setup
+
+**Django Builtins:**
+- LocMemCache, DatabaseCache, FileBasedCache, DummyCache
+
+Note: The full example runs 14 Docker containers. Use `./run.sh status` to check their state.
 
 ## Requirements
 

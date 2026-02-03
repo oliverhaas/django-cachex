@@ -1,9 +1,11 @@
 """
 Django settings for full example project.
 
-Comprehensive setup showcasing all supported cache backends:
-- django-cachex backends (Valkey, Redis)
-- Django builtin backends (LocMem, Database, File)
+Comprehensive setup showcasing ALL supported cache backends:
+- Standalone: Valkey, Redis
+- Cluster: Redis Cluster (6 nodes)
+- Sentinel: Redis Sentinel (1 master + 2 replicas + 3 sentinels)
+- Django builtins: LocMem, Database, File, Dummy
 """
 
 from pathlib import Path
@@ -65,17 +67,52 @@ DATABASES = {
     },
 }
 
+# =============================================================================
+# CACHE CONFIGURATION - All supported backends
+# =============================================================================
+
 CACHES = {
+    # -------------------------------------------------------------------------
+    # STANDALONE BACKENDS
+    # -------------------------------------------------------------------------
     "default": {
         "BACKEND": "django_cachex.cache.ValkeyCache",
-        "LOCATION": "valkey://127.0.0.1:6379/0",
-        "KEY_PREFIX": "default",
+        "LOCATION": "valkey://127.0.0.1:6381/0",
+        "KEY_PREFIX": "valkey",
     },
     "redis": {
         "BACKEND": "django_cachex.cache.RedisCache",
         "LOCATION": "redis://127.0.0.1:6380/0",
         "KEY_PREFIX": "redis",
     },
+    # -------------------------------------------------------------------------
+    # CLUSTER BACKEND
+    # Note: ValkeyClusterCache unavailable due to upstream bug, use RedisClusterCache
+    # -------------------------------------------------------------------------
+    "cluster": {
+        "BACKEND": "django_cachex.client.cluster.RedisClusterCache",
+        "LOCATION": "redis://127.0.0.1:7001",
+        "KEY_PREFIX": "cluster",
+    },
+    # -------------------------------------------------------------------------
+    # SENTINEL BACKEND
+    # Note: ValkeySentinelCache unavailable due to upstream bug, use RedisSentinelCache
+    # -------------------------------------------------------------------------
+    "sentinel": {
+        "BACKEND": "django_cachex.client.sentinel.RedisSentinelCache",
+        "LOCATION": "redis://mymaster/0",
+        "KEY_PREFIX": "sentinel",
+        "OPTIONS": {
+            "sentinels": [
+                ("127.0.0.1", 26379),
+                ("127.0.0.1", 26380),
+                ("127.0.0.1", 26381),
+            ],
+        },
+    },
+    # -------------------------------------------------------------------------
+    # DJANGO BUILTIN BACKENDS (for comparison/wrapped support)
+    # -------------------------------------------------------------------------
     "locmem": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         "LOCATION": "full-example-locmem",
