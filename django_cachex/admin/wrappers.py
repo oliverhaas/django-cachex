@@ -290,7 +290,7 @@ class LocMemCacheWrapper(BaseCacheWrapper):
         """Access the internal cache dictionary of LocMemCache."""
         return getattr(self._cache, "_cache", {})
 
-    def _get_expire_info(self) -> dict[str, float]:
+    def _get_expire_info(self) -> dict[str, float | None]:
         """Access the internal expiry info dictionary."""
         return getattr(self._cache, "_expire_info", {})
 
