@@ -55,9 +55,8 @@ def index(request: HttpRequest) -> HttpResponse:  # noqa: C901
             for cache_name in selected_caches:
                 try:
                     service = get_cache_service(cache_name)
-                    if service.is_feature_supported("flush_cache"):
-                        service.flush_cache()
-                        flushed_count += 1
+                    service.flush_cache()
+                    flushed_count += 1
                 except Exception as e:  # noqa: BLE001
                     messages.error(request, f"Error flushing '{cache_name}': {e!s}")
             if flushed_count > 0:
@@ -160,7 +159,7 @@ def key_search(request: HttpRequest, cache_name: str) -> HttpResponse:  # noqa: 
     if request.method == "POST":
         action = request.POST.get("action")
 
-        if action == "delete_selected" and service.is_feature_supported("delete_key"):
+        if action == "delete_selected":
             selected_keys = request.POST.getlist("_selected_action")
             if selected_keys:
                 deleted_count = 0
@@ -281,7 +280,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
     if request.method == "POST":
         action = request.POST.get("action")
 
-        if action == "delete" and service.is_feature_supported("delete_key"):
+        if action == "delete":
             try:
                 service.delete_key(key)
                 messages.success(request, "Key deleted successfully.")
@@ -291,7 +290,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
             except Exception as e:  # noqa: BLE001
                 messages.error(request, f"Error deleting key: {e!s}")
 
-        elif action == "update" and service.is_feature_supported("edit_key"):
+        elif action == "update":
             try:
                 new_value: Any = request.POST.get("value", "")
                 with contextlib.suppress(json.JSONDecodeError, ValueError):
@@ -309,7 +308,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
             except Exception as e:  # noqa: BLE001
                 messages.error(request, f"Error updating key: {e!s}")
 
-        elif action == "set_ttl" and service.is_feature_supported("set_ttl"):
+        elif action == "set_ttl":
             try:
                 ttl_value = request.POST.get("ttl_value", "").strip()
                 if not ttl_value:
@@ -332,7 +331,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
             except Exception as e:  # noqa: BLE001
                 messages.error(request, f"Error setting TTL: {e!s}")
 
-        elif action == "persist" and service.is_feature_supported("set_ttl"):
+        elif action == "persist":
             try:
                 result = service.persist_key(key)
                 if result["success"]:
@@ -346,7 +345,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                 messages.error(request, f"Error removing TTL: {e!s}")
 
         # List operations
-        elif action == "list_lpop" and service.is_feature_supported("list_ops"):
+        elif action == "list_lpop":
             count = 1
             count_str = request.POST.get("pop_count", "").strip()
             if count_str:
@@ -359,7 +358,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                 messages.error(request, result["message"])
             return redirect(reverse("django_cachex:key_detail", args=[cache_name, key]))
 
-        elif action == "list_rpop" and service.is_feature_supported("list_ops"):
+        elif action == "list_rpop":
             count = 1
             count_str = request.POST.get("pop_count", "").strip()
             if count_str:
@@ -372,7 +371,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                 messages.error(request, result["message"])
             return redirect(reverse("django_cachex:key_detail", args=[cache_name, key]))
 
-        elif action == "list_lpush" and service.is_feature_supported("list_ops"):
+        elif action == "list_lpush":
             value = request.POST.get("push_value", "").strip()
             if value:
                 result = service.list_lpush(key, value)
@@ -384,7 +383,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                 messages.error(request, "Value is required.")
             return redirect(reverse("django_cachex:key_detail", args=[cache_name, key]))
 
-        elif action == "list_rpush" and service.is_feature_supported("list_ops"):
+        elif action == "list_rpush":
             value = request.POST.get("push_value", "").strip()
             if value:
                 result = service.list_rpush(key, value)
@@ -396,7 +395,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                 messages.error(request, "Value is required.")
             return redirect(reverse("django_cachex:key_detail", args=[cache_name, key]))
 
-        elif action == "list_lrem" and service.is_feature_supported("list_ops"):
+        elif action == "list_lrem":
             value = request.POST.get("item_value", "").strip()
             count = 0  # Default: remove all occurrences
             count_str = request.POST.get("lrem_count", "").strip()
@@ -413,7 +412,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                 messages.error(request, "Value is required.")
             return redirect(reverse("django_cachex:key_detail", args=[cache_name, key]))
 
-        elif action == "list_ltrim" and service.is_feature_supported("list_ops"):
+        elif action == "list_ltrim":
             try:
                 start = int(request.POST.get("trim_start", "0"))
                 stop = int(request.POST.get("trim_stop", "-1"))
@@ -427,7 +426,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
             return redirect(reverse("django_cachex:key_detail", args=[cache_name, key]))
 
         # Set operations
-        elif action == "set_sadd" and service.is_feature_supported("set_ops"):
+        elif action == "set_sadd":
             member = request.POST.get("member_value", "").strip()
             if member:
                 result = service.set_sadd(key, member)
@@ -439,7 +438,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                 messages.error(request, "Member is required.")
             return redirect(reverse("django_cachex:key_detail", args=[cache_name, key]))
 
-        elif action == "set_srem" and service.is_feature_supported("set_ops"):
+        elif action == "set_srem":
             member = request.POST.get("member", "").strip()
             if member:
                 result = service.set_srem(key, member)
@@ -450,7 +449,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
             return redirect(reverse("django_cachex:key_detail", args=[cache_name, key]))
 
         # Hash operations
-        elif action == "hash_hset" and service.is_feature_supported("hash_ops"):
+        elif action == "hash_hset":
             field = request.POST.get("field_name", "").strip()
             value = request.POST.get("field_value", "").strip()
             if field:
@@ -463,7 +462,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                 messages.error(request, "Field name is required.")
             return redirect(reverse("django_cachex:key_detail", args=[cache_name, key]))
 
-        elif action == "hash_hdel" and service.is_feature_supported("hash_ops"):
+        elif action == "hash_hdel":
             field = request.POST.get("field", "").strip()
             if field:
                 result = service.hash_hdel(key, field)
@@ -474,7 +473,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
             return redirect(reverse("django_cachex:key_detail", args=[cache_name, key]))
 
         # Sorted set operations
-        elif action == "zset_zadd" and service.is_feature_supported("zset_ops"):
+        elif action == "zset_zadd":
             member = request.POST.get("member_value", "").strip()
             score_str = request.POST.get("score_value", "").strip()
             # Get ZADD flags
@@ -496,7 +495,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                 messages.error(request, "Member and score are required.")
             return redirect(reverse("django_cachex:key_detail", args=[cache_name, key]))
 
-        elif action == "zset_zrem" and service.is_feature_supported("zset_ops"):
+        elif action == "zset_zrem":
             member = request.POST.get("member", "").strip()
             if member:
                 result = service.zset_zrem(key, member)
@@ -507,7 +506,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
             return redirect(reverse("django_cachex:key_detail", args=[cache_name, key]))
 
         # Set pop operation
-        elif action == "set_spop" and service.is_feature_supported("set_ops"):
+        elif action == "set_spop":
             count = 1
             count_str = request.POST.get("pop_count", "").strip()
             if count_str:
@@ -521,7 +520,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
             return redirect(reverse("django_cachex:key_detail", args=[cache_name, key]))
 
         # Sorted set pop operations
-        elif action == "zset_zpopmin" and service.is_feature_supported("zset_ops"):
+        elif action == "zset_zpopmin":
             result = service.zset_zpopmin(key)
             if result["success"]:
                 messages.success(request, result["message"])
@@ -529,7 +528,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                 messages.error(request, result["message"])
             return redirect(reverse("django_cachex:key_detail", args=[cache_name, key]))
 
-        elif action == "zset_zpopmax" and service.is_feature_supported("zset_ops"):
+        elif action == "zset_zpopmax":
             result = service.zset_zpopmax(key)
             if result["success"]:
                 messages.success(request, result["message"])
@@ -538,7 +537,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
             return redirect(reverse("django_cachex:key_detail", args=[cache_name, key]))
 
         # Stream operations
-        elif action == "stream_xadd" and service.is_feature_supported("stream_ops"):
+        elif action == "stream_xadd":
             field_name = request.POST.get("field_name", "").strip()
             field_value = request.POST.get("field_value", "").strip()
             if field_name and field_value:
@@ -551,7 +550,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                 messages.error(request, "Field name and value are required.")
             return redirect(reverse("django_cachex:key_detail", args=[cache_name, key]))
 
-        elif action == "stream_xdel" and service.is_feature_supported("stream_ops"):
+        elif action == "stream_xdel":
             entry_id = request.POST.get("entry_id", "").strip()
             if entry_id:
                 result = service.stream_xdel(key, entry_id)
@@ -563,7 +562,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                 messages.error(request, "Entry ID is required.")
             return redirect(reverse("django_cachex:key_detail", args=[cache_name, key]))
 
-        elif action == "stream_xtrim" and service.is_feature_supported("stream_ops"):
+        elif action == "stream_xtrim":
             maxlen_str = request.POST.get("maxlen", "").strip()
             if maxlen_str:
                 try:

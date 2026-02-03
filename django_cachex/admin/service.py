@@ -72,79 +72,65 @@ class CacheService:
         """
         return "native" if self._is_native else "wrapped"
 
-    def supports(self, operation: str) -> bool:  # noqa: PLR0911
+    def supports(self, operation: str) -> bool:
         """Check if an operation is supported by this cache.
 
-        This method is primarily for templates to conditionally render UI elements.
-        It works by attempting a lightweight check or catching NotSupportedError.
+        This is a hint for templates to conditionally render UI elements.
+        The actual operation may still fail - views should catch NotSupportedError.
+
+        For native django-cachex backends, all operations are supported.
+        For wrapped backends, we check if the method exists and doesn't
+        immediately raise NotSupportedError.
 
         Args:
-            operation: The operation to check (e.g., 'keys', 'ttl', 'type').
+            operation: The operation to check (e.g., 'keys', 'ttl', 'query').
 
         Returns:
-            True if the operation is supported, False otherwise.
+            True if the operation appears to be supported, False otherwise.
         """
         # Native backends support all operations
         if self._is_native:
             return True
 
-        # For wrapped backends, check specific operations
-        operation_map = {
-            # Core operations - always supported
-            "get": True,
-            "set": True,
-            "delete": True,
-            "clear": True,
-            # View-friendly aliases for core operations
-            "get_key": True,
-            "delete_key": True,
-            "edit_key": True,
-            "add_key": True,
-            "flush_cache": True,
-            # Operations that depend on wrapper implementation
-            "keys": "keys",
-            "query": "keys",  # Alias for keys
-            "ttl": "ttl",
+        # Map operation names to method names on the wrapper
+        method_map = {
+            # View-friendly aliases
+            "query": "keys",
+            "get_key": "get",
+            "delete_key": "delete",
+            "edit_key": "set",
+            "add_key": "set",
+            "flush_cache": "clear",
             "get_ttl": "ttl",
-            "expire": "expire",
             "set_ttl": "expire",
-            "persist": "persist",
-            "type": "type",
             "get_type": "type",
-            "info": "info",
-            "slowlog": "slowlog_get",
-            # Data structure operations - not supported by wrappers
-            "list_ops": False,
-            "set_ops": False,
-            "hash_ops": False,
-            "zset_ops": False,
-            "stream_ops": False,
-            "get_type_data": False,
-            "get_size": False,
+            # Composite operations - check representative method
+            "list_ops": "lrange",
+            "set_ops": "smembers",
+            "hash_ops": "hgetall",
+            "zset_ops": "zrange",
+            "stream_ops": "xrange",
+            "get_type_data": "type",
+            "get_size": "memory_usage",
         }
 
-        check = operation_map.get(operation)
-        if check is True:
-            return True
-        if check is False:
-            return False
-        if check is None:
+        method_name = method_map.get(operation, operation)
+        method = getattr(self._cache, method_name, None)
+
+        if method is None:
             return False
 
-        # Try the operation to see if it's supported
+        # For methods that require arguments, try calling with test data
+        # to see if they raise NotSupportedError immediately
         try:
-            method_name = str(check)
-            method = getattr(self._cache, method_name, None)
-            if method is None:
-                return False
-            # For 'keys', try with a pattern that returns quickly
-            if method_name == "keys":
+            if method_name == "keys" or method_name in ("ttl", "type", "expire", "persist", "memory_usage"):
                 method("__test_support__")
+            # For other methods, assume supported if they exist
             return True
         except NotSupportedError:
             return False
         except Exception:  # noqa: BLE001
-            # Other errors might mean the operation is supported but failed
+            # Other errors mean the operation exists but failed for other reasons
             return True
 
     # Metadata methods
