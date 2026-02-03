@@ -249,6 +249,34 @@ class LocMemCacheWrapper(BaseCacheWrapper):
         """Access the internal cache dictionary of LocMemCache."""
         return getattr(self._cache, "_cache", {})
 
+    def _get_expire_info(self) -> dict[str, float]:
+        """Access the internal expiry info dictionary."""
+        return getattr(self._cache, "_expire_info", {})
+
+    def info(self) -> dict[str, Any]:
+        """Get LocMemCache info: key count, memory estimate, config."""
+        internal_cache = self._get_internal_cache()
+        key_count = len(internal_cache)
+
+        # Estimate memory usage (very rough - just serialized size)
+        import sys
+
+        try:
+            # Get rough size estimate of all cached values
+            total_size = sum(sys.getsizeof(v) for v in internal_cache.values())
+        except Exception:  # noqa: BLE001
+            total_size = 0
+
+        return {
+            "backend": "LocMemCache",
+            "key_count": key_count,
+            "memory_estimate_bytes": total_size,
+            "max_entries": getattr(self._cache, "_max_entries", "unknown"),
+            "cull_frequency": getattr(self._cache, "_cull_frequency", "unknown"),
+            "key_prefix": self.key_prefix or "(none)",
+            "version": self.version,
+        }
+
     def keys(self, pattern: str = "*") -> list[str]:
         """List keys matching the pattern by scanning internal cache dict."""
         internal_cache = self._get_internal_cache()
@@ -375,6 +403,45 @@ class DatabaseCacheWrapper(BaseCacheWrapper):
                 return -2  # Key expired
             return int(ttl)
 
+    def info(self) -> dict[str, Any]:
+        """Get DatabaseCache info: table name, row count, config."""
+        table_name = self._get_table_name()
+        quoted_table_name = connection.ops.quote_name(table_name)
+
+        try:
+            with connection.cursor() as cursor:
+                # Get total row count
+                cursor.execute(f"SELECT COUNT(*) FROM {quoted_table_name}")  # noqa: S608
+                total_count = cursor.fetchone()[0]
+
+                # Get non-expired row count
+                current_time = time.time()
+                if connection.vendor in ("postgresql", "oracle"):
+                    expires_condition = "expires > to_timestamp(%s)"
+                elif connection.vendor == "mysql":
+                    expires_condition = "expires > FROM_UNIXTIME(%s)"
+                else:
+                    expires_condition = "expires > %s"
+
+                cursor.execute(
+                    f"SELECT COUNT(*) FROM {quoted_table_name} WHERE {expires_condition}",  # noqa: S608
+                    [current_time],
+                )
+                active_count = cursor.fetchone()[0]
+        except Exception:  # noqa: BLE001
+            total_count = "error"
+            active_count = "error"
+
+        return {
+            "backend": "DatabaseCache",
+            "table_name": table_name,
+            "database": connection.vendor,
+            "total_rows": total_count,
+            "active_keys": active_count,
+            "key_prefix": self.key_prefix or "(none)",
+            "version": self.version,
+        }
+
 
 class FileCacheWrapper(BaseCacheWrapper):
     """Wrapper for Django's FileBasedCache.
@@ -384,6 +451,43 @@ class FileCacheWrapper(BaseCacheWrapper):
 
     # keys() raises NotSupportedError (inherited)
     # All other operations use base class which raises NotSupportedError
+
+    def info(self) -> dict[str, Any]:
+        """Get FileBasedCache info: directory, file count, total size."""
+        from pathlib import Path
+
+        cache_dir = getattr(self._cache, "_dir", None)
+
+        if not cache_dir:
+            return {
+                "backend": "FileBasedCache",
+                "directory": "unknown",
+                "error": "Could not determine cache directory",
+            }
+
+        cache_path = Path(cache_dir)
+
+        try:
+            if cache_path.exists():
+                # Count files and calculate total size
+                files = list(cache_path.rglob("*"))
+                file_count = sum(1 for f in files if f.is_file())
+                total_size = sum(f.stat().st_size for f in files if f.is_file())
+            else:
+                file_count = 0
+                total_size = 0
+        except Exception:  # noqa: BLE001
+            file_count = "error"
+            total_size = "error"
+
+        return {
+            "backend": "FileBasedCache",
+            "directory": str(cache_dir),
+            "file_count": file_count,
+            "total_size_bytes": total_size,
+            "key_prefix": self.key_prefix or "(none)",
+            "version": self.version,
+        }
 
 
 class MemcachedCacheWrapper(BaseCacheWrapper):
@@ -395,13 +499,20 @@ class MemcachedCacheWrapper(BaseCacheWrapper):
     def info(self) -> dict[str, Any]:
         """Get memcached stats."""
         cache = cast("Any", self._cache)
+        result: dict[str, Any] = {
+            "backend": "Memcached",
+            "key_prefix": self.key_prefix or "(none)",
+            "version": self.version,
+        }
+
         if hasattr(cache, "_cache") and hasattr(cache._cache, "stats"):
             try:
                 stats = cache._cache.stats()
-                return {"stats": stats}
-            except Exception:  # noqa: BLE001, S110
-                pass
-        raise NotSupportedError("info", self.__class__.__name__)
+                result["stats"] = stats
+            except Exception:  # noqa: BLE001
+                result["stats_error"] = "Could not retrieve memcached stats"
+
+        return result
 
 
 class DjangoRedisCacheWrapper(BaseCacheWrapper):
@@ -415,6 +526,15 @@ class DjangoRedisCacheWrapper(BaseCacheWrapper):
     # Note: Django's Redis backend doesn't expose SCAN/KEYS by default,
     # so we keep functionality minimal. Users should migrate to cachex for
     # full Redis features.
+
+    def info(self) -> dict[str, Any]:
+        """Get Django Redis cache info."""
+        return {
+            "backend": "Django RedisCache",
+            "note": "For full Redis features, use django-cachex ValkeyCache or RedisCache",
+            "key_prefix": self.key_prefix or "(none)",
+            "version": self.version,
+        }
 
 
 class DummyCacheWrapper(BaseCacheWrapper):
@@ -442,6 +562,14 @@ class DummyCacheWrapper(BaseCacheWrapper):
     def keys(self, pattern: str = "*") -> list[str]:
         """DummyCache has no keys."""
         return []
+
+    def info(self) -> dict[str, Any]:
+        """Get DummyCache info."""
+        return {
+            "backend": "DummyCache",
+            "note": "DummyCache discards all data - used for development/testing",
+            "key_count": 0,
+        }
 
 
 # Mapping of backend class paths to wrapper classes
