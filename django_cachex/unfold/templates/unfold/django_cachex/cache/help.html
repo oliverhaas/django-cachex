@@ -72,7 +72,7 @@
                                 </span>
                             </td>
                             <td class="px-4 py-3 text-sm text-base-900 dark:text-base-100">{% trans 'Wrapped Support' %}</td>
-                            <td class="px-4 py-3 text-sm text-base-700 dark:text-base-300">{% trans 'Django builtin backends (LocMemCache, DatabaseCache, etc.) and django-redis. Most features available through wrapper compatibility.' %}</td>
+                            <td class="px-4 py-3 text-sm text-base-700 dark:text-base-300">{% trans 'Django builtin backends (LocMemCache, DatabaseCache, RedisCache, etc.). Most features available through wrapper compatibility.' %}</td>
                         </tr>
                         <tr>
                             <td class="px-4 py-3">
@@ -86,6 +86,22 @@
                     </tbody>
                 </table>
             </div>
+        </div>
+    </div>
+
+    <!-- Redis Recommendation -->
+    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+        <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
+            <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">{% trans 'Using Redis/Valkey?' %}</h2>
+        </div>
+        <div class="p-4 prose dark:prose-invert max-w-none">
+            <p class="text-base-700 dark:text-base-300">
+                {% blocktrans %}
+                If you are using Django's builtin Redis backend (<code class="text-sm">django.core.cache.backends.redis.RedisCache</code>),
+                consider switching to django-cachex's <code class="text-sm">ValkeyCache</code> or <code class="text-sm">RedisCache</code> backends for
+                full admin functionality including key browsing, TTL inspection, and native Redis data type support.
+                {% endblocktrans %}
+            </p>
         </div>
     </div>
 

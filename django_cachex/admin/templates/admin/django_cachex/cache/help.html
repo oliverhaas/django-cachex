@@ -47,7 +47,7 @@
                 </tr>
                 <tr>
                     <td style="padding: 8px; border-bottom: 1px solid var(--hairline-color);"><span class="support-badge support-badge-wrapped">wrapped</span></td>
-                    <td style="padding: 8px; border-bottom: 1px solid var(--hairline-color);">{% trans 'Wrapped support - Django builtin backends (LocMemCache, DatabaseCache, etc.) and django-redis. Most features available through wrapper compatibility.' %}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid var(--hairline-color);">{% trans 'Wrapped support - Django builtin backends (LocMemCache, DatabaseCache, RedisCache, etc.). Most features available through wrapper compatibility.' %}</td>
                 </tr>
                 <tr>
                     <td style="padding: 8px;"><span class="support-badge support-badge-limited">limited</span></td>
@@ -55,6 +55,15 @@
                 </tr>
             </tbody>
         </table>
+
+        <h2>{% trans 'Using Redis/Valkey?' %}</h2>
+        <p>
+            {% blocktrans %}
+            If you are using Django's builtin Redis backend (<code>django.core.cache.backends.redis.RedisCache</code>),
+            consider switching to django-cachex's <code>ValkeyCache</code> or <code>RedisCache</code> backends for
+            full admin functionality including key browsing, TTL inspection, and native Redis data type support.
+            {% endblocktrans %}
+        </p>
     </div>
 </div>
 {% endblock %}

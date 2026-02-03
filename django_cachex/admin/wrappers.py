@@ -404,6 +404,19 @@ class MemcachedCacheWrapper(BaseCacheWrapper):
         raise NotSupportedError("info", self.__class__.__name__)
 
 
+class DjangoRedisCacheWrapper(BaseCacheWrapper):
+    """Wrapper for Django's builtin Redis cache backend.
+
+    Provides basic support for django.core.cache.backends.redis.RedisCache.
+    For full Redis/Valkey functionality (keys listing, TTL inspection, data type
+    operations), use django-cachex's ValkeyCache or RedisCache backends instead.
+    """
+
+    # Note: Django's Redis backend doesn't expose SCAN/KEYS by default,
+    # so we keep functionality minimal. Users should migrate to cachex for
+    # full Redis features.
+
+
 class DummyCacheWrapper(BaseCacheWrapper):
     """Wrapper for DummyCache.
 
@@ -445,6 +458,8 @@ WRAPPER_MAP: dict[str, type[BaseCacheWrapper]] = {
     "django.core.cache.backends.memcached.PyMemcacheCache": MemcachedCacheWrapper,
     "django.core.cache.backends.memcached.PyLibMCCache": MemcachedCacheWrapper,
     "django.core.cache.backends.memcached.MemcachedCache": MemcachedCacheWrapper,
+    # Django's builtin Redis cache (Django 4.0+)
+    "django.core.cache.backends.redis.RedisCache": DjangoRedisCacheWrapper,
 }
 
 

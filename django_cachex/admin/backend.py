@@ -46,6 +46,8 @@ BACKEND_PANEL_MAP_DEFAULT = {
     "django.core.cache.backends.filebased.FileBasedCache": "FileBasedCachePanel",
     # Dummy cache
     "django.core.cache.backends.dummy.DummyCache": "DummyCachePanel",
+    # Django's builtin Redis cache (Django 4.0+)
+    "django.core.cache.backends.redis.RedisCache": "DjangoRedisCachePanel",
 }
 
 BACKEND_PANEL_MAP = CACHEX_PANEL_SETTINGS.get(
@@ -927,6 +929,24 @@ class MemcachedCachePanel(CachePanel):
 
     ABILITIES: ClassVar[dict[str, bool]] = {
         "query": False,
+        "get_key": True,
+        "delete_key": True,
+        "edit_key": True,
+        "add_key": True,
+        "flush_cache": True,
+    }
+
+
+class DjangoRedisCachePanel(CachePanel):
+    """Cache panel for Django's builtin Redis cache backend.
+
+    Provides basic support for django.core.cache.backends.redis.RedisCache.
+    For full Redis/Valkey functionality (keys listing, TTL inspection, data type
+    operations), use django-cachex's ValkeyCache or RedisCache backends instead.
+    """
+
+    ABILITIES: ClassVar[dict[str, bool]] = {
+        "query": False,  # Django's Redis backend doesn't expose SCAN/KEYS
         "get_key": True,
         "delete_key": True,
         "edit_key": True,

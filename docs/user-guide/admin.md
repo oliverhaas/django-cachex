@@ -24,8 +24,19 @@ Different cache backends have different levels of support in the Cache Admin:
 | Badge | Level | Description |
 |-------|-------|-------------|
 | **cachex** | Full Support | django-cachex backends (`ValkeyCache`, `RedisCache`, etc.) with full access to all features including key listing, pattern search, TTL inspection, and all data type operations. |
-| **wrapped** | Wrapped Support | Django builtin backends (`LocMemCache`, `DatabaseCache`, etc.) and `django-redis`. Most features available through wrapper compatibility. |
+| **wrapped** | Wrapped Support | Django builtin backends (`LocMemCache`, `DatabaseCache`, `RedisCache`, etc.). Most features available through wrapper compatibility. |
 | **limited** | Limited Support | Custom or unknown cache backends. Basic operations may work but key listing and advanced features may not be available. |
+
+### Using Redis/Valkey?
+
+If you are using Django's builtin Redis backend (`django.core.cache.backends.redis.RedisCache`), consider switching to django-cachex's `ValkeyCache` or `RedisCache` backends for full admin functionality including:
+
+- Key browsing and pattern search
+- TTL inspection and modification
+- Native Redis data type support (lists, sets, hashes, sorted sets)
+- Server info and slow log access
+
+See the [quickstart guide](../getting-started/quickstart.md) for migration instructions.
 
 ## Views
 
@@ -78,15 +89,15 @@ Create a new cache entry:
 
 The admin adapts its interface based on what each backend supports:
 
-| Feature | cachex | wrapped | limited |
-|---------|--------|---------|---------|
-| List keys | Yes | Varies | No |
-| Get key | Yes | Yes | Yes |
-| Delete key | Yes | Yes | Yes |
-| Edit key | Yes | Yes | Yes |
-| Get TTL | Yes | Varies | No |
-| Get type | Yes | No | No |
-| Flush cache | Yes | Yes | Varies |
+| Feature | cachex | LocMemCache | DatabaseCache | Django Redis | limited |
+|---------|--------|-------------|---------------|--------------|---------|
+| List keys | Yes | Yes | Yes | No | No |
+| Get key | Yes | Yes | Yes | Yes | Yes |
+| Delete key | Yes | Yes | Yes | Yes | Yes |
+| Edit key | Yes | Yes | Yes | Yes | Yes |
+| Get TTL | Yes | No | Yes | No | No |
+| Get type | Yes | No | No | No | No |
+| Flush cache | Yes | Yes | Yes | Yes | Varies |
 
 ## Tips
 
