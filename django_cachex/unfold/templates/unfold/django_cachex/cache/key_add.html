@@ -32,13 +32,6 @@
         </div>
     </div>
 
-    <!-- Not Supported Error -->
-    {% if not edit_supported %}
-    <div class="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-default">
-        <p class="text-red-700 dark:text-red-400">{% trans 'Adding keys is not supported for this cache backend.' %}</p>
-    </div>
-    {% endif %}
-
     <!-- Add Key Form -->
     <form method="post" id="key-form">
         {% csrf_token %}
@@ -58,7 +51,6 @@
                            class="w-full max-w-md px-3 py-2 text-sm font-mono border border-base-300 dark:border-base-600 rounded-default
                                   bg-white dark:bg-base-800 text-base-900 dark:text-base-100
                                   focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                           {% if not edit_supported %}disabled{% endif %}
                            required>
                     <p class="mt-1 text-sm text-base-500 dark:text-base-400">{% trans 'The unique identifier for this cache entry.' %}</p>
                 </div>
@@ -71,28 +63,18 @@
                     <select id="id_type" name="type"
                             class="w-48 px-3 py-2 text-sm border border-base-300 dark:border-base-600 rounded-default
                                    bg-white dark:bg-base-800 text-base-900 dark:text-base-100
-                                   focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                            {% if not edit_supported %}disabled{% endif %}>
+                                   focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                         <option value="string" {% if prefill_type == "string" %}selected{% endif %}>{% trans 'String' %}</option>
-                        {% if list_ops_supported %}
                         <option value="list" {% if prefill_type == "list" %}selected{% endif %}>{% trans 'List' %}</option>
-                        {% endif %}
-                        {% if set_ops_supported %}
                         <option value="set" {% if prefill_type == "set" %}selected{% endif %}>{% trans 'Set' %}</option>
-                        {% endif %}
-                        {% if hash_ops_supported %}
                         <option value="hash" {% if prefill_type == "hash" %}selected{% endif %}>{% trans 'Hash' %}</option>
-                        {% endif %}
-                        {% if zset_ops_supported %}
                         <option value="zset" {% if prefill_type == "zset" %}selected{% endif %}>{% trans 'Sorted Set' %}</option>
-                        {% endif %}
                     </select>
                     <p class="mt-1 text-sm text-base-500 dark:text-base-400">{% trans 'Select the data type for this key.' %}</p>
                 </div>
             </div>
         </div>
 
-        {% if edit_supported %}
         <!-- Actions bar -->
         <div class="flex items-center justify-between">
             <a href="{% url 'django_cachex:key_search' cache_name %}"
@@ -105,7 +87,6 @@
                 {% trans 'Continue' %}
             </button>
         </div>
-        {% endif %}
     </form>
 </div>
 

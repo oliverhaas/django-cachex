@@ -1,6 +1,5 @@
 {% load i18n %}
 <!-- Hash Operations -->
-{% if hash_ops_supported %}
 <fieldset class="module aligned">
     <h2>{% trans 'Operations' %}</h2>
     <div class="form-row">
@@ -14,7 +13,6 @@
         </form>
     </div>
 </fieldset>
-{% endif %}
 <!-- Hash Fields -->
 <fieldset class="module aligned">
     <h2>{% trans 'Hash Fields' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
@@ -25,9 +23,7 @@
                 <tr>
                     <th scope="col">{% trans 'Field' %}</th>
                     <th scope="col">{% trans 'Value' %}</th>
-                    {% if hash_ops_supported %}
                     <th scope="col" style="width: 150px;">{% trans 'Actions' %}</th>
-                    {% endif %}
                 </tr>
             </thead>
             <tbody>
@@ -37,12 +33,10 @@
                     <td>
                         <input type="text" name="field_value" value="{{ value }}" class="vTextField" form="hash-update-{{ forloop.counter0 }}" style="width: 100%; box-sizing: border-box;">
                     </td>
-                    {% if hash_ops_supported %}
                     <td>
                         <button type="submit" form="hash-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
                         <button type="submit" form="hash-delete-{{ forloop.counter0 }}" class="button delete-btn btn-small">{% trans 'Delete' %}</button>
                     </td>
-                    {% endif %}
                 </tr>
                 {% endfor %}
             </tbody>

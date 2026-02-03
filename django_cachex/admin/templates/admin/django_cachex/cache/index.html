@@ -12,7 +12,6 @@
 {% block extrahead %}
 {{ block.super }}
 <script src="{% static 'admin/js/filters.js' %}" defer></script>
-{% if any_flush_supported %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Handle select all checkbox
@@ -39,7 +38,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 </script>
-{% endif %}
 {% endblock %}
 
 {% block bodyclass %}{{ block.super }} app-django_cachex model-cache change-list{% endblock %}
@@ -108,7 +106,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     {% block result_list %}
                     {% if caches_info %}
                     <!-- Actions (matches admin actions bar) -->
-                    {% if any_flush_supported %}
                     <div class="actions">
                         <label>{% trans 'Action:' %}
                             <select name="action">
@@ -119,18 +116,15 @@ document.addEventListener('DOMContentLoaded', function() {
                         <button type="submit" class="button" onclick="return confirm('{% trans 'Are you sure you want to flush the selected caches? This will delete all entries in those caches.' %}');">{% trans 'Run' %}</button>
                         <span class="action-counter">0 of {{ caches_info|length }} selected</span>
                     </div>
-                    {% endif %}
 
                     <!-- Results Table -->
                     <div class="results">
                         <table id="result_list">
                             <thead>
                                 <tr>
-                                    {% if any_flush_supported %}
                                     <th scope="col" class="action-checkbox-column">
                                         <div class="text"><span><input type="checkbox" id="action-toggle"></span></div>
                                     </th>
-                                    {% endif %}
                                     <th scope="col">
                                         <div class="text"><span>{% trans 'Cache Name' %}</span></div>
                                     </th>
@@ -148,11 +142,9 @@ document.addEventListener('DOMContentLoaded', function() {
                             <tbody>
                                 {% for cache_info in caches_info %}
                                 <tr class="{% cycle 'row1' 'row2' %}">
-                                    {% if any_flush_supported %}
                                     <td class="action-checkbox">
-                                        <input type="checkbox" name="_selected_action" value="{{ cache_info.name }}"{% if not cache_info.flush_supported %} disabled title="{% trans 'Flush not supported for this backend' %}"{% endif %}>
+                                        <input type="checkbox" name="_selected_action" value="{{ cache_info.name }}">
                                     </td>
-                                    {% endif %}
                                     <th scope="row">
                                         <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_info.name }}">{{ cache_info.name }}</a>
                                     </th>

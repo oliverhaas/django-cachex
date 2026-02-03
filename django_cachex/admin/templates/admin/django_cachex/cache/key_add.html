@@ -29,13 +29,6 @@
         </li>
     </ul>
 
-    <!-- Not Supported Error -->
-    {% if not edit_supported %}
-    <p class="errornote">
-        {% trans 'Adding keys is not supported for this cache backend.' %}
-    </p>
-    {% endif %}
-
     <!-- Add Key Form -->
     <form method="post" id="key-form">
         {% csrf_token %}
@@ -52,7 +45,6 @@
                         class="vTextField"
                         style="width: 400px;"
                         value="{{ prefill_key }}"
-                        {% if not edit_supported %}disabled{% endif %}
                         required
                     >
                     <p class="help">{% trans 'The unique identifier for this cache entry.' %}</p>
@@ -66,33 +58,22 @@
                         name="type"
                         class="vTextField"
                         style="width: 200px;"
-                        {% if not edit_supported %}disabled{% endif %}
                     >
                         <option value="string" {% if prefill_type == "string" %}selected{% endif %}>{% trans 'String' %}</option>
-                        {% if list_ops_supported %}
                         <option value="list" {% if prefill_type == "list" %}selected{% endif %}>{% trans 'List' %}</option>
-                        {% endif %}
-                        {% if set_ops_supported %}
                         <option value="set" {% if prefill_type == "set" %}selected{% endif %}>{% trans 'Set' %}</option>
-                        {% endif %}
-                        {% if hash_ops_supported %}
                         <option value="hash" {% if prefill_type == "hash" %}selected{% endif %}>{% trans 'Hash' %}</option>
-                        {% endif %}
-                        {% if zset_ops_supported %}
                         <option value="zset" {% if prefill_type == "zset" %}selected{% endif %}>{% trans 'Sorted Set' %}</option>
-                        {% endif %}
                     </select>
                     <p class="help">{% trans 'Select the data type for this key.' %}</p>
                 </div>
             </div>
         </fieldset>
 
-        {% if edit_supported %}
         <div class="submit-row">
             <input type="submit" value="{% trans 'Continue' %}" class="default" name="_continue">
             <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="closelink">{% trans 'Cancel' %}</a>
         </div>
-        {% endif %}
     </form>
 </div>
 {% endblock %}

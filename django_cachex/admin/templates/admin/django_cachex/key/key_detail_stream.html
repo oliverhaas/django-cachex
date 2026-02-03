@@ -1,6 +1,5 @@
 {% load i18n %}
 <!-- Stream Operations -->
-{% if stream_ops_supported %}
 <fieldset class="module aligned">
     <h2>{% trans 'Operations' %}</h2>
     <div class="form-row">
@@ -23,7 +22,6 @@
         </form>
     </div>
 </fieldset>
-{% endif %}
 <!-- Stream Entries -->
 <fieldset class="module aligned">
     <h2>{% trans 'Stream Entries' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
@@ -34,9 +32,7 @@
                 <tr>
                     <th scope="col" style="width: 180px;">{% trans 'Entry ID' %}</th>
                     <th scope="col">{% trans 'Fields' %}</th>
-                    {% if stream_ops_supported %}
                     <th scope="col" style="width: 80px;">{% trans 'Actions' %}</th>
-                    {% endif %}
                 </tr>
             </thead>
             <tbody>
@@ -44,7 +40,6 @@
                 <tr class="{% cycle 'row1' 'row2' %}">
                     <td><code class="quiet">{{ entry_id }}</code></td>
                     <td><code>{% for field, value in fields.items %}{{ field }}: {{ value }}{% if not forloop.last %}, {% endif %}{% endfor %}</code></td>
-                    {% if stream_ops_supported %}
                     <td>
                         <form method="post" style="display: inline;">
                             {% csrf_token %}
@@ -53,7 +48,6 @@
                             <button type="submit" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Delete this entry?' %}');">{% trans 'Delete' %}</button>
                         </form>
                     </td>
-                    {% endif %}
                 </tr>
                 {% endfor %}
             </tbody>

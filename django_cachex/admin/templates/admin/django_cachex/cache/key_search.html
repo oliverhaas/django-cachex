@@ -96,7 +96,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 </p>
                 {% endif %}
 
-                {% if query_supported or get_key_supported %}
                 <!-- Search Form -->
                 <div id="toolbar">
                     <form id="changelist-search" method="get" role="search">
@@ -111,7 +110,6 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                     </form>
                 </div>
-                {% endif %}
 
                 <form id="changelist-form" method="post">
                 {% csrf_token %}
@@ -221,7 +219,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     {{ keys_count }} {% trans 'keys shown' %}
                     {% endif %}
                 </nav>
-                {% elif query_supported %}
+                {% else %}
                 <nav class="paginator">
                     0 {% trans 'keys' %}
                 </nav>

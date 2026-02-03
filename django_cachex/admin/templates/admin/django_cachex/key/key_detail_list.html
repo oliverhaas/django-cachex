@@ -1,6 +1,5 @@
 {% load i18n %}
 <!-- List Operations -->
-{% if list_ops_supported %}
 <fieldset class="module aligned">
     <h2>{% trans 'Operations' %}</h2>
     <div class="form-row">
@@ -50,7 +49,6 @@
         </form>
     </div>
 </fieldset>
-{% endif %}
 <!-- List Items -->
 <fieldset class="module aligned">
     <h2>{% trans 'List Items' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
@@ -61,9 +59,7 @@
                 <tr>
                     <th scope="col" style="width: 60px;">{% trans 'Index' %}</th>
                     <th scope="col">{% trans 'Value' %}</th>
-                    {% if list_ops_supported %}
                     <th scope="col" style="width: 80px;">{% trans 'Actions' %}</th>
-                    {% endif %}
                 </tr>
             </thead>
             <tbody>
@@ -71,7 +67,6 @@
                 <tr class="{% cycle 'row1' 'row2' %}">
                     <td class="quiet">{{ forloop.counter0 }}</td>
                     <td><code>{{ item }}</code></td>
-                    {% if list_ops_supported %}
                     <td>
                         <form method="post" style="display: inline;">
                             {% csrf_token %}
@@ -80,7 +75,6 @@
                             <button type="submit" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Remove this item?' %}');">{% trans 'Remove' %}</button>
                         </form>
                     </td>
-                    {% endif %}
                 </tr>
                 {% endfor %}
             </tbody>

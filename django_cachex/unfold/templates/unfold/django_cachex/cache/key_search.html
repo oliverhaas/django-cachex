@@ -77,7 +77,6 @@
     {% endif %}
 
     <!-- Search form -->
-    {% if query_supported or get_key_supported %}
     <div class="mb-6 flex flex-col gap-4 sm:flex-row lg:border lg:border-base-200 lg:dark:border-base-800 lg:-mb-8 lg:p-3 lg:pb-11 lg:rounded-t-default">
         <form method="get" class="flex items-center gap-3 flex-1">
             <div class="relative flex-1 max-w-md">
@@ -99,13 +98,11 @@
             {% endif %}
         </form>
     </div>
-    {% endif %}
 
     {% if keys_data %}
     <!-- Keys list card -->
     <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-b-default lg:shadow-xs lg:overflow-hidden">
         <!-- Actions bar -->
-        {% if abilities.delete_key %}
         <form id="changelist-form" method="post">
             {% csrf_token %}
             <div class="flex items-center gap-4 px-4 py-3 bg-base-50 dark:bg-white/[.04] border-b border-base-200 dark:border-base-800">
@@ -122,20 +119,15 @@
                     <span id="action-counter">0</span> {% trans 'selected' %}
                 </span>
             </div>
-        {% else %}
-        <div>
-        {% endif %}
 
             <!-- Table -->
             <table class="block border-spacing-none border-separate w-full lg:table">
                 <thead class="text-font-important-light dark:text-font-important-dark hidden lg:table-header-group">
                     <tr class="bg-base-50 dark:bg-white/[.02]">
-                        {% if abilities.delete_key %}
                         <th class="align-middle border-b border-base-200 font-semibold py-2 text-left whitespace-nowrap px-3 lg:table-cell dark:border-base-800 lg:w-10">
                             <input type="checkbox" id="action-toggle"
                                    class="appearance-none bg-white block border border-base-300 cursor-pointer h-4 min-w-4 relative rounded-[4px] shadow-xs w-4 hover:border-base-400 dark:bg-base-700 dark:border-base-500 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-primary-500 after:absolute after:content-['check\_small'] after:flex! after:h-4 after:items-center after:justify-center after:leading-none after:material-symbols-outlined after:-ml-px after:-mt-px after:text-white after:transition-all after:w-4 dark:after:text-base-700 checked:bg-primary-600 dark:checked:bg-primary-600 checked:border-primary-600 dark:checked:border-primary-600 checked:transition-all checked:hover:border-primary-600 dark:checked:after:text-white">
                         </th>
-                        {% endif %}
                         <th class="align-middle border-b border-base-200 font-semibold py-2 text-left whitespace-nowrap px-3 lg:table-cell dark:border-base-800">
                             {% trans 'Key' %}
                         </th>
@@ -159,12 +151,10 @@
                 <tbody class="block relative lg:table-row-group">
                     {% for key_info in keys_data %}
                     <tr class="{% cycle '' 'bg-base-50 dark:bg-white/[.02]' %} block group {% if forloop.first %}first-row{% endif %} border border-base-200 mb-3 rounded-default shadow-xs lg:table-row lg:border-none lg:mb-0 lg:shadow-none dark:border-base-800 relative lg:hover:shadow-raised lg:dark:hover:shadow-raised-dark lg:hover:z-20">
-                        {% if abilities.delete_key %}
                         <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800 lg:w-10" data-label="{% trans 'Select' %}">
                             <input type="checkbox" name="_selected_action" value="{{ key_info.key }}"
                                    class="appearance-none bg-white block border border-base-300 cursor-pointer h-4 min-w-4 relative rounded-[4px] shadow-xs w-4 hover:border-base-400 dark:bg-base-700 dark:border-base-500 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-primary-500 after:absolute after:content-['check\_small'] after:flex! after:h-4 after:items-center after:justify-center after:leading-none after:material-symbols-outlined after:-ml-px after:-mt-px after:text-white after:transition-all after:w-4 dark:after:text-base-700 checked:bg-primary-600 dark:checked:bg-primary-600 checked:border-primary-600 dark:checked:border-primary-600 checked:transition-all checked:hover:border-primary-600 dark:checked:after:text-white action-checkbox">
                         </td>
-                        {% endif %}
                         <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Key' %}">
                             <a href="{% url 'django_cachex:key_detail' cache_name key_info.key|urlencode %}"
                                class="font-mono text-sm text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-200">
@@ -212,11 +202,7 @@
                 </tbody>
             </table>
 
-        {% if abilities.delete_key %}
         </form>
-        {% else %}
-        </div>
-        {% endif %}
 
         <!-- Pagination -->
         <div class="px-4 py-3 bg-base-50 dark:bg-white/[.04] border-t border-base-200 dark:border-base-800 flex items-center justify-between">
@@ -243,7 +229,7 @@
             </nav>
         </div>
     </div>
-    {% elif query_supported %}
+    {% else %}
     <!-- No keys found -->
     <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs p-8 text-center">
         <p class="text-base-500 dark:text-base-400">{% trans 'No keys found.' %}</p>
@@ -251,7 +237,7 @@
     {% endif %}
 </div>
 
-{% if abilities.delete_key and keys_data %}
+{% if keys_data %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const toggle = document.getElementById('action-toggle');

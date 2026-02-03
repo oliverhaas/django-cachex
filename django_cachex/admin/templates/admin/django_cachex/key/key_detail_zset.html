@@ -1,6 +1,5 @@
 {% load i18n %}
 <!-- Sorted Set Operations -->
-{% if zset_ops_supported %}
 <fieldset class="module aligned">
     <h2>{% trans 'Operations' %}</h2>
     <div class="form-row">
@@ -36,7 +35,6 @@
         </form>
     </div>
 </fieldset>
-{% endif %}
 <!-- Sorted Set Members -->
 <fieldset class="module aligned">
     <h2>{% trans 'Sorted Set Members' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
@@ -47,9 +45,7 @@
                 <tr>
                     <th scope="col">{% trans 'Member' %}</th>
                     <th scope="col" style="width: 120px;">{% trans 'Score' %}</th>
-                    {% if zset_ops_supported %}
                     <th scope="col" style="width: 150px;">{% trans 'Actions' %}</th>
-                    {% endif %}
                 </tr>
             </thead>
             <tbody>
@@ -59,12 +55,10 @@
                     <td>
                         <input type="number" name="score_value" value="{{ score }}" step="any" class="vTextField" form="zset-update-{{ forloop.counter0 }}" style="width: 100%; box-sizing: border-box;">
                     </td>
-                    {% if zset_ops_supported %}
                     <td>
                         <button type="submit" form="zset-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
                         <button type="submit" form="zset-remove-{{ forloop.counter0 }}" class="button delete-btn btn-small">{% trans 'Remove' %}</button>
                     </td>
-                    {% endif %}
                 </tr>
                 {% endfor %}
             </tbody>
