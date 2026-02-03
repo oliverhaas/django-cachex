@@ -115,11 +115,11 @@ def populate_cache_if_needed(cache_alias: str) -> None:
         else:
             from django_cachex.admin.service import CacheService
 
-            service = CacheService(cache_alias)
+            service = CacheService(cache_alias, cache)
             if hasattr(service, "key_count"):
-                count = service.key_count()
+                count = service.key_count()  # type: ignore[operator]
             else:
-                count = len(list(cache.keys("*"))) if hasattr(cache, "keys") else 0
+                count = len(list(cache.keys("*"))) if hasattr(cache, "keys") else 0  # type: ignore[operator]
     except Exception:
         count = 0
 
