@@ -17,17 +17,13 @@ from django.test import Client, override_settings
 if TYPE_CHECKING:
     from django_cachex.cache import KeyValueCache
 
-# Get Redis host/port from environment or use defaults
-REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
 
-
-def get_cache_config() -> dict:
+def get_cache_config(host: str, port: int) -> dict:
     """Build a simple CACHES config for tests."""
     return {
         "default": {
             "BACKEND": "django_cachex.cache.ValkeyCache",
-            "LOCATION": f"redis://{REDIS_HOST}:{REDIS_PORT}?db=15",
+            "LOCATION": f"redis://{host}:{port}?db=15",
         },
     }
 
@@ -64,14 +60,18 @@ def admin_client(admin_user) -> Client:
 
 
 @pytest.fixture
-def test_cache(db):
+def test_cache(db, redis_container):
     """Provide a cache instance for testing admin views.
 
     Uses override_settings to configure the cache for the duration of the test.
+    Depends on redis_container to ensure a Redis server is available.
     """
     from django.core.cache import caches
 
-    cache_config = get_cache_config()
+    # redis_container sets REDIS_HOST and REDIS_PORT env vars
+    host = os.environ.get("REDIS_HOST", "localhost")
+    port = int(os.environ.get("REDIS_PORT", "6379"))
+    cache_config = get_cache_config(host, port)
 
     with override_settings(CACHES=cache_config):
         # Close all caches to force recreation with new settings
