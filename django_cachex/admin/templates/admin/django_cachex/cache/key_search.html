@@ -101,6 +101,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div id="toolbar">
                     <form id="changelist-search" method="get" role="search">
                         <div>
+                            <input type="hidden" name="cache" value="{{ cache_name }}">
                             <label for="searchbar"><img src="{% static "admin/img/search.svg" %}" alt="Search"></label>
                             <input type="text" size="40" name="q" value="{{ search_query }}" id="searchbar">
                             <input type="submit" value="{% trans 'Search' %}">
@@ -208,10 +209,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 <nav class="paginator">
                     <ul>
                         {% if cursor > 0 %}
-                        <li><a href="?{% if search_query %}q={{ search_query|urlencode }}&{% endif %}count={{ count }}" class="button btn-small">{% trans 'Start' %}</a></li>
+                        <li><a href="?cache={{ cache_name }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}&count={{ count }}" class="button btn-small">{% trans 'Start' %}</a></li>
                         {% endif %}
                         {% if has_next %}
-                        <li><a href="?{% if search_query %}q={{ search_query|urlencode }}&{% endif %}count={{ count }}&cursor={{ next_cursor }}" class="button btn-small">{% trans 'Next' %}</a></li>
+                        <li><a href="?cache={{ cache_name }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}&count={{ count }}&cursor={{ next_cursor }}" class="button btn-small">{% trans 'Next' %}</a></li>
                         {% endif %}
                     </ul>
                     {% if total_keys is not None %}
