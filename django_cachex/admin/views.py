@@ -52,21 +52,25 @@ logger = logging.getLogger(__name__)
 
 
 def _is_json_serializable(value: Any) -> bool:
-    """Check if a value can be safely serialized to JSON and back.
+    """Check if a value can be safely serialized to JSON and back without loss.
 
-    This performs a deep check - dicts and lists are checked recursively.
+    This performs a round-trip check to ensure the value can be serialized
+    to JSON and deserialized back to an equivalent Python object.
+
     Returns True for: None, bool, int, float, str, and dicts/lists containing only
-    these types. Returns False for: bytes, datetime, custom objects, etc.
+    these types. Returns False for: bytes, datetime, custom objects, or any value
+    where the round-trip changes the data.
 
     Args:
         value: The Python value to check.
 
     Returns:
-        True if the value can round-trip through JSON, False otherwise.
+        True if the value can round-trip through JSON without information loss.
     """
     try:
-        json.dumps(value)
-        return True
+        serialized = json.dumps(value)
+        deserialized = json.loads(serialized)
+        return deserialized == value
     except (TypeError, ValueError, OverflowError):
         return False
 

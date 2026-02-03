@@ -95,6 +95,12 @@ class CacheService:
             "set": True,
             "delete": True,
             "clear": True,
+            # View-friendly aliases for core operations
+            "get_key": True,
+            "delete_key": True,
+            "edit_key": True,
+            "add_key": True,
+            "flush_cache": True,
             # Operations that depend on wrapper implementation
             "keys": "keys",
             "query": "keys",  # Alias for keys
