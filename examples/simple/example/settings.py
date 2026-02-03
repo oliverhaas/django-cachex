@@ -23,6 +23,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # django-cachex cache admin
     "django_cachex.admin",
+    # Example app (populates sample cache data on startup - see startup.py)
+    "example.apps.ExampleConfig",
 ]
 
 MIDDLEWARE = [

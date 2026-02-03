@@ -28,6 +28,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # django-cachex unfold-styled cache admin
     "django_cachex.unfold",
+    # Example app (populates sample cache data on startup - see startup.py)
+    "unfold_example.apps.UnfoldExampleConfig",
 ]
 
 MIDDLEWARE = [
