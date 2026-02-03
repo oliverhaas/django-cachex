@@ -199,34 +199,16 @@ def key_search(request: HttpRequest, cache_name: str) -> HttpResponse:  # noqa: 
     context["cursor"] = cursor
     context["count"] = count
 
-    # Handle exact key lookup (no wildcards)
-    is_exact_lookup = (
-        search_query and service.is_feature_supported("get_key") and "*" not in search_query and "?" not in search_query
-    )
-    if is_exact_lookup:
-        key_result = service.get_key(search_query)
-        if key_result.get("exists"):
-            context["exact_match"] = key_result
-            key_data = {"key": key_result["key"]}
-            context["keys_data"] = [key_data]
-            context["total_keys"] = 1
-            return render(
-                request,
-                _template("key_search.html"),
-                context,
-            )
-        messages.error(request, f"Key '{search_query}' not found in cache.")
-        context["keys_data"] = []
-        context["total_keys"] = 0
-        return render(
-            request,
-            _template("key_search.html"),
-            context,
-        )
-
-    # Handle pattern search
+    # Handle pattern search (auto-wrap in wildcards for Django-style contains search)
     if service.is_feature_supported("query"):
-        pattern = search_query if search_query else "*"
+        if search_query:
+            # Auto-wrap in wildcards if none present (Django-style contains search)
+            if "*" not in search_query and "?" not in search_query:
+                pattern = f"*{search_query}*"
+            else:
+                pattern = search_query
+        else:
+            pattern = "*"
         try:
             query_result = service.query(
                 instance_alias=cache_name,

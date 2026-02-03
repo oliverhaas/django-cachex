@@ -298,6 +298,29 @@ class TestKeySearchView:
         # Should not show non-matching key
         assert "other:key" not in content
 
+    def test_key_search_contains_pattern(
+        self,
+        admin_client: Client,
+        test_cache: KeyValueCache,
+    ):
+        """Key search without wildcards should do contains search (Django-style)."""
+        test_cache.set("session:123", "value1")
+        test_cache.set("user_session", "value2")
+        test_cache.set("my_session_data", "value3")
+        test_cache.set("unrelated:key", "value4")
+
+        url = _key_list_url("default")
+        # Search without wildcards - should find all keys containing "session"
+        response = admin_client.get(url + "&q=session")
+        assert response.status_code == 200
+        content = response.content.decode()
+        # Should show all keys containing "session"
+        assert "session:123" in content
+        assert "user_session" in content
+        assert "my_session_data" in content
+        # Should not show non-matching key
+        assert "unrelated:key" not in content
+
     def test_key_search_pagination(
         self,
         admin_client: Client,
