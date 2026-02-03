@@ -95,7 +95,7 @@ The admin adapts its interface based on what each backend supports:
 | Get key | Yes | Yes | Yes | Yes | Yes |
 | Delete key | Yes | Yes | Yes | Yes | Yes |
 | Edit key | Yes | Yes | Yes | Yes | Yes |
-| Get TTL | Yes | No | Yes | No | No |
+| Get TTL | Yes | Yes | Yes | No | No |
 | Get type | Yes | No | No | No | No |
 | Flush cache | Yes | Yes | Yes | Yes | Varies |
 

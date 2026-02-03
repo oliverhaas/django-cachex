@@ -283,6 +283,7 @@ class LocMemCacheWrapper(BaseCacheWrapper):
     """Wrapper for Django's LocMemCache.
 
     Enables keys() by accessing the internal _cache dict.
+    Enables ttl()/expire() by accessing the internal _expire_info dict.
     """
 
     def _get_internal_cache(self) -> dict[str, Any]:
@@ -292,6 +293,64 @@ class LocMemCacheWrapper(BaseCacheWrapper):
     def _get_expire_info(self) -> dict[str, float]:
         """Access the internal expiry info dictionary."""
         return getattr(self._cache, "_expire_info", {})
+
+    def ttl(self, key: str) -> int:
+        """Get the TTL of a key in seconds.
+
+        LocMemCache stores expiration as Unix timestamps in _expire_info.
+
+        Returns:
+            TTL in seconds, -1 for no expiry, -2 for key not found.
+        """
+        internal_key = self.make_key(key)
+        internal_cache = self._get_internal_cache()
+
+        # Check if key exists
+        if internal_key not in internal_cache:
+            return -2
+
+        expire_info = self._get_expire_info()
+        exp_time = expire_info.get(internal_key)
+
+        if exp_time is None:
+            # No expiry set - key persists indefinitely
+            return -1
+
+        remaining = int(exp_time - time.time())
+        return max(0, remaining)
+
+    def expire(self, key: str, timeout: int) -> bool:
+        """Set the TTL of a key.
+
+        Updates the _expire_info entry with a new expiration timestamp.
+        """
+        internal_key = self.make_key(key)
+        internal_cache = self._get_internal_cache()
+
+        # Check if key exists
+        if internal_key not in internal_cache:
+            return False
+
+        expire_info = self._get_expire_info()
+        expire_info[internal_key] = time.time() + timeout
+        return True
+
+    def persist(self, key: str) -> bool:
+        """Remove the TTL from a key, making it persist indefinitely.
+
+        Sets the _expire_info entry to None.
+        """
+        internal_key = self.make_key(key)
+        internal_cache = self._get_internal_cache()
+
+        # Check if key exists
+        if internal_key not in internal_cache:
+            return False
+
+        expire_info = self._get_expire_info()
+        # Setting to None means no expiry
+        expire_info[internal_key] = None
+        return True
 
     def info(self) -> dict[str, Any]:
         """Get LocMemCache info in structured format matching Redis INFO."""
