@@ -51,13 +51,13 @@ Full documentation at [oliverhaas.github.io/django-cachex](https://oliverhaas.gi
 
 ## Acknowledgments
 
-This project was inspired by [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause.
+This project was initially based on [django-redis](https://github.com/jazzband/django-redis) and then Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some utility code for serializers and compressors are still officially derived from django-redis, licensed under BSD-3-Clause.
 
-The admin panel was inspired by [dj-cache-panel](https://github.com/yassi/dj-cache-panel) and [django-redisboard](https://github.com/ionelmc/django-redisboard). The Unfold theme integration uses [django-unfold](https://unfoldadmin.com/).
+The admin functionality was mostly inspired by [django-redisboard](https://github.com/ionelmc/django-redisboard), and to a lesser extend [dj-cache-panel](https://github.com/yassi/dj-cache-panel). The Unfold theme integration uses [django-unfold](https://unfoldadmin.com/).
 
-AI tools (Claude) were used extensively during the initial development of this package. All AI-generated code was reviewed, tested, and refined by the maintainers.
+AI tools were used extensively during the initial development of this package. Almost all AI code in this package has been reviewed, then usually rewritten and refactored at a later point. I do not consider any part of this package "vibe-coded" or similar, especially critical components like the cache backends themselves are of a higher standard regarding AI use than less critical components like the admin functionality.
 
-Thanks to the Django community for their continued work on the framework.
+Also, major thanks to the Django community for their continued work on the framework.
 
 ## License
 
