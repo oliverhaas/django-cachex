@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from urllib.parse import quote, unquote
 
 from django.conf import settings
 from django.db import models
@@ -130,7 +129,7 @@ class Key(models.Model):
     Keys are identified by a composite of (cache_name, key_name).
     """
 
-    # Composite identifier encoded as: cache_name:url_encoded_key_name
+    # Composite identifier: cache_name:key_name
     id = models.CharField(max_length=2048, primary_key=True)
 
     # Denormalized fields for display
@@ -148,18 +147,26 @@ class Key(models.Model):
 
     @classmethod
     def make_pk(cls, cache_name: str, key_name: str) -> str:
-        """Create a URL-safe primary key from cache name and key name.
+        """Create a primary key from cache name and key name.
 
-        Format: cache_name:url_encoded_key_name
+        Format: cache_name:key_name
+
+        Note: We don't URL-encode here because Django's {% url %} template tag
+        handles URL encoding automatically. The key_name can contain any
+        characters including colons - parse_pk uses split(':', 1) to only
+        split on the first colon.
         """
-        return f"{cache_name}:{quote(key_name, safe='')}"
+        return f"{cache_name}:{key_name}"
 
     @classmethod
     def parse_pk(cls, pk: str) -> tuple[str, str]:
-        """Parse a primary key into (cache_name, key_name)."""
+        """Parse a primary key into (cache_name, key_name).
+
+        Splits on the first colon only, so key names can contain colons.
+        """
         parts = pk.split(":", 1)
         if len(parts) == 2:
-            return parts[0], unquote(parts[1])
+            return parts[0], parts[1]
         return "", pk
 
     @classmethod

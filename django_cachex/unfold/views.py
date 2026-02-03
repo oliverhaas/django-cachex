@@ -12,7 +12,6 @@ import json
 import logging
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
-from urllib.parse import unquote
 
 from django.conf import settings
 from django.contrib import admin, messages
@@ -276,7 +275,6 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
     # Show help message if requested
     help_active = _show_help(request, "key_detail")
 
-    key = unquote(key)
     service = get_cache_service(cache_name)
 
     # Handle POST requests (update or delete)
@@ -666,7 +664,6 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
 @staff_member_required
 def key_add(request: HttpRequest, cache_name: str) -> HttpResponse:
     """View for adding a new cache key - collects key name and type, then redirects to key_detail."""
-    cache_name = unquote(cache_name)
     help_active = _show_help(request, "key_add")
     service = get_cache_service(cache_name)
     cache_config = settings.CACHES.get(cache_name, {})
