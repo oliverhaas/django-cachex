@@ -415,7 +415,7 @@ wheels = [
 
 [[package]]
 name = "django-cachex"
-version = "0.1.0b5"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "django" },

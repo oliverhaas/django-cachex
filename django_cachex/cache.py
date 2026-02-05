@@ -8,9 +8,21 @@ from django_cachex.client.cache import (
     RedisCache,
     ValkeyCache,
 )
+from django_cachex.client.cluster import (
+    RedisClusterCache,
+    ValkeyClusterCache,
+)
+from django_cachex.client.sentinel import (
+    RedisSentinelCache,
+    ValkeySentinelCache,
+)
 
 __all__ = [
     "KeyValueCache",
     "RedisCache",
+    "RedisClusterCache",
+    "RedisSentinelCache",
     "ValkeyCache",
+    "ValkeyClusterCache",
+    "ValkeySentinelCache",
 ]

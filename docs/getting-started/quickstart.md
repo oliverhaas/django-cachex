@@ -19,15 +19,16 @@ CACHES = {
 | `RedisCache` | Standard Redis connection |
 | `ValkeySentinelCache` | Valkey Sentinel high availability |
 | `RedisSentinelCache` | Redis Sentinel high availability |
+| `ValkeyClusterCache` | Valkey Cluster sharding |
 | `RedisClusterCache` | Redis Cluster sharding |
 
 !!! note "Valkey and Redis Compatibility"
     Valkey and Redis are fully compatible - you can use either backend with either server.
     We recommend Valkey as it remains fully open source.
 
-!!! warning "ValkeyClusterCache"
-    `ValkeyClusterCache` is currently unavailable due to an upstream bug in valkey-py.
-    Use `RedisClusterCache` with your Valkey cluster instead.
+!!! warning "ValkeySentinelCache"
+    `ValkeySentinelCache` is currently unavailable due to an upstream bug in valkey-py.
+    Use `RedisSentinelCache` with your Valkey server instead (protocol compatible).
 
 ## Connection URL Formats
 

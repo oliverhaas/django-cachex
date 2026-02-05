@@ -69,7 +69,7 @@
 - `ScriptHelpers` - Helper functions passed to pre/post processing hooks
 - `ScriptNotRegisteredError` - Exception for unregistered script names
 
-## 0.1.0 (Planned)
+## 0.1.0 (February 2026)
 
 Initial stable release of django-cachex.
 
@@ -90,13 +90,20 @@ Initial stable release of django-cachex.
 - **TTL operations** (`ttl()`, `pttl()`, `expire()`, `persist()`)
 - **Pattern operations** (`keys()`, `iter_keys()`, `delete_pattern()`)
 - **Pipelines** for batched operations
+- **Lua script interface** with automatic key prefixing and value encoding/decoding
 - **Django Cache Admin** for cache inspection and management
+  - Browse, search, edit, and delete cache keys
+  - View server info, memory statistics, and slowlog
+  - Support for Django builtin backends (LocMemCache, DatabaseCache, FileBasedCache) via wrappers
+  - Django Unfold theme support (`django_cachex.unfold`)
+- **Async support** for all extended methods
 
 ### Data Structure Operations
 
 - **Hash operations**: `hset`, `hdel`, `hexists`, `hget`, `hgetall`, `hincrby`, `hincrbyfloat`, `hlen`, `hmget`, `hmset`, `hsetnx`, `hvals`
 - **Sorted set operations**: `zadd`, `zcard`, `zcount`, `zincrby`, `zrange`, `zrangebyscore`, `zrank`, `zrevrank`, `zrem`, `zremrangebyrank`, `zscore`, `zmscore`
 - **List operations**: `llen`, `lpush`, `rpush`, `lpop`, `rpop`, `lindex`, `lrange`, `lset`, `ltrim`, `lpos`, `lmove`
+- **Set operations**: `sadd`, `srem`, `smembers`, `sismember`, `smismember`, `scard`, `spop`, `srandmember`, `sdiff`, `sinter`, `sunion`
 
 ### Requirements
 

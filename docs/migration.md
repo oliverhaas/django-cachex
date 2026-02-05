@@ -38,7 +38,7 @@ All Django options work unchanged. You gain extended features (data structures, 
 
 Import paths: `django_valkey.*` → `django_cachex.*`
 
-For Sentinel: Use `django_cachex.cache.ValkeySentinelCache` instead of `CLIENT_CLASS`.
+For Sentinel: Use `django_cachex.cache.RedisSentinelCache` (or `ValkeySentinelCache`) instead of `CLIENT_CLASS`.
 
 !!! warning "ValkeySentinelCache"
     `ValkeySentinelCache` is currently unavailable due to an upstream bug in valkey-py.

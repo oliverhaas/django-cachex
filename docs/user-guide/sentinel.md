@@ -11,6 +11,11 @@ For basic sentinel setup, see [Configuration](configuration.md#sentinel-configur
 
 The `LOCATION` URL format is `redis://service_name/db` where `service_name` is the master name configured in Sentinel.
 
+!!! warning "ValkeySentinelCache"
+    `ValkeySentinelCache` is currently unavailable due to an upstream bug in valkey-py.
+    The `SentinelManagedConnection` class is missing the `_get_from_local_cache` method.
+    Use `RedisSentinelCache` with your Valkey server instead (protocol compatible).
+
 ## How It Works
 
 The Sentinel backend automatically:

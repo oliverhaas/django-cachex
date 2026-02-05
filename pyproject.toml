@@ -1,6 +1,6 @@
 [project]
 name = "django-cachex"
-version = "0.1.0b5"
+version = "0.1.0"
 description = "Full featured Valkey and Redis cache backend for Django"
 readme = "README.md"
 license = { text = "MIT" }
@@ -210,7 +210,9 @@ testpaths = ["tests"]
 xfail_strict = true
 
 [tool.coverage.run]
-omit = ["tests/*"]
+# Unfold module is an optional theme variant of the standard admin views.
+# It mirrors admin/ templates/views with unfold styling and is tested manually for now.
+omit = ["tests/*", "django_cachex/unfold/*"]
 
 [tool.coverage.report]
 precision = 2

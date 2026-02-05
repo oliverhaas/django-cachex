@@ -60,17 +60,16 @@ def is_rate_limited(user_id: str, limit: int = 100, window: int = 60) -> bool:
     now = time.time()
     window_start = now - window
 
-    with cache.client.get_client(write=True) as client:
-        pipe = client.pipeline()
-        # Remove old entries
-        pipe.zremrangebyscore(key, 0, window_start)
-        # Add current request
-        pipe.zadd(key, {str(now): now})
-        # Count requests in window
-        pipe.zcard(key)
-        # Set expiry
-        pipe.expire(key, window)
-        results = pipe.execute()
+    pipe = cache.pipeline()
+    # Remove old entries
+    pipe.zremrangebyscore(key, 0, window_start)
+    # Add current request
+    pipe.zadd(key, {str(now): now})
+    # Count requests in window
+    pipe.zcard(key)
+    # Set expiry
+    pipe.expire(key, window)
+    results = pipe.execute()
 
     count = results[2]
     return count > limit
