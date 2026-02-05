@@ -24,8 +24,9 @@ DEFAULT_CLIENT_LIBRARY = "redis"
 # See: https://github.com/Grokzen/docker-redis-cluster
 REDIS_CLUSTER_IMAGE = "grokzen/redis-cluster:7.0.10"
 CLUSTER_NODE_COUNT = 6  # 3 masters + 3 replicas
-CLUSTER_BASE_PORT = 7000  # Default starting port
+CLUSTER_BASE_PORT = 17000  # High port to avoid conflicts with example containers
 CLUSTER_PORT_SPACING = 10  # Gap between worker port ranges for xdist
+CLUSTER_RETRY_OFFSET = 100  # Port offset between retry attempts
 
 
 class ContainerInfo(NamedTuple):
@@ -65,6 +66,9 @@ def _get_xdist_worker_id() -> int:
     return 0
 
 
+CLUSTER_START_RETRIES = 3  # Number of retry attempts with different port ranges
+
+
 def _start_cluster_container(base_port: int) -> ContainerInfo:
     """Start a Redis Cluster container (grokzen/redis-cluster).
 
@@ -72,27 +76,41 @@ def _start_cluster_container(base_port: int) -> ContainerInfo:
     Ports must be bound to fixed ports because Redis Cluster uses gossip protocol
     where nodes announce their IPs and ports to clients.
 
+    Retries with a different port range if ports are already allocated (e.g.,
+    from leftover containers of a previous test run).
+
     Args:
         base_port: Starting port for cluster nodes (e.g., 7000 -> ports 7000-7005)
 
     """
-    container = DockerContainer(REDIS_CLUSTER_IMAGE)
-    # Bind to 0.0.0.0 so cluster nodes are accessible from host
-    container.with_env("IP", "0.0.0.0")  # noqa: S104
-    # Set the starting port for cluster nodes
-    container.with_env("INITIAL_PORT", str(base_port))
-    # Use fixed port bindings (required for cluster gossip to work)
-    for i in range(CLUSTER_NODE_COUNT):
-        port = base_port + i
-        container.with_bind_ports(port, port)
-    container.start()
-    # Wait for cluster to be ready
-    wait_for_logs(container, "Cluster state changed: ok")
-    return ContainerInfo(
-        host=container.get_container_host_ip(),
-        port=base_port,  # First master node
-        container=container,
-    )
+    last_error: Exception | None = None
+    for attempt in range(CLUSTER_START_RETRIES):
+        current_base = base_port + (attempt * CLUSTER_RETRY_OFFSET)
+        container = DockerContainer(REDIS_CLUSTER_IMAGE)
+        # Bind to 0.0.0.0 so cluster nodes are accessible from host
+        container.with_env("IP", "0.0.0.0")  # noqa: S104
+        # Set the starting port for cluster nodes
+        container.with_env("INITIAL_PORT", str(current_base))
+        # Use fixed port bindings (required for cluster gossip to work)
+        for i in range(CLUSTER_NODE_COUNT):
+            port = current_base + i
+            container.with_bind_ports(port, port)
+        try:
+            container.start()
+        except Exception as e:  # noqa: BLE001
+            last_error = e
+            with suppress(Exception):
+                container.stop()
+            continue
+        # Wait for cluster to be ready
+        wait_for_logs(container, "Cluster state changed: ok")
+        return ContainerInfo(
+            host=container.get_container_host_ip(),
+            port=current_base,  # First master node
+            container=container,
+        )
+    msg = f"Failed to start cluster container after {CLUSTER_START_RETRIES} attempts"
+    raise RuntimeError(msg) from last_error
 
 
 def _start_sentinel_container(image: str, redis_internal_ip: str) -> ContainerInfo:

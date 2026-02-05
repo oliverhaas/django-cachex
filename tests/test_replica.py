@@ -50,6 +50,31 @@ def wait_for_replication(
     return False
 
 
+def wait_for_get_many_replication(
+    cache,
+    expected: dict,
+    *,
+    max_attempts: int = 50,
+    sleep_interval: float = 0.1,
+) -> dict:
+    """Wait for get_many to return all expected keys.
+
+    get_many may route through a different connection pool than get,
+    so even if individual keys are replicated, get_many might still
+    miss keys under replication lag.
+
+    Returns:
+        The last get_many result (for assertion).
+    """
+    keys = list(expected.keys())
+    for _ in range(max_attempts):
+        result = cache.get_many(keys)
+        if result == expected:
+            return result
+        time.sleep(sleep_interval)
+    return result
+
+
 class TestReplicaSetup:
     """Tests for master-replica Redis setup."""
 
@@ -302,11 +327,10 @@ class TestReplicaDataIntegrity:
             data = {f"many_key_{i}": f"value_{i}" for i in range(10)}
             cache.set_many(data, timeout=60)
 
-            # Wait for replication of last key
-            assert wait_for_replication(cache, "many_key_9", "value_9")
-
-            # Read many keys (will use replicas)
-            result = cache.get_many(list(data.keys()))
+            # Wait for all keys to be readable via get_many.
+            # get_many may route through a different connection pool than get,
+            # so waiting for a single key via get() is not sufficient.
+            result = wait_for_get_many_replication(cache, data)
             assert result == data
 
             # Clean up
