@@ -11,43 +11,43 @@ This module defines exceptions that may be raised during cache operations.
 Users can catch these to handle specific error conditions.
 """
 
-from typing import Any
+import socket
 
+# Build exception tuples from available libraries (redis-py / valkey-py).
+# These are used by omit_exception and the client layer.
+_exception_list: list[type[Exception]] = [socket.timeout]
+_RedisResponseError: type[Exception] | None = None
+_ValkeyResponseError: type[Exception] | None = None
 
-class ConnectionInterruptedError(Exception):
-    """Raised when a connection to Redis/Valkey is interrupted.
+try:
+    from redis.exceptions import ConnectionError as RedisConnectionError
+    from redis.exceptions import RedisClusterException
+    from redis.exceptions import ResponseError as RedisResponseError
+    from redis.exceptions import TimeoutError as RedisTimeoutError
 
-    This exception wraps underlying connection errors from the redis-py
-    or valkey-py libraries. The original exception is available via
-    the ``__cause__`` attribute.
+    _RedisResponseError = RedisResponseError
+    _exception_list.extend([RedisConnectionError, RedisTimeoutError, RedisResponseError, RedisClusterException])
+except ImportError:
+    pass
 
-    Attributes:
-        connection: The connection object that was interrupted.
+try:
+    from valkey.exceptions import ConnectionError as ValkeyConnectionError
+    from valkey.exceptions import ResponseError as ValkeyResponseError
+    from valkey.exceptions import TimeoutError as ValkeyTimeoutError
 
-    Example:
-        Handling connection errors::
+    _ValkeyResponseError = ValkeyResponseError
+    _exception_list.extend([ValkeyConnectionError, ValkeyTimeoutError, ValkeyResponseError])
+except ImportError:
+    pass
 
-            from django.core.cache import cache
-            from django_cachex.exceptions import ConnectionInterruptedError
+_main_exceptions = tuple(_exception_list)
 
-            try:
-                cache.set("key", "value")
-            except ConnectionInterruptedError as e:
-                logger.error(f"Cache unavailable: {e}")
-                # Fall back to database or other storage
-    """
-
-    def __init__(self, connection: Any, parent: Any = None) -> None:
-        self.connection = connection
-
-    def __str__(self) -> str:
-        error_type = type(self.__cause__).__name__
-        error_msg = str(self.__cause__)
-        return f"Redis {error_type}: {error_msg}"
-
-
-# Backwards compatibility alias
-ConnectionInterrupted = ConnectionInterruptedError
+_response_errors: list[type[Exception]] = []
+if _RedisResponseError is not None:
+    _response_errors.append(_RedisResponseError)
+if _ValkeyResponseError is not None:
+    _response_errors.append(_ValkeyResponseError)
+_ResponseError = tuple(_response_errors) if _response_errors else (Exception,)
 
 
 class CompressorError(Exception):

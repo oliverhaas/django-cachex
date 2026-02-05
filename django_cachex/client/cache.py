@@ -53,7 +53,7 @@ from django_cachex.client.default import (
     ValkeyCacheClient,
 )
 from django_cachex.exceptions import ScriptNotRegisteredError
-from django_cachex.omit_exception import aomit_exception, omit_exception
+from django_cachex.omit_exception import omit_exception
 from django_cachex.script import LuaScript, ScriptHelpers
 
 # Sentinel value for methods with dynamic return values (e.g., get() returns default arg)
@@ -221,7 +221,7 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return self._cache.add(key, value, self.get_backend_timeout(timeout))
 
-    @aomit_exception(return_value=False)
+    @omit_exception(return_value=False)
     @override
     async def aadd(
         self,
@@ -250,7 +250,7 @@ class KeyValueCache(BaseCache):
             return default
         return value
 
-    @aomit_exception(return_value=CONNECTION_INTERRUPTED)
+    @omit_exception(return_value=CONNECTION_INTERRUPTED)
     async def _aget(self, key: KeyT, version: int | None = None) -> Any:
         """Internal async get with exception handling."""
         key = self.make_and_validate_key(key, version=version)
@@ -266,7 +266,7 @@ class KeyValueCache(BaseCache):
             return default
         return value
 
-    @aomit_exception
+    @omit_exception
     @override
     async def aset(
         self,
@@ -323,7 +323,7 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return self._cache.touch(key, self.get_backend_timeout(timeout))
 
-    @aomit_exception(return_value=False)
+    @omit_exception(return_value=False)
     @override
     async def atouch(self, key: KeyT, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
         """Update the timeout on a key asynchronously."""
@@ -337,7 +337,7 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return self._cache.delete(key)
 
-    @aomit_exception(return_value=False)
+    @omit_exception(return_value=False)
     @override
     async def adelete(self, key: KeyT, version: int | None = None) -> bool:
         """Remove a key from the cache asynchronously."""
@@ -356,7 +356,7 @@ class KeyValueCache(BaseCache):
         """Retrieve many keys."""
         return self._get_many(keys, version=version)
 
-    @aomit_exception(return_value={})
+    @omit_exception(return_value={})
     async def _aget_many(self, keys: list[KeyT], version: int | None = None) -> dict[KeyT, Any]:
         """Internal async get_many with exception handling."""
         key_map = {self.make_and_validate_key(key, version=version): key for key in keys}
@@ -375,7 +375,7 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return self._cache.has_key(key)
 
-    @aomit_exception(return_value=False)
+    @omit_exception(return_value=False)
     @override
     async def ahas_key(self, key: KeyT, version: int | None = None) -> bool:
         """Check if a key exists asynchronously."""
@@ -389,14 +389,14 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return self._cache.incr(key, delta)
 
-    @aomit_exception(return_value=0)
+    @omit_exception(return_value=0)
     @override
     async def aincr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
         """Increment a value asynchronously."""
         key = self.make_and_validate_key(key, version=version)
         return await self._cache.aincr(key, delta)
 
-    @aomit_exception(return_value=0)
+    @omit_exception(return_value=0)
     @override
     async def adecr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
         """Decrement a value asynchronously."""
@@ -469,7 +469,7 @@ class KeyValueCache(BaseCache):
         self._cache.set_many(safe_data, self.get_backend_timeout(timeout))  # type: ignore[arg-type]
         return []
 
-    @aomit_exception(return_value=[])
+    @omit_exception(return_value=[])
     @override
     async def aset_many(
         self,
@@ -497,7 +497,7 @@ class KeyValueCache(BaseCache):
         safe_keys = [self.make_and_validate_key(key, version=version) for key in keys]
         return self._cache.delete_many(safe_keys)
 
-    @aomit_exception(return_value=0)
+    @omit_exception(return_value=0)
     @override
     async def adelete_many(self, keys: list[KeyT], version: int | None = None) -> int:
         """Delete multiple keys from the cache asynchronously."""
@@ -513,7 +513,7 @@ class KeyValueCache(BaseCache):
         """Flush the database."""
         return self._cache.clear()
 
-    @aomit_exception(return_value=False)
+    @omit_exception(return_value=False)
     @override
     async def aclear(self) -> bool:
         """Flush the database asynchronously."""
@@ -1912,10 +1912,8 @@ class KeyValueCache(BaseCache):
         try:
             result = self._cache.evalsha(script._sha, len(proc_keys), *proc_keys, *proc_args)
         except Exception as e:
-            # Check for NOSCRIPT error and reload
-            # NoScriptError may be wrapped in ConnectionInterruptedError
-            err_str = str(e)
-            if "NOSCRIPT" in err_str or "NoScriptError" in err_str:
+            # NoScriptError means the script SHA was evicted from the server cache
+            if type(e).__name__ == "NoScriptError" or "NOSCRIPT" in str(e):
                 script._sha = self._cache.script_load(script.script)
                 result = self._cache.evalsha(script._sha, len(proc_keys), *proc_keys, *proc_args)
             else:
@@ -1974,10 +1972,8 @@ class KeyValueCache(BaseCache):
         try:
             result = await self._cache.aevalsha(script._sha, len(proc_keys), *proc_keys, *proc_args)
         except Exception as e:
-            # Check for NOSCRIPT error and reload
-            # NoScriptError may be wrapped in ConnectionInterruptedError
-            err_str = str(e)
-            if "NOSCRIPT" in err_str or "NoScriptError" in err_str:
+            # NoScriptError means the script SHA was evicted from the server cache
+            if type(e).__name__ == "NoScriptError" or "NOSCRIPT" in str(e):
                 script._sha = await self._cache.ascript_load(script.script)
                 result = await self._cache.aevalsha(script._sha, len(proc_keys), *proc_keys, *proc_args)
             else:

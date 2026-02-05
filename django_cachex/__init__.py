@@ -8,7 +8,6 @@ except PackageNotFoundError:
 # Re-export commonly used items for convenience
 from django_cachex.exceptions import (
     CompressorError,
-    ConnectionInterruptedError,
     ScriptNotRegisteredError,
     SerializerError,
 )
@@ -25,7 +24,6 @@ from django_cachex.script import (
 
 __all__ = [
     "CompressorError",
-    "ConnectionInterruptedError",
     "LuaScript",
     "ScriptHelpers",
     "ScriptNotRegisteredError",

@@ -21,11 +21,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast, override
 from django.conf import settings
 
 from django_cachex.client.cache import KeyValueCache
-from django_cachex.client.default import (
-    KeyValueCacheClient,
-    _main_exceptions,
-)
-from django_cachex.exceptions import ConnectionInterruptedError
+from django_cachex.client.default import KeyValueCacheClient
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
@@ -98,8 +94,6 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         """Get the Cluster client.
 
         Cluster topology discovery happens lazily on first access.
-        Connection failures are wrapped in ConnectionInterruptedError
-        so they can be handled by ignore_exceptions.
         """
         url = self._servers[0]
         if url in self._clusters:
@@ -116,11 +110,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         if parsed_url.port:
             cluster_options["port"] = parsed_url.port
 
-        try:
-            cluster = self._cluster(**cluster_options)
-        except _main_exceptions as e:
-            # Wrap cluster connection failures so ignore_exceptions can handle them
-            raise ConnectionInterruptedError(connection=None) from e
+        cluster = self._cluster(**cluster_options)
 
         self._clusters[url] = cluster
         return cluster
@@ -130,8 +120,6 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         """Get the async Cluster client for the current event loop.
 
         Cluster topology discovery happens lazily on first access.
-        Connection failures are wrapped in ConnectionInterruptedError
-        so they can be handled by ignore_exceptions.
         """
         loop = asyncio.get_running_loop()
         url = self._servers[0]
@@ -151,11 +139,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         if parsed_url.port:
             cluster_options["port"] = parsed_url.port
 
-        try:
-            cluster = self._async_cluster(**cluster_options)
-        except _main_exceptions as e:
-            # Wrap cluster connection failures so ignore_exceptions can handle them
-            raise ConnectionInterruptedError(connection=None) from e
+        cluster = self._async_cluster(**cluster_options)
 
         # Cache the cluster for this event loop
         if loop not in self._async_clusters:
@@ -185,20 +169,16 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
             return {}
 
         client = self.get_client(write=False)
-        try:
-            # mget_nonatomic handles slot splitting
-            results = cast(
-                "list[bytes | None]",
-                client.mget_nonatomic(keys),
-            )
+        # mget_nonatomic handles slot splitting
+        results = cast(
+            "list[bytes | None]",
+            client.mget_nonatomic(keys),
+        )
 
-            recovered_data = {}
-            for key, value in zip(keys, results, strict=True):
-                if value is not None:
-                    recovered_data[key] = self.decode(value)
-
-        except _main_exceptions as e:
-            raise ConnectionInterruptedError(connection=client) from e
+        recovered_data = {}
+        for key, value in zip(keys, results, strict=True):
+            if value is not None:
+                recovered_data[key] = self.decode(value)
 
         return recovered_data
 
@@ -213,21 +193,17 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         # Prepare data with encoded values
         prepared_data = {k: self.encode(v) for k, v in data.items()}
 
-        try:
-            # mset_nonatomic handles slot splitting
-            client.mset_nonatomic(prepared_data)
+        # mset_nonatomic handles slot splitting
+        client.mset_nonatomic(prepared_data)
 
-            # Set expiry if needed
-            if timeout is not None:
-                timeout_ms = int(timeout * 1000)
-                if timeout_ms > 0:
-                    pipe = client.pipeline()
-                    for key in prepared_data:
-                        pipe.pexpire(key, timeout_ms)
-                    pipe.execute()
-        except _main_exceptions as e:
-            raise ConnectionInterruptedError(connection=client) from e
-
+        # Set expiry if needed
+        if timeout is not None:
+            timeout_ms = int(timeout * 1000)
+            if timeout_ms > 0:
+                pipe = client.pipeline()
+                for key in prepared_data:
+                    pipe.pexpire(key, timeout_ms)
+                pipe.execute()
         return []
 
     @override
@@ -241,26 +217,18 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         # Group keys by slot
         slots = self._group_keys_by_slot(keys)
 
-        try:
-            total_deleted = 0
-            for slot_keys in slots.values():
-                total_deleted += cast("int", client.delete(*slot_keys))
-        except _main_exceptions as e:
-            raise ConnectionInterruptedError(connection=client) from e
-        else:
-            return total_deleted
+        total_deleted = 0
+        for slot_keys in slots.values():
+            total_deleted += cast("int", client.delete(*slot_keys))
+        return total_deleted
 
     @override
     def clear(self) -> bool:
         """Flush all primary nodes in the cluster."""
         client = self.get_client(write=True)
 
-        try:
-            # Use PRIMARIES constant from the cluster class
-            client.flushdb(target_nodes=self._cluster.PRIMARIES)
-        except _main_exceptions as e:
-            raise ConnectionInterruptedError(connection=client) from e
-
+        # Use PRIMARIES constant from the cluster class
+        client.flushdb(target_nodes=self._cluster.PRIMARIES)
         return True
 
     @override
@@ -268,14 +236,11 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         """Execute KEYS command across all primary nodes (pattern is already prefixed)."""
         client = self.get_client(write=False)
 
-        try:
-            keys_result = cast(
-                "list[bytes]",
-                client.keys(pattern, target_nodes=self._cluster.PRIMARIES),
-            )
-            return [k.decode() for k in keys_result]
-        except _main_exceptions as e:
-            raise ConnectionInterruptedError(connection=client) from e
+        keys_result = cast(
+            "list[bytes]",
+            client.keys(pattern, target_nodes=self._cluster.PRIMARIES),
+        )
+        return [k.decode() for k in keys_result]
 
     @override
     def iter_keys(
@@ -308,28 +273,24 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         if itersize is None:
             itersize = self._default_scan_itersize
 
-        try:
-            # Collect all matching keys from all primaries
-            keys_list = list(
-                client.scan_iter(
-                    match=pattern,
-                    count=itersize,
-                    target_nodes=self._cluster.PRIMARIES,
-                ),
-            )
+        # Collect all matching keys from all primaries
+        keys_list = list(
+            client.scan_iter(
+                match=pattern,
+                count=itersize,
+                target_nodes=self._cluster.PRIMARIES,
+            ),
+        )
 
-            if not keys_list:
-                return 0
+        if not keys_list:
+            return 0
 
-            # Group keys by slot for efficient deletion
-            slots = self._group_keys_by_slot(keys_list)
+        # Group keys by slot for efficient deletion
+        slots = self._group_keys_by_slot(keys_list)
 
-            total_deleted = 0
-            for slot_keys in slots.values():
-                total_deleted += cast("int", client.delete(*slot_keys))
-        except _main_exceptions as e:
-            raise ConnectionInterruptedError(connection=client) from e
-
+        total_deleted = 0
+        for slot_keys in slots.values():
+            total_deleted += cast("int", client.delete(*slot_keys))
         return total_deleted
 
     @override
@@ -358,20 +319,16 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
         client = self.get_async_client(write=False)
 
-        try:
-            # mget_nonatomic handles slot splitting
-            results = cast(
-                "list[bytes | None]",
-                await client.mget_nonatomic(keys),
-            )
+        # mget_nonatomic handles slot splitting
+        results = cast(
+            "list[bytes | None]",
+            await client.mget_nonatomic(keys),
+        )
 
-            recovered_data = {}
-            for key, value in zip(keys, results, strict=True):
-                if value is not None:
-                    recovered_data[key] = self.decode(value)
-
-        except _main_exceptions as e:
-            raise ConnectionInterruptedError(connection=client) from e
+        recovered_data = {}
+        for key, value in zip(keys, results, strict=True):
+            if value is not None:
+                recovered_data[key] = self.decode(value)
 
         return recovered_data
 
@@ -386,21 +343,17 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         # Prepare data with encoded values
         prepared_data = {k: self.encode(v) for k, v in data.items()}
 
-        try:
-            # mset_nonatomic handles slot splitting
-            await client.mset_nonatomic(prepared_data)
+        # mset_nonatomic handles slot splitting
+        await client.mset_nonatomic(prepared_data)
 
-            # Set expiry if needed
-            if timeout is not None:
-                timeout_ms = int(timeout * 1000)
-                if timeout_ms > 0:
-                    pipe = client.pipeline()
-                    for key in prepared_data:
-                        pipe.pexpire(key, timeout_ms)
-                    await pipe.execute()
-        except _main_exceptions as e:
-            raise ConnectionInterruptedError(connection=client) from e
-
+        # Set expiry if needed
+        if timeout is not None:
+            timeout_ms = int(timeout * 1000)
+            if timeout_ms > 0:
+                pipe = client.pipeline()
+                for key in prepared_data:
+                    pipe.pexpire(key, timeout_ms)
+                await pipe.execute()
         return []
 
     @override
@@ -414,26 +367,18 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         # Group keys by slot
         slots = self._group_keys_by_slot(keys)
 
-        try:
-            total_deleted = 0
-            for slot_keys in slots.values():
-                total_deleted += cast("int", await client.delete(*slot_keys))
-        except _main_exceptions as e:
-            raise ConnectionInterruptedError(connection=client) from e
-        else:
-            return total_deleted
+        total_deleted = 0
+        for slot_keys in slots.values():
+            total_deleted += cast("int", await client.delete(*slot_keys))
+        return total_deleted
 
     @override
     async def aclear(self) -> bool:
         """Flush all primary nodes in the cluster asynchronously."""
         client = self.get_async_client(write=True)
 
-        try:
-            # Use PRIMARIES constant from the cluster class
-            await client.flushdb(target_nodes=self._async_cluster.PRIMARIES)
-        except _main_exceptions as e:
-            raise ConnectionInterruptedError(connection=client) from e
-
+        # Use PRIMARIES constant from the cluster class
+        await client.flushdb(target_nodes=self._async_cluster.PRIMARIES)
         return True
 
     @override
@@ -441,14 +386,11 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         """Execute KEYS command asynchronously across all primary nodes."""
         client = self.get_async_client(write=False)
 
-        try:
-            keys_result = cast(
-                "list[bytes]",
-                await client.keys(pattern, target_nodes=self._async_cluster.PRIMARIES),
-            )
-            return [k.decode() for k in keys_result]
-        except _main_exceptions as e:
-            raise ConnectionInterruptedError(connection=client) from e
+        keys_result = cast(
+            "list[bytes]",
+            await client.keys(pattern, target_nodes=self._async_cluster.PRIMARIES),
+        )
+        return [k.decode() for k in keys_result]
 
     @override
     async def aiter_keys(
@@ -481,29 +423,25 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         if itersize is None:
             itersize = self._default_scan_itersize
 
-        try:
-            # Collect all matching keys from all primaries
-            keys_list = [
-                key
-                async for key in client.scan_iter(
-                    match=pattern,
-                    count=itersize,
-                    target_nodes=self._async_cluster.PRIMARIES,
-                )
-            ]
+        # Collect all matching keys from all primaries
+        keys_list = [
+            key
+            async for key in client.scan_iter(
+                match=pattern,
+                count=itersize,
+                target_nodes=self._async_cluster.PRIMARIES,
+            )
+        ]
 
-            if not keys_list:
-                return 0
+        if not keys_list:
+            return 0
 
-            # Group keys by slot for efficient deletion
-            slots = self._group_keys_by_slot(keys_list)
+        # Group keys by slot for efficient deletion
+        slots = self._group_keys_by_slot(keys_list)
 
-            total_deleted = 0
-            for slot_keys in slots.values():
-                total_deleted += cast("int", await client.delete(*slot_keys))
-        except _main_exceptions as e:
-            raise ConnectionInterruptedError(connection=client) from e
-
+        total_deleted = 0
+        for slot_keys in slots.values():
+            total_deleted += cast("int", await client.delete(*slot_keys))
         return total_deleted
 
     @override
