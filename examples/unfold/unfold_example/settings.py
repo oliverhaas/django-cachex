@@ -1,7 +1,7 @@
 """
 Django settings for unfold example project.
 
-Demonstrates django-cachex admin panel with django-unfold theme.
+Demonstrates django-cachex cache admin with django-unfold theme.
 """
 
 from pathlib import Path

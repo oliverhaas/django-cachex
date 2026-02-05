@@ -1,6 +1,6 @@
 /* ===== DJANGO-CACHEX ADMIN STYLES ===== */
 /*
- * Minimal custom CSS for django-cachex admin panel.
+ * Minimal custom CSS for django-cachex cache admin.
  * Uses Django admin CSS variables and classes wherever possible.
  * Only custom styles that aren't available in Django admin are defined here.
  */

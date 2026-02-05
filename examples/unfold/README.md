@@ -1,6 +1,6 @@
 # Unfold Example
 
-Example demonstrating django-cachex admin panel with [django-unfold](https://unfoldadmin.com/) theme.
+Example demonstrating django-cachex cache admin with [django-unfold](https://unfoldadmin.com/) theme.
 
 ## About django-unfold
 

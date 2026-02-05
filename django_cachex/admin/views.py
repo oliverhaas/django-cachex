@@ -328,7 +328,7 @@ def _get_page_range(
 
 @staff_member_required
 def index(request: HttpRequest) -> HttpResponse:  # noqa: C901
-    """Display all configured cache instances with their panel abilities."""
+    """Display all configured cache instances with their capabilities."""
     # Show help message if requested
     help_active = _show_help(request, "index")
 
@@ -424,7 +424,7 @@ def index(request: HttpRequest) -> HttpResponse:  # noqa: C901
 
 @staff_member_required
 def help_view(request: HttpRequest) -> HttpResponse:
-    """Display help information about the cache panel."""
+    """Display help information about the cache admin."""
     context = admin.site.each_context(request)
     context.update(
         {

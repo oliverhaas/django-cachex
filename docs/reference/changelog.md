@@ -4,7 +4,7 @@
 
 ### New Features
 
-- **Expanded cache backend support**: The admin panel now supports Django's builtin cache backends through wrapper classes
+- **Expanded cache backend support**: The admin interface now supports Django's builtin cache backends through wrapper classes
   - `LocMemCache`: Full support including key listing, TTL inspection, and memory statistics
   - `DatabaseCache`: Key listing, TTL inspection, and database statistics
   - `FileBasedCache`: File listing (as MD5 hashes) and disk usage statistics
@@ -15,7 +15,7 @@
 
 - Standardized `info()` output format across all wrapped cache backends
 - Added TTL support (`ttl()`, `expire()`, `persist()`) for LocMemCache
-- Improved admin panel UX: operations that aren't supported now fail gracefully instead of hiding UI elements
+- Improved cache admin UX: operations that aren't supported now fail gracefully instead of hiding UI elements
 
 ### Bug Fixes
 
@@ -27,7 +27,7 @@
 
 ### New Features
 
-- **Django Admin Panel**: Built-in admin interface for cache management
+- **Django Cache Admin**: Built-in admin interface for cache management
   - Browse all configured cache instances
   - Search keys with wildcard patterns
   - View and edit cache values (strings, hashes, lists, sets, sorted sets)
@@ -90,7 +90,7 @@ Initial stable release of django-cachex.
 - **TTL operations** (`ttl()`, `pttl()`, `expire()`, `persist()`)
 - **Pattern operations** (`keys()`, `iter_keys()`, `delete_pattern()`)
 - **Pipelines** for batched operations
-- **Django Admin Panel** for cache inspection and management
+- **Django Cache Admin** for cache inspection and management
 
 ### Data Structure Operations
 

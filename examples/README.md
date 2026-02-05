@@ -1,6 +1,6 @@
 # Example Projects
 
-Example Django projects demonstrating django-cachex admin panel.
+Example Django projects demonstrating django-cachex cache admin.
 
 ## Examples
 

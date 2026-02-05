@@ -1,6 +1,6 @@
 # Full Example
 
-Comprehensive example demonstrating django-cachex admin panel with multiple cache backends.
+Comprehensive example demonstrating django-cachex cache admin with multiple cache backends.
 
 ## Cache Backends
 
