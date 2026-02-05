@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 from contextlib import suppress
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from django.core.cache import caches
@@ -21,52 +21,28 @@ if TYPE_CHECKING:
 
 def wait_for_replication(
     cache,
-    key: str,
-    expected_value,
+    expected: dict[str, Any],
     *,
     max_attempts: int = 50,
     sleep_interval: float = 0.1,
-) -> bool:
-    """Wait for a key to replicate with the expected value.
+) -> dict[str, Any]:
+    """Wait for keys to replicate with expected values.
 
     Uses polling with small sleeps rather than a fixed large sleep
-    to handle replication lag efficiently.
+    to handle replication lag efficiently. Works for single keys or
+    multiple keys via get_many.
 
     Args:
         cache: The cache instance to check
-        key: The key to check
-        expected_value: The expected value
+        expected: Dict mapping keys to their expected values
         max_attempts: Maximum number of polling attempts
         sleep_interval: Time to sleep between attempts in seconds
 
     Returns:
-        True if value was found, False if timed out
-    """
-    for _ in range(max_attempts):
-        value = cache.get(key)
-        if value == expected_value:
-            return True
-        time.sleep(sleep_interval)
-    return False
-
-
-def wait_for_get_many_replication(
-    cache,
-    expected: dict,
-    *,
-    max_attempts: int = 50,
-    sleep_interval: float = 0.1,
-) -> dict:
-    """Wait for get_many to return all expected keys.
-
-    get_many may route through a different connection pool than get,
-    so even if individual keys are replicated, get_many might still
-    miss keys under replication lag.
-
-    Returns:
-        The last get_many result (for assertion).
+        The last get_many result (for assertion)
     """
     keys = list(expected.keys())
+    result: dict[str, Any] = {}
     for _ in range(max_attempts):
         result = cache.get_many(keys)
         if result == expected:
@@ -118,11 +94,8 @@ class TestReplicaSetup:
             cache.set("replica_test_key", "test_value", timeout=60)
 
             # Wait for replication and verify data is readable
-            assert wait_for_replication(
-                cache,
-                "replica_test_key",
-                "test_value",
-            ), "Replication timed out"
+            result = wait_for_replication(cache, {"replica_test_key": "test_value"})
+            assert result == {"replica_test_key": "test_value"}, "Replication timed out"
 
             # Clean up
             cache.delete("replica_test_key")
@@ -239,7 +212,7 @@ class TestReplicaSetup:
             cache.set("pool_test", "value", timeout=60)
 
             # Wait for replication
-            assert wait_for_replication(cache, "pool_test", "value")
+            assert wait_for_replication(cache, {"pool_test": "value"}) == {"pool_test": "value"}
 
             # Do multiple reads to create replica pools
             for _ in range(20):
@@ -330,7 +303,7 @@ class TestReplicaDataIntegrity:
             # Wait for all keys to be readable via get_many.
             # get_many may route through a different connection pool than get,
             # so waiting for a single key via get() is not sufficient.
-            result = wait_for_get_many_replication(cache, data)
+            result = wait_for_replication(cache, data)
             assert result == data
 
             # Clean up
@@ -371,14 +344,14 @@ class TestReplicaDataIntegrity:
             cache.set("counter", 10, timeout=60)
 
             # Wait for replication
-            assert wait_for_replication(cache, "counter", 10)
+            assert wait_for_replication(cache, {"counter": 10}) == {"counter": 10}
 
             # Increment (goes to master)
             result = cache.incr("counter", 5)
             assert result == 15
 
             # Wait for replication of new value
-            assert wait_for_replication(cache, "counter", 15)
+            assert wait_for_replication(cache, {"counter": 15}) == {"counter": 15}
 
             # Decrement
             result = cache.decr("counter", 3)
@@ -420,13 +393,18 @@ class TestReplicaDataIntegrity:
 
             # Set and verify replication
             cache.set("delete_test", "value", timeout=60)
-            assert wait_for_replication(cache, "delete_test", "value")
+            assert wait_for_replication(cache, {"delete_test": "value"}) == {"delete_test": "value"}
 
             # Delete
             cache.delete("delete_test")
 
-            # Wait for delete to propagate (value becomes None)
-            assert wait_for_replication(cache, "delete_test", None)
+            # Wait for delete to propagate - use direct polling since
+            # get_many returns {} for missing keys, not a value we can match
+            for _ in range(50):
+                if cache.get("delete_test") is None:
+                    break
+                time.sleep(0.1)
+            assert cache.get("delete_test") is None
 
         with suppress(KeyError, AttributeError):
             del caches["default"]
