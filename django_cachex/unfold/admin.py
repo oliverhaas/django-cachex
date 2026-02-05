@@ -22,9 +22,9 @@ else:
 @admin.register(Cache)
 class CacheAdmin(_BaseAdmin):
     """
-    Admin class for the unfold-styled cache panel.
+    Admin class for the unfold-styled cache admin.
 
-    The actual views are served via the panel URLs include.
+    The actual views are served via the cache admin URL include.
     This class provides the sidebar entry and permissions.
     """
 

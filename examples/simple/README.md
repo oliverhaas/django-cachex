@@ -1,6 +1,6 @@
 # Example Django Project
 
-Minimal Django project for testing django-cachex and the cache panel.
+Minimal Django project for testing django-cachex and the cache admin.
 
 ## Requirements
 

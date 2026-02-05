@@ -554,7 +554,7 @@ class CacheService:
         """Get cache metadata with parsed server information.
 
         Returns configuration metadata plus nicely parsed server info
-        for display in the admin panel.
+        for display in the cache admin.
 
         Returns:
             Dict with backend, location, key_prefix, version, and
@@ -1032,18 +1032,18 @@ class CacheService:
             return {"success": False, "message": str(e)}
 
     # ===========================================================================
-    # CachePanel-compatible aliases
-    # These methods provide backwards compatibility with the CachePanel interface
-    # used in views. They delegate to the main CacheService methods.
+    # View-friendly aliases
+    # These methods provide convenient aliases used by the admin views.
+    # They delegate to the main CacheService methods.
     # ===========================================================================
 
     def is_feature_supported(self, feature: str) -> bool:
-        """Check if a feature is supported (CachePanel compatibility)."""
+        """Check if a feature is supported ."""
         return self.supports(feature)
 
     @property
     def abilities(self) -> dict[str, bool]:
-        """Get abilities dict (CachePanel compatibility)."""
+        """Get abilities dict ."""
         # Build abilities dict based on what's supported
         features = [
             "query",
@@ -1068,19 +1068,19 @@ class CacheService:
         return {f: self.supports(f) for f in features}
 
     def get_key(self, key: str) -> dict[str, Any]:
-        """Get a key (CachePanel compatibility)."""
+        """Get a key ."""
         return self.get(key)
 
     def delete_key(self, key: str) -> dict[str, Any]:
-        """Delete a key (CachePanel compatibility)."""
+        """Delete a key ."""
         return self.delete(key)
 
     def edit_key(self, key: str, value: Any, timeout: float | None = None) -> dict[str, Any]:
-        """Edit a key (CachePanel compatibility)."""
+        """Edit a key ."""
         return self.set(key, value, timeout)
 
     def flush_cache(self) -> dict[str, Any]:
-        """Flush cache (CachePanel compatibility)."""
+        """Flush cache ."""
         return self.clear()
 
     def query(
@@ -1090,83 +1090,83 @@ class CacheService:
         cursor: int = 0,
         count: int = 100,
     ) -> dict[str, Any]:
-        """Query keys (CachePanel compatibility)."""
+        """Query keys ."""
         return self.keys(pattern, cursor, count)
 
     def get_key_ttl(self, key: str) -> int | None:
-        """Get TTL (CachePanel compatibility)."""
+        """Get TTL ."""
         try:
             return self.ttl(key)
         except NotSupportedError:
             return None
 
     def set_key_ttl(self, key: str, ttl: int) -> dict[str, Any]:
-        """Set TTL (CachePanel compatibility)."""
+        """Set TTL ."""
         try:
             return self.expire(key, ttl)
         except NotSupportedError:
             return {"success": False, "message": "Setting TTL is not supported."}
 
     def persist_key(self, key: str) -> dict[str, Any]:
-        """Persist key (CachePanel compatibility)."""
+        """Persist key ."""
         try:
             return self.persist(key)
         except NotSupportedError:
             return {"success": False, "message": "Persist is not supported."}
 
     def get_key_type(self, key: str) -> str | None:
-        """Get type (CachePanel compatibility)."""
+        """Get type ."""
         try:
             return self.type(key)
         except NotSupportedError:
             return None
 
     def get_key_size(self, key: str, key_type: str | None = None) -> int | None:
-        """Get size (CachePanel compatibility)."""
+        """Get size ."""
         return self.size(key, key_type)
 
     def slowlog(self, count: int = 25) -> dict[str, Any]:
-        """Get slowlog (CachePanel compatibility)."""
+        """Get slowlog ."""
         return self.slowlog_get(count)
 
     # List operation aliases
     def list_lpop(self, key: str, count: int = 1) -> dict[str, Any]:
-        """List lpop (CachePanel compatibility)."""
+        """List lpop ."""
         try:
             return self.lpop(key, count)
         except NotSupportedError:
             return {"success": False, "message": "List operations not supported."}
 
     def list_rpop(self, key: str, count: int = 1) -> dict[str, Any]:
-        """List rpop (CachePanel compatibility)."""
+        """List rpop ."""
         try:
             return self.rpop(key, count)
         except NotSupportedError:
             return {"success": False, "message": "List operations not supported."}
 
     def list_lpush(self, key: str, value: str) -> dict[str, Any]:
-        """List lpush (CachePanel compatibility)."""
+        """List lpush ."""
         try:
             return self.lpush(key, value)
         except NotSupportedError:
             return {"success": False, "message": "List operations not supported."}
 
     def list_rpush(self, key: str, value: str) -> dict[str, Any]:
-        """List rpush (CachePanel compatibility)."""
+        """List rpush ."""
         try:
             return self.rpush(key, value)
         except NotSupportedError:
             return {"success": False, "message": "List operations not supported."}
 
     def list_lrem(self, key: str, value: str, count: int = 0) -> dict[str, Any]:
-        """List lrem (CachePanel compatibility)."""
+        """List lrem ."""
         try:
             return self.lrem(key, value, count)
         except NotSupportedError:
             return {"success": False, "message": "List operations not supported."}
 
     def list_ltrim(self, key: str, start: int, stop: int) -> dict[str, Any]:
-        """List ltrim (CachePanel compatibility)."""
+        """List ltrim ."""
         try:
             return self.ltrim(key, start, stop)
         except NotSupportedError:
@@ -1174,21 +1174,21 @@ class CacheService:
 
     # Set operation aliases
     def set_sadd(self, key: str, member: str) -> dict[str, Any]:
-        """Set sadd (CachePanel compatibility)."""
+        """Set sadd ."""
         try:
             return self.sadd(key, member)
         except NotSupportedError:
             return {"success": False, "message": "Set operations not supported."}
 
     def set_srem(self, key: str, member: str) -> dict[str, Any]:
-        """Set srem (CachePanel compatibility)."""
+        """Set srem ."""
         try:
             return self.srem(key, member)
         except NotSupportedError:
             return {"success": False, "message": "Set operations not supported."}
 
     def set_spop(self, key: str, count: int = 1) -> dict[str, Any]:
-        """Set spop (CachePanel compatibility)."""
+        """Set spop ."""
         try:
             return self.spop(key, count)
         except NotSupportedError:
@@ -1196,14 +1196,14 @@ class CacheService:
 
     # Hash operation aliases
     def hash_hset(self, key: str, field: str, value: str) -> dict[str, Any]:
-        """Hash hset (CachePanel compatibility)."""
+        """Hash hset ."""
         try:
             return self.hset(key, field, value)
         except NotSupportedError:
             return {"success": False, "message": "Hash operations not supported."}
 
     def hash_hdel(self, key: str, field: str) -> dict[str, Any]:
-        """Hash hdel (CachePanel compatibility)."""
+        """Hash hdel ."""
         try:
             return self.hdel(key, field)
         except NotSupportedError:
@@ -1221,28 +1221,28 @@ class CacheService:
         gt: bool = False,
         lt: bool = False,
     ) -> dict[str, Any]:
-        """Sorted set zadd (CachePanel compatibility)."""
+        """Sorted set zadd ."""
         try:
             return self.zadd(key, member, score, nx=nx, xx=xx, gt=gt, lt=lt)
         except NotSupportedError:
             return {"success": False, "message": "Sorted set operations not supported."}
 
     def zset_zrem(self, key: str, member: str) -> dict[str, Any]:
-        """Sorted set zrem (CachePanel compatibility)."""
+        """Sorted set zrem ."""
         try:
             return self.zrem(key, member)
         except NotSupportedError:
             return {"success": False, "message": "Sorted set operations not supported."}
 
     def zset_zpopmin(self, key: str, count: int = 1) -> dict[str, Any]:
-        """Sorted set zpopmin (CachePanel compatibility)."""
+        """Sorted set zpopmin ."""
         try:
             return self.zpopmin(key, count=count)
         except NotSupportedError:
             return {"success": False, "message": "Sorted set operations not supported."}
 
     def zset_zpopmax(self, key: str, count: int = 1) -> dict[str, Any]:
-        """Sorted set zpopmax (CachePanel compatibility)."""
+        """Sorted set zpopmax ."""
         try:
             return self.zpopmax(key, count=count)
         except NotSupportedError:
@@ -1250,21 +1250,21 @@ class CacheService:
 
     # Stream operation aliases
     def stream_xadd(self, key: str, fields: dict[str, str]) -> dict[str, Any]:
-        """Stream xadd (CachePanel compatibility)."""
+        """Stream xadd ."""
         try:
             return self.xadd(key, fields)
         except NotSupportedError:
             return {"success": False, "message": "Stream operations not supported."}
 
     def stream_xdel(self, key: str, entry_id: str) -> dict[str, Any]:
-        """Stream xdel (CachePanel compatibility)."""
+        """Stream xdel ."""
         try:
             return self.xdel(key, entry_id)
         except NotSupportedError:
             return {"success": False, "message": "Stream operations not supported."}
 
     def stream_xtrim(self, key: str, maxlen: int) -> dict[str, Any]:
-        """Stream xtrim (CachePanel compatibility)."""
+        """Stream xtrim ."""
         try:
             return self.xtrim(key, maxlen)
         except NotSupportedError:

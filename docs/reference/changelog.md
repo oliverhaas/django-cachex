@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.1.0b5 (February 2026)
+
+### New Features
+
+- **Expanded cache backend support**: The cache admin now supports Django's builtin cache backends through wrapper classes
+  - `LocMemCache`: Full support including key listing, TTL inspection, and memory statistics
+  - `DatabaseCache`: Key listing, TTL inspection, and database statistics
+  - `FileBasedCache`: File listing (as MD5 hashes) and disk usage statistics
+  - `Memcached`: Basic stats when available
+  - Django's `RedisCache`: Basic support (full features require django-cachex backends)
+
+### Improvements
+
+- Standardized `info()` output format across all wrapped cache backends
+- Added TTL support (`ttl()`, `expire()`, `persist()`) for LocMemCache
+- Improved cache admin UX: operations that aren't supported now fail gracefully instead of hiding UI elements
+
+### Bug Fixes
+
+- Fixed LocMemCache keys showing "not found" when clicked in admin
+- Fixed cache query parameter preservation in key search form
+- Fixed editing for wrapped cache backends
+
+## 0.1.0b4 (January 2026)
+
+### New Features
+
+- **Django Cache Admin**: Built-in admin interface for cache management
+  - Browse all configured cache instances
+  - Search keys with wildcard patterns
+  - View and edit cache values (strings, hashes, lists, sets, sorted sets)
+  - Inspect TTL and modify expiration
+  - View server info and memory statistics
+  - Flush individual caches
+  - Bulk delete keys
+
+- **Django Unfold Theme Support**: Alternative admin styling for django-unfold users
+  - Use `django_cachex.unfold` instead of `django_cachex.admin`
+  - Consistent styling with Unfold's modern admin theme
+
+- **Example Projects**: Added example projects demonstrating various configurations
+  - `examples/simple/` - Basic setup with ValkeyCache and LocMemCache
+  - `examples/full/` - Multiple backends including Sentinel and Cluster
+  - `examples/unfold/` - Django Unfold theme integration
+
+### New Classes
+
+- `CacheService` - Unified service layer for cache admin operations
+- `BaseCacheWrapper` - Base class for wrapping Django builtin cache backends
+- `LocMemCacheWrapper`, `DatabaseCacheWrapper`, `FileCacheWrapper`, etc.
+
 ## 0.1.0b3 (January 2026)
 
 ### New Features
@@ -39,6 +90,7 @@ Initial release of django-cachex.
 - **TTL operations** (`ttl()`, `pttl()`, `expire()`, `persist()`)
 - **Pattern operations** (`keys()`, `iter_keys()`, `delete_pattern()`)
 - **Pipelines** for batched operations
+- **Django Cache Admin** for cache inspection and management
 
 ### Data Structure Operations
 
