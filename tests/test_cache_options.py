@@ -22,7 +22,7 @@ def reverse_key(key: str) -> str:
 @pytest.fixture
 def ignore_exceptions_cache(settings) -> KeyValueCache:
     caches_setting = copy.deepcopy(settings.CACHES)
-    caches_setting["doesnotexist"]["OPTIONS"]["ignore_exceptions"] = True
+    caches_setting["doesnotexist"].setdefault("OPTIONS", {})["ignore_exceptions"] = True
     caches_setting["doesnotexist"]["OPTIONS"]["log_ignored_exceptions"] = True
     settings.CACHES = caches_setting
     return cast("KeyValueCache", caches["doesnotexist"])
@@ -53,7 +53,7 @@ def test_get_django_omit_exceptions(
 def test_ignore_exceptions_enabled(settings):
     """Test that ignore_exceptions=True returns None instead of raising."""
     caches_setting = copy.deepcopy(settings.CACHES)
-    caches_setting["doesnotexist"]["OPTIONS"]["ignore_exceptions"] = True
+    caches_setting["doesnotexist"].setdefault("OPTIONS", {})["ignore_exceptions"] = True
     settings.CACHES = caches_setting
     cache = cast("KeyValueCache", caches["doesnotexist"])
     assert cache._ignore_exceptions is True
@@ -63,7 +63,7 @@ def test_ignore_exceptions_enabled(settings):
 def test_ignore_exceptions_disabled(settings):
     """Test that ignore_exceptions=False raises ConnectionError."""
     caches_setting = copy.deepcopy(settings.CACHES)
-    caches_setting["doesnotexist"]["OPTIONS"]["ignore_exceptions"] = False
+    caches_setting["doesnotexist"].setdefault("OPTIONS", {})["ignore_exceptions"] = False
     settings.CACHES = caches_setting
     cache = cast("KeyValueCache", caches["doesnotexist"])
     assert cache._ignore_exceptions is False

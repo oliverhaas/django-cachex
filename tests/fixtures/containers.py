@@ -1,5 +1,6 @@
 """Container fixtures for Redis and Sentinel using testcontainers."""
 
+import time
 from collections.abc import Callable, Generator
 from contextlib import suppress
 from os import environ
@@ -7,6 +8,7 @@ from typing import NamedTuple
 
 import docker
 import pytest
+import redis
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
 
@@ -67,6 +69,36 @@ def _get_xdist_worker_id() -> int:
 
 
 CLUSTER_START_RETRIES = 3  # Number of retry attempts with different port ranges
+CLUSTER_READY_TIMEOUT = 30.0  # Seconds to wait for cluster to accept commands
+CLUSTER_READY_INTERVAL = 0.5  # Seconds between readiness checks
+
+
+def _wait_for_cluster_ready(host: str, port: int, *, timeout: float = CLUSTER_READY_TIMEOUT) -> None:
+    """Wait for Redis Cluster to be fully ready by verifying cluster_state via CLUSTER INFO.
+
+    The container log message "Cluster state changed: ok" can appear before all
+    nodes are ready to serve commands. This performs an actual connection check
+    to avoid ClusterDownError on the first operation.
+    """
+    deadline = time.monotonic() + timeout
+    last_error: Exception | None = None
+
+    while time.monotonic() < deadline:
+        try:
+            client = redis.Redis(host=host, port=port, socket_connect_timeout=2)
+            info = client.execute_command("CLUSTER", "INFO")
+            client.close()
+            # Response is bytes like b"cluster_state:ok\r\n..."
+            if isinstance(info, bytes) and b"cluster_state:ok" in info:
+                return
+        except Exception as e:  # noqa: BLE001
+            last_error = e
+        time.sleep(CLUSTER_READY_INTERVAL)
+
+    msg = f"Cluster not ready after {timeout}s"
+    if last_error:
+        msg += f": {last_error}"
+    raise RuntimeError(msg)
 
 
 def _start_cluster_container(base_port: int) -> ContainerInfo:
@@ -102,10 +134,13 @@ def _start_cluster_container(base_port: int) -> ContainerInfo:
             with suppress(Exception):
                 container.stop()
             continue
-        # Wait for cluster to be ready
+        # Wait for cluster to be ready (log message)
         wait_for_logs(container, "Cluster state changed: ok")
+        host = container.get_container_host_ip()
+        # Verify cluster actually accepts commands (avoids ClusterDownError race)
+        _wait_for_cluster_ready(host, current_base)
         return ContainerInfo(
-            host=container.get_container_host_ip(),
+            host=host,
             port=current_base,  # First master node
             container=container,
         )

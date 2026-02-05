@@ -56,17 +56,14 @@ CACHES = {
     "default": {
         "BACKEND": "django_cachex.cache.RedisCache",
         "LOCATION": "redis://127.0.0.1:6379?db=1",
-        "OPTIONS": {"client_class": "django_cachex.client.DefaultClient"},
     },
     "doesnotexist": {
         "BACKEND": "django_cachex.cache.RedisCache",
         "LOCATION": "redis://127.0.0.1:56379?db=1",
-        "OPTIONS": {"client_class": "django_cachex.client.DefaultClient"},
     },
     "with_prefix": {
         "BACKEND": "django_cachex.cache.RedisCache",
         "LOCATION": "redis://127.0.0.1:6379?db=1",
-        "OPTIONS": {"client_class": "django_cachex.client.DefaultClient"},
         "KEY_PREFIX": "test-prefix",
     },
 }

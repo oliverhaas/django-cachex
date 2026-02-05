@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 _REDIS_AVAILABLE = False
 try:
     import redis
+    from redis.asyncio import Redis as AsyncRedisClient
     from redis.asyncio.sentinel import Sentinel as AsyncRedisSentinel
     from redis.asyncio.sentinel import SentinelConnectionPool as AsyncRedisSentinelConnectionPool
     from redis.sentinel import Sentinel as RedisSentinel
@@ -192,7 +193,12 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
 
         sentinels = self._options.get("sentinels")
         sentinel_kwargs = self._options.get("sentinel_kwargs", {})
-        pool_options = dict(self._pool_options) if hasattr(self, "_pool_options") else {}
+        # Filter out parser_class - it's sync-specific
+        pool_options = (
+            {k: v for k, v in self._pool_options.items() if k != "parser_class"}
+            if hasattr(self, "_pool_options")
+            else {}
+        )
 
         async_sentinel = self._async_sentinel_class(
             sentinels,
@@ -225,7 +231,12 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
         async_sentinel = self._get_async_sentinel()
 
         # Use _pool_options from parent class (already cleaned in __init__)
-        pool_options: dict[str, Any] = dict(self._pool_options) if hasattr(self, "_pool_options") else {}
+        # Filter out parser_class - it's sync-specific and causes AttributeError on async connections
+        pool_options: dict[str, Any] = (
+            {k: v for k, v in self._pool_options.items() if k != "parser_class"}
+            if hasattr(self, "_pool_options")
+            else {}
+        )
         pool_options.update(
             service_name=service_name,
             sentinel_manager=async_sentinel,
@@ -289,6 +300,7 @@ if _REDIS_AVAILABLE:
         _pool_class = RedisSentinelConnectionPool
         _sentinel_class = RedisSentinel
         _sentinel_pool_class = RedisSentinelConnectionPool
+        _async_client_class = AsyncRedisClient
         _async_sentinel_class = AsyncRedisSentinel
         _async_sentinel_pool_class = AsyncRedisSentinelConnectionPool
 
