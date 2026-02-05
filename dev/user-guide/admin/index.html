@@ -558,6 +558,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Installation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#standard-django-admin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standard Django Admin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#django-unfold-theme" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Django Unfold Theme
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -627,6 +655,17 @@
     <span class="md-ellipsis">
       
         Key Detail
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cache-info" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache Info
       
     </span>
   </a>
@@ -1061,6 +1100,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Installation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#standard-django-admin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standard Django Admin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#django-unfold-theme" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Django Unfold Theme
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1137,6 +1204,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#cache-info" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache Info
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#add-key" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1197,15 +1275,36 @@
 <h1 id="cache-admin">Cache Admin<a class="headerlink" href="#cache-admin" title="Permanent link">&para;</a></h1>
 <p>django-cachex provides a Django admin interface for inspecting and managing cache instances. It allows you to browse cache keys, view their values, and perform operations like adding, editing, and deleting cache entries.</p>
 <h2 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h2>
+<h3 id="standard-django-admin">Standard Django Admin<a class="headerlink" href="#standard-django-admin" title="Permanent link">&para;</a></h3>
 <p>Add <code>django_cachex.admin</code> to your <code>INSTALLED_APPS</code>:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">INSTALLED_APPS</span> <span class="o">=</span> <span class="p">[</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="c1"># ... other apps</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="s2">&quot;django.contrib.admin&quot;</span><span class="p">,</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="s2">&quot;django_cachex&quot;</span><span class="p">,</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="s2">&quot;django_cachex.admin&quot;</span><span class="p">,</span>  <span class="c1"># Cache admin interface</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">]</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="s2">&quot;django_cachex.admin&quot;</span><span class="p">,</span>  <span class="c1"># Cache admin interface</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="p">]</span>
 </span></code></pre></div>
 <p>The cache admin will appear in the Django admin sidebar under "Caches".</p>
+<h3 id="django-unfold-theme">Django Unfold Theme<a class="headerlink" href="#django-unfold-theme" title="Permanent link">&para;</a></h3>
+<p>For users of <a href="https://github.com/unfoldadmin/django-unfold">django-unfold</a>, use <code>django_cachex.unfold</code> instead:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">INSTALLED_APPS</span> <span class="o">=</span> <span class="p">[</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="c1"># django-unfold must be before django.contrib.admin</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="s2">&quot;unfold&quot;</span><span class="p">,</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="s2">&quot;unfold.contrib.filters&quot;</span><span class="p">,</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="s2">&quot;unfold.contrib.forms&quot;</span><span class="p">,</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="c1"># Django apps</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="s2">&quot;django.contrib.admin&quot;</span><span class="p">,</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="c1"># ...</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="s2">&quot;django_cachex.unfold&quot;</span><span class="p">,</span>  <span class="c1"># Unfold-styled cache admin</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="p">]</span>
+</span></code></pre></div>
+<p>Install the unfold extra:</p>
+<div class="language-console highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="go">pip install django-cachex[unfold]</span>
+</span></code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Choose One</p>
+<p>Use either <code>django_cachex.admin</code> OR <code>django_cachex.unfold</code>, not both.
+They provide the same functionality with different styling.</p>
+</div>
 <h2 id="support-levels">Support Levels<a class="headerlink" href="#support-levels" title="Permanent link">&para;</a></h2>
 <p>Different cache backends have different levels of support in the Cache Admin:</p>
 <table>
@@ -1225,7 +1324,7 @@
 <tr>
 <td><strong>wrapped</strong></td>
 <td>Wrapped Support</td>
-<td>Django builtin backends (<code>LocMemCache</code>, <code>DatabaseCache</code>, <code>RedisCache</code>, etc.). Most features available through wrapper compatibility.</td>
+<td>Django builtin backends (<code>LocMemCache</code>, <code>DatabaseCache</code>, etc.). Most features available through wrapper compatibility.</td>
 </tr>
 <tr>
 <td><strong>limited</strong></td>
@@ -1240,7 +1339,7 @@
 <li>Key browsing and pattern search</li>
 <li>TTL inspection and modification</li>
 <li>Native Redis data type support (lists, sets, hashes, sorted sets)</li>
-<li>Server info and slow log access</li>
+<li>Server info and memory statistics</li>
 </ul>
 <p>See the <a href="../../getting-started/quickstart/">quickstart guide</a> for migration instructions.</p>
 <h2 id="views">Views<a class="headerlink" href="#views" title="Permanent link">&para;</a></h2>
@@ -1278,6 +1377,16 @@
 <li><strong>Edit</strong>: Modify value and timeout</li>
 <li><strong>Delete</strong>: Remove the key</li>
 </ul>
+<h3 id="cache-info">Cache Info<a class="headerlink" href="#cache-info" title="Permanent link">&para;</a></h3>
+<p>View server information and statistics:</p>
+<ul>
+<li><strong>Configuration</strong>: Backend, location, key prefix, version</li>
+<li><strong>Server</strong>: Version, operating system, uptime</li>
+<li><strong>Memory</strong>: Used memory, peak memory, max memory, eviction policy</li>
+<li><strong>Clients</strong>: Connected clients, blocked clients</li>
+<li><strong>Statistics</strong>: Total connections, commands processed, hit/miss rates</li>
+<li><strong>Keyspace</strong>: Per-database key counts and TTL statistics</li>
+</ul>
 <h3 id="add-key">Add Key<a class="headerlink" href="#add-key" title="Permanent link">&para;</a></h3>
 <p>Create a new cache entry:</p>
 <ul>
@@ -1294,7 +1403,7 @@
 <th>cachex</th>
 <th>LocMemCache</th>
 <th>DatabaseCache</th>
-<th>Django Redis</th>
+<th>FileBasedCache</th>
 <th>limited</th>
 </tr>
 </thead>
@@ -1304,7 +1413,7 @@
 <td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
-<td>No</td>
+<td>Yes*</td>
 <td>No</td>
 </tr>
 <tr>
@@ -1312,7 +1421,7 @@
 <td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
-<td>Yes</td>
+<td>No</td>
 <td>Yes</td>
 </tr>
 <tr>
@@ -1320,7 +1429,7 @@
 <td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
-<td>Yes</td>
+<td>No</td>
 <td>Yes</td>
 </tr>
 <tr>
@@ -1328,7 +1437,7 @@
 <td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
-<td>Yes</td>
+<td>No</td>
 <td>Yes</td>
 </tr>
 <tr>
@@ -1348,6 +1457,14 @@
 <td>No</td>
 </tr>
 <tr>
+<td>Cache info</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr>
 <td>Flush cache</td>
 <td>Yes</td>
 <td>Yes</td>
@@ -1357,11 +1474,13 @@
 </tr>
 </tbody>
 </table>
+<p>*FileBasedCache shows MD5 hashes instead of original key names (one-way hash)</p>
 <h2 id="tips">Tips<a class="headerlink" href="#tips" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Pattern Search</strong>: Use <code>*</code> as a wildcard. For example, <code>user:*</code> finds all keys starting with "user:".</li>
 <li><strong>JSON Values</strong>: When editing, you can enter valid JSON to store objects or arrays.</li>
-<li><strong>Help Button</strong>: Each view has a help button (info icon) that shows context-specific tips.</li>
+<li><strong>Help Button</strong>: Each view has a help button that shows context-specific tips.</li>
+<li><strong>Refresh</strong>: Use the refresh action to update key lists and statistics.</li>
 </ul>
 
 

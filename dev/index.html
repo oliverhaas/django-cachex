@@ -1059,22 +1059,23 @@
 
 
 <h1 id="django-cachex">django-cachex<a class="headerlink" href="#django-cachex" title="Permanent link">&para;</a></h1>
-<p>Full featured Valkey and Redis cache backend for Django.</p>
+<p>Full featured Valkey and Redis cache backend for Django with a built-in admin interface.</p>
 <p><a href="https://pypi.org/project/django-cachex/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/django-cachex.svg?style=flat" /></a>
 <a href="https://pypi.org/project/django-cachex/"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/django-cachex.svg" /></a>
 <a href="https://pypi.org/project/django-cachex/"><img alt="Django versions" src="https://img.shields.io/pypi/frameworkversions/django/django-cachex.svg" /></a></p>
 <h2 id="why-django-cachex">Why django-cachex?<a class="headerlink" href="#why-django-cachex" title="Permanent link">&para;</a></h2>
-<p><strong>Drop-in replacement</strong> for Django's built-in Redis cache backend (<code>django.core.cache.backends.redis</code>) with extended features:</p>
+<p><strong>Drop-in replacement</strong> for Django's built-in Redis cache backend with extended features:</p>
 <ul>
-<li>Uses native valkey-py/redis-py</li>
-<li>Extended functionality of all typical commands for hashes, sets, lists, sorted sets, and streams</li>
-<li>Pluggable serializers</li>
-<li>Pluggable compressors</li>
-<li>Valkey/Redis Sentinel and Cluster support</li>
-<li>Primary/replica support</li>
-<li>Comprehensive test suite</li>
-<li>Facilities for raw access to Valkey/Redis client/connection pool</li>
-<li>Highly configurable</li>
+<li><strong>Built-in admin interface</strong> - Browse, search, edit, and delete cache keys from Django admin</li>
+<li><strong>Unified Valkey and Redis support</strong> - Single package for both backends</li>
+<li><strong>Extended data structures</strong> - Hashes, lists, sets, sorted sets</li>
+<li><strong>Async support</strong> - Async versions of all extended methods</li>
+<li><strong>TTL and pattern operations</strong> - <code>ttl()</code>, <code>expire()</code>, <code>keys()</code>, <code>delete_pattern()</code></li>
+<li><strong>Lua script support</strong> - Register and execute Lua scripts with automatic key prefixing</li>
+<li><strong>Distributed locking</strong> - <code>cache.lock()</code> for cross-process synchronization</li>
+<li><strong>Sentinel and Cluster</strong> - High availability and horizontal scaling</li>
+<li><strong>Pluggable serializers</strong> - Pickle, JSON, MsgPack with fallback support</li>
+<li><strong>Pluggable compressors</strong> - Zlib, Gzip, LZ4, LZMA, Zstandard with fallback support</li>
 </ul>
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
 <ul>
@@ -1084,18 +1085,25 @@
 </ul>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <p>Install with pip:</p>
-<div class="language-console highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="go">pip install django-cachex</span>
+<div class="language-console highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="go">pip install django-cachex[valkey]</span>
 </span></code></pre></div>
 <p>Configure as cache backend:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.ValkeyCache&quot;</span><span class="p">,</span> <span class="c1"># or django_cachex.cache.RedisCache</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey://127.0.0.1:6379/1&quot;</span><span class="p">,</span> <span class="c1"># or redis://127.0.0.1:6379/1</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.ValkeyCache&quot;</span><span class="p">,</span>  <span class="c1"># or RedisCache</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey://127.0.0.1:6379/1&quot;</span><span class="p">,</span>       <span class="c1"># or redis://...</span>
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="p">}</span>
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="p">}</span>
 </span></code></pre></div>
+<p>Enable the admin interface (optional):</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">INSTALLED_APPS</span> <span class="o">=</span> <span class="p">[</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="c1"># ...</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="s2">&quot;django_cachex.admin&quot;</span><span class="p">,</span>  <span class="c1"># or &quot;django_cachex.unfold&quot; for django-unfold users</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="p">]</span>
+</span></code></pre></div>
 <h2 id="acknowledgments">Acknowledgments<a class="headerlink" href="#acknowledgments" title="Permanent link">&para;</a></h2>
-<p>This project was inspired by <a href="https://github.com/jazzband/django-redis">django-redis</a> and Django's official <a href="https://docs.djangoproject.com/en/stable/topics/cache/#redis">Redis cache backend</a>. Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause. Thanks to the Django community for their continued work on the framework.</p>
+<p>This project was inspired by <a href="https://github.com/jazzband/django-redis">django-redis</a> and Django's official <a href="https://docs.djangoproject.com/en/stable/topics/cache/#redis">Redis cache backend</a>. Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause.</p>
+<p>The admin functionality was inspired by <a href="https://github.com/ionelmc/django-redisboard">django-redisboard</a>. The Unfold theme integration uses <a href="https://unfoldadmin.com/">django-unfold</a>.</p>
 <h2 id="license">License<a class="headerlink" href="#license" title="Permanent link">&para;</a></h2>
 <p>MIT License. See <a href="https://github.com/oliverhaas/django-cachex/blob/main/LICENSE">LICENSE</a> for details.</p>
 
