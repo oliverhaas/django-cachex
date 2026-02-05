@@ -4,7 +4,7 @@
 
 ### New Features
 
-- **Expanded cache backend support**: The cache admin now supports Django's builtin cache backends through wrapper classes
+- **Expanded cache backend support**: The admin interface now supports Django's builtin cache backends through wrapper classes
   - `LocMemCache`: Full support including key listing, TTL inspection, and memory statistics
   - `DatabaseCache`: Key listing, TTL inspection, and database statistics
   - `FileBasedCache`: File listing (as MD5 hashes) and disk usage statistics
@@ -69,9 +69,9 @@
 - `ScriptHelpers` - Helper functions passed to pre/post processing hooks
 - `ScriptNotRegisteredError` - Exception for unregistered script names
 
-## 0.1.0 (January 2026)
+## 0.1.0 (Planned)
 
-Initial release of django-cachex.
+Initial stable release of django-cachex.
 
 ### Features
 

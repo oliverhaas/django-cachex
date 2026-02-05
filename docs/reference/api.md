@@ -26,7 +26,7 @@ django-cachex adds these extended methods:
 
 | Method | Description |
 |--------|-------------|
-| `ttl(key)` | Get TTL in seconds |
+| `ttl(key)` | Get TTL in seconds (-1 = no expiry, -2 = not found) |
 | `pttl(key)` | Get TTL in milliseconds |
 | `expire(key, timeout)` | Set expiration in seconds |
 | `pexpire(key, timeout)` | Set expiration in milliseconds |
@@ -57,6 +57,28 @@ Hash operations for field-value data structures:
 | `hsetnx(key, field, value)` | Set hash field only if it doesn't exist |
 | `hvals(key)` | Get all values in a hash |
 
+### Set Methods
+
+Set operations for unordered collections of unique elements:
+
+| Method | Description |
+|--------|-------------|
+| `sadd(key, *members)` | Add member(s) to set |
+| `srem(key, *members)` | Remove member(s) from set |
+| `smembers(key)` | Get all members of set |
+| `sismember(key, member)` | Check if member exists in set |
+| `smismember(key, *members)` | Check if multiple members exist |
+| `scard(key)` | Get number of members |
+| `spop(key, count=None)` | Remove and return random member(s) |
+| `srandmember(key, count=None)` | Get random member(s) without removing |
+| `smove(src, dst, member)` | Move member between sets |
+| `sdiff(keys)` | Get difference of sets |
+| `sdiffstore(dest, keys)` | Store difference of sets |
+| `sinter(keys)` | Get intersection of sets |
+| `sinterstore(dest, keys)` | Store intersection of sets |
+| `sunion(keys)` | Get union of sets |
+| `sunionstore(dest, keys)` | Store union of sets |
+
 ### Sorted Set Methods
 
 Sorted set operations for scored, ordered collections:
@@ -68,13 +90,17 @@ Sorted set operations for scored, ordered collections:
 | `zcount(key, min, max)` | Count members with scores in range |
 | `zincrby(key, amount, member)` | Increment member's score |
 | `zrange(key, start, end, ...)` | Get members by index range |
+| `zrevrange(key, start, end, ...)` | Get members by index range (descending) |
 | `zrangebyscore(key, min, max, ...)` | Get members by score range |
+| `zrevrangebyscore(key, max, min, ...)` | Get members by score range (descending) |
 | `zrank(key, member)` | Get member's rank (ascending) |
 | `zrevrank(key, member)` | Get member's rank (descending) |
 | `zrem(key, *members)` | Remove member(s) |
 | `zremrangebyrank(key, start, end)` | Remove members by rank range |
 | `zscore(key, member)` | Get member's score |
 | `zmscore(key, *members)` | Get multiple members' scores |
+| `zpopmin(key, count=1)` | Remove and return members with lowest scores |
+| `zpopmax(key, count=1)` | Remove and return members with highest scores |
 
 ### List Methods
 
@@ -164,6 +190,32 @@ cache.set(key, value, timeout=300, nx=False, xx=False)
 | `nx` | Only set if key doesn't exist (SETNX) |
 | `xx` | Only set if key exists |
 
+## Async Methods
+
+All extended methods have async versions prefixed with `a`:
+
+```python
+# Sync
+value = cache.get("key")
+cache.hset("hash", "field", "value")
+
+# Async
+value = await cache.aget("key")
+await cache.ahset("hash", "field", "value")
+```
+
+Async methods available:
+
+- `aget`, `aset`, `adelete`, `aget_many`, `aset_many`, `adelete_many`
+- `ahas_key`, `aincr`, `adecr`, `aclear`, `aclose`
+- `attl`, `apttl`, `aexpire`, `apexpire`, `aexpire_at`, `apexpire_at`, `apersist`
+- `akeys`, `aiter_keys`, `adelete_pattern`
+- `ahset`, `ahdel`, `ahexists`, `ahget`, `ahgetall`, `ahincrby`, `ahincrbyfloat`, `ahlen`, `ahmget`, `ahmset`, `ahsetnx`, `ahvals`
+- `asadd`, `asrem`, `asmembers`, `asismember`, `ascard`, `aspop`, `asrandmember`
+- `azadd`, `azcard`, `azcount`, `azincrby`, `azrange`, `azrangebyscore`, `azrank`, `azrevrank`, `azrem`, `azremrangebyrank`, `azscore`, `azmscore`, `azpopmin`, `azpopmax`
+- `allen`, `alpush`, `arpush`, `alpop`, `arpop`, `alindex`, `alrange`, `alset`, `altrim`, `alpos`, `almove`
+- `aeval_script`
+
 ## Raw Client Access
 
 ```python
@@ -205,6 +257,20 @@ if lock.acquire():
     finally:
         lock.release()
 ```
+
+## Pipelines
+
+Batch multiple operations for efficiency:
+
+```python
+pipe = cache.pipeline()
+pipe.set("key1", "value1")
+pipe.set("key2", "value2")
+pipe.hset("hash", "field", "value")
+results = pipe.execute()
+```
+
+All cache methods are available on the pipeline. Results are returned as a list in the same order as the commands.
 
 ## Settings Reference
 

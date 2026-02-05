@@ -4,18 +4,46 @@ django-cachex provides a Django admin interface for inspecting and managing cach
 
 ## Installation
 
+### Standard Django Admin
+
 Add `django_cachex.admin` to your `INSTALLED_APPS`:
 
 ```python
 INSTALLED_APPS = [
     # ... other apps
     "django.contrib.admin",
-    "django_cachex",
     "django_cachex.admin",  # Cache admin interface
 ]
 ```
 
 The cache admin will appear in the Django admin sidebar under "Caches".
+
+### Django Unfold Theme
+
+For users of [django-unfold](https://github.com/unfoldadmin/django-unfold), use `django_cachex.unfold` instead:
+
+```python
+INSTALLED_APPS = [
+    # django-unfold must be before django.contrib.admin
+    "unfold",
+    "unfold.contrib.filters",
+    "unfold.contrib.forms",
+    # Django apps
+    "django.contrib.admin",
+    # ...
+    "django_cachex.unfold",  # Unfold-styled cache admin
+]
+```
+
+Install the unfold extra:
+
+```console
+pip install django-cachex[unfold]
+```
+
+!!! note "Choose One"
+    Use either `django_cachex.admin` OR `django_cachex.unfold`, not both.
+    They provide the same functionality with different styling.
 
 ## Support Levels
 
@@ -24,7 +52,7 @@ Different cache backends have different levels of support in the Cache Admin:
 | Badge | Level | Description |
 |-------|-------|-------------|
 | **cachex** | Full Support | django-cachex backends (`ValkeyCache`, `RedisCache`, etc.) with full access to all features including key listing, pattern search, TTL inspection, and all data type operations. |
-| **wrapped** | Wrapped Support | Django builtin backends (`LocMemCache`, `DatabaseCache`, `RedisCache`, etc.). Most features available through wrapper compatibility. |
+| **wrapped** | Wrapped Support | Django builtin backends (`LocMemCache`, `DatabaseCache`, etc.). Most features available through wrapper compatibility. |
 | **limited** | Limited Support | Custom or unknown cache backends. Basic operations may work but key listing and advanced features may not be available. |
 
 ### Using Redis/Valkey?
@@ -34,7 +62,7 @@ If you are using Django's builtin Redis backend (`django.core.cache.backends.red
 - Key browsing and pattern search
 - TTL inspection and modification
 - Native Redis data type support (lists, sets, hashes, sorted sets)
-- Server info and slow log access
+- Server info and memory statistics
 
 See the [quickstart guide](../getting-started/quickstart.md) for migration instructions.
 
@@ -77,6 +105,17 @@ View and edit a specific key:
 - **Edit**: Modify value and timeout
 - **Delete**: Remove the key
 
+### Cache Info
+
+View server information and statistics:
+
+- **Configuration**: Backend, location, key prefix, version
+- **Server**: Version, operating system, uptime
+- **Memory**: Used memory, peak memory, max memory, eviction policy
+- **Clients**: Connected clients, blocked clients
+- **Statistics**: Total connections, commands processed, hit/miss rates
+- **Keyspace**: Per-database key counts and TTL statistics
+
 ### Add Key
 
 Create a new cache entry:
@@ -89,18 +128,22 @@ Create a new cache entry:
 
 The admin adapts its interface based on what each backend supports:
 
-| Feature | cachex | LocMemCache | DatabaseCache | Django Redis | limited |
-|---------|--------|-------------|---------------|--------------|---------|
-| List keys | Yes | Yes | Yes | No | No |
-| Get key | Yes | Yes | Yes | Yes | Yes |
-| Delete key | Yes | Yes | Yes | Yes | Yes |
-| Edit key | Yes | Yes | Yes | Yes | Yes |
+| Feature | cachex | LocMemCache | DatabaseCache | FileBasedCache | limited |
+|---------|--------|-------------|---------------|----------------|---------|
+| List keys | Yes | Yes | Yes | Yes* | No |
+| Get key | Yes | Yes | Yes | No | Yes |
+| Delete key | Yes | Yes | Yes | No | Yes |
+| Edit key | Yes | Yes | Yes | No | Yes |
 | Get TTL | Yes | Yes | Yes | No | No |
 | Get type | Yes | No | No | No | No |
+| Cache info | Yes | Yes | Yes | Yes | No |
 | Flush cache | Yes | Yes | Yes | Yes | Varies |
+
+*FileBasedCache shows MD5 hashes instead of original key names (one-way hash)
 
 ## Tips
 
 - **Pattern Search**: Use `*` as a wildcard. For example, `user:*` finds all keys starting with "user:".
 - **JSON Values**: When editing, you can enter valid JSON to store objects or arrays.
-- **Help Button**: Each view has a help button (info icon) that shows context-specific tips.
+- **Help Button**: Each view has a help button that shows context-specific tips.
+- **Refresh**: Use the refresh action to update key lists and statistics.
