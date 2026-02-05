@@ -1308,7 +1308,7 @@
 <h2 id="010b5-february-2026">0.1.0b5 (February 2026)<a class="headerlink" href="#010b5-february-2026" title="Permanent link">&para;</a></h2>
 <h3 id="new-features">New Features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Expanded cache backend support</strong>: The admin panel now supports Django's builtin cache backends through wrapper classes</li>
+<li><strong>Expanded cache backend support</strong>: The admin interface now supports Django's builtin cache backends through wrapper classes</li>
 <li><code>LocMemCache</code>: Full support including key listing, TTL inspection, and memory statistics</li>
 <li><code>DatabaseCache</code>: Key listing, TTL inspection, and database statistics</li>
 <li><code>FileBasedCache</code>: File listing (as MD5 hashes) and disk usage statistics</li>
@@ -1319,7 +1319,7 @@
 <ul>
 <li>Standardized <code>info()</code> output format across all wrapped cache backends</li>
 <li>Added TTL support (<code>ttl()</code>, <code>expire()</code>, <code>persist()</code>) for LocMemCache</li>
-<li>Improved admin panel UX: operations that aren't supported now fail gracefully instead of hiding UI elements</li>
+<li>Improved cache admin UX: operations that aren't supported now fail gracefully instead of hiding UI elements</li>
 </ul>
 <h3 id="bug-fixes">Bug Fixes<a class="headerlink" href="#bug-fixes" title="Permanent link">&para;</a></h3>
 <ul>
@@ -1330,7 +1330,7 @@
 <h2 id="010b4-january-2026">0.1.0b4 (January 2026)<a class="headerlink" href="#010b4-january-2026" title="Permanent link">&para;</a></h2>
 <h3 id="new-features_1">New Features<a class="headerlink" href="#new-features_1" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Django Admin Panel</strong>: Built-in admin interface for cache management</li>
+<li><strong>Django Cache Admin</strong>: Built-in admin interface for cache management</li>
 <li>Browse all configured cache instances</li>
 <li>Search keys with wildcard patterns</li>
 <li>View and edit cache values (strings, hashes, lists, sets, sorted sets)</li>
@@ -1396,7 +1396,7 @@
 <li><strong>TTL operations</strong> (<code>ttl()</code>, <code>pttl()</code>, <code>expire()</code>, <code>persist()</code>)</li>
 <li><strong>Pattern operations</strong> (<code>keys()</code>, <code>iter_keys()</code>, <code>delete_pattern()</code>)</li>
 <li><strong>Pipelines</strong> for batched operations</li>
-<li><strong>Django Admin Panel</strong> for cache inspection and management</li>
+<li><strong>Django Cache Admin</strong> for cache inspection and management</li>
 </ul>
 <h3 id="data-structure-operations">Data Structure Operations<a class="headerlink" href="#data-structure-operations" title="Permanent link">&para;</a></h3>
 <ul>
