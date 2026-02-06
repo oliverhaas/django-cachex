@@ -460,7 +460,7 @@ def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:  # no
             for cache_name in selected_caches:
                 try:
                     service = get_cache_service(cache_name)
-                    service.flush_cache()
+                    service.clear()
                     flushed_count += 1
                 except Exception as e:  # noqa: BLE001
                     messages.error(request, f"Error flushing '{cache_name}': {e!s}")
@@ -483,7 +483,7 @@ def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:  # no
         support_level = cache_obj.support_level if cache_obj else "limited"
         try:
             service = get_cache_service(cache_name)
-            flush_supported = service.is_feature_supported("flush_cache")
+            flush_supported = service.is_feature_supported("clear")
             if flush_supported:
                 any_flush_supported = True
             cache_info = {
@@ -587,7 +587,7 @@ def _cache_detail_view(
     slowlog_data = None
     if slowlog_supported:
         try:
-            slowlog_data = service.slowlog(slowlog_count)
+            slowlog_data = service.slowlog_get(slowlog_count)
         except NotImplementedError:
             slowlog_supported = False
         except Exception as e:  # noqa: BLE001
@@ -667,7 +667,7 @@ def _key_search_view(  # noqa: C901, PLR0912, PLR0915
                 deleted_count = 0
                 for key in selected_keys:
                     with contextlib.suppress(Exception):
-                        service.delete_key(key)
+                        service.delete(key)
                         deleted_count += 1
                 if deleted_count > 0:
                     messages.success(
@@ -682,8 +682,8 @@ def _key_search_view(  # noqa: C901, PLR0912, PLR0915
             "title": f"Keys in '{cache_name}'",
             "cache_name": cache_name,
             "cache_config": cache_config,
-            "query_supported": service.is_feature_supported("query"),
-            "get_key_supported": service.is_feature_supported("get_key"),
+            "query_supported": service.is_feature_supported("keys"),
+            "get_key_supported": service.is_feature_supported("get"),
             "abilities": service.abilities,
             "help_active": help_active,
         },
@@ -698,7 +698,7 @@ def _key_search_view(  # noqa: C901, PLR0912, PLR0915
     context["cursor"] = cursor
 
     # Handle pattern search (auto-wrap in wildcards for Django-style contains search)
-    if service.is_feature_supported("query"):
+    if service.is_feature_supported("keys"):
         if search_query:
             # Auto-wrap in wildcards if none present (Django-style contains search)
             if "*" not in search_query and "?" not in search_query:
@@ -708,8 +708,7 @@ def _key_search_view(  # noqa: C901, PLR0912, PLR0915
         else:
             pattern = "*"
         try:
-            query_result = service.query(
-                instance_alias=cache_name,
+            query_result = service.keys(
                 pattern=pattern,
                 cursor=cursor,
                 count=count,
@@ -745,16 +744,16 @@ def _key_search_view(  # noqa: C901, PLR0912, PLR0915
                 for key_entry in keys_data:
                     user_key = key_entry["key"]
                     key_type = None
-                    if service.is_feature_supported("get_ttl"):
-                        ttl = service.get_key_ttl(user_key)
+                    if service.is_feature_supported("ttl"):
+                        ttl = service.ttl(user_key)
                         key_entry["ttl"] = ttl
                         if ttl is not None and ttl >= 0:
                             key_entry["ttl_expires_at"] = timezone.now() + timedelta(seconds=ttl)
-                    if service.is_feature_supported("get_type"):
-                        key_type = service.get_key_type(user_key)
+                    if service.is_feature_supported("type"):
+                        key_type = service.type(user_key)
                         key_entry["type"] = key_type
-                    if service.is_feature_supported("get_size"):
-                        key_entry["size"] = service.get_key_size(user_key, key_type)
+                    if service.is_feature_supported("size"):
+                        key_entry["size"] = service.size(user_key, key_type)
 
             context["keys_data"] = keys_data
             context["show_ttl"] = service.is_feature_supported("get_ttl")
@@ -800,7 +799,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
 
         if action == "delete":
             try:
-                service.delete_key(key)
+                service.delete(key)
                 messages.success(request, "Key deleted successfully.")
                 return redirect(urls.key_list_url(cache_name))
             except Exception as e:  # noqa: BLE001
@@ -813,7 +812,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     new_value = json.loads(new_value)
 
                 # Update value only (TTL is handled separately via set_ttl action)
-                result = service.edit_key(key, new_value, timeout=None)
+                result = service.set(key, new_value, timeout=None)
                 messages.success(request, result["message"])
                 return redirect(urls.key_detail_url(cache_name, key))
             except Exception as e:  # noqa: BLE001
@@ -824,7 +823,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 ttl_str = request.POST.get("ttl_value", "").strip()
                 if not ttl_str:
                     # Empty TTL = persist (no expiry)
-                    result = service.persist_key(key)
+                    result = service.persist(key)
                     if result["success"]:
                         messages.success(request, result["message"])
                     else:
@@ -835,13 +834,13 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                         messages.error(request, "TTL must be non-negative.")
                     elif ttl_int == 0:
                         # TTL of 0 = persist (no expiry)
-                        result = service.persist_key(key)
+                        result = service.persist(key)
                         if result["success"]:
                             messages.success(request, result["message"])
                         else:
                             messages.error(request, result["message"])
                     else:
-                        result = service.set_key_ttl(key, ttl_int)
+                        result = service.expire(key, ttl_int)
                         if result["success"]:
                             messages.success(request, result["message"])
                         else:
@@ -854,7 +853,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
 
         elif action == "persist":
             try:
-                result = service.persist_key(key)
+                result = service.persist(key)
                 if result["success"]:
                     messages.success(request, result["message"])
                 else:
@@ -1100,7 +1099,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             return redirect(urls.key_detail_url(cache_name, key))
 
     # GET request - display the key
-    key_result = service.get_key(key)
+    key_result = service.get(key)
 
     raw_value = key_result.get("value")
     value_is_editable = True
@@ -1131,10 +1130,10 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     ttl_expires_at = None
     type_data: dict[str, Any] = {}
     if key_exists:
-        if service.is_feature_supported("get_type"):
-            key_type = service.get_key_type(key)
-        if service.is_feature_supported("get_ttl"):
-            ttl = service.get_key_ttl(key)
+        if service.is_feature_supported("type"):
+            key_type = service.type(key)
+        if service.is_feature_supported("ttl"):
+            ttl = service.ttl(key)
             if ttl is not None and ttl >= 0:
                 ttl_expires_at = timezone.now() + timedelta(seconds=ttl)
         # Get type-specific data for non-string types
@@ -1175,12 +1174,12 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             "ttl": ttl,
             "ttl_expires_at": ttl_expires_at,
             "type_data": type_data,
-            "query_supported": service.is_feature_supported("query"),
-            "get_key_supported": service.is_feature_supported("get_key"),
-            "delete_supported": service.is_feature_supported("delete_key") and key_exists,
-            "backend_edit_supported": service.is_feature_supported("edit_key") and can_operate,
-            "edit_supported": service.is_feature_supported("edit_key") and can_operate and value_is_editable,
-            "set_ttl_supported": service.is_feature_supported("set_ttl") and key_exists,
+            "query_supported": service.is_feature_supported("keys"),
+            "get_key_supported": service.is_feature_supported("get"),
+            "delete_supported": service.is_feature_supported("delete") and key_exists,
+            "backend_edit_supported": service.is_feature_supported("set") and can_operate,
+            "edit_supported": service.is_feature_supported("set") and can_operate and value_is_editable,
+            "set_ttl_supported": service.is_feature_supported("expire") and key_exists,
             "list_ops_supported": service.is_feature_supported("list_ops") and can_operate,
             "set_ops_supported": service.is_feature_supported("set_ops") and can_operate,
             "hash_ops_supported": service.is_feature_supported("hash_ops") and can_operate,
@@ -1220,7 +1219,7 @@ def _key_add_view(
             messages.error(request, "Key name is required.")
         else:
             # Check if key already exists
-            existing = service.get_key(key_name)
+            existing = service.get(key_name)
             if existing.get("exists", False):
                 messages.warning(request, f"Key '{key_name}' already exists.")
                 return redirect(urls.key_detail_url(cache_name, key_name))
@@ -1245,7 +1244,7 @@ def _key_add_view(
             "cache_config": cache_config,
             "prefill_key": prefill_key,
             "prefill_type": prefill_type,
-            "edit_supported": service.is_feature_supported("edit_key"),
+            "edit_supported": service.is_feature_supported("set"),
             "list_ops_supported": service.is_feature_supported("list_ops"),
             "set_ops_supported": service.is_feature_supported("set_ops"),
             "hash_ops_supported": service.is_feature_supported("hash_ops"),

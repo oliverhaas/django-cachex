@@ -58,12 +58,12 @@ document.addEventListener('DOMContentLoaded', function() {
         <li>
             <a href="?{% if not help_active %}help=1{% endif %}">{% trans 'Help' %}</a>
         </li>
-        {% if abilities.info or abilities.slowlog %}
+        {% if abilities.info or abilities.slowlog_get %}
         <li>
             <a href="{% url 'admin:django_cachex_cache_change' cache_name %}">{% trans 'Cache Details' %}</a>
         </li>
         {% endif %}
-        {% if abilities.edit_key %}
+        {% if abilities.set %}
         <li>
             <a href="{% url 'admin:django_cachex_key_add' %}?cache={{ cache_name }}" class="addlink">{% trans 'Add key' %}</a>
         </li>
@@ -114,7 +114,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <form id="changelist-form" method="post">
                 {% csrf_token %}
 
-                {% if keys_data and abilities.delete_key %}
+                {% if keys_data and abilities.delete %}
                 <!-- Actions -->
                 <div class="actions">
                     <label>{% trans 'Action:' %}
@@ -134,7 +134,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <table id="result_list">
                         <thead>
                             <tr>
-                                {% if abilities.delete_key %}
+                                {% if abilities.delete %}
                                 <th scope="col" class="action-checkbox-column">
                                     <div class="text"><span><input type="checkbox" id="action-toggle"></span></div>
                                 </th>
@@ -162,7 +162,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <tbody>
                             {% for key_info in keys_data %}
                             <tr class="{% cycle 'row1' 'row2' %}">
-                                {% if abilities.delete_key %}
+                                {% if abilities.delete %}
                                 <td class="action-checkbox">
                                     <input type="checkbox" name="_selected_action" value="{{ key_info.key }}">
                                 </td>

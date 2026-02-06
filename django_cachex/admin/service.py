@@ -92,26 +92,15 @@ class CacheService:
         if self._is_native:
             return True
 
-        # Map operation names to method names on the wrapper
+        # Map composite operations to representative methods
         method_map = {
-            # View-friendly aliases
-            "query": "keys",
-            "get_key": "get",
-            "delete_key": "delete",
-            "edit_key": "set",
-            "add_key": "set",
-            "flush_cache": "clear",
-            "get_ttl": "ttl",
-            "set_ttl": "expire",
-            "get_type": "type",
-            # Composite operations - check representative method
             "list_ops": "lrange",
             "set_ops": "smembers",
             "hash_ops": "hgetall",
             "zset_ops": "zrange",
             "stream_ops": "xrange",
             "get_type_data": "type",
-            "get_size": "memory_usage",
+            "size": "memory_usage",
         }
 
         method_name = method_map.get(operation, operation)
@@ -994,19 +983,18 @@ class CacheService:
         """Get abilities dict ."""
         # Build abilities dict based on what's supported
         features = [
-            "query",
-            "get_key",
-            "delete_key",
-            "edit_key",
-            "add_key",
-            "flush_cache",
-            "get_ttl",
-            "set_ttl",
-            "get_type",
+            "keys",
+            "get",
+            "delete",
+            "set",
+            "clear",
+            "ttl",
+            "expire",
+            "type",
             "get_type_data",
-            "get_size",
+            "size",
             "info",
-            "slowlog",
+            "slowlog_get",
             "list_ops",
             "set_ops",
             "hash_ops",
@@ -1014,68 +1002,6 @@ class CacheService:
             "stream_ops",
         ]
         return {f: self.supports(f) for f in features}
-
-    def get_key(self, key: str) -> dict[str, Any]:
-        """Get a key ."""
-        return self.get(key)
-
-    def delete_key(self, key: str) -> dict[str, Any]:
-        """Delete a key ."""
-        return self.delete(key)
-
-    def edit_key(self, key: str, value: Any, timeout: float | None = None) -> dict[str, Any]:
-        """Edit a key ."""
-        return self.set(key, value, timeout)
-
-    def flush_cache(self) -> dict[str, Any]:
-        """Flush cache ."""
-        return self.clear()
-
-    def query(
-        self,
-        instance_alias: str,  # Ignored, for compatibility
-        pattern: str = "*",
-        cursor: int = 0,
-        count: int = 100,
-    ) -> dict[str, Any]:
-        """Query keys ."""
-        return self.keys(pattern, cursor, count)
-
-    def get_key_ttl(self, key: str) -> int | None:
-        """Get TTL ."""
-        try:
-            return self.ttl(key)
-        except NotSupportedError:
-            return None
-
-    def set_key_ttl(self, key: str, ttl: int) -> dict[str, Any]:
-        """Set TTL ."""
-        try:
-            return self.expire(key, ttl)
-        except NotSupportedError:
-            return {"success": False, "message": "Setting TTL is not supported."}
-
-    def persist_key(self, key: str) -> dict[str, Any]:
-        """Persist key ."""
-        try:
-            return self.persist(key)
-        except NotSupportedError:
-            return {"success": False, "message": "Persist is not supported."}
-
-    def get_key_type(self, key: str) -> str | None:
-        """Get type ."""
-        try:
-            return self.type(key)
-        except NotSupportedError:
-            return None
-
-    def get_key_size(self, key: str, key_type: str | None = None) -> int | None:
-        """Get size ."""
-        return self.size(key, key_type)
-
-    def slowlog(self, count: int = 25) -> dict[str, Any]:
-        """Get slowlog ."""
-        return self.slowlog_get(count)
 
 
 def get_cache_service(cache_name: str) -> CacheService:

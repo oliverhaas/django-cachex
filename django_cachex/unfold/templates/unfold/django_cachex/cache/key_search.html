@@ -28,7 +28,7 @@
                       shadow-xs text-sm transition-colors">
                 {% trans 'Help' %}
             </a>
-            {% if abilities.info or abilities.slowlog %}
+            {% if abilities.info or abilities.slowlog_get %}
             <a href="{% url 'admin:django_cachex_cache_change' cache_name %}"
                class="border cursor-pointer font-medium px-3 py-2 rounded-default text-center whitespace-nowrap
                       bg-white border-base-200 hover:text-primary-600
@@ -37,7 +37,7 @@
                 {% trans 'Cache Details' %}
             </a>
             {% endif %}
-            {% if abilities.edit_key %}
+            {% if abilities.set %}
             <a href="{% url 'admin:django_cachex_key_add' %}?cache={{ cache_name }}"
                class="border cursor-pointer font-medium px-3 py-2 rounded-default text-center whitespace-nowrap
                       bg-primary-600 border-transparent text-white
@@ -106,7 +106,7 @@
         <!-- Actions bar -->
         <form id="changelist-form" method="post">
             {% csrf_token %}
-            {% if abilities.delete_key %}
+            {% if abilities.delete %}
             <div class="flex items-center gap-4 px-4 py-3 bg-base-50 dark:bg-white/[.04] border-b border-base-200 dark:border-base-800">
                 <select name="action" class="border border-base-200 bg-white font-medium min-w-20 placeholder-base-400 rounded-default shadow-xs text-font-default-light text-sm px-3 py-2 dark:bg-base-900 dark:border-base-700 dark:text-font-default-dark">
                     <option value="">---------</option>
@@ -127,7 +127,7 @@
             <table class="block border-spacing-none border-separate w-full lg:table">
                 <thead class="text-font-important-light dark:text-font-important-dark hidden lg:table-header-group">
                     <tr class="bg-base-50 dark:bg-white/[.02]">
-                        {% if abilities.delete_key %}
+                        {% if abilities.delete %}
                         <th class="align-middle border-b border-base-200 font-semibold py-2 text-left whitespace-nowrap px-3 lg:table-cell dark:border-base-800 lg:w-10">
                             <input type="checkbox" id="action-toggle"
                                    class="appearance-none bg-white block border border-base-300 cursor-pointer h-4 min-w-4 relative rounded-[4px] shadow-xs w-4 hover:border-base-400 dark:bg-base-700 dark:border-base-500 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-primary-500 after:absolute after:content-['check\_small'] after:flex! after:h-4 after:items-center after:justify-center after:leading-none after:material-symbols-outlined after:-ml-px after:-mt-px after:text-white after:transition-all after:w-4 dark:after:text-base-700 checked:bg-primary-600 dark:checked:bg-primary-600 checked:border-primary-600 dark:checked:border-primary-600 checked:transition-all checked:hover:border-primary-600 dark:checked:after:text-white">
@@ -156,7 +156,7 @@
                 <tbody class="block relative lg:table-row-group">
                     {% for key_info in keys_data %}
                     <tr class="{% cycle '' 'bg-base-50 dark:bg-white/[.02]' %} block group {% if forloop.first %}first-row{% endif %} border border-base-200 mb-3 rounded-default shadow-xs lg:table-row lg:border-none lg:mb-0 lg:shadow-none dark:border-base-800 relative lg:hover:shadow-raised lg:dark:hover:shadow-raised-dark lg:hover:z-20">
-                        {% if abilities.delete_key %}
+                        {% if abilities.delete %}
                         <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800 lg:w-10" data-label="{% trans 'Select' %}">
                             <input type="checkbox" name="_selected_action" value="{{ key_info.key }}"
                                    class="appearance-none bg-white block border border-base-300 cursor-pointer h-4 min-w-4 relative rounded-[4px] shadow-xs w-4 hover:border-base-400 dark:bg-base-700 dark:border-base-500 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-primary-500 after:absolute after:content-['check\_small'] after:flex! after:h-4 after:items-center after:justify-center after:leading-none after:material-symbols-outlined after:-ml-px after:-mt-px after:text-white after:transition-all after:w-4 dark:after:text-base-700 checked:bg-primary-600 dark:checked:bg-primary-600 checked:border-primary-600 dark:checked:border-primary-600 checked:transition-all checked:hover:border-primary-600 dark:checked:after:text-white action-checkbox">

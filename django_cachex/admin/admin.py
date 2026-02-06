@@ -174,8 +174,8 @@ class CacheAdmin(_CacheBase):
                 for cache_name in selected_caches:
                     try:
                         service = get_cache_service(cache_name)
-                        if service.is_feature_supported("flush_cache"):
-                            service.flush_cache()
+                        if service.is_feature_supported("clear"):
+                            service.clear()
                             flushed_count += 1
                     except Exception as e:  # noqa: BLE001
                         messages.error(request, f"Error flushing '{cache_name}': {e!s}")
@@ -201,7 +201,7 @@ class CacheAdmin(_CacheBase):
             support_level = self._cachex_get_support_level(backend)
             try:
                 service = get_cache_service(cache.name)
-                flush_supported = service.is_feature_supported("flush_cache")
+                flush_supported = service.is_feature_supported("clear")
                 if flush_supported:
                     any_flush_supported = True
                 cache_info = {
@@ -297,7 +297,7 @@ class CacheAdmin(_CacheBase):
         slowlog_data = None
         if slowlog_supported:
             try:
-                slowlog_data = service.slowlog(10)
+                slowlog_data = service.slowlog_get(10)
             except NotImplementedError:
                 slowlog_supported = False
             except Exception as e:  # noqa: BLE001
@@ -346,7 +346,7 @@ class KeyAdmin(_KeyBase):
         cache_name = request.GET.get("cache", "default")
         try:
             service = get_cache_service(cache_name)
-            return service.is_feature_supported("edit_key")
+            return service.is_feature_supported("set")
         except Exception:  # noqa: BLE001
             return False
 
@@ -359,7 +359,7 @@ class KeyAdmin(_KeyBase):
             return False
         if obj:
             try:
-                return obj.service.is_feature_supported("delete_key")
+                return obj.service.is_feature_supported("delete")
             except Exception:  # noqa: BLE001
                 return False
         return True
