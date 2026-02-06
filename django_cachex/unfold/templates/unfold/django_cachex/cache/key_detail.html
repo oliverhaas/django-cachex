@@ -8,9 +8,9 @@
     <nav class="flex text-sm">
         <a href="{% url 'admin:index' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Home' %}</a>
         <span class="mx-2 text-base-400">/</span>
-        <a href="{% url 'django_cachex:index' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Cache Instances' %}</a>
+        <a href="{% url 'admin:django_cachex_cache_changelist' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Cache Instances' %}</a>
         <span class="mx-2 text-base-400">/</span>
-        <a href="{% url 'django_cachex:key_search' cache_name %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{{ cache_name }}</a>
+        <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{{ cache_name }}</a>
         <span class="mx-2 text-base-400">/</span>
         <span class="text-font-important-light dark:text-font-important-dark font-medium font-mono text-xs">{{ key|truncatechars:50 }}</span>
     </nav>
@@ -65,21 +65,21 @@
                 <span class="font-mono text-xs text-base-500 dark:text-base-400">{{ raw_key }}</span>
             </div>
             <!-- Type -->
-            {% if redis_type %}
+            {% if key_type %}
             <div class="flex items-center gap-3">
                 <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Type:' %}</label>
                 <span class="inline-block font-semibold h-6 leading-6 px-2 rounded-default text-[11px] uppercase whitespace-nowrap
-                    {% if redis_type == 'string' %}bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400
-                    {% elif redis_type == 'list' %}bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400
-                    {% elif redis_type == 'set' %}bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400
-                    {% elif redis_type == 'hash' %}bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400
-                    {% elif redis_type == 'zset' %}bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400
-                    {% elif redis_type == 'stream' %}bg-primary-100 text-primary-700 dark:bg-primary-500/20 dark:text-primary-400
+                    {% if key_type == 'string' %}bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400
+                    {% elif key_type == 'list' %}bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400
+                    {% elif key_type == 'set' %}bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400
+                    {% elif key_type == 'hash' %}bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400
+                    {% elif key_type == 'zset' %}bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400
+                    {% elif key_type == 'stream' %}bg-primary-100 text-primary-700 dark:bg-primary-500/20 dark:text-primary-400
                     {% else %}bg-base-100 text-base-700 dark:bg-base-500/20 dark:text-base-200{% endif %}">
-                    {{ redis_type }}
+                    {{ key_type }}
                 </span>
                 {% if type_data.length is not None %}
-                <span class="text-xs text-base-400">({{ type_data.length }} {% if redis_type == 'hash' %}{% trans 'fields' %}{% elif redis_type == 'list' %}{% trans 'items' %}{% else %}{% trans 'members' %}{% endif %})</span>
+                <span class="text-xs text-base-400">({{ type_data.length }} {% if key_type == 'hash' %}{% trans 'fields' %}{% elif key_type == 'list' %}{% trans 'items' %}{% else %}{% trans 'members' %}{% endif %})</span>
                 {% endif %}
             </div>
             {% endif %}
@@ -131,7 +131,7 @@
 
     {% if key_exists or create_mode %}
 
-    {% if redis_type == 'list' %}
+    {% if key_type == 'list' %}
     <!-- List Operations -->
     <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
         <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
@@ -252,7 +252,7 @@
         {% endif %}
     </div>
 
-    {% elif redis_type == 'hash' %}
+    {% elif key_type == 'hash' %}
     <!-- Hash Operations -->
     <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
         <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
@@ -329,7 +329,7 @@
         {% endif %}
     </div>
 
-    {% elif redis_type == 'set' %}
+    {% elif key_type == 'set' %}
     <!-- Set Operations -->
     <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
         <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
@@ -402,7 +402,7 @@
         {% endif %}
     </div>
 
-    {% elif redis_type == 'zset' %}
+    {% elif key_type == 'zset' %}
     <!-- Sorted Set Operations -->
     <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
         <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
@@ -511,7 +511,7 @@
         {% endif %}
     </div>
 
-    {% elif redis_type == 'stream' %}
+    {% elif key_type == 'stream' %}
     <!-- Stream Operations -->
     <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
         <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
@@ -638,7 +638,7 @@
 
         <!-- Actions bar for string type -->
         <div class="flex items-center justify-between">
-            <a href="{% url 'django_cachex:key_search' cache_name %}"
+            <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}"
                class="px-4 py-2 text-sm font-medium rounded-default bg-base-100 dark:bg-base-800
                       text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700 transition-colors">
                 {% trans 'Close' %}
@@ -659,9 +659,9 @@
     {% endif %}
 
     <!-- Actions bar for non-string types -->
-    {% if redis_type and redis_type != 'string' %}
+    {% if key_type and key_type != 'string' %}
     <div class="flex items-center justify-between">
-        <a href="{% url 'django_cachex:key_search' cache_name %}"
+        <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}"
            class="px-4 py-2 text-sm font-medium rounded-default bg-base-100 dark:bg-base-800
                   text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700 transition-colors">
             {% trans 'Close' %}
