@@ -75,56 +75,6 @@ class CacheService:
         """
         return "native" if self._is_native else "wrapped"
 
-    def supports(self, operation: str) -> bool:
-        """Check if an operation is supported by this cache.
-
-        This is a hint for templates to conditionally render UI elements.
-        The actual operation may still fail - views should catch NotSupportedError.
-
-        For native django-cachex backends, all operations are supported.
-        For wrapped backends, we check if the method exists and doesn't
-        immediately raise NotSupportedError.
-
-        Args:
-            operation: The operation to check (e.g., 'keys', 'ttl', 'query').
-
-        Returns:
-            True if the operation appears to be supported, False otherwise.
-        """
-        # Native backends support all operations
-        if self._is_native:
-            return True
-
-        # Map composite operations to representative methods
-        method_map = {
-            "list_ops": "lrange",
-            "set_ops": "smembers",
-            "hash_ops": "hgetall",
-            "zset_ops": "zrange",
-            "stream_ops": "xrange",
-            "get_type_data": "type",
-            "size": "memory_usage",
-        }
-
-        method_name = method_map.get(operation, operation)
-        method = getattr(self._cache, method_name, None)
-
-        if method is None:
-            return False
-
-        # For methods that require arguments, try calling with test data
-        # to see if they raise NotSupportedError immediately
-        try:
-            if method_name == "keys" or method_name in ("ttl", "type", "expire", "persist", "memory_usage"):
-                method("__test_support__")
-            # For other methods, assume supported if they exist
-            return True
-        except NotSupportedError:
-            return False
-        except Exception:  # noqa: BLE001
-            # Other errors mean the operation exists but failed for other reasons
-            return True
-
     # Metadata methods
 
     def get_cache_metadata(self) -> dict[str, Any]:
@@ -770,41 +720,6 @@ class CacheService:
         """Trim a stream to a maximum length. Returns number of entries removed."""
         cache = cast("Any", self._cache)
         return cache._cache.xtrim(key, maxlen=maxlen)
-
-    # ===========================================================================
-    # View-friendly aliases
-    # These methods provide convenient aliases used by the admin views.
-    # They delegate to the main CacheService methods.
-    # ===========================================================================
-
-    def is_feature_supported(self, feature: str) -> bool:
-        """Check if a feature is supported ."""
-        return self.supports(feature)
-
-    @property
-    def abilities(self) -> dict[str, bool]:
-        """Get abilities dict ."""
-        # Build abilities dict based on what's supported
-        features = [
-            "keys",
-            "get",
-            "delete",
-            "set",
-            "clear",
-            "ttl",
-            "expire",
-            "type",
-            "get_type_data",
-            "size",
-            "info",
-            "slowlog_get",
-            "list_ops",
-            "set_ops",
-            "hash_ops",
-            "zset_ops",
-            "stream_ops",
-        ]
-        return {f: self.supports(f) for f in features}
 
 
 def get_cache_service(cache_name: str) -> CacheService:

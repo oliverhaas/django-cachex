@@ -32,12 +32,6 @@
         </li>
     </ul>
 
-    {% if not info_supported and not slowlog_supported %}
-    <p class="errornote">
-        {% trans 'Cache info and slow log are not supported for this cache backend.' %}
-    </p>
-    {% endif %}
-
     {% if info_data %}
     <!-- Basic Configuration -->
     <fieldset class="module aligned info-section">
@@ -257,16 +251,13 @@
     {% endif %}
     {% endif %}
 
-    {% if slowlog_supported %}
+    {% if slowlog_data %}
     <!-- Slow Log Section -->
     <fieldset class="module aligned info-section">
         <h2>{% trans 'Slow Log' %}</h2>
-
-        {% if slowlog_data %}
         {% if slowlog_data.error %}
         <p class="warningnote">{{ slowlog_data.error }}</p>
-        {% else %}
-        {% if slowlog_data.entries %}
+        {% elif slowlog_data.entries %}
         <div class="results">
             <table id="result_list" style="width: 100%;">
                 <thead>
@@ -312,11 +303,6 @@
         </div>
         {% else %}
         <p class="quiet" style="padding: 10px;">{% trans 'No slow queries recorded.' %}</p>
-        {% endif %}
-
-        {% endif %}
-        {% else %}
-        <p class="quiet" style="padding: 10px;">{% trans 'No slow log data available.' %}</p>
         {% endif %}
     </fieldset>
     {% endif %}

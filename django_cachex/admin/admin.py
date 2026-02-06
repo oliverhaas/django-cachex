@@ -155,7 +155,7 @@ class CacheAdmin(_CacheBase):
         ]
         return custom_urls + urls
 
-    def changelist_view(  # noqa: C901
+    def changelist_view(
         self,
         request: HttpRequest,
         extra_context: dict[str, Any] | None = None,
@@ -174,9 +174,8 @@ class CacheAdmin(_CacheBase):
                 for cache_name in selected_caches:
                     try:
                         service = get_cache_service(cache_name)
-                        if service.is_feature_supported("clear"):
-                            service.clear()
-                            flushed_count += 1
+                        service.clear()
+                        flushed_count += 1
                     except Exception as e:  # noqa: BLE001
                         messages.error(request, f"Error flushing '{cache_name}': {e!s}")
                 if flushed_count > 0:
@@ -199,20 +198,16 @@ class CacheAdmin(_CacheBase):
         for cache in Cache.get_all():
             backend = cache.backend
             support_level = self._cachex_get_support_level(backend)
+            any_flush_supported = True
             try:
-                service = get_cache_service(cache.name)
-                flush_supported = service.is_feature_supported("clear")
-                if flush_supported:
-                    any_flush_supported = True
+                get_cache_service(cache.name)  # Verify cache is accessible
                 cache_info = {
                     "name": cache.name,
                     "config": cache.config,
                     "backend": backend,
                     "backend_short": cache.backend_short,
                     "location": cache.location,
-                    "abilities": service.abilities,
                     "support_level": support_level,
-                    "flush_supported": flush_supported,
                 }
                 caches_info.append(cache_info)
             except Exception as e:  # noqa: BLE001
@@ -222,9 +217,7 @@ class CacheAdmin(_CacheBase):
                     "backend": backend,
                     "backend_short": cache.backend_short,
                     "location": cache.location,
-                    "abilities": {},
                     "support_level": support_level,
-                    "flush_supported": False,
                     "error": str(e),
                 }
                 caches_info.append(cache_info)
@@ -280,28 +273,20 @@ class CacheAdmin(_CacheBase):
         service = get_cache_service(cache_name)
 
         # Get cache metadata and info
-        info_supported = service.is_feature_supported("info")
         info_data = None
         raw_info = None
-        if info_supported:
-            try:
-                info_data = service.metadata()
-                raw_info = service.info()
-            except NotImplementedError:
-                info_supported = False
-            except Exception as e:  # noqa: BLE001
-                messages.error(request, f"Error retrieving cache info: {e!s}")
+        try:
+            info_data = service.metadata()
+            raw_info = service.info()
+        except Exception as e:  # noqa: BLE001
+            messages.error(request, f"Error retrieving cache info: {e!s}")
 
         # Get slowlog (last 10 entries)
-        slowlog_supported = service.is_feature_supported("slowlog")
         slowlog_data = None
-        if slowlog_supported:
-            try:
-                slowlog_data = service.slowlog_get(10)
-            except NotImplementedError:
-                slowlog_supported = False
-            except Exception as e:  # noqa: BLE001
-                messages.error(request, f"Error retrieving slow log: {e!s}")
+        try:
+            slowlog_data = service.slowlog_get(10)
+        except Exception as e:  # noqa: BLE001
+            messages.error(request, f"Error retrieving slow log: {e!s}")
 
         # Convert raw_info to pretty-printed JSON for display
         raw_info_json = None
@@ -313,10 +298,8 @@ class CacheAdmin(_CacheBase):
             "title": f"Cache: {cache_name}",
             "cache_name": cache_name,
             "cache_obj": cache_obj,
-            "info_supported": info_supported,
             "info_data": info_data,
             "raw_info_json": raw_info_json,
-            "slowlog_supported": slowlog_supported,
             "slowlog_data": slowlog_data,
             "help_active": help_active,
             "opts": self.model._meta,
@@ -341,28 +324,14 @@ class KeyAdmin(_KeyBase):
         return False
 
     def has_add_permission(self, request: HttpRequest) -> bool:
-        if not getattr(request.user, "is_staff", False):
-            return False
-        cache_name = request.GET.get("cache", "default")
-        try:
-            service = get_cache_service(cache_name)
-            return service.is_feature_supported("set")
-        except Exception:  # noqa: BLE001
-            return False
+        return bool(getattr(request.user, "is_staff", False))
 
     def has_delete_permission(
         self,
         request: HttpRequest,
         obj: Key | None = None,
     ) -> bool:
-        if not getattr(request.user, "is_staff", False):
-            return False
-        if obj:
-            try:
-                return obj.service.is_feature_supported("delete")
-            except Exception:  # noqa: BLE001
-                return False
-        return True
+        return bool(getattr(request.user, "is_staff", False))
 
     def has_change_permission(
         self,

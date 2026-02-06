@@ -58,16 +58,12 @@ document.addEventListener('DOMContentLoaded', function() {
         <li>
             <a href="?{% if not help_active %}help=1{% endif %}">{% trans 'Help' %}</a>
         </li>
-        {% if abilities.info or abilities.slowlog_get %}
         <li>
             <a href="{% url 'admin:django_cachex_cache_change' cache_name %}">{% trans 'Cache Details' %}</a>
         </li>
-        {% endif %}
-        {% if abilities.set %}
         <li>
             <a href="{% url 'admin:django_cachex_key_add' %}?cache={{ cache_name }}" class="addlink">{% trans 'Add key' %}</a>
         </li>
-        {% endif %}
         {% endblock %}
     </ul>
     {% endblock %}
@@ -83,17 +79,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 {% if error_message %}
                 <p class="errornote">{{ error_message }}</p>
-                {% endif %}
-
-                <!-- Warning messages for limited support -->
-                {% if not query_supported and not get_key_supported %}
-                <p class="errornote" style="background: var(--message-warning-bg); border-color: var(--body-quiet-color);">
-                    {% trans 'Key Operations Not Available: This cache backend does not support listing keys or performing exact key lookups.' %}
-                </p>
-                {% elif not query_supported %}
-                <p class="errornote" style="background: var(--message-warning-bg); border-color: var(--body-quiet-color);">
-                    {% trans 'Key Listing Not Available: This cache backend does not support listing all keys. You can still perform exact key lookups using the search box below.' %}
-                </p>
                 {% endif %}
 
                 <!-- Search Form -->
@@ -114,7 +99,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <form id="changelist-form" method="post">
                 {% csrf_token %}
 
-                {% if keys_data and abilities.delete %}
+                {% if keys_data %}
                 <!-- Actions -->
                 <div class="actions">
                     <label>{% trans 'Action:' %}
@@ -134,11 +119,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     <table id="result_list">
                         <thead>
                             <tr>
-                                {% if abilities.delete %}
                                 <th scope="col" class="action-checkbox-column">
                                     <div class="text"><span><input type="checkbox" id="action-toggle"></span></div>
                                 </th>
-                                {% endif %}
                                 <th scope="col">
                                     <div class="text"><span>{% trans 'Key' %}</span></div>
                                 </th>
@@ -162,11 +145,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         <tbody>
                             {% for key_info in keys_data %}
                             <tr class="{% cycle 'row1' 'row2' %}">
-                                {% if abilities.delete %}
                                 <td class="action-checkbox">
                                     <input type="checkbox" name="_selected_action" value="{{ key_info.key }}">
                                 </td>
-                                {% endif %}
                                 <th scope="row">
                                     <a href="{% url 'admin:django_cachex_key_change' key_info.pk %}"><code>{{ key_info.key }}</code></a>
                                 </th>

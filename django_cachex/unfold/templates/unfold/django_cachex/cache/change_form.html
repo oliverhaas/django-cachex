@@ -37,14 +37,6 @@
         </div>
     </div>
 
-    {% if not info_supported and not slowlog_supported %}
-    <div class="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-default">
-        <p class="text-yellow-700 dark:text-yellow-400">
-            {% trans 'Cache info and slow log are not supported for this cache backend.' %}
-        </p>
-    </div>
-    {% endif %}
-
     {% if info_data %}
     <!-- Configuration Section -->
     <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
@@ -312,14 +304,12 @@
     {% endif %}
     {% endif %}
 
-    {% if slowlog_supported %}
+    {% if slowlog_data %}
     <!-- Slow Log Section -->
     <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
         <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
             <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">{% trans 'Slow Log' %}</h2>
         </div>
-
-        {% if slowlog_data %}
         {% if slowlog_data.error %}
         <div class="p-4 bg-yellow-50 dark:bg-yellow-900/20">
             <p class="text-yellow-700 dark:text-yellow-400">{{ slowlog_data.error }}</p>
@@ -372,9 +362,6 @@
         {% else %}
         <p class="p-4 text-base-500 dark:text-base-400">{% trans 'No slow queries recorded.' %}</p>
         {% endif %}
-        {% endif %}
-        {% else %}
-        <p class="p-4 text-base-500 dark:text-base-400">{% trans 'No slow log data available.' %}</p>
         {% endif %}
     </div>
     {% endif %}

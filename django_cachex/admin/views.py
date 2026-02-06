@@ -442,7 +442,7 @@ def _get_page_range(
     return pages
 
 
-def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:  # noqa: C901
+def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:
     """Display all configured cache instances with their capabilities.
 
     This is the internal implementation; use index() for the decorated admin view.
@@ -481,20 +481,16 @@ def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:  # no
         cache_obj = Cache.get_by_name(cache_name)
         backend = str(cache_config.get("BACKEND", "Unknown"))
         support_level = cache_obj.support_level if cache_obj else "limited"
+        any_flush_supported = True
         try:
-            service = get_cache_service(cache_name)
-            flush_supported = service.is_feature_supported("clear")
-            if flush_supported:
-                any_flush_supported = True
+            get_cache_service(cache_name)  # Verify cache is accessible
             cache_info = {
                 "name": cache_name,
                 "config": cache_config,
                 "backend": backend,
                 "backend_short": backend.rsplit(".", 1)[-1] if "." in backend else backend,
                 "location": cache_config.get("LOCATION", ""),
-                "abilities": service.abilities,
                 "support_level": support_level,
-                "flush_supported": flush_supported,
             }
             caches_info.append(cache_info)
         except Exception as e:  # noqa: BLE001
@@ -504,9 +500,7 @@ def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:  # no
                 "backend": backend,
                 "backend_short": backend.rsplit(".", 1)[-1] if "." in backend else backend,
                 "location": cache_config.get("LOCATION", ""),
-                "abilities": {},
                 "support_level": support_level,
-                "flush_supported": False,
                 "error": str(e),
             }
             caches_info.append(cache_info)
@@ -567,31 +561,23 @@ def _cache_detail_view(
     service = get_cache_service(cache_name)
 
     # Get cache metadata and info
-    info_supported = service.is_feature_supported("info")
     info_data = None
     raw_info = None
-    if info_supported:
-        try:
-            info_data = service.metadata()
-            raw_info = service.info()
-        except NotImplementedError:
-            info_supported = False
-        except Exception as e:  # noqa: BLE001
-            messages.error(request, f"Error retrieving cache info: {e!s}")
+    try:
+        info_data = service.metadata()
+        raw_info = service.info()
+    except Exception as e:  # noqa: BLE001
+        messages.error(request, f"Error retrieving cache info: {e!s}")
 
     # Get slowlog count from query param (default 10)
     slowlog_count = int(request.GET.get("count", 10))
 
     # Get slowlog entries
-    slowlog_supported = service.is_feature_supported("slowlog")
     slowlog_data = None
-    if slowlog_supported:
-        try:
-            slowlog_data = service.slowlog_get(slowlog_count)
-        except NotImplementedError:
-            slowlog_supported = False
-        except Exception as e:  # noqa: BLE001
-            messages.error(request, f"Error retrieving slow log: {e!s}")
+    try:
+        slowlog_data = service.slowlog_get(slowlog_count)
+    except Exception as e:  # noqa: BLE001
+        messages.error(request, f"Error retrieving slow log: {e!s}")
 
     # Convert raw_info to pretty-printed JSON for display
     raw_info_json = None
@@ -604,10 +590,8 @@ def _cache_detail_view(
             "title": f"Cache: {cache_name}",
             "cache_name": cache_name,
             "cache_obj": cache_obj,
-            "info_supported": info_supported,
             "info_data": info_data,
             "raw_info_json": raw_info_json,
-            "slowlog_supported": slowlog_supported,
             "slowlog_data": slowlog_data,
             "slowlog_count": slowlog_count,
             "help_active": help_active,
@@ -682,9 +666,6 @@ def _key_search_view(  # noqa: C901, PLR0912, PLR0915
             "title": f"Keys in '{cache_name}'",
             "cache_name": cache_name,
             "cache_config": cache_config,
-            "query_supported": service.is_feature_supported("keys"),
-            "get_key_supported": service.is_feature_supported("get"),
-            "abilities": service.abilities,
             "help_active": help_active,
         },
     )
@@ -698,78 +679,73 @@ def _key_search_view(  # noqa: C901, PLR0912, PLR0915
     context["cursor"] = cursor
 
     # Handle pattern search (auto-wrap in wildcards for Django-style contains search)
-    if service.is_feature_supported("keys"):
-        if search_query:
-            # Auto-wrap in wildcards if none present (Django-style contains search)
-            if "*" not in search_query and "?" not in search_query:
-                pattern = f"*{search_query}*"
-            else:
-                pattern = search_query
+    if search_query:
+        # Auto-wrap in wildcards if none present (Django-style contains search)
+        if "*" not in search_query and "?" not in search_query:
+            pattern = f"*{search_query}*"
         else:
-            pattern = "*"
-        try:
-            query_result = service.keys(
-                pattern=pattern,
-                cursor=cursor,
-                count=count,
-            )
+            pattern = search_query
+    else:
+        pattern = "*"
+    try:
+        query_result = service.keys(
+            pattern=pattern,
+            cursor=cursor,
+            count=count,
+        )
 
-            keys = query_result["keys"]
-            next_cursor = query_result["next_cursor"]
-            total_count = query_result.get("total_count")  # May be None for SCAN
-            error = query_result.get("error")
+        keys = query_result["keys"]
+        next_cursor = query_result["next_cursor"]
+        total_count = query_result.get("total_count")  # May be None for SCAN
+        error = query_result.get("error")
 
-            if error:
-                context["error"] = error
+        if error:
+            context["error"] = error
 
-            keys_data = []
-            for key_item in keys:
-                if isinstance(key_item, dict):
-                    user_key = key_item["key"]
-                    redis_key = key_item.get("redis_key")
-                else:
-                    user_key = key_item
-                    redis_key = None
+        keys_data = []
+        for key_item in keys:
+            if isinstance(key_item, dict):
+                user_key = key_item["key"]
+                redis_key = key_item.get("redis_key")
+            else:
+                user_key = key_item
+                redis_key = None
 
-                key_entry: dict[str, Any] = {
-                    "key": user_key,
-                    "pk": Key.make_pk(cache_name, user_key),
-                }
-                if redis_key:
-                    key_entry["redis_key"] = redis_key
-                keys_data.append(key_entry)
+            key_entry: dict[str, Any] = {
+                "key": user_key,
+                "pk": Key.make_pk(cache_name, user_key),
+            }
+            if redis_key:
+                key_entry["redis_key"] = redis_key
+            keys_data.append(key_entry)
 
-            # Fetch TTL, type, and size for displayed keys
-            if keys_data:
-                for key_entry in keys_data:
-                    user_key = key_entry["key"]
-                    key_type = None
-                    if service.is_feature_supported("ttl"):
-                        ttl = service.ttl(user_key)
-                        key_entry["ttl"] = ttl
-                        if ttl is not None and ttl >= 0:
-                            key_entry["ttl_expires_at"] = timezone.now() + timedelta(seconds=ttl)
-                    if service.is_feature_supported("type"):
-                        key_type = service.type(user_key)
-                        key_entry["type"] = key_type
-                    if service.is_feature_supported("size"):
-                        key_entry["size"] = service.size(user_key, key_type)
+        # Fetch TTL, type, and size for displayed keys
+        for key_entry in keys_data:
+            user_key = key_entry["key"]
+            key_type = None
+            with contextlib.suppress(Exception):
+                ttl = service.ttl(user_key)
+                key_entry["ttl"] = ttl
+                if ttl is not None and ttl >= 0:
+                    key_entry["ttl_expires_at"] = timezone.now() + timedelta(seconds=ttl)
+            with contextlib.suppress(Exception):
+                key_type = service.type(user_key)
+                key_entry["type"] = key_type
+            with contextlib.suppress(Exception):
+                key_entry["size"] = service.size(user_key, key_type)
 
-            context["keys_data"] = keys_data
-            context["show_ttl"] = service.is_feature_supported("get_ttl")
-            context["show_type"] = service.is_feature_supported("get_type")
-            context["show_size"] = service.is_feature_supported("get_size")
-            context["total_keys"] = total_count  # May be None
-            context["keys_count"] = len(keys_data)
+        context["keys_data"] = keys_data
+        context["total_keys"] = total_count  # May be None
+        context["keys_count"] = len(keys_data)
 
-            # Cursor-based pagination
-            context["next_cursor"] = next_cursor
-            context["has_next"] = next_cursor != 0
-            context["has_previous"] = cursor > 0
+        # Cursor-based pagination
+        context["next_cursor"] = next_cursor
+        context["has_next"] = next_cursor != 0
+        context["has_previous"] = cursor > 0
 
-        except Exception:
-            logger.exception("Error querying cache '%s'", cache_name)
-            context["error_message"] = "An error occurred while querying the cache."
+    except Exception:
+        logger.exception("Error querying cache '%s'", cache_name)
+        context["error_message"] = "An error occurred while querying the cache."
 
     return render(request, config.template("cache/key_search.html"), context)
 
@@ -1177,9 +1153,9 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     ttl_expires_at = None
     type_data: dict[str, Any] = {}
     if key_exists:
-        if service.is_feature_supported("type"):
+        with contextlib.suppress(Exception):
             key_type = service.type(key)
-        if service.is_feature_supported("ttl"):
+        with contextlib.suppress(Exception):
             ttl = service.ttl(key)
             if ttl is not None and ttl >= 0:
                 ttl_expires_at = timezone.now() + timedelta(seconds=ttl)
@@ -1221,17 +1197,15 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             "ttl": ttl,
             "ttl_expires_at": ttl_expires_at,
             "type_data": type_data,
-            "query_supported": service.is_feature_supported("keys"),
-            "get_key_supported": service.is_feature_supported("get"),
-            "delete_supported": service.is_feature_supported("delete") and key_exists,
-            "backend_edit_supported": service.is_feature_supported("set") and can_operate,
-            "edit_supported": service.is_feature_supported("set") and can_operate and value_is_editable,
-            "set_ttl_supported": service.is_feature_supported("expire") and key_exists,
-            "list_ops_supported": service.is_feature_supported("list_ops") and can_operate,
-            "set_ops_supported": service.is_feature_supported("set_ops") and can_operate,
-            "hash_ops_supported": service.is_feature_supported("hash_ops") and can_operate,
-            "zset_ops_supported": service.is_feature_supported("zset_ops") and can_operate,
-            "stream_ops_supported": service.is_feature_supported("stream_ops") and can_operate,
+            "delete_supported": key_exists,
+            "backend_edit_supported": can_operate,
+            "edit_supported": can_operate and value_is_editable,
+            "set_ttl_supported": key_exists,
+            "list_ops_supported": can_operate,
+            "set_ops_supported": can_operate,
+            "hash_ops_supported": can_operate,
+            "zset_ops_supported": can_operate,
+            "stream_ops_supported": can_operate,
             "help_active": help_active,
         },
     )
@@ -1291,11 +1265,6 @@ def _key_add_view(
             "cache_config": cache_config,
             "prefill_key": prefill_key,
             "prefill_type": prefill_type,
-            "edit_supported": service.is_feature_supported("set"),
-            "list_ops_supported": service.is_feature_supported("list_ops"),
-            "set_ops_supported": service.is_feature_supported("set_ops"),
-            "hash_ops_supported": service.is_feature_supported("hash_ops"),
-            "zset_ops_supported": service.is_feature_supported("zset_ops"),
             "help_active": help_active,
         },
     )
