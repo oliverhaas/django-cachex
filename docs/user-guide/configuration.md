@@ -36,10 +36,6 @@ All backends are in `django_cachex.cache`.
     Valkey and Redis are fully compatible - you can use either backend with either server.
     We recommend Valkey as it remains fully open source.
 
-!!! warning "ValkeySentinelCache"
-    `ValkeySentinelCache` is currently unavailable due to an upstream bug in valkey-py.
-    Use `RedisSentinelCache` with your Valkey server instead (protocol compatible).
-
 ## LOCATION
 
 Server URL(s). Supports multiple formats:

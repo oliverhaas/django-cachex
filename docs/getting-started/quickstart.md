@@ -26,10 +26,6 @@ CACHES = {
     Valkey and Redis are fully compatible - you can use either backend with either server.
     We recommend Valkey as it remains fully open source.
 
-!!! warning "ValkeySentinelCache"
-    `ValkeySentinelCache` is currently unavailable due to an upstream bug in valkey-py.
-    Use `RedisSentinelCache` with your Valkey server instead (protocol compatible).
-
 ## Connection URL Formats
 
 django-cachex uses the valkey-py/redis-py native URL notation for connection strings:

@@ -43,8 +43,11 @@ except ImportError:
 _VALKEY_AVAILABLE = False
 try:
     import valkey
-    from valkey.sentinel import Sentinel as ValkeySentinel  # noqa: F401
-    from valkey.sentinel import SentinelConnectionPool as ValkeySentinelConnectionPool  # noqa: F401
+    from valkey.asyncio import Valkey as AsyncValkeyClient
+    from valkey.asyncio.sentinel import Sentinel as AsyncValkeySentinel
+    from valkey.asyncio.sentinel import SentinelConnectionPool as AsyncValkeySentinelConnectionPool
+    from valkey.sentinel import Sentinel as ValkeySentinel
+    from valkey.sentinel import SentinelConnectionPool as ValkeySentinelConnectionPool
 
     _VALKEY_AVAILABLE = True
 except ImportError:
@@ -389,35 +392,107 @@ else:
             )
 
 
-# NOTE: ValkeySentinelCacheClient is not currently provided due to a bug in valkey-py.
-# The valkey-py library's SentinelManagedConnection is missing the `_get_from_local_cache`
-# method which causes AttributeError when using Sentinel connections.
-# See: https://github.com/valkey-io/valkey-py/issues
-# Once the upstream bug is fixed, we can re-enable this.
+if _VALKEY_AVAILABLE:
 
+    class ValkeySentinelCacheClient(KeyValueSentinelCacheClient):
+        """Valkey Sentinel cache client.
 
-class ValkeySentinelCacheClient(ValkeyCacheClient):  # ty: ignore[unsupported-base]
-    """Valkey Sentinel cache client (currently unavailable due to valkey-py bug)."""
+        Extends KeyValueSentinelCacheClient with Valkey-specific classes.
+        Automatically discovers primary and replica nodes via Valkey Sentinel.
+        """
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        raise NotImplementedError(
-            "ValkeySentinelCacheClient is currently unavailable due to a bug in valkey-py. "
-            "The SentinelManagedConnection class is missing the '_get_from_local_cache' method. "
-            "Use RedisSentinelCacheClient with a Valkey server instead (protocol compatible), "
-            "or wait for an upstream fix in valkey-py.",
-        )
+        _lib = valkey
+        _client_class = valkey.Valkey
+        _pool_class = ValkeySentinelConnectionPool
+        _sentinel_class = ValkeySentinel
+        _sentinel_pool_class = ValkeySentinelConnectionPool
+        _async_client_class = AsyncValkeyClient
+        _async_sentinel_class = AsyncValkeySentinel
+        _async_sentinel_pool_class = AsyncValkeySentinelConnectionPool
 
+    class ValkeySentinelCache(KeyValueSentinelCache):
+        """Django cache backend for Valkey Sentinel high availability.
 
-class ValkeySentinelCache(ValkeyCache):
-    """Valkey Sentinel cache backend (currently unavailable due to valkey-py bug)."""
+        Valkey Sentinel provides automatic failover and service discovery for Valkey.
+        When the primary server fails, Sentinel promotes a replica to primary and
+        updates clients automatically.
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        raise NotImplementedError(
-            "ValkeySentinelCache is currently unavailable due to a bug in valkey-py. "
-            "The SentinelManagedConnection class is missing the '_get_from_local_cache' method. "
-            "Use RedisSentinelCache with a Valkey server instead (protocol compatible), "
-            "or wait for an upstream fix in valkey-py.",
-        )
+        Requirements:
+            Requires valkey-py to be installed::
+
+                pip install valkey
+
+        How it Works:
+            - Sentinel monitors Valkey primary and replica nodes
+            - On primary failure, Sentinel elects a new primary
+            - The cache backend automatically discovers the current primary
+            - Reads can be directed to replicas for better performance
+
+        Example:
+            Basic configuration with Sentinel service name::
+
+                CACHES = {
+                    "default": {
+                        "BACKEND": "django_cachex.client.ValkeySentinelCache",
+                        "LOCATION": "valkey://mymaster/0",  # Service name, not hostname
+                        "OPTIONS": {
+                            "sentinels": [
+                                ("sentinel1.example.com", 26379),
+                                ("sentinel2.example.com", 26379),
+                                ("sentinel3.example.com", 26379),
+                            ],
+                        }
+                    }
+                }
+
+            With authentication and additional options::
+
+                CACHES = {
+                    "default": {
+                        "BACKEND": "django_cachex.client.ValkeySentinelCache",
+                        "LOCATION": "valkey://mymaster/0",
+                        "OPTIONS": {
+                            "sentinels": [
+                                ("sentinel1.example.com", 26379),
+                                ("sentinel2.example.com", 26379),
+                            ],
+                            "sentinel_kwargs": {
+                                "password": "sentinel-password",
+                            },
+                            "password": "valkey-password",
+                        }
+                    }
+                }
+
+        Note:
+            The ``LOCATION`` should use the Sentinel service name (e.g., "mymaster")
+            as the hostname, not the actual Valkey server hostname. Sentinel will
+            resolve the service name to the current primary's address.
+
+        See Also:
+            - ``ValkeyCache``: For standalone Valkey servers
+            - ``ValkeyClusterCache``: For Valkey Cluster horizontal scaling
+        """
+
+        _class = ValkeySentinelCacheClient
+
+else:
+
+    class ValkeySentinelCacheClient(ValkeyCacheClient):  # type: ignore[no-redef]  # ty: ignore[unsupported-base]
+        """Valkey Sentinel cache client (requires valkey-py to be installed)."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise ImportError(
+                "ValkeySentinelCacheClient requires valkey-py to be installed. Install it with: pip install valkey",
+            )
+
+    class ValkeySentinelCache(ValkeyCache):  # type: ignore[no-redef]
+        """Valkey Sentinel cache backend (requires valkey-py to be installed)."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise ImportError(
+                "ValkeySentinelCache requires valkey-py to be installed. Install it with: pip install valkey",
+            )
 
 
 # =============================================================================

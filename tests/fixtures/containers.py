@@ -149,7 +149,14 @@ def _start_cluster_container(base_port: int) -> ContainerInfo:
 
 
 def _start_sentinel_container(image: str, redis_internal_ip: str) -> ContainerInfo:
-    """Start a Redis Sentinel container with the given image."""
+    """Start a Sentinel container with the given image.
+
+    Uses redis-sentinel for Redis images and valkey-sentinel for Valkey images.
+    """
+    # Determine sentinel command based on image
+    is_valkey = "valkey" in image.lower()
+    sentinel_cmd = "valkey-sentinel" if is_valkey else "redis-sentinel"
+
     sentinel_conf = f"""
 sentinel monitor mymaster {redis_internal_ip} 6379 1
 sentinel down-after-milliseconds mymaster 5000
@@ -159,7 +166,7 @@ sentinel parallel-syncs mymaster 1
     container = DockerContainer(image)
     container.with_exposed_ports(26379)
     container.with_command(
-        f"sh -c 'echo \"{sentinel_conf}\" > /tmp/sentinel.conf && redis-sentinel /tmp/sentinel.conf --port 26379'",
+        f"sh -c 'echo \"{sentinel_conf}\" > /tmp/sentinel.conf && {sentinel_cmd} /tmp/sentinel.conf --port 26379'",
     )
     container.start()
     wait_for_logs(container, r"\+monitor master")
