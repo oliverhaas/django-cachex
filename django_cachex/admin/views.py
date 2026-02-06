@@ -2,6 +2,8 @@
 Views for the django-cachex cache admin.
 
 Provides cache inspection and management functionality.
+These views can be configured with different template prefixes and URL builders
+to support both the standard Django admin and alternative admin themes like Unfold.
 """
 
 from __future__ import annotations
@@ -9,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+from abc import ABC, abstractmethod
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -27,25 +30,138 @@ if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
 
 
+# =============================================================================
+# URL Builder Abstraction
+# =============================================================================
+
+
+class UrlBuilder(ABC):
+    """Abstract base class for URL generation."""
+
+    @abstractmethod
+    def cache_list_url(self) -> str:
+        """URL for the cache list/index page."""
+        ...
+
+    @abstractmethod
+    def key_list_url(self, cache_name: str) -> str:
+        """URL for the key list/search page."""
+        ...
+
+    @abstractmethod
+    def key_detail_url(self, cache_name: str, key: str) -> str:
+        """URL for the key detail page."""
+        ...
+
+    @abstractmethod
+    def key_add_url(self, cache_name: str) -> str:
+        """URL for the key add page."""
+        ...
+
+
+class AdminUrlBuilder(UrlBuilder):
+    """URL builder for Django admin integration."""
+
+    def cache_list_url(self) -> str:
+        return reverse("admin:django_cachex_cache_changelist")
+
+    def key_list_url(self, cache_name: str) -> str:
+        return reverse("admin:django_cachex_key_changelist") + f"?cache={cache_name}"
+
+    def key_detail_url(self, cache_name: str, key: str) -> str:
+        pk = Key.make_pk(cache_name, key)
+        return reverse("admin:django_cachex_key_change", args=[pk])
+
+    def key_add_url(self, cache_name: str) -> str:
+        return reverse("admin:django_cachex_key_add") + f"?cache={cache_name}"
+
+
+class StandaloneUrlBuilder(UrlBuilder):
+    """URL builder for standalone/unfold integration."""
+
+    def __init__(self, namespace: str = "django_cachex"):
+        self.namespace = namespace
+
+    def cache_list_url(self) -> str:
+        return reverse(f"{self.namespace}:index")
+
+    def key_list_url(self, cache_name: str) -> str:
+        return reverse(f"{self.namespace}:key_search", args=[cache_name])
+
+    def key_detail_url(self, cache_name: str, key: str) -> str:
+        return reverse(f"{self.namespace}:key_detail", args=[cache_name, key])
+
+    def key_add_url(self, cache_name: str) -> str:
+        return reverse(f"{self.namespace}:key_add", args=[cache_name])
+
+
+# Default URL builder for admin views
+_admin_url_builder = AdminUrlBuilder()
+
+
 def _admin_cache_list_url() -> str:
     """Get the admin URL for the cache list page."""
-    return reverse("admin:django_cachex_cache_changelist")
+    return _admin_url_builder.cache_list_url()
 
 
 def _admin_key_list_url(cache_name: str) -> str:
     """Get the admin URL for the key list page."""
-    return reverse("admin:django_cachex_key_changelist") + f"?cache={cache_name}"
+    return _admin_url_builder.key_list_url(cache_name)
 
 
 def _admin_key_detail_url(cache_name: str, key: str) -> str:
     """Get the admin URL for the key detail page."""
-    pk = Key.make_pk(cache_name, key)
-    return reverse("admin:django_cachex_key_change", args=[pk])
+    return _admin_url_builder.key_detail_url(cache_name, key)
 
 
 def _admin_key_add_url(cache_name: str) -> str:
     """Get the admin URL for the key add page."""
-    return reverse("admin:django_cachex_key_add") + f"?cache={cache_name}"
+    return _admin_url_builder.key_add_url(cache_name)
+
+
+# =============================================================================
+# View Configuration
+# =============================================================================
+
+
+class ViewConfig:
+    """Configuration for cache admin views.
+
+    Holds template prefix and URL builder configuration to support
+    both Django admin and alternative admin themes.
+
+    Args:
+        template_prefix: Base path for templates (e.g., "admin/django_cachex")
+        url_builder: URL builder for generating URLs
+        template_overrides: Dict mapping canonical names to actual template paths.
+            Use this when template names differ between themes.
+    """
+
+    def __init__(
+        self,
+        template_prefix: str = "admin/django_cachex",
+        url_builder: UrlBuilder | None = None,
+        template_overrides: dict[str, str] | None = None,
+    ):
+        self.template_prefix = template_prefix.rstrip("/")
+        self.url_builder = url_builder or AdminUrlBuilder()
+        self.template_overrides = template_overrides or {}
+
+    def template(self, name: str) -> str:
+        """Get the full template path for a template name.
+
+        Checks template_overrides first, then falls back to prefix + name.
+        """
+        if name in self.template_overrides:
+            return f"{self.template_prefix}/{self.template_overrides[name]}"
+        return f"{self.template_prefix}/{name}"
+
+
+# Default configuration for standard Django admin
+ADMIN_CONFIG = ViewConfig(
+    template_prefix="admin/django_cachex",
+    url_builder=AdminUrlBuilder(),
+)
 
 
 logger = logging.getLogger(__name__)
@@ -326,9 +442,11 @@ def _get_page_range(
     return pages
 
 
-@staff_member_required
-def index(request: HttpRequest) -> HttpResponse:  # noqa: C901
-    """Display all configured cache instances with their capabilities."""
+def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:  # noqa: C901
+    """Display all configured cache instances with their capabilities.
+
+    This is the internal implementation; use index() for the decorated admin view.
+    """
     # Show help message if requested
     help_active = _show_help(request, "index")
 
@@ -351,7 +469,7 @@ def index(request: HttpRequest) -> HttpResponse:  # noqa: C901
                     request,
                     f"Successfully flushed {flushed_count} cache(s).",
                 )
-            return redirect(_admin_cache_list_url())
+            return redirect(config.url_builder.cache_list_url())
 
     # Get filter parameters
     support_filter = request.GET.get("support", "").strip()
@@ -419,24 +537,44 @@ def index(request: HttpRequest) -> HttpResponse:  # noqa: C901
             "help_active": help_active,
         },
     )
-    return render(request, "admin/django_cachex/cache/index.html", context)
+    return render(request, config.template("cache/index.html"), context)
 
 
 @staff_member_required
-def help_view(request: HttpRequest) -> HttpResponse:
-    """Display help information about the cache admin."""
+def index(request: HttpRequest) -> HttpResponse:
+    """Display all configured cache instances with their capabilities."""
+    return _index_view(request, ADMIN_CONFIG)
+
+
+def _help_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:
+    """Display help information about the cache admin.
+
+    This is the internal implementation; use help_view() for the decorated admin view.
+    """
     context = admin.site.each_context(request)
     context.update(
         {
             "title": "Cache Admin - Help",
         },
     )
-    return render(request, "admin/django_cachex/cache/help.html", context)
+    return render(request, config.template("cache/help.html"), context)
 
 
 @staff_member_required
-def key_search(request: HttpRequest, cache_name: str) -> HttpResponse:  # noqa: C901, PLR0912, PLR0915
-    """View for searching/browsing cache keys."""
+def help_view(request: HttpRequest) -> HttpResponse:
+    """Display help information about the cache admin."""
+    return _help_view(request, ADMIN_CONFIG)
+
+
+def _key_search_view(  # noqa: C901, PLR0912, PLR0915
+    request: HttpRequest,
+    cache_name: str,
+    config: ViewConfig,
+) -> HttpResponse:
+    """View for searching/browsing cache keys.
+
+    This is the internal implementation; use key_search() for the decorated admin view.
+    """
     # Show help message if requested
     help_active = _show_help(request, "key_search")
 
@@ -460,7 +598,7 @@ def key_search(request: HttpRequest, cache_name: str) -> HttpResponse:  # noqa: 
                         request,
                         f"Successfully deleted {deleted_count} key(s).",
                     )
-            return redirect(_admin_key_list_url(cache_name))
+            return redirect(config.url_builder.key_list_url(cache_name))
 
     context = admin.site.each_context(request)
     context.update(
@@ -558,13 +696,27 @@ def key_search(request: HttpRequest, cache_name: str) -> HttpResponse:  # noqa: 
             logger.exception("Error querying cache '%s'", cache_name)
             context["error_message"] = "An error occurred while querying the cache."
 
-    return render(request, "admin/django_cachex/cache/key_search.html", context)
+    return render(request, config.template("cache/key_search.html"), context)
 
 
 @staff_member_required
-def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:  # noqa: C901, PLR0911, PLR0912, PLR0915
-    """View for displaying the details of a specific cache key."""
+def key_search(request: HttpRequest, cache_name: str) -> HttpResponse:
+    """View for searching/browsing cache keys."""
+    return _key_search_view(request, cache_name, ADMIN_CONFIG)
+
+
+def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
+    request: HttpRequest,
+    cache_name: str,
+    key: str,
+    config: ViewConfig,
+) -> HttpResponse:
+    """View for displaying the details of a specific cache key.
+
+    This is the internal implementation; use key_detail() for the decorated admin view.
+    """
     service = get_cache_service(cache_name)
+    urls = config.url_builder
 
     # Handle POST requests (update or delete)
     if request.method == "POST":
@@ -574,7 +726,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
             try:
                 service.delete_key(key)
                 messages.success(request, "Key deleted successfully.")
-                return redirect(_admin_key_list_url(cache_name))
+                return redirect(urls.key_list_url(cache_name))
             except Exception as e:  # noqa: BLE001
                 messages.error(request, f"Error deleting key: {e!s}")
 
@@ -587,9 +739,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                 # Update value only (TTL is handled separately via set_ttl action)
                 result = service.edit_key(key, new_value, timeout=None)
                 messages.success(request, result["message"])
-                return redirect(
-                    _admin_key_detail_url(cache_name, key),
-                )
+                return redirect(urls.key_detail_url(cache_name, key))
             except Exception as e:  # noqa: BLE001
                 messages.error(request, f"Error updating key: {e!s}")
 
@@ -620,9 +770,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                             messages.success(request, result["message"])
                         else:
                             messages.error(request, result["message"])
-                return redirect(
-                    _admin_key_detail_url(cache_name, key),
-                )
+                return redirect(urls.key_detail_url(cache_name, key))
             except ValueError:
                 messages.error(request, "Invalid TTL value. Must be a number.")
             except Exception as e:  # noqa: BLE001
@@ -635,9 +783,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                     messages.success(request, result["message"])
                 else:
                     messages.error(request, result["message"])
-                return redirect(
-                    _admin_key_detail_url(cache_name, key),
-                )
+                return redirect(urls.key_detail_url(cache_name, key))
             except Exception as e:  # noqa: BLE001
                 messages.error(request, f"Error removing TTL: {e!s}")
 
@@ -653,7 +799,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                 messages.success(request, result["message"])
             else:
                 messages.error(request, result["message"])
-            return redirect(_admin_key_detail_url(cache_name, key))
+            return redirect(urls.key_detail_url(cache_name, key))
 
         elif action == "list_rpop":
             count = 1
@@ -666,7 +812,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                 messages.success(request, result["message"])
             else:
                 messages.error(request, result["message"])
-            return redirect(_admin_key_detail_url(cache_name, key))
+            return redirect(urls.key_detail_url(cache_name, key))
 
         elif action == "list_lpush":
             value = request.POST.get("push_value", "").strip()
@@ -678,7 +824,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                     messages.error(request, result["message"])
             else:
                 messages.error(request, "Value is required.")
-            return redirect(_admin_key_detail_url(cache_name, key))
+            return redirect(urls.key_detail_url(cache_name, key))
 
         elif action == "list_rpush":
             value = request.POST.get("push_value", "").strip()
@@ -690,7 +836,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                     messages.error(request, result["message"])
             else:
                 messages.error(request, "Value is required.")
-            return redirect(_admin_key_detail_url(cache_name, key))
+            return redirect(urls.key_detail_url(cache_name, key))
 
         elif action == "list_lrem":
             value = request.POST.get("item_value", "").strip()
@@ -707,7 +853,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                     messages.error(request, result["message"])
             else:
                 messages.error(request, "Value is required.")
-            return redirect(_admin_key_detail_url(cache_name, key))
+            return redirect(urls.key_detail_url(cache_name, key))
 
         elif action == "list_ltrim":
             try:
@@ -720,7 +866,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                     messages.error(request, result["message"])
             except ValueError:
                 messages.error(request, "Start and stop must be integers.")
-            return redirect(_admin_key_detail_url(cache_name, key))
+            return redirect(urls.key_detail_url(cache_name, key))
 
         # Set operations
         elif action == "set_sadd":
@@ -733,7 +879,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                     messages.error(request, result["message"])
             else:
                 messages.error(request, "Member is required.")
-            return redirect(_admin_key_detail_url(cache_name, key))
+            return redirect(urls.key_detail_url(cache_name, key))
 
         elif action == "set_srem":
             member = request.POST.get("member", "").strip()
@@ -743,7 +889,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                     messages.success(request, result["message"])
                 else:
                     messages.error(request, result["message"])
-            return redirect(_admin_key_detail_url(cache_name, key))
+            return redirect(urls.key_detail_url(cache_name, key))
 
         # Hash operations
         elif action == "hash_hset":
@@ -757,7 +903,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                     messages.error(request, result["message"])
             else:
                 messages.error(request, "Field name is required.")
-            return redirect(_admin_key_detail_url(cache_name, key))
+            return redirect(urls.key_detail_url(cache_name, key))
 
         elif action == "hash_hdel":
             field = request.POST.get("field", "").strip()
@@ -767,7 +913,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                     messages.success(request, result["message"])
                 else:
                     messages.error(request, result["message"])
-            return redirect(_admin_key_detail_url(cache_name, key))
+            return redirect(urls.key_detail_url(cache_name, key))
 
         # Sorted set operations
         elif action == "zset_zadd":
@@ -790,7 +936,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                     messages.error(request, "Score must be a number.")
             else:
                 messages.error(request, "Member and score are required.")
-            return redirect(_admin_key_detail_url(cache_name, key))
+            return redirect(urls.key_detail_url(cache_name, key))
 
         elif action == "zset_zrem":
             member = request.POST.get("member", "").strip()
@@ -800,7 +946,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                     messages.success(request, result["message"])
                 else:
                     messages.error(request, result["message"])
-            return redirect(_admin_key_detail_url(cache_name, key))
+            return redirect(urls.key_detail_url(cache_name, key))
 
         # Set pop operation
         elif action == "set_spop":
@@ -814,7 +960,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                 messages.success(request, result["message"])
             else:
                 messages.error(request, result["message"])
-            return redirect(_admin_key_detail_url(cache_name, key))
+            return redirect(urls.key_detail_url(cache_name, key))
 
         # Sorted set pop operations
         elif action == "zset_zpopmin":
@@ -824,7 +970,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                 messages.success(request, result["message"])
             else:
                 messages.error(request, result["message"])
-            return redirect(_admin_key_detail_url(cache_name, key))
+            return redirect(urls.key_detail_url(cache_name, key))
 
         elif action == "zset_zpopmax":
             pop_count = int(request.POST.get("pop_count", 1) or 1)
@@ -833,7 +979,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                 messages.success(request, result["message"])
             else:
                 messages.error(request, result["message"])
-            return redirect(_admin_key_detail_url(cache_name, key))
+            return redirect(urls.key_detail_url(cache_name, key))
 
         # Stream operations
         elif action == "stream_xadd":
@@ -847,7 +993,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                     messages.error(request, result["message"])
             else:
                 messages.error(request, "Field name and value are required.")
-            return redirect(_admin_key_detail_url(cache_name, key))
+            return redirect(urls.key_detail_url(cache_name, key))
 
         elif action == "stream_xdel":
             entry_id = request.POST.get("entry_id", "").strip()
@@ -859,7 +1005,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                     messages.error(request, result["message"])
             else:
                 messages.error(request, "Entry ID is required.")
-            return redirect(_admin_key_detail_url(cache_name, key))
+            return redirect(urls.key_detail_url(cache_name, key))
 
         elif action == "stream_xtrim":
             maxlen_str = request.POST.get("maxlen", "").strip()
@@ -875,7 +1021,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
                     messages.error(request, "Max length must be a number.")
             else:
                 messages.error(request, "Max length is required.")
-            return redirect(_admin_key_detail_url(cache_name, key))
+            return redirect(urls.key_detail_url(cache_name, key))
 
     # GET request - display the key
     key_result = service.get_key(key)
@@ -901,7 +1047,7 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
             create_mode = True
         else:
             messages.error(request, f"Key '{key}' does not exist in cache '{cache_name}'.")
-            return redirect(_admin_key_list_url(cache_name))
+            return redirect(urls.key_list_url(cache_name))
 
     # Get TTL and type for the key
     key_type = None
@@ -967,15 +1113,28 @@ def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
             "help_active": help_active,
         },
     )
-    return render(request, "admin/django_cachex/key/change_form.html", context)
+    return render(request, config.template("key/change_form.html"), context)
 
 
 @staff_member_required
-def key_add(request: HttpRequest, cache_name: str) -> HttpResponse:
-    """View for adding a new cache key - collects key name and type, then redirects to key_detail."""
+def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
+    """View for displaying the details of a specific cache key."""
+    return _key_detail_view(request, cache_name, key, ADMIN_CONFIG)
+
+
+def _key_add_view(
+    request: HttpRequest,
+    cache_name: str,
+    config: ViewConfig,
+) -> HttpResponse:
+    """View for adding a new cache key - collects key name and type, then redirects to key_detail.
+
+    This is the internal implementation; use key_add() for the decorated admin view.
+    """
     help_active = _show_help(request, "key_add")
     service = get_cache_service(cache_name)
     cache_config = settings.CACHES.get(cache_name, {})
+    urls = config.url_builder
 
     if request.method == "POST":
         key_name = request.POST.get("key", "").strip()
@@ -988,12 +1147,15 @@ def key_add(request: HttpRequest, cache_name: str) -> HttpResponse:
             existing = service.get_key(key_name)
             if existing.get("exists", False):
                 messages.warning(request, f"Key '{key_name}' already exists.")
-                return redirect(_admin_key_detail_url(cache_name, key_name))
+                return redirect(urls.key_detail_url(cache_name, key_name))
             # Redirect to key_detail in create mode
             from urllib.parse import urlencode
 
+            base_url = urls.key_detail_url(cache_name, key_name)
             params = urlencode({"type": key_type})
-            return redirect(f"{_admin_key_detail_url(cache_name, key_name)}&{params}")
+            # Use ? or & depending on whether URL already has query params
+            separator = "&" if "?" in base_url else "?"
+            return redirect(f"{base_url}{separator}{params}")
 
     # Pre-fill from query params (for Back button)
     prefill_key = request.GET.get("key", "")
@@ -1015,4 +1177,10 @@ def key_add(request: HttpRequest, cache_name: str) -> HttpResponse:
             "help_active": help_active,
         },
     )
-    return render(request, "admin/django_cachex/cache/key_add.html", context)
+    return render(request, config.template("cache/key_add.html"), context)
+
+
+@staff_member_required
+def key_add(request: HttpRequest, cache_name: str) -> HttpResponse:
+    """View for adding a new cache key - collects key name and type, then redirects to key_detail."""
+    return _key_add_view(request, cache_name, ADMIN_CONFIG)
