@@ -434,11 +434,11 @@ class CacheService:
             Dict with type-specific data (items for lists, members for sets, etc.)
             Empty dict if not supported.
         """
-        if not self._is_native:
+        try:
+            if key_type is None:
+                key_type = self.type(key)
+        except NotSupportedError:
             return {}
-
-        if key_type is None:
-            key_type = self.type(key)
 
         if not key_type or key_type == "string":
             return {}
@@ -485,11 +485,11 @@ class CacheService:
         Returns:
             Size/length or None if not supported.
         """
-        if not self._is_native:
+        try:
+            if key_type is None:
+                key_type = self.type(key)
+        except NotSupportedError:
             return None
-
-        if key_type is None:
-            key_type = self.type(key)
 
         if not key_type:
             return None
@@ -573,60 +573,63 @@ class CacheService:
             "stats": None,
         }
 
-        if not self._is_native:
-            try:
-                wrapper_info = self._cache.info()
-                base_info.update(wrapper_info)
-                return base_info
-            except NotSupportedError:
-                raise
-            except Exception:  # noqa: BLE001
-                raise NotSupportedError("metadata", self.__class__.__name__) from None
-
-        # Native backend - get detailed Redis/Valkey info
         try:
             raw_info = self.info()
-            if raw_info:
-                base_info["server"] = {
-                    "redis_version": raw_info.get("redis_version"),
-                    "os": raw_info.get("os"),
-                    "arch_bits": raw_info.get("arch_bits"),
-                    "uptime_in_seconds": raw_info.get("uptime_in_seconds"),
-                    "uptime_in_days": raw_info.get("uptime_in_days"),
-                    "tcp_port": raw_info.get("tcp_port"),
-                    "process_id": raw_info.get("process_id"),
-                    "run_id": raw_info.get("run_id"),
-                }
+        except NotSupportedError:
+            raise
+        except Exception:  # noqa: BLE001
+            raise NotSupportedError("metadata", self.__class__.__name__) from None
 
-                base_info["memory"] = {
-                    "used_memory": raw_info.get("used_memory"),
-                    "used_memory_human": raw_info.get("used_memory_human"),
-                    "used_memory_peak": raw_info.get("used_memory_peak"),
-                    "used_memory_peak_human": raw_info.get("used_memory_peak_human"),
-                    "maxmemory": raw_info.get("maxmemory"),
-                    "maxmemory_human": raw_info.get("maxmemory_human"),
-                    "maxmemory_policy": raw_info.get("maxmemory_policy"),
-                }
+        if not raw_info:
+            return base_info
 
-                base_info["clients"] = {
-                    "connected_clients": raw_info.get("connected_clients"),
-                    "blocked_clients": raw_info.get("blocked_clients"),
-                    "tracking_clients": raw_info.get("tracking_clients"),
-                }
+        # Check if info() returned already-structured data (from wrappers)
+        if isinstance(raw_info.get("server"), dict):
+            base_info.update(raw_info)
+            return base_info
 
-                base_info["stats"] = {
-                    "total_connections_received": raw_info.get("total_connections_received"),
-                    "total_commands_processed": raw_info.get("total_commands_processed"),
-                    "instantaneous_ops_per_sec": raw_info.get("instantaneous_ops_per_sec"),
-                    "keyspace_hits": raw_info.get("keyspace_hits"),
-                    "keyspace_misses": raw_info.get("keyspace_misses"),
-                    "expired_keys": raw_info.get("expired_keys"),
-                    "evicted_keys": raw_info.get("evicted_keys"),
-                }
+        # Parse flat Redis/Valkey INFO into structured sections
+        try:
+            base_info["server"] = {
+                "redis_version": raw_info.get("redis_version"),
+                "os": raw_info.get("os"),
+                "arch_bits": raw_info.get("arch_bits"),
+                "uptime_in_seconds": raw_info.get("uptime_in_seconds"),
+                "uptime_in_days": raw_info.get("uptime_in_days"),
+                "tcp_port": raw_info.get("tcp_port"),
+                "process_id": raw_info.get("process_id"),
+                "run_id": raw_info.get("run_id"),
+            }
 
-                keyspace = {k: v for k, v in raw_info.items() if k.startswith("db") and isinstance(v, dict)}
-                if keyspace:
-                    base_info["keyspace"] = keyspace
+            base_info["memory"] = {
+                "used_memory": raw_info.get("used_memory"),
+                "used_memory_human": raw_info.get("used_memory_human"),
+                "used_memory_peak": raw_info.get("used_memory_peak"),
+                "used_memory_peak_human": raw_info.get("used_memory_peak_human"),
+                "maxmemory": raw_info.get("maxmemory"),
+                "maxmemory_human": raw_info.get("maxmemory_human"),
+                "maxmemory_policy": raw_info.get("maxmemory_policy"),
+            }
+
+            base_info["clients"] = {
+                "connected_clients": raw_info.get("connected_clients"),
+                "blocked_clients": raw_info.get("blocked_clients"),
+                "tracking_clients": raw_info.get("tracking_clients"),
+            }
+
+            base_info["stats"] = {
+                "total_connections_received": raw_info.get("total_connections_received"),
+                "total_commands_processed": raw_info.get("total_commands_processed"),
+                "instantaneous_ops_per_sec": raw_info.get("instantaneous_ops_per_sec"),
+                "keyspace_hits": raw_info.get("keyspace_hits"),
+                "keyspace_misses": raw_info.get("keyspace_misses"),
+                "expired_keys": raw_info.get("expired_keys"),
+                "evicted_keys": raw_info.get("evicted_keys"),
+            }
+
+            keyspace = {k: v for k, v in raw_info.items() if k.startswith("db") and isinstance(v, dict)}
+            if keyspace:
+                base_info["keyspace"] = keyspace
 
         except Exception:  # noqa: BLE001, S110
             pass
@@ -675,48 +678,44 @@ class CacheService:
             "error": None,
         }
 
-        if not self._is_native:
-            try:
-                return self._cache.slowlog_get(count)
-            except NotSupportedError:
-                raise
-            except Exception:  # noqa: BLE001
-                raise NotSupportedError("slowlog", self.__class__.__name__) from None
-
         cache = cast("Any", self._cache)
 
-        # Try cache's own slowlog methods first (KeyValueCache exposes these)
-        if hasattr(cache, "slowlog_get") and hasattr(cache, "slowlog_len"):
+        # Try cache's slowlog_get first - wrappers return structured result
+        if hasattr(cache, "slowlog_get"):
             try:
-                result["length"] = cache.slowlog_len()
-                raw_entries = cache.slowlog_get(count)
+                slowlog_result = cache.slowlog_get(count)
+                # Wrappers return structured dict with "entries" key
+                if isinstance(slowlog_result, dict) and "entries" in slowlog_result:
+                    return slowlog_result
+                # Native backends return raw entries list - need length too
+                if hasattr(cache, "slowlog_len"):
+                    result["length"] = cache.slowlog_len()
+                result["entries"] = [self._parse_slowlog_entry(entry) for entry in slowlog_result]
+                return result
+            except NotSupportedError:
+                raise
             except Exception as e:  # noqa: BLE001
                 result["error"] = str(e)
                 return result
-        # Fall back to internal cache client
-        elif hasattr(cache, "_cache") and hasattr(cache._cache, "slowlog_get"):
+
+        # Fall back to internal cache client for native backends
+        if hasattr(cache, "_cache") and hasattr(cache._cache, "slowlog_get"):
             try:
                 result["length"] = cache._cache.slowlog_len()
                 raw_entries = cache._cache.slowlog_get(count)
+                result["entries"] = [self._parse_slowlog_entry(entry) for entry in raw_entries]
+                return result
             except Exception as e:  # noqa: BLE001
                 result["error"] = str(e)
                 return result
-        else:
-            result["error"] = "Slow log not available for this backend."
-            return result
 
-        # Parse raw entries into structured format
-        result["entries"] = [self._parse_slowlog_entry(entry) for entry in raw_entries]
-
+        result["error"] = "Slow log not available for this backend."
         return result
 
     # List operations
 
     def lpop(self, key: str, count: int = 1) -> dict[str, Any]:
         """Pop from the left of a list."""
-        if not self._is_native:
-            raise NotSupportedError("lpop", "wrapped backend")
-
         try:
             cache = cast("Any", self._cache)
             if count == 1:
@@ -733,9 +732,6 @@ class CacheService:
 
     def rpop(self, key: str, count: int = 1) -> dict[str, Any]:
         """Pop from the right of a list."""
-        if not self._is_native:
-            raise NotSupportedError("rpop", "wrapped backend")
-
         try:
             cache = cast("Any", self._cache)
             if count == 1:
@@ -752,9 +748,6 @@ class CacheService:
 
     def lpush(self, key: str, value: str) -> dict[str, Any]:
         """Push to the left of a list."""
-        if not self._is_native:
-            raise NotSupportedError("lpush", "wrapped backend")
-
         try:
             cache = cast("Any", self._cache)
             new_len = cache.lpush(key, value)
@@ -764,9 +757,6 @@ class CacheService:
 
     def rpush(self, key: str, value: str) -> dict[str, Any]:
         """Push to the right of a list."""
-        if not self._is_native:
-            raise NotSupportedError("rpush", "wrapped backend")
-
         try:
             cache = cast("Any", self._cache)
             new_len = cache.rpush(key, value)
@@ -776,9 +766,6 @@ class CacheService:
 
     def lrem(self, key: str, value: str, count: int = 0) -> dict[str, Any]:
         """Remove elements from a list."""
-        if not self._is_native:
-            raise NotSupportedError("lrem", "wrapped backend")
-
         try:
             cache = cast("Any", self._cache)
             removed = cache.lrem(key, count, value)
@@ -794,9 +781,6 @@ class CacheService:
 
     def ltrim(self, key: str, start: int, stop: int) -> dict[str, Any]:
         """Trim a list to the specified range."""
-        if not self._is_native:
-            raise NotSupportedError("ltrim", "wrapped backend")
-
         try:
             cache = cast("Any", self._cache)
             cache.ltrim(key, start, stop)
@@ -808,9 +792,6 @@ class CacheService:
 
     def sadd(self, key: str, member: str) -> dict[str, Any]:
         """Add a member to a set."""
-        if not self._is_native:
-            raise NotSupportedError("sadd", "wrapped backend")
-
         try:
             cache = cast("Any", self._cache)
             added = cache.sadd(key, member)
@@ -822,9 +803,6 @@ class CacheService:
 
     def srem(self, key: str, member: str) -> dict[str, Any]:
         """Remove a member from a set."""
-        if not self._is_native:
-            raise NotSupportedError("srem", "wrapped backend")
-
         try:
             cache = cast("Any", self._cache)
             removed = cache.srem(key, member)
@@ -836,9 +814,6 @@ class CacheService:
 
     def spop(self, key: str, count: int = 1) -> dict[str, Any]:
         """Pop random members from a set."""
-        if not self._is_native:
-            raise NotSupportedError("spop", "wrapped backend")
-
         try:
             cache = cast("Any", self._cache)
             if count == 1:
@@ -861,9 +836,6 @@ class CacheService:
 
     def hset(self, key: str, field: str, value: str) -> dict[str, Any]:
         """Set a field in a hash."""
-        if not self._is_native:
-            raise NotSupportedError("hset", "wrapped backend")
-
         try:
             cache = cast("Any", self._cache)
             cache.hset(key, field, value)
@@ -873,9 +845,6 @@ class CacheService:
 
     def hdel(self, key: str, field: str) -> dict[str, Any]:
         """Delete a field from a hash."""
-        if not self._is_native:
-            raise NotSupportedError("hdel", "wrapped backend")
-
         try:
             cache = cast("Any", self._cache)
             removed = cache.hdel(key, field)
@@ -899,9 +868,6 @@ class CacheService:
         lt: bool = False,
     ) -> dict[str, Any]:
         """Add a member to a sorted set."""
-        if not self._is_native:
-            raise NotSupportedError("zadd", "wrapped backend")
-
         try:
             cache = cast("Any", self._cache)
             added = cache.zadd(key, {member: score}, nx=nx, xx=xx, gt=gt, lt=lt)
@@ -919,9 +885,6 @@ class CacheService:
 
     def zrem(self, key: str, member: str) -> dict[str, Any]:
         """Remove a member from a sorted set."""
-        if not self._is_native:
-            raise NotSupportedError("zrem", "wrapped backend")
-
         try:
             cache = cast("Any", self._cache)
             removed = cache.zrem(key, member)
@@ -933,9 +896,6 @@ class CacheService:
 
     def zpopmin(self, key: str, count: int = 1) -> dict[str, Any]:
         """Pop the member(s) with lowest score."""
-        if not self._is_native:
-            raise NotSupportedError("zpopmin", "wrapped backend")
-
         try:
             cache = cast("Any", self._cache)
             result = cache.zpopmin(key, count=count)
@@ -960,9 +920,6 @@ class CacheService:
 
     def zpopmax(self, key: str, count: int = 1) -> dict[str, Any]:
         """Pop the member(s) with highest score."""
-        if not self._is_native:
-            raise NotSupportedError("zpopmax", "wrapped backend")
-
         try:
             cache = cast("Any", self._cache)
             result = cache.zpopmax(key, count=count)
@@ -989,9 +946,6 @@ class CacheService:
 
     def xadd(self, key: str, fields: dict[str, str]) -> dict[str, Any]:
         """Add an entry to a stream."""
-        if not self._is_native:
-            raise NotSupportedError("xadd", "wrapped backend")
-
         try:
             cache = cast("Any", self._cache)
             if not hasattr(cache, "_cache") or not hasattr(cache._cache, "xadd"):
@@ -1003,9 +957,6 @@ class CacheService:
 
     def xdel(self, key: str, entry_id: str) -> dict[str, Any]:
         """Delete an entry from a stream."""
-        if not self._is_native:
-            raise NotSupportedError("xdel", "wrapped backend")
-
         try:
             cache = cast("Any", self._cache)
             if not hasattr(cache, "_cache") or not hasattr(cache._cache, "xdel"):
@@ -1019,9 +970,6 @@ class CacheService:
 
     def xtrim(self, key: str, maxlen: int) -> dict[str, Any]:
         """Trim a stream to a maximum length."""
-        if not self._is_native:
-            raise NotSupportedError("xtrim", "wrapped backend")
-
         try:
             cache = cast("Any", self._cache)
             if not hasattr(cache, "_cache") or not hasattr(cache._cache, "xtrim"):
