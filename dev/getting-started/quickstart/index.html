@@ -1151,6 +1151,10 @@
 <td>Redis Sentinel high availability</td>
 </tr>
 <tr>
+<td><code>ValkeyClusterCache</code></td>
+<td>Valkey Cluster sharding</td>
+</tr>
+<tr>
 <td><code>RedisClusterCache</code></td>
 <td>Redis Cluster sharding</td>
 </tr>
@@ -1160,11 +1164,6 @@
 <p class="admonition-title">Valkey and Redis Compatibility</p>
 <p>Valkey and Redis are fully compatible - you can use either backend with either server.
 We recommend Valkey as it remains fully open source.</p>
-</div>
-<div class="admonition warning">
-<p class="admonition-title">ValkeyClusterCache</p>
-<p><code>ValkeyClusterCache</code> is currently unavailable due to an upstream bug in valkey-py.
-Use <code>RedisClusterCache</code> with your Valkey cluster instead.</p>
 </div>
 <h2 id="connection-url-formats">Connection URL Formats<a class="headerlink" href="#connection-url-formats" title="Permanent link">&para;</a></h2>
 <p>django-cachex uses the valkey-py/redis-py native URL notation for connection strings:</p>

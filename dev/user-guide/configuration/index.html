@@ -1668,8 +1668,12 @@
 <td>Redis Sentinel high availability</td>
 </tr>
 <tr>
+<td><code>ValkeyClusterCache</code></td>
+<td>Valkey Cluster sharding</td>
+</tr>
+<tr>
 <td><code>RedisClusterCache</code></td>
-<td>Redis/Valkey Cluster sharding</td>
+<td>Redis Cluster sharding</td>
 </tr>
 </tbody>
 </table>
@@ -1678,16 +1682,6 @@
 <p class="admonition-title">Valkey and Redis Compatibility</p>
 <p>Valkey and Redis are fully compatible - you can use either backend with either server.
 We recommend Valkey as it remains fully open source.</p>
-</div>
-<div class="admonition warning">
-<p class="admonition-title">ValkeyClusterCache</p>
-<p><code>ValkeyClusterCache</code> is currently unavailable due to an upstream bug in valkey-py.
-Use <code>RedisClusterCache</code> with your Valkey cluster instead.</p>
-</div>
-<div class="admonition warning">
-<p class="admonition-title">ValkeySentinelCache</p>
-<p><code>ValkeySentinelCache</code> is currently unavailable due to an upstream bug in valkey-py.
-Use <code>RedisSentinelCache</code> with your Valkey server instead (protocol compatible).</p>
 </div>
 <h2 id="location">LOCATION<a class="headerlink" href="#location" title="Permanent link">&para;</a></h2>
 <p>Server URL(s). Supports multiple formats:</p>

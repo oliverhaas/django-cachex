@@ -1015,15 +1015,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#010-planned" class="md-nav__link">
+  <a href="#010-february-2026" class="md-nav__link">
     <span class="md-ellipsis">
       
-        0.1.0 (Planned)
+        0.1.0 (February 2026)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="0.1.0 (Planned)">
+    <nav class="md-nav" aria-label="0.1.0 (February 2026)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1235,15 +1235,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#010-planned" class="md-nav__link">
+  <a href="#010-february-2026" class="md-nav__link">
     <span class="md-ellipsis">
       
-        0.1.0 (Planned)
+        0.1.0 (February 2026)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="0.1.0 (Planned)">
+    <nav class="md-nav" aria-label="0.1.0 (February 2026)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1377,7 +1377,7 @@
 <li><code>ScriptHelpers</code> - Helper functions passed to pre/post processing hooks</li>
 <li><code>ScriptNotRegisteredError</code> - Exception for unregistered script names</li>
 </ul>
-<h2 id="010-planned">0.1.0 (Planned)<a class="headerlink" href="#010-planned" title="Permanent link">&para;</a></h2>
+<h2 id="010-february-2026">0.1.0 (February 2026)<a class="headerlink" href="#010-february-2026" title="Permanent link">&para;</a></h2>
 <p>Initial stable release of django-cachex.</p>
 <h3 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h3>
 <ul>
@@ -1396,13 +1396,20 @@
 <li><strong>TTL operations</strong> (<code>ttl()</code>, <code>pttl()</code>, <code>expire()</code>, <code>persist()</code>)</li>
 <li><strong>Pattern operations</strong> (<code>keys()</code>, <code>iter_keys()</code>, <code>delete_pattern()</code>)</li>
 <li><strong>Pipelines</strong> for batched operations</li>
+<li><strong>Lua script interface</strong> with automatic key prefixing and value encoding/decoding</li>
 <li><strong>Django Cache Admin</strong> for cache inspection and management</li>
+<li>Browse, search, edit, and delete cache keys</li>
+<li>View server info, memory statistics, and slowlog</li>
+<li>Support for Django builtin backends (LocMemCache, DatabaseCache, FileBasedCache) via wrappers</li>
+<li>Django Unfold theme support (<code>django_cachex.unfold</code>)</li>
+<li><strong>Async support</strong> for all extended methods</li>
 </ul>
 <h3 id="data-structure-operations">Data Structure Operations<a class="headerlink" href="#data-structure-operations" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Hash operations</strong>: <code>hset</code>, <code>hdel</code>, <code>hexists</code>, <code>hget</code>, <code>hgetall</code>, <code>hincrby</code>, <code>hincrbyfloat</code>, <code>hlen</code>, <code>hmget</code>, <code>hmset</code>, <code>hsetnx</code>, <code>hvals</code></li>
 <li><strong>Sorted set operations</strong>: <code>zadd</code>, <code>zcard</code>, <code>zcount</code>, <code>zincrby</code>, <code>zrange</code>, <code>zrangebyscore</code>, <code>zrank</code>, <code>zrevrank</code>, <code>zrem</code>, <code>zremrangebyrank</code>, <code>zscore</code>, <code>zmscore</code></li>
 <li><strong>List operations</strong>: <code>llen</code>, <code>lpush</code>, <code>rpush</code>, <code>lpop</code>, <code>rpop</code>, <code>lindex</code>, <code>lrange</code>, <code>lset</code>, <code>ltrim</code>, <code>lpos</code>, <code>lmove</code></li>
+<li><strong>Set operations</strong>: <code>sadd</code>, <code>srem</code>, <code>smembers</code>, <code>sismember</code>, <code>smismember</code>, <code>scard</code>, <code>spop</code>, <code>srandmember</code>, <code>sdiff</code>, <code>sinter</code>, <code>sunion</code></li>
 </ul>
 <h3 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h3>
 <ul>
