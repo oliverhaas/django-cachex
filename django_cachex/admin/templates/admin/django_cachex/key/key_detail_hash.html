@@ -6,7 +6,7 @@
         <label>{% trans 'Set Field:' %}</label>
         <form method="post" style="display: inline;">
             {% csrf_token %}
-            <input type="hidden" name="action" value="hash_hset">
+            <input type="hidden" name="action" value="hset">
             <input type="text" name="field_name" placeholder="{% trans 'field' %}" style="width: 100px;">
             <input type="text" name="field_value" placeholder="{% trans 'value' %}" style="width: 150px;">
             <button type="submit" class="button btn-small">{% trans 'Set' %}</button>
@@ -46,12 +46,12 @@
     {% for field, value in type_data.fields.items %}
     <form id="hash-update-{{ forloop.counter0 }}" method="post" style="display: none;">
         {% csrf_token %}
-        <input type="hidden" name="action" value="hash_hset">
+        <input type="hidden" name="action" value="hset">
         <input type="hidden" name="field_name" value="{{ field }}">
     </form>
     <form id="hash-delete-{{ forloop.counter0 }}" method="post" style="display: none;">
         {% csrf_token %}
-        <input type="hidden" name="action" value="hash_hdel">
+        <input type="hidden" name="action" value="hdel">
         <input type="hidden" name="field" value="{{ field }}">
     </form>
     {% endfor %}

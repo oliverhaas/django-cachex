@@ -6,7 +6,7 @@
         <label>{% trans 'Add:' %}</label>
         <form method="post" style="display: inline;">
             {% csrf_token %}
-            <input type="hidden" name="action" value="set_sadd">
+            <input type="hidden" name="action" value="sadd">
             <input type="text" name="member_value" placeholder="{% trans 'member' %}" style="width: 150px;">
             <button type="submit" class="button btn-small">{% trans 'Add' %}</button>
         </form>
@@ -15,7 +15,7 @@
         <label>{% trans 'Pop:' %}</label>
         <form method="post" style="display: inline;">
             {% csrf_token %}
-            <input type="hidden" name="action" value="set_spop">
+            <input type="hidden" name="action" value="spop">
             <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" title="{% trans 'Count' %}">
             <button type="submit" class="button btn-small">{% trans 'Random' %}</button>
         </form>
@@ -40,7 +40,7 @@
                     <td>
                         <form method="post" style="display: inline;">
                             {% csrf_token %}
-                            <input type="hidden" name="action" value="set_srem">
+                            <input type="hidden" name="action" value="srem">
                             <input type="hidden" name="member" value="{{ member }}">
                             <button type="submit" class="button delete-btn btn-small">{% trans 'Remove' %}</button>
                         </form>

@@ -6,7 +6,7 @@
         <label>{% trans 'Add:' %}</label>
         <form method="post" style="display: inline;">
             {% csrf_token %}
-            <input type="hidden" name="action" value="zset_zadd">
+            <input type="hidden" name="action" value="zadd">
             <input type="text" name="member_value" placeholder="{% trans 'member' %}" style="width: 100px; vertical-align: middle;">
             <input type="number" name="score_value" placeholder="{% trans 'score' %}" style="width: 70px; vertical-align: middle;" step="any">
             <label class="quiet" title="{% trans 'Only add new' %}" style="display: inline; vertical-align: middle;"><input type="checkbox" name="zadd_nx" style="vertical-align: middle;"> NX</label>
@@ -20,7 +20,7 @@
         <label>{% trans 'Pop Min:' %}</label>
         <form method="post" style="display: inline;">
             {% csrf_token %}
-            <input type="hidden" name="action" value="zset_zpopmin">
+            <input type="hidden" name="action" value="zpopmin">
             <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" title="{% trans 'Count' %}">
             <button type="submit" class="button btn-small">{% trans 'Pop' %}</button>
         </form>
@@ -29,7 +29,7 @@
         <label>{% trans 'Pop Max:' %}</label>
         <form method="post" style="display: inline;">
             {% csrf_token %}
-            <input type="hidden" name="action" value="zset_zpopmax">
+            <input type="hidden" name="action" value="zpopmax">
             <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" title="{% trans 'Count' %}">
             <button type="submit" class="button btn-small">{% trans 'Pop' %}</button>
         </form>
@@ -68,12 +68,12 @@
     {% for member, score in type_data.members %}
     <form id="zset-update-{{ forloop.counter0 }}" method="post" style="display: none;">
         {% csrf_token %}
-        <input type="hidden" name="action" value="zset_zadd">
+        <input type="hidden" name="action" value="zadd">
         <input type="hidden" name="member_value" value="{{ member }}">
     </form>
     <form id="zset-remove-{{ forloop.counter0 }}" method="post" style="display: none;">
         {% csrf_token %}
-        <input type="hidden" name="action" value="zset_zrem">
+        <input type="hidden" name="action" value="zrem">
         <input type="hidden" name="member" value="{{ member }}">
     </form>
     {% endfor %}

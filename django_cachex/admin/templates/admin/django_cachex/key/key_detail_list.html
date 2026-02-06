@@ -6,7 +6,7 @@
         <label>{% trans 'Push Left:' %}</label>
         <form method="post" style="display: inline;">
             {% csrf_token %}
-            <input type="hidden" name="action" value="list_lpush">
+            <input type="hidden" name="action" value="lpush">
             <input type="text" name="push_value" placeholder="{% trans 'value' %}" style="width: 120px;">
             <button type="submit" class="button btn-small">{% trans 'Push' %}</button>
         </form>
@@ -15,7 +15,7 @@
         <label>{% trans 'Push Right:' %}</label>
         <form method="post" style="display: inline;">
             {% csrf_token %}
-            <input type="hidden" name="action" value="list_rpush">
+            <input type="hidden" name="action" value="rpush">
             <input type="text" name="push_value" placeholder="{% trans 'value' %}" style="width: 120px;">
             <button type="submit" class="button btn-small">{% trans 'Push' %}</button>
         </form>
@@ -24,7 +24,7 @@
         <label>{% trans 'Pop Left:' %}</label>
         <form method="post" style="display: inline;">
             {% csrf_token %}
-            <input type="hidden" name="action" value="list_lpop">
+            <input type="hidden" name="action" value="lpop">
             <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" title="{% trans 'Count' %}">
             <button type="submit" class="button btn-small">{% trans 'Pop' %}</button>
         </form>
@@ -33,7 +33,7 @@
         <label>{% trans 'Pop Right:' %}</label>
         <form method="post" style="display: inline;">
             {% csrf_token %}
-            <input type="hidden" name="action" value="list_rpop">
+            <input type="hidden" name="action" value="rpop">
             <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" title="{% trans 'Count' %}">
             <button type="submit" class="button btn-small">{% trans 'Pop' %}</button>
         </form>
@@ -42,7 +42,7 @@
         <label>{% trans 'Trim:' %}</label>
         <form method="post" style="display: inline;">
             {% csrf_token %}
-            <input type="hidden" name="action" value="list_ltrim">
+            <input type="hidden" name="action" value="ltrim">
             <input type="number" name="trim_start" value="0" class="vIntegerField" style="width: 60px;" title="{% trans 'Start index' %}" placeholder="{% trans 'start' %}">
             <input type="number" name="trim_stop" value="-1" class="vIntegerField" style="width: 60px;" title="{% trans 'Stop index (-1 for last)' %}" placeholder="{% trans 'stop' %}">
             <button type="submit" class="button btn-small" onclick="return confirm('{% trans 'Trim list to this range? Elements outside the range will be removed.' %}');">{% trans 'Trim' %}</button>
@@ -70,7 +70,7 @@
                     <td>
                         <form method="post" style="display: inline;">
                             {% csrf_token %}
-                            <input type="hidden" name="action" value="list_lrem">
+                            <input type="hidden" name="action" value="lrem">
                             <input type="hidden" name="item_value" value="{{ item }}">
                             <button type="submit" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Remove this item?' %}');">{% trans 'Remove' %}</button>
                         </form>

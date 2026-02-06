@@ -864,36 +864,36 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 messages.error(request, f"Error removing TTL: {e!s}")
 
         # List operations
-        elif action == "list_lpop":
+        elif action == "lpop":
             count = 1
             count_str = request.POST.get("pop_count", "").strip()
             if count_str:
                 with contextlib.suppress(ValueError):
                     count = max(1, int(count_str))
-            result = service.list_lpop(key, count=count)
+            result = service.lpop(key, count=count)
             if result["success"]:
                 messages.success(request, result["message"])
             else:
                 messages.error(request, result["message"])
             return redirect(urls.key_detail_url(cache_name, key))
 
-        elif action == "list_rpop":
+        elif action == "rpop":
             count = 1
             count_str = request.POST.get("pop_count", "").strip()
             if count_str:
                 with contextlib.suppress(ValueError):
                     count = max(1, int(count_str))
-            result = service.list_rpop(key, count=count)
+            result = service.rpop(key, count=count)
             if result["success"]:
                 messages.success(request, result["message"])
             else:
                 messages.error(request, result["message"])
             return redirect(urls.key_detail_url(cache_name, key))
 
-        elif action == "list_lpush":
+        elif action == "lpush":
             value = request.POST.get("push_value", "").strip()
             if value:
-                result = service.list_lpush(key, value)
+                result = service.lpush(key, value)
                 if result["success"]:
                     messages.success(request, result["message"])
                 else:
@@ -902,10 +902,10 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 messages.error(request, "Value is required.")
             return redirect(urls.key_detail_url(cache_name, key))
 
-        elif action == "list_rpush":
+        elif action == "rpush":
             value = request.POST.get("push_value", "").strip()
             if value:
-                result = service.list_rpush(key, value)
+                result = service.rpush(key, value)
                 if result["success"]:
                     messages.success(request, result["message"])
                 else:
@@ -914,7 +914,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 messages.error(request, "Value is required.")
             return redirect(urls.key_detail_url(cache_name, key))
 
-        elif action == "list_lrem":
+        elif action == "lrem":
             value = request.POST.get("item_value", "").strip()
             count = 0  # Default: remove all occurrences
             count_str = request.POST.get("lrem_count", "").strip()
@@ -922,7 +922,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 with contextlib.suppress(ValueError):
                     count = int(count_str)
             if value:
-                result = service.list_lrem(key, value, count=count)
+                result = service.lrem(key, value, count=count)
                 if result["success"]:
                     messages.success(request, result["message"])
                 else:
@@ -931,11 +931,11 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 messages.error(request, "Value is required.")
             return redirect(urls.key_detail_url(cache_name, key))
 
-        elif action == "list_ltrim":
+        elif action == "ltrim":
             try:
                 start = int(request.POST.get("trim_start", "0"))
                 stop = int(request.POST.get("trim_stop", "-1"))
-                result = service.list_ltrim(key, start, stop)
+                result = service.ltrim(key, start, stop)
                 if result["success"]:
                     messages.success(request, result["message"])
                 else:
@@ -945,10 +945,10 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             return redirect(urls.key_detail_url(cache_name, key))
 
         # Set operations
-        elif action == "set_sadd":
+        elif action == "sadd":
             member = request.POST.get("member_value", "").strip()
             if member:
-                result = service.set_sadd(key, member)
+                result = service.sadd(key, member)
                 if result["success"]:
                     messages.success(request, result["message"])
                 else:
@@ -957,10 +957,10 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 messages.error(request, "Member is required.")
             return redirect(urls.key_detail_url(cache_name, key))
 
-        elif action == "set_srem":
+        elif action == "srem":
             member = request.POST.get("member", "").strip()
             if member:
-                result = service.set_srem(key, member)
+                result = service.srem(key, member)
                 if result["success"]:
                     messages.success(request, result["message"])
                 else:
@@ -968,11 +968,11 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             return redirect(urls.key_detail_url(cache_name, key))
 
         # Hash operations
-        elif action == "hash_hset":
+        elif action == "hset":
             field = request.POST.get("field_name", "").strip()
             value = request.POST.get("field_value", "").strip()
             if field:
-                result = service.hash_hset(key, field, value)
+                result = service.hset(key, field, value)
                 if result["success"]:
                     messages.success(request, result["message"])
                 else:
@@ -981,10 +981,10 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 messages.error(request, "Field name is required.")
             return redirect(urls.key_detail_url(cache_name, key))
 
-        elif action == "hash_hdel":
+        elif action == "hdel":
             field = request.POST.get("field", "").strip()
             if field:
-                result = service.hash_hdel(key, field)
+                result = service.hdel(key, field)
                 if result["success"]:
                     messages.success(request, result["message"])
                 else:
@@ -992,7 +992,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             return redirect(urls.key_detail_url(cache_name, key))
 
         # Sorted set operations
-        elif action == "zset_zadd":
+        elif action == "zadd":
             member = request.POST.get("member_value", "").strip()
             score_str = request.POST.get("score_value", "").strip()
             # Get ZADD flags
@@ -1003,7 +1003,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             if member and score_str:
                 try:
                     score = float(score_str)
-                    result = service.zset_zadd(key, member, score, nx=nx, xx=xx, gt=gt, lt=lt)
+                    result = service.zadd(key, member, score, nx=nx, xx=xx, gt=gt, lt=lt)
                     if result["success"]:
                         messages.success(request, result["message"])
                     else:
@@ -1014,10 +1014,10 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 messages.error(request, "Member and score are required.")
             return redirect(urls.key_detail_url(cache_name, key))
 
-        elif action == "zset_zrem":
+        elif action == "zrem":
             member = request.POST.get("member", "").strip()
             if member:
-                result = service.zset_zrem(key, member)
+                result = service.zrem(key, member)
                 if result["success"]:
                     messages.success(request, result["message"])
                 else:
@@ -1025,13 +1025,13 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             return redirect(urls.key_detail_url(cache_name, key))
 
         # Set pop operation
-        elif action == "set_spop":
+        elif action == "spop":
             count = 1
             count_str = request.POST.get("pop_count", "").strip()
             if count_str:
                 with contextlib.suppress(ValueError):
                     count = max(1, int(count_str))
-            result = service.set_spop(key, count=count)
+            result = service.spop(key, count=count)
             if result["success"]:
                 messages.success(request, result["message"])
             else:
@@ -1039,18 +1039,18 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             return redirect(urls.key_detail_url(cache_name, key))
 
         # Sorted set pop operations
-        elif action == "zset_zpopmin":
+        elif action == "zpopmin":
             pop_count = int(request.POST.get("pop_count", 1) or 1)
-            result = service.zset_zpopmin(key, count=pop_count)
+            result = service.zpopmin(key, count=pop_count)
             if result["success"]:
                 messages.success(request, result["message"])
             else:
                 messages.error(request, result["message"])
             return redirect(urls.key_detail_url(cache_name, key))
 
-        elif action == "zset_zpopmax":
+        elif action == "zpopmax":
             pop_count = int(request.POST.get("pop_count", 1) or 1)
-            result = service.zset_zpopmax(key, count=pop_count)
+            result = service.zpopmax(key, count=pop_count)
             if result["success"]:
                 messages.success(request, result["message"])
             else:
@@ -1058,11 +1058,11 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             return redirect(urls.key_detail_url(cache_name, key))
 
         # Stream operations
-        elif action == "stream_xadd":
+        elif action == "xadd":
             field_name = request.POST.get("field_name", "").strip()
             field_value = request.POST.get("field_value", "").strip()
             if field_name and field_value:
-                result = service.stream_xadd(key, {field_name: field_value})
+                result = service.xadd(key, {field_name: field_value})
                 if result["success"]:
                     messages.success(request, result["message"])
                 else:
@@ -1071,10 +1071,10 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 messages.error(request, "Field name and value are required.")
             return redirect(urls.key_detail_url(cache_name, key))
 
-        elif action == "stream_xdel":
+        elif action == "xdel":
             entry_id = request.POST.get("entry_id", "").strip()
             if entry_id:
-                result = service.stream_xdel(key, entry_id)
+                result = service.xdel(key, entry_id)
                 if result["success"]:
                     messages.success(request, result["message"])
                 else:
@@ -1083,12 +1083,12 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 messages.error(request, "Entry ID is required.")
             return redirect(urls.key_detail_url(cache_name, key))
 
-        elif action == "stream_xtrim":
+        elif action == "xtrim":
             maxlen_str = request.POST.get("maxlen", "").strip()
             if maxlen_str:
                 try:
                     maxlen = int(maxlen_str)
-                    result = service.stream_xtrim(key, maxlen)
+                    result = service.xtrim(key, maxlen)
                     if result["success"]:
                         messages.success(request, result["message"])
                     else:

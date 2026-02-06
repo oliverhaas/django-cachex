@@ -128,7 +128,7 @@
                 <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Push Left:' %}</label>
                 <form method="post" class="flex items-center gap-2">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="list_lpush">
+                    <input type="hidden" name="action" value="lpush">
                     <input type="text" name="push_value" placeholder="{% trans 'value' %}"
                            class="w-32 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
                                   bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
@@ -141,7 +141,7 @@
                 <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Push Right:' %}</label>
                 <form method="post" class="flex items-center gap-2">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="list_rpush">
+                    <input type="hidden" name="action" value="rpush">
                     <input type="text" name="push_value" placeholder="{% trans 'value' %}"
                            class="w-32 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
                                   bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
@@ -154,7 +154,7 @@
                 <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Pop Left:' %}</label>
                 <form method="post" class="flex items-center gap-2">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="list_lpop">
+                    <input type="hidden" name="action" value="lpop">
                     <input type="number" name="pop_count" value="1" min="1"
                            class="w-14 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
                                   bg-white dark:bg-base-700 text-base-900 dark:text-base-100" title="{% trans 'Count' %}">
@@ -167,7 +167,7 @@
                 <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Pop Right:' %}</label>
                 <form method="post" class="flex items-center gap-2">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="list_rpop">
+                    <input type="hidden" name="action" value="rpop">
                     <input type="number" name="pop_count" value="1" min="1"
                            class="w-14 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
                                   bg-white dark:bg-base-700 text-base-900 dark:text-base-100" title="{% trans 'Count' %}">
@@ -180,7 +180,7 @@
                 <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Trim:' %}</label>
                 <form method="post" class="flex items-center gap-2">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="list_ltrim">
+                    <input type="hidden" name="action" value="ltrim">
                     <input type="number" name="trim_start" value="0"
                            class="w-14 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
                                   bg-white dark:bg-base-700 text-base-900 dark:text-base-100" title="{% trans 'Start index' %}">
@@ -220,7 +220,7 @@
                     <td class="px-4 py-3">
                         <form method="post" class="inline">
                             {% csrf_token %}
-                            <input type="hidden" name="action" value="list_lrem">
+                            <input type="hidden" name="action" value="lrem">
                             <input type="hidden" name="item_value" value="{{ item }}">
                             <button type="submit"
                                     onclick="return confirm('{% trans 'Remove this item?' %}');"
@@ -249,7 +249,7 @@
                 <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Set Field:' %}</label>
                 <form method="post" class="flex items-center gap-2">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="hash_hset">
+                    <input type="hidden" name="action" value="hset">
                     <input type="text" name="field_name" placeholder="{% trans 'field' %}"
                            class="w-28 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
                                   bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
@@ -285,7 +285,7 @@
                     <td class="px-4 py-3 font-mono text-sm text-base-900 dark:text-base-100">{{ field }}</td>
                     <form method="post" class="contents">
                         {% csrf_token %}
-                        <input type="hidden" name="action" value="hash_hset">
+                        <input type="hidden" name="action" value="hset">
                         <input type="hidden" name="field_name" value="{{ field }}">
                         <td class="px-4 py-3">
                             <input type="text" name="field_value" value="{{ value }}"
@@ -299,7 +299,7 @@
                     </form>
                             <form method="post" class="inline ml-1">
                                 {% csrf_token %}
-                                <input type="hidden" name="action" value="hash_hdel">
+                                <input type="hidden" name="action" value="hdel">
                                 <input type="hidden" name="field" value="{{ field }}">
                                 <button type="submit" class="px-2 py-1 text-xs font-medium rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50">
                                     {% trans 'Delete' %}
@@ -326,7 +326,7 @@
                 <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Add:' %}</label>
                 <form method="post" class="flex items-center gap-2">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="set_sadd">
+                    <input type="hidden" name="action" value="sadd">
                     <input type="text" name="member_value" placeholder="{% trans 'member' %}"
                            class="w-40 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
                                   bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
@@ -339,7 +339,7 @@
                 <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Pop:' %}</label>
                 <form method="post" class="flex items-center gap-2">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="set_spop">
+                    <input type="hidden" name="action" value="spop">
                     <input type="number" name="pop_count" value="1" min="1"
                            class="w-14 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
                                   bg-white dark:bg-base-700 text-base-900 dark:text-base-100" title="{% trans 'Count' %}">
@@ -372,7 +372,7 @@
                     <td class="px-4 py-3">
                         <form method="post" class="inline">
                             {% csrf_token %}
-                            <input type="hidden" name="action" value="set_srem">
+                            <input type="hidden" name="action" value="srem">
                             <input type="hidden" name="member" value="{{ member }}">
                             <button type="submit" class="px-2 py-1 text-xs font-medium rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50">
                                 {% trans 'Remove' %}
@@ -399,7 +399,7 @@
                 <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Add:' %}</label>
                 <form method="post" class="flex flex-wrap items-center gap-2">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="zset_zadd">
+                    <input type="hidden" name="action" value="zadd">
                     <input type="text" name="member_value" placeholder="{% trans 'member' %}"
                            class="w-28 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
                                   bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
@@ -421,7 +421,7 @@
                 <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Pop Min:' %}</label>
                 <form method="post" class="flex items-center gap-2">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="zset_zpopmin">
+                    <input type="hidden" name="action" value="zpopmin">
                     <input type="number" name="pop_count" value="1" min="1"
                            class="w-14 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
                                   bg-white dark:bg-base-700 text-base-900 dark:text-base-100" title="{% trans 'Count' %}">
@@ -434,7 +434,7 @@
                 <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Pop Max:' %}</label>
                 <form method="post" class="flex items-center gap-2">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="zset_zpopmax">
+                    <input type="hidden" name="action" value="zpopmax">
                     <input type="number" name="pop_count" value="1" min="1"
                            class="w-14 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
                                   bg-white dark:bg-base-700 text-base-900 dark:text-base-100" title="{% trans 'Count' %}">
@@ -467,7 +467,7 @@
                     <td class="px-4 py-3 font-mono text-sm text-base-900 dark:text-base-100">{{ member }}</td>
                     <form method="post" class="contents">
                         {% csrf_token %}
-                        <input type="hidden" name="action" value="zset_zadd">
+                        <input type="hidden" name="action" value="zadd">
                         <input type="hidden" name="member_value" value="{{ member }}">
                         <td class="px-4 py-3">
                             <input type="number" name="score_value" value="{{ score }}" step="any"
@@ -481,7 +481,7 @@
                     </form>
                             <form method="post" class="inline ml-1">
                                 {% csrf_token %}
-                                <input type="hidden" name="action" value="zset_zrem">
+                                <input type="hidden" name="action" value="zrem">
                                 <input type="hidden" name="member" value="{{ member }}">
                                 <button type="submit" class="px-2 py-1 text-xs font-medium rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50">
                                     {% trans 'Remove' %}
@@ -508,7 +508,7 @@
                 <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Add Entry:' %}</label>
                 <form method="post" class="flex items-center gap-2">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="stream_xadd">
+                    <input type="hidden" name="action" value="xadd">
                     <input type="text" name="field_name" placeholder="{% trans 'field' %}"
                            class="w-24 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
                                   bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
@@ -524,7 +524,7 @@
                 <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Trim:' %}</label>
                 <form method="post" class="flex items-center gap-2">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="stream_xtrim">
+                    <input type="hidden" name="action" value="xtrim">
                     <input type="number" name="maxlen" placeholder="{% trans 'max length' %}" min="0"
                            class="w-24 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
                                   bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
@@ -563,7 +563,7 @@
                     <td class="px-4 py-3">
                         <form method="post" class="inline">
                             {% csrf_token %}
-                            <input type="hidden" name="action" value="stream_xdel">
+                            <input type="hidden" name="action" value="xdel">
                             <input type="hidden" name="entry_id" value="{{ entry_id }}">
                             <button type="submit"
                                     onclick="return confirm('{% trans 'Delete this entry?' %}');"
