@@ -1,0 +1,209 @@
+"""
+Cache-related views for the django-cachex admin.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import TYPE_CHECKING, Any
+
+from django.conf import settings
+from django.contrib import admin, messages
+from django.contrib.admin.views.decorators import staff_member_required
+from django.shortcuts import redirect, render
+
+from django_cachex.admin.models import Cache
+from django_cachex.admin.service import get_cache_service
+from django_cachex.admin.views.base import (
+    ADMIN_CONFIG,
+    ViewConfig,
+    cache_list_url,
+    show_help,
+)
+
+if TYPE_CHECKING:
+    from django.http import HttpRequest, HttpResponse
+
+
+def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:
+    """Display all configured cache instances with their capabilities.
+
+    This is the internal implementation; use index() for the decorated admin view.
+    """
+    # Show help message if requested
+    help_active = show_help(request, "index")
+
+    # Handle POST requests (flush cache action)
+    if request.method == "POST":
+        action = request.POST.get("action")
+        selected_caches = request.POST.getlist("_selected_action")
+
+        if action == "flush_selected" and selected_caches:
+            flushed_count = 0
+            for cache_name in selected_caches:
+                try:
+                    service = get_cache_service(cache_name)
+                    service.clear()
+                    flushed_count += 1
+                except Exception as e:  # noqa: BLE001
+                    messages.error(request, f"Error flushing '{cache_name}': {e!s}")
+            if flushed_count > 0:
+                messages.success(
+                    request,
+                    f"Successfully flushed {flushed_count} cache(s).",
+                )
+            return redirect(cache_list_url())
+
+    # Get filter parameters
+    support_filter = request.GET.get("support", "").strip()
+    search_query = request.GET.get("q", "").strip().lower()
+
+    caches_info: list[dict[str, Any]] = []
+    any_flush_supported = False
+    for cache_name, cache_config in settings.CACHES.items():
+        cache_obj = Cache.get_by_name(cache_name)
+        backend = str(cache_config.get("BACKEND", "Unknown"))
+        support_level = cache_obj.support_level if cache_obj else "limited"
+        any_flush_supported = True
+        try:
+            get_cache_service(cache_name)  # Verify cache is accessible
+            cache_info = {
+                "name": cache_name,
+                "config": cache_config,
+                "backend": backend,
+                "backend_short": backend.rsplit(".", 1)[-1] if "." in backend else backend,
+                "location": cache_config.get("LOCATION", ""),
+                "support_level": support_level,
+            }
+            caches_info.append(cache_info)
+        except Exception as e:  # noqa: BLE001
+            cache_info = {
+                "name": cache_name,
+                "config": cache_config,
+                "backend": backend,
+                "backend_short": backend.rsplit(".", 1)[-1] if "." in backend else backend,
+                "location": cache_config.get("LOCATION", ""),
+                "support_level": support_level,
+                "error": str(e),
+            }
+            caches_info.append(cache_info)
+
+    # Apply support filter
+    if support_filter:
+        caches_info = [c for c in caches_info if c["support_level"] == support_filter]
+
+    # Apply search filter
+    if search_query:
+        caches_info = [
+            c
+            for c in caches_info
+            if search_query in c["name"].lower()
+            or search_query in c["backend"].lower()
+            or search_query in str(c.get("location", "")).lower()
+        ]
+
+    context = admin.site.each_context(request)
+    context.update(
+        {
+            "caches_info": caches_info,
+            "has_caches_configured": bool(settings.CACHES),
+            "title": "Cache Admin - Instances",
+            "support_filter": support_filter,
+            "search_query": search_query,
+            "any_flush_supported": any_flush_supported,
+            "help_active": help_active,
+        },
+    )
+    return render(request, config.template("cache/index.html"), context)
+
+
+@staff_member_required
+def index(request: HttpRequest) -> HttpResponse:
+    """Display all configured cache instances with their capabilities."""
+    return _index_view(request, ADMIN_CONFIG)
+
+
+def _cache_detail_view(
+    request: HttpRequest,
+    cache_name: str,
+    config: ViewConfig,
+) -> HttpResponse:
+    """Display cache details (info + slowlog combined).
+
+    This is the internal implementation; use cache_detail() for the decorated admin view.
+    """
+    cache_obj = Cache.get_by_name(cache_name)
+
+    if cache_obj is None:
+        messages.error(request, f"Cache '{cache_name}' not found.")
+        return redirect(cache_list_url())
+
+    # Show help message if requested
+    help_active = show_help(request, "cache_info")
+
+    service = get_cache_service(cache_name)
+
+    # Get cache metadata and info
+    info_data = None
+    raw_info = None
+    try:
+        info_data = service.metadata()
+        raw_info = service.info()
+    except Exception as e:  # noqa: BLE001
+        messages.error(request, f"Error retrieving cache info: {e!s}")
+
+    # Get slowlog count from query param (default 10)
+    slowlog_count = int(request.GET.get("count", 10))
+
+    # Get slowlog entries
+    slowlog_data = None
+    try:
+        slowlog_data = service.slowlog_get(slowlog_count)
+    except Exception as e:  # noqa: BLE001
+        messages.error(request, f"Error retrieving slow log: {e!s}")
+
+    # Convert raw_info to pretty-printed JSON for display
+    raw_info_json = None
+    if raw_info:
+        raw_info_json = json.dumps(raw_info, indent=2, default=str)
+
+    context = admin.site.each_context(request)
+    context.update(
+        {
+            "title": f"Cache: {cache_name}",
+            "cache_name": cache_name,
+            "cache_obj": cache_obj,
+            "info_data": info_data,
+            "raw_info_json": raw_info_json,
+            "slowlog_data": slowlog_data,
+            "slowlog_count": slowlog_count,
+            "help_active": help_active,
+        },
+    )
+    return render(request, config.template("cache/change_form.html"), context)
+
+
+@staff_member_required
+def cache_detail(request: HttpRequest, cache_name: str) -> HttpResponse:
+    """Display cache details (info + slowlog combined)."""
+    return _cache_detail_view(request, cache_name, ADMIN_CONFIG)
+
+
+def _help_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:
+    """Display help information about the cache admin.
+
+    This is the internal implementation; use help_view() for the decorated admin view.
+    """
+    context = admin.site.each_context(request)
+    context.update(
+        {
+            "title": "Cache Admin - Help",
+        },
+    )
+    return render(request, config.template("cache/help.html"), context)
+
+
+@staff_member_required
+def help_view(request: HttpRequest) -> HttpResponse:
+    """Display help information about the cache admin."""
+    return _help_view(request, ADMIN_CONFIG)
