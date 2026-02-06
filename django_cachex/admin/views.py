@@ -797,30 +797,20 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         elif action == "set_ttl":
             try:
                 ttl_str = request.POST.get("ttl_value", "").strip()
-                if not ttl_str:
-                    # Empty TTL = persist (no expiry)
-                    result = service.persist(key)
-                    if result["success"]:
-                        messages.success(request, result["message"])
+                if not ttl_str or ttl_str == "0":
+                    # Empty or 0 TTL = persist (no expiry)
+                    if service.persist(key):
+                        messages.success(request, "TTL removed. Key will not expire.")
                     else:
-                        messages.error(request, result["message"])
+                        messages.error(request, "Key does not exist or has no TTL.")
                 else:
                     ttl_int = int(ttl_str)
                     if ttl_int < 0:
                         messages.error(request, "TTL must be non-negative.")
-                    elif ttl_int == 0:
-                        # TTL of 0 = persist (no expiry)
-                        result = service.persist(key)
-                        if result["success"]:
-                            messages.success(request, result["message"])
-                        else:
-                            messages.error(request, result["message"])
+                    elif service.expire(key, ttl_int):
+                        messages.success(request, f"TTL set to {ttl_int} seconds.")
                     else:
-                        result = service.expire(key, ttl_int)
-                        if result["success"]:
-                            messages.success(request, result["message"])
-                        else:
-                            messages.error(request, result["message"])
+                        messages.error(request, "Key does not exist or TTL could not be set.")
                 return redirect(urls.key_detail_url(cache_name, key))
             except ValueError:
                 messages.error(request, "Invalid TTL value. Must be a number.")
@@ -829,11 +819,10 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
 
         elif action == "persist":
             try:
-                result = service.persist(key)
-                if result["success"]:
-                    messages.success(request, result["message"])
+                if service.persist(key):
+                    messages.success(request, "TTL removed. Key will not expire.")
                 else:
-                    messages.error(request, result["message"])
+                    messages.error(request, "Key does not exist or has no TTL.")
                 return redirect(urls.key_detail_url(cache_name, key))
             except Exception as e:  # noqa: BLE001
                 messages.error(request, f"Error removing TTL: {e!s}")

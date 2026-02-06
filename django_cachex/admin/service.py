@@ -243,61 +243,29 @@ class CacheService:
         """Get the TTL of a key in seconds.
 
         Returns:
-            TTL in seconds, None for no expiry, None for key not found.
-
-        Raises:
-            NotSupportedError: If TTL is not supported.
+            TTL in seconds, None for no expiry or key not found.
         """
-        try:
-            result = self._cache.ttl(key)
-            # Redis returns -1 for no expiry, -2 for key doesn't exist
-            if result is not None and result >= 0:
-                return result
-            if result == -1:
-                return None  # No expiry
-            return None
-        except NotSupportedError:
-            raise
-        except Exception:  # noqa: BLE001
-            return None
+        result = self._cache.ttl(key)
+        # Redis returns -1 for no expiry, -2 for key doesn't exist
+        if result is not None and result >= 0:
+            return result
+        return None
 
-    def expire(self, key: str, timeout: int) -> dict[str, Any]:
+    def expire(self, key: str, timeout: int) -> bool:
         """Set the TTL of a key.
 
         Returns:
-            Dict with success, message fields.
-
-        Raises:
-            NotSupportedError: If expire is not supported.
+            True if successful, False if key doesn't exist.
         """
-        try:
-            result = self._cache.expire(key, timeout)
-            if result:
-                return {"success": True, "message": f"TTL set to {timeout} seconds."}
-            return {"success": False, "message": "Key does not exist or TTL could not be set."}
-        except NotSupportedError:
-            raise
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+        return self._cache.expire(key, timeout)
 
-    def persist(self, key: str) -> dict[str, Any]:
+    def persist(self, key: str) -> bool:
         """Remove the TTL from a key.
 
         Returns:
-            Dict with success, message fields.
-
-        Raises:
-            NotSupportedError: If persist is not supported.
+            True if successful, False if key doesn't exist or has no TTL.
         """
-        try:
-            result = self._cache.persist(key)
-            if result:
-                return {"success": True, "message": "TTL removed. Key will not expire."}
-            return {"success": False, "message": "Key does not exist or has no TTL."}
-        except NotSupportedError:
-            raise
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+        return self._cache.persist(key)
 
     # Type operations
 
