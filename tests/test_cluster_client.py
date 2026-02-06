@@ -1,7 +1,9 @@
 """Tests for RedisClusterCacheClient."""
 
-from unittest.mock import MagicMock
+import asyncio
+from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from redis.cluster import RedisCluster, key_slot
 
 from django_cachex.client import RedisClusterCacheClient
@@ -433,3 +435,39 @@ class TestRedisClusterCacheClient:
 
         mock_cluster.close.assert_called_once()
         assert "redis://localhost:7000" not in client._clusters
+
+    @pytest.mark.asyncio
+    async def test_aclose_closes_async_cluster(self):
+        """Test aclose() closes the async cluster connection when close_connection=True."""
+        mock_async_cluster = AsyncMock()
+
+        # Create and populate instance
+        client = setup_cluster_client()
+        client._options = {"close_connection": True}
+
+        # Set up the async clusters dict with current event loop
+        loop = asyncio.get_running_loop()
+        client._async_clusters = {loop: {"redis://localhost:7000": mock_async_cluster}}
+
+        await client.aclose()
+
+        mock_async_cluster.aclose.assert_called_once()
+        assert "redis://localhost:7000" not in client._async_clusters.get(loop, {})
+
+    @pytest.mark.asyncio
+    async def test_aclose_no_op_when_not_configured(self):
+        """Test aclose() does nothing when close_connection is not set."""
+        mock_async_cluster = AsyncMock()
+
+        client = setup_cluster_client()
+        client._options = {}  # close_connection not set
+
+        loop = asyncio.get_running_loop()
+        client._async_clusters = {loop: {"redis://localhost:7000": mock_async_cluster}}
+
+        await client.aclose()
+
+        # Should NOT close the connection
+        mock_async_cluster.aclose.assert_not_called()
+        # Connection should still exist
+        assert "redis://localhost:7000" in client._async_clusters.get(loop, {})
