@@ -576,18 +576,14 @@ class CacheService:
 
     # List operations
 
-    def lpop(self, key: str, count: int = 1) -> Any:
-        """Pop from the left of a list. Returns value(s) or None if empty."""
+    def lpop(self, key: str, count: int = 1) -> list[Any] | None:
+        """Pop from the left of a list. Returns list of values or None if empty."""
         cache = cast("Any", self._cache)
-        if count == 1:
-            return cache.lpop(key)
         return cache.lpop(key, count=count)
 
-    def rpop(self, key: str, count: int = 1) -> Any:
-        """Pop from the right of a list. Returns value(s) or None if empty."""
+    def rpop(self, key: str, count: int = 1) -> list[Any] | None:
+        """Pop from the right of a list. Returns list of values or None if empty."""
         cache = cast("Any", self._cache)
-        if count == 1:
-            return cache.rpop(key)
         return cache.rpop(key, count=count)
 
     def lpush(self, key: str, value: str) -> int:
@@ -622,11 +618,9 @@ class CacheService:
         cache = cast("Any", self._cache)
         return bool(cache.srem(key, member))
 
-    def spop(self, key: str, count: int = 1) -> Any:
-        """Pop random members from a set. Returns value(s) or None if empty."""
+    def spop(self, key: str, count: int = 1) -> list[Any] | None:
+        """Pop random members from a set. Returns list of values or None if empty."""
         cache = cast("Any", self._cache)
-        if count == 1:
-            return cache.spop(key)
         return cache.spop(key, count=count)
 
     # Hash operations

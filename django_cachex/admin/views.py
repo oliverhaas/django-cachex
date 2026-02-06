@@ -765,10 +765,10 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     count = max(1, int(count_str))
             try:
                 result = service.lpop(key, count=count)
-                if result is None or (isinstance(result, list) and not result):
+                if not result:
                     messages.error(request, "List is empty or key does not exist.")
-                elif count == 1:
-                    messages.success(request, f"Popped: {result}")
+                elif len(result) == 1:
+                    messages.success(request, f"Popped: {result[0]}")
                 else:
                     messages.success(request, f"Popped {len(result)} item(s): {result}")
             except Exception as e:  # noqa: BLE001
@@ -783,10 +783,10 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     count = max(1, int(count_str))
             try:
                 result = service.rpop(key, count=count)
-                if result is None or (isinstance(result, list) and not result):
+                if not result:
                     messages.error(request, "List is empty or key does not exist.")
-                elif count == 1:
-                    messages.success(request, f"Popped: {result}")
+                elif len(result) == 1:
+                    messages.success(request, f"Popped: {result[0]}")
                 else:
                     messages.success(request, f"Popped {len(result)} item(s): {result}")
             except Exception as e:  # noqa: BLE001
@@ -952,10 +952,10 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     count = max(1, int(count_str))
             try:
                 result = service.spop(key, count=count)
-                if result is None or (hasattr(result, "__len__") and len(result) == 0):
+                if not result:
                     messages.error(request, "Set is empty or key does not exist.")
-                elif count == 1:
-                    messages.success(request, f"Popped: {result}")
+                elif len(result) == 1:
+                    messages.success(request, f"Popped: {result[0]}")
                 else:
                     messages.success(request, f"Popped {len(result)} member(s): {result}")
             except Exception as e:  # noqa: BLE001
