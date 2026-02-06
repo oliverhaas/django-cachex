@@ -812,11 +812,11 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     new_value = json.loads(new_value)
 
                 # Update value only (TTL is handled separately via set_ttl action)
-                result = service.set(key, new_value, timeout=None)
-                messages.success(request, result["message"])
+                service.set(key, new_value, timeout=None)
+                messages.success(request, "Key updated successfully.")
                 return redirect(urls.key_detail_url(cache_name, key))
             except Exception as e:  # noqa: BLE001
-                messages.error(request, f"Error updating key: {e!s}")
+                messages.error(request, str(e))
 
         elif action == "set_ttl":
             try:
@@ -869,11 +869,16 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             if count_str:
                 with contextlib.suppress(ValueError):
                     count = max(1, int(count_str))
-            result = service.lpop(key, count=count)
-            if result["success"]:
-                messages.success(request, result["message"])
-            else:
-                messages.error(request, result["message"])
+            try:
+                result = service.lpop(key, count=count)
+                if result is None or (isinstance(result, list) and not result):
+                    messages.error(request, "List is empty or key does not exist.")
+                elif count == 1:
+                    messages.success(request, f"Popped: {result}")
+                else:
+                    messages.success(request, f"Popped {len(result)} item(s): {result}")
+            except Exception as e:  # noqa: BLE001
+                messages.error(request, str(e))
             return redirect(urls.key_detail_url(cache_name, key))
 
         elif action == "rpop":
@@ -882,21 +887,26 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             if count_str:
                 with contextlib.suppress(ValueError):
                     count = max(1, int(count_str))
-            result = service.rpop(key, count=count)
-            if result["success"]:
-                messages.success(request, result["message"])
-            else:
-                messages.error(request, result["message"])
+            try:
+                result = service.rpop(key, count=count)
+                if result is None or (isinstance(result, list) and not result):
+                    messages.error(request, "List is empty or key does not exist.")
+                elif count == 1:
+                    messages.success(request, f"Popped: {result}")
+                else:
+                    messages.success(request, f"Popped {len(result)} item(s): {result}")
+            except Exception as e:  # noqa: BLE001
+                messages.error(request, str(e))
             return redirect(urls.key_detail_url(cache_name, key))
 
         elif action == "lpush":
             value = request.POST.get("push_value", "").strip()
             if value:
-                result = service.lpush(key, value)
-                if result["success"]:
-                    messages.success(request, result["message"])
-                else:
-                    messages.error(request, result["message"])
+                try:
+                    new_len = service.lpush(key, value)
+                    messages.success(request, f"Pushed to left. Length: {new_len}")
+                except Exception as e:  # noqa: BLE001
+                    messages.error(request, str(e))
             else:
                 messages.error(request, "Value is required.")
             return redirect(urls.key_detail_url(cache_name, key))
@@ -904,11 +914,11 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         elif action == "rpush":
             value = request.POST.get("push_value", "").strip()
             if value:
-                result = service.rpush(key, value)
-                if result["success"]:
-                    messages.success(request, result["message"])
-                else:
-                    messages.error(request, result["message"])
+                try:
+                    new_len = service.rpush(key, value)
+                    messages.success(request, f"Pushed to right. Length: {new_len}")
+                except Exception as e:  # noqa: BLE001
+                    messages.error(request, str(e))
             else:
                 messages.error(request, "Value is required.")
             return redirect(urls.key_detail_url(cache_name, key))
@@ -921,11 +931,14 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 with contextlib.suppress(ValueError):
                     count = int(count_str)
             if value:
-                result = service.lrem(key, value, count=count)
-                if result["success"]:
-                    messages.success(request, result["message"])
-                else:
-                    messages.error(request, result["message"])
+                try:
+                    removed = service.lrem(key, value, count=count)
+                    if removed > 0:
+                        messages.success(request, f"Removed {removed} occurrence(s) of '{value}'.")
+                    else:
+                        messages.warning(request, f"'{value}' not found in list.")
+                except Exception as e:  # noqa: BLE001
+                    messages.error(request, str(e))
             else:
                 messages.error(request, "Value is required.")
             return redirect(urls.key_detail_url(cache_name, key))
@@ -934,24 +947,26 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             try:
                 start = int(request.POST.get("trim_start", "0"))
                 stop = int(request.POST.get("trim_stop", "-1"))
-                result = service.ltrim(key, start, stop)
-                if result["success"]:
-                    messages.success(request, result["message"])
-                else:
-                    messages.error(request, result["message"])
+                service.ltrim(key, start, stop)
+                messages.success(request, f"List trimmed to range [{start}:{stop}].")
             except ValueError:
                 messages.error(request, "Start and stop must be integers.")
+            except Exception as e:  # noqa: BLE001
+                messages.error(request, str(e))
             return redirect(urls.key_detail_url(cache_name, key))
 
         # Set operations
         elif action == "sadd":
             member = request.POST.get("member_value", "").strip()
             if member:
-                result = service.sadd(key, member)
-                if result["success"]:
-                    messages.success(request, result["message"])
-                else:
-                    messages.error(request, result["message"])
+                try:
+                    added = service.sadd(key, member)
+                    if added:
+                        messages.success(request, f"Added '{member}' to set.")
+                    else:
+                        messages.info(request, f"'{member}' already exists in set.")
+                except Exception as e:  # noqa: BLE001
+                    messages.error(request, str(e))
             else:
                 messages.error(request, "Member is required.")
             return redirect(urls.key_detail_url(cache_name, key))
@@ -959,11 +974,14 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         elif action == "srem":
             member = request.POST.get("member", "").strip()
             if member:
-                result = service.srem(key, member)
-                if result["success"]:
-                    messages.success(request, result["message"])
-                else:
-                    messages.error(request, result["message"])
+                try:
+                    removed = service.srem(key, member)
+                    if removed:
+                        messages.success(request, f"Removed '{member}' from set.")
+                    else:
+                        messages.warning(request, f"'{member}' not found in set.")
+                except Exception as e:  # noqa: BLE001
+                    messages.error(request, str(e))
             return redirect(urls.key_detail_url(cache_name, key))
 
         # Hash operations
@@ -971,11 +989,11 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             field = request.POST.get("field_name", "").strip()
             value = request.POST.get("field_value", "").strip()
             if field:
-                result = service.hset(key, field, value)
-                if result["success"]:
-                    messages.success(request, result["message"])
-                else:
-                    messages.error(request, result["message"])
+                try:
+                    service.hset(key, field, value)
+                    messages.success(request, f"Set field '{field}'.")
+                except Exception as e:  # noqa: BLE001
+                    messages.error(request, str(e))
             else:
                 messages.error(request, "Field name is required.")
             return redirect(urls.key_detail_url(cache_name, key))
@@ -983,11 +1001,14 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         elif action == "hdel":
             field = request.POST.get("field", "").strip()
             if field:
-                result = service.hdel(key, field)
-                if result["success"]:
-                    messages.success(request, result["message"])
-                else:
-                    messages.error(request, result["message"])
+                try:
+                    removed = service.hdel(key, field)
+                    if removed:
+                        messages.success(request, f"Deleted field '{field}'.")
+                    else:
+                        messages.warning(request, f"Field '{field}' not found.")
+                except Exception as e:  # noqa: BLE001
+                    messages.error(request, str(e))
             return redirect(urls.key_detail_url(cache_name, key))
 
         # Sorted set operations
@@ -1002,13 +1023,15 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             if member and score_str:
                 try:
                     score = float(score_str)
-                    result = service.zadd(key, member, score, nx=nx, xx=xx, gt=gt, lt=lt)
-                    if result["success"]:
-                        messages.success(request, result["message"])
+                    added = service.zadd(key, {member: score}, nx=nx, xx=xx, gt=gt, lt=lt)
+                    if added:
+                        messages.success(request, f"Added '{member}' with score {score}.")
                     else:
-                        messages.error(request, result["message"])
+                        messages.success(request, f"Updated '{member}' score to {score}.")
                 except ValueError:
                     messages.error(request, "Score must be a number.")
+                except Exception as e:  # noqa: BLE001
+                    messages.error(request, str(e))
             else:
                 messages.error(request, "Member and score are required.")
             return redirect(urls.key_detail_url(cache_name, key))
@@ -1016,11 +1039,14 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         elif action == "zrem":
             member = request.POST.get("member", "").strip()
             if member:
-                result = service.zrem(key, member)
-                if result["success"]:
-                    messages.success(request, result["message"])
-                else:
-                    messages.error(request, result["message"])
+                try:
+                    removed = service.zrem(key, member)
+                    if removed:
+                        messages.success(request, f"Removed '{member}' from sorted set.")
+                    else:
+                        messages.warning(request, f"'{member}' not found in sorted set.")
+                except Exception as e:  # noqa: BLE001
+                    messages.error(request, str(e))
             return redirect(urls.key_detail_url(cache_name, key))
 
         # Set pop operation
@@ -1030,30 +1056,49 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             if count_str:
                 with contextlib.suppress(ValueError):
                     count = max(1, int(count_str))
-            result = service.spop(key, count=count)
-            if result["success"]:
-                messages.success(request, result["message"])
-            else:
-                messages.error(request, result["message"])
+            try:
+                result = service.spop(key, count=count)
+                if result is None or (hasattr(result, "__len__") and len(result) == 0):
+                    messages.error(request, "Set is empty or key does not exist.")
+                elif count == 1:
+                    messages.success(request, f"Popped: {result}")
+                else:
+                    messages.success(request, f"Popped {len(result)} member(s): {result}")
+            except Exception as e:  # noqa: BLE001
+                messages.error(request, str(e))
             return redirect(urls.key_detail_url(cache_name, key))
 
         # Sorted set pop operations
         elif action == "zpopmin":
             pop_count = int(request.POST.get("pop_count", 1) or 1)
-            result = service.zpopmin(key, count=pop_count)
-            if result["success"]:
-                messages.success(request, result["message"])
-            else:
-                messages.error(request, result["message"])
+            try:
+                result = service.zpopmin(key, count=pop_count)
+                if not result:
+                    messages.error(request, "Sorted set is empty or key does not exist.")
+                elif len(result) == 1:
+                    member, score = result[0]
+                    messages.success(request, f"Popped: {member} (score: {score})")
+                else:
+                    members = [f"{m} ({s})" for m, s in result]
+                    messages.success(request, f"Popped {len(result)} member(s): {', '.join(members)}")
+            except Exception as e:  # noqa: BLE001
+                messages.error(request, str(e))
             return redirect(urls.key_detail_url(cache_name, key))
 
         elif action == "zpopmax":
             pop_count = int(request.POST.get("pop_count", 1) or 1)
-            result = service.zpopmax(key, count=pop_count)
-            if result["success"]:
-                messages.success(request, result["message"])
-            else:
-                messages.error(request, result["message"])
+            try:
+                result = service.zpopmax(key, count=pop_count)
+                if not result:
+                    messages.error(request, "Sorted set is empty or key does not exist.")
+                elif len(result) == 1:
+                    member, score = result[0]
+                    messages.success(request, f"Popped: {member} (score: {score})")
+                else:
+                    members = [f"{m} ({s})" for m, s in result]
+                    messages.success(request, f"Popped {len(result)} member(s): {', '.join(members)}")
+            except Exception as e:  # noqa: BLE001
+                messages.error(request, str(e))
             return redirect(urls.key_detail_url(cache_name, key))
 
         # Stream operations
@@ -1061,11 +1106,11 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             field_name = request.POST.get("field_name", "").strip()
             field_value = request.POST.get("field_value", "").strip()
             if field_name and field_value:
-                result = service.xadd(key, {field_name: field_value})
-                if result["success"]:
-                    messages.success(request, result["message"])
-                else:
-                    messages.error(request, result["message"])
+                try:
+                    entry_id = service.xadd(key, {field_name: field_value})
+                    messages.success(request, f"Added entry {entry_id}.")
+                except Exception as e:  # noqa: BLE001
+                    messages.error(request, str(e))
             else:
                 messages.error(request, "Field name and value are required.")
             return redirect(urls.key_detail_url(cache_name, key))
@@ -1073,11 +1118,14 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         elif action == "xdel":
             entry_id = request.POST.get("entry_id", "").strip()
             if entry_id:
-                result = service.xdel(key, entry_id)
-                if result["success"]:
-                    messages.success(request, result["message"])
-                else:
-                    messages.error(request, result["message"])
+                try:
+                    deleted = service.xdel(key, entry_id)
+                    if deleted:
+                        messages.success(request, f"Deleted entry {entry_id}.")
+                    else:
+                        messages.warning(request, f"Entry {entry_id} not found.")
+                except Exception as e:  # noqa: BLE001
+                    messages.error(request, str(e))
             else:
                 messages.error(request, "Entry ID is required.")
             return redirect(urls.key_detail_url(cache_name, key))
@@ -1087,13 +1135,12 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             if maxlen_str:
                 try:
                     maxlen = int(maxlen_str)
-                    result = service.xtrim(key, maxlen)
-                    if result["success"]:
-                        messages.success(request, result["message"])
-                    else:
-                        messages.error(request, result["message"])
+                    trimmed = service.xtrim(key, maxlen)
+                    messages.success(request, f"Trimmed {trimmed} entries.")
                 except ValueError:
                     messages.error(request, "Max length must be a number.")
+                except Exception as e:  # noqa: BLE001
+                    messages.error(request, str(e))
             else:
                 messages.error(request, "Max length is required.")
             return redirect(urls.key_detail_url(cache_name, key))

@@ -9,7 +9,10 @@ wrappers to adapt Django builtin caches.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 from django.conf import settings
 from django.core.cache import caches
@@ -210,65 +213,17 @@ class CacheService:
             "expiry": None,
         }
 
-    def set(self, key: str, value: Any, timeout: float | None = None) -> dict[str, Any]:
-        """Set a key value in the cache.
+    def set(self, key: str, value: Any, timeout: float | None = None) -> None:
+        """Set a key value in the cache."""
+        self._cache.set(key, value, timeout=timeout)
 
-        Returns:
-            Dict with success, error, message fields.
-        """
-        try:
-            self._cache.set(key, value, timeout=timeout)
-            return {
-                "success": True,
-                "error": None,
-                "message": f"Key {key} updated successfully.",
-            }
-        except Exception as e:  # noqa: BLE001
-            return {
-                "success": False,
-                "error": str(e),
-                "message": f"Error setting key: {e}",
-            }
+    def delete(self, key: str) -> bool:
+        """Delete a key from the cache. Returns True if key existed."""
+        return self._cache.delete(key)
 
-    def delete(self, key: str) -> dict[str, Any]:
-        """Delete a key from the cache.
-
-        Returns:
-            Dict with success, error, message fields.
-        """
-        try:
-            self._cache.delete(key)
-            return {
-                "success": True,
-                "error": None,
-                "message": f"Key {key} deleted successfully.",
-            }
-        except Exception as e:  # noqa: BLE001
-            return {
-                "success": False,
-                "error": str(e),
-                "message": f"Error deleting key: {e}",
-            }
-
-    def clear(self) -> dict[str, Any]:
-        """Clear all keys from the cache.
-
-        Returns:
-            Dict with success, error, message fields.
-        """
-        try:
-            self._cache.clear()
-            return {
-                "success": True,
-                "error": None,
-                "message": "Cache flushed successfully.",
-            }
-        except Exception as e:  # noqa: BLE001
-            return {
-                "success": False,
-                "error": str(e),
-                "message": f"Error flushing cache: {e}",
-            }
+    def clear(self) -> None:
+        """Clear all keys from the cache."""
+        self._cache.clear()
 
     # Key listing and search
 
@@ -703,270 +658,118 @@ class CacheService:
 
     # List operations
 
-    def lpop(self, key: str, count: int = 1) -> dict[str, Any]:
-        """Pop from the left of a list."""
-        try:
-            cache = cast("Any", self._cache)
-            if count == 1:
-                value = cache.lpop(key)
-                if value is not None:
-                    return {"success": True, "value": value, "message": f"Popped: {value}"}
-                return {"success": False, "message": "List is empty or key does not exist."}
-            values = cache.lpop(key, count=count)
-            if values:
-                return {"success": True, "values": values, "message": f"Popped {len(values)} item(s): {values}"}
-            return {"success": False, "message": "List is empty or key does not exist."}
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+    def lpop(self, key: str, count: int = 1) -> Any:
+        """Pop from the left of a list. Returns value(s) or None if empty."""
+        cache = cast("Any", self._cache)
+        if count == 1:
+            return cache.lpop(key)
+        return cache.lpop(key, count=count)
 
-    def rpop(self, key: str, count: int = 1) -> dict[str, Any]:
-        """Pop from the right of a list."""
-        try:
-            cache = cast("Any", self._cache)
-            if count == 1:
-                value = cache.rpop(key)
-                if value is not None:
-                    return {"success": True, "value": value, "message": f"Popped: {value}"}
-                return {"success": False, "message": "List is empty or key does not exist."}
-            values = cache.rpop(key, count=count)
-            if values:
-                return {"success": True, "values": values, "message": f"Popped {len(values)} item(s): {values}"}
-            return {"success": False, "message": "List is empty or key does not exist."}
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+    def rpop(self, key: str, count: int = 1) -> Any:
+        """Pop from the right of a list. Returns value(s) or None if empty."""
+        cache = cast("Any", self._cache)
+        if count == 1:
+            return cache.rpop(key)
+        return cache.rpop(key, count=count)
 
-    def lpush(self, key: str, value: str) -> dict[str, Any]:
-        """Push to the left of a list."""
-        try:
-            cache = cast("Any", self._cache)
-            new_len = cache.lpush(key, value)
-            return {"success": True, "length": new_len, "message": f"Pushed to left. Length: {new_len}"}
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+    def lpush(self, key: str, value: str) -> int:
+        """Push to the left of a list. Returns new length."""
+        cache = cast("Any", self._cache)
+        return cache.lpush(key, value)
 
-    def rpush(self, key: str, value: str) -> dict[str, Any]:
-        """Push to the right of a list."""
-        try:
-            cache = cast("Any", self._cache)
-            new_len = cache.rpush(key, value)
-            return {"success": True, "length": new_len, "message": f"Pushed to right. Length: {new_len}"}
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+    def rpush(self, key: str, value: str) -> int:
+        """Push to the right of a list. Returns new length."""
+        cache = cast("Any", self._cache)
+        return cache.rpush(key, value)
 
-    def lrem(self, key: str, value: str, count: int = 0) -> dict[str, Any]:
-        """Remove elements from a list."""
-        try:
-            cache = cast("Any", self._cache)
-            removed = cache.lrem(key, count, value)
-            if removed > 0:
-                return {
-                    "success": True,
-                    "removed": removed,
-                    "message": f"Removed {removed} occurrence(s) of '{value}'.",
-                }
-            return {"success": False, "message": f"'{value}' not found in list."}
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+    def lrem(self, key: str, value: str, count: int = 0) -> int:
+        """Remove elements from a list. Returns count removed."""
+        cache = cast("Any", self._cache)
+        return cache.lrem(key, count, value)
 
-    def ltrim(self, key: str, start: int, stop: int) -> dict[str, Any]:
+    def ltrim(self, key: str, start: int, stop: int) -> None:
         """Trim a list to the specified range."""
-        try:
-            cache = cast("Any", self._cache)
-            cache.ltrim(key, start, stop)
-            return {"success": True, "message": f"List trimmed to range [{start}:{stop}]."}
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+        cache = cast("Any", self._cache)
+        cache.ltrim(key, start, stop)
 
     # Set operations
 
-    def sadd(self, key: str, member: str) -> dict[str, Any]:
-        """Add a member to a set."""
-        try:
-            cache = cast("Any", self._cache)
-            added = cache.sadd(key, member)
-            if added:
-                return {"success": True, "message": f"Added '{member}' to set."}
-            return {"success": True, "message": f"'{member}' already exists in set."}
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+    def sadd(self, key: str, member: str) -> bool:
+        """Add a member to a set. Returns True if member was new."""
+        cache = cast("Any", self._cache)
+        return bool(cache.sadd(key, member))
 
-    def srem(self, key: str, member: str) -> dict[str, Any]:
-        """Remove a member from a set."""
-        try:
-            cache = cast("Any", self._cache)
-            removed = cache.srem(key, member)
-            if removed:
-                return {"success": True, "message": f"Removed '{member}' from set."}
-            return {"success": False, "message": f"'{member}' not found in set."}
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+    def srem(self, key: str, member: str) -> bool:
+        """Remove a member from a set. Returns True if member existed."""
+        cache = cast("Any", self._cache)
+        return bool(cache.srem(key, member))
 
-    def spop(self, key: str, count: int = 1) -> dict[str, Any]:
-        """Pop random members from a set."""
-        try:
-            cache = cast("Any", self._cache)
-            if count == 1:
-                value = cache.spop(key)
-                if value is not None:
-                    return {"success": True, "value": value, "message": f"Popped: {value}"}
-                return {"success": False, "message": "Set is empty or key does not exist."}
-            values = cache.spop(key, count=count)
-            if values:
-                return {
-                    "success": True,
-                    "values": list(values) if hasattr(values, "__iter__") else [values],
-                    "message": f"Popped {len(values) if hasattr(values, '__len__') else 1} member(s): {values}",
-                }
-            return {"success": False, "message": "Set is empty or key does not exist."}
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+    def spop(self, key: str, count: int = 1) -> Any:
+        """Pop random members from a set. Returns value(s) or None if empty."""
+        cache = cast("Any", self._cache)
+        if count == 1:
+            return cache.spop(key)
+        return cache.spop(key, count=count)
 
     # Hash operations
 
-    def hset(self, key: str, field: str, value: str) -> dict[str, Any]:
+    def hset(self, key: str, field: str, value: str) -> None:
         """Set a field in a hash."""
-        try:
-            cache = cast("Any", self._cache)
-            cache.hset(key, field, value)
-            return {"success": True, "message": f"Set field '{field}'."}
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+        cache = cast("Any", self._cache)
+        cache.hset(key, field, value)
 
-    def hdel(self, key: str, field: str) -> dict[str, Any]:
-        """Delete a field from a hash."""
-        try:
-            cache = cast("Any", self._cache)
-            removed = cache.hdel(key, field)
-            if removed:
-                return {"success": True, "message": f"Deleted field '{field}'."}
-            return {"success": False, "message": f"Field '{field}' not found."}
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+    def hdel(self, key: str, field: str) -> bool:
+        """Delete a field from a hash. Returns True if field existed."""
+        cache = cast("Any", self._cache)
+        return bool(cache.hdel(key, field))
 
     # Sorted set operations
 
     def zadd(
         self,
         key: str,
-        member: str,
-        score: float,
+        mapping: Mapping[str, float],
         *,
         nx: bool = False,
         xx: bool = False,
         gt: bool = False,
         lt: bool = False,
-    ) -> dict[str, Any]:
-        """Add a member to a sorted set."""
-        try:
-            cache = cast("Any", self._cache)
-            added = cache.zadd(key, {member: score}, nx=nx, xx=xx, gt=gt, lt=lt)
-            if nx and not added:
-                return {"success": True, "message": f"'{member}' already exists (NX flag)."}
-            if xx and not added:
-                return {"success": True, "message": f"'{member}' does not exist (XX flag)."}
-            if (gt or lt) and not added:
-                return {"success": True, "message": "Score not updated (GT/LT condition not met)."}
-            if added:
-                return {"success": True, "message": f"Added '{member}' with score {score}."}
-            return {"success": True, "message": f"Updated '{member}' score to {score}."}
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+    ) -> int:
+        """Add members to a sorted set. Returns number of elements added."""
+        cache = cast("Any", self._cache)
+        return cache.zadd(key, mapping, nx=nx, xx=xx, gt=gt, lt=lt)
 
-    def zrem(self, key: str, member: str) -> dict[str, Any]:
-        """Remove a member from a sorted set."""
-        try:
-            cache = cast("Any", self._cache)
-            removed = cache.zrem(key, member)
-            if removed:
-                return {"success": True, "message": f"Removed '{member}' from sorted set."}
-            return {"success": False, "message": f"'{member}' not found in sorted set."}
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+    def zrem(self, key: str, member: str) -> bool:
+        """Remove a member from a sorted set. Returns True if member existed."""
+        cache = cast("Any", self._cache)
+        return bool(cache.zrem(key, member))
 
-    def zpopmin(self, key: str, count: int = 1) -> dict[str, Any]:
-        """Pop the member(s) with lowest score."""
-        try:
-            cache = cast("Any", self._cache)
-            result = cache.zpopmin(key, count=count)
-            if result:
-                if count == 1:
-                    member, score = result[0]
-                    return {
-                        "success": True,
-                        "member": member,
-                        "score": score,
-                        "message": f"Popped: {member} (score: {score})",
-                    }
-                members = [f"{m} ({s})" for m, s in result]
-                return {
-                    "success": True,
-                    "count": len(result),
-                    "message": f"Popped {len(result)} member(s): {', '.join(members)}",
-                }
-            return {"success": False, "message": "Sorted set is empty or key does not exist."}
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+    def zpopmin(self, key: str, count: int = 1) -> list[tuple[str, float]]:
+        """Pop the member(s) with lowest score. Returns list of (member, score) tuples."""
+        cache = cast("Any", self._cache)
+        return cache.zpopmin(key, count=count)
 
-    def zpopmax(self, key: str, count: int = 1) -> dict[str, Any]:
-        """Pop the member(s) with highest score."""
-        try:
-            cache = cast("Any", self._cache)
-            result = cache.zpopmax(key, count=count)
-            if result:
-                if count == 1:
-                    member, score = result[0]
-                    return {
-                        "success": True,
-                        "member": member,
-                        "score": score,
-                        "message": f"Popped: {member} (score: {score})",
-                    }
-                members = [f"{m} ({s})" for m, s in result]
-                return {
-                    "success": True,
-                    "count": len(result),
-                    "message": f"Popped {len(result)} member(s): {', '.join(members)}",
-                }
-            return {"success": False, "message": "Sorted set is empty or key does not exist."}
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+    def zpopmax(self, key: str, count: int = 1) -> list[tuple[str, float]]:
+        """Pop the member(s) with highest score. Returns list of (member, score) tuples."""
+        cache = cast("Any", self._cache)
+        return cache.zpopmax(key, count=count)
 
     # Stream operations
 
-    def xadd(self, key: str, fields: dict[str, str]) -> dict[str, Any]:
-        """Add an entry to a stream."""
-        try:
-            cache = cast("Any", self._cache)
-            if not hasattr(cache, "_cache") or not hasattr(cache._cache, "xadd"):
-                return {"success": False, "message": "Stream operations not available."}
-            entry_id = cache._cache.xadd(key, fields)
-            return {"success": True, "entry_id": entry_id, "message": f"Added entry {entry_id}."}
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+    def xadd(self, key: str, fields: dict[str, str]) -> str:
+        """Add an entry to a stream. Returns the entry ID."""
+        cache = cast("Any", self._cache)
+        return cache._cache.xadd(key, fields)
 
-    def xdel(self, key: str, entry_id: str) -> dict[str, Any]:
-        """Delete an entry from a stream."""
-        try:
-            cache = cast("Any", self._cache)
-            if not hasattr(cache, "_cache") or not hasattr(cache._cache, "xdel"):
-                return {"success": False, "message": "Stream operations not available."}
-            deleted = cache._cache.xdel(key, entry_id)
-            if deleted:
-                return {"success": True, "message": f"Deleted entry {entry_id}."}
-            return {"success": False, "message": f"Entry {entry_id} not found."}
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+    def xdel(self, key: str, entry_id: str) -> bool:
+        """Delete an entry from a stream. Returns True if entry existed."""
+        cache = cast("Any", self._cache)
+        return bool(cache._cache.xdel(key, entry_id))
 
-    def xtrim(self, key: str, maxlen: int) -> dict[str, Any]:
-        """Trim a stream to a maximum length."""
-        try:
-            cache = cast("Any", self._cache)
-            if not hasattr(cache, "_cache") or not hasattr(cache._cache, "xtrim"):
-                return {"success": False, "message": "Stream operations not available."}
-            trimmed = cache._cache.xtrim(key, maxlen=maxlen)
-            return {"success": True, "message": f"Trimmed {trimmed} entries."}
-        except Exception as e:  # noqa: BLE001
-            return {"success": False, "message": str(e)}
+    def xtrim(self, key: str, maxlen: int) -> int:
+        """Trim a stream to a maximum length. Returns number of entries removed."""
+        cache = cast("Any", self._cache)
+        return cache._cache.xtrim(key, maxlen=maxlen)
 
     # ===========================================================================
     # View-friendly aliases
