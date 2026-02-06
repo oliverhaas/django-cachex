@@ -11,7 +11,6 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-from abc import ABC, abstractmethod
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -31,92 +30,29 @@ if TYPE_CHECKING:
 
 
 # =============================================================================
-# URL Builder Abstraction
+# URL Helpers
 # =============================================================================
 
 
-class UrlBuilder(ABC):
-    """Abstract base class for URL generation."""
-
-    @abstractmethod
-    def cache_list_url(self) -> str:
-        """URL for the cache list/index page."""
-        ...
-
-    @abstractmethod
-    def key_list_url(self, cache_name: str) -> str:
-        """URL for the key list/search page."""
-        ...
-
-    @abstractmethod
-    def key_detail_url(self, cache_name: str, key: str) -> str:
-        """URL for the key detail page."""
-        ...
-
-    @abstractmethod
-    def key_add_url(self, cache_name: str) -> str:
-        """URL for the key add page."""
-        ...
+def cache_list_url() -> str:
+    """URL for the cache list page."""
+    return reverse("admin:django_cachex_cache_changelist")
 
 
-class AdminUrlBuilder(UrlBuilder):
-    """URL builder for Django admin integration."""
-
-    def cache_list_url(self) -> str:
-        return reverse("admin:django_cachex_cache_changelist")
-
-    def key_list_url(self, cache_name: str) -> str:
-        return reverse("admin:django_cachex_key_changelist") + f"?cache={cache_name}"
-
-    def key_detail_url(self, cache_name: str, key: str) -> str:
-        pk = Key.make_pk(cache_name, key)
-        return reverse("admin:django_cachex_key_change", args=[pk])
-
-    def key_add_url(self, cache_name: str) -> str:
-        return reverse("admin:django_cachex_key_add") + f"?cache={cache_name}"
+def key_list_url(cache_name: str) -> str:
+    """URL for the key list page."""
+    return reverse("admin:django_cachex_key_changelist") + f"?cache={cache_name}"
 
 
-class StandaloneUrlBuilder(UrlBuilder):
-    """URL builder for standalone/unfold integration."""
-
-    def __init__(self, namespace: str = "django_cachex"):
-        self.namespace = namespace
-
-    def cache_list_url(self) -> str:
-        return reverse(f"{self.namespace}:index")
-
-    def key_list_url(self, cache_name: str) -> str:
-        return reverse(f"{self.namespace}:key_search", args=[cache_name])
-
-    def key_detail_url(self, cache_name: str, key: str) -> str:
-        return reverse(f"{self.namespace}:key_detail", args=[cache_name, key])
-
-    def key_add_url(self, cache_name: str) -> str:
-        return reverse(f"{self.namespace}:key_add", args=[cache_name])
+def key_detail_url(cache_name: str, key: str) -> str:
+    """URL for the key detail page."""
+    pk = Key.make_pk(cache_name, key)
+    return reverse("admin:django_cachex_key_change", args=[pk])
 
 
-# Default URL builder for admin views
-_admin_url_builder = AdminUrlBuilder()
-
-
-def _admin_cache_list_url() -> str:
-    """Get the admin URL for the cache list page."""
-    return _admin_url_builder.cache_list_url()
-
-
-def _admin_key_list_url(cache_name: str) -> str:
-    """Get the admin URL for the key list page."""
-    return _admin_url_builder.key_list_url(cache_name)
-
-
-def _admin_key_detail_url(cache_name: str, key: str) -> str:
-    """Get the admin URL for the key detail page."""
-    return _admin_url_builder.key_detail_url(cache_name, key)
-
-
-def _admin_key_add_url(cache_name: str) -> str:
-    """Get the admin URL for the key add page."""
-    return _admin_url_builder.key_add_url(cache_name)
+def key_add_url(cache_name: str) -> str:
+    """URL for the key add page."""
+    return reverse("admin:django_cachex_key_add") + f"?cache={cache_name}"
 
 
 # =============================================================================
@@ -127,12 +63,11 @@ def _admin_key_add_url(cache_name: str) -> str:
 class ViewConfig:
     """Configuration for cache admin views.
 
-    Holds template prefix and URL builder configuration to support
-    both Django admin and alternative admin themes.
+    Holds template prefix configuration to support both Django admin
+    and alternative admin themes (like Unfold).
 
     Args:
         template_prefix: Base path for templates (e.g., "admin/django_cachex")
-        url_builder: URL builder for generating URLs
         template_overrides: Dict mapping canonical names to actual template paths.
             Use this when template names differ between themes.
     """
@@ -140,11 +75,9 @@ class ViewConfig:
     def __init__(
         self,
         template_prefix: str = "admin/django_cachex",
-        url_builder: UrlBuilder | None = None,
         template_overrides: dict[str, str] | None = None,
     ):
         self.template_prefix = template_prefix.rstrip("/")
-        self.url_builder = url_builder or AdminUrlBuilder()
         self.template_overrides = template_overrides or {}
 
     def template(self, name: str) -> str:
@@ -158,10 +91,7 @@ class ViewConfig:
 
 
 # Default configuration for standard Django admin
-ADMIN_CONFIG = ViewConfig(
-    template_prefix="admin/django_cachex",
-    url_builder=AdminUrlBuilder(),
-)
+ADMIN_CONFIG = ViewConfig(template_prefix="admin/django_cachex")
 
 
 logger = logging.getLogger(__name__)
@@ -469,7 +399,7 @@ def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:
                     request,
                     f"Successfully flushed {flushed_count} cache(s).",
                 )
-            return redirect(config.url_builder.cache_list_url())
+            return redirect(cache_list_url())
 
     # Get filter parameters
     support_filter = request.GET.get("support", "").strip()
@@ -553,7 +483,7 @@ def _cache_detail_view(
 
     if cache_obj is None:
         messages.error(request, f"Cache '{cache_name}' not found.")
-        return redirect(config.url_builder.cache_list_url())
+        return redirect(cache_list_url())
 
     # Show help message if requested
     help_active = _show_help(request, "cache_info")
@@ -658,7 +588,7 @@ def _key_search_view(  # noqa: C901, PLR0912, PLR0915
                         request,
                         f"Successfully deleted {deleted_count} key(s).",
                     )
-            return redirect(config.url_builder.key_list_url(cache_name))
+            return redirect(key_list_url(cache_name))
 
     context = admin.site.each_context(request)
     context.update(
@@ -767,7 +697,6 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     This is the internal implementation; use key_detail() for the decorated admin view.
     """
     service = get_cache_service(cache_name)
-    urls = config.url_builder
 
     # Handle POST requests (update or delete)
     if request.method == "POST":
@@ -777,7 +706,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             try:
                 service.delete(key)
                 messages.success(request, "Key deleted successfully.")
-                return redirect(urls.key_list_url(cache_name))
+                return redirect(key_list_url(cache_name))
             except Exception as e:  # noqa: BLE001
                 messages.error(request, f"Error deleting key: {e!s}")
 
@@ -790,7 +719,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 # Update value only (TTL is handled separately via set_ttl action)
                 service.set(key, new_value, timeout=None)
                 messages.success(request, "Key updated successfully.")
-                return redirect(urls.key_detail_url(cache_name, key))
+                return redirect(key_detail_url(cache_name, key))
             except Exception as e:  # noqa: BLE001
                 messages.error(request, str(e))
 
@@ -811,7 +740,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                         messages.success(request, f"TTL set to {ttl_int} seconds.")
                     else:
                         messages.error(request, "Key does not exist or TTL could not be set.")
-                return redirect(urls.key_detail_url(cache_name, key))
+                return redirect(key_detail_url(cache_name, key))
             except ValueError:
                 messages.error(request, "Invalid TTL value. Must be a number.")
             except Exception as e:  # noqa: BLE001
@@ -823,7 +752,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.success(request, "TTL removed. Key will not expire.")
                 else:
                     messages.error(request, "Key does not exist or has no TTL.")
-                return redirect(urls.key_detail_url(cache_name, key))
+                return redirect(key_detail_url(cache_name, key))
             except Exception as e:  # noqa: BLE001
                 messages.error(request, f"Error removing TTL: {e!s}")
 
@@ -844,7 +773,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.success(request, f"Popped {len(result)} item(s): {result}")
             except Exception as e:  # noqa: BLE001
                 messages.error(request, str(e))
-            return redirect(urls.key_detail_url(cache_name, key))
+            return redirect(key_detail_url(cache_name, key))
 
         elif action == "rpop":
             count = 1
@@ -862,7 +791,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.success(request, f"Popped {len(result)} item(s): {result}")
             except Exception as e:  # noqa: BLE001
                 messages.error(request, str(e))
-            return redirect(urls.key_detail_url(cache_name, key))
+            return redirect(key_detail_url(cache_name, key))
 
         elif action == "lpush":
             value = request.POST.get("push_value", "").strip()
@@ -874,7 +803,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.error(request, str(e))
             else:
                 messages.error(request, "Value is required.")
-            return redirect(urls.key_detail_url(cache_name, key))
+            return redirect(key_detail_url(cache_name, key))
 
         elif action == "rpush":
             value = request.POST.get("push_value", "").strip()
@@ -886,7 +815,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.error(request, str(e))
             else:
                 messages.error(request, "Value is required.")
-            return redirect(urls.key_detail_url(cache_name, key))
+            return redirect(key_detail_url(cache_name, key))
 
         elif action == "lrem":
             value = request.POST.get("item_value", "").strip()
@@ -906,7 +835,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.error(request, str(e))
             else:
                 messages.error(request, "Value is required.")
-            return redirect(urls.key_detail_url(cache_name, key))
+            return redirect(key_detail_url(cache_name, key))
 
         elif action == "ltrim":
             try:
@@ -918,7 +847,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 messages.error(request, "Start and stop must be integers.")
             except Exception as e:  # noqa: BLE001
                 messages.error(request, str(e))
-            return redirect(urls.key_detail_url(cache_name, key))
+            return redirect(key_detail_url(cache_name, key))
 
         # Set operations
         elif action == "sadd":
@@ -934,7 +863,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.error(request, str(e))
             else:
                 messages.error(request, "Member is required.")
-            return redirect(urls.key_detail_url(cache_name, key))
+            return redirect(key_detail_url(cache_name, key))
 
         elif action == "srem":
             member = request.POST.get("member", "").strip()
@@ -947,7 +876,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                         messages.warning(request, f"'{member}' not found in set.")
                 except Exception as e:  # noqa: BLE001
                     messages.error(request, str(e))
-            return redirect(urls.key_detail_url(cache_name, key))
+            return redirect(key_detail_url(cache_name, key))
 
         # Hash operations
         elif action == "hset":
@@ -961,7 +890,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.error(request, str(e))
             else:
                 messages.error(request, "Field name is required.")
-            return redirect(urls.key_detail_url(cache_name, key))
+            return redirect(key_detail_url(cache_name, key))
 
         elif action == "hdel":
             field = request.POST.get("field", "").strip()
@@ -974,7 +903,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                         messages.warning(request, f"Field '{field}' not found.")
                 except Exception as e:  # noqa: BLE001
                     messages.error(request, str(e))
-            return redirect(urls.key_detail_url(cache_name, key))
+            return redirect(key_detail_url(cache_name, key))
 
         # Sorted set operations
         elif action == "zadd":
@@ -999,7 +928,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.error(request, str(e))
             else:
                 messages.error(request, "Member and score are required.")
-            return redirect(urls.key_detail_url(cache_name, key))
+            return redirect(key_detail_url(cache_name, key))
 
         elif action == "zrem":
             member = request.POST.get("member", "").strip()
@@ -1012,7 +941,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                         messages.warning(request, f"'{member}' not found in sorted set.")
                 except Exception as e:  # noqa: BLE001
                     messages.error(request, str(e))
-            return redirect(urls.key_detail_url(cache_name, key))
+            return redirect(key_detail_url(cache_name, key))
 
         # Set pop operation
         elif action == "spop":
@@ -1031,7 +960,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.success(request, f"Popped {len(result)} member(s): {result}")
             except Exception as e:  # noqa: BLE001
                 messages.error(request, str(e))
-            return redirect(urls.key_detail_url(cache_name, key))
+            return redirect(key_detail_url(cache_name, key))
 
         # Sorted set pop operations
         elif action == "zpopmin":
@@ -1048,7 +977,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.success(request, f"Popped {len(result)} member(s): {', '.join(members)}")
             except Exception as e:  # noqa: BLE001
                 messages.error(request, str(e))
-            return redirect(urls.key_detail_url(cache_name, key))
+            return redirect(key_detail_url(cache_name, key))
 
         elif action == "zpopmax":
             pop_count = int(request.POST.get("pop_count", 1) or 1)
@@ -1064,7 +993,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.success(request, f"Popped {len(result)} member(s): {', '.join(members)}")
             except Exception as e:  # noqa: BLE001
                 messages.error(request, str(e))
-            return redirect(urls.key_detail_url(cache_name, key))
+            return redirect(key_detail_url(cache_name, key))
 
         # Stream operations
         elif action == "xadd":
@@ -1078,7 +1007,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.error(request, str(e))
             else:
                 messages.error(request, "Field name and value are required.")
-            return redirect(urls.key_detail_url(cache_name, key))
+            return redirect(key_detail_url(cache_name, key))
 
         elif action == "xdel":
             entry_id = request.POST.get("entry_id", "").strip()
@@ -1093,7 +1022,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.error(request, str(e))
             else:
                 messages.error(request, "Entry ID is required.")
-            return redirect(urls.key_detail_url(cache_name, key))
+            return redirect(key_detail_url(cache_name, key))
 
         elif action == "xtrim":
             maxlen_str = request.POST.get("maxlen", "").strip()
@@ -1108,7 +1037,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.error(request, str(e))
             else:
                 messages.error(request, "Max length is required.")
-            return redirect(urls.key_detail_url(cache_name, key))
+            return redirect(key_detail_url(cache_name, key))
 
     # GET request - display the key
     key_result = service.get(key)
@@ -1134,7 +1063,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             create_mode = True
         else:
             messages.error(request, f"Key '{key}' does not exist in cache '{cache_name}'.")
-            return redirect(urls.key_list_url(cache_name))
+            return redirect(key_list_url(cache_name))
 
     # Get TTL and type for the key
     key_type = None
@@ -1219,7 +1148,6 @@ def _key_add_view(
     help_active = _show_help(request, "key_add")
     service = get_cache_service(cache_name)
     cache_config = settings.CACHES.get(cache_name, {})
-    urls = config.url_builder
 
     if request.method == "POST":
         key_name = request.POST.get("key", "").strip()
@@ -1232,11 +1160,11 @@ def _key_add_view(
             existing = service.get(key_name)
             if existing.get("exists", False):
                 messages.warning(request, f"Key '{key_name}' already exists.")
-                return redirect(urls.key_detail_url(cache_name, key_name))
+                return redirect(key_detail_url(cache_name, key_name))
             # Redirect to key_detail in create mode
             from urllib.parse import urlencode
 
-            base_url = urls.key_detail_url(cache_name, key_name)
+            base_url = key_detail_url(cache_name, key_name)
             params = urlencode({"type": key_type})
             # Use ? or & depending on whether URL already has query params
             separator = "&" if "?" in base_url else "?"

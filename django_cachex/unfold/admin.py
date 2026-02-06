@@ -17,7 +17,6 @@ from django.urls import path, reverse
 from django_cachex.admin.models import Cache, Key
 from django_cachex.admin.service import get_cache_service
 from django_cachex.admin.views import (
-    AdminUrlBuilder,
     ViewConfig,
     _cache_detail_view,
     _index_view,
@@ -46,7 +45,6 @@ else:
 # Uses admin URLs but with unfold template prefix
 UNFOLD_CONFIG = ViewConfig(
     template_prefix="unfold/django_cachex",
-    url_builder=AdminUrlBuilder(),
     template_overrides={
         # Unfold uses cache/ for all templates, admin uses key/ for key details
         "key/change_form.html": "cache/key_detail.html",
