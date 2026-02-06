@@ -51,7 +51,7 @@ class CacheAdmin(_CacheBase):
             "type detection, TTL management, and data operations</td></tr>"
             "<tr><td style='padding: 2px 8px;'><strong>wrapped</strong></td>"
             "<td style='padding: 2px 8px;'>Wrapped support — Django built-in backends "
-            "(Redis, LocMem, Database, File) with most features</td></tr>"
+            "(Redis, LocMem, Database, File) with some features</td></tr>"
             "<tr><td style='padding: 2px 8px;'><strong>limited</strong></td>"
             "<td style='padding: 2px 8px;'>Limited support — Custom/unknown backends, "
             "basic get/set only</td></tr>"

@@ -27,27 +27,46 @@
         </a>
     </div>
 
+    <!-- Filter and Search -->
+    <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <!-- Support Filter -->
+        <div class="flex flex-wrap items-center gap-2">
+            <span class="text-sm text-base-500 dark:text-base-400">{% trans 'Filter:' %}</span>
+            <a href="?{% if search_query %}q={{ search_query|urlencode }}{% endif %}"
+               class="px-3 py-1 text-sm rounded-default {% if not support_filter %}bg-primary-600 text-white{% else %}bg-base-100 dark:bg-base-800 text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700{% endif %}">
+                {% trans 'All' %}
+            </a>
+            <a href="?support=cachex{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}"
+               class="px-3 py-1 text-sm rounded-default {% if support_filter == 'cachex' %}bg-primary-600 text-white{% else %}bg-base-100 dark:bg-base-800 text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700{% endif %}">
+                cachex
+            </a>
+            <a href="?support=wrapped{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}"
+               class="px-3 py-1 text-sm rounded-default {% if support_filter == 'wrapped' %}bg-primary-600 text-white{% else %}bg-base-100 dark:bg-base-800 text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700{% endif %}">
+                wrapped
+            </a>
+            <a href="?support=limited{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}"
+               class="px-3 py-1 text-sm rounded-default {% if support_filter == 'limited' %}bg-primary-600 text-white{% else %}bg-base-100 dark:bg-base-800 text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700{% endif %}">
+                limited
+            </a>
+        </div>
+        <!-- Search -->
+        <form method="get" class="flex items-center gap-2">
+            {% if support_filter %}<input type="hidden" name="support" value="{{ support_filter }}">{% endif %}
+            <input type="text" name="q" value="{{ search_query|default:'' }}"
+                   placeholder="{% trans 'Search...' %}"
+                   class="w-48 px-3 py-1.5 border border-base-200 bg-white font-medium placeholder-base-400 rounded-default shadow-xs text-font-default-light text-sm dark:bg-base-900 dark:border-base-700 dark:text-font-default-dark">
+            <button type="submit"
+                    class="px-3 py-1.5 text-sm font-medium rounded-default bg-primary-600 text-white hover:bg-primary-700">
+                {% trans 'Search' %}
+            </button>
+        </form>
+    </div>
+
     {% if caches_info %}
     <!-- Cache list card -->
     <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs lg:overflow-hidden">
-        <!-- Actions bar -->
-        <form id="changelist-form" method="post">
+        <form id="changelist-form" method="post" class="group">
             {% csrf_token %}
-            <div class="flex items-center gap-4 px-4 py-3 bg-base-50 dark:bg-white/[.04] border-b border-base-200 dark:border-base-800">
-                <select name="action" class="border border-base-200 bg-white font-medium min-w-20 placeholder-base-400 rounded-default shadow-xs text-font-default-light text-sm px-3 py-2 dark:bg-base-900 dark:border-base-700 dark:text-font-default-dark">
-                    <option value="">---------</option>
-                    <option value="flush_selected">{% trans 'Flush selected caches' %}</option>
-                </select>
-                <button type="submit"
-                        onclick="return confirm('{% trans 'Are you sure you want to flush the selected caches?' %}')"
-                        class="border cursor-pointer font-medium px-3 py-2 rounded-default text-center whitespace-nowrap bg-primary-600 border-transparent text-white text-sm">
-                    {% trans 'Run' %}
-                </button>
-                <span class="text-sm text-base-500 dark:text-base-400">
-                    <span id="action-counter">0</span> {% trans 'selected' %}
-                </span>
-            </div>
-
             <!-- Table -->
             <table class="block border-spacing-none border-separate w-full lg:table">
                 <thead class="text-font-important-light dark:text-font-important-dark hidden lg:table-header-group">
@@ -78,7 +97,7 @@
                     <tr class="{% cycle '' 'bg-base-50 dark:bg-white/[.02]' %} block group {% if forloop.first %}first-row{% endif %} border border-base-200 mb-3 rounded-default shadow-xs lg:table-row lg:border-none lg:mb-0 lg:shadow-none dark:border-base-800 relative lg:hover:shadow-raised lg:dark:hover:shadow-raised-dark lg:hover:z-20">
                         <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800 lg:w-10" data-label="{% trans 'Select' %}">
                             <input type="checkbox" name="_selected_action" value="{{ cache_info.name }}"
-                                   class="appearance-none bg-white block border border-base-300 cursor-pointer h-4 min-w-4 relative rounded-[4px] shadow-xs w-4 hover:border-base-400 dark:bg-base-700 dark:border-base-500 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-primary-500 after:absolute after:content-['check\_small'] after:flex! after:h-4 after:items-center after:justify-center after:leading-none after:material-symbols-outlined after:-ml-px after:-mt-px after:text-white after:transition-all after:w-4 dark:after:text-base-700 checked:bg-primary-600 dark:checked:bg-primary-600 checked:border-primary-600 dark:checked:border-primary-600 checked:transition-all checked:hover:border-primary-600 dark:checked:after:text-white action-checkbox">
+                                   class="appearance-none bg-white block border border-base-300 cursor-pointer h-4 min-w-4 relative rounded-[4px] shadow-xs w-4 hover:border-base-400 dark:bg-base-700 dark:border-base-500 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-primary-500 after:absolute after:content-['check\_small'] after:flex! after:h-4 after:items-center after:justify-center after:leading-none after:material-symbols-outlined after:-ml-px after:-mt-px after:text-white after:transition-all after:w-4 dark:after:text-base-700 checked:bg-primary-600 dark:checked:bg-primary-600 checked:border-primary-600 dark:checked:border-primary-600 checked:transition-all checked:hover:border-primary-600 dark:checked:after:text-white action-select">
                         </td>
                         <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Cache Name' %}">
                             <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_info.name }}"
@@ -114,7 +133,10 @@
                         </td>
                         <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Actions' %}">
                             <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_info.name }}"
-                               class="inline-block font-medium h-6 leading-6 px-3 rounded-full text-xs uppercase whitespace-nowrap bg-base-100 text-base-700 hover:bg-base-200 dark:bg-base-700 dark:text-base-200 dark:hover:bg-base-600">
+                               class="border cursor-pointer font-medium px-3 py-2 rounded-default text-center whitespace-nowrap
+                                      bg-white border-base-200 text-base-700 hover:text-primary-600
+                                      dark:bg-base-900 dark:border-base-700 dark:text-base-200 dark:hover:text-primary-500
+                                      shadow-xs text-sm transition-colors">
                                 {% trans 'List Keys' %}
                             </a>
                         </td>
@@ -123,6 +145,25 @@
                 </tbody>
             </table>
 
+            <!-- Fixed bottom action bar (unfold style) - shows when items are selected -->
+            <div class="bottom-0 left-0 right-0 hidden group-has-[input.action-select:checked]:flex fixed items-center p-3 z-50 lg:bottom-16">
+                <div class="bg-primary-600 dark:bg-primary-500 flex flex-col gap-3 mx-auto p-3 rounded-default text-white sm:flex-row sm:items-center max-w-4xl w-full shadow-lg">
+                    <div class="flex flex-row gap-2 items-center">
+                        <select name="action" class="bg-primary-900 border-0 font-medium px-3 py-1.5 rounded-default text-sm text-white">
+                            <option value="">---------</option>
+                            <option value="flush_selected">{% trans 'Flush selected caches' %}</option>
+                        </select>
+                        <button type="submit"
+                                onclick="return confirm('{% trans 'Are you sure you want to flush the selected caches?' %}')"
+                                class="bg-primary-900 cursor-pointer font-medium px-3 py-1.5 rounded-default text-sm text-white whitespace-nowrap hover:bg-primary-800">
+                            {% trans 'Run' %}
+                        </button>
+                    </div>
+                    <span class="text-sm">
+                        <span id="action-counter">0</span> {% trans 'selected' %}
+                    </span>
+                </div>
+            </div>
         </form>
 
         <!-- Footer -->
@@ -152,11 +193,11 @@ CACHES = {
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const toggle = document.getElementById('action-toggle');
-    const checkboxes = document.querySelectorAll('.action-checkbox');
+    const checkboxes = document.querySelectorAll('.action-select');
     const counter = document.getElementById('action-counter');
 
     function updateCounter() {
-        const checked = document.querySelectorAll('.action-checkbox:checked').length;
+        const checked = document.querySelectorAll('.action-select:checked').length;
         counter.textContent = checked;
     }
 
