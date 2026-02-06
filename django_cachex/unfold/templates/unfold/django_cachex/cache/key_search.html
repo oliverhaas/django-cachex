@@ -28,15 +28,6 @@
                       shadow-xs text-sm transition-colors">
                 {% trans 'Help' %}
             </a>
-            {% if abilities.info or abilities.slowlog %}
-            <a href="{% url 'django_cachex:cache_info' cache_name %}"
-               class="border cursor-pointer font-medium px-3 py-2 rounded-default text-center whitespace-nowrap
-                      bg-white border-base-200 hover:text-primary-600
-                      dark:bg-base-900 dark:border-base-700 dark:hover:text-primary-500
-                      shadow-xs text-sm transition-colors">
-                {% trans 'Cache Details' %}
-            </a>
-            {% endif %}
             {% if abilities.edit_key %}
             <a href="{% url 'django_cachex:key_add' cache_name %}"
                class="border cursor-pointer font-medium px-3 py-2 rounded-default text-center whitespace-nowrap
