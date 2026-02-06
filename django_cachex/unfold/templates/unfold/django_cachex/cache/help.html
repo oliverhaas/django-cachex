@@ -8,7 +8,7 @@
     <nav class="flex text-sm">
         <a href="{% url 'admin:index' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Home' %}</a>
         <span class="mx-2 text-base-400">/</span>
-        <a href="{% url 'django_cachex:index' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Cache Instances' %}</a>
+        <a href="{% url 'admin:django_cachex_cache_changelist' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Cache Instances' %}</a>
         <span class="mx-2 text-base-400">/</span>
         <span class="text-font-important-light dark:text-font-important-dark font-medium">{% trans 'Help' %}</span>
     </nav>
@@ -107,7 +107,7 @@
 
     <!-- Back button -->
     <div class="flex items-center">
-        <a href="{% url 'django_cachex:index' %}"
+        <a href="{% url 'admin:django_cachex_cache_changelist' %}"
            class="px-4 py-2 text-sm font-medium rounded-default bg-base-100 dark:bg-base-800
                   text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700 transition-colors">
             {% trans 'Back to Cache Instances' %}

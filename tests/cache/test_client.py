@@ -111,8 +111,8 @@ class TestClientClose:
 
 
 class TestRedisCacheClient:
-    @patch("tests.test_client.RedisCacheClient.get_client")
-    @patch("tests.test_client.RedisCacheClient.__init__", return_value=None)
+    @patch("tests.cache.test_client.RedisCacheClient.get_client")
+    @patch("tests.cache.test_client.RedisCacheClient.__init__", return_value=None)
     def test_delete_pattern_calls_get_client_given_no_client(
         self,
         init_mock,
@@ -131,8 +131,8 @@ class TestRedisCacheClient:
         client.delete_pattern(pattern="foo*")
         get_client_mock.assert_called_once_with(write=True)
 
-    @patch("tests.test_client.RedisCacheClient.get_client")
-    @patch("tests.test_client.RedisCacheClient.__init__", return_value=None)
+    @patch("tests.cache.test_client.RedisCacheClient.get_client")
+    @patch("tests.cache.test_client.RedisCacheClient.__init__", return_value=None)
     def test_delete_pattern_calls_scan_iter_with_pattern(
         self,
         init_mock,
@@ -156,8 +156,8 @@ class TestRedisCacheClient:
             match="prefix:1:foo*",
         )
 
-    @patch("tests.test_client.RedisCacheClient.get_client")
-    @patch("tests.test_client.RedisCacheClient.__init__", return_value=None)
+    @patch("tests.cache.test_client.RedisCacheClient.get_client")
+    @patch("tests.cache.test_client.RedisCacheClient.__init__", return_value=None)
     def test_delete_pattern_calls_scan_iter_with_count_if_itersize_given(
         self,
         init_mock,
@@ -180,8 +180,8 @@ class TestRedisCacheClient:
             match="prefix:1:foo*",
         )
 
-    @patch("tests.test_client.RedisCacheClient.get_client")
-    @patch("tests.test_client.RedisCacheClient.__init__", return_value=None)
+    @patch("tests.cache.test_client.RedisCacheClient.get_client")
+    @patch("tests.cache.test_client.RedisCacheClient.__init__", return_value=None)
     def test_delete_pattern_deletes_found_keys(
         self,
         init_mock,

@@ -8,14 +8,95 @@ running admin tests with every cache backend combination.
 from __future__ import annotations
 
 import os
+from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, cast
+from urllib.parse import urlencode
 
 import pytest
 from django.contrib.auth.models import User
 from django.test import Client, override_settings
+from django.urls import reverse
+
+from django_cachex.admin.models import Key
 
 if TYPE_CHECKING:
     from django_cachex.cache import KeyValueCache
+
+
+class UrlBuilder(ABC):
+    """Abstract base class for building test URLs."""
+
+    @abstractmethod
+    def cache_list_url(self) -> str:
+        """Get URL for cache list."""
+        ...
+
+    @abstractmethod
+    def cache_detail_url(self, cache_name: str) -> str:
+        """Get URL for cache detail."""
+        ...
+
+    @abstractmethod
+    def key_list_url(self, cache_name: str) -> str:
+        """Get URL for key list."""
+        ...
+
+    @abstractmethod
+    def key_detail_url(self, cache_name: str, key_name: str) -> str:
+        """Get URL for key detail."""
+        ...
+
+    @abstractmethod
+    def key_add_url(self, cache_name: str) -> str:
+        """Get URL for key add."""
+        ...
+
+    @abstractmethod
+    def key_detail_create_url(
+        self,
+        cache_name: str,
+        key_name: str,
+        key_type: str = "string",
+    ) -> str:
+        """Get URL for key detail in create mode."""
+        ...
+
+
+class AdminUrlBuilder(UrlBuilder):
+    """URL builder for Django admin integration."""
+
+    def cache_list_url(self) -> str:
+        return reverse("admin:django_cachex_cache_changelist")
+
+    def cache_detail_url(self, cache_name: str) -> str:
+        return reverse("admin:django_cachex_cache_change", args=[cache_name])
+
+    def key_list_url(self, cache_name: str) -> str:
+        return reverse("admin:django_cachex_key_changelist") + f"?cache={cache_name}"
+
+    def key_detail_url(self, cache_name: str, key_name: str) -> str:
+        pk = Key.make_pk(cache_name, key_name)
+        return reverse("admin:django_cachex_key_change", args=[pk])
+
+    def key_add_url(self, cache_name: str) -> str:
+        return reverse("admin:django_cachex_key_add") + f"?cache={cache_name}"
+
+    def key_detail_create_url(
+        self,
+        cache_name: str,
+        key_name: str,
+        key_type: str = "string",
+    ) -> str:
+        pk = Key.make_pk(cache_name, key_name)
+        base = reverse("admin:django_cachex_key_change", args=[pk])
+        params = urlencode({"type": key_type})
+        return f"{base}?{params}"
+
+
+@pytest.fixture
+def urls() -> UrlBuilder:
+    """Provide URL builder for tests."""
+    return AdminUrlBuilder()
 
 
 def get_cache_config(host: str, port: int) -> dict:

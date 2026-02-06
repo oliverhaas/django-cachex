@@ -8,7 +8,7 @@
     <nav class="flex text-sm">
         <a href="{% url 'admin:index' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Home' %}</a>
         <span class="mx-2 text-base-400">/</span>
-        <a href="{% url 'django_cachex:index' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Cache Instances' %}</a>
+        <a href="{% url 'admin:django_cachex_cache_changelist' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Cache Instances' %}</a>
         <span class="mx-2 text-base-400">/</span>
         <span class="text-font-important-light dark:text-font-important-dark font-medium">{{ cache_name }}</span>
     </nav>
@@ -29,7 +29,7 @@
                 {% trans 'Help' %}
             </a>
             {% if abilities.edit_key %}
-            <a href="{% url 'django_cachex:key_add' cache_name %}"
+            <a href="{% url 'admin:django_cachex_key_add' %}?cache={{ cache_name }}"
                class="border cursor-pointer font-medium px-3 py-2 rounded-default text-center whitespace-nowrap
                       bg-primary-600 border-transparent text-white
                       shadow-xs text-sm transition-colors hover:bg-primary-700">
@@ -147,7 +147,7 @@
                                    class="appearance-none bg-white block border border-base-300 cursor-pointer h-4 min-w-4 relative rounded-[4px] shadow-xs w-4 hover:border-base-400 dark:bg-base-700 dark:border-base-500 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-primary-500 after:absolute after:content-['check\_small'] after:flex! after:h-4 after:items-center after:justify-center after:leading-none after:material-symbols-outlined after:-ml-px after:-mt-px after:text-white after:transition-all after:w-4 dark:after:text-base-700 checked:bg-primary-600 dark:checked:bg-primary-600 checked:border-primary-600 dark:checked:border-primary-600 checked:transition-all checked:hover:border-primary-600 dark:checked:after:text-white action-checkbox">
                         </td>
                         <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Key' %}">
-                            <a href="{% url 'django_cachex:key_detail' cache_name key_info.key|urlencode %}"
+                            <a href="{% url 'admin:django_cachex_key_change' key_info.pk %}"
                                class="font-mono text-sm text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-200">
                                 {{ key_info.key }}
                             </a>

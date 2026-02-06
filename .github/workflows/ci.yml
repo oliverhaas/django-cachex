@@ -33,7 +33,7 @@ jobs:
       - name: Run ty check
         run: uv run ty check django_cachex/
 
-  test:
+  test-backend:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -45,19 +45,19 @@ jobs:
         django-version:
           - "5.2"
           - "6.0"
-        redis-py-version:
+        client-library-version:
           - "latest"
 
         include:
-          # Pre-release redis-py
+          # Pre-release client libraries (redis-py master, valkey-py main)
           - python-version: "3.14"
             django-version: "6.0"
-            redis-py-version: "master"
+            client-library-version: "dev"
 
           # Pre-release Django
           - python-version: "3.14"
             django-version: "main"
-            redis-py-version: "latest"
+            client-library-version: "latest"
 
     steps:
       - uses: actions/checkout@v6
@@ -79,16 +79,90 @@ jobs:
             uv pip install "Django~=${{ matrix.django-version }}.0"
           fi
 
-      - name: Install redis-py ${{ matrix.redis-py-version }}
-        if: matrix.redis-py-version == 'master'
-        run: uv pip install "redis @ git+https://github.com/redis/redis-py.git@master"
+      - name: Install pre-release client libraries
+        if: matrix.client-library-version == 'dev'
+        run: |
+          uv pip install "redis @ git+https://github.com/redis/redis-py.git@master"
+          uv pip install "valkey @ git+https://github.com/valkey-io/valkey-py.git@main"
 
-      - name: Run tests
-        run: uv run pytest -n auto
+      - name: Run backend tests
+        run: uv run pytest tests/cache/ -n auto
 
       - name: Upload coverage to Codecov
-        if: matrix.python-version == '3.13' && matrix.django-version == '5.2' && matrix.redis-py-version == 'latest'
+        if: matrix.python-version == '3.13' && matrix.django-version == '5.2' && matrix.client-library-version == 'latest'
         uses: codecov/codecov-action@v5
         with:
           files: ./coverage.xml
           fail_ci_if_error: false
+
+  test-admin:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.13"
+          - "3.14"
+        django-version:
+          - "5.2"
+          - "6.0"
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Install Django ${{ matrix.django-version }}
+        run: |
+          if [ "${{ matrix.django-version }}" = "main" ]; then
+            uv pip install "Django @ git+https://github.com/django/django.git@main"
+          else
+            uv pip install "Django~=${{ matrix.django-version }}.0"
+          fi
+
+      - name: Run admin tests
+        run: uv run pytest tests/admin/ -n auto
+
+  test-unfold:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.13"
+          - "3.14"
+        django-version:
+          - "5.2"
+          - "6.0"
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies with unfold
+        run: uv sync --group dev --extra unfold
+
+      - name: Install Django ${{ matrix.django-version }}
+        run: |
+          if [ "${{ matrix.django-version }}" = "main" ]; then
+            uv pip install "Django @ git+https://github.com/django/django.git@main"
+          else
+            uv pip install "Django~=${{ matrix.django-version }}.0"
+          fi
+
+      - name: Run unfold tests
+        run: uv run pytest tests/admin/ -n auto
+        env:
+          DJANGO_SETTINGS_MODULE: settings.unfold

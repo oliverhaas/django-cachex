@@ -212,7 +212,14 @@ xfail_strict = true
 [tool.coverage.run]
 # Unfold module is an optional theme variant of the standard admin views.
 # It mirrors admin/ templates/views with unfold styling and is tested manually for now.
-omit = ["tests/*", "django_cachex/unfold/*"]
+# types.py contains only type aliases and Protocol definitions - no executable code.
+# serializers/base.py is an abstract base class with NotImplementedError stubs.
+omit = [
+  "tests/*",
+  "django_cachex/unfold/*",
+  "django_cachex/types.py",
+  "django_cachex/serializers/base.py",
+]
 
 [tool.coverage.report]
 precision = 2
