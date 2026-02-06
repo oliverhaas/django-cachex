@@ -31,10 +31,10 @@ from .cache import (
 from .key import (
     _key_add_view,
     _key_detail_view,
-    _key_search_view,
+    _key_list_view,
     key_add,
     key_detail,
-    key_search,
+    key_list,
 )
 
 __all__ = [
@@ -46,7 +46,7 @@ __all__ = [
     "_index_view",
     "_key_add_view",
     "_key_detail_view",
-    "_key_search_view",
+    "_key_list_view",
     "cache_detail",
     "cache_list_url",
     "format_value_for_display",
@@ -58,8 +58,8 @@ __all__ = [
     "key_add_url",
     "key_detail",
     "key_detail_url",
+    "key_list",
     "key_list_url",
-    "key_search",
     "parse_timeout",
     "show_help",
 ]

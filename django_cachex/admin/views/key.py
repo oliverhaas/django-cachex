@@ -32,17 +32,17 @@ if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
 
 
-def _key_search_view(  # noqa: C901, PLR0912, PLR0915
+def _key_list_view(  # noqa: C901, PLR0912, PLR0915
     request: HttpRequest,
     cache_name: str,
     config: ViewConfig,
 ) -> HttpResponse:
     """View for searching/browsing cache keys.
 
-    This is the internal implementation; use key_search() for the decorated admin view.
+    This is the internal implementation; use key_list() for the decorated admin view.
     """
     # Show help message if requested
-    help_active = show_help(request, "key_search")
+    help_active = show_help(request, "key_list")
 
     service = get_cache_service(cache_name)
     cache_config = settings.CACHES.get(cache_name, {})
@@ -153,13 +153,13 @@ def _key_search_view(  # noqa: C901, PLR0912, PLR0915
         logger.exception("Error querying cache '%s'", cache_name)
         context["error_message"] = "An error occurred while querying the cache."
 
-    return render(request, config.template("cache/key_search.html"), context)
+    return render(request, config.template("cache/key_list.html"), context)
 
 
 @staff_member_required
-def key_search(request: HttpRequest, cache_name: str) -> HttpResponse:
+def key_list(request: HttpRequest, cache_name: str) -> HttpResponse:
     """View for searching/browsing cache keys."""
-    return _key_search_view(request, cache_name, ADMIN_CONFIG)
+    return _key_list_view(request, cache_name, ADMIN_CONFIG)
 
 
 def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915

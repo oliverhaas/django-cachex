@@ -377,10 +377,10 @@ class KeyAdmin(_KeyBase):
                 reverse("admin:django_cachex_cache_changelist"),
             )
 
-        # Delegate to views.key_search with adapted URL handling
+        # Delegate to views.key_list with adapted URL handling
         # For now, we use a redirect to maintain compatibility
         # This will be replaced with inline logic in a future iteration
-        return views.key_search(request, cache_name)
+        return views.key_list(request, cache_name)
 
     def change_view(
         self,

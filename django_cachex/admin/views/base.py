@@ -112,7 +112,7 @@ HELP_MESSAGES = {
         "- Select caches and use 'Flush selected caches' to clear them<br>"
         "- Use the filter sidebar to filter by support level",
     ),
-    "key_search": mark_safe(
+    "key_list": mark_safe(
         "<strong>Key Browser</strong><br>"
         "Search and manage cache keys for this backend.<br><br>"
         "<strong>Search Patterns</strong><br>"

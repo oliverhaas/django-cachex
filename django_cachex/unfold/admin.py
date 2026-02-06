@@ -22,7 +22,7 @@ from django_cachex.admin.views import (
     _index_view,
     _key_add_view,
     _key_detail_view,
-    _key_search_view,
+    _key_list_view,
 )
 
 if TYPE_CHECKING:
@@ -205,7 +205,7 @@ class KeyAdmin(_KeyBase):
                 reverse("admin:django_cachex_cache_changelist"),
             )
 
-        return _key_search_view(request, cache_name, UNFOLD_CONFIG)
+        return _key_list_view(request, cache_name, UNFOLD_CONFIG)
 
     def change_view(
         self,

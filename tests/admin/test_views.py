@@ -142,23 +142,23 @@ class TestIndexView:
         assert "with_prefix" not in content
 
 
-class TestKeySearchView:
+class TestKeyListView:
     """Tests for the key search/browser view (KeyAdmin changelist)."""
 
-    def test_key_search_returns_200(self, admin_client: Client, test_cache):
+    def test_key_list_returns_200(self, admin_client: Client, test_cache):
         """Key search view should return 200."""
         url = _key_list_url("default")
         response = admin_client.get(url)
         assert response.status_code == 200
 
-    def test_key_search_requires_staff(self, db, test_cache):
+    def test_key_list_requires_staff(self, db, test_cache):
         """Key search view should redirect anonymous users."""
         client = Client()
         url = _key_list_url("default")
         response = client.get(url)
         assert response.status_code == 302
 
-    def test_key_search_page_title(self, admin_client: Client, test_cache):
+    def test_key_list_page_title(self, admin_client: Client, test_cache):
         """Key search view should have correct page title."""
         url = _key_list_url("default")
         response = admin_client.get(url)
@@ -167,7 +167,7 @@ class TestKeySearchView:
         assert b"Keys in" in response.content
         assert b"default" in response.content
 
-    def test_key_search_has_help_and_add_links(self, admin_client: Client, test_cache):
+    def test_key_list_has_help_and_add_links(self, admin_client: Client, test_cache):
         """Key search view should have help and add key links."""
         url = _key_list_url("default")
         response = admin_client.get(url)
@@ -178,7 +178,7 @@ class TestKeySearchView:
         # Should have add key link
         assert "Add" in content
 
-    def test_key_search_bulk_delete(
+    def test_key_list_bulk_delete(
         self,
         admin_client: Client,
         test_cache: KeyValueCache,
@@ -204,7 +204,7 @@ class TestKeySearchView:
         assert test_cache.get("bulk:delete:2") is None
         assert test_cache.get("bulk:keep") == "value3"
 
-    def test_key_search_shows_string_keys(
+    def test_key_list_shows_string_keys(
         self,
         admin_client: Client,
         test_cache: KeyValueCache,
@@ -219,7 +219,7 @@ class TestKeySearchView:
         assert b"test:key1" in response.content
         assert b"test:key2" in response.content
 
-    def test_key_search_empty_pattern(
+    def test_key_list_empty_pattern(
         self,
         admin_client: Client,
         test_cache: KeyValueCache,
@@ -231,7 +231,7 @@ class TestKeySearchView:
         response = admin_client.get(url)
         assert response.status_code == 200
 
-    def test_key_search_shows_type_column(
+    def test_key_list_shows_type_column(
         self,
         admin_client: Client,
         test_cache: KeyValueCache,
@@ -247,7 +247,7 @@ class TestKeySearchView:
         # Should show type badges
         assert "string" in content.lower() or "list" in content.lower()
 
-    def test_key_search_shows_ttl_column(
+    def test_key_list_shows_ttl_column(
         self,
         admin_client: Client,
         test_cache: KeyValueCache,
@@ -262,7 +262,7 @@ class TestKeySearchView:
         # Should show TTL value or "No expiry" - looking for table header
         assert "TTL" in content or "ttl" in content.lower()
 
-    def test_key_search_shows_size_column(
+    def test_key_list_shows_size_column(
         self,
         admin_client: Client,
         test_cache: KeyValueCache,
@@ -278,7 +278,7 @@ class TestKeySearchView:
         # Should show Size column header
         assert "Size" in content or "size" in content.lower()
 
-    def test_key_search_wildcard_pattern(
+    def test_key_list_wildcard_pattern(
         self,
         admin_client: Client,
         test_cache: KeyValueCache,
@@ -298,7 +298,7 @@ class TestKeySearchView:
         # Should not show non-matching key
         assert "other:key" not in content
 
-    def test_key_search_contains_pattern(
+    def test_key_list_contains_pattern(
         self,
         admin_client: Client,
         test_cache: KeyValueCache,
@@ -321,7 +321,7 @@ class TestKeySearchView:
         # Should not show non-matching key
         assert "unrelated:key" not in content
 
-    def test_key_search_pagination(
+    def test_key_list_pagination(
         self,
         admin_client: Client,
         test_cache: KeyValueCache,
@@ -338,7 +338,7 @@ class TestKeySearchView:
         # Should show pagination controls
         assert "paginator" in content or "page" in content.lower()
 
-    def test_key_search_results_count(
+    def test_key_list_results_count(
         self,
         admin_client: Client,
         test_cache: KeyValueCache,
