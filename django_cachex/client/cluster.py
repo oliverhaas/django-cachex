@@ -18,8 +18,6 @@ import asyncio
 import weakref
 from typing import TYPE_CHECKING, Any, ClassVar, cast, override
 
-from django.conf import settings
-
 from django_cachex.client.cache import KeyValueCache
 from django_cachex.client.default import KeyValueCacheClient
 
@@ -296,11 +294,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
     @override
     def close(self, **kwargs: Any) -> None:
         """Close the cluster connection if configured to do so."""
-        close_flag = self._options.get(
-            "close_connection",
-            getattr(settings, "DJANGO_REDIS_CLOSE_CONNECTION", False),
-        )
-        if close_flag:
+        if self._options.get("close_connection", False):
             url = self._servers[0]
             if url in self._clusters:
                 self._clusters[url].close()
@@ -447,11 +441,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
     @override
     async def aclose(self, **kwargs: Any) -> None:
         """Close the async cluster connection if configured to do so."""
-        close_flag = self._options.get(
-            "close_connection",
-            getattr(settings, "DJANGO_REDIS_CLOSE_CONNECTION", False),
-        )
-        if close_flag:
+        if self._options.get("close_connection", False):
             loop = asyncio.get_running_loop()
             url = self._servers[0]
             if loop in self._async_clusters and url in self._async_clusters[loop]:
