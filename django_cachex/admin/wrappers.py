@@ -65,7 +65,7 @@ class BaseCacheExtensions:
     """
 
     # Marker to detect already-extended caches
-    _cachex_extended: bool = True
+    _cachex_wrapped: bool = True
 
     # =========================================================================
     # TTL Operations
@@ -1181,7 +1181,7 @@ def wrap_cache(cache: BaseCache) -> BaseCache:
         The same cache instance, now with extended methods available.
     """
     # Idempotency check - already wrapped
-    if getattr(cache, "_cachex_extended", False):
+    if getattr(cache, "_cachex_wrapped", False):
         return cache
 
     # Find the extended class for this cache type
