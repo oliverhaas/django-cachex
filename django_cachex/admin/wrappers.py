@@ -50,6 +50,9 @@ if TYPE_CHECKING:
 # Alias to avoid shadowing by method names
 _set = set
 
+# Sentinel for distinguishing "key not found" from "key holds None"
+_MISSING = object()
+
 
 # =============================================================================
 # Base Extensions Mixin
@@ -83,8 +86,12 @@ class BaseCacheExtensions:
         raise NotSupportedError("pttl", self.__class__.__name__)
 
     def type(self, key: KeyT, version: int | None = None) -> str | None:
-        """Get the data type of a key."""
-        raise NotSupportedError("type", self.__class__.__name__)
+        """Get the data type of a key.
+
+        Wrapped backends only support Django's cache.set/get, so all values
+        are stored as serialized strings.
+        """
+        return "string"
 
     def persist(self, key: KeyT, version: int | None = None) -> bool:
         """Remove the TTL from a key."""
@@ -851,6 +858,189 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
 
         matching_keys.sort()
         return matching_keys
+
+    # =========================================================================
+    # Type Detection
+    # =========================================================================
+
+    def type(self, key: KeyT, version: int | None = None) -> str | None:
+        """Get the data type of a key by inspecting the stored Python value."""
+        value = self.get(key, default=_MISSING, version=version)
+        if value is _MISSING:
+            return None
+        if isinstance(value, list):
+            return "list"
+        return "string"
+
+    # =========================================================================
+    # List Helpers
+    # =========================================================================
+
+    def _get_list(self, key: KeyT, version: int | None = None) -> list[Any] | None:
+        """Get the stored list value, or None if key doesn't exist.
+
+        Raises:
+            TypeError: If the key exists but doesn't hold a list.
+        """
+        value = self.get(key, default=_MISSING, version=version)
+        if value is _MISSING:
+            return None
+        if not isinstance(value, list):
+            msg = f"Key '{key}' does not hold a list value."
+            raise TypeError(msg)
+        return value
+
+    def _get_ttl_timeout(self, key: KeyT, version: int | None = None) -> int | None:
+        """Convert ttl() result to a timeout value suitable for self.set().
+
+        Returns None (no expiry) for new keys or persistent keys,
+        or the remaining seconds for keys with a TTL.
+        """
+        current_ttl = self.ttl(key, version=version)
+        if current_ttl is None or current_ttl <= 0:
+            # -1 = no expiry, -2 = missing, None = unknown → persist
+            return None
+        return current_ttl
+
+    # =========================================================================
+    # List Operations
+    # =========================================================================
+
+    def lpush(self, key: KeyT, *values: Any, version: int | None = None) -> int:
+        """Prepend values to the head of a list."""
+        current = self._get_list(key, version=version)
+        timeout = self._get_ttl_timeout(key, version=version)
+        if current is None:
+            current = []
+        new_list = list(reversed(values)) + current
+        self.set(key, new_list, timeout=timeout, version=version)
+        return len(new_list)
+
+    def rpush(self, key: KeyT, *values: Any, version: int | None = None) -> int:
+        """Append values to the tail of a list."""
+        current = self._get_list(key, version=version)
+        timeout = self._get_ttl_timeout(key, version=version)
+        if current is None:
+            current = []
+        new_list = current + list(values)
+        self.set(key, new_list, timeout=timeout, version=version)
+        return len(new_list)
+
+    def lpop(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[Any]:
+        """Remove and return element(s) from the head of a list."""
+        current = self._get_list(key, version=version)
+        if not current:
+            return []
+        timeout = self._get_ttl_timeout(key, version=version)
+        pop_count = count if count is not None else 1
+        popped = current[:pop_count]
+        remaining = current[pop_count:]
+        if remaining:
+            self.set(key, remaining, timeout=timeout, version=version)
+        else:
+            self.delete(key, version=version)
+        return popped
+
+    def rpop(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[Any]:
+        """Remove and return element(s) from the tail of a list."""
+        current = self._get_list(key, version=version)
+        if not current:
+            return []
+        timeout = self._get_ttl_timeout(key, version=version)
+        pop_count = count if count is not None else 1
+        popped = list(reversed(current[-pop_count:]))
+        remaining = current[:-pop_count] if pop_count < len(current) else []
+        if remaining:
+            self.set(key, remaining, timeout=timeout, version=version)
+        else:
+            self.delete(key, version=version)
+        return popped
+
+    def lrange(self, key: KeyT, start: int, end: int, version: int | None = None) -> list[Any]:
+        """Return a range of elements from a list (inclusive end, Redis-style)."""
+        current = self._get_list(key, version=version)
+        if not current:
+            return []
+        length = len(current)
+        # Normalize negative indices
+        if start < 0:
+            start = max(length + start, 0)
+        if end < 0:
+            end = length + end
+        if start >= length or end < start:
+            return []
+        # Redis end is inclusive
+        return current[start : end + 1]
+
+    def llen(self, key: KeyT, version: int | None = None) -> int:
+        """Return the length of a list."""
+        current = self._get_list(key, version=version)
+        if current is None:
+            return 0
+        return len(current)
+
+    def lrem(  # noqa: PLR0912
+        self,
+        key: KeyT,
+        count: int,
+        value: Any,
+        version: int | None = None,
+    ) -> int:
+        """Remove occurrences of value from a list.
+
+        count=0: all, >0: first N from head, <0: first |N| from tail.
+        """
+        current = self._get_list(key, version=version)
+        if not current:
+            return 0
+        timeout = self._get_ttl_timeout(key, version=version)
+        removed = 0
+        if count == 0:
+            new_list = [item for item in current if item != value]
+            removed = len(current) - len(new_list)
+        elif count > 0:
+            new_list = []
+            for item in current:
+                if item == value and removed < count:
+                    removed += 1
+                else:
+                    new_list.append(item)
+        else:
+            abs_count = abs(count)
+            new_list = []
+            for item in reversed(current):
+                if item == value and removed < abs_count:
+                    removed += 1
+                else:
+                    new_list.append(item)
+            new_list.reverse()
+        if removed > 0:
+            if new_list:
+                self.set(key, new_list, timeout=timeout, version=version)
+            else:
+                self.delete(key, version=version)
+        return removed
+
+    def ltrim(self, key: KeyT, start: int, end: int, version: int | None = None) -> bool:
+        """Trim a list to the specified range (inclusive end, Redis-style)."""
+        current = self._get_list(key, version=version)
+        if current is None:
+            return True
+        timeout = self._get_ttl_timeout(key, version=version)
+        length = len(current)
+        if start < 0:
+            start = max(length + start, 0)
+        if end < 0:
+            end = length + end
+        if start >= length or end < start:
+            self.delete(key, version=version)
+            return True
+        trimmed = current[start : end + 1]
+        if trimmed:
+            self.set(key, trimmed, timeout=timeout, version=version)
+        else:
+            self.delete(key, version=version)
+        return True
 
 
 class WrappedDatabaseCache(DatabaseCache, BaseCacheExtensions):

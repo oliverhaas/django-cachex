@@ -172,6 +172,212 @@ class TestLocMemCacheExtensions:
 
 
 # =============================================================================
+# LocMemCache list operations
+# =============================================================================
+
+
+class TestLocMemCacheListOperations:
+    """Tests for LocMemCache list operations and type detection."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_cache(self):
+        with override_settings(CACHES=LOCMEM_CACHES):
+            cache = caches["locmem"]
+            cache.clear()
+            self.cache = wrap_cache(cache)
+            yield
+
+    # -- type() ---------------------------------------------------------------
+
+    def test_type_string_for_scalar(self):
+        self.cache.set("k", "hello")
+        assert self.cache.type("k") == "string"
+
+    def test_type_list_for_list(self):
+        self.cache.set("k", [1, 2, 3])
+        assert self.cache.type("k") == "list"
+
+    def test_type_none_for_missing(self):
+        assert self.cache.type("missing") is None
+
+    def test_type_string_for_dict(self):
+        self.cache.set("k", {"a": 1})
+        assert self.cache.type("k") == "string"
+
+    def test_type_string_for_int(self):
+        self.cache.set("k", 42)
+        assert self.cache.type("k") == "string"
+
+    # -- lpush() --------------------------------------------------------------
+
+    def test_lpush_creates_new_list(self):
+        assert self.cache.lpush("k", "a") == 1
+        assert self.cache.get("k") == ["a"]
+
+    def test_lpush_prepends(self):
+        self.cache.lpush("k", "a")
+        self.cache.lpush("k", "b")
+        assert self.cache.get("k") == ["b", "a"]
+
+    def test_lpush_multiple_values(self):
+        assert self.cache.lpush("k", "a", "b", "c") == 3
+        assert self.cache.get("k") == ["c", "b", "a"]
+
+    def test_lpush_type_error_on_non_list(self):
+        self.cache.set("k", "string_value")
+        with pytest.raises(TypeError):
+            self.cache.lpush("k", "x")
+
+    # -- rpush() --------------------------------------------------------------
+
+    def test_rpush_creates_new_list(self):
+        assert self.cache.rpush("k", "a") == 1
+        assert self.cache.get("k") == ["a"]
+
+    def test_rpush_appends(self):
+        self.cache.rpush("k", "a")
+        self.cache.rpush("k", "b")
+        assert self.cache.get("k") == ["a", "b"]
+
+    def test_rpush_multiple_values(self):
+        assert self.cache.rpush("k", "a", "b", "c") == 3
+        assert self.cache.get("k") == ["a", "b", "c"]
+
+    def test_rpush_type_error_on_non_list(self):
+        self.cache.set("k", "string_value")
+        with pytest.raises(TypeError):
+            self.cache.rpush("k", "x")
+
+    # -- lpop() ---------------------------------------------------------------
+
+    def test_lpop_returns_first(self):
+        self.cache.set("k", [1, 2, 3])
+        assert self.cache.lpop("k") == [1]
+        assert self.cache.get("k") == [2, 3]
+
+    def test_lpop_with_count(self):
+        self.cache.set("k", [1, 2, 3, 4])
+        assert self.cache.lpop("k", count=2) == [1, 2]
+        assert self.cache.get("k") == [3, 4]
+
+    def test_lpop_empty_returns_empty(self):
+        assert self.cache.lpop("missing") == []
+
+    def test_lpop_deletes_when_empty(self):
+        self.cache.set("k", [1])
+        self.cache.lpop("k")
+        assert self.cache.get("k") is None
+
+    # -- rpop() ---------------------------------------------------------------
+
+    def test_rpop_returns_last(self):
+        self.cache.set("k", [1, 2, 3])
+        assert self.cache.rpop("k") == [3]
+        assert self.cache.get("k") == [1, 2]
+
+    def test_rpop_with_count(self):
+        self.cache.set("k", [1, 2, 3, 4])
+        assert self.cache.rpop("k", count=2) == [4, 3]
+        assert self.cache.get("k") == [1, 2]
+
+    def test_rpop_empty_returns_empty(self):
+        assert self.cache.rpop("missing") == []
+
+    def test_rpop_deletes_when_empty(self):
+        self.cache.set("k", [1])
+        self.cache.rpop("k")
+        assert self.cache.get("k") is None
+
+    # -- lrange() -------------------------------------------------------------
+
+    def test_lrange_full(self):
+        self.cache.set("k", ["a", "b", "c"])
+        assert self.cache.lrange("k", 0, -1) == ["a", "b", "c"]
+
+    def test_lrange_partial(self):
+        self.cache.set("k", ["a", "b", "c", "d"])
+        assert self.cache.lrange("k", 1, 2) == ["b", "c"]
+
+    def test_lrange_negative_indices(self):
+        self.cache.set("k", ["a", "b", "c", "d", "e"])
+        assert self.cache.lrange("k", -3, -1) == ["c", "d", "e"]
+
+    def test_lrange_missing_key(self):
+        assert self.cache.lrange("missing", 0, -1) == []
+
+    # -- llen() ---------------------------------------------------------------
+
+    def test_llen_returns_length(self):
+        self.cache.set("k", [1, 2, 3])
+        assert self.cache.llen("k") == 3
+
+    def test_llen_missing_key(self):
+        assert self.cache.llen("missing") == 0
+
+    # -- lrem() ---------------------------------------------------------------
+
+    def test_lrem_all_occurrences(self):
+        self.cache.set("k", ["a", "b", "a", "c", "a"])
+        assert self.cache.lrem("k", 0, "a") == 3
+        assert self.cache.get("k") == ["b", "c"]
+
+    def test_lrem_from_head(self):
+        self.cache.set("k", ["a", "b", "a", "c", "a"])
+        assert self.cache.lrem("k", 2, "a") == 2
+        assert self.cache.get("k") == ["b", "c", "a"]
+
+    def test_lrem_from_tail(self):
+        self.cache.set("k", ["a", "b", "a", "c", "a"])
+        assert self.cache.lrem("k", -1, "a") == 1
+        assert self.cache.get("k") == ["a", "b", "a", "c"]
+
+    def test_lrem_not_found(self):
+        self.cache.set("k", ["a", "b"])
+        assert self.cache.lrem("k", 0, "z") == 0
+
+    def test_lrem_missing_key(self):
+        assert self.cache.lrem("missing", 0, "a") == 0
+
+    def test_lrem_deletes_when_all_removed(self):
+        self.cache.set("k", ["a", "a"])
+        self.cache.lrem("k", 0, "a")
+        assert self.cache.get("k") is None
+
+    # -- ltrim() --------------------------------------------------------------
+
+    def test_ltrim_basic(self):
+        self.cache.set("k", ["a", "b", "c", "d", "e"])
+        assert self.cache.ltrim("k", 1, 3) is True
+        assert self.cache.get("k") == ["b", "c", "d"]
+
+    def test_ltrim_negative_end(self):
+        self.cache.set("k", ["a", "b", "c"])
+        self.cache.ltrim("k", 0, -2)
+        assert self.cache.get("k") == ["a", "b"]
+
+    def test_ltrim_out_of_range_deletes(self):
+        self.cache.set("k", ["a", "b"])
+        self.cache.ltrim("k", 5, 10)
+        assert self.cache.get("k") is None
+
+    def test_ltrim_missing_key(self):
+        assert self.cache.ltrim("missing", 0, -1) is True
+
+    # -- TTL preservation -----------------------------------------------------
+
+    def test_list_ops_preserve_ttl(self):
+        self.cache.set("k", [1, 2], timeout=3600)
+        self.cache.rpush("k", 3)
+        ttl = self.cache.ttl("k")
+        assert 3590 <= ttl <= 3600
+
+    def test_list_ops_no_expiry_stays(self):
+        self.cache.set("k", [1, 2], timeout=None)
+        self.cache.rpush("k", 3)
+        assert self.cache.ttl("k") == -1
+
+
+# =============================================================================
 # DatabaseCache extension tests
 # =============================================================================
 
@@ -292,7 +498,6 @@ class TestDummyCacheExtensions:
 UNSUPPORTED_OPERATIONS = [
     ("keys", ("*",)),
     ("ttl", ("key",)),
-    ("type", ("key",)),
     ("expire", ("key", 100)),
     ("persist", ("key",)),
     ("lrange", ("key", 0, -1)),
