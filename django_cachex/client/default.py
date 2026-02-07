@@ -3445,10 +3445,7 @@ else:
 # =============================================================================
 
 __all__ = [
-    "_REDIS_AVAILABLE",
-    "_VALKEY_AVAILABLE",
     "KeyValueCacheClient",
     "RedisCacheClient",
     "ValkeyCacheClient",
-    "_main_exceptions",
 ]

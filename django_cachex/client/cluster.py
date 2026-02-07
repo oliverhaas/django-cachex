@@ -498,14 +498,11 @@ class KeyValueClusterCache(KeyValueCache):
 # =============================================================================
 
 # Try to import Redis Cluster
-_REDIS_CLUSTER_AVAILABLE = False
 try:
     import redis
     from redis.asyncio.cluster import RedisCluster as AsyncRedisCluster
     from redis.cluster import RedisCluster
     from redis.cluster import key_slot as redis_key_slot
-
-    _REDIS_CLUSTER_AVAILABLE = True
 
     class RedisClusterCacheClient(KeyValueClusterCacheClient):
         """Redis Cluster cache client.
@@ -593,14 +590,11 @@ except ImportError:
 
 
 # Try to import Valkey Cluster
-_VALKEY_CLUSTER_AVAILABLE = False
 try:
     import valkey
     from valkey.asyncio.cluster import ValkeyCluster as AsyncValkeyCluster
     from valkey.cluster import ValkeyCluster
     from valkey.cluster import key_slot as valkey_key_slot
-
-    _VALKEY_CLUSTER_AVAILABLE = True
 
     class ValkeyClusterCacheClient(KeyValueClusterCacheClient):
         """Valkey Cluster cache client.
