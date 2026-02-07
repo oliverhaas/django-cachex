@@ -7,5 +7,3 @@ the unfold-styled cache admin interface.
 This app provides the same functionality as django_cachex.admin but with
 templates optimized for the django-unfold theme.
 """
-
-default_app_config = "django_cachex.unfold.apps.UnfoldCacheAdminConfig"
