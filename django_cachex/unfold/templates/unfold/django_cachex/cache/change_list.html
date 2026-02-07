@@ -28,7 +28,7 @@
     </div>
 
     <!-- Filter and Search -->
-    <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between lg:border lg:border-base-200 lg:dark:border-base-800 lg:-mb-8 lg:p-3 lg:pb-11 lg:rounded-t-default">
         <!-- Support Filter -->
         <div class="flex flex-wrap items-center gap-2">
             <span class="text-sm text-base-500 dark:text-base-400">{% trans 'Filter:' %}</span>
@@ -64,13 +64,13 @@
 
     {% if caches_info %}
     <!-- Cache list card -->
-    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs lg:overflow-hidden">
+    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-b-default lg:shadow-xs lg:overflow-hidden">
         <form id="changelist-form" method="post" class="group">
             {% csrf_token %}
             <!-- Table -->
             <table class="block border-spacing-none border-separate w-full lg:table">
                 <thead class="text-font-important-light dark:text-font-important-dark hidden lg:table-header-group">
-                    <tr class="bg-base-50 dark:bg-white/[.02]">
+                    <tr>
                         <th class="align-middle border-b border-base-200 font-semibold py-2 text-left whitespace-nowrap px-3 lg:table-cell dark:border-base-800 lg:w-10">
                             <input type="checkbox" id="action-toggle"
                                    class="appearance-none bg-white block border border-base-300 cursor-pointer h-4 min-w-4 relative rounded-[4px] shadow-xs w-4 hover:border-base-400 dark:bg-base-700 dark:border-base-500 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-primary-500 after:absolute after:content-['check\_small'] after:flex! after:h-4 after:items-center after:justify-center after:leading-none after:material-symbols-outlined after:-ml-px after:-mt-px after:text-white after:transition-all after:w-4 dark:after:text-base-700 checked:bg-primary-600 dark:checked:bg-primary-600 checked:border-primary-600 dark:checked:border-primary-600 checked:transition-all checked:hover:border-primary-600 dark:checked:after:text-white">
