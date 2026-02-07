@@ -200,9 +200,9 @@ class TestLocMemCacheListOperations:
     def test_type_none_for_missing(self):
         assert self.cache.type("missing") is None
 
-    def test_type_string_for_dict(self):
+    def test_type_hash_for_dict(self):
         self.cache.set("k", {"a": 1})
-        assert self.cache.type("k") == "string"
+        assert self.cache.type("k") == "hash"
 
     def test_type_string_for_int(self):
         self.cache.set("k", 42)
@@ -374,6 +374,400 @@ class TestLocMemCacheListOperations:
     def test_list_ops_no_expiry_stays(self):
         self.cache.set("k", [1, 2], timeout=None)
         self.cache.rpush("k", 3)
+        assert self.cache.ttl("k") == -1
+
+
+# =============================================================================
+# LocMemCache set operations
+# =============================================================================
+
+
+class TestLocMemCacheSetOperations:
+    """Tests for LocMemCache set operations and type detection."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_cache(self):
+        with override_settings(CACHES=LOCMEM_CACHES):
+            cache = caches["locmem"]
+            cache.clear()
+            self.cache = wrap_cache(cache)
+            yield
+
+    # -- type() for sets ------------------------------------------------------
+
+    def test_type_set_for_set(self):
+        self.cache.set("k", {1, 2, 3})
+        assert self.cache.type("k") == "set"
+
+    def test_type_set_for_empty_set(self):
+        self.cache.set("k", set())
+        assert self.cache.type("k") == "set"
+
+    # -- sadd() ---------------------------------------------------------------
+
+    def test_sadd_creates_new_set(self):
+        assert self.cache.sadd("k", "a") == 1
+        assert self.cache.get("k") == {"a"}
+
+    def test_sadd_adds_to_existing(self):
+        self.cache.sadd("k", "a")
+        assert self.cache.sadd("k", "b") == 1
+        assert self.cache.get("k") == {"a", "b"}
+
+    def test_sadd_duplicate_returns_zero(self):
+        self.cache.sadd("k", "a")
+        assert self.cache.sadd("k", "a") == 0
+
+    def test_sadd_multiple_members(self):
+        assert self.cache.sadd("k", "a", "b", "c") == 3
+        assert self.cache.get("k") == {"a", "b", "c"}
+
+    def test_sadd_type_error_on_non_set(self):
+        self.cache.set("k", "string_value")
+        with pytest.raises(TypeError):
+            self.cache.sadd("k", "x")
+
+    # -- srem() ---------------------------------------------------------------
+
+    def test_srem_removes_member(self):
+        self.cache.set("k", {"a", "b", "c"})
+        assert self.cache.srem("k", "b") == 1
+        assert self.cache.get("k") == {"a", "c"}
+
+    def test_srem_multiple_members(self):
+        self.cache.set("k", {"a", "b", "c", "d"})
+        assert self.cache.srem("k", "a", "c") == 2
+        assert self.cache.get("k") == {"b", "d"}
+
+    def test_srem_nonexistent_member(self):
+        self.cache.set("k", {"a", "b"})
+        assert self.cache.srem("k", "z") == 0
+
+    def test_srem_missing_key(self):
+        assert self.cache.srem("missing", "a") == 0
+
+    def test_srem_deletes_when_empty(self):
+        self.cache.set("k", {"a"})
+        self.cache.srem("k", "a")
+        assert self.cache.get("k") is None
+
+    # -- scard() --------------------------------------------------------------
+
+    def test_scard_returns_count(self):
+        self.cache.set("k", {"a", "b", "c"})
+        assert self.cache.scard("k") == 3
+
+    def test_scard_missing_key(self):
+        assert self.cache.scard("missing") == 0
+
+    # -- sismember() ----------------------------------------------------------
+
+    def test_sismember_true(self):
+        self.cache.set("k", {"a", "b"})
+        assert self.cache.sismember("k", "a") is True
+
+    def test_sismember_false(self):
+        self.cache.set("k", {"a", "b"})
+        assert self.cache.sismember("k", "z") is False
+
+    def test_sismember_missing_key(self):
+        assert self.cache.sismember("missing", "a") is False
+
+    # -- smembers() -----------------------------------------------------------
+
+    def test_smembers_returns_copy(self):
+        original = {"a", "b", "c"}
+        self.cache.set("k", original)
+        result = self.cache.smembers("k")
+        assert result == original
+        # Should be a copy, not the same object
+        result.add("d")
+        assert self.cache.smembers("k") == original
+
+    def test_smembers_missing_key(self):
+        assert self.cache.smembers("missing") == set()
+
+    # -- spop() ---------------------------------------------------------------
+
+    def test_spop_single(self):
+        self.cache.set("k", {"a", "b", "c"})
+        member = self.cache.spop("k")
+        assert member in {"a", "b", "c"}
+        assert self.cache.scard("k") == 2
+
+    def test_spop_with_count(self):
+        self.cache.set("k", {"a", "b", "c"})
+        popped = self.cache.spop("k", count=2)
+        assert isinstance(popped, set)
+        assert len(popped) == 2
+        assert popped.issubset({"a", "b", "c"})
+
+    def test_spop_missing_key_single(self):
+        assert self.cache.spop("missing") is None
+
+    def test_spop_missing_key_with_count(self):
+        assert self.cache.spop("missing", count=2) == set()
+
+    def test_spop_deletes_when_empty(self):
+        self.cache.set("k", {"a"})
+        self.cache.spop("k")
+        assert self.cache.get("k") is None
+
+    # -- srandmember() --------------------------------------------------------
+
+    def test_srandmember_single(self):
+        self.cache.set("k", {"a", "b", "c"})
+        member = self.cache.srandmember("k")
+        assert member in {"a", "b", "c"}
+        # Should NOT modify the set
+        assert self.cache.scard("k") == 3
+
+    def test_srandmember_with_count(self):
+        self.cache.set("k", {"a", "b", "c"})
+        members = self.cache.srandmember("k", count=2)
+        assert isinstance(members, list)
+        assert len(members) == 2
+        assert all(m in {"a", "b", "c"} for m in members)
+        assert self.cache.scard("k") == 3
+
+    def test_srandmember_missing_key_single(self):
+        assert self.cache.srandmember("missing") is None
+
+    def test_srandmember_missing_key_with_count(self):
+        assert self.cache.srandmember("missing", count=2) == []
+
+    # -- TTL preservation -----------------------------------------------------
+
+    def test_set_ops_preserve_ttl(self):
+        self.cache.set("k", {"a"}, timeout=3600)
+        self.cache.sadd("k", "b")
+        ttl = self.cache.ttl("k")
+        assert 3590 <= ttl <= 3600
+
+    def test_set_ops_no_expiry_stays(self):
+        self.cache.set("k", {"a"}, timeout=None)
+        self.cache.sadd("k", "b")
+        assert self.cache.ttl("k") == -1
+
+
+# =============================================================================
+# LocMemCache hash operations
+# =============================================================================
+
+
+class TestLocMemCacheHashOperations:
+    """Tests for LocMemCache hash operations and type detection."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_cache(self):
+        with override_settings(CACHES=LOCMEM_CACHES):
+            cache = caches["locmem"]
+            cache.clear()
+            self.cache = wrap_cache(cache)
+            yield
+
+    # -- type() for hashes ----------------------------------------------------
+
+    def test_type_hash_for_str_key_dict(self):
+        self.cache.set("k", {"name": "alice", "age": "30"})
+        assert self.cache.type("k") == "hash"
+
+    def test_type_hash_for_empty_dict(self):
+        self.cache.set("k", {})
+        assert self.cache.type("k") == "hash"
+
+    def test_type_string_for_int_key_dict(self):
+        self.cache.set("k", {1: "a", 2: "b"})
+        assert self.cache.type("k") == "string"
+
+    def test_type_string_for_mixed_key_dict(self):
+        self.cache.set("k", {"a": 1, 2: "b"})
+        assert self.cache.type("k") == "string"
+
+    # -- hset() ---------------------------------------------------------------
+
+    def test_hset_creates_new_hash(self):
+        assert self.cache.hset("k", "name", "alice") == 1
+        assert self.cache.get("k") == {"name": "alice"}
+
+    def test_hset_adds_field(self):
+        self.cache.hset("k", "name", "alice")
+        assert self.cache.hset("k", "age", "30") == 1
+        assert self.cache.get("k") == {"name": "alice", "age": "30"}
+
+    def test_hset_overwrites_returns_zero(self):
+        self.cache.hset("k", "name", "alice")
+        assert self.cache.hset("k", "name", "bob") == 0
+        assert self.cache.get("k") == {"name": "bob"}
+
+    def test_hset_type_error_on_non_hash(self):
+        self.cache.set("k", "string_value")
+        with pytest.raises(TypeError):
+            self.cache.hset("k", "f", "v")
+
+    # -- hdel() ---------------------------------------------------------------
+
+    def test_hdel_removes_field(self):
+        self.cache.set("k", {"a": 1, "b": 2, "c": 3})
+        assert self.cache.hdel("k", "b") == 1
+        assert self.cache.get("k") == {"a": 1, "c": 3}
+
+    def test_hdel_multiple_fields(self):
+        self.cache.set("k", {"a": 1, "b": 2, "c": 3})
+        assert self.cache.hdel("k", "a", "c") == 2
+        assert self.cache.get("k") == {"b": 2}
+
+    def test_hdel_nonexistent_field(self):
+        self.cache.set("k", {"a": 1})
+        assert self.cache.hdel("k", "z") == 0
+
+    def test_hdel_missing_key(self):
+        assert self.cache.hdel("missing", "f") == 0
+
+    def test_hdel_deletes_when_empty(self):
+        self.cache.set("k", {"a": 1})
+        self.cache.hdel("k", "a")
+        assert self.cache.get("k") is None
+
+    # -- hget() ---------------------------------------------------------------
+
+    def test_hget_returns_value(self):
+        self.cache.set("k", {"name": "alice"})
+        assert self.cache.hget("k", "name") == "alice"
+
+    def test_hget_missing_field(self):
+        self.cache.set("k", {"name": "alice"})
+        assert self.cache.hget("k", "age") is None
+
+    def test_hget_missing_key(self):
+        assert self.cache.hget("missing", "f") is None
+
+    # -- hgetall() ------------------------------------------------------------
+
+    def test_hgetall_returns_copy(self):
+        original = {"a": 1, "b": 2}
+        self.cache.set("k", original)
+        result = self.cache.hgetall("k")
+        assert result == original
+        result["c"] = 3
+        assert self.cache.hgetall("k") == original
+
+    def test_hgetall_missing_key(self):
+        assert self.cache.hgetall("missing") == {}
+
+    # -- hlen() ---------------------------------------------------------------
+
+    def test_hlen_returns_count(self):
+        self.cache.set("k", {"a": 1, "b": 2, "c": 3})
+        assert self.cache.hlen("k") == 3
+
+    def test_hlen_missing_key(self):
+        assert self.cache.hlen("missing") == 0
+
+    # -- hkeys() / hvals() ---------------------------------------------------
+
+    def test_hkeys_returns_field_names(self):
+        self.cache.set("k", {"x": 1, "y": 2})
+        assert sorted(self.cache.hkeys("k")) == ["x", "y"]
+
+    def test_hkeys_missing_key(self):
+        assert self.cache.hkeys("missing") == []
+
+    def test_hvals_returns_values(self):
+        self.cache.set("k", {"x": 10, "y": 20})
+        assert sorted(self.cache.hvals("k")) == [10, 20]
+
+    def test_hvals_missing_key(self):
+        assert self.cache.hvals("missing") == []
+
+    # -- hexists() ------------------------------------------------------------
+
+    def test_hexists_true(self):
+        self.cache.set("k", {"name": "alice"})
+        assert self.cache.hexists("k", "name") is True
+
+    def test_hexists_false(self):
+        self.cache.set("k", {"name": "alice"})
+        assert self.cache.hexists("k", "age") is False
+
+    def test_hexists_missing_key(self):
+        assert self.cache.hexists("missing", "f") is False
+
+    # -- hmget() --------------------------------------------------------------
+
+    def test_hmget_returns_values(self):
+        self.cache.set("k", {"a": 1, "b": 2, "c": 3})
+        assert self.cache.hmget("k", "a", "c") == [1, 3]
+
+    def test_hmget_missing_fields(self):
+        self.cache.set("k", {"a": 1})
+        assert self.cache.hmget("k", "a", "z") == [1, None]
+
+    def test_hmget_missing_key(self):
+        assert self.cache.hmget("missing", "a", "b") == [None, None]
+
+    # -- hmset() --------------------------------------------------------------
+
+    def test_hmset_creates_hash(self):
+        assert self.cache.hmset("k", {"a": 1, "b": 2}) is True
+        assert self.cache.get("k") == {"a": 1, "b": 2}
+
+    def test_hmset_merges_fields(self):
+        self.cache.set("k", {"a": 1})
+        self.cache.hmset("k", {"b": 2, "c": 3})
+        assert self.cache.get("k") == {"a": 1, "b": 2, "c": 3}
+
+    # -- hsetnx() -------------------------------------------------------------
+
+    def test_hsetnx_sets_new_field(self):
+        self.cache.set("k", {"a": 1})
+        assert self.cache.hsetnx("k", "b", 2) is True
+        assert self.cache.get("k") == {"a": 1, "b": 2}
+
+    def test_hsetnx_skips_existing_field(self):
+        self.cache.set("k", {"a": 1})
+        assert self.cache.hsetnx("k", "a", 99) is False
+        assert self.cache.get("k") == {"a": 1}
+
+    def test_hsetnx_creates_hash(self):
+        assert self.cache.hsetnx("k", "f", "v") is True
+        assert self.cache.get("k") == {"f": "v"}
+
+    # -- hincrby() / hincrbyfloat() -------------------------------------------
+
+    def test_hincrby_new_field(self):
+        self.cache.set("k", {})
+        assert self.cache.hincrby("k", "count", 5) == 5
+
+    def test_hincrby_existing_field(self):
+        self.cache.set("k", {"count": 10})
+        assert self.cache.hincrby("k", "count", 3) == 13
+
+    def test_hincrby_creates_hash(self):
+        assert self.cache.hincrby("k", "x") == 1
+        assert self.cache.get("k") == {"x": 1}
+
+    def test_hincrbyfloat_new_field(self):
+        self.cache.set("k", {})
+        result = self.cache.hincrbyfloat("k", "score", 1.5)
+        assert result == pytest.approx(1.5)
+
+    def test_hincrbyfloat_existing_field(self):
+        self.cache.set("k", {"score": 2.5})
+        result = self.cache.hincrbyfloat("k", "score", 0.5)
+        assert result == pytest.approx(3.0)
+
+    # -- TTL preservation -----------------------------------------------------
+
+    def test_hash_ops_preserve_ttl(self):
+        self.cache.set("k", {"a": 1}, timeout=3600)
+        self.cache.hset("k", "b", 2)
+        ttl = self.cache.ttl("k")
+        assert 3590 <= ttl <= 3600
+
+    def test_hash_ops_no_expiry_stays(self):
+        self.cache.set("k", {"a": 1}, timeout=None)
+        self.cache.hset("k", "b", 2)
         assert self.cache.ttl("k") == -1
 
 

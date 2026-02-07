@@ -870,6 +870,10 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
             return None
         if isinstance(value, list):
             return "list"
+        if isinstance(value, _set):
+            return "set"
+        if isinstance(value, dict) and all(isinstance(k, str) for k in value):
+            return "hash"
         return "string"
 
     # =========================================================================
@@ -1041,6 +1045,254 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
         else:
             self.delete(key, version=version)
         return True
+
+    # =========================================================================
+    # Set Helpers
+    # =========================================================================
+
+    def _get_set(self, key: KeyT, version: int | None = None) -> _set[Any] | None:
+        """Get the stored set value, or None if key doesn't exist.
+
+        Raises:
+            TypeError: If the key exists but doesn't hold a set.
+        """
+        value = self.get(key, default=_MISSING, version=version)
+        if value is _MISSING:
+            return None
+        if not isinstance(value, _set):
+            msg = f"Key '{key}' does not hold a set value."
+            raise TypeError(msg)
+        return value
+
+    # =========================================================================
+    # Set Operations
+    # =========================================================================
+
+    def sadd(self, key: KeyT, *members: Any, version: int | None = None) -> int:
+        """Add members to a set."""
+        current = self._get_set(key, version=version)
+        timeout = self._get_ttl_timeout(key, version=version)
+        if current is None:
+            current = _set()
+        before = len(current)
+        current.update(members)
+        self.set(key, current, timeout=timeout, version=version)
+        return len(current) - before
+
+    def srem(self, key: KeyT, *members: Any, version: int | None = None) -> int:
+        """Remove members from a set."""
+        current = self._get_set(key, version=version)
+        if not current:
+            return 0
+        timeout = self._get_ttl_timeout(key, version=version)
+        removed = len(current.intersection(members))
+        current.difference_update(members)
+        if current:
+            self.set(key, current, timeout=timeout, version=version)
+        else:
+            self.delete(key, version=version)
+        return removed
+
+    def scard(self, key: KeyT, version: int | None = None) -> int:
+        """Get the number of members in a set."""
+        current = self._get_set(key, version=version)
+        if current is None:
+            return 0
+        return len(current)
+
+    def sismember(self, key: KeyT, member: Any, version: int | None = None) -> bool:
+        """Check if member is in set."""
+        current = self._get_set(key, version=version)
+        if current is None:
+            return False
+        return member in current
+
+    def smembers(self, key: KeyT, version: int | None = None) -> _set[Any]:
+        """Get all members of a set."""
+        current = self._get_set(key, version=version)
+        if current is None:
+            return _set()
+        return _set(current)
+
+    def spop(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | _set[Any]:
+        """Remove and return random member(s) from set."""
+        import random
+
+        current = self._get_set(key, version=version)
+        if not current:
+            if count is None:
+                return None
+            return _set()
+        timeout = self._get_ttl_timeout(key, version=version)
+        if count is None:
+            member = random.choice(list(current))  # noqa: S311
+            current.discard(member)
+            if current:
+                self.set(key, current, timeout=timeout, version=version)
+            else:
+                self.delete(key, version=version)
+            return member
+        pop_count = min(count, len(current))
+        popped = _set(random.sample(list(current), pop_count))
+        current.difference_update(popped)
+        if current:
+            self.set(key, current, timeout=timeout, version=version)
+        else:
+            self.delete(key, version=version)
+        return popped
+
+    def srandmember(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | list[Any]:
+        """Get random member(s) from set without removing."""
+        import random
+
+        current = self._get_set(key, version=version)
+        if not current:
+            if count is None:
+                return None
+            return []
+        if count is None:
+            return random.choice(list(current))  # noqa: S311
+        return random.sample(list(current), min(count, len(current)))
+
+    # =========================================================================
+    # Hash Helpers
+    # =========================================================================
+
+    def _get_hash(self, key: KeyT, version: int | None = None) -> dict[str, Any] | None:
+        """Get the stored hash (dict with string keys), or None if key doesn't exist.
+
+        Raises:
+            TypeError: If the key exists but doesn't hold a hash.
+        """
+        value = self.get(key, default=_MISSING, version=version)
+        if value is _MISSING:
+            return None
+        if not isinstance(value, dict) or not all(isinstance(k, str) for k in value):
+            msg = f"Key '{key}' does not hold a hash value."
+            raise TypeError(msg)
+        return value
+
+    # =========================================================================
+    # Hash Operations
+    # =========================================================================
+
+    def hset(self, key: KeyT, field: str, value: Any, version: int | None = None) -> int:
+        """Set field in hash."""
+        current = self._get_hash(key, version=version)
+        timeout = self._get_ttl_timeout(key, version=version)
+        if current is None:
+            current = {}
+        is_new = field not in current
+        current[field] = value
+        self.set(key, current, timeout=timeout, version=version)
+        return int(is_new)
+
+    def hdel(self, key: KeyT, *fields: str, version: int | None = None) -> int:
+        """Delete hash fields."""
+        current = self._get_hash(key, version=version)
+        if not current:
+            return 0
+        timeout = self._get_ttl_timeout(key, version=version)
+        removed = sum(1 for f in fields if f in current)
+        for f in fields:
+            current.pop(f, None)
+        if removed > 0:
+            if current:
+                self.set(key, current, timeout=timeout, version=version)
+            else:
+                self.delete(key, version=version)
+        return removed
+
+    def hget(self, key: KeyT, field: str, version: int | None = None) -> Any:
+        """Get value of field in hash."""
+        current = self._get_hash(key, version=version)
+        if current is None:
+            return None
+        return current.get(field)
+
+    def hgetall(self, key: KeyT, version: int | None = None) -> dict[str, Any]:
+        """Get all fields and values in hash."""
+        current = self._get_hash(key, version=version)
+        if current is None:
+            return {}
+        return dict(current)
+
+    def hlen(self, key: KeyT, version: int | None = None) -> int:
+        """Get number of fields in hash."""
+        current = self._get_hash(key, version=version)
+        if current is None:
+            return 0
+        return len(current)
+
+    def hkeys(self, key: KeyT, version: int | None = None) -> list[str]:
+        """Get all field names in hash."""
+        current = self._get_hash(key, version=version)
+        if current is None:
+            return []
+        return list(current.keys())
+
+    def hvals(self, key: KeyT, version: int | None = None) -> list[Any]:
+        """Get all values in hash."""
+        current = self._get_hash(key, version=version)
+        if current is None:
+            return []
+        return list(current.values())
+
+    def hexists(self, key: KeyT, field: str, version: int | None = None) -> bool:
+        """Check if field exists in hash."""
+        current = self._get_hash(key, version=version)
+        if current is None:
+            return False
+        return field in current
+
+    def hmget(self, key: KeyT, *fields: str, version: int | None = None) -> list[Any]:
+        """Get values of multiple fields."""
+        current = self._get_hash(key, version=version)
+        if current is None:
+            return [None] * len(fields)
+        return [current.get(f) for f in fields]
+
+    def hmset(self, key: KeyT, mapping: Mapping[str, Any], version: int | None = None) -> bool:
+        """Set multiple hash fields."""
+        current = self._get_hash(key, version=version)
+        timeout = self._get_ttl_timeout(key, version=version)
+        if current is None:
+            current = {}
+        current.update(mapping)
+        self.set(key, current, timeout=timeout, version=version)
+        return True
+
+    def hsetnx(self, key: KeyT, field: str, value: Any, version: int | None = None) -> bool:
+        """Set field in hash only if it doesn't exist."""
+        current = self._get_hash(key, version=version)
+        timeout = self._get_ttl_timeout(key, version=version)
+        if current is None:
+            current = {}
+        if field in current:
+            return False
+        current[field] = value
+        self.set(key, current, timeout=timeout, version=version)
+        return True
+
+    def hincrby(self, key: KeyT, field: str, amount: int = 1, version: int | None = None) -> int:
+        """Increment integer value of field in hash."""
+        current = self._get_hash(key, version=version)
+        timeout = self._get_ttl_timeout(key, version=version)
+        if current is None:
+            current = {}
+        current[field] = int(current.get(field, 0)) + amount
+        self.set(key, current, timeout=timeout, version=version)
+        return current[field]
+
+    def hincrbyfloat(self, key: KeyT, field: str, amount: float = 1.0, version: int | None = None) -> float:
+        """Increment float value of field in hash."""
+        current = self._get_hash(key, version=version)
+        timeout = self._get_ttl_timeout(key, version=version)
+        if current is None:
+            current = {}
+        current[field] = float(current.get(field, 0)) + amount
+        self.set(key, current, timeout=timeout, version=version)
+        return current[field]
 
 
 class WrappedDatabaseCache(DatabaseCache, BaseCacheExtensions):
