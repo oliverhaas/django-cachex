@@ -28,7 +28,6 @@ Extended attributes (our additions):
 from __future__ import annotations
 
 import asyncio
-import logging
 import weakref
 from typing import TYPE_CHECKING, Any, cast
 
@@ -64,8 +63,6 @@ try:
     _VALKEY_AVAILABLE = True
 except ImportError:
     valkey = None  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-
-logger = logging.getLogger(__name__)
 
 
 # =============================================================================
