@@ -1,0 +1,220 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block title %}{{ key }} | django-cachex{% endblock %}
+
+{% block breadcrumbs %}
+<div class="container mb-4 mx-auto px-4 lg:px-0">
+    <nav class="flex text-sm">
+        <a href="{% url 'admin:index' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Home' %}</a>
+        <span class="mx-2 text-base-400">/</span>
+        <a href="{% url 'admin:django_cachex_cache_changelist' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Cache Instances' %}</a>
+        <span class="mx-2 text-base-400">/</span>
+        <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{{ cache_name }}</a>
+        <span class="mx-2 text-base-400">/</span>
+        <span class="text-font-important-light dark:text-font-important-dark font-medium font-mono text-xs">{{ key|truncatechars:50 }}</span>
+    </nav>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 lg:px-0">
+    <!-- Header with tools -->
+    <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+        <h1 class="text-2xl font-semibold text-font-important-light dark:text-font-important-dark font-mono break-all">{{ key }}</h1>
+        <div class="flex items-center gap-2">
+            <a href="?{% if not help_active %}help=1{% endif %}"
+               class="border cursor-pointer font-medium px-3 py-2 rounded-default text-center whitespace-nowrap
+                      bg-white border-base-200 hover:text-primary-600
+                      dark:bg-base-900 dark:border-base-700 dark:hover:text-primary-500
+                      shadow-xs text-sm transition-colors">
+                {% trans 'Help' %}
+            </a>
+        </div>
+    </div>
+
+    <!-- Key Does Not Exist Error -->
+    {% if not key_exists %}
+    <div class="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-default">
+        <p class="text-red-700 dark:text-red-400">{% trans 'This key does not exist in the cache.' %}</p>
+    </div>
+    {% endif %}
+
+    <!-- Key Information Card -->
+    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+        <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
+            <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">{% trans 'Key Information' %}</h2>
+        </div>
+        <div class="p-4">
+            <table class="w-full">
+                <tbody class="divide-y divide-base-200 dark:divide-base-800">
+                    <tr>
+                        <th class="px-3 py-2 text-left text-sm font-medium text-base-700 dark:text-base-300 w-32 align-top">{% trans 'Key' %}</th>
+                        <td class="px-3 py-2 font-mono text-sm text-base-900 dark:text-base-100 break-all">{{ key }}</td>
+                    </tr>
+                    <tr>
+                        <th class="px-3 py-2 text-left text-sm font-medium text-base-700 dark:text-base-300 align-top">{% trans 'Cache' %}</th>
+                        <td class="px-3 py-2 text-sm text-base-900 dark:text-base-100">
+                            <span class="font-mono">{{ cache_name }}</span>
+                            {% if cache_metadata.location or cache_metadata.key_prefix or cache_metadata.version != 1 %}
+                            <span class="text-base-400 ml-1">({% if cache_metadata.location %}{{ cache_metadata.location }}{% if cache_metadata.key_prefix or cache_metadata.version != 1 %}, {% endif %}{% endif %}{% if cache_metadata.key_prefix %}prefix: {{ cache_metadata.key_prefix }}{% if cache_metadata.version != 1 %}, {% endif %}{% endif %}{% if cache_metadata.version != 1 %}version: {{ cache_metadata.version }}{% endif %})</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th class="px-3 py-2 text-left text-sm font-medium text-base-700 dark:text-base-300 align-top">{% trans 'Raw Key' %}</th>
+                        <td class="px-3 py-2 font-mono text-xs text-base-400 break-all">{{ raw_key }}</td>
+                    </tr>
+                    {% if key_type %}
+                    <tr>
+                        <th class="px-3 py-2 text-left text-sm font-medium text-base-700 dark:text-base-300">{% trans 'Type' %}</th>
+                        <td class="px-3 py-2">
+                            <span class="inline-block font-semibold h-6 leading-6 px-2 rounded-default text-[11px] uppercase whitespace-nowrap
+                                {% if key_type == 'string' %}bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400
+                                {% elif key_type == 'list' %}bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-400
+                                {% elif key_type == 'set' %}bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400
+                                {% elif key_type == 'hash' %}bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400
+                                {% elif key_type == 'zset' %}bg-teal-100 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400
+                                {% elif key_type == 'stream' %}bg-primary-100 text-primary-700 dark:bg-primary-500/20 dark:text-primary-400
+                                {% else %}bg-base-100 text-base-700 dark:bg-base-500/20 dark:text-base-200{% endif %}">
+                                {{ key_type }}
+                            </span>
+                            {% if type_data.length is not None %}
+                            <span class="text-sm text-base-400 ml-2">({{ type_data.length }} {% if key_type == 'hash' %}{% trans 'fields' %}{% elif key_type == 'list' %}{% trans 'items' %}{% else %}{% trans 'members' %}{% endif %})</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    <tr>
+                        <th class="px-3 py-2 text-left text-sm font-medium text-base-700 dark:text-base-300">{% trans 'TTL (s)' %}</th>
+                        <td class="px-3 py-2">
+                            <form method="post" class="flex items-center gap-2">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="set_ttl">
+                                <input type="number" name="ttl_value" step="1" min="0"
+                                       value="{% if ttl is not None and ttl >= 0 %}{{ ttl }}{% endif %}"
+                                       placeholder="{% trans 'no expiry' %}"
+                                       class="border border-base-200 bg-white font-medium min-w-20 placeholder-base-400 rounded-default shadow-xs text-font-default-light text-sm px-3 py-2 dark:bg-base-900 dark:border-base-700 dark:text-font-default-dark w-28">
+                                <button type="submit"
+                                        class="border cursor-pointer font-medium px-3 py-2 rounded-default text-center whitespace-nowrap bg-white border-base-200 text-base-700 hover:text-primary-600 dark:bg-base-900 dark:border-base-700 dark:text-base-200 dark:hover:text-primary-500 shadow-xs text-sm">
+                                    {% trans 'Update' %}
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% if create_mode %}
+    <div class="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-default">
+        <p class="text-yellow-700 dark:text-yellow-400">
+            {% trans 'This key does not exist yet. Use the operations below to add your first item and create the key.' %}
+        </p>
+    </div>
+    {% endif %}
+
+    {% if key_exists or create_mode %}
+
+    {% if key_type == 'list' %}
+    {% include "unfold/django_cachex/key/key_detail_list.html" %}
+    <div class="flex items-center justify-between">
+        <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}"
+           class="px-4 py-2 text-sm font-medium rounded-default bg-base-100 dark:bg-base-800
+                  text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700 transition-colors">
+            {% trans 'Close' %}
+        </a>
+        <button type="button"
+                onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); }"
+                class="px-4 py-2 text-sm font-medium rounded-default bg-red-600 text-white hover:bg-red-700 transition-colors">
+            {% trans 'Delete' %}
+        </button>
+    </div>
+
+    {% elif key_type == 'hash' %}
+    {% include "unfold/django_cachex/key/key_detail_hash.html" %}
+    <div class="flex items-center justify-between">
+        <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}"
+           class="px-4 py-2 text-sm font-medium rounded-default bg-base-100 dark:bg-base-800
+                  text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700 transition-colors">
+            {% trans 'Close' %}
+        </a>
+        <button type="button"
+                onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); }"
+                class="px-4 py-2 text-sm font-medium rounded-default bg-red-600 text-white hover:bg-red-700 transition-colors">
+            {% trans 'Delete' %}
+        </button>
+    </div>
+
+    {% elif key_type == 'set' %}
+    {% include "unfold/django_cachex/key/key_detail_set.html" %}
+    <div class="flex items-center justify-between">
+        <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}"
+           class="px-4 py-2 text-sm font-medium rounded-default bg-base-100 dark:bg-base-800
+                  text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700 transition-colors">
+            {% trans 'Close' %}
+        </a>
+        <button type="button"
+                onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); }"
+                class="px-4 py-2 text-sm font-medium rounded-default bg-red-600 text-white hover:bg-red-700 transition-colors">
+            {% trans 'Delete' %}
+        </button>
+    </div>
+
+    {% elif key_type == 'zset' %}
+    {% include "unfold/django_cachex/key/key_detail_zset.html" %}
+    <div class="flex items-center justify-between">
+        <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}"
+           class="px-4 py-2 text-sm font-medium rounded-default bg-base-100 dark:bg-base-800
+                  text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700 transition-colors">
+            {% trans 'Close' %}
+        </a>
+        <button type="button"
+                onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); }"
+                class="px-4 py-2 text-sm font-medium rounded-default bg-red-600 text-white hover:bg-red-700 transition-colors">
+            {% trans 'Delete' %}
+        </button>
+    </div>
+
+    {% elif key_type == 'stream' %}
+    {% include "unfold/django_cachex/key/key_detail_stream.html" %}
+    <div class="flex items-center justify-between">
+        <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}"
+           class="px-4 py-2 text-sm font-medium rounded-default bg-base-100 dark:bg-base-800
+                  text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700 transition-colors">
+            {% trans 'Close' %}
+        </a>
+        <button type="button"
+                onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); }"
+                class="px-4 py-2 text-sm font-medium rounded-default bg-red-600 text-white hover:bg-red-700 transition-colors">
+            {% trans 'Delete' %}
+        </button>
+    </div>
+
+    {% else %}
+    {% include "unfold/django_cachex/key/key_detail_string.html" %}
+    <div class="flex items-center justify-between">
+        <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}"
+           class="px-4 py-2 text-sm font-medium rounded-default bg-base-100 dark:bg-base-800
+                  text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700 transition-colors">
+            {% trans 'Close' %}
+        </a>
+        <button type="button"
+                onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); }"
+                class="px-4 py-2 text-sm font-medium rounded-default bg-red-600 text-white hover:bg-red-700 transition-colors">
+            {% trans 'Delete' %}
+        </button>
+    </div>
+    {% endif %}
+
+    {% endif %}
+
+    {% if key_exists %}
+    <form id="delete-form" method="post" style="display: none;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete">
+    </form>
+    {% endif %}
+</div>
+{% endblock %}

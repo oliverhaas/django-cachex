@@ -1,10 +1,9 @@
 """
-Cache-related views for the django-cachex admin.
+Cache list view for the django-cachex admin.
 """
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
@@ -114,96 +113,10 @@ def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:
             "help_active": help_active,
         },
     )
-    return render(request, config.template("cache/index.html"), context)
+    return render(request, config.template("cache/change_list.html"), context)
 
 
 @staff_member_required
 def index(request: HttpRequest) -> HttpResponse:
     """Display all configured cache instances with their capabilities."""
     return _index_view(request, ADMIN_CONFIG)
-
-
-def _cache_detail_view(
-    request: HttpRequest,
-    cache_name: str,
-    config: ViewConfig,
-) -> HttpResponse:
-    """Display cache details (info + slowlog combined).
-
-    This is the internal implementation; use cache_detail() for the decorated admin view.
-    """
-    cache_obj = Cache.get_by_name(cache_name)
-
-    if cache_obj is None:
-        messages.error(request, f"Cache '{cache_name}' not found.")
-        return redirect(cache_list_url())
-
-    # Show help message if requested
-    help_active = show_help(request, "cache_info")
-
-    service = get_cache_service(cache_name)
-
-    # Get cache metadata and info
-    info_data = None
-    raw_info = None
-    try:
-        info_data = service.metadata()
-        raw_info = service.info()
-    except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Error retrieving cache info: {e!s}")
-
-    # Get slowlog count from query param (default 10)
-    slowlog_count = int(request.GET.get("count", 10))
-
-    # Get slowlog entries
-    slowlog_data = None
-    try:
-        slowlog_data = service.slowlog_get(slowlog_count)
-    except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Error retrieving slow log: {e!s}")
-
-    # Convert raw_info to pretty-printed JSON for display
-    raw_info_json = None
-    if raw_info:
-        raw_info_json = json.dumps(raw_info, indent=2, default=str)
-
-    context = admin.site.each_context(request)
-    context.update(
-        {
-            "title": f"Cache: {cache_name}",
-            "cache_name": cache_name,
-            "cache_obj": cache_obj,
-            "info_data": info_data,
-            "raw_info_json": raw_info_json,
-            "slowlog_data": slowlog_data,
-            "slowlog_count": slowlog_count,
-            "help_active": help_active,
-        },
-    )
-    return render(request, config.template("cache/change_form.html"), context)
-
-
-@staff_member_required
-def cache_detail(request: HttpRequest, cache_name: str) -> HttpResponse:
-    """Display cache details (info + slowlog combined)."""
-    return _cache_detail_view(request, cache_name, ADMIN_CONFIG)
-
-
-def _help_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:
-    """Display help information about the cache admin.
-
-    This is the internal implementation; use help_view() for the decorated admin view.
-    """
-    context = admin.site.each_context(request)
-    context.update(
-        {
-            "title": "Cache Admin - Help",
-        },
-    )
-    return render(request, config.template("cache/help.html"), context)
-
-
-@staff_member_required
-def help_view(request: HttpRequest) -> HttpResponse:
-    """Display help information about the cache admin."""
-    return _help_view(request, ADMIN_CONFIG)

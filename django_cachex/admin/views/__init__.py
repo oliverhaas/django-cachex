@@ -20,20 +20,24 @@ from .base import (
     parse_timeout,
     show_help,
 )
-from .cache import (
+from .cache_detail import (
     _cache_detail_view,
-    _help_view,
-    _index_view,
     cache_detail,
-    help_view,
+)
+from .cache_list import (
+    _index_view,
     index,
 )
-from .key import (
+from .key_add import (
     _key_add_view,
-    _key_detail_view,
-    _key_list_view,
     key_add,
+)
+from .key_detail import (
+    _key_detail_view,
     key_detail,
+)
+from .key_list import (
+    _key_list_view,
     key_list,
 )
 
@@ -42,7 +46,6 @@ __all__ = [
     "HELP_MESSAGES",
     "ViewConfig",
     "_cache_detail_view",
-    "_help_view",
     "_index_view",
     "_key_add_view",
     "_key_detail_view",
@@ -51,7 +54,6 @@ __all__ = [
     "cache_list_url",
     "format_value_for_display",
     "get_page_range",
-    "help_view",
     "index",
     "is_json_serializable",
     "key_add",

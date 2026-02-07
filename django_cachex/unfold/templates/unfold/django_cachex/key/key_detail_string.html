@@ -1,0 +1,41 @@
+{% load i18n %}
+<!-- String Value Editor -->
+<form method="post" id="key-form">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="update">
+
+    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+        <div class="px-4 py-3 border-b border-base-200 dark:border-base-800 flex items-center gap-2">
+            <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">{% trans 'Value' %}</h2>
+            {% if value_is_editable %}
+            <span class="inline-block font-semibold h-6 leading-6 px-2 rounded-default text-[11px] uppercase whitespace-nowrap bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400">JSON</span>
+            {% else %}
+            <span class="inline-block font-semibold h-6 leading-6 px-2 rounded-default text-[11px] uppercase whitespace-nowrap bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400">{% trans 'read-only' %}</span>
+            {% endif %}
+        </div>
+        {% if not value_is_editable %}
+        <div class="px-4 py-3 bg-yellow-50 dark:bg-yellow-900/20 border-b border-yellow-200 dark:border-yellow-800">
+            <p class="text-sm text-yellow-700 dark:text-yellow-400">
+                <strong>{% trans 'Complex object detected.' %}</strong>
+                {% trans 'This value cannot be safely edited because it is not JSON-serializable. It may contain Python objects like datetime, bytes, or custom classes.' %}
+            </p>
+        </div>
+        {% endif %}
+        <div class="p-4">
+            <label for="id_value" class="block text-sm font-medium text-base-700 dark:text-base-300 mb-2">{% trans 'Value:' %}</label>
+            <textarea id="id_value" name="value" rows="12"
+                      class="w-full px-3 py-2 text-sm font-mono border border-base-300 dark:border-base-600 rounded-default
+                             bg-white dark:bg-base-800 text-base-900 dark:text-base-100
+                             focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      {% if not value_is_editable %}readonly{% endif %}>{{ value_display }}</textarea>
+            {% if value_is_editable %}
+            <div class="mt-3">
+                <button type="submit"
+                        class="px-4 py-2 text-sm font-medium rounded-default bg-primary-600 text-white hover:bg-primary-700 transition-colors">
+                    {% trans 'Update' %}
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</form>

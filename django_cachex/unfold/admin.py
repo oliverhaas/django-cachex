@@ -45,10 +45,6 @@ else:
 # Uses admin URLs but with unfold template prefix
 UNFOLD_CONFIG = ViewConfig(
     template_prefix="unfold/django_cachex",
-    template_overrides={
-        # Unfold uses cache/ for all templates, admin uses key/ for key details
-        "key/change_form.html": "cache/key_detail.html",
-    },
 )
 
 

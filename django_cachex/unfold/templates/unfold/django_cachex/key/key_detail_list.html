@@ -1,0 +1,120 @@
+{% load i18n %}
+<!-- List Operations -->
+<div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+    <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
+        <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">{% trans 'Operations' %}</h2>
+    </div>
+    <div class="p-4 space-y-3">
+        <div class="flex items-center gap-3">
+            <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Push Left:' %}</label>
+            <form method="post" class="flex items-center gap-2">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="lpush">
+                <input type="text" name="push_value" placeholder="{% trans 'value' %}"
+                       class="w-32 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                              bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
+                <button type="submit" class="px-3 py-1 text-sm font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                    {% trans 'Push' %}
+                </button>
+            </form>
+        </div>
+        <div class="flex items-center gap-3">
+            <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Push Right:' %}</label>
+            <form method="post" class="flex items-center gap-2">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="rpush">
+                <input type="text" name="push_value" placeholder="{% trans 'value' %}"
+                       class="w-32 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                              bg-white dark:bg-base-700 text-base-900 dark:text-base-100">
+                <button type="submit" class="px-3 py-1 text-sm font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                    {% trans 'Push' %}
+                </button>
+            </form>
+        </div>
+        <div class="flex items-center gap-3">
+            <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Pop Left:' %}</label>
+            <form method="post" class="flex items-center gap-2">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="lpop">
+                <input type="number" name="pop_count" value="1" min="1"
+                       class="w-14 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                              bg-white dark:bg-base-700 text-base-900 dark:text-base-100" title="{% trans 'Count' %}">
+                <button type="submit" class="px-3 py-1 text-sm font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                    {% trans 'Pop' %}
+                </button>
+            </form>
+        </div>
+        <div class="flex items-center gap-3">
+            <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Pop Right:' %}</label>
+            <form method="post" class="flex items-center gap-2">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="rpop">
+                <input type="number" name="pop_count" value="1" min="1"
+                       class="w-14 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                              bg-white dark:bg-base-700 text-base-900 dark:text-base-100" title="{% trans 'Count' %}">
+                <button type="submit" class="px-3 py-1 text-sm font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                    {% trans 'Pop' %}
+                </button>
+            </form>
+        </div>
+        <div class="flex items-center gap-3">
+            <label class="w-24 text-sm font-medium text-base-700 dark:text-base-300 flex-none">{% trans 'Trim:' %}</label>
+            <form method="post" class="flex items-center gap-2">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="ltrim">
+                <input type="number" name="trim_start" value="0"
+                       class="w-14 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                              bg-white dark:bg-base-700 text-base-900 dark:text-base-100" title="{% trans 'Start index' %}">
+                <input type="number" name="trim_stop" value="-1"
+                       class="w-14 px-2 py-1 text-sm border border-base-300 dark:border-base-600 rounded
+                              bg-white dark:bg-base-700 text-base-900 dark:text-base-100" title="{% trans 'Stop index (-1 for last)' %}">
+                <button type="submit"
+                        onclick="return confirm('{% trans 'Trim list to this range? Elements outside the range will be removed.' %}');"
+                        class="px-3 py-1 text-sm font-medium rounded bg-primary-600 text-white hover:bg-primary-700">
+                    {% trans 'Trim' %}
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+<!-- List Items -->
+<div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs mb-6">
+    <div class="px-4 py-3 border-b border-base-200 dark:border-base-800">
+        <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark">
+            {% trans 'List Items' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}
+        </h2>
+    </div>
+    {% if type_data.items %}
+    <table class="w-full">
+        <thead class="bg-base-50 dark:bg-base-800 border-b border-base-200 dark:border-base-800">
+            <tr>
+                <th class="w-16 px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase">{% trans 'Index' %}</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase">{% trans 'Value' %}</th>
+                <th class="w-24 px-4 py-3 text-left text-xs font-medium text-base-500 dark:text-base-400 uppercase">{% trans 'Actions' %}</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-base-200 dark:divide-base-800">
+            {% for item in type_data.items %}
+            <tr class="hover:bg-base-50 dark:hover:bg-base-800">
+                <td class="px-4 py-3 text-sm text-base-400">{{ forloop.counter0 }}</td>
+                <td class="px-4 py-3 font-mono text-sm text-base-900 dark:text-base-100">{{ item }}</td>
+                <td class="px-4 py-3">
+                    <form method="post" class="inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="lrem">
+                        <input type="hidden" name="item_value" value="{{ item }}">
+                        <button type="submit"
+                                onclick="return confirm('{% trans 'Remove this item?' %}');"
+                                class="px-2 py-1 text-xs font-medium rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50">
+                            {% trans 'Remove' %}
+                        </button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="p-4 text-base-500 dark:text-base-400">{% trans 'List is empty.' %}</p>
+    {% endif %}
+</div>
