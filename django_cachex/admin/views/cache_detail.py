@@ -7,12 +7,13 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import redirect, render
 
+from django_cachex.admin.helpers import get_cache, get_metadata, get_slowlog
 from django_cachex.admin.models import Cache
-from django_cachex.admin.service import get_cache_service
 from django_cachex.admin.views.base import (
     ADMIN_CONFIG,
     ViewConfig,
@@ -42,14 +43,15 @@ def _cache_detail_view(
     # Show help message if requested
     help_active = show_help(request, "cache_info")
 
-    service = get_cache_service(cache_name)
+    cache = get_cache(cache_name)
+    cache_config = settings.CACHES.get(cache_name, {})
 
     # Get cache metadata and info
     info_data = None
     raw_info = None
     try:
-        info_data = service.metadata()
-        raw_info = service.info()
+        info_data = get_metadata(cache, cache_config)
+        raw_info = cache.info()
     except Exception as e:  # noqa: BLE001
         messages.error(request, f"Error retrieving cache info: {e!s}")
 
@@ -59,7 +61,7 @@ def _cache_detail_view(
     # Get slowlog entries
     slowlog_data = None
     try:
-        slowlog_data = service.slowlog_get(slowlog_count)
+        slowlog_data = get_slowlog(cache, slowlog_count)
     except Exception as e:  # noqa: BLE001
         messages.error(request, f"Error retrieving slow log: {e!s}")
 

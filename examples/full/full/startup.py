@@ -112,14 +112,11 @@ def populate_cache_if_needed(cache_alias: str) -> None:
             # For database cache, check if we can get a known key
             # If not found, assume it needs population
             count = 0 if cache.get("config:version") is None else MIN_KEYS
+        elif hasattr(cache, "keys"):
+            # Count keys via keys() if available
+            count = len(list(cache.keys("*")))  # type: ignore[operator]
         else:
-            from django_cachex.admin.service import CacheService
-
-            service = CacheService(cache_alias, cache)
-            if hasattr(service, "key_count"):
-                count = service.key_count()  # type: ignore[operator]
-            else:
-                count = len(list(cache.keys("*"))) if hasattr(cache, "keys") else 0  # type: ignore[operator]
+            count = 0
     except Exception:
         count = 0
 

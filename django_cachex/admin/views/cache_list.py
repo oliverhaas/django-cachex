@@ -11,8 +11,8 @@ from django.contrib import admin, messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import redirect, render
 
+from django_cachex.admin.helpers import get_cache
 from django_cachex.admin.models import Cache
-from django_cachex.admin.service import get_cache_service
 from django_cachex.admin.views.base import (
     ADMIN_CONFIG,
     ViewConfig,
@@ -41,8 +41,8 @@ def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:
             flushed_count = 0
             for cache_name in selected_caches:
                 try:
-                    service = get_cache_service(cache_name)
-                    service.clear()
+                    cache = get_cache(cache_name)
+                    cache.clear()
                     flushed_count += 1
                 except Exception as e:  # noqa: BLE001
                     messages.error(request, f"Error flushing '{cache_name}': {e!s}")
@@ -65,7 +65,7 @@ def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:
         support_level = cache_obj.support_level if cache_obj else "limited"
         any_flush_supported = True
         try:
-            get_cache_service(cache_name)  # Verify cache is accessible
+            get_cache(cache_name)  # Verify cache is accessible
             cache_info = {
                 "name": cache_name,
                 "config": cache_config,

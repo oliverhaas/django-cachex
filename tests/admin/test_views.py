@@ -94,31 +94,77 @@ class TestIndexView:
         assert "Cache" in content
 
     def test_index_shows_support_badge(self, admin_client: Client, test_cache):
-        """Index view should show support level badges."""
+        """Index view should show support level badges in the cache table."""
+        from bs4 import BeautifulSoup
+
         url = _cache_list_url()
         response = admin_client.get(url)
         assert response.status_code == 200
-        content = response.content.decode()
+
+        # Find the table containing our cache name
+        soup = BeautifulSoup(response.content, "html.parser")
+        tables = soup.find_all("table")
+        data_table = None
+        for table in tables:
+            if "default" in table.get_text():
+                data_table = table
+                break
+        assert data_table is not None, "Expected a table containing 'default' cache"
+
         # Should show cachex badge for django-cachex backends
-        assert "cachex" in content.lower()
+        table_text = data_table.get_text().lower()
+        assert "cachex" in table_text, "'cachex' badge not found in cache table"
 
     def test_index_shows_backend_column(self, admin_client: Client, test_cache):
-        """Index view should show backend class path."""
+        """Index view should show backend class path in the cache table."""
+        from bs4 import BeautifulSoup
+
         url = _cache_list_url()
         response = admin_client.get(url)
         assert response.status_code == 200
-        content = response.content.decode()
-        # Should show the full backend class path
-        assert "ValkeyCache" in content or "RedisCache" in content or "django_cachex" in content
+
+        # Find the table containing our cache name
+        soup = BeautifulSoup(response.content, "html.parser")
+        tables = soup.find_all("table")
+        data_table = None
+        for table in tables:
+            if "default" in table.get_text():
+                data_table = table
+                break
+        assert data_table is not None, "Expected a table containing 'default' cache"
+
+        # Should show the backend class path
+        table_text = data_table.get_text()
+        assert "ValkeyCache" in table_text or "RedisCache" in table_text or "django_cachex" in table_text, (
+            f"Backend class not found in cache table: {table_text[:200]}"
+        )
 
     def test_index_shows_location_column(self, admin_client: Client, test_cache):
-        """Index view should show cache location."""
+        """Index view should show cache location in the cache table."""
+        from bs4 import BeautifulSoup
+
         url = _cache_list_url()
         response = admin_client.get(url)
         assert response.status_code == 200
-        content = response.content.decode()
-        # Should show the location (redis:// URL or path)
-        assert "redis://" in content or "localhost" in content or "127.0.0.1" in content
+
+        # Find the table containing our cache name
+        soup = BeautifulSoup(response.content, "html.parser")
+        tables = soup.find_all("table")
+        data_table = None
+        for table in tables:
+            if "default" in table.get_text():
+                data_table = table
+                break
+        assert data_table is not None, "Expected a table containing 'default' cache"
+
+        # Should show the location (redis:// URL or localhost)
+        table_text = data_table.get_text()
+        assert (
+            "redis://" in table_text
+            or "valkey://" in table_text
+            or "localhost" in table_text
+            or "127.0.0.1" in table_text
+        ), f"Cache location not found in cache table: {table_text[:200]}"
 
     def test_index_cache_links_to_keys(self, admin_client: Client, test_cache):
         """Cache list should have links to key browser."""
@@ -236,16 +282,33 @@ class TestKeyListView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Key search should show type column for keys."""
+        """Key search should show type column with actual type values in table cells."""
+        from bs4 import BeautifulSoup
+
         test_cache.set("type:string:test", "value")
         test_cache.rpush("type:list:test", "item1")
 
         url = _key_list_url("default")
         response = admin_client.get(url + "&q=type:*")
         assert response.status_code == 200
-        content = response.content.decode()
-        # Should show type badges
-        assert "string" in content.lower() or "list" in content.lower()
+
+        # Parse HTML and find the table containing our test keys
+        soup = BeautifulSoup(response.content, "html.parser")
+        # Find any table that contains our key names
+        tables = soup.find_all("table")
+        data_table = None
+        for table in tables:
+            if "type:string:test" in table.get_text():
+                data_table = table
+                break
+        assert data_table is not None, "Expected a table containing our test keys"
+
+        # Get all text content from table cells
+        table_text = data_table.get_text()
+
+        # Verify type values appear in the table
+        assert "string" in table_text, "'string' not found in table"
+        assert "list" in table_text, "'list' not found in table"
 
     def test_key_list_shows_ttl_column(
         self,
@@ -267,16 +330,31 @@ class TestKeyListView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Key search should show size column for keys."""
-        test_cache.set("size:string:test", "hello world")
+        """Key search should show size column with actual size values in table cells."""
+        from bs4 import BeautifulSoup
+
         test_cache.rpush("size:list:test", "a", "b", "c")
 
         url = _key_list_url("default")
-        response = admin_client.get(url + "&q=size:*")
+        response = admin_client.get(url + "&q=size:list*")
         assert response.status_code == 200
-        content = response.content.decode()
-        # Should show Size column header
-        assert "Size" in content or "size" in content.lower()
+
+        # Parse HTML and find the table containing our test key
+        soup = BeautifulSoup(response.content, "html.parser")
+        # Find any table that contains our key name
+        tables = soup.find_all("table")
+        data_table = None
+        for table in tables:
+            if "size:list:test" in table.get_text():
+                data_table = table
+                break
+        assert data_table is not None, "Expected a table containing our test key"
+
+        # Get all text content from table cells (td elements only, not headers)
+        cells_text = [td.get_text(strip=True) for td in data_table.find_all("td")]
+
+        # Verify size "3" appears in table cells (for the 3-item list)
+        assert "3" in cells_text, f"'3' (list size) not found in table cells: {cells_text}"
 
     def test_key_list_wildcard_pattern(
         self,

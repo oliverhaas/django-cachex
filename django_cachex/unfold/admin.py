@@ -15,7 +15,6 @@ from django.http import HttpResponseRedirect
 from django.urls import path, reverse
 
 from django_cachex.admin.models import Cache, Key
-from django_cachex.admin.service import get_cache_service
 from django_cachex.admin.views import (
     ViewConfig,
     _cache_detail_view,
@@ -136,28 +135,14 @@ class KeyAdmin(_KeyBase):
         return False
 
     def has_add_permission(self, request: HttpRequest) -> bool:
-        if not getattr(request.user, "is_staff", False):
-            return False
-        cache_name = request.GET.get("cache", "default")
-        try:
-            service = get_cache_service(cache_name)
-            return service.is_feature_supported("edit_key")
-        except Exception:  # noqa: BLE001
-            return False
+        return bool(getattr(request.user, "is_staff", False))
 
     def has_delete_permission(
         self,
         request: HttpRequest,
         obj: Key | None = None,
     ) -> bool:
-        if not getattr(request.user, "is_staff", False):
-            return False
-        if obj:
-            try:
-                return obj.service.is_feature_supported("delete_key")
-            except Exception:  # noqa: BLE001
-                return False
-        return True
+        return bool(getattr(request.user, "is_staff", False))
 
     def has_change_permission(
         self,

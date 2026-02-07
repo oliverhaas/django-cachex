@@ -15,7 +15,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import redirect, render
 from django.utils import timezone
 
-from django_cachex.admin.service import get_cache_service
+from django_cachex.admin.helpers import get_cache, get_type_data
 from django_cachex.admin.views.base import (
     ADMIN_CONFIG,
     ViewConfig,
@@ -39,7 +39,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
 
     This is the internal implementation; use key_detail() for the decorated admin view.
     """
-    service = get_cache_service(cache_name)
+    cache = get_cache(cache_name)
 
     # Handle POST requests (update or delete)
     if request.method == "POST":
@@ -47,7 +47,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
 
         if action == "delete":
             try:
-                service.delete(key)
+                cache.delete(key)
                 messages.success(request, "Key deleted successfully.")
                 return redirect(key_list_url(cache_name))
             except Exception as e:  # noqa: BLE001
@@ -60,7 +60,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     new_value = json.loads(new_value)
 
                 # Update value only (TTL is handled separately via set_ttl action)
-                service.set(key, new_value, timeout=None)
+                cache.set(key, new_value, timeout=None)
                 messages.success(request, "Key updated successfully.")
                 return redirect(key_detail_url(cache_name, key))
             except Exception as e:  # noqa: BLE001
@@ -71,7 +71,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 ttl_str = request.POST.get("ttl_value", "").strip()
                 if not ttl_str or ttl_str == "0":
                     # Empty or 0 TTL = persist (no expiry)
-                    if service.persist(key):
+                    if cache.persist(key):
                         messages.success(request, "TTL removed. Key will not expire.")
                     else:
                         messages.error(request, "Key does not exist or has no TTL.")
@@ -79,7 +79,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     ttl_int = int(ttl_str)
                     if ttl_int < 0:
                         messages.error(request, "TTL must be non-negative.")
-                    elif service.expire(key, ttl_int):
+                    elif cache.expire(key, ttl_int):
                         messages.success(request, f"TTL set to {ttl_int} seconds.")
                     else:
                         messages.error(request, "Key does not exist or TTL could not be set.")
@@ -91,7 +91,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
 
         elif action == "persist":
             try:
-                if service.persist(key):
+                if cache.persist(key):
                     messages.success(request, "TTL removed. Key will not expire.")
                 else:
                     messages.error(request, "Key does not exist or has no TTL.")
@@ -107,7 +107,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 with contextlib.suppress(ValueError):
                     count = max(1, int(count_str))
             try:
-                result = service.lpop(key, count=count)
+                result = cache.lpop(key, count=count)
                 if not result:
                     messages.error(request, "List is empty or key does not exist.")
                 elif len(result) == 1:
@@ -125,7 +125,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 with contextlib.suppress(ValueError):
                     count = max(1, int(count_str))
             try:
-                result = service.rpop(key, count=count)
+                result = cache.rpop(key, count=count)
                 if not result:
                     messages.error(request, "List is empty or key does not exist.")
                 elif len(result) == 1:
@@ -140,7 +140,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             value = request.POST.get("push_value", "").strip()
             if value:
                 try:
-                    new_len = service.lpush(key, value)
+                    new_len = cache.lpush(key, value)
                     messages.success(request, f"Pushed to left. Length: {new_len}")
                 except Exception as e:  # noqa: BLE001
                     messages.error(request, str(e))
@@ -152,7 +152,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             value = request.POST.get("push_value", "").strip()
             if value:
                 try:
-                    new_len = service.rpush(key, value)
+                    new_len = cache.rpush(key, value)
                     messages.success(request, f"Pushed to right. Length: {new_len}")
                 except Exception as e:  # noqa: BLE001
                     messages.error(request, str(e))
@@ -169,7 +169,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     count = int(count_str)
             if value:
                 try:
-                    removed = service.lrem(key, value, count=count)
+                    removed = cache.lrem(key, count, value)
                     if removed > 0:
                         messages.success(request, f"Removed {removed} occurrence(s) of '{value}'.")
                     else:
@@ -184,7 +184,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             try:
                 start = int(request.POST.get("trim_start", "0"))
                 stop = int(request.POST.get("trim_stop", "-1"))
-                service.ltrim(key, start, stop)
+                cache.ltrim(key, start, stop)
                 messages.success(request, f"List trimmed to range [{start}:{stop}].")
             except ValueError:
                 messages.error(request, "Start and stop must be integers.")
@@ -197,7 +197,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             member = request.POST.get("member_value", "").strip()
             if member:
                 try:
-                    added = service.sadd(key, member)
+                    added = cache.sadd(key, member)
                     if added:
                         messages.success(request, f"Added '{member}' to set.")
                     else:
@@ -212,7 +212,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             member = request.POST.get("member", "").strip()
             if member:
                 try:
-                    removed = service.srem(key, member)
+                    removed = cache.srem(key, member)
                     if removed:
                         messages.success(request, f"Removed '{member}' from set.")
                     else:
@@ -227,7 +227,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             value = request.POST.get("field_value", "").strip()
             if field:
                 try:
-                    service.hset(key, field, value)
+                    cache.hset(key, field, value)
                     messages.success(request, f"Set field '{field}'.")
                 except Exception as e:  # noqa: BLE001
                     messages.error(request, str(e))
@@ -239,7 +239,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             field = request.POST.get("field", "").strip()
             if field:
                 try:
-                    removed = service.hdel(key, field)
+                    removed = cache.hdel(key, field)
                     if removed:
                         messages.success(request, f"Deleted field '{field}'.")
                     else:
@@ -260,7 +260,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             if member and score_str:
                 try:
                     score = float(score_str)
-                    added = service.zadd(key, {member: score}, nx=nx, xx=xx, gt=gt, lt=lt)
+                    added = cache.zadd(key, {member: score}, nx=nx, xx=xx, gt=gt, lt=lt)
                     if added:
                         messages.success(request, f"Added '{member}' with score {score}.")
                     else:
@@ -277,7 +277,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             member = request.POST.get("member", "").strip()
             if member:
                 try:
-                    removed = service.zrem(key, member)
+                    removed = cache.zrem(key, member)
                     if removed:
                         messages.success(request, f"Removed '{member}' from sorted set.")
                     else:
@@ -294,7 +294,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 with contextlib.suppress(ValueError):
                     count = max(1, int(count_str))
             try:
-                result = service.spop(key, count=count)
+                result = cache.spop(key, count=count)
                 if not result:
                     messages.error(request, "Set is empty or key does not exist.")
                 elif len(result) == 1:
@@ -309,7 +309,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         elif action == "zpopmin":
             pop_count = int(request.POST.get("pop_count", 1) or 1)
             try:
-                result = service.zpopmin(key, count=pop_count)
+                result = cache.zpopmin(key, count=pop_count)
                 if not result:
                     messages.error(request, "Sorted set is empty or key does not exist.")
                 elif len(result) == 1:
@@ -325,7 +325,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         elif action == "zpopmax":
             pop_count = int(request.POST.get("pop_count", 1) or 1)
             try:
-                result = service.zpopmax(key, count=pop_count)
+                result = cache.zpopmax(key, count=pop_count)
                 if not result:
                     messages.error(request, "Sorted set is empty or key does not exist.")
                 elif len(result) == 1:
@@ -344,7 +344,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             field_value = request.POST.get("field_value", "").strip()
             if field_name and field_value:
                 try:
-                    entry_id = service.xadd(key, {field_name: field_value})
+                    entry_id = cache._cache.xadd(key, {field_name: field_value})
                     messages.success(request, f"Added entry {entry_id}.")
                 except Exception as e:  # noqa: BLE001
                     messages.error(request, str(e))
@@ -356,7 +356,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             entry_id = request.POST.get("entry_id", "").strip()
             if entry_id:
                 try:
-                    deleted = service.xdel(key, entry_id)
+                    deleted = cache._cache.xdel(key, entry_id)
                     if deleted:
                         messages.success(request, f"Deleted entry {entry_id}.")
                     else:
@@ -372,7 +372,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             if maxlen_str:
                 try:
                     maxlen = int(maxlen_str)
-                    trimmed = service.xtrim(key, maxlen)
+                    trimmed = cache._cache.xtrim(key, maxlen=maxlen)
                     messages.success(request, f"Trimmed {trimmed} entries.")
                 except ValueError:
                     messages.error(request, "Max length must be a number.")
@@ -383,19 +383,8 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             return redirect(key_detail_url(cache_name, key))
 
     # GET request - display the key
-    key_result = service.get(key)
-
-    raw_value = key_result.get("value")
-    value_is_editable = True
-
-    if raw_value is not None:
-        # Format value for display - JSON-serializable values are editable
-        value_display, value_is_editable = format_value_for_display(raw_value)
-    else:
-        value_display = "null"
-
     cache_config = settings.CACHES.get(cache_name, {})
-    key_exists = key_result.get("exists", False)
+    key_exists = cache.has_key(key)
 
     # Check for create mode (type param provided for non-existing key)
     create_mode = False
@@ -415,17 +404,29 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     type_data: dict[str, Any] = {}
     if key_exists:
         with contextlib.suppress(Exception):
-            key_type = service.type(key)
+            key_type = cache.type(key)
         with contextlib.suppress(Exception):
-            ttl = service.ttl(key)
+            ttl = cache.ttl(key)
             if ttl >= 0:
                 ttl_expires_at = timezone.now() + timedelta(seconds=ttl)
         # Get type-specific data for non-string types
         if key_type and key_type != "string":
-            type_data = service.get_type_data(key, key_type)
+            type_data = get_type_data(cache, key, key_type)
     elif create_mode:
         # In create mode, use the type from query param
         key_type = create_type
+
+    # Get value for string keys (cache.get() only works for strings)
+    raw_value = None
+    value_is_editable = True
+    if key_exists and (not key_type or key_type == "string"):
+        raw_value = cache.get(key)
+
+    if raw_value is not None:
+        # Format value for display - JSON-serializable values are editable
+        value_display, value_is_editable = format_value_for_display(raw_value)
+    else:
+        value_display = "null"
 
     # Show type-specific help message if requested
     help_key = (
@@ -434,8 +435,11 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     help_active = show_help(request, help_key)
 
     # Get cache metadata for displaying the raw key info
-    cache_metadata = service.get_cache_metadata()
-    raw_key = service.make_key(key)
+    cache_metadata = {
+        "key_prefix": cache.key_prefix,
+        "version": cache.version,
+    }
+    raw_key = cache.make_key(key)
 
     # In create mode, enable ops based on feature support (not key existence)
     can_operate = key_exists or create_mode
@@ -449,7 +453,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             "key": key,
             "raw_key": raw_key,
             "cache_metadata": cache_metadata,
-            "key_value": key_result,
+            "key_value": {"value": raw_value, "exists": key_exists},
             "key_exists": key_exists,
             "create_mode": create_mode,
             "value_display": value_display,

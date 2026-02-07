@@ -14,8 +14,8 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import redirect, render
 from django.utils import timezone
 
+from django_cachex.admin.helpers import get_cache, get_size
 from django_cachex.admin.models import Key
-from django_cachex.admin.service import get_cache_service
 from django_cachex.admin.views.base import (
     ADMIN_CONFIG,
     ViewConfig,
@@ -40,7 +40,7 @@ def _key_list_view(  # noqa: C901, PLR0912, PLR0915
     # Show help message if requested
     help_active = show_help(request, "key_list")
 
-    service = get_cache_service(cache_name)
+    cache = get_cache(cache_name)
     cache_config = settings.CACHES.get(cache_name, {})
 
     # Handle POST requests (bulk delete)
@@ -53,7 +53,7 @@ def _key_list_view(  # noqa: C901, PLR0912, PLR0915
                 deleted_count = 0
                 for key in selected_keys:
                     with contextlib.suppress(Exception):
-                        service.delete(key)
+                        cache.delete(key)
                         deleted_count += 1
                 if deleted_count > 0:
                     messages.success(
@@ -69,6 +69,11 @@ def _key_list_view(  # noqa: C901, PLR0912, PLR0915
             "cache_name": cache_name,
             "cache_config": cache_config,
             "help_active": help_active,
+            # Show all columns for django-cachex native backends
+            # These columns are populated per-key below; showing them is always safe
+            "show_type": True,
+            "show_ttl": True,
+            "show_size": True,
         },
     )
 
@@ -90,19 +95,12 @@ def _key_list_view(  # noqa: C901, PLR0912, PLR0915
     else:
         pattern = "*"
     try:
-        query_result = service.keys(
-            pattern=pattern,
+        next_cursor, keys = cache.scan(
             cursor=cursor,
+            pattern=pattern,
             count=count,
         )
-
-        keys = query_result["keys"]
-        next_cursor = query_result["next_cursor"]
-        total_count = query_result.get("total_count")  # May be None for SCAN
-        error = query_result.get("error")
-
-        if error:
-            context["error"] = error
+        total_count = None  # scan() doesn't provide total count
 
         keys_data = []
         for key_item in keys:
@@ -126,15 +124,15 @@ def _key_list_view(  # noqa: C901, PLR0912, PLR0915
             user_key = key_entry["key"]
             key_type = None
             with contextlib.suppress(Exception):
-                ttl = service.ttl(user_key)
+                ttl = cache.ttl(user_key)
                 key_entry["ttl"] = ttl
                 if ttl >= 0:
                     key_entry["ttl_expires_at"] = timezone.now() + timedelta(seconds=ttl)
             with contextlib.suppress(Exception):
-                key_type = service.type(user_key)
+                key_type = cache.type(user_key)
                 key_entry["type"] = key_type
             with contextlib.suppress(Exception):
-                key_entry["size"] = service.size(user_key, key_type)
+                key_entry["size"] = get_size(cache, user_key, key_type)
 
         context["keys_data"] = keys_data
         context["total_keys"] = total_count  # May be None

@@ -12,7 +12,7 @@ from django.contrib import admin, messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import redirect, render
 
-from django_cachex.admin.service import get_cache_service
+from django_cachex.admin.helpers import get_cache
 from django_cachex.admin.views.base import (
     ADMIN_CONFIG,
     ViewConfig,
@@ -34,7 +34,7 @@ def _key_add_view(
     This is the internal implementation; use key_add() for the decorated admin view.
     """
     help_active = show_help(request, "key_add")
-    service = get_cache_service(cache_name)
+    cache = get_cache(cache_name)
     cache_config = settings.CACHES.get(cache_name, {})
 
     if request.method == "POST":
@@ -45,8 +45,7 @@ def _key_add_view(
             messages.error(request, "Key name is required.")
         else:
             # Check if key already exists
-            existing = service.get(key_name)
-            if existing.get("exists", False):
+            if cache.has_key(key_name):
                 messages.warning(request, f"Key '{key_name}' already exists.")
                 return redirect(key_detail_url(cache_name, key_name))
             # Redirect to key_detail in create mode

@@ -17,8 +17,8 @@ from django.urls import path, reverse
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
+from .helpers import get_cache, get_metadata, get_slowlog
 from .models import Cache, Key
-from .service import get_cache_service
 
 if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
@@ -173,8 +173,8 @@ class CacheAdmin(_CacheBase):
                 flushed_count = 0
                 for cache_name in selected_caches:
                     try:
-                        service = get_cache_service(cache_name)
-                        service.clear()
+                        cache = get_cache(cache_name)
+                        cache.clear()
                         flushed_count += 1
                     except Exception as e:  # noqa: BLE001
                         messages.error(request, f"Error flushing '{cache_name}': {e!s}")
@@ -200,7 +200,7 @@ class CacheAdmin(_CacheBase):
             support_level = self._cachex_get_support_level(backend)
             any_flush_supported = True
             try:
-                get_cache_service(cache.name)  # Verify cache is accessible
+                get_cache(cache.name)  # Verify cache is accessible
                 cache_info = {
                     "name": cache.name,
                     "config": cache.config,
@@ -270,21 +270,24 @@ class CacheAdmin(_CacheBase):
         # Show help message if requested
         help_active = self._cachex_show_help(request, "cache_change")
 
-        service = get_cache_service(cache_name)
+        from django.conf import settings
+
+        cache = get_cache(cache_name)
+        cache_config = settings.CACHES.get(cache_name, {})
 
         # Get cache metadata and info
         info_data = None
         raw_info = None
         try:
-            info_data = service.metadata()
-            raw_info = service.info()
+            info_data = get_metadata(cache, cache_config)
+            raw_info = cache.info()
         except Exception as e:  # noqa: BLE001
             messages.error(request, f"Error retrieving cache info: {e!s}")
 
         # Get slowlog (last 10 entries)
         slowlog_data = None
         try:
-            slowlog_data = service.slowlog_get(10)
+            slowlog_data = get_slowlog(cache, 10)
         except Exception as e:  # noqa: BLE001
             messages.error(request, f"Error retrieving slow log: {e!s}")
 

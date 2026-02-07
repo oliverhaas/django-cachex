@@ -130,8 +130,33 @@ class BaseCacheExtensions:
         count: int | None = None,
         version: int | None = None,
     ) -> tuple[int, list[str]]:
-        """Perform a single SCAN iteration."""
-        raise NotSupportedError("scan", self.__class__.__name__)
+        """Perform a single SCAN iteration.
+
+        Simulates cursor-based pagination using keys(). The cursor is treated
+        as an offset into the sorted list of keys.
+
+        Returns:
+            Tuple of (next_cursor, keys) where next_cursor is 0 if complete.
+        """
+        # Get all keys (may raise NotSupportedError if keys() not implemented)
+        all_keys = self.keys(pattern, version=version)  # type: ignore[attr-defined]
+
+        # Sort for consistent ordering
+        if hasattr(all_keys, "sort"):
+            all_keys.sort()
+        else:
+            all_keys = sorted(all_keys)
+
+        # Paginate
+        count = count or 100
+        start_idx = cursor
+        end_idx = start_idx + count
+        paginated_keys = all_keys[start_idx:end_idx]
+
+        # Next cursor is 0 if we've reached the end
+        next_cursor = end_idx if end_idx < len(all_keys) else 0
+
+        return (next_cursor, paginated_keys)
 
     def delete_pattern(
         self,

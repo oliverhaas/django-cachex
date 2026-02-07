@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from django.conf import settings
 from django.core.cache import InvalidCacheBackendError
 from django.db import models
-
-if TYPE_CHECKING:
-    from .service import CacheService
 
 
 class Cache(models.Model):
@@ -72,13 +69,6 @@ class Cache(models.Model):
         if isinstance(loc, list):
             return ", ".join(str(item) for item in loc)
         return str(loc) if loc else ""
-
-    @property
-    def service(self) -> CacheService:
-        """Get the CacheService for this cache."""
-        from .service import get_cache_service
-
-        return get_cache_service(self.name)
 
     def _get_cache(self) -> Any | None:
         """Get the raw cache instance."""
@@ -210,10 +200,3 @@ class Key(models.Model):
     def cache(self) -> Cache | None:
         """Get the parent Cache object."""
         return Cache.get_by_name(self.cache_name)
-
-    @property
-    def service(self) -> CacheService:
-        """Get the CacheService for this key's cache."""
-        from .service import get_cache_service
-
-        return get_cache_service(self.cache_name)
