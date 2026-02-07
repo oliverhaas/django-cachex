@@ -1,14 +1,14 @@
 {% extends "admin/base_site.html" %}
 {% load i18n %}
 
-{% block title %}{% trans 'Cache Instances' %} | django-cachex{% endblock %}
+{% block title %}{% trans 'Caches' %} | django-cachex{% endblock %}
 
 {% block breadcrumbs %}
 <div class="container mb-4 mx-auto px-4 lg:px-0">
     <nav class="flex text-sm">
         <a href="{% url 'admin:index' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Home' %}</a>
         <span class="mx-2 text-base-400">/</span>
-        <span class="text-font-important-light dark:text-font-important-dark font-medium">{% trans 'Cache Instances' %}</span>
+        <span class="text-font-important-light dark:text-font-important-dark font-medium">{% trans 'Caches' %}</span>
     </nav>
 </div>
 {% endblock %}
@@ -35,13 +35,20 @@
                                        value="{{ search_query|default:'' }}"
                                        id="searchbar"
                                        placeholder="{% trans 'Type to search' %}">
+                                <kbd class="bg-base-50 border border-base-200 font-sans text-xs text-font-subtle-light rounded-xs px-1 whitespace-nowrap dark:bg-white/[.04] dark:border-base-700 dark:text-font-subtle-dark">/</kbd>
                             </div>
                         </form>
                     </div>
-                    <a class="bg-white border-base-200 hover:text-primary-600 dark:bg-base-900 dark:border-base-700 dark:hover:text-primary-500 border cursor-pointer flex font-medium gap-2 group items-center px-3 py-2 rounded-default shadow-xs text-sm lg:ml-auto md:mt-0" x-on:click="filterOpen = true" x-on:keydown.escape.window="filterOpen = false">
-                        {% trans 'Filters' %}
-                        <span class="material-symbols-outlined md-18 ml-auto">filter_list</span>
-                    </a>
+                    <div class="flex flex-row gap-2 items-center lg:ml-auto">
+                        <a href="?{% if not help_active %}help=1{% endif %}"
+                           class="bg-white border-base-200 hover:text-primary-600 dark:bg-base-900 dark:border-base-700 dark:hover:text-primary-500 border cursor-pointer flex font-medium gap-2 items-center px-3 py-2 rounded-default shadow-xs text-sm">
+                            {% trans 'Help' %}
+                        </a>
+                        <a class="bg-white border-base-200 hover:text-primary-600 dark:bg-base-900 dark:border-base-700 dark:hover:text-primary-500 border cursor-pointer flex font-medium gap-2 group items-center px-3 py-2 rounded-default shadow-xs text-sm" x-on:click="filterOpen = true" x-on:keydown.escape.window="filterOpen = false">
+                            {% trans 'Filters' %}
+                            <span class="material-symbols-outlined md-18 ml-auto">filter_list</span>
+                        </a>
+                    </div>
                 </div>
 
                 <form id="changelist-form" method="post" class="group">
@@ -95,7 +102,7 @@
                                         </div>
                                     </th>
                                     <th class="align-middle font-semibold py-2 text-left text-font-important-light dark:text-font-important-dark whitespace-nowrap hidden px-3 lg:table-cell" scope="col">
-                                        <div class="flex items-center"><div class="text">{% trans 'Cache Name' %}</div></div>
+                                        <div class="flex items-center"><div class="text">{% trans 'Name' %}</div></div>
                                     </th>
                                     <th class="align-middle font-semibold py-2 text-left text-font-important-light dark:text-font-important-dark whitespace-nowrap hidden px-3 lg:table-cell" scope="col">
                                         <div class="flex items-center"><div class="text">{% trans 'Backend' %}</div></div>
@@ -119,7 +126,7 @@
                                                class="appearance-none bg-white block border border-base-300 cursor-pointer h-4 min-w-4 relative rounded-[4px] shadow-xs w-4 hover:border-base-400 dark:bg-base-700 dark:border-base-500 dark:checked:after:text-white focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-primary-500 after:absolute after:content-['check\_small'] after:flex! after:h-4 after:items-center after:justify-center after:leading-none after:material-symbols-outlined after:-ml-px after:-mt-px after:text-white after:transition-all after:w-4 dark:after:text-base-700 checked:bg-primary-600 dark:checked:bg-primary-600 checked:border-primary-600 dark:checked:border-primary-600 checked:transition-all checked:hover:border-primary-600 action-select"
                                                aria-label="{% trans 'Select record' %}">
                                     </td>
-                                    <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Cache Name' %}">
+                                    <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Name' %}">
                                         <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_info.name }}"
                                            class="font-medium text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-200">
                                             {{ cache_info.name }}
@@ -172,7 +179,7 @@
                 <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs p-6">
                     <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark mb-4">{% trans 'Cache Configuration Required' %}</h2>
                     <p class="text-base-600 dark:text-base-400 mb-4">
-                        {% trans 'To use Cache Admin, you must configure cache instances in your Django settings.' %}
+                        {% trans 'To use Cache Admin, you must configure caches in your Django settings.' %}
                     </p>
                     <pre class="bg-base-100 dark:bg-base-800 rounded-default p-4 text-sm font-mono overflow-x-auto">
 CACHES = {
@@ -229,15 +236,6 @@ CACHES = {
             </div>
         </div>
     </div>
-
-    <!-- Footer -->
-    <div class="px-4 lg:backdrop-blur-xs lg:bg-white/80 lg:flex lg:items-center lg:dark:bg-base-900/80 lg:left-0 lg:right-0 lg:bottom-0 lg:sticky relative z-40 lg:border-t lg:border-base-200 lg:relative lg:scrollable-top lg:dark:border-base-800">
-        <div class="flex flex-row grow items-center lg:h-[64px] container mx-auto">
-            <div class="py-4">
-                {{ caches_info|length }} {% blocktrans count counter=caches_info|length %}cache instance{% plural %}cache instances{% endblocktrans %}
-            </div>
-        </div>
-    </div>
 </div>
 
 <script>
@@ -261,4 +259,14 @@ document.addEventListener('DOMContentLoaded', function() {
     checkboxes.forEach(cb => cb.addEventListener('change', updateCounter));
 });
 </script>
+{% endblock %}
+
+{% block footer %}
+<div class="px-4 lg:backdrop-blur-xs lg:bg-white/80 lg:flex lg:items-center lg:dark:bg-base-900/80 lg:left-0 lg:right-0 lg:bottom-0 lg:sticky relative z-40 lg:border-t lg:border-base-200 lg:relative lg:scrollable-top lg:dark:border-base-800">
+    <div class="flex flex-row grow items-center lg:h-[64px] container mx-auto">
+        <div class="py-4">
+            {{ caches_info|length }} {% blocktrans count counter=caches_info|length %}cache{% plural %}caches{% endblocktrans %}
+        </div>
+    </div>
+</div>
 {% endblock %}

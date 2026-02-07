@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 
 def get_cache(cache_name: str) -> Any:
-    """Get a cache instance, wrapping if needed for admin compatibility.
+    """Get a cache backend, wrapping if needed for admin compatibility.
 
     For django-cachex backends, returns the cache directly.
     For Django builtin backends, wraps them first.
@@ -31,7 +31,7 @@ def get_cache(cache_name: str) -> Any:
         cache_name: The name of the cache in CACHES setting.
 
     Returns:
-        A cache instance with cachex extensions available.
+        A cache backend with cachex extensions available.
 
     Raises:
         ValueError: If the cache is not configured.
@@ -59,7 +59,7 @@ def get_metadata(cache: Any, cache_config: Mapping[str, Any]) -> dict[str, Any]:
     in the cache admin.
 
     Args:
-        cache: The cache instance (native or wrapped).
+        cache: The cache backend (native or wrapped).
         cache_config: The cache configuration dict from settings.CACHES.
 
     Returns:
@@ -156,7 +156,7 @@ def get_type_data(cache: Any, key: str, key_type: str | None = None) -> dict[str
     """Get type-specific data for a key.
 
     Args:
-        cache: The cache instance.
+        cache: The cache backend.
         key: The cache key.
         key_type: Optional type hint (avoids extra type() call).
 
@@ -200,7 +200,7 @@ def get_size(cache: Any, key: str, key_type: str | None = None) -> int | None:
     """Get the size/length of a key.
 
     Args:
-        cache: The cache instance.
+        cache: The cache backend.
         key: The cache key.
         key_type: Optional type hint.
 
@@ -271,7 +271,7 @@ def get_slowlog(cache: Any, count: int = 25) -> dict[str, Any]:
     """Get slow query log entries.
 
     Args:
-        cache: The cache instance.
+        cache: The cache backend.
         count: Number of entries to retrieve.
 
     Returns:

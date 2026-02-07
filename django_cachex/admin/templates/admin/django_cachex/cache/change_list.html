@@ -45,7 +45,7 @@ document.addEventListener('DOMContentLoaded', function() {
 {% block breadcrumbs %}
 <div class="breadcrumbs">
     <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
-    &rsaquo; {% trans 'Cache Instances' %}
+    &rsaquo; {% trans 'Caches' %}
 </div>
 {% endblock %}
 
@@ -183,7 +183,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     {% block pagination %}
                     <div class="changelist-footer">
                         <nav class="paginator">
-                            {{ caches_info|length }} {% blocktrans count counter=caches_info|length %}cache instance{% plural %}cache instances{% endblocktrans %}
+                            {{ caches_info|length }} {% blocktrans count counter=caches_info|length %}cache{% plural %}caches{% endblocktrans %}
                         </nav>
                     </div>
                     {% endblock %}
@@ -196,7 +196,7 @@ document.addEventListener('DOMContentLoaded', function() {
     <div class="module aligned">
         <h2>{% trans 'Cache Configuration Required' %}</h2>
         <div class="form-row">
-            <p>{% trans 'To use Cache Admin, you must configure cache instances in your Django settings.' %}</p>
+            <p>{% trans 'To use Cache Admin, you must configure caches in your Django settings.' %}</p>
         </div>
         <div class="form-row">
             <h3>{% trans 'Example configuration:' %}</h3>

@@ -14,7 +14,7 @@
 {% block breadcrumbs %}
 <div class="breadcrumbs">
     <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
-    &rsaquo; <a href="{% url 'admin:django_cachex_cache_changelist' %}">{% trans 'Cache Instances' %}</a>
+    &rsaquo; <a href="{% url 'admin:django_cachex_cache_changelist' %}">{% trans 'Caches' %}</a>
     &rsaquo; <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}">{{ cache_name }}</a>
     &rsaquo; {% trans 'Add Key' %}
 </div>

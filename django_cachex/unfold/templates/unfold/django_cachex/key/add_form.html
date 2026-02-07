@@ -8,7 +8,7 @@
     <nav class="flex text-sm">
         <a href="{% url 'admin:index' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Home' %}</a>
         <span class="mx-2 text-base-400">/</span>
-        <a href="{% url 'admin:django_cachex_cache_changelist' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Cache Instances' %}</a>
+        <a href="{% url 'admin:django_cachex_cache_changelist' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Caches' %}</a>
         <span class="mx-2 text-base-400">/</span>
         <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{{ cache_name }}</a>
         <span class="mx-2 text-base-400">/</span>

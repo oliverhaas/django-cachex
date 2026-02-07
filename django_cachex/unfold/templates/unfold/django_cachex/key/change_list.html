@@ -8,7 +8,7 @@
     <nav class="flex text-sm">
         <a href="{% url 'admin:index' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Home' %}</a>
         <span class="mx-2 text-base-400">/</span>
-        <a href="{% url 'admin:django_cachex_cache_changelist' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Cache Instances' %}</a>
+        <a href="{% url 'admin:django_cachex_cache_changelist' %}" class="text-base-500 dark:text-base-400 hover:text-primary-600 dark:hover:text-primary-400">{% trans 'Caches' %}</a>
         <span class="mx-2 text-base-400">/</span>
         <span class="text-font-important-light dark:text-font-important-dark font-medium">{{ cache_name }}</span>
     </nav>
@@ -50,10 +50,15 @@
                                        value="{{ search_query }}"
                                        id="searchbar"
                                        placeholder="{% trans 'Type to search' %}">
+                                <kbd class="bg-base-50 border border-base-200 font-sans text-xs text-font-subtle-light rounded-xs px-1 whitespace-nowrap dark:bg-white/[.04] dark:border-base-700 dark:text-font-subtle-dark">/</kbd>
                             </div>
                         </form>
                     </div>
                     <div class="flex flex-row gap-2 items-center lg:ml-auto">
+                        <a href="?cache={{ cache_name }}&{% if not help_active %}help=1{% endif %}"
+                           class="bg-white border-base-200 hover:text-primary-600 dark:bg-base-900 dark:border-base-700 dark:hover:text-primary-500 border cursor-pointer flex font-medium gap-2 items-center px-3 py-2 rounded-default shadow-xs text-sm">
+                            {% trans 'Help' %}
+                        </a>
                         <a href="{% url 'admin:django_cachex_cache_change' cache_name %}"
                            class="bg-white border-base-200 hover:text-primary-600 dark:bg-base-900 dark:border-base-700 dark:hover:text-primary-500 border cursor-pointer flex font-medium gap-2 items-center px-3 py-2 rounded-default shadow-xs text-sm">
                             {% trans 'Cache Details' %}
@@ -202,33 +207,6 @@
             </div>
         </div>
     </div>
-
-    <!-- Footer -->
-    <div class="px-4 lg:backdrop-blur-xs lg:bg-white/80 lg:flex lg:items-center lg:dark:bg-base-900/80 lg:left-0 lg:right-0 lg:bottom-0 lg:sticky relative z-40 lg:border-t lg:border-base-200 lg:relative lg:scrollable-top lg:dark:border-base-800">
-        <div class="flex flex-row grow items-center lg:h-[64px] container mx-auto">
-            <div class="py-4">
-                {% if total_keys is not None %}
-                {{ total_keys }} {% blocktrans count counter=total_keys %}key{% plural %}keys{% endblocktrans %}
-                {% else %}
-                {{ keys_count }} {% trans 'keys shown' %}
-                {% endif %}
-            </div>
-            <nav class="flex items-center gap-2 ml-auto">
-                {% if cursor > 0 %}
-                <a href="?cache={{ cache_name }}{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}&amp;count={{ count }}"
-                   class="px-3 py-1 text-sm rounded-default hover:bg-base-200 dark:hover:bg-base-700">
-                    {% trans 'Start' %}
-                </a>
-                {% endif %}
-                {% if has_next %}
-                <a href="?cache={{ cache_name }}{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}&amp;count={{ count }}&amp;cursor={{ next_cursor }}"
-                   class="px-3 py-1 text-sm rounded-default hover:bg-base-200 dark:hover:bg-base-700">
-                    {% trans 'Next' %}
-                </a>
-                {% endif %}
-            </nav>
-        </div>
-    </div>
 </div>
 
 {% if keys_data %}
@@ -254,4 +232,32 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 {% endif %}
+{% endblock %}
+
+{% block footer %}
+<div class="px-4 lg:backdrop-blur-xs lg:bg-white/80 lg:flex lg:items-center lg:dark:bg-base-900/80 lg:left-0 lg:right-0 lg:bottom-0 lg:sticky relative z-40 lg:border-t lg:border-base-200 lg:relative lg:scrollable-top lg:dark:border-base-800">
+    <div class="flex flex-row grow items-center lg:h-[64px] container mx-auto">
+        <div class="py-4">
+            {% if total_keys is not None %}
+            {{ total_keys }} {% blocktrans count counter=total_keys %}key{% plural %}keys{% endblocktrans %}
+            {% else %}
+            {{ keys_count }} {% trans 'keys shown' %}
+            {% endif %}
+        </div>
+        <nav class="flex items-center gap-2 ml-auto">
+            {% if cursor > 0 %}
+            <a href="?cache={{ cache_name }}{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}&amp;count={{ count }}"
+               class="px-3 py-1 text-sm rounded-default hover:bg-base-200 dark:hover:bg-base-700">
+                {% trans 'Start' %}
+            </a>
+            {% endif %}
+            {% if has_next %}
+            <a href="?cache={{ cache_name }}{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}&amp;count={{ count }}&amp;cursor={{ next_cursor }}"
+               class="px-3 py-1 text-sm rounded-default hover:bg-base-200 dark:hover:bg-base-700">
+                {% trans 'Next' %}
+            </a>
+            {% endif %}
+        </nav>
+    </div>
+</div>
 {% endblock %}

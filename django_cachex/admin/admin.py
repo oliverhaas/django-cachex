@@ -1,7 +1,7 @@
 """
 Django admin classes for cache management.
 
-This module provides ModelAdmin classes for managing cache instances
+This module provides ModelAdmin classes for managing caches
 and cache keys through Django's admin interface.
 """
 
@@ -37,15 +37,15 @@ else:
 @admin.register(Cache)
 class CacheAdmin(_CacheBase):
     """
-    Admin for cache instances.
+    Admin for caches.
 
-    - changelist_view: Lists all cache instances (from settings.CACHES)
+    - changelist_view: Lists all caches (from settings.CACHES)
     - change_view: Shows cache details (info + slowlog combined)
     """
 
     _cachex_help_messages: ClassVar[dict[str, str]] = {
         "cache_list": mark_safe(
-            "<strong>Cache Instances</strong><br>"
+            "<strong>Caches</strong><br>"
             "View all cache backends configured in your Django settings.<br><br>"
             "<strong>Support Levels</strong><br>"
             "<table style='margin: 4px 0 12px 0; border-collapse: collapse;'>"
@@ -137,7 +137,7 @@ class CacheAdmin(_CacheBase):
         request: HttpRequest,
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
-        """List all configured cache instances."""
+        """List all configured caches."""
         # Show help message if requested
         help_active = show_help(request, "cache_list", self._cachex_help_messages)
 
@@ -215,7 +215,7 @@ class CacheAdmin(_CacheBase):
             **self.admin_site.each_context(request),
             "caches_info": caches_info,
             "has_caches_configured": bool(caches_info) or bool(Cache.get_all()),
-            "title": _("Cache Admin - Instances"),
+            "title": _("Caches"),
             "support_filter": support_filter,
             "search_query": search_query,
             "any_flush_supported": any_flush_supported,
