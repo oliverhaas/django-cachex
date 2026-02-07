@@ -61,7 +61,7 @@ class BaseCacheExtensions:
 
     This mixin adds all the extended cache operations that aren't part of
     Django's BaseCache. Methods raise NotSupportedError by default;
-    backend-specific mixins override the ones they can actually implement.
+    Extended* classes override the ones they can actually implement.
     """
 
     # Marker to detect already-extended caches
@@ -686,12 +686,12 @@ def _deep_getsizeof(obj: Any, seen: set[int] | None = None) -> int:
 
 
 # =============================================================================
-# Backend-Specific Extensions
+# Extended Cache Classes
 # =============================================================================
 
 
-class LocMemCacheExtensions(BaseCacheExtensions):
-    """Extensions for Django's LocMemCache.
+class ExtendedLocMemCache(LocMemCache, BaseCacheExtensions):
+    """LocMemCache with cachex extensions.
 
     Enables keys() by accessing the internal _cache dict.
     Enables ttl()/expire()/persist() by accessing the internal _expire_info dict.
@@ -711,7 +711,7 @@ class LocMemCacheExtensions(BaseCacheExtensions):
         Returns:
             TTL in seconds, -1 for no expiry, -2 for key not found.
         """
-        internal_key = self.make_key(str(key), version=version)  # type: ignore[attr-defined]
+        internal_key = self.make_key(str(key), version=version)
         internal_cache = self._get_internal_cache()
 
         if internal_key not in internal_cache:
@@ -730,7 +730,7 @@ class LocMemCacheExtensions(BaseCacheExtensions):
         """Set the TTL of a key."""
         from datetime import timedelta
 
-        internal_key = self.make_key(str(key), version=version)  # type: ignore[attr-defined]
+        internal_key = self.make_key(str(key), version=version)
         internal_cache = self._get_internal_cache()
 
         if internal_key not in internal_cache:
@@ -747,7 +747,7 @@ class LocMemCacheExtensions(BaseCacheExtensions):
 
     def persist(self, key: KeyT, version: int | None = None) -> bool:
         """Remove the TTL from a key, making it persist indefinitely."""
-        internal_key = self.make_key(str(key), version=version)  # type: ignore[attr-defined]
+        internal_key = self.make_key(str(key), version=version)
         internal_cache = self._get_internal_cache()
 
         if internal_key not in internal_cache:
@@ -799,15 +799,14 @@ class LocMemCacheExtensions(BaseCacheExtensions):
     def keys(self, pattern: str = "*", version: int | None = None) -> list[str]:
         """List keys matching the pattern by scanning internal cache dict."""
         internal_cache = self._get_internal_cache()
-        key_prefix = self.key_prefix  # type: ignore[attr-defined]
 
         all_keys = []
         for internal_key in internal_cache:
             parts = internal_key.split(":", 2)
             if len(parts) >= 3:
                 user_key = parts[2]
-                if key_prefix and user_key.startswith(key_prefix):
-                    user_key = user_key[len(key_prefix) :]
+                if self.key_prefix and user_key.startswith(self.key_prefix):
+                    user_key = user_key[len(self.key_prefix) :]
                 all_keys.append(user_key)
             else:
                 all_keys.append(internal_key)
@@ -821,8 +820,8 @@ class LocMemCacheExtensions(BaseCacheExtensions):
         return matching_keys
 
 
-class DatabaseCacheExtensions(BaseCacheExtensions):
-    """Extensions for Django's DatabaseCache.
+class ExtendedDatabaseCache(DatabaseCache, BaseCacheExtensions):
+    """DatabaseCache with cachex extensions.
 
     Enables keys() by querying the database table.
     Enables ttl() by reading the expires column.
@@ -838,7 +837,7 @@ class DatabaseCacheExtensions(BaseCacheExtensions):
         quoted_table_name = connection.ops.quote_name(table_name)
 
         if pattern and pattern != "*":
-            transformed_pattern = self.make_key(pattern)  # type: ignore[attr-defined]
+            transformed_pattern = self.make_key(pattern)
             sql_pattern = transformed_pattern.replace("*", "%").replace("?", "_")
         else:
             sql_pattern = "%"
@@ -863,10 +862,9 @@ class DatabaseCacheExtensions(BaseCacheExtensions):
             raw_keys = [row[0] for row in cursor.fetchall()]
 
             keys = []
-            key_prefix = self.key_prefix  # type: ignore[attr-defined]
             for cache_key in raw_keys:
-                if cache_key.startswith(key_prefix):
-                    key_without_prefix = cache_key[len(key_prefix) :]
+                if cache_key.startswith(self.key_prefix):
+                    key_without_prefix = cache_key[len(self.key_prefix) :]
                     parts = key_without_prefix.split(":", 2)
                     if len(parts) >= 3:
                         original_key = parts[2]
@@ -886,7 +884,7 @@ class DatabaseCacheExtensions(BaseCacheExtensions):
         """
         table_name = self._get_table_name()
         quoted_table_name = connection.ops.quote_name(table_name)
-        cache_key = self.make_key(str(key), version=version)  # type: ignore[attr-defined]
+        cache_key = self.make_key(str(key), version=version)
         current_time = time.time()
 
         with connection.cursor() as cursor:
@@ -970,8 +968,8 @@ class DatabaseCacheExtensions(BaseCacheExtensions):
         }
 
 
-class FileCacheExtensions(BaseCacheExtensions):
-    """Extensions for Django's FileBasedCache.
+class ExtendedFileBasedCache(FileBasedCache, BaseCacheExtensions):
+    """FileBasedCache with cachex extensions.
 
     Lists keys as MD5 hash filenames (original keys cannot be recovered).
     """
@@ -1037,64 +1035,8 @@ class FileCacheExtensions(BaseCacheExtensions):
         }
 
 
-class MemcachedCacheExtensions(BaseCacheExtensions):
-    """Extensions for Memcached backends.
-
-    Cannot list keys, but can get stats via info().
-    """
-
-    def info(self, section: str | None = None) -> dict[str, Any]:
-        """Get memcached stats in structured format."""
-        mc_stats: dict[str, Any] = {}
-        if hasattr(self, "_cache") and hasattr(cast("Any", self)._cache, "stats"):
-            with contextlib.suppress(Exception):
-                mc_stats = cast("Any", self)._cache.stats() or {}
-
-        bytes_used = 0
-        curr_items = 0
-        for server_stats in mc_stats.values() if mc_stats else []:
-            if isinstance(server_stats, dict):
-                bytes_used += int(server_stats.get("bytes", 0))
-                curr_items += int(server_stats.get("curr_items", 0))
-
-        return {
-            "backend": "Memcached",
-            "server": {
-                "redis_version": "Memcached",
-            },
-            "memory": {
-                "used_memory": bytes_used,
-                "used_memory_human": _format_bytes(bytes_used) if bytes_used else None,
-            },
-            "keyspace": {
-                "db0": {
-                    "keys": curr_items,
-                },
-            }
-            if curr_items
-            else None,
-        }
-
-
-class DjangoRedisCacheExtensions(BaseCacheExtensions):
-    """Extensions for Django's builtin Redis cache backend.
-
-    For full functionality, use django-cachex's ValkeyCache or RedisCache.
-    """
-
-    def info(self, section: str | None = None) -> dict[str, Any]:
-        """Get Django Redis cache info in structured format."""
-        return {
-            "backend": "Django RedisCache",
-            "server": {
-                "redis_version": "Django RedisCache (limited support)",
-                "os": "Use django-cachex ValkeyCache/RedisCache for full features",
-            },
-        }
-
-
-class DummyCacheExtensions(BaseCacheExtensions):
-    """Extensions for DummyCache."""
+class ExtendedDummyCache(DummyCache, BaseCacheExtensions):
+    """DummyCache with cachex extensions."""
 
     def keys(self, pattern: str = "*", version: int | None = None) -> list[str]:
         """DummyCache has no keys."""
@@ -1116,25 +1058,6 @@ class DummyCacheExtensions(BaseCacheExtensions):
         }
 
 
-# =============================================================================
-# Extended Cache Classes
-# =============================================================================
-class ExtendedLocMemCache(LocMemCache, LocMemCacheExtensions):
-    """LocMemCache with cachex extensions."""
-
-
-class ExtendedDatabaseCache(DatabaseCache, DatabaseCacheExtensions):
-    """DatabaseCache with cachex extensions."""
-
-
-class ExtendedFileBasedCache(FileBasedCache, FileCacheExtensions):
-    """FileBasedCache with cachex extensions."""
-
-
-class ExtendedDummyCache(DummyCache, DummyCacheExtensions):
-    """DummyCache with cachex extensions."""
-
-
 # Mapping of original classes to extended classes
 EXTENDED_CLASS_MAP: dict[type, type] = {
     LocMemCache: ExtendedLocMemCache,
@@ -1146,22 +1069,96 @@ EXTENDED_CLASS_MAP: dict[type, type] = {
 # Add optional backends if available
 if PyLibMCCache is not None:
 
-    class ExtendedPyLibMCCache(PyLibMCCache, MemcachedCacheExtensions):
+    class ExtendedPyLibMCCache(PyLibMCCache, BaseCacheExtensions):
         """PyLibMCCache with cachex extensions."""
+
+        def info(self, section: str | None = None) -> dict[str, Any]:
+            """Get memcached stats in structured format."""
+            mc_stats: dict[str, Any] = {}
+            if hasattr(self, "_cache") and hasattr(cast("Any", self)._cache, "stats"):
+                with contextlib.suppress(Exception):
+                    mc_stats = cast("Any", self)._cache.stats() or {}
+
+            bytes_used = 0
+            curr_items = 0
+            for server_stats in mc_stats.values() if mc_stats else []:
+                if isinstance(server_stats, dict):
+                    bytes_used += int(server_stats.get("bytes", 0))
+                    curr_items += int(server_stats.get("curr_items", 0))
+
+            return {
+                "backend": "Memcached",
+                "server": {
+                    "redis_version": "Memcached",
+                },
+                "memory": {
+                    "used_memory": bytes_used,
+                    "used_memory_human": _format_bytes(bytes_used) if bytes_used else None,
+                },
+                "keyspace": {
+                    "db0": {
+                        "keys": curr_items,
+                    },
+                }
+                if curr_items
+                else None,
+            }
 
     EXTENDED_CLASS_MAP[PyLibMCCache] = ExtendedPyLibMCCache
 
 if PyMemcacheCache is not None:
 
-    class ExtendedPyMemcacheCache(PyMemcacheCache, MemcachedCacheExtensions):
+    class ExtendedPyMemcacheCache(PyMemcacheCache, BaseCacheExtensions):
         """PyMemcacheCache with cachex extensions."""
+
+        def info(self, section: str | None = None) -> dict[str, Any]:
+            """Get memcached stats in structured format."""
+            mc_stats: dict[str, Any] = {}
+            if hasattr(self, "_cache") and hasattr(cast("Any", self)._cache, "stats"):
+                with contextlib.suppress(Exception):
+                    mc_stats = cast("Any", self)._cache.stats() or {}
+
+            bytes_used = 0
+            curr_items = 0
+            for server_stats in mc_stats.values() if mc_stats else []:
+                if isinstance(server_stats, dict):
+                    bytes_used += int(server_stats.get("bytes", 0))
+                    curr_items += int(server_stats.get("curr_items", 0))
+
+            return {
+                "backend": "Memcached",
+                "server": {
+                    "redis_version": "Memcached",
+                },
+                "memory": {
+                    "used_memory": bytes_used,
+                    "used_memory_human": _format_bytes(bytes_used) if bytes_used else None,
+                },
+                "keyspace": {
+                    "db0": {
+                        "keys": curr_items,
+                    },
+                }
+                if curr_items
+                else None,
+            }
 
     EXTENDED_CLASS_MAP[PyMemcacheCache] = ExtendedPyMemcacheCache
 
 if DjangoRedisCache is not None:
 
-    class ExtendedDjangoRedisCache(DjangoRedisCache, DjangoRedisCacheExtensions):
+    class ExtendedDjangoRedisCache(DjangoRedisCache, BaseCacheExtensions):
         """Django RedisCache with cachex extensions."""
+
+        def info(self, section: str | None = None) -> dict[str, Any]:
+            """Get Django Redis cache info in structured format."""
+            return {
+                "backend": "Django RedisCache",
+                "server": {
+                    "redis_version": "Django RedisCache (limited support)",
+                    "os": "Use django-cachex ValkeyCache/RedisCache for full features",
+                },
+            }
 
     EXTENDED_CLASS_MAP[DjangoRedisCache] = ExtendedDjangoRedisCache
 
