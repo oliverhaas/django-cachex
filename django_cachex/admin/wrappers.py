@@ -25,17 +25,17 @@ from django_cachex.exceptions import NotSupportedError
 try:
     from django.core.cache.backends.memcached import PyLibMCCache
 except ImportError:
-    PyLibMCCache = None  # type: ignore[misc, assignment]
+    PyLibMCCache = None  # type: ignore[misc, assignment]  # ty: ignore[invalid-assignment]
 
 try:
     from django.core.cache.backends.memcached import PyMemcacheCache
 except ImportError:
-    PyMemcacheCache = None  # type: ignore[misc, assignment]
+    PyMemcacheCache = None  # type: ignore[misc, assignment]  # ty: ignore[invalid-assignment]
 
 try:
     from django.core.cache.backends.redis import RedisCache as DjangoRedisCache
 except ImportError:
-    DjangoRedisCache = None  # type: ignore[misc, assignment]
+    DjangoRedisCache = None  # type: ignore[misc, assignment]  # ty: ignore[invalid-assignment]
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -139,7 +139,7 @@ class BaseCacheExtensions:
             Tuple of (next_cursor, keys) where next_cursor is 0 if complete.
         """
         # Get all keys (may raise NotSupportedError if keys() not implemented)
-        all_keys = self.keys(pattern, version=version)  # type: ignore[attr-defined]
+        all_keys = self.keys(pattern, version=version)
 
         # Sort for consistent ordering
         if hasattr(all_keys, "sort"):

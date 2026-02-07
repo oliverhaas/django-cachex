@@ -56,10 +56,10 @@ UNFOLD_KEY_CONFIG = ViewConfig(
 
 # Unregister models if already registered (e.g., by django_cachex.admin)
 # This allows unfold to take over even if both apps are in INSTALLED_APPS
-with contextlib.suppress(admin.sites.NotRegistered):
+with contextlib.suppress(admin.sites.NotRegistered):  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     admin.site.unregister(Cache)
 
-with contextlib.suppress(admin.sites.NotRegistered):
+with contextlib.suppress(admin.sites.NotRegistered):  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     admin.site.unregister(Key)
 
 
