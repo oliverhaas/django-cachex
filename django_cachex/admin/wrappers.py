@@ -11,7 +11,7 @@ from __future__ import annotations
 import contextlib
 import fnmatch
 import time
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from django.core.cache.backends.db import DatabaseCache
 from django.core.cache.backends.dummy import DummyCache
@@ -64,8 +64,11 @@ class BaseCacheExtensions:
     Extended* classes override the ones they can actually implement.
     """
 
-    # Marker to detect already-extended caches
-    _cachex_wrapped: bool = True
+    # Marker to detect already-extended caches and support level
+    # "cachex" = native django-cachex backends (full support)
+    # "wrapped" = Django builtin backends (almost full support)
+    # "limited" = Unknown backends (limited support, may not work correctly)
+    _cachex_support: Literal["cachex", "wrapped", "limited"] = "limited"
 
     # =========================================================================
     # TTL Operations
@@ -697,6 +700,8 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
     Enables ttl()/expire()/persist() by accessing the internal _expire_info dict.
     """
 
+    _cachex_support: Literal["cachex", "wrapped", "limited"] = "wrapped"
+
     def _get_internal_cache(self) -> dict[str, Any]:
         """Access the internal cache dictionary of LocMemCache."""
         return getattr(self, "_cache", {})
@@ -826,6 +831,8 @@ class WrappedDatabaseCache(DatabaseCache, BaseCacheExtensions):
     Enables keys() by querying the database table.
     Enables ttl() by reading the expires column.
     """
+
+    _cachex_support: Literal["cachex", "wrapped", "limited"] = "wrapped"
 
     def _get_table_name(self) -> str:
         """Get the database table name for this cache."""
@@ -974,6 +981,8 @@ class WrappedFileBasedCache(FileBasedCache, BaseCacheExtensions):
     Lists keys as MD5 hash filenames (original keys cannot be recovered).
     """
 
+    _cachex_support: Literal["cachex", "wrapped", "limited"] = "wrapped"
+
     def _get_cache_dir(self) -> Path | None:
         """Get the cache directory path."""
         from pathlib import Path
@@ -1038,6 +1047,8 @@ class WrappedFileBasedCache(FileBasedCache, BaseCacheExtensions):
 class WrappedDummyCache(DummyCache, BaseCacheExtensions):
     """DummyCache with cachex extensions."""
 
+    _cachex_support: Literal["cachex", "wrapped", "limited"] = "wrapped"
+
     def keys(self, pattern: str = "*", version: int | None = None) -> list[str]:
         """DummyCache has no keys."""
         return []
@@ -1071,6 +1082,8 @@ if PyLibMCCache is not None:
 
     class WrappedPyLibMCCache(PyLibMCCache, BaseCacheExtensions):
         """PyLibMCCache with cachex extensions."""
+
+        _cachex_support: Literal["cachex", "wrapped", "limited"] = "wrapped"
 
         def info(self, section: str | None = None) -> dict[str, Any]:
             """Get memcached stats in structured format."""
@@ -1111,6 +1124,8 @@ if PyMemcacheCache is not None:
     class WrappedPyMemcacheCache(PyMemcacheCache, BaseCacheExtensions):
         """PyMemcacheCache with cachex extensions."""
 
+        _cachex_support: Literal["cachex", "wrapped", "limited"] = "wrapped"
+
         def info(self, section: str | None = None) -> dict[str, Any]:
             """Get memcached stats in structured format."""
             mc_stats: dict[str, Any] = {}
@@ -1150,6 +1165,8 @@ if DjangoRedisCache is not None:
     class WrappedDjangoRedisCache(DjangoRedisCache, BaseCacheExtensions):
         """Django RedisCache with cachex extensions."""
 
+        _cachex_support: Literal["cachex", "wrapped", "limited"] = "wrapped"
+
         def info(self, section: str | None = None) -> dict[str, Any]:
             """Get Django Redis cache info in structured format."""
             return {
@@ -1181,7 +1198,7 @@ def wrap_cache(cache: BaseCache) -> BaseCache:
         The same cache instance, now with extended methods available.
     """
     # Idempotency check - already wrapped
-    if getattr(cache, "_cachex_wrapped", False):
+    if hasattr(cache, "_cachex_support"):
         return cache
 
     # Find the extended class for this cache type

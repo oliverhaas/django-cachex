@@ -77,7 +77,7 @@ class TestWrapCache:
         wrapped1 = wrap_cache(cache)
         wrapped2 = wrap_cache(wrapped1)
         assert wrapped1 is wrapped2
-        assert getattr(wrapped2, "_cachex_wrapped", False) is True
+        assert getattr(wrapped2, "_cachex_support", None) == "wrapped"
 
     @override_settings(CACHES=LOCMEM_CACHES)
     def test_get_wrapper_legacy_alias(self):
