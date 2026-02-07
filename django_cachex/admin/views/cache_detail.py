@@ -9,13 +9,11 @@ from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.contrib import admin, messages
-from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import redirect, render
 
 from django_cachex.admin.helpers import get_cache, get_metadata, get_slowlog
 from django_cachex.admin.models import Cache
 from django_cachex.admin.views.base import (
-    ADMIN_CONFIG,
     ViewConfig,
     cache_list_url,
     show_help,
@@ -30,10 +28,7 @@ def _cache_detail_view(
     cache_name: str,
     config: ViewConfig,
 ) -> HttpResponse:
-    """Display cache details (info + slowlog combined).
-
-    This is the internal implementation; use cache_detail() for the decorated admin view.
-    """
+    """Display cache details (info + slowlog combined)."""
     cache_obj = Cache.get_by_name(cache_name)
 
     if cache_obj is None:
@@ -84,9 +79,3 @@ def _cache_detail_view(
         },
     )
     return render(request, config.template("cache/change_form.html"), context)
-
-
-@staff_member_required
-def cache_detail(request: HttpRequest, cache_name: str) -> HttpResponse:
-    """Display cache details (info + slowlog combined)."""
-    return _cache_detail_view(request, cache_name, ADMIN_CONFIG)

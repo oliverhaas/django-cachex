@@ -10,14 +10,12 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 from django.contrib import admin, messages
-from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import redirect, render
 from django.utils import timezone
 
 from django_cachex.admin.helpers import get_cache, get_size
 from django_cachex.admin.models import Key
 from django_cachex.admin.views.base import (
-    ADMIN_CONFIG,
     ViewConfig,
     key_list_url,
     logger,
@@ -148,9 +146,3 @@ def _key_list_view(  # noqa: C901, PLR0912, PLR0915
         context["error_message"] = "An error occurred while querying the cache."
 
     return render(request, config.template("key/change_list.html"), context)
-
-
-@staff_member_required
-def key_list(request: HttpRequest, cache_name: str) -> HttpResponse:
-    """View for searching/browsing cache keys."""
-    return _key_list_view(request, cache_name, ADMIN_CONFIG)

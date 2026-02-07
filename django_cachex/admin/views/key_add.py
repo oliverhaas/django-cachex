@@ -9,12 +9,10 @@ from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib import admin, messages
-from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import redirect, render
 
 from django_cachex.admin.helpers import get_cache
 from django_cachex.admin.views.base import (
-    ADMIN_CONFIG,
     ViewConfig,
     key_detail_url,
     show_help,
@@ -29,10 +27,7 @@ def _key_add_view(
     cache_name: str,
     config: ViewConfig,
 ) -> HttpResponse:
-    """View for adding a new cache key - collects key name and type, then redirects to key_detail.
-
-    This is the internal implementation; use key_add() for the decorated admin view.
-    """
+    """View for adding a new cache key - collects key name and type, then redirects to key_detail."""
     help_active = show_help(request, "key_add", config.help_messages)
     cache = get_cache(cache_name)
     cache_config = settings.CACHES.get(cache_name, {})
@@ -71,9 +66,3 @@ def _key_add_view(
         },
     )
     return render(request, config.template("key/add_form.html"), context)
-
-
-@staff_member_required
-def key_add(request: HttpRequest, cache_name: str) -> HttpResponse:
-    """View for adding a new cache key - collects key name and type, then redirects to key_detail."""
-    return _key_add_view(request, cache_name, ADMIN_CONFIG)

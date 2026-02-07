@@ -11,13 +11,11 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 from django.contrib import admin, messages
-from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import redirect, render
 from django.utils import timezone
 
 from django_cachex.admin.helpers import get_cache, get_type_data
 from django_cachex.admin.views.base import (
-    ADMIN_CONFIG,
     ViewConfig,
     format_value_for_display,
     key_detail_url,
@@ -475,9 +473,3 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         },
     )
     return render(request, config.template("key/change_form.html"), context)
-
-
-@staff_member_required
-def key_detail(request: HttpRequest, cache_name: str, key: str) -> HttpResponse:
-    """View for displaying the details of a specific cache key."""
-    return _key_detail_view(request, cache_name, key, ADMIN_CONFIG)

@@ -8,13 +8,11 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 from django.contrib import admin, messages
-from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import redirect, render
 
 from django_cachex.admin.helpers import get_cache
 from django_cachex.admin.models import Cache
 from django_cachex.admin.views.base import (
-    ADMIN_CONFIG,
     ViewConfig,
     cache_list_url,
     show_help,
@@ -25,10 +23,7 @@ if TYPE_CHECKING:
 
 
 def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:
-    """Display all configured cache instances with their capabilities.
-
-    This is the internal implementation; use index() for the decorated admin view.
-    """
+    """Display all configured caches with their capabilities."""
     # Show help message if requested
     help_active = show_help(request, "cache_list", config.help_messages)
 
@@ -106,7 +101,7 @@ def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:
         {
             "caches_info": caches_info,
             "has_caches_configured": bool(settings.CACHES),
-            "title": "Cache Admin - Instances",
+            "title": "Cache Admin - Caches",
             "support_filter": support_filter,
             "search_query": search_query,
             "any_flush_supported": any_flush_supported,
@@ -114,9 +109,3 @@ def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:
         },
     )
     return render(request, config.template("cache/change_list.html"), context)
-
-
-@staff_member_required
-def index(request: HttpRequest) -> HttpResponse:
-    """Display all configured cache instances with their capabilities."""
-    return _index_view(request, ADMIN_CONFIG)
