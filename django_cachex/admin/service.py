@@ -61,20 +61,6 @@ class CacheService:
         """Get the backend class path."""
         return str(self._cache_config.get("BACKEND", ""))
 
-    @property
-    def is_native(self) -> bool:
-        """Check if this is a native django-cachex backend."""
-        return self._is_native
-
-    @property
-    def support_level(self) -> str:
-        """Get the support level for this backend.
-
-        Returns:
-            'native' for django-cachex backends, 'wrapped' for others.
-        """
-        return "native" if self._is_native else "wrapped"
-
     # Metadata methods
 
     def get_cache_metadata(self) -> dict[str, Any]:
