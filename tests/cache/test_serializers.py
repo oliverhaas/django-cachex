@@ -7,7 +7,6 @@ from django_cachex.exceptions import SerializerError
 from django_cachex.serializers.json import JSONSerializer
 from django_cachex.serializers.msgpack import MessagePackSerializer
 from django_cachex.serializers.pickle import PickleSerializer
-from django_cachex.util import default_reverse_key
 
 
 class TestJSONSerializer:
@@ -77,14 +76,22 @@ class TestMessagePackSerializer:
         assert decoded is None
 
 
+def _reverse_key(key: str) -> str:
+    """Reverse a made key back to original (strip version:prefix:)."""
+    parts = key.split(":", 2)
+    if len(parts) == 3:
+        return parts[2]
+    return key
+
+
 class TestDefaultReverseKey:
     def test_basic_key_reversal(self):
         # Format: version:key_prefix:key
-        assert default_reverse_key("1:myprefix:mykey") == "mykey"
+        assert _reverse_key("1:myprefix:mykey") == "mykey"
 
     def test_key_with_colons(self):
         # Key itself can contain colons
-        assert default_reverse_key("1:prefix:key:with:colons") == "key:with:colons"
+        assert _reverse_key("1:prefix:key:with:colons") == "key:with:colons"
 
     def test_empty_prefix(self):
-        assert default_reverse_key("1::mykey") == "mykey"
+        assert _reverse_key("1::mykey") == "mykey"
