@@ -432,7 +432,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     help_key = (
         f"key_detail_{key_type}" if key_type in ("string", "list", "set", "hash", "zset", "stream") else "key_detail"
     )
-    help_active = show_help(request, help_key)
+    help_active = show_help(request, help_key, config.help_messages)
 
     # Get cache metadata for displaying the raw key info
     cache_metadata = {

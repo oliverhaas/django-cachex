@@ -41,7 +41,7 @@ def _cache_detail_view(
         return redirect(cache_list_url())
 
     # Show help message if requested
-    help_active = show_help(request, "cache_info")
+    help_active = show_help(request, "cache_detail", config.help_messages)
 
     cache = get_cache(cache_name)
     cache_config = settings.CACHES.get(cache_name, {})

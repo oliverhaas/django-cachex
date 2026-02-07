@@ -30,7 +30,7 @@ def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:
     This is the internal implementation; use index() for the decorated admin view.
     """
     # Show help message if requested
-    help_active = show_help(request, "index")
+    help_active = show_help(request, "cache_list", config.help_messages)
 
     # Handle POST requests (flush cache action)
     if request.method == "POST":

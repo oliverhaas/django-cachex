@@ -38,7 +38,7 @@ def _key_list_view(  # noqa: C901, PLR0912, PLR0915
     This is the internal implementation; use key_list() for the decorated admin view.
     """
     # Show help message if requested
-    help_active = show_help(request, "key_list")
+    help_active = show_help(request, "key_list", config.help_messages)
 
     cache = get_cache(cache_name)
     cache_config = settings.CACHES.get(cache_name, {})

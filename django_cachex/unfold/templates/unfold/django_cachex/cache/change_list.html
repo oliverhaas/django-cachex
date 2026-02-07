@@ -14,180 +14,230 @@
 {% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 lg:px-0">
-    <!-- Header with action -->
-    <div class="flex items-center justify-between mb-6">
-        <h1 class="text-2xl font-semibold text-font-important-light dark:text-font-important-dark">{% trans 'Cache Instances' %}</h1>
-        <a href="?{% if not help_active %}help=1{% endif %}"
-           class="border cursor-pointer font-medium px-3 py-2 rounded-default text-center whitespace-nowrap
-                  bg-white border-base-200 hover:text-primary-600
-                  dark:bg-base-900 dark:border-base-700 dark:hover:text-primary-500
-                  shadow-xs text-sm transition-colors">
-            {% trans 'Help' %}
-        </a>
-    </div>
+<div id="content-main" x-data="{ filterOpen: false }">
 
-    <!-- Filter and Search -->
-    <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between lg:border lg:border-base-200 lg:dark:border-base-800 lg:-mb-8 lg:p-3 lg:pb-11 lg:rounded-t-default">
-        <!-- Support Filter -->
-        <div class="flex flex-wrap items-center gap-2">
-            <span class="text-sm text-base-500 dark:text-base-400">{% trans 'Filter:' %}</span>
-            <a href="?{% if search_query %}q={{ search_query|urlencode }}{% endif %}"
-               class="px-3 py-1 text-sm rounded-default {% if not support_filter %}bg-primary-600 text-white{% else %}bg-base-100 dark:bg-base-800 text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700{% endif %}">
-                {% trans 'All' %}
-            </a>
-            <a href="?support=cachex{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}"
-               class="px-3 py-1 text-sm rounded-default {% if support_filter == 'cachex' %}bg-primary-600 text-white{% else %}bg-base-100 dark:bg-base-800 text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700{% endif %}">
-                cachex
-            </a>
-            <a href="?support=wrapped{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}"
-               class="px-3 py-1 text-sm rounded-default {% if support_filter == 'wrapped' %}bg-primary-600 text-white{% else %}bg-base-100 dark:bg-base-800 text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700{% endif %}">
-                wrapped
-            </a>
-            <a href="?support=limited{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}"
-               class="px-3 py-1 text-sm rounded-default {% if support_filter == 'limited' %}bg-primary-600 text-white{% else %}bg-base-100 dark:bg-base-800 text-base-700 dark:text-base-200 hover:bg-base-200 dark:hover:bg-base-700{% endif %}">
-                limited
-            </a>
-        </div>
-        <!-- Search -->
-        <form method="get" class="flex items-center gap-2">
-            {% if support_filter %}<input type="hidden" name="support" value="{{ support_filter }}">{% endif %}
-            <input type="text" name="q" value="{{ search_query|default:'' }}"
-                   placeholder="{% trans 'Search...' %}"
-                   class="w-48 px-3 py-1.5 border border-base-200 bg-white font-medium placeholder-base-400 rounded-default shadow-xs text-font-default-light text-sm dark:bg-base-900 dark:border-base-700 dark:text-font-default-dark">
-            <button type="submit"
-                    class="px-3 py-1.5 text-sm font-medium rounded-default bg-primary-600 text-white hover:bg-primary-700">
-                {% trans 'Search' %}
-            </button>
-        </form>
-    </div>
+    <div class="flex -mx-4 module filtered" id="changelist" x-data="{ changeListWidth: 0 }">
+        <div class="result-list-wrapper changelist-form-container flex flex-row grow gap-6 min-w-0 px-4">
+            <div class="grow min-w-0" x-resize="changeListWidth = $width">
 
-    {% if caches_info %}
-    <!-- Cache list card -->
-    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-b-default lg:shadow-xs lg:overflow-hidden">
-        <form id="changelist-form" method="post" class="group">
-            {% csrf_token %}
-            <!-- Table -->
-            <table class="block border-spacing-none border-separate w-full lg:table">
-                <thead class="text-font-important-light dark:text-font-important-dark hidden lg:table-header-group">
-                    <tr>
-                        <th class="align-middle border-b border-base-200 font-semibold py-2 text-left whitespace-nowrap px-3 lg:table-cell dark:border-base-800 lg:w-10">
-                            <input type="checkbox" id="action-toggle"
-                                   class="appearance-none bg-white block border border-base-300 cursor-pointer h-4 min-w-4 relative rounded-[4px] shadow-xs w-4 hover:border-base-400 dark:bg-base-700 dark:border-base-500 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-primary-500 after:absolute after:content-['check\_small'] after:flex! after:h-4 after:items-center after:justify-center after:leading-none after:material-symbols-outlined after:-ml-px after:-mt-px after:text-white after:transition-all after:w-4 dark:after:text-base-700 checked:bg-primary-600 dark:checked:bg-primary-600 checked:border-primary-600 dark:checked:border-primary-600 checked:transition-all checked:hover:border-primary-600 dark:checked:after:text-white">
-                        </th>
-                        <th class="align-middle border-b border-base-200 font-semibold py-2 text-left whitespace-nowrap px-3 lg:table-cell dark:border-base-800">
-                            {% trans 'Cache Name' %}
-                        </th>
-                        <th class="align-middle border-b border-base-200 font-semibold py-2 text-left whitespace-nowrap px-3 lg:table-cell dark:border-base-800">
-                            {% trans 'Backend' %}
-                        </th>
-                        <th class="align-middle border-b border-base-200 font-semibold py-2 text-left whitespace-nowrap px-3 lg:table-cell dark:border-base-800">
-                            {% trans 'Location' %}
-                        </th>
-                        <th class="align-middle border-b border-base-200 font-semibold py-2 text-left whitespace-nowrap px-3 lg:table-cell dark:border-base-800">
-                            {% trans 'Support' %}
-                        </th>
-                        <th class="align-middle border-b border-base-200 font-semibold py-2 text-left whitespace-nowrap px-3 lg:table-cell dark:border-base-800">
-                            {% trans 'Actions' %}
-                        </th>
-                    </tr>
-                </thead>
-                <tbody class="block relative lg:table-row-group">
-                    {% for cache_info in caches_info %}
-                    <tr class="{% cycle '' 'bg-base-50 dark:bg-white/[.02]' %} block group {% if forloop.first %}first-row{% endif %} border border-base-200 mb-3 rounded-default shadow-xs lg:table-row lg:border-none lg:mb-0 lg:shadow-none dark:border-base-800 relative lg:hover:shadow-raised lg:dark:hover:shadow-raised-dark lg:hover:z-20">
-                        <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800 lg:w-10" data-label="{% trans 'Select' %}">
-                            <input type="checkbox" name="_selected_action" value="{{ cache_info.name }}"
-                                   class="appearance-none bg-white block border border-base-300 cursor-pointer h-4 min-w-4 relative rounded-[4px] shadow-xs w-4 hover:border-base-400 dark:bg-base-700 dark:border-base-500 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-primary-500 after:absolute after:content-['check\_small'] after:flex! after:h-4 after:items-center after:justify-center after:leading-none after:material-symbols-outlined after:-ml-px after:-mt-px after:text-white after:transition-all after:w-4 dark:after:text-base-700 checked:bg-primary-600 dark:checked:bg-primary-600 checked:border-primary-600 dark:checked:border-primary-600 checked:transition-all checked:hover:border-primary-600 dark:checked:after:text-white action-select">
-                        </td>
-                        <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Cache Name' %}">
-                            <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_info.name }}"
-                               class="font-medium text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-200">
-                                {{ cache_info.name }}
-                            </a>
-                        </td>
-                        <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Backend' %}">
-                            <span class="font-mono text-sm text-base-500 dark:text-base-400">
-                                {{ cache_info.backend }}
-                                {% if cache_info.error %}
-                                <br><span class="text-red-600 dark:text-red-400 text-xs">{{ cache_info.error }}</span>
-                                {% endif %}
-                            </span>
-                        </td>
-                        <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Location' %}">
-                            <span class="font-mono text-sm text-base-500 dark:text-base-400">{{ cache_info.location|default:"-" }}</span>
-                        </td>
-                        <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Support' %}">
-                            {% if cache_info.support_level == "cachex" %}
-                            <span class="inline-block font-semibold h-6 leading-6 px-2 rounded-default text-[11px] uppercase whitespace-nowrap bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400">
-                                cachex
-                            </span>
-                            {% elif cache_info.support_level == "wrapped" %}
-                            <span class="inline-block font-semibold h-6 leading-6 px-2 rounded-default text-[11px] uppercase whitespace-nowrap bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400">
-                                wrapped
-                            </span>
-                            {% else %}
-                            <span class="inline-block font-semibold h-6 leading-6 px-2 rounded-default text-[11px] uppercase whitespace-nowrap bg-base-100 text-base-700 dark:bg-base-500/20 dark:text-base-200">
-                                limited
-                            </span>
-                            {% endif %}
-                        </td>
-                        <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Actions' %}">
-                            <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_info.name }}"
-                               class="border cursor-pointer font-medium px-3 py-2 rounded-default text-center whitespace-nowrap
-                                      bg-white border-base-200 text-base-700 hover:text-primary-600
-                                      dark:bg-base-900 dark:border-base-700 dark:text-base-200 dark:hover:text-primary-500
-                                      shadow-xs text-sm transition-colors">
-                                {% trans 'List Keys' %}
-                            </a>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-
-            <!-- Fixed bottom action bar (unfold style) - shows when items are selected -->
-            <div class="bottom-0 left-0 right-0 hidden group-has-[input.action-select:checked]:flex fixed items-center p-3 z-50 lg:bottom-16">
-                <div class="bg-primary-600 dark:bg-primary-500 flex flex-col gap-3 mx-auto p-3 rounded-default text-white sm:flex-row sm:items-center max-w-4xl w-full shadow-lg">
-                    <div class="flex flex-row gap-2 items-center">
-                        <select name="action" class="bg-primary-900 border-0 font-medium px-3 py-1.5 rounded-default text-sm text-white">
-                            <option value="">---------</option>
-                            <option value="flush_selected">{% trans 'Flush selected caches' %}</option>
-                        </select>
-                        <button type="submit"
-                                onclick="return confirm('{% trans 'Are you sure you want to flush the selected caches?' %}')"
-                                class="bg-primary-900 cursor-pointer font-medium px-3 py-1.5 rounded-default text-sm text-white whitespace-nowrap hover:bg-primary-800">
-                            {% trans 'Run' %}
-                        </button>
+                <!-- Search + Filters toolbar -->
+                <div class="flex flex-col gap-4 mb-4 sm:flex-row empty:hidden lg:border lg:border-base-200 lg:dark:border-base-800 lg:-mb-8 lg:p-3 lg:pb-11 lg:rounded-t-default">
+                    <div id="toolbar">
+                        <form id="changelist-search" method="get" role="search">
+                            {% if support_filter %}<input type="hidden" name="support" value="{{ support_filter }}">{% endif %}
+                            <div class="bg-white border border-base-200 flex flex-row items-center px-3 rounded-default relative shadow-xs w-full focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-primary-600 lg:w-96 dark:bg-base-900 dark:border-base-700">
+                                <button type="submit" class="flex items-center focus:outline-hidden" id="searchbar-submit">
+                                    <span class="material-symbols-outlined md-18 text-base-400 dark:text-base-500">search</span>
+                                </button>
+                                <input type="text"
+                                       class="grow font-medium min-w-0 overflow-hidden p-2 placeholder-font-subtle-light truncate focus:outline-hidden dark:bg-base-900 dark:placeholder-font-subtle-dark dark:text-font-default-dark"
+                                       name="q"
+                                       value="{{ search_query|default:'' }}"
+                                       id="searchbar"
+                                       placeholder="{% trans 'Type to search' %}">
+                            </div>
+                        </form>
                     </div>
-                    <span class="text-sm">
-                        <span id="action-counter">0</span> {% trans 'selected' %}
-                    </span>
+                    <a class="bg-white border-base-200 hover:text-primary-600 dark:bg-base-900 dark:border-base-700 dark:hover:text-primary-500 border cursor-pointer flex font-medium gap-2 group items-center px-3 py-2 rounded-default shadow-xs text-sm lg:ml-auto md:mt-0" x-on:click="filterOpen = true" x-on:keydown.escape.window="filterOpen = false">
+                        {% trans 'Filters' %}
+                        <span class="material-symbols-outlined md-18 ml-auto">filter_list</span>
+                    </a>
                 </div>
-            </div>
-        </form>
 
-        <!-- Footer -->
-        <div class="px-4 py-3 bg-base-50 dark:bg-white/[.04] border-t border-base-200 dark:border-base-800 text-sm text-base-500 dark:text-base-400">
-            {{ caches_info|length }} {% blocktrans count counter=caches_info|length %}cache instance{% plural %}cache instances{% endblocktrans %}
-        </div>
-    </div>
-    {% endif %}
+                <form id="changelist-form" method="post" class="group">
+                    {% csrf_token %}
 
-    {% if not has_caches_configured %}
-    <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs p-6">
-        <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark mb-4">{% trans 'Cache Configuration Required' %}</h2>
-        <p class="text-base-600 dark:text-base-400 mb-4">
-            {% trans 'To use Cache Admin, you must configure cache instances in your Django settings.' %}
-        </p>
-        <pre class="bg-base-100 dark:bg-base-800 rounded-default p-4 text-sm font-mono overflow-x-auto">
+                    <!-- Action bar -->
+                    <div class="bottom-0 left-0 right-0 hidden group-has-[input.action-select:checked]:flex fixed gap-3 lg:bottom-[64px] lg:h-[64px] items-center p-3 z-50 lg:flex-row">
+                        <div class="grow group changelist-actions" x-bind:class="{'xl:ml-0': !sidebarDesktopOpen, 'xl:ml-72': sidebarDesktopOpen}">
+                            <div class="actions mx-1 text-white mx-auto" x-bind:style="'width: ' + changeListWidth + 'px'">
+                                <div class="bg-primary-600 flex flex-col gap-3 mx-3 p-1.5 rounded-default dark:bg-primary-500 sm:flex-row sm:items-center lg:items-center">
+                                    <div class="group primary flex flex-row gap-2 lg:flex-row">
+                                        <div class="grow relative max-w-2xl">
+                                            <select name="action" class="border border-base-200 bg-white font-medium min-w-20 placeholder-base-400 rounded-default shadow-xs text-font-default-light text-sm focus:outline-2 focus:-outline-offset-2 focus:outline-primary-600 dark:bg-base-900 dark:border-base-700 dark:text-font-default-dark dark:scheme-dark group-[.primary]:border-transparent px-3 py-2 w-full pr-8! max-w-2xl appearance-none text-ellipsis group-[.changelist-actions]:appearance-none group-[.changelist-actions]:!bg-white/20 group-[.changelist-actions]:font-medium group-[.changelist-actions]:grow group-[.changelist-actions]:px-2 group-[.changelist-actions]:py-1 group-[.changelist-actions]:pr-8 group-[.changelist-actions]:rounded-default group-[.changelist-actions]:!text-current group-[.changelist-actions]:truncate group-[.changelist-actions]:!outline-primary-400 group-[.changelist-actions]:dark:!outline-primary-700 group-[.changelist-actions]:*:text-base-700 group-[.changelist-actions]:lg:w-72" required>
+                                                <option value="" selected>{% trans 'Select action' %}</option>
+                                                <option value="flush_selected">{% trans 'Flush selected caches' %}</option>
+                                            </select>
+                                            <span class="material-symbols-outlined absolute group-[.primary]:text-white pointer-events-none mr-[12px] right-0 text-base-400 top-1/2 -translate-y-1/2">expand_more</span>
+                                        </div>
+                                        <button type="submit"
+                                                onclick="return confirm('{% trans 'Are you sure you want to flush the selected caches?' %}')"
+                                                class="bg-primary-900 cursor-pointer flex font-medium items-center justify-center px-3 py-1 rounded-default text-sm text-white whitespace-nowrap">
+                                            {% trans 'Run' %}
+                                        </button>
+                                    </div>
+                                    <div class="flex grow flex-col sm:flex-row sm:items-center">
+                                        <span class="action-counter">
+                                            <span id="action-counter">0</span> {% trans 'selected' %}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if caches_info %}
+                    <!-- Table card -->
+                    <div class="lg:rounded-b-default -mx-1 px-1 overflow-x-auto lg:border lg:border-base-200 lg:mx-0 lg:px-0 lg:shadow-xs lg:dark:border-base-800 lg:bg-white lg:dark:bg-base-900">
+                        <table id="result_list" class="result-list block border-base-200 border-spacing-none border-separate w-full lg:table">
+                            <thead>
+                                <tr>
+                                    <th class="align-middle font-semibold py-2 text-left text-font-important-light dark:text-font-important-dark whitespace-nowrap action-checkbox-column lg:px-3 lg:w-10" scope="col">
+                                        <div class="flex items-center">
+                                            <div class="text">
+                                                <label class="flex flex-row items-center gap-2">
+                                                    <input type="checkbox" id="action-toggle"
+                                                           class="appearance-none bg-white block border border-base-300 cursor-pointer h-4 min-w-4 relative rounded-[4px] shadow-xs w-4 hover:border-base-400 dark:bg-base-700 dark:border-base-500 dark:checked:after:text-white focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-primary-500 after:absolute after:content-['check\_small'] after:flex! after:h-4 after:items-center after:justify-center after:leading-none after:material-symbols-outlined after:-ml-px after:-mt-px after:text-white after:transition-all after:w-4 dark:after:text-base-700 checked:bg-primary-600 dark:checked:bg-primary-600 checked:border-primary-600 dark:checked:border-primary-600 checked:transition-all checked:hover:border-primary-600 action-toggle"
+                                                           aria-label="{% trans 'Select all objects on this page for an action' %}">
+                                                    <span class="block font-normal lg:hidden">{% trans 'Select all rows' %}</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </th>
+                                    <th class="align-middle font-semibold py-2 text-left text-font-important-light dark:text-font-important-dark whitespace-nowrap hidden px-3 lg:table-cell" scope="col">
+                                        <div class="flex items-center"><div class="text">{% trans 'Cache Name' %}</div></div>
+                                    </th>
+                                    <th class="align-middle font-semibold py-2 text-left text-font-important-light dark:text-font-important-dark whitespace-nowrap hidden px-3 lg:table-cell" scope="col">
+                                        <div class="flex items-center"><div class="text">{% trans 'Backend' %}</div></div>
+                                    </th>
+                                    <th class="align-middle font-semibold py-2 text-left text-font-important-light dark:text-font-important-dark whitespace-nowrap hidden px-3 lg:table-cell" scope="col">
+                                        <div class="flex items-center"><div class="text">{% trans 'Location' %}</div></div>
+                                    </th>
+                                    <th class="align-middle font-semibold py-2 text-left text-font-important-light dark:text-font-important-dark whitespace-nowrap hidden px-3 lg:table-cell" scope="col">
+                                        <div class="flex items-center"><div class="text">{% trans 'Support' %}</div></div>
+                                    </th>
+                                    <th class="align-middle font-semibold py-2 text-left text-font-important-light dark:text-font-important-dark whitespace-nowrap hidden px-3 lg:table-cell" scope="col">
+                                        <div class="flex items-center"><div class="text">{% trans 'Actions' %}</div></div>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody class="block relative lg:table-row-group">
+                                {% for cache_info in caches_info %}
+                                <tr class="{% cycle '' 'bg-base-50 dark:bg-white/[.02]' %} block group {% if forloop.first %}first-row{% endif %} border border-base-200 mb-3 rounded-default shadow-xs lg:table-row lg:border-none lg:mb-0 lg:shadow-none dark:border-base-800 relative lg:hover:shadow-raised lg:dark:hover:shadow-raised-dark lg:hover:z-20">
+                                    <td class="action-checkbox align-middle flex items-center px-3 py-2 text-left before:block before:capitalize before:content-[attr(data-label)] before:font-semibold before:mr-auto before:text-font-important-light lg:before:hidden lg:border-t lg:border-base-200 lg:table-cell dark:lg:border-base-800 dark:before:text-font-important-dark" data-label="{% trans 'Select' %}">
+                                        <input type="checkbox" name="_selected_action" value="{{ cache_info.name }}"
+                                               class="appearance-none bg-white block border border-base-300 cursor-pointer h-4 min-w-4 relative rounded-[4px] shadow-xs w-4 hover:border-base-400 dark:bg-base-700 dark:border-base-500 dark:checked:after:text-white focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-primary-500 after:absolute after:content-['check\_small'] after:flex! after:h-4 after:items-center after:justify-center after:leading-none after:material-symbols-outlined after:-ml-px after:-mt-px after:text-white after:transition-all after:w-4 dark:after:text-base-700 checked:bg-primary-600 dark:checked:bg-primary-600 checked:border-primary-600 dark:checked:border-primary-600 checked:transition-all checked:hover:border-primary-600 action-select"
+                                               aria-label="{% trans 'Select record' %}">
+                                    </td>
+                                    <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Cache Name' %}">
+                                        <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_info.name }}"
+                                           class="font-medium text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-200">
+                                            {{ cache_info.name }}
+                                        </a>
+                                    </td>
+                                    <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Backend' %}">
+                                        <span class="font-mono text-sm text-base-500 dark:text-base-400">
+                                            {{ cache_info.backend }}
+                                            {% if cache_info.error %}
+                                            <br><span class="text-red-600 dark:text-red-400 text-xs">{{ cache_info.error }}</span>
+                                            {% endif %}
+                                        </span>
+                                    </td>
+                                    <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Location' %}">
+                                        <span class="font-mono text-sm text-base-500 dark:text-base-400">{{ cache_info.location|default:"-" }}</span>
+                                    </td>
+                                    <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Support' %}">
+                                        {% if cache_info.support_level == "cachex" %}
+                                        <span class="inline-block font-semibold h-6 leading-6 px-2 rounded-default text-[11px] uppercase whitespace-nowrap bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400">
+                                            cachex
+                                        </span>
+                                        {% elif cache_info.support_level == "wrapped" %}
+                                        <span class="inline-block font-semibold h-6 leading-6 px-2 rounded-default text-[11px] uppercase whitespace-nowrap bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400">
+                                            wrapped
+                                        </span>
+                                        {% else %}
+                                        <span class="inline-block font-semibold h-6 leading-6 px-2 rounded-default text-[11px] uppercase whitespace-nowrap bg-base-100 text-base-700 dark:bg-base-500/20 dark:text-base-200">
+                                            limited
+                                        </span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="px-3 py-2 align-middle flex border-t border-base-200 font-normal gap-4 min-w-0 overflow-hidden text-left before:flex before:capitalize before:content-[attr(data-label)] before:font-semibold before:text-font-important-light dark:before:text-font-important-dark before:items-center before:mr-auto first:border-t-0 lg:group-[.first-row]:border-t-0 lg:before:hidden lg:py-3 lg:table-cell dark:border-base-800" data-label="{% trans 'Actions' %}">
+                                        <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_info.name }}"
+                                           class="border cursor-pointer font-medium px-3 py-2 rounded-default text-center whitespace-nowrap
+                                                  bg-white border-base-200 text-base-700 hover:text-primary-600
+                                                  dark:bg-base-900 dark:border-base-700 dark:text-base-200 dark:hover:text-primary-500
+                                                  shadow-xs text-sm transition-colors">
+                                            {% trans 'List Keys' %}
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                </form>
+
+                {% if not has_caches_configured %}
+                <div class="bg-white dark:bg-base-900 lg:border lg:border-base-200 lg:dark:border-base-800 lg:rounded-default lg:shadow-xs p-6">
+                    <h2 class="text-lg font-semibold text-font-important-light dark:text-font-important-dark mb-4">{% trans 'Cache Configuration Required' %}</h2>
+                    <p class="text-base-600 dark:text-base-400 mb-4">
+                        {% trans 'To use Cache Admin, you must configure cache instances in your Django settings.' %}
+                    </p>
+                    <pre class="bg-base-100 dark:bg-base-800 rounded-default p-4 text-sm font-mono overflow-x-auto">
 CACHES = {
     "default": {
         "BACKEND": "django_cachex.cache.ValkeyCache",
         "LOCATION": "valkey://127.0.0.1:6379/0",
     }
 }</pre>
+                </div>
+                {% endif %}
+
+                <!-- Filter modal -->
+                <div id="changelist-filter" class="backdrop-blur-xs bg-base-900/80 flex inset-0 z-60 fixed" x-show="filterOpen" x-cloak>
+                    <div id="changelist-filter-close" class="grow" x-on:click="filterOpen = false"></div>
+                    <div class="bg-white flex m-4 overflow-hidden rounded-default shadow-xs w-80 dark:bg-base-800">
+                        <div class="grow h-full overflow-auto relative">
+                            <div class="flex flex-col h-full">
+                                <div class="flex flex-col grow gap-4 overflow-auto *:mb-0">
+                                    <div class="flex flex-col gap-4 px-3 py-2.5 *:mb-0">
+                                        <div>
+                                            <h3 class="font-semibold mb-2 text-font-important-light dark:text-font-important-dark">
+                                                {% trans 'By support level' %}
+                                            </h3>
+                                            <ul class="dark:bg-base-900 border border-base-200 flex min-w-20 rounded-default shadow-xs text-font-default-light dark:border-base-700 dark:text-font-default-dark w-full">
+                                                <li class="basis-1/4 border-r border-base-200 grow truncate last:border-r-0 dark:border-base-700 {% if not support_filter %}font-semibold text-primary-600 dark:text-primary-500{% else %}hover:text-base-700 dark:hover:text-base-200{% endif %}">
+                                                    <a href="?{% if search_query %}q={{ search_query|urlencode }}{% endif %}" title="{% trans 'All' %}" class="block py-2 text-center hover:text-primary-600 dark:hover:text-primary-500">
+                                                        {% trans 'All' %}
+                                                    </a>
+                                                </li>
+                                                <li class="basis-1/4 border-r border-base-200 grow truncate last:border-r-0 dark:border-base-700 {% if support_filter == 'cachex' %}font-semibold text-primary-600 dark:text-primary-500{% else %}hover:text-base-700 dark:hover:text-base-200{% endif %}">
+                                                    <a href="?support=cachex{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}" title="cachex" class="block py-2 text-center hover:text-primary-600 dark:hover:text-primary-500">
+                                                        cachex
+                                                    </a>
+                                                </li>
+                                                <li class="basis-1/4 border-r border-base-200 grow truncate last:border-r-0 dark:border-base-700 {% if support_filter == 'wrapped' %}font-semibold text-primary-600 dark:text-primary-500{% else %}hover:text-base-700 dark:hover:text-base-200{% endif %}">
+                                                    <a href="?support=wrapped{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}" title="wrapped" class="block py-2 text-center hover:text-primary-600 dark:hover:text-primary-500">
+                                                        wrapped
+                                                    </a>
+                                                </li>
+                                                <li class="basis-1/4 border-r border-base-200 grow truncate last:border-r-0 dark:border-base-700 {% if support_filter == 'limited' %}font-semibold text-primary-600 dark:text-primary-500{% else %}hover:text-base-700 dark:hover:text-base-200{% endif %}">
+                                                    <a href="?support=limited{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}" title="limited" class="block py-2 text-center hover:text-primary-600 dark:hover:text-primary-500">
+                                                        limited
+                                                    </a>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
     </div>
-    {% endif %}
+
+    <!-- Footer -->
+    <div class="px-4 lg:backdrop-blur-xs lg:bg-white/80 lg:flex lg:items-center lg:dark:bg-base-900/80 lg:left-0 lg:right-0 lg:bottom-0 lg:sticky relative z-40 lg:border-t lg:border-base-200 lg:relative lg:scrollable-top lg:dark:border-base-800">
+        <div class="flex flex-row grow items-center lg:h-[64px] container mx-auto">
+            <div class="py-4">
+                {{ caches_info|length }} {% blocktrans count counter=caches_info|length %}cache instance{% plural %}cache instances{% endblocktrans %}
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>

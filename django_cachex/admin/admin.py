@@ -19,6 +19,10 @@ from django.utils.translation import gettext_lazy as _
 
 from .helpers import get_cache, get_metadata, get_slowlog
 from .models import Cache, Key
+from .views.base import (
+    ViewConfig,
+    show_help,
+)
 
 if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
@@ -39,9 +43,8 @@ class CacheAdmin(_CacheBase):
     - change_view: Shows cache details (info + slowlog combined)
     """
 
-    # Help messages for each view (HTML content wrapped with mark_safe)
     _cachex_help_messages: ClassVar[dict[str, str]] = {
-        "cache_changelist": mark_safe(
+        "cache_list": mark_safe(
             "<strong>Cache Instances</strong><br>"
             "View all cache backends configured in your Django settings.<br><br>"
             "<strong>Support Levels</strong><br>"
@@ -51,7 +54,7 @@ class CacheAdmin(_CacheBase):
             "type detection, TTL management, and data operations</td></tr>"
             "<tr><td style='padding: 2px 8px;'><strong>wrapped</strong></td>"
             "<td style='padding: 2px 8px;'>Wrapped support — Django built-in backends "
-            "(Redis, LocMem, Database, File) with some features</td></tr>"
+            "(LocMem, Database, File) with some features</td></tr>"
             "<tr><td style='padding: 2px 8px;'><strong>limited</strong></td>"
             "<td style='padding: 2px 8px;'>Limited support — Custom/unknown backends, "
             "basic get/set only</td></tr>"
@@ -59,10 +62,10 @@ class CacheAdmin(_CacheBase):
             "<strong>Actions</strong><br>"
             "• Click a cache name to view its details (info, stats, slowlog)<br>"
             "• Click 'List Keys' to browse keys in that cache<br>"
-            "• Select caches with checkboxes and use 'Flush selected caches' to clear them<br>"
-            "• Use the filter sidebar to show only specific support levels",
+            "• Select caches and use 'Flush selected caches' to clear them<br>"
+            "• Use the filter sidebar to filter by support level",
         ),
-        "cache_change": mark_safe(
+        "cache_detail": mark_safe(
             "<strong>Cache Details</strong><br>"
             "View server information, memory stats, and slow query log for this cache.<br><br>"
             "<strong>Sections</strong><br>"
@@ -74,16 +77,20 @@ class CacheAdmin(_CacheBase):
             "• <strong>Keyspace</strong> — Keys per database<br>"
             "• <strong>Slow Log</strong> — Slow queries for performance analysis",
         ),
+        "cache_slowlog": mark_safe(
+            "<strong>Slow Query Log</strong><br>"
+            "Commands that exceeded the server's slowlog threshold.<br><br>"
+            "<strong>Columns</strong><br>"
+            "• <strong>ID</strong> — Unique log entry identifier<br>"
+            "• <strong>Time</strong> — When the command was executed<br>"
+            "• <strong>Duration</strong> — Execution time in microseconds<br>"
+            "• <strong>Command</strong> — The slow command with arguments<br>"
+            "• <strong>Client</strong> — Client address and name<br><br>"
+            "<strong>Configuration</strong><br>"
+            "The threshold is set via Redis <code>slowlog-log-slower-than</code> config. "
+            "Use the dropdown to show 10-100 entries.",
+        ),
     }
-
-    def _cachex_show_help(self, request: HttpRequest, view_name: str) -> bool:
-        """Check if help was requested and show message if so. Returns True if help shown."""
-        if request.GET.get("help"):
-            help_text = self._cachex_help_messages.get(view_name, "")
-            if help_text:
-                messages.info(request, help_text)
-            return True
-        return False
 
     # Disable standard CRUD operations
     def has_add_permission(self, request: HttpRequest) -> bool:
@@ -132,7 +139,7 @@ class CacheAdmin(_CacheBase):
     ) -> HttpResponse:
         """List all configured cache instances."""
         # Show help message if requested
-        help_active = self._cachex_show_help(request, "cache_changelist")
+        help_active = show_help(request, "cache_list", self._cachex_help_messages)
 
         # Handle POST requests (flush cache action)
         if request.method == "POST":
@@ -236,7 +243,7 @@ class CacheAdmin(_CacheBase):
             )
 
         # Show help message if requested
-        help_active = self._cachex_show_help(request, "cache_change")
+        help_active = show_help(request, "cache_detail", self._cachex_help_messages)
 
         from django.conf import settings
 
@@ -290,6 +297,112 @@ class KeyAdmin(_KeyBase):
     This admin is accessed via CacheAdmin and is hidden from the sidebar.
     """
 
+    _cachex_help_messages: ClassVar[dict[str, str]] = {
+        "key_list": mark_safe(
+            "<strong>Key Browser</strong><br>"
+            "Search and manage cache keys for this backend.<br><br>"
+            "<strong>Search Patterns</strong><br>"
+            "Search combines Django-style convenience with Redis/Valkey glob patterns.<br>"
+            "• <code>session</code> — Keys containing 'session' (auto-wrapped as <code>*session*</code>)<br>"
+            "• <code>prefix:*</code> — Keys starting with 'prefix:'<br>"
+            "• <code>*:suffix</code> — Keys ending with ':suffix'<br>"
+            "• <code>*</code> — List all keys (default when empty)<br><br>"
+            "<strong>Table Columns</strong><br>"
+            "• <strong>Key</strong> — Click to view/edit the key<br>"
+            "• <strong>Type</strong> — Data type (string, list, set, hash, zset, stream)<br>"
+            "• <strong>TTL</strong> — Time until expiration<br>"
+            "• <strong>Size</strong> — Length for collections, bytes for strings<br><br>"
+            "<strong>Actions</strong><br>"
+            "• Use 'Add key' to create new entries<br>"
+            "• Select keys and use 'Delete selected' to remove them",
+        ),
+        "key_detail_string": mark_safe(
+            "<strong>String Key</strong><br>"
+            "View and edit this string value stored in cache.<br><br>"
+            "<strong>Value Format</strong><br>"
+            "Values are displayed and edited as JSON. Strings appear quoted, "
+            "objects as <code>{...}</code>, arrays as <code>[...]</code>.<br><br>"
+            "<strong>Operations</strong><br>"
+            "• Edit the value in the textarea and click <strong>Update</strong><br>"
+            "• Set TTL to control expiration (empty = no expiry)<br>"
+            "• Use <strong>Delete</strong> to remove this key",
+        ),
+        "key_detail_list": mark_safe(
+            "<strong>List Key</strong><br>"
+            "View and modify this Redis list (ordered collection).<br><br>"
+            "<strong>Operations</strong><br>"
+            "• <strong>Push Left/Right</strong> — Add items to the head or tail<br>"
+            "• <strong>Pop Left/Right</strong> — Remove and return items from head or tail<br>"
+            "• <strong>Trim</strong> — Keep only items in the specified index range<br>"
+            "• <strong>Remove</strong> — Delete specific items from the list<br><br>"
+            "<strong>Index</strong><br>"
+            "Items are shown with their 0-based index. Index 0 is the head (left).",
+        ),
+        "key_detail_set": mark_safe(
+            "<strong>Set Key</strong><br>"
+            "View and modify this Redis set (unordered unique members).<br><br>"
+            "<strong>Operations</strong><br>"
+            "• <strong>Add</strong> — Add a new member to the set<br>"
+            "• <strong>Pop</strong> — Remove and return random member(s)<br>"
+            "• <strong>Remove</strong> — Delete a specific member<br><br>"
+            "<strong>Note</strong><br>"
+            "Sets do not allow duplicate members. Adding an existing member has no effect.",
+        ),
+        "key_detail_hash": mark_safe(
+            "<strong>Hash Key</strong><br>"
+            "View and modify this Redis hash (field-value mapping).<br><br>"
+            "<strong>Operations</strong><br>"
+            "• <strong>Set Field</strong> — Add a new field or update existing<br>"
+            "• <strong>Update</strong> — Modify a field's value inline<br>"
+            "• <strong>Delete</strong> — Remove a field from the hash<br><br>"
+            "<strong>Note</strong><br>"
+            "Field names must be unique. Setting an existing field overwrites its value.",
+        ),
+        "key_detail_zset": mark_safe(
+            "<strong>Sorted Set Key</strong><br>"
+            "View and modify this Redis sorted set (members ordered by score).<br><br>"
+            "<strong>Operations</strong><br>"
+            "• <strong>Add</strong> — Add member with score. Flags: "
+            "NX (only if new), XX (only if exists), GT (if score greater), LT (if score less)<br>"
+            "• <strong>Pop Min/Max</strong> — Remove member(s) with lowest/highest score<br>"
+            "• <strong>Remove</strong> — Delete a specific member<br><br>"
+            "<strong>Ordering</strong><br>"
+            "Members are displayed by score (lowest first). Rank is the 0-based position.",
+        ),
+        "key_detail_stream": mark_safe(
+            "<strong>Stream Key</strong><br>"
+            "View and modify this Redis stream (append-only log).<br><br>"
+            "<strong>Operations</strong><br>"
+            "• <strong>Add Entry</strong> — Append a new entry with field-value data<br>"
+            "• <strong>Trim</strong> — Limit stream to a maximum number of entries<br>"
+            "• <strong>Delete</strong> — Remove a specific entry by ID<br><br>"
+            "<strong>Entry IDs</strong><br>"
+            "Each entry has a unique ID in the format <code>timestamp-sequence</code>. "
+            "IDs are auto-generated when adding entries.",
+        ),
+        "key_detail": mark_safe(
+            "<strong>Key Details</strong><br>"
+            "View and modify this cache key.<br><br>"
+            "<strong>TTL</strong><br>"
+            "Time-to-live in seconds. Leave empty for no expiry.",
+        ),
+        "key_add": mark_safe(
+            "<strong>Add Key</strong><br>"
+            "Create a new cache entry with a key name, value, and optional timeout.<br><br>"
+            "<strong>Key Name</strong><br>"
+            "Enter a unique identifier. Common patterns: <code>user:123</code>, "
+            "<code>session:abc</code>, <code>cache:page:home</code><br><br>"
+            "<strong>Value Format</strong><br>"
+            "• Plain text — Stored as a string<br>"
+            '• <code>{"key": "value"}</code> — JSON objects are parsed and stored<br>'
+            "• <code>[1, 2, 3]</code> — JSON arrays are parsed and stored<br><br>"
+            "<strong>Timeout</strong><br>"
+            "• Leave empty — Uses the cache's default timeout<br>"
+            "• Enter seconds — Key expires after this duration<br>"
+            "• Enter 0 — Key never expires",
+        ),
+    }
+
     # Hide from sidebar - accessed via Cache
     def has_module_permission(self, request: HttpRequest) -> bool:
         return False
@@ -330,14 +443,16 @@ class KeyAdmin(_KeyBase):
         ]
         return custom_urls + urls
 
+    def _get_config(self) -> ViewConfig:
+        return ViewConfig(help_messages=self._cachex_help_messages)
+
     def changelist_view(
         self,
         request: HttpRequest,
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
         """Browse keys for a specific cache."""
-        # Import here to avoid circular imports and keep views logic accessible
-        from . import views
+        from .views.key_list import _key_list_view
 
         cache_name = request.GET.get("cache", "default")
 
@@ -348,10 +463,7 @@ class KeyAdmin(_KeyBase):
                 reverse("admin:django_cachex_cache_changelist"),
             )
 
-        # Delegate to views.key_list with adapted URL handling
-        # For now, we use a redirect to maintain compatibility
-        # This will be replaced with inline logic in a future iteration
-        return views.key_list(request, cache_name)
+        return _key_list_view(request, cache_name, self._get_config())
 
     def change_view(
         self,
@@ -361,7 +473,7 @@ class KeyAdmin(_KeyBase):
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
         """View/edit a specific key."""
-        from . import views
+        from .views.key_detail import _key_detail_view
 
         cache_name, key_name = Key.parse_pk(object_id)
 
@@ -371,7 +483,7 @@ class KeyAdmin(_KeyBase):
                 reverse("admin:django_cachex_cache_changelist"),
             )
 
-        return views.key_detail(request, cache_name, key_name)
+        return _key_detail_view(request, cache_name, key_name, self._get_config())
 
     def add_view(
         self,
@@ -380,7 +492,7 @@ class KeyAdmin(_KeyBase):
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
         """Add a new key to a cache."""
-        from . import views
+        from .views.key_add import _key_add_view
 
         cache_name = request.GET.get("cache", "default")
 
@@ -390,4 +502,4 @@ class KeyAdmin(_KeyBase):
                 reverse("admin:django_cachex_cache_changelist"),
             )
 
-        return views.key_add(request, cache_name)
+        return _key_add_view(request, cache_name, self._get_config())

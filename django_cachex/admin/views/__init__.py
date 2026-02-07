@@ -8,7 +8,6 @@ to support both the standard Django admin and alternative admin themes like Unfo
 
 from .base import (
     ADMIN_CONFIG,
-    HELP_MESSAGES,
     ViewConfig,
     cache_list_url,
     format_value_for_display,
@@ -43,7 +42,6 @@ from .key_list import (
 
 __all__ = [
     "ADMIN_CONFIG",
-    "HELP_MESSAGES",
     "ViewConfig",
     "_cache_detail_view",
     "_index_view",

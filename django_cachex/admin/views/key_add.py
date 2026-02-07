@@ -33,7 +33,7 @@ def _key_add_view(
 
     This is the internal implementation; use key_add() for the decorated admin view.
     """
-    help_active = show_help(request, "key_add")
+    help_active = show_help(request, "key_add", config.help_messages)
     cache = get_cache(cache_name)
     cache_config = settings.CACHES.get(cache_name, {})
 

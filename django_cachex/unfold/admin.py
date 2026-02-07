@@ -14,6 +14,8 @@ from django.contrib import admin
 from django.http import HttpResponseRedirect
 from django.urls import path, reverse
 
+from django_cachex.admin.admin import CacheAdmin as StandardCacheAdmin
+from django_cachex.admin.admin import KeyAdmin as StandardKeyAdmin
 from django_cachex.admin.models import Cache, Key
 from django_cachex.admin.views import (
     ViewConfig,
@@ -42,8 +44,13 @@ else:
 
 # Configuration for unfold-themed views
 # Uses admin URLs but with unfold template prefix
-UNFOLD_CONFIG = ViewConfig(
+UNFOLD_CACHE_CONFIG = ViewConfig(
     template_prefix="unfold/django_cachex",
+    help_messages=StandardCacheAdmin._cachex_help_messages,
+)
+UNFOLD_KEY_CONFIG = ViewConfig(
+    template_prefix="unfold/django_cachex",
+    help_messages=StandardKeyAdmin._cachex_help_messages,
 )
 
 
@@ -109,7 +116,7 @@ class CacheAdmin(_CacheBase):
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
         """List all configured cache instances using unfold templates."""
-        return _index_view(request, UNFOLD_CONFIG)
+        return _index_view(request, UNFOLD_CACHE_CONFIG)
 
     def change_view(
         self,
@@ -119,7 +126,7 @@ class CacheAdmin(_CacheBase):
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
         """Display cache details using unfold templates."""
-        return _cache_detail_view(request, object_id, UNFOLD_CONFIG)
+        return _cache_detail_view(request, object_id, UNFOLD_CACHE_CONFIG)
 
 
 @admin.register(Key)
@@ -186,7 +193,7 @@ class KeyAdmin(_KeyBase):
                 reverse("admin:django_cachex_cache_changelist"),
             )
 
-        return _key_list_view(request, cache_name, UNFOLD_CONFIG)
+        return _key_list_view(request, cache_name, UNFOLD_KEY_CONFIG)
 
     def change_view(
         self,
@@ -206,7 +213,7 @@ class KeyAdmin(_KeyBase):
                 reverse("admin:django_cachex_cache_changelist"),
             )
 
-        return _key_detail_view(request, cache_name, key_name, UNFOLD_CONFIG)
+        return _key_detail_view(request, cache_name, key_name, UNFOLD_KEY_CONFIG)
 
     def add_view(
         self,
@@ -225,4 +232,4 @@ class KeyAdmin(_KeyBase):
                 reverse("admin:django_cachex_cache_changelist"),
             )
 
-        return _key_add_view(request, cache_name, UNFOLD_CONFIG)
+        return _key_add_view(request, cache_name, UNFOLD_KEY_CONFIG)
