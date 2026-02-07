@@ -57,9 +57,9 @@ INSTALLED_APPS = [
 
 ## Acknowledgments
 
-This project was inspired by [django-redis](https://github.com/jazzband/django-redis), [django-valkey](https://github.com/amirreza8002/django-valkey), and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause.
+This project was inspired by [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause. The admin functionality was inspired by [django-redisboard](https://github.com/ionelmc/django-redisboard). The Unfold theme integration uses [django-unfold](https://unfoldadmin.com/).
 
-The admin functionality was inspired by [django-redisboard](https://github.com/ionelmc/django-redisboard) and [dj-cache-panel](https://github.com/vinitkumar/dj-cache-panel). The Unfold theme integration uses [django-unfold](https://unfoldadmin.com/).
+Additional inspiration from [django-valkey](https://github.com/amirreza8002/django-valkey) and [dj-cache-panel](https://github.com/vinitkumar/dj-cache-panel).
 
 ## License
 
