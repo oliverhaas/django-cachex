@@ -33,7 +33,7 @@ def wait_for_replication(
     multiple keys via get_many.
 
     Args:
-        cache: The cache instance to check
+        cache: The cache backend to check
         expected: Dict mapping keys to their expected values
         max_attempts: Maximum number of polling attempts
         sleep_interval: Time to sleep between attempts in seconds

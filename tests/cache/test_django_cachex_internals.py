@@ -129,7 +129,7 @@ class TestRedisCacheInternals:
             },
         }
 
-        # Clear cached cache instance before override_settings
+        # Clear cached cache backend before override_settings
         with suppress(KeyError, AttributeError):
             del caches["default"]
 
@@ -183,7 +183,7 @@ class TestRedisCacheClientMethods:
             },
         }
 
-        # Clear cached cache instance before override_settings
+        # Clear cached cache backend before override_settings
         with suppress(KeyError, AttributeError):
             del caches["default"]
 
@@ -252,7 +252,7 @@ class TestConnectionCleanup:
             },
         }
 
-        # Clear cached cache instance before override_settings
+        # Clear cached cache backend before override_settings
         with suppress(KeyError, AttributeError):
             del caches["default"]
 
@@ -315,7 +315,7 @@ class TestConnectionCleanup:
             },
         }
 
-        # Clear cached cache instance before override_settings
+        # Clear cached cache backend before override_settings
         with suppress(KeyError, AttributeError):
             del caches["default"]
 

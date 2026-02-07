@@ -9,10 +9,10 @@ from django.db import models
 
 class Cache(models.Model):
     """
-    Fake model representing a Django cache instance.
+    Fake model representing a Django cache backend.
 
     This model is not managed by Django (no migrations, no database table).
-    It provides a hook for Django admin to display cache instances.
+    It provides a hook for Django admin to display caches.
     """
 
     # Fake primary key - corresponds to cache name
@@ -29,7 +29,7 @@ class Cache(models.Model):
 
     @classmethod
     def get_all(cls) -> list[Cache]:
-        """Get all configured caches as Cache instances."""
+        """Get all configured caches as Cache objects."""
         caches = []
         for name in settings.CACHES:
             cache = cls()
@@ -39,7 +39,7 @@ class Cache(models.Model):
 
     @classmethod
     def get_by_name(cls, name: str) -> Cache | None:
-        """Get a Cache instance by name."""
+        """Get a Cache object by name."""
         if name in settings.CACHES:
             cache = cls()
             cache.name = name
@@ -71,7 +71,7 @@ class Cache(models.Model):
         return str(loc) if loc else ""
 
     def _get_cache(self) -> Any | None:
-        """Get the raw cache instance."""
+        """Get the raw cache backend."""
         from django.core.cache import caches
 
         try:
@@ -88,7 +88,7 @@ class Cache(models.Model):
             - "wrapped": Django core builtin backends (wrapped for almost full support)
             - "limited": Custom/unknown backends with limited support
         """
-        # Check for _cachex_support attribute on the cache instance (set by wrap_cache
+        # Check for _cachex_support attribute on the cache backend (set by wrap_cache
         # or native django-cachex backends)
         cache = self._get_cache()
         if cache is not None and hasattr(cache, "_cachex_support"):

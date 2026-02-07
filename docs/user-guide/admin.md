@@ -1,6 +1,6 @@
 # Cache Admin
 
-django-cachex provides a Django admin interface for inspecting and managing cache instances. It allows you to browse cache keys, view their values, and perform operations like adding, editing, and deleting cache entries.
+django-cachex provides a Django admin interface for inspecting and managing caches. It allows you to browse cache keys, view their values, and perform operations like adding, editing, and deleting cache entries.
 
 ## Installation
 
@@ -68,9 +68,9 @@ See the [quickstart guide](../getting-started/quickstart.md) for migration instr
 
 ## Views
 
-### Cache Instances (Index)
+### Caches (Index)
 
-The main view lists all configured cache instances with:
+The main view lists all configured caches with:
 
 - **Cache Name**: The alias used in `settings.CACHES`
 - **Backend**: The full backend class path

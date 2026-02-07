@@ -54,7 +54,7 @@ def _key_detail_create_url(cache_name: str, key_name: str, key_type: str = "stri
 
 
 class TestIndexView:
-    """Tests for the cache instances index view (CacheAdmin changelist)."""
+    """Tests for the caches index view (CacheAdmin changelist)."""
 
     def test_index_returns_200(self, admin_client: Client, test_cache):
         """Index view should return 200 for authenticated staff."""

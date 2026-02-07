@@ -212,7 +212,7 @@ This closes the async connection pool for the current event loop. The sync pools
 
 ## Mixed Sync/Async Usage
 
-A single cache instance works for both sync and async code:
+A single cache backend works for both sync and async code:
 
 ```python
 from django.core.cache import cache

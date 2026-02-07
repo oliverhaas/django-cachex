@@ -142,7 +142,7 @@ def admin_client(admin_user) -> Client:
 
 @pytest.fixture
 def test_cache(db, redis_container):
-    """Provide a cache instance for testing admin views.
+    """Provide a cache backend for testing admin views.
 
     Uses override_settings to configure the cache for the duration of the test.
     Depends on redis_container to ensure a Redis server is available.

@@ -1799,11 +1799,11 @@ class KeyValueCache(BaseCache):
     ) -> LuaScript:
         """Register a Lua script for later execution.
 
-        Scripts are registered per-cache-instance, allowing different caches
+        Scripts are registered per cache backend, allowing different caches
         to use different encoders and key prefixes.
 
         Args:
-            name: Unique name for the script within this cache instance.
+            name: Unique name for the script within this cache backend.
             script: Lua script source code.
             num_keys: Expected number of KEYS arguments (for documentation only).
             pre_func: Optional function to process keys/args before execution.

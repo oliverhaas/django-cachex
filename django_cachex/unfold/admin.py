@@ -66,7 +66,7 @@ with contextlib.suppress(admin.sites.NotRegistered):
 @admin.register(Cache)
 class CacheAdmin(_CacheBase):
     """
-    Unfold-themed admin for cache instances.
+    Unfold-themed admin for caches.
 
     Uses shared view logic with unfold templates.
     """
@@ -115,7 +115,7 @@ class CacheAdmin(_CacheBase):
         request: HttpRequest,
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
-        """List all configured cache instances using unfold templates."""
+        """List all configured caches using unfold templates."""
         return _index_view(request, UNFOLD_CACHE_CONFIG)
 
     def change_view(

@@ -28,7 +28,7 @@
 ### New Features
 
 - **Django Cache Admin**: Built-in admin interface for cache management
-  - Browse all configured cache instances
+  - Browse all configured caches
   - Search keys with wildcard patterns
   - View and edit cache values (strings, hashes, lists, sets, sorted sets)
   - Inspect TTL and modify expiration

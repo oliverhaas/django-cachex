@@ -1209,16 +1209,16 @@ if DjangoRedisCache is not None:
 
 
 def wrap_cache(cache: BaseCache) -> BaseCache:
-    """Extend a Django cache instance with cachex functionality.
+    """Extend a Django cache backend with cachex functionality.
 
-    This function patches the cache instance's class to add extended methods
+    This function patches the cache backend's class to add extended methods
     (keys, ttl, info, etc.) while preserving all original functionality.
 
     Args:
-        cache: A Django cache instance.
+        cache: A Django cache backend.
 
     Returns:
-        The same cache instance, now with extended methods available.
+        The same cache backend, now with extended methods available.
     """
     # Idempotency check - already wrapped
     if hasattr(cache, "_cachex_support"):

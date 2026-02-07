@@ -44,7 +44,7 @@ DUMMY_CACHES = {
 
 
 class TestWrapCache:
-    """Test that wrap_cache returns properly extended cache instances."""
+    """Test that wrap_cache returns properly extended cache backends."""
 
     @override_settings(CACHES=LOCMEM_CACHES)
     def test_locmem_returns_extended_locmem(self):
