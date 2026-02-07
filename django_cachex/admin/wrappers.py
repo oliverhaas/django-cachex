@@ -129,11 +129,16 @@ class BaseCacheExtensions:
         pattern: str = "*",
         count: int | None = None,
         version: int | None = None,
+        key_type: str | None = None,
     ) -> tuple[int, list[str]]:
         """Perform a single SCAN iteration.
 
         Simulates cursor-based pagination using keys(). The cursor is treated
         as an offset into the sorted list of keys.
+
+        Args:
+            key_type: Accepted for API compatibility but ignored — wrapped
+                backends don't have Redis-style key types.
 
         Returns:
             Tuple of (next_cursor, keys) where next_cursor is 0 if complete.

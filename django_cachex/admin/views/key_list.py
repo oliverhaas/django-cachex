@@ -24,6 +24,8 @@ from django_cachex.admin.views.base import (
 if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
 
+KEY_TYPES = ("string", "list", "set", "zset", "hash", "stream")
+
 
 def _key_list_view(  # noqa: C901, PLR0912, PLR0915
     request: HttpRequest,
@@ -35,6 +37,11 @@ def _key_list_view(  # noqa: C901, PLR0912, PLR0915
     help_active = show_help(request, "key_list", config.help_messages)
 
     cache = get_cache(cache_name)
+
+    # Type filter
+    type_filter = request.GET.get("type", "").strip().lower()
+    if type_filter not in KEY_TYPES:
+        type_filter = ""
 
     # Handle POST requests (bulk delete)
     if request.method == "POST":
@@ -53,7 +60,10 @@ def _key_list_view(  # noqa: C901, PLR0912, PLR0915
                         request,
                         f"Successfully deleted {deleted_count} key(s).",
                     )
-            return redirect(key_list_url(cache_name))
+            url = key_list_url(cache_name)
+            if type_filter:
+                url += f"&type={type_filter}"
+            return redirect(url)
 
     context = admin.site.each_context(request)
     context.update(
@@ -61,6 +71,8 @@ def _key_list_view(  # noqa: C901, PLR0912, PLR0915
             "title": f"Keys in '{cache_name}'",
             "cache_name": cache_name,
             "help_active": help_active,
+            "type_filter": type_filter,
+            "key_types": KEY_TYPES,
             # Show all columns for django-cachex native backends
             # These columns are populated per-key below; showing them is always safe
             "show_type": True,
@@ -91,6 +103,7 @@ def _key_list_view(  # noqa: C901, PLR0912, PLR0915
             cursor=cursor,
             pattern=pattern,
             count=count,
+            key_type=type_filter or None,
         )
         total_count = None  # scan() doesn't provide total count
 

@@ -16,7 +16,7 @@
 {% endblock %}
 
 {% block content %}
-<div id="content-main">
+<div id="content-main" x-data="{ filterOpen: false }">
 
     <!-- Error messages -->
     {% if error %}
@@ -31,7 +31,7 @@
     </div>
     {% endif %}
 
-    <div class="flex -mx-4 module" id="changelist" x-data="{ changeListWidth: 0 }">
+    <div class="flex -mx-4 module{% if type_filter %} filtered{% endif %}" id="changelist" x-data="{ changeListWidth: 0 }">
         <div class="result-list-wrapper changelist-form-container flex flex-row grow gap-6 min-w-0 px-4">
             <div class="grow min-w-0" x-resize="changeListWidth = $width">
 
@@ -40,6 +40,7 @@
                     <div id="toolbar">
                         <form id="changelist-search" method="get" role="search">
                             <input type="hidden" name="cache" value="{{ cache_name }}">
+                            {% if type_filter %}<input type="hidden" name="type" value="{{ type_filter }}">{% endif %}
                             <div class="bg-white border border-base-200 flex flex-row items-center px-3 rounded-default relative shadow-xs w-full focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-primary-600 lg:w-96 dark:bg-base-900 dark:border-base-700">
                                 <button type="submit" class="flex items-center focus:outline-hidden" id="searchbar-submit">
                                     <span class="material-symbols-outlined md-18 text-base-400 dark:text-base-500">search</span>
@@ -59,6 +60,12 @@
                            class="bg-white border-base-200 hover:text-primary-600 dark:bg-base-900 dark:border-base-700 dark:hover:text-primary-500 border cursor-pointer flex font-medium gap-2 items-center px-3 py-2 rounded-default shadow-xs text-sm">
                             {% trans 'Help' %}
                         </a>
+                        {% if key_types %}
+                        <a class="bg-white border-base-200 hover:text-primary-600 dark:bg-base-900 dark:border-base-700 dark:hover:text-primary-500 border cursor-pointer flex font-medium gap-2 group items-center px-3 py-2 rounded-default shadow-xs text-sm" x-on:click="filterOpen = true" x-on:keydown.escape.window="filterOpen = false">
+                            {% trans 'Filters' %}
+                            <span class="material-symbols-outlined md-18 ml-auto">filter_list</span>
+                        </a>
+                        {% endif %}
                         <a href="{% url 'admin:django_cachex_cache_change' cache_name %}"
                            class="bg-white border-base-200 hover:text-primary-600 dark:bg-base-900 dark:border-base-700 dark:hover:text-primary-500 border cursor-pointer flex font-medium gap-2 items-center px-3 py-2 rounded-default shadow-xs text-sm">
                             {% trans 'Cache Details' %}
@@ -206,6 +213,42 @@
 
             </div>
         </div>
+
+                {% if key_types %}
+                <div id="changelist-filter" class="backdrop-blur-xs bg-base-900/80 flex inset-0 z-60 fixed" x-show="filterOpen" x-cloak>
+                    <div id="changelist-filter-close" class="grow" x-on:click="filterOpen = false"></div>
+                    <div class="bg-white flex m-4 overflow-hidden rounded-default shadow-xs w-80 dark:bg-base-800">
+                        <div class="grow h-full overflow-auto relative">
+                            <div class="flex flex-col h-full">
+                                <div class="flex flex-col grow gap-4 overflow-auto *:mb-0">
+                                    <div class="flex flex-col gap-4 px-3 py-2.5 *:mb-0">
+                                        <div>
+                                            <h3 class="font-semibold mb-2 text-font-important-light dark:text-font-important-dark">
+                                                {% trans 'By type' %}
+                                            </h3>
+                                            <ul class="flex flex-col dark:bg-base-900 border border-base-200 min-w-20 rounded-default shadow-xs text-font-default-light dark:border-base-700 dark:text-font-default-dark w-full">
+                                                <li class="border-b border-base-200 last:border-b-0 dark:border-base-700 {% if not type_filter %}font-semibold text-primary-600 dark:text-primary-500{% else %}hover:text-base-700 dark:hover:text-base-200{% endif %}">
+                                                    <a href="?cache={{ cache_name }}{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}" title="{% trans 'All' %}" class="block py-2 px-3 hover:text-primary-600 dark:hover:text-primary-500">
+                                                        {% trans 'All' %}
+                                                    </a>
+                                                </li>
+                                                {% for kt in key_types %}
+                                                <li class="border-b border-base-200 last:border-b-0 dark:border-base-700 {% if type_filter == kt %}font-semibold text-primary-600 dark:text-primary-500{% else %}hover:text-base-700 dark:hover:text-base-200{% endif %}">
+                                                    <a href="?cache={{ cache_name }}&amp;type={{ kt }}{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}" title="{{ kt }}" class="block py-2 px-3 hover:text-primary-600 dark:hover:text-primary-500">
+                                                        {{ kt }}
+                                                    </a>
+                                                </li>
+                                                {% endfor %}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
     </div>
 </div>
 
@@ -246,13 +289,13 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
         <nav class="flex items-center gap-2 ml-auto">
             {% if cursor > 0 %}
-            <a href="?cache={{ cache_name }}{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}&amp;count={{ count }}"
+            <a href="?cache={{ cache_name }}{% if type_filter %}&amp;type={{ type_filter }}{% endif %}{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}&amp;count={{ count }}"
                class="px-3 py-1 text-sm rounded-default hover:bg-base-200 dark:hover:bg-base-700">
                 {% trans 'Start' %}
             </a>
             {% endif %}
             {% if has_next %}
-            <a href="?cache={{ cache_name }}{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}&amp;count={{ count }}&amp;cursor={{ next_cursor }}"
+            <a href="?cache={{ cache_name }}{% if type_filter %}&amp;type={{ type_filter }}{% endif %}{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}&amp;count={{ count }}&amp;cursor={{ next_cursor }}"
                class="px-3 py-1 text-sm rounded-default hover:bg-base-200 dark:hover:bg-base-700">
                 {% trans 'Next' %}
             </a>

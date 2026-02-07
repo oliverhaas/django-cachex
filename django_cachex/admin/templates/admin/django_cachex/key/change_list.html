@@ -68,8 +68,27 @@ document.addEventListener('DOMContentLoaded', function() {
     </ul>
     {% endblock %}
 
-    <div class="module" id="changelist">
+    <div class="module{% if type_filter %} filtered{% endif %}" id="changelist">
         <div class="changelist-form-container">
+            {% if key_types %}
+            <search id="changelist-filter" aria-labelledby="changelist-filter-header">
+                <h2 id="changelist-filter-header">{% trans 'Filter' %}</h2>
+                <details data-filter-title="type" open>
+                    <summary>{% trans 'By Type' %}</summary>
+                    <ul>
+                        <li{% if not type_filter %} class="selected"{% endif %}>
+                            <a href="?cache={{ cache_name }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}">{% trans 'All' %}</a>
+                        </li>
+                        {% for kt in key_types %}
+                        <li{% if type_filter == kt %} class="selected"{% endif %}>
+                            <a href="?cache={{ cache_name }}&type={{ kt }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}">{{ kt }}</a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </details>
+            </search>
+            {% endif %}
+
             <div>
                 {% if error %}
                 <p class="errornote">
@@ -86,6 +105,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <form id="changelist-search" method="get" role="search">
                         <div>
                             <input type="hidden" name="cache" value="{{ cache_name }}">
+                            {% if type_filter %}<input type="hidden" name="type" value="{{ type_filter }}">{% endif %}
                             <label for="searchbar"><img src="{% static "admin/img/search.svg" %}" alt="Search"></label>
                             <input type="text" size="40" name="q" value="{{ search_query }}" id="searchbar">
                             <input type="submit" value="{% trans 'Search' %}">
@@ -188,10 +208,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 <nav class="paginator">
                     <ul>
                         {% if cursor > 0 %}
-                        <li><a href="?cache={{ cache_name }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}&count={{ count }}" class="button btn-small">{% trans 'Start' %}</a></li>
+                        <li><a href="?cache={{ cache_name }}{% if type_filter %}&type={{ type_filter }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}&count={{ count }}" class="button btn-small">{% trans 'Start' %}</a></li>
                         {% endif %}
                         {% if has_next %}
-                        <li><a href="?cache={{ cache_name }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}&count={{ count }}&cursor={{ next_cursor }}" class="button btn-small">{% trans 'Next' %}</a></li>
+                        <li><a href="?cache={{ cache_name }}{% if type_filter %}&type={{ type_filter }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}&count={{ count }}&cursor={{ next_cursor }}" class="button btn-small">{% trans 'Next' %}</a></li>
                         {% endif %}
                     </ul>
                     {% if total_keys is not None %}

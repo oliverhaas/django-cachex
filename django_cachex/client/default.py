@@ -782,6 +782,7 @@ class KeyValueCacheClient:
         cursor: int = 0,
         match: str | None = None,
         count: int | None = None,
+        _type: str | None = None,
     ) -> tuple[int, list[str]]:
         """Perform a single SCAN iteration returning cursor and keys.
 
@@ -789,6 +790,7 @@ class KeyValueCacheClient:
             cursor: Cursor position (0 to start a new scan)
             match: Pattern to match keys against
             count: Hint for number of keys to return per call
+            _type: Filter by key type (e.g. "string", "list", "set")
 
         Returns:
             Tuple of (next_cursor, list of keys). When next_cursor is 0,
@@ -799,7 +801,12 @@ class KeyValueCacheClient:
         if count is None:
             count = self._default_scan_itersize
 
-        next_cursor, keys = client.scan(cursor=cursor, match=match, count=count)
+        next_cursor, keys = client.scan(
+            cursor=cursor,
+            match=match,
+            count=count,
+            _type=_type,
+        )
         decoded_keys = [k.decode() if isinstance(k, bytes) else k for k in keys]
         return next_cursor, decoded_keys
 

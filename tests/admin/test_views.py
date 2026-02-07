@@ -433,6 +433,24 @@ class TestKeyListView:
         # Should show result count somewhere (either "3 results" or "3 keys")
         assert "3" in content
 
+    def test_key_list_type_filter(
+        self,
+        admin_client: Client,
+        test_cache: KeyValueCache,
+    ):
+        """Type filter should only show keys of the selected type."""
+        test_cache.set("typefilter:str", "value")
+        test_cache.rpush("typefilter:lst", "item1")
+
+        url = _key_list_url("default")
+        response = admin_client.get(url + "&q=typefilter:*&type=string")
+        assert response.status_code == 200
+        content = response.content.decode()
+        # Should show the string key
+        assert "typefilter:str" in content
+        # Should not show the list key
+        assert "typefilter:lst" not in content
+
 
 class TestKeyDetailView:
     """Tests for the key detail view."""

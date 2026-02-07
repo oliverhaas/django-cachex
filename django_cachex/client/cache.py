@@ -638,6 +638,7 @@ class KeyValueCache(BaseCache):
         pattern: str = "*",
         count: int | None = None,
         version: int | None = None,
+        key_type: str | None = None,
     ) -> tuple[int, list[str]]:
         """Perform a single SCAN iteration returning cursor and keys.
 
@@ -646,13 +647,19 @@ class KeyValueCache(BaseCache):
             pattern: Pattern to match keys against
             count: Hint for number of keys to return per call
             version: Key version to use
+            key_type: Filter by key type (e.g. "string", "list", "set")
 
         Returns:
             Tuple of (next_cursor, list of user keys). When next_cursor is 0,
             the scan is complete.
         """
         full_pattern = self.make_pattern(pattern, version=version)
-        next_cursor, raw_keys = self._cache.scan(cursor=cursor, match=full_pattern, count=count)
+        next_cursor, raw_keys = self._cache.scan(
+            cursor=cursor,
+            match=full_pattern,
+            count=count,
+            _type=key_type,
+        )
         return next_cursor, [self.reverse_key(k) for k in raw_keys]
 
     def delete_pattern(
