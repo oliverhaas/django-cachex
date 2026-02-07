@@ -917,6 +917,7 @@ UNSUPPORTED_OPERATIONS = [
     ("zrem", ("key", "member")),
     ("zpopmin", ("key",)),
     ("zpopmax", ("key",)),
+    ("xlen", ("key",)),
 ]
 
 

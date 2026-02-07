@@ -15,7 +15,7 @@ from django.core.cache import caches
 
 from django_cachex.exceptions import NotSupportedError
 
-from .wrappers import wrap_cache
+from .wrappers import _deep_getsizeof, wrap_cache
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -216,28 +216,30 @@ def get_size(cache: Any, key: str, key_type: str | None = None) -> int | None:
     if not key_type:
         return None
 
+    def _string_size() -> int | None:
+        # Use STRLEN via raw client when available
+        try:
+            client = cache.get_client(write=False)
+            full_key = cache.make_key(key)
+            return client.strlen(full_key)
+        except (NotSupportedError, AttributeError):
+            pass
+        # Fallback: compute Python object size (e.g. LocMemCache)
+        value = cache.get(key)
+        return _deep_getsizeof(value) if value is not None else None
+
     try:
         size_methods: dict[str, Any] = {
+            "string": _string_size,
             "list": lambda: cache.llen(key),
             "set": lambda: cache.scard(key),
             "hash": lambda: cache.hlen(key),
             "zset": lambda: cache.zcard(key),
+            "stream": lambda: cache.xlen(key),
         }
 
-        if hasattr(cache, "_cache") and hasattr(cache._cache, "xlen"):
-            size_methods["stream"] = lambda: cache._cache.xlen(key)
-
         method = size_methods.get(key_type)
-        if method:
-            return method()
-
-        # For strings, we need raw client access for STRLEN
-        if key_type == "string" and hasattr(cache, "get_client"):
-            client = cache.get_client(write=False)
-            full_key = cache.make_key(key)
-            return client.strlen(full_key)
-
-        return None
+        return method() if method else None
     except Exception:  # noqa: BLE001
         return None
 

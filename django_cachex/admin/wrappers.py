@@ -626,6 +626,14 @@ class BaseCacheExtensions:
         raise NotSupportedError("zmscore", self.__class__.__name__)
 
     # =========================================================================
+    # Stream Operations
+    # =========================================================================
+
+    def xlen(self, key: KeyT, version: int | None = None) -> int:
+        """Get the number of entries in a stream."""
+        raise NotSupportedError("xlen", self.__class__.__name__)
+
+    # =========================================================================
     # Client Access & Info
     # =========================================================================
 

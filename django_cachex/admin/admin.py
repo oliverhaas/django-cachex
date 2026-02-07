@@ -172,7 +172,7 @@ class KeyAdmin(_KeyBase):
             "Values are displayed and edited as JSON. Strings appear quoted, "
             "numbers (integers, floats) appear unquoted, "
             "objects as <code>{...}</code>, arrays as <code>[...]</code>.<br>"
-            "If the existing value is not JSON-serializable, editing is disabled "
+            "If the existing value is not JSON-serializable, updating is disabled "
             "for safety. Any input must be valid JSON.<br><br>"
             "<strong>Operations</strong><br>"
             "• Edit the value in the textarea and click <strong>Update</strong><br>"
