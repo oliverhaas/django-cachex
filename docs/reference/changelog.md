@@ -1,74 +1,5 @@
 # Changelog
 
-## 0.1.0b5 (February 2026)
-
-### New Features
-
-- **Expanded cache backend support**: The admin interface now supports Django's builtin cache backends through wrapper classes
-  - `LocMemCache`: Full support including key listing, TTL inspection, and memory statistics
-  - `DatabaseCache`: Key listing, TTL inspection, and database statistics
-  - `FileBasedCache`: File listing (as MD5 hashes) and disk usage statistics
-  - `Memcached`: Basic stats when available
-  - Django's `RedisCache`: Basic support (full features require django-cachex backends)
-
-### Improvements
-
-- Standardized `info()` output format across all wrapped cache backends
-- Added TTL support (`ttl()`, `expire()`, `persist()`) for LocMemCache
-- Improved cache admin UX: operations that aren't supported now fail gracefully instead of hiding UI elements
-
-### Bug Fixes
-
-- Fixed LocMemCache keys showing "not found" when clicked in admin
-- Fixed cache query parameter preservation in key search form
-- Fixed editing for wrapped cache backends
-
-## 0.1.0b4 (January 2026)
-
-### New Features
-
-- **Django Cache Admin**: Built-in admin interface for cache management
-  - Browse all configured caches
-  - Search keys with wildcard patterns
-  - View and edit cache values (strings, hashes, lists, sets, sorted sets)
-  - Inspect TTL and modify expiration
-  - View server info and memory statistics
-  - Flush individual caches
-  - Bulk delete keys
-
-- **Django Unfold Theme Support**: Alternative admin styling for django-unfold users
-  - Use `django_cachex.unfold` instead of `django_cachex.admin`
-  - Consistent styling with Unfold's modern admin theme
-
-- **Example Projects**: Added example projects demonstrating various configurations
-  - `examples/simple/` - Basic setup with ValkeyCache and LocMemCache
-  - `examples/full/` - Multiple backends including Sentinel and Cluster
-  - `examples/unfold/` - Django Unfold theme integration
-
-### New Classes
-
-- `CacheService` - Unified service layer for cache admin operations
-- `BaseCacheWrapper` - Base class for wrapping Django builtin cache backends
-- `LocMemCacheWrapper`, `DatabaseCacheWrapper`, `FileCacheWrapper`, etc.
-
-## 0.1.0b3 (January 2026)
-
-### New Features
-
-- **Lua Script Interface**: High-level API for registering and executing Lua scripts with automatic key prefixing and value encoding/decoding
-  - `cache.register_script()` to register scripts with pre/post processing hooks
-  - `cache.eval_script()` and `cache.aeval_script()` for sync/async execution
-  - `pipe.eval_script()` for pipeline support
-  - Pre-built helpers: `keys_only_pre`, `full_encode_pre`, `decode_single_post`, `decode_list_post`
-  - `ScriptHelpers` class exposes `make_key`, `encode`, `decode` for custom hooks
-  - Automatic SHA caching with NOSCRIPT fallback
-
-### New Classes
-
-- `LuaScript` - Dataclass for registered scripts with metadata
-- `ScriptHelpers` - Helper functions passed to pre/post processing hooks
-- `ScriptNotRegisteredError` - Exception for unregistered script names
-
 ## 0.1.0 (February 2026)
 
 Initial stable release of django-cachex.
@@ -94,6 +25,7 @@ Initial stable release of django-cachex.
 - **Django Cache Admin** for cache inspection and management
   - Browse, search, edit, and delete cache keys
   - View server info, memory statistics, and slowlog
+  - Key type filter sidebar
   - Support for Django builtin backends (LocMemCache, DatabaseCache, FileBasedCache) via wrappers
   - Django Unfold theme support (`django_cachex.unfold`)
 - **Async support** for all extended methods
@@ -110,3 +42,88 @@ Initial stable release of django-cachex.
 - Python 3.12+
 - Django 5.2+
 - valkey-py 6+ or redis-py 6+
+
+---
+
+## Pre-release History
+
+### 0.1.0b6 (February 2026)
+
+#### New Features
+
+- **Key type filter**: Filter keys by type (string, list, set, hash, zset, stream) in the admin key list sidebar
+- **LocMemCache data structure operations**: List, set, and hash operations now work with LocMemCache wrappers
+- **LocMemCache type detection**: Automatically detects stored Python types (list, set, dict) and maps them to Redis equivalents
+- **`KeyType` StrEnum**: Centralized enum for Redis key types, replacing scattered string literals
+
+#### Improvements
+
+- Major admin refactoring: replaced service layer with helpers module, simplified views, restructured templates
+- Unified admin views between classic Django admin and Unfold theme
+- Added `_cachex_support` ClassVar to `CacheProtocol` for standardized support level detection
+- Mixin-based class patching for cache wrappers (replacing intermediate extension classes)
+- Extensive dead code cleanup across the codebase
+
+#### Bug Fixes
+
+- Fixed unfold template differences with classic admin
+- Fixed `key_type` variable usage in unfold key detail template
+- Fixed mypy and ty type-checking errors
+- Fixed `!r` format spec for `KeyT` in error messages
+
+### 0.1.0b5 (February 2026)
+
+#### New Features
+
+- **Expanded cache backend support**: The admin interface now supports Django's builtin cache backends through wrapper classes
+  - `LocMemCache`: Full support including key listing, TTL inspection, and memory statistics
+  - `DatabaseCache`: Key listing, TTL inspection, and database statistics
+  - `FileBasedCache`: File listing (as MD5 hashes) and disk usage statistics
+  - `Memcached`: Basic stats when available
+  - Django's `RedisCache`: Basic support (full features require django-cachex backends)
+
+#### Improvements
+
+- Standardized `info()` output format across all wrapped cache backends
+- Added TTL support (`ttl()`, `expire()`, `persist()`) for LocMemCache
+- Improved cache admin UX: operations that aren't supported now fail gracefully instead of hiding UI elements
+
+#### Bug Fixes
+
+- Fixed LocMemCache keys showing "not found" when clicked in admin
+- Fixed cache query parameter preservation in key search form
+- Fixed editing for wrapped cache backends
+
+### 0.1.0b4 (January 2026)
+
+#### New Features
+
+- **Django Cache Admin**: Built-in admin interface for cache management
+  - Browse all configured caches
+  - Search keys with wildcard patterns
+  - View and edit cache values (strings, hashes, lists, sets, sorted sets)
+  - Inspect TTL and modify expiration
+  - View server info and memory statistics
+  - Flush individual caches
+  - Bulk delete keys
+
+- **Django Unfold Theme Support**: Alternative admin styling for django-unfold users
+  - Use `django_cachex.unfold` instead of `django_cachex.admin`
+  - Consistent styling with Unfold's modern admin theme
+
+- **Example Projects**: Added example projects demonstrating various configurations
+  - `examples/simple/` - Basic setup with ValkeyCache and LocMemCache
+  - `examples/full/` - Multiple backends including Sentinel and Cluster
+  - `examples/unfold/` - Django Unfold theme integration
+
+### 0.1.0b3 (January 2026)
+
+#### New Features
+
+- **Lua Script Interface**: High-level API for registering and executing Lua scripts with automatic key prefixing and value encoding/decoding
+  - `cache.register_script()` to register scripts with pre/post processing hooks
+  - `cache.eval_script()` and `cache.aeval_script()` for sync/async execution
+  - `pipe.eval_script()` for pipeline support
+  - Pre-built helpers: `keys_only_pre`, `full_encode_pre`, `decode_single_post`, `decode_list_post`
+  - `ScriptHelpers` class exposes `make_key`, `encode`, `decode` for custom hooks
+  - Automatic SHA caching with NOSCRIPT fallback

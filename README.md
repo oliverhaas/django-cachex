@@ -50,10 +50,17 @@ INSTALLED_APPS = [
 ]
 ```
 
+Browse all configured caches, search and filter keys by type, and manage values directly:
+
+![Cache list](docs/assets/screenshot-cache-list.png)
+![Key list](docs/assets/screenshot-key-list.png)
+![Key detail](docs/assets/screenshot-key-detail.png)
+
 Features:
 - Browse all configured cache backends (Valkey, Redis, LocMemCache, DatabaseCache, and more)
 - Search keys with wildcard patterns (`user:*`, `*:session`)
-- View and edit values (strings, hashes, lists, sets, sorted sets)
+- Filter by key type (string, list, set, hash, zset, stream)
+- View and edit values with type-specific operations
 - Inspect and modify TTL
 - View server info and memory statistics
 - Flush caches
