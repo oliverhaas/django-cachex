@@ -11,12 +11,10 @@ from .base import (
     ViewConfig,
     cache_list_url,
     format_value_for_display,
-    get_page_range,
     is_json_serializable,
     key_add_url,
     key_detail_url,
     key_list_url,
-    parse_timeout,
     show_help,
 )
 from .cache_detail import (
@@ -51,7 +49,6 @@ __all__ = [
     "cache_detail",
     "cache_list_url",
     "format_value_for_display",
-    "get_page_range",
     "index",
     "is_json_serializable",
     "key_add",
@@ -60,6 +57,5 @@ __all__ = [
     "key_detail_url",
     "key_list",
     "key_list_url",
-    "parse_timeout",
     "show_help",
 ]
