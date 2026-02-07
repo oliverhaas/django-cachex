@@ -62,6 +62,10 @@ def _key_list_view(  # noqa: C901, PLR0912, PLR0915
                     )
             return redirect(key_list_url(cache_name))
 
+    # Determine which columns to show based on backend support level
+    support = getattr(cache, "_cachex_support", "limited")
+    is_native = support == "cachex"
+
     context = admin.site.each_context(request)
     context.update(
         {
@@ -69,11 +73,11 @@ def _key_list_view(  # noqa: C901, PLR0912, PLR0915
             "cache_name": cache_name,
             "cache_config": cache_config,
             "help_active": help_active,
-            # Show all columns for django-cachex native backends
-            # These columns are populated per-key below; showing them is always safe
-            "show_type": True,
+            # Type and size require native cachex backends
+            # TTL is available for all backends
+            "show_type": is_native,
             "show_ttl": True,
-            "show_size": True,
+            "show_size": is_native,
         },
     )
 
@@ -128,11 +132,12 @@ def _key_list_view(  # noqa: C901, PLR0912, PLR0915
                 key_entry["ttl"] = ttl
                 if ttl >= 0:
                     key_entry["ttl_expires_at"] = timezone.now() + timedelta(seconds=ttl)
-            with contextlib.suppress(Exception):
-                key_type = cache.type(user_key)
-                key_entry["type"] = key_type
-            with contextlib.suppress(Exception):
-                key_entry["size"] = get_size(cache, user_key, key_type)
+            if is_native:
+                with contextlib.suppress(Exception):
+                    key_type = cache.type(user_key)
+                    key_entry["type"] = key_type
+                with contextlib.suppress(Exception):
+                    key_entry["size"] = get_size(cache, user_key, key_type)
 
         context["keys_data"] = keys_data
         context["total_keys"] = total_count  # May be None
