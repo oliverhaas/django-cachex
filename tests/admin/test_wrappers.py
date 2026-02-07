@@ -161,13 +161,6 @@ class TestLocMemCacheExtensions:
     def test_persist_missing_key(self):
         assert self.cache.persist("nonexistent") is False
 
-    def test_type_existing_key(self):
-        self.cache.set("key1", "value1")
-        assert self.cache.type("key1") == "string"
-
-    def test_type_missing_key(self):
-        assert self.cache.type("nonexistent") is None
-
     def test_info_returns_dict(self):
         self.cache.set("key1", "value1")
         info = self.cache.info()
@@ -299,6 +292,7 @@ class TestDummyCacheExtensions:
 UNSUPPORTED_OPERATIONS = [
     ("keys", ("*",)),
     ("ttl", ("key",)),
+    ("type", ("key",)),
     ("expire", ("key", 100)),
     ("persist", ("key",)),
     ("lrange", ("key", 0, -1)),

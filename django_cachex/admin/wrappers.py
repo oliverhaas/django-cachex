@@ -84,9 +84,7 @@ class BaseCacheExtensions:
 
     def type(self, key: KeyT, version: int | None = None) -> str | None:
         """Get the data type of a key."""
-        sentinel = object()
-        value = self.get(key, sentinel, version=version)  # type: ignore[attr-defined]
-        return "string" if value is not sentinel else None
+        raise NotSupportedError("type", self.__class__.__name__)
 
     def persist(self, key: KeyT, version: int | None = None) -> bool:
         """Remove the TTL from a key."""

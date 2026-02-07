@@ -84,8 +84,28 @@ class CacheService:
         Returns:
             Dict with key, value, exists, type, expiry fields.
         """
-        # Check type first - works for both native (Redis types) and wrapped (always "string")
-        key_type = self.type(key)
+        # Try to get the key type (only works for native backends)
+        try:
+            key_type = self.type(key)
+        except NotSupportedError:
+            # Wrapped backend - fall back to get() to check existence
+            sentinel = object()
+            value = self._cache.get(key, sentinel)
+            if value is sentinel:
+                return {
+                    "key": key,
+                    "value": None,
+                    "exists": False,
+                    "type": None,
+                    "expiry": None,
+                }
+            return {
+                "key": key,
+                "value": value,
+                "exists": True,
+                "type": "string",  # Wrapped backends only support strings
+                "expiry": None,
+            }
 
         if key_type is None:
             return {
