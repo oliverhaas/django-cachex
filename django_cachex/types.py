@@ -12,7 +12,7 @@ just for type annotations.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, TypeVar, runtime_checkable
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -98,6 +98,9 @@ class CacheProtocol(Protocol):
     Since protocols cannot inherit from regular classes, this replicates
     the BaseCache interface plus all django-cachex extensions.
     """
+
+    # Support level: "cachex" (native), "wrapped" (Django builtin), "limited" (unknown)
+    _cachex_support: ClassVar[str]
 
     # =========================================================================
     # Properties (from BaseCache)
