@@ -70,19 +70,6 @@ class CacheAdmin(_CacheBase):
             "• <strong>Keyspace</strong> — Keys per database<br>"
             "• <strong>Slow Log</strong> — Slow queries for performance analysis",
         ),
-        "cache_slowlog": mark_safe(
-            "<strong>Slow Query Log</strong><br>"
-            "Commands that exceeded the server's slowlog threshold.<br><br>"
-            "<strong>Columns</strong><br>"
-            "• <strong>ID</strong> — Unique log entry identifier<br>"
-            "• <strong>Time</strong> — When the command was executed<br>"
-            "• <strong>Duration</strong> — Execution time in microseconds<br>"
-            "• <strong>Command</strong> — The slow command with arguments<br>"
-            "• <strong>Client</strong> — Client address and name<br><br>"
-            "<strong>Configuration</strong><br>"
-            "The threshold is set via Redis <code>slowlog-log-slower-than</code> config. "
-            "Use the dropdown to show 10-100 entries.",
-        ),
     }
 
     # Disable standard CRUD operations
