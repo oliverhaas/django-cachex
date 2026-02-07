@@ -899,7 +899,7 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
         if value is _MISSING:
             return None
         if not isinstance(value, list):
-            msg = f"Key '{key}' does not hold a list value."
+            msg = f"Key {key!r} does not hold a list value."
             raise TypeError(msg)
         return value
 
@@ -1069,7 +1069,7 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
         if value is _MISSING:
             return None
         if not isinstance(value, _set):
-            msg = f"Key '{key}' does not hold a set value."
+            msg = f"Key {key!r} does not hold a set value."
             raise TypeError(msg)
         return value
 
@@ -1177,7 +1177,7 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
         if value is _MISSING:
             return None
         if not isinstance(value, dict) or not all(isinstance(k, str) for k in value):
-            msg = f"Key '{key}' does not hold a hash value."
+            msg = f"Key {key!r} does not hold a hash value."
             raise TypeError(msg)
         return value
 
