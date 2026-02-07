@@ -5,11 +5,12 @@ from django.core.cache import caches
 from django.test import override_settings
 
 from django_cachex.admin.wrappers import (
-    BaseCacheWrapper,
-    DatabaseCacheWrapper,
-    DummyCacheWrapper,
-    LocMemCacheWrapper,
+    BaseCacheExtensions,
+    ExtendedDatabaseCache,
+    ExtendedDummyCache,
+    ExtendedLocMemCache,
     get_wrapper,
+    wrap_cache,
 )
 from django_cachex.exceptions import NotSupportedError
 
@@ -39,132 +40,144 @@ DUMMY_CACHES = {
 
 
 # =============================================================================
-# get_wrapper factory tests
+# wrap_cache / get_wrapper factory tests
 # =============================================================================
 
 
-class TestGetWrapper:
-    """Test that get_wrapper returns the correct wrapper class."""
+class TestWrapCache:
+    """Test that wrap_cache returns properly extended cache instances."""
 
     @override_settings(CACHES=LOCMEM_CACHES)
-    def test_locmem_returns_locmem_wrapper(self):
+    def test_locmem_returns_extended_locmem(self):
         cache = caches["locmem"]
-        wrapper = get_wrapper(cache, "locmem")
-        assert isinstance(wrapper, LocMemCacheWrapper)
+        wrapped = wrap_cache(cache)
+        assert isinstance(wrapped, ExtendedLocMemCache)
+        assert wrapped is cache  # Same instance, class patched
 
     @override_settings(CACHES=DATABASE_CACHES)
-    def test_database_returns_database_wrapper(self, db):
+    def test_database_returns_extended_database(self, db):
         from django.core.management import call_command
 
         call_command("createcachetable", verbosity=0)
         cache = caches["dbcache"]
-        wrapper = get_wrapper(cache, "dbcache")
-        assert isinstance(wrapper, DatabaseCacheWrapper)
+        wrapped = wrap_cache(cache)
+        assert isinstance(wrapped, ExtendedDatabaseCache)
+        assert wrapped is cache
 
     @override_settings(CACHES=DUMMY_CACHES)
-    def test_dummy_returns_dummy_wrapper(self):
+    def test_dummy_returns_extended_dummy(self):
         cache = caches["dummy"]
-        wrapper = get_wrapper(cache, "dummy")
-        assert isinstance(wrapper, DummyCacheWrapper)
+        wrapped = wrap_cache(cache)
+        assert isinstance(wrapped, ExtendedDummyCache)
+        assert wrapped is cache
 
-    @override_settings(
-        CACHES={
-            "unknown": {
-                "BACKEND": "some.unknown.Backend",
-            },
-        },
-    )
-    def test_unknown_returns_base_wrapper(self):
-        # Can't actually create the cache, but test the mapping logic
-        wrapper_cls = BaseCacheWrapper
-        assert wrapper_cls is not None
+    @override_settings(CACHES=LOCMEM_CACHES)
+    def test_wrap_cache_is_idempotent(self):
+        cache = caches["locmem"]
+        wrapped1 = wrap_cache(cache)
+        wrapped2 = wrap_cache(wrapped1)
+        assert wrapped1 is wrapped2
+        assert getattr(wrapped2, "_cachex_extended", False) is True
+
+    @override_settings(CACHES=LOCMEM_CACHES)
+    def test_get_wrapper_legacy_alias(self):
+        cache = caches["locmem"]
+        wrapped = get_wrapper(cache, "locmem")
+        assert isinstance(wrapped, ExtendedLocMemCache)
 
 
 # =============================================================================
-# LocMemCache wrapper tests
+# LocMemCache extension tests
 # =============================================================================
 
 
-class TestLocMemCacheWrapper:
-    """Parametrized tests for LocMemCache wrapper."""
+class TestLocMemCacheExtensions:
+    """Parametrized tests for LocMemCache extensions."""
 
     @pytest.fixture(autouse=True)
     def _setup_cache(self):
         with override_settings(CACHES=LOCMEM_CACHES):
             cache = caches["locmem"]
             cache.clear()
-            self.wrapper = LocMemCacheWrapper(cache, "locmem")
+            self.cache = wrap_cache(cache)
             yield
 
     def test_set_and_get(self):
-        self.wrapper.set("key1", "value1")
-        assert self.wrapper.get("key1") == "value1"
+        self.cache.set("key1", "value1")
+        assert self.cache.get("key1") == "value1"
 
     def test_get_missing_returns_default(self):
-        assert self.wrapper.get("missing") is None
-        assert self.wrapper.get("missing", "default") == "default"
+        assert self.cache.get("missing") is None
+        assert self.cache.get("missing", "default") == "default"
 
     def test_delete(self):
-        self.wrapper.set("key1", "value1")
-        assert self.wrapper.delete("key1") is True
-        assert self.wrapper.get("key1") is None
+        self.cache.set("key1", "value1")
+        assert self.cache.delete("key1") is True
+        assert self.cache.get("key1") is None
 
     def test_clear(self):
-        self.wrapper.set("key1", "value1")
-        self.wrapper.set("key2", "value2")
-        self.wrapper.clear()
-        assert self.wrapper.get("key1") is None
+        self.cache.set("key1", "value1")
+        self.cache.set("key2", "value2")
+        self.cache.clear()
+        assert self.cache.get("key1") is None
 
     def test_keys_returns_all(self):
-        self.wrapper.set("alpha", 1)
-        self.wrapper.set("beta", 2)
-        keys = self.wrapper.keys()
+        self.cache.set("alpha", 1)
+        self.cache.set("beta", 2)
+        keys = self.cache.keys()
         assert "alpha" in keys
         assert "beta" in keys
 
     def test_keys_with_pattern(self):
-        self.wrapper.set("user:1", "alice")
-        self.wrapper.set("user:2", "bob")
-        self.wrapper.set("session:abc", "data")
-        keys = self.wrapper.keys("user:*")
+        self.cache.set("user:1", "alice")
+        self.cache.set("user:2", "bob")
+        self.cache.set("session:abc", "data")
+        keys = self.cache.keys("user:*")
         assert "user:1" in keys
         assert "user:2" in keys
         assert "session:abc" not in keys
 
     def test_ttl_missing_key(self):
-        assert self.wrapper.ttl("nonexistent") == -2
+        assert self.cache.ttl("nonexistent") == -2
 
     def test_ttl_persistent_key(self):
-        self.wrapper.set("forever", "value", timeout=None)
-        assert self.wrapper.ttl("forever") == -1
+        self.cache.set("forever", "value", timeout=None)
+        assert self.cache.ttl("forever") == -1
 
     def test_ttl_expiring_key(self):
-        self.wrapper.set("temp", "value", timeout=3600)
-        ttl = self.wrapper.ttl("temp")
+        self.cache.set("temp", "value", timeout=3600)
+        ttl = self.cache.ttl("temp")
         assert 3590 <= ttl <= 3600
 
     def test_expire(self):
-        self.wrapper.set("key1", "value1", timeout=None)
-        assert self.wrapper.ttl("key1") == -1
-        self.wrapper.expire("key1", 100)
-        ttl = self.wrapper.ttl("key1")
+        self.cache.set("key1", "value1", timeout=None)
+        assert self.cache.ttl("key1") == -1
+        self.cache.expire("key1", 100)
+        ttl = self.cache.ttl("key1")
         assert 90 <= ttl <= 100
 
     def test_expire_missing_key(self):
-        assert self.wrapper.expire("nonexistent", 100) is False
+        assert self.cache.expire("nonexistent", 100) is False
 
     def test_persist(self):
-        self.wrapper.set("key1", "value1", timeout=60)
-        assert self.wrapper.ttl("key1") > 0
-        self.wrapper.persist("key1")
-        assert self.wrapper.ttl("key1") == -1
+        self.cache.set("key1", "value1", timeout=60)
+        assert self.cache.ttl("key1") > 0
+        self.cache.persist("key1")
+        assert self.cache.ttl("key1") == -1
 
     def test_persist_missing_key(self):
-        assert self.wrapper.persist("nonexistent") is False
+        assert self.cache.persist("nonexistent") is False
+
+    def test_type_existing_key(self):
+        self.cache.set("key1", "value1")
+        assert self.cache.type("key1") == "string"
+
+    def test_type_missing_key(self):
+        assert self.cache.type("nonexistent") is None
 
     def test_info_returns_dict(self):
-        self.wrapper.set("key1", "value1")
-        info = self.wrapper.info()
+        self.cache.set("key1", "value1")
+        info = self.cache.info()
         assert info["backend"] == "LocMemCache"
         assert "server" in info
         assert "memory" in info
@@ -173,12 +186,12 @@ class TestLocMemCacheWrapper:
 
 
 # =============================================================================
-# DatabaseCache wrapper tests
+# DatabaseCache extension tests
 # =============================================================================
 
 
-class TestDatabaseCacheWrapper:
-    """Tests for DatabaseCache wrapper."""
+class TestDatabaseCacheExtensions:
+    """Tests for DatabaseCache extensions."""
 
     @pytest.fixture(autouse=True)
     def _setup_cache(self, db):
@@ -188,35 +201,35 @@ class TestDatabaseCacheWrapper:
             call_command("createcachetable", verbosity=0)
             cache = caches["dbcache"]
             cache.clear()
-            self.wrapper = DatabaseCacheWrapper(cache, "dbcache")
+            self.cache = wrap_cache(cache)
             yield
 
     def test_set_and_get(self):
-        self.wrapper.set("key1", "value1")
-        assert self.wrapper.get("key1") == "value1"
+        self.cache.set("key1", "value1")
+        assert self.cache.get("key1") == "value1"
 
     def test_delete(self):
-        self.wrapper.set("key1", "value1")
-        self.wrapper.delete("key1")
-        assert self.wrapper.get("key1") is None
+        self.cache.set("key1", "value1")
+        self.cache.delete("key1")
+        assert self.cache.get("key1") is None
 
     def test_clear(self):
-        self.wrapper.set("key1", "value1")
-        self.wrapper.clear()
-        assert self.wrapper.get("key1") is None
+        self.cache.set("key1", "value1")
+        self.cache.clear()
+        assert self.cache.get("key1") is None
 
     def test_keys_returns_all(self):
-        self.wrapper.set("alpha", 1)
-        self.wrapper.set("beta", 2)
-        keys = self.wrapper.keys()
+        self.cache.set("alpha", 1)
+        self.cache.set("beta", 2)
+        keys = self.cache.keys()
         assert len(keys) >= 2
 
     def test_ttl_missing_key(self):
-        assert self.wrapper.ttl("nonexistent") == -2
+        assert self.cache.ttl("nonexistent") == -2
 
     def test_ttl_expiring_key(self):
-        self.wrapper.set("temp", "value", timeout=3600)
-        ttl = self.wrapper.ttl("temp")
+        self.cache.set("temp", "value", timeout=3600)
+        ttl = self.cache.ttl("temp")
         # SQLite stores expires as datetime strings; the TTL arithmetic
         # may not work correctly on SQLite (returns -2). This is a known
         # limitation since DatabaseCache is primarily used with PostgreSQL/MySQL.
@@ -228,61 +241,65 @@ class TestDatabaseCacheWrapper:
             assert 3500 <= ttl <= 3600
 
     def test_info_returns_dict(self):
-        self.wrapper.set("key1", "value1")
-        info = self.wrapper.info()
+        self.cache.set("key1", "value1")
+        info = self.cache.info()
         assert info["backend"] == "DatabaseCache"
         assert "keyspace" in info
 
     def test_expire_not_supported(self):
-        self.wrapper.set("key1", "value1")
+        self.cache.set("key1", "value1")
         with pytest.raises(NotSupportedError):
-            self.wrapper.expire("key1", 100)
+            self.cache.expire("key1", 100)
 
     def test_persist_not_supported(self):
         with pytest.raises(NotSupportedError):
-            self.wrapper.persist("key1")
+            self.cache.persist("key1")
 
 
 # =============================================================================
-# DummyCache wrapper tests
+# DummyCache extension tests
 # =============================================================================
 
 
-class TestDummyCacheWrapper:
-    """Tests for DummyCache wrapper."""
+class TestDummyCacheExtensions:
+    """Tests for DummyCache extensions."""
 
     @pytest.fixture(autouse=True)
     def _setup_cache(self):
         with override_settings(CACHES=DUMMY_CACHES):
             cache = caches["dummy"]
-            self.wrapper = DummyCacheWrapper(cache, "dummy")
+            self.cache = wrap_cache(cache)
             yield
 
     def test_get_returns_default(self):
-        assert self.wrapper.get("key1") is None
-        assert self.wrapper.get("key1", "default") == "default"
+        assert self.cache.get("key1") is None
+        assert self.cache.get("key1", "default") == "default"
 
     def test_set_is_noop(self):
-        assert self.wrapper.set("key1", "value1") is True
-        assert self.wrapper.get("key1") is None
+        # DummyCache.set() returns None per Django's implementation
+        self.cache.set("key1", "value1")
+        assert self.cache.get("key1") is None
 
     def test_delete_is_noop(self):
-        assert self.wrapper.delete("key1") is True
+        # DummyCache.delete() returns False per Django's implementation
+        assert self.cache.delete("key1") is False
 
     def test_clear_is_noop(self):
-        assert self.wrapper.clear() is True
+        # DummyCache.clear() returns None per Django's implementation
+        self.cache.clear()
+        # Just verify it doesn't raise
 
     def test_keys_returns_empty(self):
-        assert self.wrapper.keys() == []
+        assert self.cache.keys() == []
 
     def test_info_returns_dict(self):
-        info = self.wrapper.info()
+        info = self.cache.info()
         assert info["backend"] == "DummyCache"
         assert info["keyspace"]["db0"]["keys"] == 0
 
 
 # =============================================================================
-# BaseCacheWrapper unsupported operations
+# BaseCacheExtensions unsupported operations
 # =============================================================================
 
 
@@ -291,8 +308,6 @@ UNSUPPORTED_OPERATIONS = [
     ("ttl", ("key",)),
     ("expire", ("key", 100)),
     ("persist", ("key",)),
-    ("type", ("key",)),
-    ("incr", ("key",)),
     ("lrange", ("key", 0, -1)),
     ("llen", ("key",)),
     ("lpush", ("key", "value")),
@@ -319,15 +334,20 @@ UNSUPPORTED_OPERATIONS = [
 ]
 
 
-class TestBaseCacheWrapperUnsupported:
-    """Test that BaseCacheWrapper raises NotSupportedError for extended operations."""
+class TestBaseCacheExtensionsUnsupported:
+    """Test that BaseCacheExtensions raises NotSupportedError for extended operations."""
 
     @pytest.fixture(autouse=True)
-    def _setup_wrapper(self):
-        with override_settings(CACHES=LOCMEM_CACHES):
-            cache = caches["locmem"]
-            self.wrapper = BaseCacheWrapper(cache, "locmem")
-            yield
+    def _setup_extensions(self):
+        # Create a mock class that combines BaseCache with BaseCacheExtensions
+        # to test that base extensions raise NotSupportedError
+        from django.core.cache.backends.base import BaseCache
+
+        class MockExtendedCache(BaseCache, BaseCacheExtensions):
+            def __init__(self):
+                super().__init__(params={})
+
+        self.cache = MockExtendedCache()
 
     @pytest.mark.parametrize(
         ("operation", "args"),
@@ -335,6 +355,6 @@ class TestBaseCacheWrapperUnsupported:
         ids=[op for op, _ in UNSUPPORTED_OPERATIONS],
     )
     def test_unsupported_operation_raises(self, operation, args):
-        method = getattr(self.wrapper, operation)
+        method = getattr(self.cache, operation)
         with pytest.raises(NotSupportedError):
             method(*args)

@@ -19,17 +19,12 @@ from django.core.cache import caches
 
 from django_cachex.exceptions import NotSupportedError
 
-from .wrappers import BaseCacheWrapper, get_wrapper
+from .wrappers import get_wrapper
 
 # Admin settings
 CACHEX_ADMIN_SETTINGS = getattr(settings, "CACHEX_ADMIN", {})
 
 CACHES_SETTINGS = CACHEX_ADMIN_SETTINGS.get("CACHES", {})
-
-
-def _is_native_backend(backend: str) -> bool:
-    """Check if the backend is a native django-cachex backend."""
-    return backend.startswith("django_cachex.")
 
 
 class CacheService:
@@ -54,7 +49,6 @@ class CacheService:
         self._cache = cache
         self._cache_config = settings.CACHES.get(cache_name, {})
         self._cache_settings = CACHES_SETTINGS.get(cache_name, {})
-        self._is_native = _is_native_backend(str(self._cache_config.get("BACKEND", "")))
 
     @property
     def backend(self) -> str:
@@ -65,30 +59,14 @@ class CacheService:
 
     def get_cache_metadata(self) -> dict[str, Any]:
         """Get metadata about the cache configuration."""
-        cache = self._cache
-        if isinstance(cache, BaseCacheWrapper):
-            cache = cache._cache
-
         return {
-            "key_prefix": getattr(cache, "key_prefix", "") or "",
-            "version": getattr(cache, "version", 1),
+            "key_prefix": self._cache.key_prefix,
+            "version": self._cache.version,
             "location": self._get_location(),
         }
 
     def _get_location(self) -> str:
-        """Get the cache server location(s)."""
-        cache = self._cache
-        if isinstance(cache, BaseCacheWrapper):
-            cache = cache._cache
-
-        # Try different attributes where location might be stored
-        servers = getattr(cache, "_servers", None)
-        if servers:
-            return ", ".join(servers) if isinstance(servers, list) else str(servers)
-        server = getattr(cache, "_server", None)
-        if server:
-            return str(server)
-        # Fall back to settings
+        """Get the cache server location(s) from settings."""
         location = self._cache_config.get("LOCATION", "")
         if isinstance(location, list):
             return ", ".join(location)
@@ -96,12 +74,7 @@ class CacheService:
 
     def make_key(self, key: str) -> str:
         """Get the full cache key including prefix and version."""
-        cache = self._cache
-        if isinstance(cache, BaseCacheWrapper):
-            return cache.make_key(key)
-        if hasattr(cache, "make_key"):
-            return cache.make_key(key)
-        return key
+        return self._cache.make_key(key)
 
     # Core operations
 
@@ -111,41 +84,36 @@ class CacheService:
         Returns:
             Dict with key, value, exists, type, expiry fields.
         """
-        if self._is_native:
-            # For native backends, check type first to handle non-string types
-            key_type = self.type(key)
-            if key_type is None:
-                return {
-                    "key": key,
-                    "value": None,
-                    "exists": False,
-                    "type": None,
-                    "expiry": None,
-                }
+        # Check type first - works for both native (Redis types) and wrapped (always "string")
+        key_type = self.type(key)
 
-            # For non-string types, don't try to get() - it will fail
-            if key_type in ("list", "set", "hash", "zset", "stream"):
-                return {
-                    "key": key,
-                    "value": None,  # Value comes from get_type_data() instead
-                    "exists": True,
-                    "type": key_type,
-                    "expiry": None,
-                }
+        if key_type is None:
+            return {
+                "key": key,
+                "value": None,
+                "exists": False,
+                "type": None,
+                "expiry": None,
+            }
 
-        # For string type or wrapped backends, use normal get
-        sentinel = object()
-        value = self._cache.get(key, sentinel)
-        exists = value is not sentinel
+        # For non-string types, don't try to get() - it will fail
+        # Value comes from get_type_data() instead
+        if key_type in ("list", "set", "hash", "zset", "stream"):
+            return {
+                "key": key,
+                "value": None,
+                "exists": True,
+                "type": key_type,
+                "expiry": None,
+            }
 
-        if not exists:
-            value = None
-
+        # String type - use normal get
+        value = self._cache.get(key)
         return {
             "key": key,
             "value": value,
-            "exists": exists,
-            "type": type(value).__name__ if value is not None else None,
+            "exists": True,
+            "type": key_type,
             "expiry": None,
         }
 
@@ -225,17 +193,13 @@ class CacheService:
 
     # TTL operations
 
-    def ttl(self, key: str) -> int | None:
+    def ttl(self, key: str) -> int:
         """Get the TTL of a key in seconds.
 
         Returns:
-            TTL in seconds, None for no expiry or key not found.
+            TTL in seconds, -1 for no expiry, -2 for key not found.
         """
-        result = self._cache.ttl(key)
-        # Redis returns -1 for no expiry, -2 for key doesn't exist
-        if result is not None and result >= 0:
-            return result
-        return None
+        return self._cache.ttl(key)
 
     def expire(self, key: str, timeout: int) -> bool:
         """Set the TTL of a key.
@@ -260,16 +224,8 @@ class CacheService:
 
         Returns:
             Type string (string, list, set, hash, zset, stream) or None.
-
-        Raises:
-            NotSupportedError: If type detection is not supported.
         """
-        try:
-            return self._cache.type(key)
-        except NotSupportedError:
-            raise
-        except Exception:  # noqa: BLE001
-            return None
+        return self._cache.type(key)
 
     def get_type_data(self, key: str, key_type: str | None = None) -> dict[str, Any]:  # noqa: PLR0911
         """Get type-specific data for a key.
@@ -374,29 +330,10 @@ class CacheService:
     def info(self) -> dict[str, Any]:
         """Get raw cache server information.
 
-        Returns the raw output from the cache backend's info() method,
-        which is a JSON-serializable dict with up to 2 levels of nesting.
-
         Returns:
-            Dict with raw server info, or empty dict if not supported.
+            Dict with raw server info.
         """
-        cache = cast("Any", self._cache)
-
-        # First try the cache's own info() method
-        if hasattr(cache, "info"):
-            try:
-                return dict(cache.info())
-            except Exception:  # noqa: BLE001, S110
-                pass
-
-        # Fall back to accessing the internal cache client directly
-        if hasattr(cache, "_cache") and hasattr(cache._cache, "info"):
-            try:
-                return dict(cache._cache.info())
-            except Exception:  # noqa: BLE001, S110
-                pass
-
-        return {}
+        return self._cache.info()
 
     def metadata(self) -> dict[str, Any]:
         """Get cache metadata with parsed server information.
@@ -694,7 +631,7 @@ def get_cache_service(cache_name: str) -> CacheService:
     cache = caches[cache_name]
 
     # Native django-cachex - use directly
-    if _is_native_backend(backend):
+    if backend.startswith("django_cachex."):
         return CacheService(cache_name, cache)
 
     # Django builtin - wrap first
