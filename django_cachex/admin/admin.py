@@ -148,8 +148,8 @@ class KeyAdmin(_KeyBase):
 
     _cachex_help_messages: ClassVar[dict[str, str]] = {
         "key_list": mark_safe(
-            "<strong>Key Browser</strong><br>"
-            "Search and manage cache keys for this backend.<br><br>"
+            "<strong>Key List</strong><br>"
+            "Search and manage keys for this cache.<br><br>"
             "<strong>Search Patterns</strong><br>"
             "Search combines Django-style convenience with Redis/Valkey glob patterns.<br>"
             "• <code>session</code> — Keys containing 'session' (auto-wrapped as <code>*session*</code>)<br>"
