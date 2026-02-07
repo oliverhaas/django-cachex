@@ -1663,7 +1663,7 @@
 </span></code></pre></div>
 <p>This closes the async connection pool for the current event loop. The sync pools remain open.</p>
 <h2 id="mixed-syncasync-usage">Mixed Sync/Async Usage<a class="headerlink" href="#mixed-syncasync-usage" title="Permanent link">&para;</a></h2>
-<p>A single cache instance works for both sync and async code:</p>
+<p>A single cache backend works for both sync and async code:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
 </span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
 </span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="c1"># Sync code path</span>
