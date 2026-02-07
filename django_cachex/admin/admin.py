@@ -7,22 +7,15 @@ and cache keys through Django's admin interface.
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from django.contrib import admin, messages
 from django.http import HttpResponseRedirect
-from django.shortcuts import render
 from django.urls import path, reverse
 from django.utils.safestring import mark_safe
-from django.utils.translation import gettext_lazy as _
 
-from .helpers import get_cache, get_metadata, get_slowlog
 from .models import Cache, Key
-from .views.base import (
-    ViewConfig,
-    show_help,
-)
+from .views import ViewConfig, _cache_detail_view, _index_view
 
 if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
@@ -132,98 +125,16 @@ class CacheAdmin(_CacheBase):
         ]
         return custom_urls + urls
 
+    def _get_config(self) -> ViewConfig:
+        return ViewConfig(help_messages=self._cachex_help_messages)
+
     def changelist_view(
         self,
         request: HttpRequest,
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
         """List all configured caches."""
-        # Show help message if requested
-        help_active = show_help(request, "cache_list", self._cachex_help_messages)
-
-        # Handle POST requests (flush cache action)
-        if request.method == "POST":
-            action = request.POST.get("action")
-            selected_caches = request.POST.getlist("_selected_action")
-
-            if action == "flush_selected" and selected_caches:
-                flushed_count = 0
-                for cache_name in selected_caches:
-                    try:
-                        cache = get_cache(cache_name)
-                        cache.clear()
-                        flushed_count += 1
-                    except Exception as e:  # noqa: BLE001
-                        messages.error(request, f"Error flushing '{cache_name}': {e!s}")
-                if flushed_count > 0:
-                    messages.success(
-                        request,
-                        f"Successfully flushed {flushed_count} cache(s).",
-                    )
-                return HttpResponseRedirect(
-                    reverse("admin:django_cachex_cache_changelist"),
-                )
-
-        # Get filter parameters
-        support_filter = request.GET.get("support", "").strip()
-        search_query = request.GET.get("q", "").strip().lower()
-
-        # Build cache info list
-        caches_info: list[dict[str, Any]] = []
-        any_flush_supported = False
-
-        for cache in Cache.get_all():
-            any_flush_supported = True
-            try:
-                get_cache(cache.name)  # Verify cache is accessible
-                cache_info = {
-                    "name": cache.name,
-                    "config": cache.config,
-                    "backend": cache.backend,
-                    "backend_short": cache.backend_short,
-                    "location": cache.location,
-                    "support_level": cache.support_level,
-                }
-                caches_info.append(cache_info)
-            except Exception as e:  # noqa: BLE001
-                cache_info = {
-                    "name": cache.name,
-                    "config": cache.config,
-                    "backend": cache.backend,
-                    "backend_short": cache.backend_short,
-                    "location": cache.location,
-                    "support_level": cache.support_level,
-                    "error": str(e),
-                }
-                caches_info.append(cache_info)
-
-        # Apply support filter
-        if support_filter:
-            caches_info = [c for c in caches_info if c["support_level"] == support_filter]
-
-        # Apply search filter
-        if search_query:
-            caches_info = [
-                c
-                for c in caches_info
-                if search_query in c["name"].lower()
-                or search_query in c["backend"].lower()
-                or search_query in str(c.get("location", "")).lower()
-            ]
-
-        context = {
-            **self.admin_site.each_context(request),
-            "caches_info": caches_info,
-            "has_caches_configured": bool(caches_info) or bool(Cache.get_all()),
-            "title": _("Caches"),
-            "support_filter": support_filter,
-            "search_query": search_query,
-            "any_flush_supported": any_flush_supported,
-            "help_active": help_active,
-            "opts": self.model._meta,
-            "cl": None,  # No changelist object
-        }
-        return render(request, "admin/django_cachex/cache/change_list.html", context)
+        return _index_view(request, self._get_config())
 
     def change_view(
         self,
@@ -233,56 +144,7 @@ class CacheAdmin(_CacheBase):
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
         """Display cache details (info + slowlog combined)."""
-        cache_name = object_id
-        cache_obj = Cache.get_by_name(cache_name)
-
-        if cache_obj is None:
-            messages.error(request, f"Cache '{cache_name}' not found.")
-            return HttpResponseRedirect(
-                reverse("admin:django_cachex_cache_changelist"),
-            )
-
-        # Show help message if requested
-        help_active = show_help(request, "cache_detail", self._cachex_help_messages)
-
-        from django.conf import settings
-
-        cache = get_cache(cache_name)
-        cache_config = settings.CACHES.get(cache_name, {})
-
-        # Get cache metadata and info
-        info_data = None
-        raw_info = None
-        try:
-            info_data = get_metadata(cache, cache_config)
-            raw_info = cache.info()
-        except Exception as e:  # noqa: BLE001
-            messages.error(request, f"Error retrieving cache info: {e!s}")
-
-        # Get slowlog (last 10 entries)
-        slowlog_data = None
-        try:
-            slowlog_data = get_slowlog(cache, 10)
-        except Exception as e:  # noqa: BLE001
-            messages.error(request, f"Error retrieving slow log: {e!s}")
-
-        # Convert raw_info to pretty-printed JSON for display
-        raw_info_json = None
-        if raw_info:
-            raw_info_json = json.dumps(raw_info, indent=2, default=str)
-
-        context = {
-            **self.admin_site.each_context(request),
-            "title": f"Cache: {cache_name}",
-            "cache_name": cache_name,
-            "cache_obj": cache_obj,
-            "info_data": info_data,
-            "raw_info_json": raw_info_json,
-            "slowlog_data": slowlog_data,
-            "help_active": help_active,
-            "opts": self.model._meta,
-        }
-        return render(request, "admin/django_cachex/cache/change_form.html", context)
+        return _cache_detail_view(request, object_id, self._get_config())
 
 
 @admin.register(Key)
