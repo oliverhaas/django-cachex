@@ -686,11 +686,11 @@ def _deep_getsizeof(obj: Any, seen: set[int] | None = None) -> int:
 
 
 # =============================================================================
-# Extended Cache Classes
+# Wrapped Cache Classes
 # =============================================================================
 
 
-class ExtendedLocMemCache(LocMemCache, BaseCacheExtensions):
+class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
     """LocMemCache with cachex extensions.
 
     Enables keys() by accessing the internal _cache dict.
@@ -820,7 +820,7 @@ class ExtendedLocMemCache(LocMemCache, BaseCacheExtensions):
         return matching_keys
 
 
-class ExtendedDatabaseCache(DatabaseCache, BaseCacheExtensions):
+class WrappedDatabaseCache(DatabaseCache, BaseCacheExtensions):
     """DatabaseCache with cachex extensions.
 
     Enables keys() by querying the database table.
@@ -968,7 +968,7 @@ class ExtendedDatabaseCache(DatabaseCache, BaseCacheExtensions):
         }
 
 
-class ExtendedFileBasedCache(FileBasedCache, BaseCacheExtensions):
+class WrappedFileBasedCache(FileBasedCache, BaseCacheExtensions):
     """FileBasedCache with cachex extensions.
 
     Lists keys as MD5 hash filenames (original keys cannot be recovered).
@@ -1035,7 +1035,7 @@ class ExtendedFileBasedCache(FileBasedCache, BaseCacheExtensions):
         }
 
 
-class ExtendedDummyCache(DummyCache, BaseCacheExtensions):
+class WrappedDummyCache(DummyCache, BaseCacheExtensions):
     """DummyCache with cachex extensions."""
 
     def keys(self, pattern: str = "*", version: int | None = None) -> list[str]:
@@ -1058,18 +1058,18 @@ class ExtendedDummyCache(DummyCache, BaseCacheExtensions):
         }
 
 
-# Mapping of original classes to extended classes
-EXTENDED_CLASS_MAP: dict[type, type] = {
-    LocMemCache: ExtendedLocMemCache,
-    DatabaseCache: ExtendedDatabaseCache,
-    FileBasedCache: ExtendedFileBasedCache,
-    DummyCache: ExtendedDummyCache,
+# Mapping of original classes to wrapped classes
+WRAPPED_CLASS_MAP: dict[type, type] = {
+    LocMemCache: WrappedLocMemCache,
+    DatabaseCache: WrappedDatabaseCache,
+    FileBasedCache: WrappedFileBasedCache,
+    DummyCache: WrappedDummyCache,
 }
 
 # Add optional backends if available
 if PyLibMCCache is not None:
 
-    class ExtendedPyLibMCCache(PyLibMCCache, BaseCacheExtensions):
+    class WrappedPyLibMCCache(PyLibMCCache, BaseCacheExtensions):
         """PyLibMCCache with cachex extensions."""
 
         def info(self, section: str | None = None) -> dict[str, Any]:
@@ -1104,11 +1104,11 @@ if PyLibMCCache is not None:
                 else None,
             }
 
-    EXTENDED_CLASS_MAP[PyLibMCCache] = ExtendedPyLibMCCache
+    WRAPPED_CLASS_MAP[PyLibMCCache] = WrappedPyLibMCCache
 
 if PyMemcacheCache is not None:
 
-    class ExtendedPyMemcacheCache(PyMemcacheCache, BaseCacheExtensions):
+    class WrappedPyMemcacheCache(PyMemcacheCache, BaseCacheExtensions):
         """PyMemcacheCache with cachex extensions."""
 
         def info(self, section: str | None = None) -> dict[str, Any]:
@@ -1143,11 +1143,11 @@ if PyMemcacheCache is not None:
                 else None,
             }
 
-    EXTENDED_CLASS_MAP[PyMemcacheCache] = ExtendedPyMemcacheCache
+    WRAPPED_CLASS_MAP[PyMemcacheCache] = WrappedPyMemcacheCache
 
 if DjangoRedisCache is not None:
 
-    class ExtendedDjangoRedisCache(DjangoRedisCache, BaseCacheExtensions):
+    class WrappedDjangoRedisCache(DjangoRedisCache, BaseCacheExtensions):
         """Django RedisCache with cachex extensions."""
 
         def info(self, section: str | None = None) -> dict[str, Any]:
@@ -1160,7 +1160,7 @@ if DjangoRedisCache is not None:
                 },
             }
 
-    EXTENDED_CLASS_MAP[DjangoRedisCache] = ExtendedDjangoRedisCache
+    WRAPPED_CLASS_MAP[DjangoRedisCache] = WrappedDjangoRedisCache
 
 
 # =============================================================================
@@ -1185,7 +1185,7 @@ def wrap_cache(cache: BaseCache) -> BaseCache:
         return cache
 
     # Find the extended class for this cache type
-    extended_class = EXTENDED_CLASS_MAP.get(type(cache))
+    extended_class = WRAPPED_CLASS_MAP.get(type(cache))
 
     if extended_class is not None:
         # Patch the instance's class

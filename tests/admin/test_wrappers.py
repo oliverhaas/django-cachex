@@ -6,9 +6,9 @@ from django.test import override_settings
 
 from django_cachex.admin.wrappers import (
     BaseCacheExtensions,
-    ExtendedDatabaseCache,
-    ExtendedDummyCache,
-    ExtendedLocMemCache,
+    WrappedDatabaseCache,
+    WrappedDummyCache,
+    WrappedLocMemCache,
     get_wrapper,
     wrap_cache,
 )
@@ -51,7 +51,7 @@ class TestWrapCache:
     def test_locmem_returns_extended_locmem(self):
         cache = caches["locmem"]
         wrapped = wrap_cache(cache)
-        assert isinstance(wrapped, ExtendedLocMemCache)
+        assert isinstance(wrapped, WrappedLocMemCache)
         assert wrapped is cache  # Same instance, class patched
 
     @override_settings(CACHES=DATABASE_CACHES)
@@ -61,14 +61,14 @@ class TestWrapCache:
         call_command("createcachetable", verbosity=0)
         cache = caches["dbcache"]
         wrapped = wrap_cache(cache)
-        assert isinstance(wrapped, ExtendedDatabaseCache)
+        assert isinstance(wrapped, WrappedDatabaseCache)
         assert wrapped is cache
 
     @override_settings(CACHES=DUMMY_CACHES)
     def test_dummy_returns_extended_dummy(self):
         cache = caches["dummy"]
         wrapped = wrap_cache(cache)
-        assert isinstance(wrapped, ExtendedDummyCache)
+        assert isinstance(wrapped, WrappedDummyCache)
         assert wrapped is cache
 
     @override_settings(CACHES=LOCMEM_CACHES)
@@ -83,7 +83,7 @@ class TestWrapCache:
     def test_get_wrapper_legacy_alias(self):
         cache = caches["locmem"]
         wrapped = get_wrapper(cache, "locmem")
-        assert isinstance(wrapped, ExtendedLocMemCache)
+        assert isinstance(wrapped, WrappedLocMemCache)
 
 
 # =============================================================================
