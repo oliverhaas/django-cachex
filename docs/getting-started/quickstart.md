@@ -23,7 +23,7 @@ CACHES = {
 | `RedisClusterCache` | Redis Cluster sharding |
 
 !!! note "Valkey and Redis Compatibility"
-    Valkey and Redis are fully compatible - you can use either backend with either server.
+    Valkey and Redis are probably still fully compatible, meaning you could use either backend with either server.
     We recommend Valkey as it remains fully open source.
 
 ## Connection URL Formats
