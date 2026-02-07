@@ -35,27 +35,21 @@ class Pipeline:
 
     def __init__(
         self,
-        client: Any = None,
-        pipeline: Any = None,
+        cache_client: Any,
+        pipeline: Any,
         version: int | None = None,
-        *,
-        cache_client: Any = None,
-        key_func: Callable[..., str] | None = None,
     ) -> None:
         """Initialize the wrapped pipeline.
 
         Args:
-            client: The django-cachex client (for make_key, encode, decode) - legacy
+            cache_client: The CacheClient (for encode, decode)
             pipeline: The raw Redis/Valkey pipeline object
             version: Default key version (uses client default if None)
-            cache_client: The CacheClient (for encode, decode) - new architecture
-            key_func: Function to create prefixed keys - new architecture
         """
-        # Support both old (client) and new (cache_client + key_func) architectures
-        self._client = cache_client if cache_client is not None else client
+        self._client = cache_client
         self._pipeline = pipeline
         self._version = version
-        self._key_func = key_func
+        self._key_func: Callable[..., str] | None = None
         self._decoders: list[Callable[[Any], Any]] = []
         # Script support (set by KeyValueCache.pipeline())
         self._scripts: dict[str, LuaScript] = {}
@@ -166,9 +160,7 @@ class Pipeline:
         """Create a prefixed key."""
         v = version if version is not None else self._version
         if self._key_func is not None:
-            # New architecture: use provided key_func
             return self._key_func(key, version=v)
-        # Legacy: fall back to client.make_key
         return self._client.make_key(key, version=v)
 
     def _encode(self, value: Any) -> bytes | int:
