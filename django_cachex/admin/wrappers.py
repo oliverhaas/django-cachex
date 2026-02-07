@@ -20,6 +20,7 @@ from django.core.cache.backends.locmem import LocMemCache
 from django.db import connection
 
 from django_cachex.exceptions import NotSupportedError
+from django_cachex.types import KeyType
 
 # Try to import optional backends
 try:
@@ -85,13 +86,13 @@ class BaseCacheExtensions:
         """Get the TTL of a key in milliseconds."""
         raise NotSupportedError("pttl", self.__class__.__name__)
 
-    def type(self, key: KeyT, version: int | None = None) -> str | None:
+    def type(self, key: KeyT, version: int | None = None) -> KeyType | None:
         """Get the data type of a key.
 
         Wrapped backends only support Django's cache.set/get, so all values
         are stored as serialized strings.
         """
-        return "string"
+        return KeyType.STRING
 
     def persist(self, key: KeyT, version: int | None = None) -> bool:
         """Remove the TTL from a key."""
@@ -871,18 +872,18 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
     # Type Detection
     # =========================================================================
 
-    def type(self, key: KeyT, version: int | None = None) -> str | None:
+    def type(self, key: KeyT, version: int | None = None) -> KeyType | None:
         """Get the data type of a key by inspecting the stored Python value."""
         value = self.get(key, default=_MISSING, version=version)
         if value is _MISSING:
             return None
         if isinstance(value, list):
-            return "list"
+            return KeyType.LIST
         if isinstance(value, _set):
-            return "set"
+            return KeyType.SET
         if isinstance(value, dict) and all(isinstance(k, str) for k in value):
-            return "hash"
-        return "string"
+            return KeyType.HASH
+        return KeyType.STRING
 
     # =========================================================================
     # List Helpers

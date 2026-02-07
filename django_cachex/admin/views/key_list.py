@@ -20,11 +20,12 @@ from django_cachex.admin.views.base import (
     logger,
     show_help,
 )
+from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
 
-KEY_TYPES = ("string", "list", "set", "zset", "hash", "stream")
+KEY_TYPES = tuple(KeyType)
 
 
 def _key_list_view(  # noqa: C901, PLR0912, PLR0915

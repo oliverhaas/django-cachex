@@ -14,6 +14,7 @@ from django.conf import settings
 from django.core.cache import caches
 
 from django_cachex.exceptions import NotSupportedError
+from django_cachex.types import KeyType
 
 from .wrappers import _deep_getsizeof, wrap_cache
 
@@ -170,25 +171,25 @@ def get_type_data(cache: Any, key: str, key_type: str | None = None) -> dict[str
     except NotSupportedError:
         key_type = None
 
-    if not key_type or key_type == "string":
+    if not key_type or key_type == KeyType.STRING:
         return {}
 
     result: dict[str, Any] = {}
     try:
         match key_type:
-            case "list":
+            case KeyType.LIST:
                 items = [str(i) for i in cache.lrange(key, 0, -1)]
                 result = {"items": items, "length": len(items)}
-            case "hash":
+            case KeyType.HASH:
                 fields = {str(k): str(v) for k, v in cache.hgetall(key).items()}
                 result = {"fields": fields, "length": len(fields)}
-            case "set":
+            case KeyType.SET:
                 members = sorted(str(m) for m in cache.smembers(key))
                 result = {"members": members, "length": len(members)}
-            case "zset":
+            case KeyType.ZSET:
                 zset_members = [(str(m), s) for m, s in cache.zrange(key, 0, -1, withscores=True)]
                 result = {"members": zset_members, "length": len(zset_members)}
-            case "stream" if hasattr(cache, "_cache") and hasattr(cache._cache, "xrange"):
+            case KeyType.STREAM if hasattr(cache, "_cache") and hasattr(cache._cache, "xrange"):
                 entries = cache._cache.xrange(key, count=100)
                 result = {"entries": entries, "length": cache._cache.xlen(key)}
     except Exception:  # noqa: BLE001, S110
@@ -230,12 +231,12 @@ def get_size(cache: Any, key: str, key_type: str | None = None) -> int | None:
 
     try:
         size_methods: dict[str, Any] = {
-            "string": _string_size,
-            "list": lambda: cache.llen(key),
-            "set": lambda: cache.scard(key),
-            "hash": lambda: cache.hlen(key),
-            "zset": lambda: cache.zcard(key),
-            "stream": lambda: cache.xlen(key),
+            KeyType.STRING: _string_size,
+            KeyType.LIST: lambda: cache.llen(key),
+            KeyType.SET: lambda: cache.scard(key),
+            KeyType.HASH: lambda: cache.hlen(key),
+            KeyType.ZSET: lambda: cache.zcard(key),
+            KeyType.STREAM: lambda: cache.xlen(key),
         }
 
         method = size_methods.get(key_type)

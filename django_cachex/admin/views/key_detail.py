@@ -21,6 +21,7 @@ from django_cachex.admin.views.base import (
     key_list_url,
     show_help,
 )
+from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
@@ -406,7 +407,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             if ttl >= 0:
                 ttl_expires_at = timezone.now() + timedelta(seconds=ttl)
         # Get type-specific data for non-string types
-        if key_type and key_type != "string":
+        if key_type and key_type != KeyType.STRING:
             type_data = get_type_data(cache, key, key_type)
     elif create_mode:
         # In create mode, use the type from query param
@@ -415,7 +416,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     # Get value for string keys (cache.get() only works for strings)
     raw_value = None
     value_is_editable = True
-    if key_exists and (not key_type or key_type == "string"):
+    if key_exists and (not key_type or key_type == KeyType.STRING):
         raw_value = cache.get(key)
 
     if raw_value is not None:
@@ -425,9 +426,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         value_display = "null"
 
     # Show type-specific help message if requested
-    help_key = (
-        f"key_detail_{key_type}" if key_type in ("string", "list", "set", "hash", "zset", "stream") else "key_detail"
-    )
+    help_key = f"key_detail_{key_type}" if isinstance(key_type, KeyType) else "key_detail"
     help_active = show_help(request, help_key, config.help_messages)
 
     # Get cache metadata for displaying the raw key info

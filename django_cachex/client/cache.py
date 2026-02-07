@@ -45,7 +45,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
 
     from django_cachex.client.pipeline import Pipeline
-    from django_cachex.types import AbsExpiryT, ExpiryT, KeyT
+    from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, KeyType
 
 from django_cachex.client.default import (
     KeyValueCacheClient,
@@ -541,27 +541,26 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return self._cache.pttl(key)
 
-    def type(self, key: KeyT, version: int | None = None) -> str | None:
+    def type(self, key: KeyT, version: int | None = None) -> KeyType | None:
         """Get the Redis data type of a key.
 
-        Returns the type of the value stored at key:
-        'string', 'list', 'set', 'zset', 'hash', 'stream', or None if
-        the key does not exist.
+        Returns the type of the value stored at key as a ``KeyType``
+        enum member, or ``None`` if the key does not exist.
 
         Args:
             key: Cache key to check.
             version: Key version (default: cache's version).
 
         Returns:
-            Type string or None if key doesn't exist.
+            ``KeyType`` member or ``None`` if key doesn't exist.
 
         Example::
 
             cache.set("mykey", "value")
-            cache.type("mykey")  # Returns "string"
+            cache.type("mykey")  # Returns KeyType.STRING
 
             cache.lpush("mylist", "a", "b")
-            cache.type("mylist")  # Returns "list"
+            cache.type("mylist")  # Returns KeyType.LIST
         """
         key = self.make_and_validate_key(key, version=version)
         return self._cache.type(key)
@@ -647,7 +646,7 @@ class KeyValueCache(BaseCache):
             pattern: Pattern to match keys against
             count: Hint for number of keys to return per call
             version: Key version to use
-            key_type: Filter by key type (e.g. "string", "list", "set")
+            key_type: Filter by key type (e.g. KeyType.STRING, KeyType.LIST)
 
         Returns:
             Tuple of (next_cursor, list of user keys). When next_cursor is 0,

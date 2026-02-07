@@ -16,6 +16,7 @@ from django_cachex.admin.views.base import (
     key_detail_url,
     show_help,
 )
+from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
@@ -32,7 +33,7 @@ def _key_add_view(
 
     if request.method == "POST":
         key_name = request.POST.get("key", "").strip()
-        key_type = request.POST.get("type", "string").strip()
+        key_type = request.POST.get("type", KeyType.STRING).strip()
 
         if not key_name:
             messages.error(request, "Key name is required.")
@@ -50,7 +51,7 @@ def _key_add_view(
 
     # Pre-fill from query params (for Back button)
     prefill_key = request.GET.get("key", "")
-    prefill_type = request.GET.get("type", "string")
+    prefill_type = request.GET.get("type", KeyType.STRING)
 
     context = admin.site.each_context(request)
     context.update(

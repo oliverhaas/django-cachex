@@ -12,6 +12,7 @@ just for type annotations.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -32,6 +33,17 @@ type ExpiryT = int | timedelta
 
 # Absolute expiry types - matches redis.typing.AbsExpiryT
 type AbsExpiryT = int | datetime
+
+
+class KeyType(StrEnum):
+    """Redis key data types."""
+
+    STRING = "string"
+    LIST = "list"
+    SET = "set"
+    HASH = "hash"
+    ZSET = "zset"
+    STREAM = "stream"
 
 
 # Alias to avoid shadowing by CacheProtocol.set method
@@ -194,7 +206,7 @@ class CacheProtocol(Protocol):
 
     def pttl(self, key: KeyT, version: int | None = None) -> int | None: ...
 
-    def type(self, key: KeyT, version: int | None = None) -> str | None: ...
+    def type(self, key: KeyT, version: int | None = None) -> KeyType | None: ...
 
     def persist(self, key: KeyT, version: int | None = None) -> bool: ...
 

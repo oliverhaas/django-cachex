@@ -35,6 +35,7 @@ from django.utils.module_loading import import_string
 
 from django_cachex.compat import create_compressor, create_serializer
 from django_cachex.exceptions import CompressorError, SerializerError, _main_exceptions, _ResponseError
+from django_cachex.types import KeyType
 
 # Alias builtin set type to avoid shadowing by the set() method
 _Set = set
@@ -482,28 +483,27 @@ class KeyValueCacheClient:
 
         return bool(await client.exists(key))
 
-    def type(self, key: KeyT) -> str | None:
+    def type(self, key: KeyT) -> KeyType | None:
         """Get the Redis data type of a key.
 
-        Returns the type of the value stored at key as a string:
-        'string', 'list', 'set', 'zset', 'hash', 'stream', or None if
-        the key does not exist.
+        Returns the type of the value stored at key as a ``KeyType``
+        enum member, or ``None`` if the key does not exist.
         """
         client = self.get_client(key, write=False)
 
         result = client.type(key)
         if isinstance(result, bytes):
             result = result.decode("utf-8")
-        return None if result == "none" else result
+        return None if result == "none" else KeyType(result)
 
-    async def atype(self, key: KeyT) -> str | None:
+    async def atype(self, key: KeyT) -> KeyType | None:
         """Get the Redis data type of a key asynchronously."""
         client = self.get_async_client(key, write=False)
 
         result = await client.type(key)
         if isinstance(result, bytes):
             result = result.decode("utf-8")
-        return None if result == "none" else result
+        return None if result == "none" else KeyType(result)
 
     def incr(self, key: KeyT, delta: int = 1) -> int:
         """Increment a value.
