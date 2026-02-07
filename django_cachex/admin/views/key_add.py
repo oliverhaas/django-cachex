@@ -7,7 +7,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
-from django.conf import settings
 from django.contrib import admin, messages
 from django.shortcuts import redirect, render
 
@@ -30,7 +29,6 @@ def _key_add_view(
     """View for adding a new cache key - collects key name and type, then redirects to key_detail."""
     help_active = show_help(request, "key_add", config.help_messages)
     cache = get_cache(cache_name)
-    cache_config = settings.CACHES.get(cache_name, {})
 
     if request.method == "POST":
         key_name = request.POST.get("key", "").strip()
@@ -59,7 +57,6 @@ def _key_add_view(
         {
             "title": f"Add key to '{cache_name}'",
             "cache_name": cache_name,
-            "cache_config": cache_config,
             "prefill_key": prefill_key,
             "prefill_type": prefill_type,
             "help_active": help_active,

@@ -9,7 +9,6 @@ import json
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
-from django.conf import settings
 from django.contrib import admin, messages
 from django.shortcuts import redirect, render
 from django.utils import timezone
@@ -381,7 +380,6 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             return redirect(key_detail_url(cache_name, key))
 
     # GET request - display the key
-    cache_config = settings.CACHES.get(cache_name, {})
     key_exists = cache.has_key(key)
 
     # Check for create mode (type param provided for non-existing key)
@@ -447,7 +445,6 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         {
             "title": f"Add Key: {key}" if create_mode else f"Key: {key}",
             "cache_name": cache_name,
-            "cache_config": cache_config,
             "key": key,
             "raw_key": raw_key,
             "cache_metadata": cache_metadata,

@@ -53,12 +53,10 @@ def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:
     search_query = request.GET.get("q", "").strip().lower()
 
     caches_info: list[dict[str, Any]] = []
-    any_flush_supported = False
     for cache_name, cache_config in settings.CACHES.items():
         cache_obj = Cache.get_by_name(cache_name)
         backend = str(cache_config.get("BACKEND", "Unknown"))
         support_level = cache_obj.support_level if cache_obj else "limited"
-        any_flush_supported = True
         try:
             get_cache(cache_name)  # Verify cache is accessible
             cache_info = {
@@ -104,7 +102,6 @@ def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:
             "title": "Cache Admin - Caches",
             "support_filter": support_filter,
             "search_query": search_query,
-            "any_flush_supported": any_flush_supported,
             "help_active": help_active,
         },
     )
