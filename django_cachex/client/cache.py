@@ -141,6 +141,9 @@ class KeyValueCache(BaseCache):
         - ``RedisSentinelCache``: For Redis Sentinel mode
     """
 
+    # Support level marker for admin interface
+    _cachex_support: str = "cachex"
+
     # Class attribute - subclasses override this
     _class: builtins.type[KeyValueCacheClient] = KeyValueCacheClient
 

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
+from django.core.cache import InvalidCacheBackendError
 from django.db import models
 
 if TYPE_CHECKING:
@@ -79,6 +80,15 @@ class Cache(models.Model):
 
         return get_cache_service(self.name)
 
+    def _get_cache(self) -> Any | None:
+        """Get the raw cache instance."""
+        from django.core.cache import caches
+
+        try:
+            return caches[self.name]
+        except (InvalidCacheBackendError, KeyError):
+            return None
+
     @property
     def support_level(self) -> str:
         """Determine the support level for this cache backend.
@@ -88,6 +98,13 @@ class Cache(models.Model):
             - "wrapped": Django core builtin backends (wrapped for almost full support)
             - "limited": Custom/unknown backends with limited support
         """
+        # Check for _cachex_support attribute on the cache instance (set by wrap_cache
+        # or native django-cachex backends)
+        cache = self._get_cache()
+        if cache is not None and hasattr(cache, "_cachex_support"):
+            return cache._cachex_support
+
+        # Fall back to backend string check
         backend = self.backend
 
         # django-cachex backends - full support
