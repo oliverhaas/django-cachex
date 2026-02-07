@@ -27,10 +27,14 @@ CACHES = {
 
 ## Features
 
-- **Built-in admin interface** - Browse, search, edit, and delete cache keys directly from Django admin
+- **Full-featured cache backends** for Valkey and Redis with async support, extended data structures, distributed locking, Lua scripting, and more
+- **Built-in admin interface** for browsing, searching, and managing cache keys directly from Django admin
+- **Drop-in replacement** for Django's built-in Redis backend
+
+## Cache Backends
+
 - **Unified Valkey and Redis support** - Single package for both backends
 - **Async support** - Async versions of all extended methods
-- **Drop-in replacement** - Easy migration from Django's built-in Redis backend
 - **Extended data structures** - Hashes, lists, sets, sorted sets
 - **TTL and pattern operations** - `ttl()`, `expire()`, `keys()`, `delete_pattern()`
 - **Lua script support** - Register and execute Lua scripts with automatic key prefixing
