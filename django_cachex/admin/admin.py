@@ -76,17 +76,6 @@ class CacheAdmin(_CacheBase):
         ),
     }
 
-    # Django builtin backends that get "wrapped" support level
-    _cachex_django_builtins: ClassVar[set[str]] = {
-        "django.core.cache.backends.locmem.LocMemCache",
-        "django.core.cache.backends.db.DatabaseCache",
-        "django.core.cache.backends.filebased.FileBasedCache",
-        "django.core.cache.backends.dummy.DummyCache",
-        "django.core.cache.backends.memcached.PyMemcacheCache",
-        "django.core.cache.backends.memcached.PyLibMCCache",
-        "django.core.cache.backends.memcached.MemcachedCache",
-    }
-
     def _cachex_show_help(self, request: HttpRequest, view_name: str) -> bool:
         """Check if help was requested and show message if so. Returns True if help shown."""
         if request.GET.get("help"):
@@ -95,25 +84,6 @@ class CacheAdmin(_CacheBase):
                 messages.info(request, help_text)
             return True
         return False
-
-    def _cachex_get_support_level(self, backend: str) -> str:
-        """Determine the support level for a cache backend.
-
-        Returns:
-            - "cachex": Full support (django-cachex backends)
-            - "wrapped": Django core builtin backends (wrapped for almost full support)
-            - "limited": Custom/unknown backends with limited support
-        """
-        # django-cachex backends - full support
-        if backend.startswith("django_cachex."):
-            return "cachex"
-
-        # Django core builtin backends - wrapped support
-        if backend in self._cachex_django_builtins:
-            return "wrapped"
-
-        # Unknown/custom backends
-        return "limited"
 
     # Disable standard CRUD operations
     def has_add_permission(self, request: HttpRequest) -> bool:
@@ -196,28 +166,26 @@ class CacheAdmin(_CacheBase):
         any_flush_supported = False
 
         for cache in Cache.get_all():
-            backend = cache.backend
-            support_level = self._cachex_get_support_level(backend)
             any_flush_supported = True
             try:
                 get_cache(cache.name)  # Verify cache is accessible
                 cache_info = {
                     "name": cache.name,
                     "config": cache.config,
-                    "backend": backend,
+                    "backend": cache.backend,
                     "backend_short": cache.backend_short,
                     "location": cache.location,
-                    "support_level": support_level,
+                    "support_level": cache.support_level,
                 }
                 caches_info.append(cache_info)
             except Exception as e:  # noqa: BLE001
                 cache_info = {
                     "name": cache.name,
                     "config": cache.config,
-                    "backend": backend,
+                    "backend": cache.backend,
                     "backend_short": cache.backend_short,
                     "location": cache.location,
-                    "support_level": support_level,
+                    "support_level": cache.support_level,
                     "error": str(e),
                 }
                 caches_info.append(cache_info)
