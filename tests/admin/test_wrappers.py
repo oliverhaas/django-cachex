@@ -9,7 +9,6 @@ from django_cachex.admin.wrappers import (
     WrappedDatabaseCache,
     WrappedDummyCache,
     WrappedLocMemCache,
-    get_wrapper,
     wrap_cache,
 )
 from django_cachex.exceptions import NotSupportedError
@@ -40,7 +39,7 @@ DUMMY_CACHES = {
 
 
 # =============================================================================
-# wrap_cache / get_wrapper factory tests
+# wrap_cache factory tests
 # =============================================================================
 
 
@@ -78,12 +77,6 @@ class TestWrapCache:
         wrapped2 = wrap_cache(wrapped1)
         assert wrapped1 is wrapped2
         assert getattr(wrapped2, "_cachex_support", None) == "wrapped"
-
-    @override_settings(CACHES=LOCMEM_CACHES)
-    def test_get_wrapper_legacy_alias(self):
-        cache = caches["locmem"]
-        wrapped = get_wrapper(cache, "locmem")
-        assert isinstance(wrapped, WrappedLocMemCache)
 
 
 # =============================================================================

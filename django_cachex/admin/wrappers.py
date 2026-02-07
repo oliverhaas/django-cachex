@@ -1219,9 +1219,3 @@ def wrap_cache(cache: BaseCache) -> BaseCache:
         cache.__class__ = extended_class
 
     return cache
-
-
-# Legacy alias for backwards compatibility
-def get_wrapper(cache: BaseCache, _cache_name: str) -> BaseCache:
-    """Legacy wrapper function. Use wrap_cache() instead."""
-    return wrap_cache(cache)

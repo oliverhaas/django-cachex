@@ -19,7 +19,7 @@ from django.core.cache import caches
 
 from django_cachex.exceptions import NotSupportedError
 
-from .wrappers import get_wrapper
+from .wrappers import wrap_cache
 
 # Admin settings
 CACHEX_ADMIN_SETTINGS = getattr(settings, "CACHEX_ADMIN", {})
@@ -635,5 +635,5 @@ def get_cache_service(cache_name: str) -> CacheService:
         return CacheService(cache_name, cache)
 
     # Django builtin - wrap first
-    wrapped = get_wrapper(cache, cache_name)
+    wrapped = wrap_cache(cache)
     return CacheService(cache_name, wrapped)
