@@ -419,3 +419,108 @@ class TestConnectionCleanup:
         # Clean up
         cache.delete("sync_key")
         await cache.adelete("async_key")
+
+    def test_sync_then_nested_async_run(self, redis_container: "RedisContainerInfo"):
+        """Test WSGI-like pattern: sync ops then asyncio.run() for async ops.
+
+        Simulates a WSGI thread that does sync cache work, then spins up an
+        event loop for some async logic using the same cache instance.
+        """
+        from contextlib import suppress
+
+        host = redis_container.host
+        port = redis_container.port
+
+        caches_config = {
+            "default": {
+                "BACKEND": "django_cachex.cache.RedisCache",
+                "LOCATION": f"redis://{host}:{port}/1",
+            },
+        }
+
+        with suppress(KeyError, AttributeError):
+            del caches["default"]
+
+        with override_settings(CACHES=caches_config):
+            cache = caches["default"]
+
+            # 1. Sync operations (like a normal WSGI request)
+            cache.set("wsgi_key", "wsgi_value")
+            assert cache.get("wsgi_key") == "wsgi_value"
+
+            # 2. Spin up an event loop for async work (same cache instance)
+            async def async_work():
+                await cache.aset("async_key", "async_value")
+                result = await cache.aget("async_key")
+                assert result == "async_value"
+                await cache.adelete("async_key")
+
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(async_work())
+            loop.close()
+
+            # 3. Back to sync — should still work fine
+            assert cache.get("wsgi_key") == "wsgi_value"
+            cache.delete("wsgi_key")
+
+        with suppress(KeyError, AttributeError):
+            del caches["default"]
+
+    def test_multiple_sequential_event_loops(self, redis_container: "RedisContainerInfo"):
+        """Test multiple asyncio.run() calls from the same sync context.
+
+        Simulates a WSGI thread that calls asyncio.run() multiple times across
+        different requests, each creating a new event loop. The WeakKeyDictionary
+        should handle old loops being GC'd and new ones being created.
+        """
+        from contextlib import suppress
+
+        host = redis_container.host
+        port = redis_container.port
+
+        caches_config = {
+            "default": {
+                "BACKEND": "django_cachex.cache.RedisCache",
+                "LOCATION": f"redis://{host}:{port}/1",
+            },
+        }
+
+        with suppress(KeyError, AttributeError):
+            del caches["default"]
+
+        with override_settings(CACHES=caches_config):
+            cache = caches["default"]
+
+            async def async_set_get(key, value):
+                await cache.aset(key, value)
+                return await cache.aget(key)
+
+            # First "request": sync + async
+            cache.set("sync_1", "value_1")
+            loop1 = asyncio.new_event_loop()
+            result = loop1.run_until_complete(async_set_get("async_1", "avalue_1"))
+            assert result == "avalue_1"
+            loop1.close()
+
+            # Second "request": new event loop, same cache instance
+            cache.set("sync_2", "value_2")
+            loop2 = asyncio.new_event_loop()
+            result = loop2.run_until_complete(async_set_get("async_2", "avalue_2"))
+            assert result == "avalue_2"
+            loop2.close()
+
+            # Third "request": yet another event loop
+            loop3 = asyncio.new_event_loop()
+            result = loop3.run_until_complete(async_set_get("async_3", "avalue_3"))
+            assert result == "avalue_3"
+            loop3.close()
+
+            # Sync still works
+            assert cache.get("sync_1") == "value_1"
+            assert cache.get("sync_2") == "value_2"
+
+            # Clean up
+            cache.delete_many(["sync_1", "sync_2", "async_1", "async_2", "async_3"])
+
+        with suppress(KeyError, AttributeError):
+            del caches["default"]
