@@ -102,7 +102,6 @@ class KeyValueCacheClient:
             "serializer",
             "ignore_exceptions",
             "log_ignored_exceptions",
-            "close_connection",
             "sentinels",
             "sentinel_kwargs",
             "async_pool_class",
@@ -628,29 +627,10 @@ class KeyValueCacheClient:
         return bool(await client.flushdb())
 
     def close(self, **kwargs: Any) -> None:
-        """Close connections if configured."""
-        if self._options.get("close_connection", False):
-            for pool in self._pools.values():
-                pool.disconnect()
-            self._pools.clear()
-            # Also clear async pool references (actual disconnection happens via aclose)
-            self._async_pools.clear()
+        """No-op. Pools live for the instance's lifetime (matches Django's BaseCache)."""
 
     async def aclose(self, **kwargs: Any) -> None:
-        """Async close - disconnect async pools for current event loop."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            # No running event loop
-            return
-
-        pool_dict = self._async_pools.get(loop)
-        if pool_dict is not None:
-            for pool in pool_dict.values():
-                await pool.disconnect()
-            # Remove from tracking
-            if loop in self._async_pools:
-                del self._async_pools[loop]
+        """No-op. Pools live for the instance's lifetime (matches Django's BaseCache)."""
 
     # =========================================================================
     # Extended Operations (beyond Django's BaseCache)

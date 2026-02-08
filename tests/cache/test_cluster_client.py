@@ -14,7 +14,7 @@ def setup_cluster_client(mock_cluster_cls=None):
     client = RedisClusterCacheClient.__new__(RedisClusterCacheClient)
     client._servers = ["redis://localhost:7000"]
     client._options = {}
-    client._clusters = {}
+    client._cluster_instance = None
     # Set class attributes that are normally set via class definition
     if mock_cluster_cls is not None:
         client._cluster_class = mock_cluster_cls
@@ -422,52 +422,40 @@ class TestRedisClusterCacheClient:
         assert mock_cluster.delete.call_count == 2
         assert result == 3  # 2 + 1 = 3 total deleted
 
-    def test_close_closes_cluster(self):
-        """Test close() closes the cluster connection when close_connection=True."""
+    def test_close_is_noop(self):
+        """Test close() is a no-op — cluster persists after close."""
+        mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
+        mock_cluster_cls.return_value = mock_cluster
 
-        # Create and populate instance
-        client = setup_cluster_client()
-        client._options = {"close_connection": True}
-        client._clusters = {"redis://localhost:7000": mock_cluster}
+        client = setup_cluster_client(mock_cluster_cls)
+        # Create the cluster instance
+        client.get_client()
+        assert client._cluster_instance is not None
 
+        # close() should NOT close the cluster
         client.close()
-
-        mock_cluster.close.assert_called_once()
-        assert "redis://localhost:7000" not in client._clusters
-
-    @pytest.mark.asyncio
-    async def test_aclose_closes_async_cluster(self):
-        """Test aclose() closes the async cluster connection when close_connection=True."""
-        mock_async_cluster = AsyncMock()
-
-        # Create and populate instance
-        client = setup_cluster_client()
-        client._options = {"close_connection": True}
-
-        # Set up the async clusters dict with current event loop
-        loop = asyncio.get_running_loop()
-        client._async_clusters = {loop: {"redis://localhost:7000": mock_async_cluster}}
-
-        await client.aclose()
-
-        mock_async_cluster.aclose.assert_called_once()
-        assert "redis://localhost:7000" not in client._async_clusters.get(loop, {})
+        assert client._cluster_instance is not None
+        mock_cluster.close.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_aclose_no_op_when_not_configured(self):
-        """Test aclose() does nothing when close_connection is not set."""
+    async def test_aclose_is_noop(self):
+        """Test aclose() is a no-op — async cluster persists after aclose."""
+        import weakref
+
+        mock_cluster_cls = MagicMock()
         mock_async_cluster = AsyncMock()
 
-        client = setup_cluster_client()
-        client._options = {}  # close_connection not set
+        client = setup_cluster_client(mock_cluster_cls)
+        client._async_cluster_class = MagicMock(return_value=mock_async_cluster)
+        client._async_cluster_instances = weakref.WeakKeyDictionary()
 
+        # Create the async cluster instance
+        client.get_async_client()
         loop = asyncio.get_running_loop()
-        client._async_clusters = {loop: {"redis://localhost:7000": mock_async_cluster}}
+        assert loop in client._async_cluster_instances
 
+        # aclose() should NOT close the cluster
         await client.aclose()
-
-        # Should NOT close the connection
+        assert loop in client._async_cluster_instances
         mock_async_cluster.aclose.assert_not_called()
-        # Connection should still exist
-        assert "redis://localhost:7000" in client._async_clusters.get(loop, {})

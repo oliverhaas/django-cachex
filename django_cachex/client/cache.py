@@ -524,8 +524,13 @@ class KeyValueCache(BaseCache):
 
     @override
     def close(self, **kwargs: Any) -> None:
-        """Close all connection pools."""
+        """No-op. Pools live for the instance's lifetime (matches Django's BaseCache)."""
         self._cache.close(**kwargs)
+
+    @override
+    async def aclose(self, **kwargs: Any) -> None:
+        """No-op. Pools live for the instance's lifetime (matches Django's BaseCache)."""
+        await self._cache.aclose(**kwargs)
 
     # =========================================================================
     # Extended Methods (beyond Django's BaseCache)

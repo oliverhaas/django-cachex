@@ -198,6 +198,8 @@ class CacheProtocol(Protocol):
 
     def close(self, **kwargs: Any) -> None: ...
 
+    async def aclose(self, **kwargs: Any) -> None: ...
+
     # =========================================================================
     # TTL Operations
     # =========================================================================

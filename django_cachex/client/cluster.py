@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import weakref
-from typing import TYPE_CHECKING, Any, ClassVar, cast, override
+from typing import TYPE_CHECKING, Any, cast, override
 
 from django_cachex.client.cache import KeyValueCache
 from django_cachex.client.default import KeyValueCacheClient
@@ -34,7 +34,6 @@ _KNOWN_OPTIONS = frozenset(
         "sentinel_kwargs",
         "compressor",
         "serializer",
-        "close_connection",
         "ignore_exceptions",
         "log_ignored_exceptions",
     },
@@ -61,19 +60,21 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
     - _key_slot_func: Function to calculate key slot
     """
 
-    # Cluster-level cache (cluster manages its own connection pool)
-    _clusters: ClassVar[dict[str, Any]] = {}
-
-    # Async cluster cache: WeakKeyDictionary keyed by event loop
-    # Each loop gets its own dict of URL -> async cluster
-    _async_clusters: ClassVar[weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, Any]]] = (
-        weakref.WeakKeyDictionary()
-    )
-
     # Subclasses must set these
     _cluster_class: type[Any] | None = None
     _async_cluster_class: type[Any] | None = None
     _key_slot_func: Any = None  # Function to calculate key slot
+
+    @override
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # Per-instance cluster (cluster manages its own connection pool)
+        self._cluster_instance: Any | None = None
+        # Per-instance async clusters: WeakKeyDictionary keyed by event loop
+        self._async_cluster_instances: weakref.WeakKeyDictionary[
+            asyncio.AbstractEventLoop,
+            Any,
+        ] = weakref.WeakKeyDictionary()
 
     @property
     def _cluster(self) -> type[Any]:
@@ -93,12 +94,12 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
         Cluster topology discovery happens lazily on first access.
         """
-        url = self._servers[0]
-        if url in self._clusters:
-            return self._clusters[url]
+        if self._cluster_instance is not None:
+            return self._cluster_instance
 
         from urllib.parse import urlparse
 
+        url = self._servers[0]
         parsed_url = urlparse(url)
         # Pass through options
         cluster_options = {key_opt: value for key_opt, value in self._options.items() if key_opt not in _KNOWN_OPTIONS}
@@ -108,10 +109,8 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         if parsed_url.port:
             cluster_options["port"] = parsed_url.port
 
-        cluster = self._cluster(**cluster_options)
-
-        self._clusters[url] = cluster
-        return cluster
+        self._cluster_instance = self._cluster(**cluster_options)
+        return self._cluster_instance
 
     @override
     def get_async_client(self, key: KeyT | None = None, *, write: bool = False) -> Any:
@@ -120,14 +119,14 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         Cluster topology discovery happens lazily on first access.
         """
         loop = asyncio.get_running_loop()
-        url = self._servers[0]
 
         # Check if we already have an async cluster for this loop
-        if loop in self._async_clusters and url in self._async_clusters[loop]:
-            return self._async_clusters[loop][url]
+        if loop in self._async_cluster_instances:
+            return self._async_cluster_instances[loop]
 
         from urllib.parse import urlparse
 
+        url = self._servers[0]
         parsed_url = urlparse(url)
         # Pass through options
         cluster_options = {key_opt: value for key_opt, value in self._options.items() if key_opt not in _KNOWN_OPTIONS}
@@ -138,11 +137,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
             cluster_options["port"] = parsed_url.port
 
         cluster = self._async_cluster(**cluster_options)
-
-        # Cache the cluster for this event loop
-        if loop not in self._async_clusters:
-            self._async_clusters[loop] = {}
-        self._async_clusters[loop][url] = cluster
+        self._async_cluster_instances[loop] = cluster
 
         return cluster
 
@@ -293,12 +288,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
     @override
     def close(self, **kwargs: Any) -> None:
-        """Close the cluster connection if configured to do so."""
-        if self._options.get("close_connection", False):
-            url = self._servers[0]
-            if url in self._clusters:
-                self._clusters[url].close()
-                del self._clusters[url]
+        """No-op. Cluster lives for the instance's lifetime (matches Django's BaseCache)."""
 
     # =========================================================================
     # Async Override Methods
@@ -440,13 +430,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
     @override
     async def aclose(self, **kwargs: Any) -> None:
-        """Close the async cluster connection if configured to do so."""
-        if self._options.get("close_connection", False):
-            loop = asyncio.get_running_loop()
-            url = self._servers[0]
-            if loop in self._async_clusters and url in self._async_clusters[loop]:
-                await self._async_clusters[loop][url].aclose()
-                del self._async_clusters[loop][url]
+        """No-op. Cluster lives for the instance's lifetime (matches Django's BaseCache)."""
 
     @override
     def pipeline(
