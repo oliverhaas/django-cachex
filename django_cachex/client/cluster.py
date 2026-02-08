@@ -71,6 +71,11 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         # Per-instance cluster (cluster manages its own connection pool)
         self._cluster_instance: Any | None = None
         # Per-instance async clusters: WeakKeyDictionary keyed by event loop
+        # Keyed by event loop because async clusters are bound to the loop they're
+        # created on. The same client instance can see multiple loops (e.g., WSGI
+        # thread that calls asyncio.run() — ContextVar copies mean the same cache
+        # instance is shared with the async context). WeakKeyDictionary ensures
+        # automatic cleanup when a loop is GC'd.
         self._async_cluster_instances: weakref.WeakKeyDictionary[
             asyncio.AbstractEventLoop,
             Any,

@@ -133,7 +133,11 @@ class KeyValueCacheClient:
         self._pools: dict[int, Any] = {}
 
         # Async pools: WeakKeyDictionary keyed by event loop -> {server_index: pool}
-        # Using WeakKeyDictionary ensures automatic cleanup when the event loop is GC'd
+        # Keyed by event loop because async pools are bound to the loop they're created on.
+        # The same client instance can see multiple loops (e.g., WSGI thread that calls
+        # asyncio.run() multiple times — ContextVar copies mean the same cache instance
+        # is shared with the async context). WeakKeyDictionary ensures automatic cleanup
+        # when a loop is GC'd.
         self._async_pools: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[int, Any]] = (
             weakref.WeakKeyDictionary()
         )
