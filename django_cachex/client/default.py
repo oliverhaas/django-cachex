@@ -102,7 +102,6 @@ class KeyValueCacheClient:
             "serializer",
             "ignore_exceptions",
             "log_ignored_exceptions",
-            "close_connection",
             "sentinels",
             "sentinel_kwargs",
             "async_pool_class",
@@ -134,7 +133,11 @@ class KeyValueCacheClient:
         self._pools: dict[int, Any] = {}
 
         # Async pools: WeakKeyDictionary keyed by event loop -> {server_index: pool}
-        # Using WeakKeyDictionary ensures automatic cleanup when the event loop is GC'd
+        # Keyed by event loop because async pools are bound to the loop they're created on.
+        # The same client instance can see multiple loops (e.g., WSGI thread that calls
+        # asyncio.run() multiple times — ContextVar copies mean the same cache instance
+        # is shared with the async context). WeakKeyDictionary ensures automatic cleanup
+        # when a loop is GC'd.
         self._async_pools: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[int, Any]] = (
             weakref.WeakKeyDictionary()
         )
@@ -628,29 +631,10 @@ class KeyValueCacheClient:
         return bool(await client.flushdb())
 
     def close(self, **kwargs: Any) -> None:
-        """Close connections if configured."""
-        if self._options.get("close_connection", False):
-            for pool in self._pools.values():
-                pool.disconnect()
-            self._pools.clear()
-            # Also clear async pool references (actual disconnection happens via aclose)
-            self._async_pools.clear()
+        """No-op. Pools live for the instance's lifetime (matches Django's BaseCache)."""
 
     async def aclose(self, **kwargs: Any) -> None:
-        """Async close - disconnect async pools for current event loop."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            # No running event loop
-            return
-
-        pool_dict = self._async_pools.get(loop)
-        if pool_dict is not None:
-            for pool in pool_dict.values():
-                await pool.disconnect()
-            # Remove from tracking
-            if loop in self._async_pools:
-                del self._async_pools[loop]
+        """No-op. Pools live for the instance's lifetime (matches Django's BaseCache)."""
 
     # =========================================================================
     # Extended Operations (beyond Django's BaseCache)
