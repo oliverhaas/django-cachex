@@ -215,7 +215,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         self._pipeline.delete(nkey)
         # DEL returns count of deleted keys, convert to bool
-        self._decoders.append(lambda x: bool(x))
+        self._decoders.append(bool)
         return self
 
     def exists(self, key: KeyT, version: int | None = None) -> Self:
@@ -227,7 +227,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         self._pipeline.exists(nkey)
         # EXISTS returns count, convert to bool
-        self._decoders.append(lambda x: bool(x))
+        self._decoders.append(bool)
         return self
 
     def expire(
@@ -538,7 +538,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         nmember = self._encode(member)
         self._pipeline.sismember(nkey, nmember)
-        self._decoders.append(lambda x: bool(x))  # Returns bool
+        self._decoders.append(bool)  # Returns bool
         return self
 
     def smismember(
@@ -577,7 +577,7 @@ class Pipeline:
         ndestination = self._make_key(destination, version)
         nmember = self._encode(member)
         self._pipeline.smove(nsource, ndestination, nmember)
-        self._decoders.append(lambda x: bool(x))  # Returns bool
+        self._decoders.append(bool)  # Returns bool
         return self
 
     def spop(
@@ -722,7 +722,7 @@ class Pipeline:
         """Queue HEXISTS command (check if field exists)."""
         nkey = self._make_key(key, version)
         self._pipeline.hexists(nkey, field)
-        self._decoders.append(lambda x: bool(x))
+        self._decoders.append(bool)
         return self
 
     def hget(
@@ -797,7 +797,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         nvalue = self._encode(value)
         self._pipeline.hsetnx(nkey, field, nvalue)
-        self._decoders.append(lambda x: bool(x))
+        self._decoders.append(bool)
         return self
 
     def hvals(
