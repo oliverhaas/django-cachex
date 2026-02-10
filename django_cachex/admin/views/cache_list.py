@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect, render
 
 from django_cachex.admin.helpers import get_cache
@@ -22,6 +23,31 @@ if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
 
 
+def _handle_flush(request: HttpRequest) -> HttpResponse | None:
+    """Handle cache flush POST action. Returns redirect on success, None to fall through."""
+    if not request.user.has_perm("django_cachex.change_cache"):
+        raise PermissionDenied
+    action = request.POST.get("action")
+    selected_caches = request.POST.getlist("_selected_action")
+
+    if action == "flush_selected" and selected_caches:
+        flushed_count = 0
+        for cache_name in selected_caches:
+            try:
+                cache = get_cache(cache_name)
+                cache.clear()
+                flushed_count += 1
+            except Exception as e:  # noqa: BLE001
+                messages.error(request, f"Error flushing '{cache_name}': {e!s}")
+        if flushed_count > 0:
+            messages.success(
+                request,
+                f"Successfully flushed {flushed_count} cache(s).",
+            )
+        return redirect(cache_list_url())
+    return None
+
+
 def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:
     """Display all configured caches with their capabilities."""
     # Show help message if requested
@@ -29,24 +55,9 @@ def _index_view(request: HttpRequest, config: ViewConfig) -> HttpResponse:
 
     # Handle POST requests (flush cache action)
     if request.method == "POST":
-        action = request.POST.get("action")
-        selected_caches = request.POST.getlist("_selected_action")
-
-        if action == "flush_selected" and selected_caches:
-            flushed_count = 0
-            for cache_name in selected_caches:
-                try:
-                    cache = get_cache(cache_name)
-                    cache.clear()
-                    flushed_count += 1
-                except Exception as e:  # noqa: BLE001
-                    messages.error(request, f"Error flushing '{cache_name}': {e!s}")
-            if flushed_count > 0:
-                messages.success(
-                    request,
-                    f"Successfully flushed {flushed_count} cache(s).",
-                )
-            return redirect(cache_list_url())
+        result = _handle_flush(request)
+        if result is not None:
+            return result
 
     # Get filter parameters
     support_filter = request.GET.get("support", "").strip()

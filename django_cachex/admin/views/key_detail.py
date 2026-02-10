@@ -10,6 +10,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect, render
 from django.utils import timezone
 
@@ -42,6 +43,12 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     # Handle POST requests (update or delete)
     if request.method == "POST":
         action = request.POST.get("action")
+
+        # Permission gates: delete needs delete_key, all other mutations need change_key
+        if action == "delete" and not request.user.has_perm("django_cachex.delete_key"):
+            raise PermissionDenied
+        if action and action != "delete" and not request.user.has_perm("django_cachex.change_key"):
+            raise PermissionDenied
 
         if action == "delete":
             try:

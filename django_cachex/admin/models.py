@@ -21,6 +21,7 @@ class Cache(models.Model):
     class Meta:
         managed = False
         app_label = "django_cachex"
+        default_permissions = ("view", "change")
         verbose_name = "Cache"
         verbose_name_plural = "Caches"
 
@@ -146,6 +147,7 @@ class Key(models.Model):
     class Meta:
         managed = False
         app_label = "django_cachex"
+        default_permissions = ("add", "change", "delete", "view")
         verbose_name = "Key"
         verbose_name_plural = "Keys"
 

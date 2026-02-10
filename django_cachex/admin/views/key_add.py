@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
 from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect, render
 
 from django_cachex.admin.helpers import get_cache
@@ -32,6 +33,8 @@ def _key_add_view(
     cache = get_cache(cache_name)
 
     if request.method == "POST":
+        if not request.user.has_perm("django_cachex.add_key"):
+            raise PermissionDenied
         key_name = request.POST.get("key", "").strip()
         key_type = request.POST.get("type", KeyType.STRING).strip()
 

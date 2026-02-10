@@ -2053,7 +2053,7 @@ class TestCacheAdmin:
 
         assert cache_admin.has_delete_permission(request) is False
 
-    def test_staff_only_permissions(self, db, test_cache):
+    def test_non_staff_has_no_permissions(self, db, test_cache):
         """Non-staff users should not have view/change/module permissions."""
         from django.contrib.admin import site
         from django.contrib.auth.models import User
@@ -2063,7 +2063,6 @@ class TestCacheAdmin:
 
         cache_admin = site._registry[Cache]
 
-        # Create a non-staff user
         non_staff_user = User.objects.create_user(
             username="nonstaff",
             password="password",  # noqa: S106
@@ -2074,13 +2073,12 @@ class TestCacheAdmin:
         request = factory.get("/admin/")
         request.user = non_staff_user
 
-        # Non-staff should not have permissions
         assert cache_admin.has_view_permission(request) is False
         assert cache_admin.has_change_permission(request) is False
         assert cache_admin.has_module_permission(request) is False
 
-    def test_staff_has_permissions(self, admin_user, test_cache):
-        """Staff users should have view/change/module permissions."""
+    def test_superuser_has_all_permissions(self, admin_user, test_cache):
+        """Superusers should have view/change/module permissions."""
         from django.contrib.admin import site
         from django.test import RequestFactory
 
@@ -2092,7 +2090,323 @@ class TestCacheAdmin:
         request = factory.get("/admin/")
         request.user = admin_user
 
-        # Staff should have view/change/module permissions
         assert cache_admin.has_view_permission(request) is True
         assert cache_admin.has_change_permission(request) is True
         assert cache_admin.has_module_permission(request) is True
+
+    def test_staff_without_perms_has_no_permissions(self, db, test_cache):
+        """Staff users without explicit permissions should be denied."""
+        from django.contrib.admin import site
+        from django.contrib.auth.models import User
+        from django.test import RequestFactory
+
+        from django_cachex.admin.models import Cache
+
+        cache_admin = site._registry[Cache]
+
+        staff_user = User.objects.create_user(
+            username="staff_no_perms",
+            password="password",  # noqa: S106
+            is_staff=True,
+        )
+
+        factory = RequestFactory()
+        request = factory.get("/admin/")
+        request.user = staff_user
+
+        assert cache_admin.has_view_permission(request) is False
+        assert cache_admin.has_change_permission(request) is False
+
+    def test_staff_with_view_perm_can_view(self, db, test_cache):
+        """Staff user with view_cache permission can view caches."""
+        from django.contrib.admin import site
+        from django.contrib.auth.models import Permission, User
+        from django.test import RequestFactory
+
+        from django_cachex.admin.models import Cache
+
+        cache_admin = site._registry[Cache]
+
+        staff_user = User.objects.create_user(
+            username="staff_viewer",
+            password="password",  # noqa: S106
+            is_staff=True,
+        )
+        perm = Permission.objects.get(
+            codename="view_cache",
+            content_type__app_label="django_cachex",
+        )
+        staff_user.user_permissions.add(perm)
+        # Refetch to clear permission cache
+        staff_user = User.objects.get(pk=staff_user.pk)
+
+        factory = RequestFactory()
+        request = factory.get("/admin/")
+        request.user = staff_user
+
+        assert cache_admin.has_view_permission(request) is True
+        assert cache_admin.has_change_permission(request) is False
+
+    def test_staff_with_change_perm_can_change(self, db, test_cache):
+        """Staff user with change_cache permission can flush caches."""
+        from django.contrib.admin import site
+        from django.contrib.auth.models import Permission, User
+        from django.test import RequestFactory
+
+        from django_cachex.admin.models import Cache
+
+        cache_admin = site._registry[Cache]
+
+        staff_user = User.objects.create_user(
+            username="staff_changer",
+            password="password",  # noqa: S106
+            is_staff=True,
+        )
+        perm = Permission.objects.get(
+            codename="change_cache",
+            content_type__app_label="django_cachex",
+        )
+        staff_user.user_permissions.add(perm)
+        staff_user = User.objects.get(pk=staff_user.pk)
+
+        factory = RequestFactory()
+        request = factory.get("/admin/")
+        request.user = staff_user
+
+        assert cache_admin.has_change_permission(request) is True
+        # change_cache also grants view (Django default behavior)
+        assert cache_admin.has_view_permission(request) is True
+
+
+class TestKeyAdminPermissions:
+    """Test KeyAdmin permission methods with Django's permission system."""
+
+    def test_module_permission_always_false(self, admin_user, test_cache):
+        """KeyAdmin should always hide from sidebar."""
+        from django.contrib.admin import site
+        from django.test import RequestFactory
+
+        from django_cachex.admin.models import Key
+
+        key_admin = site._registry[Key]
+
+        factory = RequestFactory()
+        request = factory.get("/admin/")
+        request.user = admin_user
+
+        assert key_admin.has_module_permission(request) is False
+
+    def test_superuser_has_all_key_permissions(self, admin_user, test_cache):
+        """Superusers should have all key permissions."""
+        from django.contrib.admin import site
+        from django.test import RequestFactory
+
+        from django_cachex.admin.models import Key
+
+        key_admin = site._registry[Key]
+
+        factory = RequestFactory()
+        request = factory.get("/admin/")
+        request.user = admin_user
+
+        assert key_admin.has_view_permission(request) is True
+        assert key_admin.has_add_permission(request) is True
+        assert key_admin.has_change_permission(request) is True
+        assert key_admin.has_delete_permission(request) is True
+
+    def test_staff_without_perms_denied(self, db, test_cache):
+        """Staff users without permissions should be denied."""
+        from django.contrib.admin import site
+        from django.contrib.auth.models import User
+        from django.test import RequestFactory
+
+        from django_cachex.admin.models import Key
+
+        key_admin = site._registry[Key]
+
+        staff_user = User.objects.create_user(
+            username="staff_no_perms",
+            password="password",  # noqa: S106
+            is_staff=True,
+        )
+
+        factory = RequestFactory()
+        request = factory.get("/admin/")
+        request.user = staff_user
+
+        assert key_admin.has_view_permission(request) is False
+        assert key_admin.has_add_permission(request) is False
+        assert key_admin.has_change_permission(request) is False
+        assert key_admin.has_delete_permission(request) is False
+
+    def test_staff_with_view_key_perm(self, db, test_cache):
+        """Staff user with view_key permission can view keys."""
+        from django.contrib.admin import site
+        from django.contrib.auth.models import Permission, User
+        from django.test import RequestFactory
+
+        from django_cachex.admin.models import Key
+
+        key_admin = site._registry[Key]
+
+        staff_user = User.objects.create_user(
+            username="staff_viewer",
+            password="password",  # noqa: S106
+            is_staff=True,
+        )
+        perm = Permission.objects.get(
+            codename="view_key",
+            content_type__app_label="django_cachex",
+        )
+        staff_user.user_permissions.add(perm)
+        staff_user = User.objects.get(pk=staff_user.pk)
+
+        factory = RequestFactory()
+        request = factory.get("/admin/")
+        request.user = staff_user
+
+        assert key_admin.has_view_permission(request) is True
+        assert key_admin.has_add_permission(request) is False
+        assert key_admin.has_change_permission(request) is False
+        assert key_admin.has_delete_permission(request) is False
+
+
+class TestPermissionViewAccess:
+    """Test that views enforce permissions via HTTP requests."""
+
+    def test_staff_without_perms_denied_cache_list(self, db, test_cache):
+        """Staff user without permissions gets 403 on cache list."""
+        from django.contrib.auth.models import User
+
+        staff_user = User.objects.create_user(
+            username="staff_no_perms",
+            password="password",  # noqa: S106
+            is_staff=True,
+        )
+        client = Client()
+        client.force_login(staff_user)
+
+        response = client.get(_cache_list_url())
+        assert response.status_code == 403
+
+    def test_staff_without_perms_denied_cache_detail(self, db, test_cache):
+        """Staff user without permissions gets 403 on cache detail."""
+        from django.contrib.auth.models import User
+
+        staff_user = User.objects.create_user(
+            username="staff_no_perms",
+            password="password",  # noqa: S106
+            is_staff=True,
+        )
+        client = Client()
+        client.force_login(staff_user)
+
+        response = client.get(_cache_detail_url("default"))
+        assert response.status_code == 403
+
+    def test_staff_without_perms_denied_key_list(self, db, test_cache):
+        """Staff user without permissions gets 403 on key list."""
+        from django.contrib.auth.models import User
+
+        staff_user = User.objects.create_user(
+            username="staff_no_perms",
+            password="password",  # noqa: S106
+            is_staff=True,
+        )
+        client = Client()
+        client.force_login(staff_user)
+
+        response = client.get(_key_list_url("default"))
+        assert response.status_code == 403
+
+    def test_staff_without_perms_denied_key_add(self, db, test_cache):
+        """Staff user without permissions gets 403 on key add."""
+        from django.contrib.auth.models import User
+
+        staff_user = User.objects.create_user(
+            username="staff_no_perms",
+            password="password",  # noqa: S106
+            is_staff=True,
+        )
+        client = Client()
+        client.force_login(staff_user)
+
+        response = client.get(_key_add_url("default"))
+        assert response.status_code == 403
+
+    def test_staff_with_view_perm_can_access_cache_list(self, db, test_cache):
+        """Staff user with view_cache can access cache list."""
+        from django.contrib.auth.models import Permission, User
+
+        staff_user = User.objects.create_user(
+            username="staff_viewer",
+            password="password",  # noqa: S106
+            is_staff=True,
+        )
+        perm = Permission.objects.get(
+            codename="view_cache",
+            content_type__app_label="django_cachex",
+        )
+        staff_user.user_permissions.add(perm)
+
+        client = Client()
+        client.force_login(staff_user)
+
+        response = client.get(_cache_list_url())
+        assert response.status_code == 200
+
+    def test_view_only_user_cannot_flush_cache(self, db, test_cache):
+        """Staff user with only view_cache perm gets 403 on flush POST."""
+        from django.contrib.auth.models import Permission, User
+
+        staff_user = User.objects.create_user(
+            username="staff_viewer",
+            password="password",  # noqa: S106
+            is_staff=True,
+        )
+        perm = Permission.objects.get(
+            codename="view_cache",
+            content_type__app_label="django_cachex",
+        )
+        staff_user.user_permissions.add(perm)
+
+        client = Client()
+        client.force_login(staff_user)
+
+        response = client.post(
+            _cache_list_url(),
+            {"action": "flush_selected", "_selected_action": ["default"]},
+        )
+        assert response.status_code == 403
+
+    def test_view_only_user_cannot_delete_keys(self, db, test_cache):
+        """Staff user with only view_key perm gets 403 on bulk delete POST."""
+        from django.contrib.auth.models import Permission, User
+
+        staff_user = User.objects.create_user(
+            username="staff_viewer",
+            password="password",  # noqa: S106
+            is_staff=True,
+        )
+        view_key = Permission.objects.get(
+            codename="view_key",
+            content_type__app_label="django_cachex",
+        )
+        staff_user.user_permissions.add(view_key)
+
+        client = Client()
+        client.force_login(staff_user)
+
+        test_cache.set("test_key", "value")
+        response = client.post(
+            _key_list_url("default"),
+            {"action": "delete_selected", "_selected_action": ["test_key"]},
+        )
+        assert response.status_code == 403
+
+    def test_superuser_can_access_all_views(self, admin_client, test_cache):
+        """Superuser can access all views (unchanged behavior)."""
+        assert admin_client.get(_cache_list_url()).status_code == 200
+        assert admin_client.get(_cache_detail_url("default")).status_code == 200
+        assert admin_client.get(_key_list_url("default")).status_code == 200
+        assert admin_client.get(_key_add_url("default")).status_code == 200

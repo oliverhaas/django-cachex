@@ -9,6 +9,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect, render
 from django.utils import timezone
 
@@ -46,6 +47,8 @@ def _key_list_view(  # noqa: C901, PLR0912, PLR0915
 
     # Handle POST requests (bulk delete)
     if request.method == "POST":
+        if not request.user.has_perm("django_cachex.delete_key"):
+            raise PermissionDenied
         action = request.POST.get("action")
 
         if action == "delete_selected":

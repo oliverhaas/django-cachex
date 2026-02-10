@@ -11,6 +11,7 @@ import contextlib
 from typing import TYPE_CHECKING, Any
 
 from django.contrib import admin
+from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseRedirect
 from django.urls import path, reverse
 
@@ -71,6 +72,7 @@ class CacheAdmin(_CacheBase):
     Uses shared view logic with unfold templates.
     """
 
+    # Caches are defined in settings — add/delete don't apply
     def has_add_permission(self, request: HttpRequest) -> bool:
         return False
 
@@ -80,23 +82,6 @@ class CacheAdmin(_CacheBase):
         obj: Cache | None = None,
     ) -> bool:
         return False
-
-    def has_change_permission(
-        self,
-        request: HttpRequest,
-        obj: Cache | None = None,
-    ) -> bool:
-        return bool(getattr(request.user, "is_staff", False))
-
-    def has_view_permission(
-        self,
-        request: HttpRequest,
-        obj: Cache | None = None,
-    ) -> bool:
-        return bool(getattr(request.user, "is_staff", False))
-
-    def has_module_permission(self, request: HttpRequest) -> bool:
-        return bool(getattr(request.user, "is_staff", False))
 
     def get_urls(self) -> list:
         """Add custom URL patterns."""
@@ -116,6 +101,8 @@ class CacheAdmin(_CacheBase):
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
         """List all configured caches using unfold templates."""
+        if not self.has_view_or_change_permission(request):
+            raise PermissionDenied
         return _index_view(request, UNFOLD_CACHE_CONFIG)
 
     def change_view(
@@ -126,6 +113,8 @@ class CacheAdmin(_CacheBase):
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
         """Display cache details using unfold templates."""
+        if not self.has_view_or_change_permission(request):
+            raise PermissionDenied
         return _cache_detail_view(request, object_id, UNFOLD_CACHE_CONFIG)
 
 
@@ -137,33 +126,9 @@ class KeyAdmin(_KeyBase):
     Uses shared view logic with unfold templates.
     """
 
+    # Hide from sidebar — accessed via Cache
     def has_module_permission(self, request: HttpRequest) -> bool:
-        # Hide from sidebar - accessed via Cache
         return False
-
-    def has_add_permission(self, request: HttpRequest) -> bool:
-        return bool(getattr(request.user, "is_staff", False))
-
-    def has_delete_permission(
-        self,
-        request: HttpRequest,
-        obj: Key | None = None,
-    ) -> bool:
-        return bool(getattr(request.user, "is_staff", False))
-
-    def has_change_permission(
-        self,
-        request: HttpRequest,
-        obj: Key | None = None,
-    ) -> bool:
-        return bool(getattr(request.user, "is_staff", False))
-
-    def has_view_permission(
-        self,
-        request: HttpRequest,
-        obj: Key | None = None,
-    ) -> bool:
-        return bool(getattr(request.user, "is_staff", False))
 
     def get_urls(self) -> list:
         """Add custom URL patterns for key operations."""
@@ -183,6 +148,9 @@ class KeyAdmin(_KeyBase):
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
         """Browse keys for a specific cache using unfold templates."""
+        if not self.has_view_or_change_permission(request):
+            raise PermissionDenied
+
         from django.contrib import messages
 
         cache_name = request.GET.get("cache", "default")
@@ -203,6 +171,9 @@ class KeyAdmin(_KeyBase):
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
         """View/edit a specific key using unfold templates."""
+        if not self.has_view_or_change_permission(request):
+            raise PermissionDenied
+
         from django.contrib import messages
 
         cache_name, key_name = Key.parse_pk(object_id)
@@ -222,6 +193,9 @@ class KeyAdmin(_KeyBase):
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
         """Add a new key to a cache using unfold templates."""
+        if not self.has_add_permission(request):
+            raise PermissionDenied
+
         from django.contrib import messages
 
         cache_name = request.GET.get("cache", "default")

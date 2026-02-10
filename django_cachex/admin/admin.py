@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseRedirect
 from django.urls import path, reverse
 from django.utils.safestring import mark_safe
@@ -72,7 +73,7 @@ class CacheAdmin(_CacheBase):
         ),
     }
 
-    # Disable standard CRUD operations
+    # Caches are defined in settings — add/delete don't apply
     def has_add_permission(self, request: HttpRequest) -> bool:
         return False
 
@@ -82,23 +83,6 @@ class CacheAdmin(_CacheBase):
         obj: Cache | None = None,
     ) -> bool:
         return False
-
-    def has_change_permission(
-        self,
-        request: HttpRequest,
-        obj: Cache | None = None,
-    ) -> bool:
-        return bool(getattr(request.user, "is_staff", False))
-
-    def has_view_permission(
-        self,
-        request: HttpRequest,
-        obj: Cache | None = None,
-    ) -> bool:
-        return bool(getattr(request.user, "is_staff", False))
-
-    def has_module_permission(self, request: HttpRequest) -> bool:
-        return bool(getattr(request.user, "is_staff", False))
 
     def get_urls(self) -> list:
         """Add custom URL patterns."""
@@ -121,6 +105,8 @@ class CacheAdmin(_CacheBase):
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
         """List all configured caches."""
+        if not self.has_view_or_change_permission(request):
+            raise PermissionDenied
         return _index_view(request, self._get_config())
 
     def change_view(
@@ -131,6 +117,8 @@ class CacheAdmin(_CacheBase):
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
         """Display cache details (info + slowlog combined)."""
+        if not self.has_view_or_change_permission(request):
+            raise PermissionDenied
         return _cache_detail_view(request, object_id, self._get_config())
 
 
@@ -255,33 +243,9 @@ class KeyAdmin(_KeyBase):
         ),
     }
 
-    # Hide from sidebar - accessed via Cache
+    # Hide from sidebar — accessed via Cache
     def has_module_permission(self, request: HttpRequest) -> bool:
         return False
-
-    def has_add_permission(self, request: HttpRequest) -> bool:
-        return bool(getattr(request.user, "is_staff", False))
-
-    def has_delete_permission(
-        self,
-        request: HttpRequest,
-        obj: Key | None = None,
-    ) -> bool:
-        return bool(getattr(request.user, "is_staff", False))
-
-    def has_change_permission(
-        self,
-        request: HttpRequest,
-        obj: Key | None = None,
-    ) -> bool:
-        return bool(getattr(request.user, "is_staff", False))
-
-    def has_view_permission(
-        self,
-        request: HttpRequest,
-        obj: Key | None = None,
-    ) -> bool:
-        return bool(getattr(request.user, "is_staff", False))
 
     def get_urls(self) -> list:
         """Add custom URL patterns for key operations."""
@@ -304,6 +268,9 @@ class KeyAdmin(_KeyBase):
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
         """Browse keys for a specific cache."""
+        if not self.has_view_or_change_permission(request):
+            raise PermissionDenied
+
         from .views.key_list import _key_list_view
 
         cache_name = request.GET.get("cache", "default")
@@ -325,6 +292,9 @@ class KeyAdmin(_KeyBase):
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
         """View/edit a specific key."""
+        if not self.has_view_or_change_permission(request):
+            raise PermissionDenied
+
         from .views.key_detail import _key_detail_view
 
         cache_name, key_name = Key.parse_pk(object_id)
@@ -344,6 +314,9 @@ class KeyAdmin(_KeyBase):
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
         """Add a new key to a cache."""
+        if not self.has_add_permission(request):
+            raise PermissionDenied
+
         from .views.key_add import _key_add_view
 
         cache_name = request.GET.get("cache", "default")
