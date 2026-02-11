@@ -589,6 +589,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#permissions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Permissions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#support-levels" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1131,6 +1142,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#permissions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Permissions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#support-levels" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1305,6 +1327,15 @@
 <p>Use either <code>django_cachex.admin</code> OR <code>django_cachex.unfold</code>, not both.
 They provide the same functionality with different styling.</p>
 </div>
+<h2 id="permissions">Permissions<a class="headerlink" href="#permissions" title="Permanent link">&para;</a></h2>
+<p>The admin uses Django's built-in permission system. Superusers have full access. Staff users need explicit permissions:</p>
+<ul>
+<li><code>django_cachex.view_cache</code> / <code>view_key</code> — view caches and keys</li>
+<li><code>django_cachex.change_cache</code> — flush caches, update TTL</li>
+<li><code>django_cachex.add_key</code> — create keys</li>
+<li><code>django_cachex.change_key</code> — edit values</li>
+<li><code>django_cachex.delete_key</code> — delete keys</li>
+</ul>
 <h2 id="support-levels">Support Levels<a class="headerlink" href="#support-levels" title="Permanent link">&para;</a></h2>
 <p>Different cache backends have different levels of support in the Cache Admin:</p>
 <table>
