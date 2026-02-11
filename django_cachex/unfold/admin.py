@@ -1,9 +1,4 @@
-"""
-Django admin classes for cache management with Unfold theme.
-
-This module provides ModelAdmin classes that use the Unfold admin theme
-while sharing view logic with the standard admin module via ViewConfig.
-"""
+"""Django admin classes for cache management with Unfold theme."""
 
 from __future__ import annotations
 
@@ -66,11 +61,7 @@ with contextlib.suppress(admin.sites.NotRegistered):  # type: ignore[attr-define
 
 @admin.register(Cache)
 class CacheAdmin(_CacheBase):
-    """
-    Unfold-themed admin for caches.
-
-    Uses shared view logic with unfold templates.
-    """
+    """Unfold-themed admin for caches."""
 
     # Caches are defined in settings — add/delete don't apply
     def has_add_permission(self, request: HttpRequest) -> bool:
@@ -120,11 +111,7 @@ class CacheAdmin(_CacheBase):
 
 @admin.register(Key)
 class KeyAdmin(_KeyBase):
-    """
-    Unfold-themed admin for cache keys.
-
-    Uses shared view logic with unfold templates.
-    """
+    """Unfold-themed admin for cache keys."""
 
     # Hide from sidebar — accessed via Cache
     def has_module_permission(self, request: HttpRequest) -> bool:

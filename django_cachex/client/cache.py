@@ -1,33 +1,8 @@
 """Cache backend classes for key-value backends like Valkey or Redis.
 
-This module provides cache backend classes that extend Django's BaseCache
-with Redis/Valkey specific features:
-- Multi-serializer fallback support
-- Compression support
-- Extended Redis operations (hashes, lists, sets, sorted sets)
-- TTL and expiry operations
-- Pattern-based operations
-- Distributed locking
-- Pipeline support
-
-Architecture (matching Django's RedisCache structure):
-- KeyValueCache(BaseCache): Base class with all logic, library-agnostic
-- RedisCache(KeyValueCache): Sets _class = RedisCacheClient
-- ValkeyCache(KeyValueCache): Sets _class = ValkeyCacheClient
-
-Internal attributes (matching Django's RedisCache for compatibility):
-- _servers: List of server URLs
-- _class: The CacheClient class to use
-- _options: Options dict from params["OPTIONS"]
-- _cache: Cached property that instantiates the CacheClient
-
-Usage:
-    CACHES = {
-        "default": {
-            "BACKEND": "django_cachex.cache.RedisCache",  # or ValkeyCache
-            "LOCATION": "redis://127.0.0.1:6379/1",
-        }
-    }
+Extends Django's BaseCache with Redis/Valkey features: data structures,
+TTL operations, pattern matching, distributed locking, pipelines, and
+multi-serializer/compressor support.
 """
 
 from __future__ import annotations
@@ -79,66 +54,8 @@ def _glob_escape(s: str) -> str:
 class KeyValueCache(BaseCache):
     """Django cache backend for Redis/Valkey with extended features.
 
-    This is the base class for all django-cachex cache backends. It extends
-    Django's ``BaseCache`` with Redis/Valkey specific features while maintaining
-    full compatibility with Django's cache API.
-
-    Features:
-        - **Full Django Cache API**: All standard methods (get, set, delete, etc.)
-          plus their async variants (aget, aset, adelete, etc.)
-        - **Multi-serializer fallback**: Safely migrate between serialization formats
-        - **Compression**: Optional compression with multiple algorithm support
-        - **Extended operations**: Redis data structures (hashes, lists, sets,
-          sorted sets) with automatic serialization
-        - **TTL operations**: Query and modify key expiration times
-        - **Pattern operations**: Find and delete keys by pattern
-        - **Distributed locking**: Redis-based locks for distributed systems
-        - **Pipeline support**: Batch operations for improved performance
-        - **Master-replica support**: Configure multiple servers for read scaling
-
-    Usage:
-        Don't use this class directly. Use ``RedisCache`` or ``ValkeyCache``::
-
-            # settings.py
-            CACHES = {
-                "default": {
-                    "BACKEND": "django_cachex.cache.RedisCache",
-                    "LOCATION": "redis://127.0.0.1:6379/1",
-                    "OPTIONS": {
-                        "serializer": "django_cachex.serializers.pickle.PickleSerializer",
-                        "compressor": "django_cachex.compressors.zstd.ZstdCompressor",
-                    }
-                }
-            }
-
-        Then use via Django's cache framework::
-
-            from django.core.cache import cache
-
-            # Standard operations
-            cache.set("key", {"data": "value"}, timeout=300)
-            value = cache.get("key")
-
-            # Async operations (Django 4.0+)
-            await cache.aset("key", "value")
-            value = await cache.aget("key")
-
-            # Extended operations
-            cache.hset("user:1", "name", "Alice")
-            cache.lpush("queue", "task1", "task2")
-            cache.sadd("tags", "python", "django")
-
-    Attributes:
-        _servers: List of server URLs (first is master, rest are replicas).
-        _options: Configuration options from Django's CACHES setting.
-        _class: The CacheClient class to use (set by subclasses).
-        _cache: Lazily-initialized CacheClient instance.
-
-    See Also:
-        - ``RedisCache``: For redis-py library
-        - ``ValkeyCache``: For valkey-py library
-        - ``RedisClusterCache``: For Redis Cluster mode
-        - ``RedisSentinelCache``: For Redis Sentinel mode
+    Base class for all django-cachex backends. Extends Django's ``BaseCache``
+    with data structures, TTL ops, pattern matching, locking, and pipelines.
     """
 
     # Support level marker for admin interface
@@ -177,7 +94,7 @@ class KeyValueCache(BaseCache):
 
     @cached_property
     def _cache(self) -> KeyValueCacheClient:
-        """Get the CacheClient instance (matches Django's pattern)."""
+        """Get the KeyValueCacheClient instance (matches Django's pattern)."""
         return self._class(self._servers, **self._options)
 
     def get_backend_timeout(self, timeout: float | None = DEFAULT_TIMEOUT) -> int | None:
@@ -294,20 +211,8 @@ class KeyValueCache(BaseCache):
     ) -> bool | None:
         """Set a value in the cache.
 
-        Extended to support nx/xx flags beyond Django's standard interface.
-
-        Args:
-            key: Cache key
-            value: Value to store
-            timeout: Expiry time in seconds (DEFAULT_TIMEOUT uses default)
-            version: Key version
-            **kwargs: Extended options:
-                - nx: Only set if key does not exist
-                - xx: Only set if key already exists
-
-        Returns:
-            When nx or xx is True: bool indicating success
-            Otherwise: None (standard Django behavior)
+        Supports nx/xx kwargs: nx=True only sets if key doesn't exist,
+        xx=True only sets if key exists. Returns bool when nx/xx is used.
         """
         nx = kwargs.get("nx", False)
         xx = kwargs.get("xx", False)
@@ -413,14 +318,7 @@ class KeyValueCache(BaseCache):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
     ) -> Any:
-        """Fetch a given key from the cache. If the key does not exist,
-        add the key and set it to the default value.
-
-        The default value can also be any callable. If timeout is given,
-        use that timeout for the key; otherwise use the default cache timeout.
-
-        Return the value of the key stored or retrieved.
-        """
+        """Fetch a key from the cache, setting it to default if missing."""
         val = self.get(key, self._missing_key, version=version)
         if val is self._missing_key:
             if callable(default):
@@ -439,14 +337,7 @@ class KeyValueCache(BaseCache):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
     ) -> Any:
-        """Fetch a given key from the cache asynchronously. If the key does not exist,
-        add the key and set it to the default value.
-
-        The default value can also be any callable. If timeout is given,
-        use that timeout for the key; otherwise use the default cache timeout.
-
-        Return the value of the key stored or retrieved.
-        """
+        """Fetch a key from the cache asynchronously, setting it to default if missing."""
         val = await self.aget(key, self._missing_key, version=version)
         if val is self._missing_key:
             if callable(default):
@@ -490,10 +381,7 @@ class KeyValueCache(BaseCache):
     @omit_exception(return_value=0)
     @override
     def delete_many(self, keys: list[KeyT], version: int | None = None) -> int:
-        """Delete multiple keys from the cache.
-
-        Extended to return the count of deleted keys (Django's returns None).
-        """
+        """Delete multiple keys from the cache."""
         keys = list(keys)  # Convert generator to list
         if not keys:
             return 0
@@ -524,12 +412,12 @@ class KeyValueCache(BaseCache):
 
     @override
     def close(self, **kwargs: Any) -> None:
-        """No-op. Pools live for the instance's lifetime (matches Django's BaseCache)."""
+        """Delegate to the client. By default a no-op (pools live for the instance's lifetime)."""
         self._cache.close(**kwargs)
 
     @override
     async def aclose(self, **kwargs: Any) -> None:
-        """No-op. Pools live for the instance's lifetime (matches Django's BaseCache)."""
+        """Delegate to the client. By default a no-op (pools live for the instance's lifetime)."""
         await self._cache.aclose(**kwargs)
 
     # =========================================================================
@@ -537,36 +425,17 @@ class KeyValueCache(BaseCache):
     # =========================================================================
 
     def ttl(self, key: KeyT, version: int | None = None) -> int | None:
-        """Get the time-to-live of a key in seconds."""
+        """Get TTL in seconds. Returns None if no expiry, -2 if key doesn't exist."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.ttl(key)
 
     def pttl(self, key: KeyT, version: int | None = None) -> int | None:
-        """Get the time-to-live of a key in milliseconds."""
+        """Get TTL in milliseconds. Returns None if no expiry, -2 if key doesn't exist."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.pttl(key)
 
     def type(self, key: KeyT, version: int | None = None) -> KeyType | None:
-        """Get the Redis data type of a key.
-
-        Returns the type of the value stored at key as a ``KeyType``
-        enum member, or ``None`` if the key does not exist.
-
-        Args:
-            key: Cache key to check.
-            version: Key version (default: cache's version).
-
-        Returns:
-            ``KeyType`` member or ``None`` if key doesn't exist.
-
-        Example::
-
-            cache.set("mykey", "value")
-            cache.type("mykey")  # Returns KeyType.STRING
-
-            cache.lpush("mylist", "a", "b")
-            cache.type("mylist")  # Returns KeyType.LIST
-        """
+        """Get the Redis data type of a key."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.type(key)
 
@@ -611,7 +480,7 @@ class KeyValueCache(BaseCache):
         when: AbsExpiryT,
         version: int | None = None,
     ) -> bool:
-        """Set expiry to an absolute time in milliseconds."""
+        """Set expiry to an absolute time with millisecond precision."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.pexpireat(key, when)
 
@@ -644,19 +513,7 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
         key_type: str | None = None,
     ) -> tuple[int, list[str]]:
-        """Perform a single SCAN iteration returning cursor and keys.
-
-        Args:
-            cursor: Cursor position (0 to start a new scan)
-            pattern: Pattern to match keys against
-            count: Hint for number of keys to return per call
-            version: Key version to use
-            key_type: Filter by key type (e.g. KeyType.STRING, KeyType.LIST)
-
-        Returns:
-            Tuple of (next_cursor, list of user keys). When next_cursor is 0,
-            the scan is complete.
-        """
+        """Perform a single SCAN iteration returning cursor and keys."""
         full_pattern = self.make_pattern(pattern, version=version)
         next_cursor, raw_keys = self._cache.scan(
             cursor=cursor,
@@ -872,16 +729,7 @@ class KeyValueCache(BaseCache):
         count: int | None = None,
         version: int | None = None,
     ) -> Any | list[Any] | None:
-        """Remove and return element(s) from head of list.
-
-        Args:
-            key: The list key
-            count: Optional number of elements to pop (default: 1, returns single value)
-            version: Key version
-
-        Returns:
-            Single value if count is None, list of values if count is specified
-        """
+        """Remove and return element(s) from head of list."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.lpop(key, count=count)
 
@@ -891,16 +739,7 @@ class KeyValueCache(BaseCache):
         count: int | None = None,
         version: int | None = None,
     ) -> Any | list[Any] | None:
-        """Remove and return element(s) from tail of list.
-
-        Args:
-            key: The list key
-            count: Optional number of elements to pop (default: 1, returns single value)
-            version: Key version
-
-        Returns:
-            Single value if count is None, list of values if count is specified
-        """
+        """Remove and return element(s) from tail of list."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.rpop(key, count=count)
 
@@ -939,19 +778,7 @@ class KeyValueCache(BaseCache):
         maxlen: int | None = None,
         version: int | None = None,
     ) -> int | list[int] | None:
-        """Find position(s) of element in list.
-
-        Args:
-            key: List key
-            value: Value to search for
-            rank: Rank of first match to return (1 for first, -1 for last, etc.)
-            count: Number of matches to return (0 for all)
-            maxlen: Limit search to first N elements
-            version: Key version
-
-        Returns:
-            Index if count is None, list of indices if count is specified, None if not found
-        """
+        """Find position(s) of element in list."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.lpos(key, value, rank=rank, count=count, maxlen=maxlen)
 
@@ -963,18 +790,7 @@ class KeyValueCache(BaseCache):
         whereto: str,
         version: int | None = None,
     ) -> Any | None:
-        """Atomically move an element from one list to another.
-
-        Args:
-            src: Source list key
-            dst: Destination list key
-            wherefrom: Where to pop from source ('LEFT' or 'RIGHT')
-            whereto: Where to push to destination ('LEFT' or 'RIGHT')
-            version: Key version for both lists
-
-        Returns:
-            The moved element, or None if src is empty
-        """
+        """Atomically move an element from one list to another."""
         src = self.make_and_validate_key(src, version=version)
         dst = self.make_and_validate_key(dst, version=version)
         return self._cache.lmove(src, dst, wherefrom, whereto)
@@ -1030,18 +846,7 @@ class KeyValueCache(BaseCache):
         timeout: float = 0,
         version: int | None = None,
     ) -> tuple[str, Any] | None:
-        """Blocking pop from head of list.
-
-        Blocks until an element is available or timeout expires.
-
-        Args:
-            *keys: One or more list keys to pop from (first available)
-            timeout: Seconds to block (0 = block indefinitely)
-            version: Key version
-
-        Returns:
-            Tuple of (original_key, value) or None if timeout expires.
-        """
+        """Blocking pop from head of list."""
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
         result = self._cache.blpop(nkeys, timeout=timeout)
         if result is None:
@@ -1055,18 +860,7 @@ class KeyValueCache(BaseCache):
         timeout: float = 0,
         version: int | None = None,
     ) -> tuple[str, Any] | None:
-        """Blocking pop from tail of list.
-
-        Blocks until an element is available or timeout expires.
-
-        Args:
-            *keys: One or more list keys to pop from (first available)
-            timeout: Seconds to block (0 = block indefinitely)
-            version: Key version
-
-        Returns:
-            Tuple of (original_key, value) or None if timeout expires.
-        """
+        """Blocking pop from tail of list."""
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
         result = self._cache.brpop(nkeys, timeout=timeout)
         if result is None:
@@ -1083,21 +877,7 @@ class KeyValueCache(BaseCache):
         whereto: str = "RIGHT",
         version: int | None = None,
     ) -> Any | None:
-        """Blocking atomically move element from one list to another.
-
-        Blocks until an element is available in src or timeout expires.
-
-        Args:
-            src: Source list key
-            dst: Destination list key
-            timeout: Seconds to block (0 = block indefinitely)
-            wherefrom: Where to pop from source ('LEFT' or 'RIGHT')
-            whereto: Where to push to destination ('LEFT' or 'RIGHT')
-            version: Key version for both lists
-
-        Returns:
-            The moved element, or None if timeout expires.
-        """
+        """Blocking atomically move element from one list to another."""
         src = self.make_and_validate_key(src, version=version)
         dst = self.make_and_validate_key(dst, version=version)
         return self._cache.blmove(src, dst, timeout, wherefrom, whereto)
@@ -1138,15 +918,7 @@ class KeyValueCache(BaseCache):
         version_dest: int | None = None,
         version_keys: int | None = None,
     ) -> int:
-        """Store the difference of sets at dest.
-
-        Args:
-            dest: Destination key to store the result
-            *keys: Source keys to compute difference from
-            version: Version for all keys (default for dest and keys)
-            version_dest: Override version for destination key
-            version_keys: Override version for source keys
-        """
+        """Store the difference of sets at dest."""
         # Use specific versions if provided, otherwise fall back to version
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
@@ -1171,15 +943,7 @@ class KeyValueCache(BaseCache):
         version_dest: int | None = None,
         version_keys: int | None = None,
     ) -> int:
-        """Store the intersection of sets at dest.
-
-        Args:
-            dest: Destination key to store the result
-            *keys: Source keys to compute intersection from
-            version: Version for all keys (default for dest and keys)
-            version_dest: Override version for destination key
-            version_keys: Override version for source keys
-        """
+        """Store the intersection of sets at dest."""
         # Use specific versions if provided, otherwise fall back to version
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
@@ -1223,7 +987,7 @@ class KeyValueCache(BaseCache):
         key: KeyT,
         count: int | None = None,
         version: int | None = None,
-    ) -> Any | _Set[Any]:
+    ) -> Any | list[Any] | None:
         """Remove and return random member(s) from set."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.spop(key, count)
@@ -1265,15 +1029,7 @@ class KeyValueCache(BaseCache):
         version_dest: int | None = None,
         version_keys: int | None = None,
     ) -> int:
-        """Store the union of sets at dest.
-
-        Args:
-            dest: Destination key to store the result
-            *keys: Source keys to compute union from
-            version: Version for all keys (default for dest and keys)
-            version_dest: Override version for destination key
-            version_keys: Override version for source keys
-        """
+        """Store the union of sets at dest."""
         # Use specific versions if provided, otherwise fall back to version
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
@@ -1299,18 +1055,7 @@ class KeyValueCache(BaseCache):
         count: int | None = None,
         version: int | None = None,
     ) -> tuple[int, _Set[Any]]:
-        """Incrementally iterate over set members.
-
-        Args:
-            key: The set key
-            cursor: Cursor position (0 to start)
-            match: Pattern to filter members
-            count: Hint for number of elements per batch
-            version: Key version
-
-        Returns:
-            Tuple of (next_cursor, set of members)
-        """
+        """Incrementally iterate over set members."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.sscan(key, cursor=cursor, match=match, count=count)
 
@@ -1321,17 +1066,7 @@ class KeyValueCache(BaseCache):
         count: int | None = None,
         version: int | None = None,
     ) -> Iterator[Any]:
-        """Iterate over set members using SSCAN.
-
-        Args:
-            key: The set key
-            match: Pattern to filter members
-            count: Hint for number of elements per batch
-            version: Key version
-
-        Yields:
-            Decoded member values
-        """
+        """Iterate over set members using SSCAN."""
         key = self.make_and_validate_key(key, version=version)
         yield from self._cache.sscan_iter(key, match=match, count=count)
 
@@ -1541,49 +1276,8 @@ class KeyValueCache(BaseCache):
     def info(self, section: str | None = None) -> dict[str, Any]:
         """Get server information and statistics.
 
-        Returns additional backend-specific information as a JSON-serializable
-        dictionary with up to 2 levels of nesting.
-
-        For Redis/Valkey backends, this returns the INFO command output which
-        includes server version, memory usage, connected clients, statistics,
-        replication info, and keyspace information.
-
-        Args:
-            section: Optional section name to filter results (e.g., 'server',
-                'memory', 'stats', 'replication', 'clients', 'keyspace').
-                If not specified, returns all sections.
-
-        Returns:
-            A dictionary containing backend information. The structure varies
-            by backend but is guaranteed to be JSON-serializable with a maximum
-            nesting depth of 2 levels.
-
-            For Redis/Valkey, common top-level keys include:
-            - redis_version, redis_git_sha1: Server version info
-            - os, arch_bits: System info
-            - uptime_in_seconds, uptime_in_days: Uptime
-            - connected_clients, blocked_clients: Client stats
-            - used_memory, used_memory_human, used_memory_peak: Memory usage
-            - total_connections_received, total_commands_processed: Stats
-            - keyspace_hits, keyspace_misses: Cache hit ratio
-            - db0, db1, ...: Keyspace info (nested dicts with keys/expires/avg_ttl)
-
-        Example::
-
-            from django.core.cache import cache
-
-            # Get all info
-            info = cache.info()
-            print(f"Redis version: {info.get('redis_version')}")
-            print(f"Memory used: {info.get('used_memory_human')}")
-
-            # Get specific section
-            memory_info = cache.info('memory')
-            print(f"Peak memory: {memory_info.get('used_memory_peak_human')}")
-
-        Note:
-            This method returns the raw backend response. For backends that
-            don't support info (e.g., dummy cache), returns an empty dict.
+        Returns the Redis/Valkey INFO command output as a dictionary.
+        Optionally filter by section (e.g., 'server', 'memory', 'stats').
         """
         if section:
             return dict(self._cache.info(section))
@@ -1592,51 +1286,12 @@ class KeyValueCache(BaseCache):
     def slowlog_get(self, count: int = 10) -> list[Any]:
         """Get slow query log entries.
 
-        Returns the Redis SLOWLOG GET output - a list of slow query entries.
-        Each entry contains information about a slow command including its
-        ID, timestamp, execution time, and the command itself.
-
-        Args:
-            count: Maximum number of entries to retrieve (default 10).
-
-        Returns:
-            A list of slowlog entries. Each entry is typically a dict with:
-            - id: Unique entry identifier
-            - start_time: Unix timestamp when the command was logged
-            - duration: Execution time in microseconds
-            - command: List of command arguments
-            - client_address: Client IP:port (Redis 4.0+)
-            - client_name: Client name if set (Redis 4.0+)
-
-        Example::
-
-            from django.core.cache import cache
-
-            # Get last 10 slow queries
-            entries = cache.slowlog_get(10)
-            for entry in entries:
-                print(f"Command: {entry.get('command')}")
-                print(f"Duration: {entry.get('duration')} microseconds")
-
-        Note:
-            Requires slowlog-log-slower-than to be configured in Redis.
-            Returns empty list if slowlog is not supported.
+        Returns up to ``count`` entries from the Redis SLOWLOG.
         """
         return list(self._cache.slowlog_get(count))
 
     def slowlog_len(self) -> int:
-        """Get the number of entries in the slow query log.
-
-        Returns:
-            The number of entries in the slowlog, or 0 if not supported.
-
-        Example::
-
-            from django.core.cache import cache
-
-            total = cache.slowlog_len()
-            print(f"Total slow queries logged: {total}")
-        """
+        """Get the number of entries in the slow query log."""
         return int(self._cache.slowlog_len())
 
     # =========================================================================
@@ -1651,24 +1306,7 @@ class KeyValueCache(BaseCache):
         version_src: int | None = None,
         version_dst: int | None = None,
     ) -> bool:
-        """Rename a key atomically.
-
-        Renames the key from src to dst. If dst already exists, it is overwritten.
-        The TTL is preserved.
-
-        Args:
-            src: Source key name
-            dst: Destination key name
-            version: Version for both keys (default)
-            version_src: Override version for source key
-            version_dst: Override version for destination key
-
-        Returns:
-            True on success
-
-        Raises:
-            ValueError: If src does not exist
-        """
+        """Rename a key atomically."""
         src_ver = version_src if version_src is not None else version
         dst_ver = version_dst if version_dst is not None else version
         src_key = self.make_and_validate_key(src, version=src_ver)
@@ -1683,24 +1321,7 @@ class KeyValueCache(BaseCache):
         version_src: int | None = None,
         version_dst: int | None = None,
     ) -> bool:
-        """Rename a key only if the destination does not exist.
-
-        Atomically renames src to dst only if dst does not already exist.
-        The TTL is preserved.
-
-        Args:
-            src: Source key name
-            dst: Destination key name
-            version: Version for both keys (default)
-            version_src: Override version for source key
-            version_dst: Override version for destination key
-
-        Returns:
-            True if renamed, False if dst already exists
-
-        Raises:
-            ValueError: If src does not exist
-        """
+        """Rename a key only if the destination does not exist."""
         src_ver = version_src if version_src is not None else version
         dst_ver = version_dst if version_dst is not None else version
         src_key = self.make_and_validate_key(src, version=src_ver)
@@ -1709,22 +1330,7 @@ class KeyValueCache(BaseCache):
 
     @override
     def incr_version(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
-        """Atomically increment the version of a key using RENAME.
-
-        This is more efficient than Django's default implementation which uses
-        GET + SET + DELETE. RENAME is O(1), atomic, and preserves TTL.
-
-        Args:
-            key: The cache key
-            delta: Amount to increment version by (default 1)
-            version: Current version (defaults to cache's default version)
-
-        Returns:
-            The new version number
-
-        Raises:
-            ValueError: If the key does not exist
-        """
+        """Atomically increment the version of a key using RENAME."""
         if version is None:
             version = self.version
         old_key = self.make_and_validate_key(key, version=version)
@@ -1734,41 +1340,12 @@ class KeyValueCache(BaseCache):
 
     @override
     def decr_version(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
-        """Atomically decrement the version of a key.
-
-        This is a convenience method that calls incr_version with a negative delta.
-
-        Args:
-            key: The cache key
-            delta: Amount to decrement version by (default 1)
-            version: Current version (defaults to cache's default version)
-
-        Returns:
-            The new version number
-
-        Raises:
-            ValueError: If the key does not exist
-        """
+        """Atomically decrement the version of a key."""
         return self.incr_version(key, -delta, version)
 
     @override
     async def aincr_version(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
-        """Atomically increment the version of a key using RENAME asynchronously.
-
-        This is more efficient than Django's default implementation which uses
-        GET + SET + DELETE. RENAME is O(1), atomic, and preserves TTL.
-
-        Args:
-            key: The cache key
-            delta: Amount to increment version by (default 1)
-            version: Current version (defaults to cache's default version)
-
-        Returns:
-            The new version number
-
-        Raises:
-            ValueError: If the key does not exist
-        """
+        """Atomically increment the version of a key using RENAME asynchronously."""
         if version is None:
             version = self.version
         old_key = self.make_and_validate_key(key, version=version)
@@ -1778,21 +1355,7 @@ class KeyValueCache(BaseCache):
 
     @override
     async def adecr_version(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
-        """Atomically decrement the version of a key asynchronously.
-
-        This is a convenience method that calls aincr_version with a negative delta.
-
-        Args:
-            key: The cache key
-            delta: Amount to decrement version by (default 1)
-            version: Current version (defaults to cache's default version)
-
-        Returns:
-            The new version number
-
-        Raises:
-            ValueError: If the key does not exist
-        """
+        """Atomically decrement the version of a key asynchronously."""
         return await self.aincr_version(key, -delta, version)
 
     # =========================================================================
@@ -1810,9 +1373,6 @@ class KeyValueCache(BaseCache):
     ) -> LuaScript:
         """Register a Lua script for later execution.
 
-        Scripts are registered per cache backend, allowing different caches
-        to use different encoders and key prefixes.
-
         Args:
             name: Unique name for the script within this cache backend.
             script: Lua script source code.
@@ -1821,42 +1381,6 @@ class KeyValueCache(BaseCache):
                 Signature: ``(helpers, keys, args) -> (processed_keys, processed_args)``
             post_func: Optional function to process result after execution.
                 Signature: ``(helpers, result) -> processed_result``
-
-        Returns:
-            The registered LuaScript object.
-
-        Example:
-            Simple script (no encoding needed)::
-
-                from django_cachex.script import keys_only_pre
-
-                cache.register_script(
-                    "rate_limit",
-                    '''
-                    local current = redis.call('INCR', KEYS[1])
-                    if current == 1 then
-                        redis.call('EXPIRE', KEYS[1], ARGV[1])
-                    end
-                    return current
-                    ''',
-                    num_keys=1,
-                    pre_func=keys_only_pre,
-                )
-
-            Script with encoding::
-
-                from django_cachex.script import full_encode_pre, decode_single_post
-
-                cache.register_script(
-                    "get_and_set",
-                    '''
-                    local old = redis.call('GET', KEYS[1])
-                    redis.call('SET', KEYS[1], ARGV[1])
-                    return old
-                    ''',
-                    pre_func=full_encode_pre,
-                    post_func=decode_single_post,
-                )
         """
         lua_script = LuaScript(
             name=name,
@@ -1892,19 +1416,6 @@ class KeyValueCache(BaseCache):
             keys: KEYS to pass to the script.
             args: ARGV to pass to the script.
             version: Key version for prefixing.
-
-        Returns:
-            Script result, processed by post_func if defined.
-
-        Raises:
-            ScriptNotRegisteredError: If script name is not registered.
-
-        Example:
-            Execute a previously registered script::
-
-                count = cache.eval_script("rate_limit", keys=["user:123:req"], args=[60])
-                if count > 100:
-                    raise RateLimitExceeded()
         """
         if name not in self._scripts:
             raise ScriptNotRegisteredError(name)
@@ -1954,17 +1465,6 @@ class KeyValueCache(BaseCache):
             keys: KEYS to pass to the script.
             args: ARGV to pass to the script.
             version: Key version for prefixing.
-
-        Returns:
-            Script result, processed by post_func if defined.
-
-        Raises:
-            ScriptNotRegisteredError: If script name is not registered.
-
-        Example:
-            Execute a script asynchronously::
-
-                count = await cache.aeval_script("rate_limit", keys=["user:123:req"], args=[60])
         """
         if name not in self._scripts:
             raise ScriptNotRegisteredError(name)
@@ -2006,59 +1506,7 @@ class KeyValueCache(BaseCache):
 
 
 class RedisCache(KeyValueCache):
-    """Django cache backend using the redis-py library.
-
-    This is the primary cache backend for connecting to Redis servers.
-    It provides all features of ``KeyValueCache`` using the official
-    redis-py client library.
-
-    Requirements:
-        Requires redis-py to be installed::
-
-            pip install redis
-
-    Example:
-        Basic configuration::
-
-            CACHES = {
-                "default": {
-                    "BACKEND": "django_cachex.cache.RedisCache",
-                    "LOCATION": "redis://127.0.0.1:6379/1",
-                }
-            }
-
-        With authentication and options::
-
-            CACHES = {
-                "default": {
-                    "BACKEND": "django_cachex.cache.RedisCache",
-                    "LOCATION": "redis://username:password@hostname:6379/1",
-                    "OPTIONS": {
-                        "max_connections": 50,
-                        "socket_timeout": 5,
-                        "serializer": "django_cachex.serializers.json.JSONSerializer",
-                    }
-                }
-            }
-
-        Master-replica setup for read scaling::
-
-            CACHES = {
-                "default": {
-                    "BACKEND": "django_cachex.cache.RedisCache",
-                    "LOCATION": [
-                        "redis://master:6379/1",
-                        "redis://replica1:6379/1",
-                        "redis://replica2:6379/1",
-                    ],
-                }
-            }
-
-    See Also:
-        - ``ValkeyCache``: For Valkey servers using valkey-py
-        - ``RedisClusterCache``: For Redis Cluster mode
-        - ``RedisSentinelCache``: For Redis Sentinel high availability
-    """
+    """Django cache backend using the redis-py library."""
 
     _class = RedisCacheClient
 
@@ -2069,48 +1517,7 @@ class RedisCache(KeyValueCache):
 
 
 class ValkeyCache(KeyValueCache):
-    """Django cache backend using the valkey-py library.
-
-    This cache backend is for connecting to Valkey servers using the
-    official valkey-py client library. Valkey is an open-source,
-    Redis-compatible key-value store.
-
-    Requirements:
-        Requires valkey-py to be installed::
-
-            pip install valkey
-
-    Example:
-        Basic configuration::
-
-            CACHES = {
-                "default": {
-                    "BACKEND": "django_cachex.cache.ValkeyCache",
-                    "LOCATION": "valkey://127.0.0.1:6379/1",
-                }
-            }
-
-        With options::
-
-            CACHES = {
-                "default": {
-                    "BACKEND": "django_cachex.cache.ValkeyCache",
-                    "LOCATION": "valkey://hostname:6379/1",
-                    "OPTIONS": {
-                        "max_connections": 50,
-                        "serializer": "django_cachex.serializers.pickle.PickleSerializer",
-                    }
-                }
-            }
-
-    Note:
-        Valkey is wire-protocol compatible with Redis, so you can also use
-        ``RedisCache`` with redis-py to connect to Valkey servers if preferred.
-
-    See Also:
-        - ``RedisCache``: For Redis servers using redis-py
-        - ``ValkeyClusterCache``: For Valkey Cluster mode
-    """
+    """Django cache backend using the valkey-py library."""
 
     _class = ValkeyCacheClient
 

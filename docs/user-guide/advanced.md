@@ -1,8 +1,8 @@
 # Advanced Usage
 
-## Pickle Version
+## Serializer
 
-By default, django-cachex uses `pickle.DEFAULT_PROTOCOL`. To set a specific version:
+By default, `PickleSerializer` is used with `pickle.DEFAULT_PROTOCOL`. To use a different serializer or configure pickle options, use the `serializer` option:
 
 ```python
 CACHES = {
@@ -10,7 +10,7 @@ CACHES = {
         "BACKEND": "django_cachex.cache.ValkeyCache",
         "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
-            "PICKLE_VERSION": -1  # Highest protocol available
+            "serializer": "django_cachex.serializers.json.JSONSerializer",
         }
     }
 }
@@ -87,7 +87,7 @@ cache.ttl("foo")  # Returns None (no expiration)
 
 ## Locks
 
-Distributed locks with the same interface as `threading.Lock`:
+Distributed locks with the `threading.Lock` interface:
 
 ```python
 from django.core.cache import cache
@@ -150,11 +150,11 @@ cache.decr("counter")  # Returns 5
 
 ## Data Structures
 
-django-cachex provides direct access to Valkey/Redis data structures through the cache interface.
+Direct access to Valkey/Redis data structures through the cache interface.
 
 ### Hashes
 
-Hashes are maps of field-value pairs, useful for storing objects:
+Maps of field-value pairs:
 
 ```python
 from django.core.cache import cache
@@ -193,7 +193,7 @@ cache.hvals("user:1")  # ["Alice", "alice@example.com"]
 
 ### Sorted Sets
 
-Sorted sets store unique members with scores, automatically sorted by score:
+Unique members with scores, automatically sorted:
 
 ```python
 from django.core.cache import cache
@@ -238,7 +238,7 @@ cache.zcard("leaderboard")
 
 ### Lists
 
-Lists are ordered collections of elements:
+Ordered collections of elements:
 
 ```python
 from django.core.cache import cache
@@ -275,7 +275,7 @@ cache.lmove("source", "dest", "LEFT", "RIGHT")  # LPOP source, RPUSH dest
 
 ## Raw Client Access
 
-Access the underlying valkey-py/redis-py client:
+Access the underlying valkey-py/redis-py client directly:
 
 ```python
 client = cache.get_client()
@@ -284,11 +284,9 @@ client.publish("channel", "message")
 
 ## Lua Scripts
 
-django-cachex provides a high-level interface for Lua scripts with automatic key prefixing and value encoding/decoding.
+High-level interface for Lua scripts with automatic key prefixing and value encoding/decoding.
 
 ### Registering Scripts
-
-Register scripts with `cache.register_script()`:
 
 ```python
 from django.core.cache import cache
@@ -311,8 +309,6 @@ cache.register_script(
 
 ### Executing Scripts
 
-Execute registered scripts with `cache.eval_script()`:
-
 ```python
 # Execute the rate limiter
 count = cache.eval_script("rate_limit", keys=["user:123:requests"], args=[60])
@@ -322,10 +318,7 @@ if count > 100:
 
 ### Pre/Post Processing Hooks
 
-Scripts support hooks for transforming inputs and outputs:
-
-- **`pre_func`**: Transform keys and args before execution
-- **`post_func`**: Transform the result after execution
+Scripts support `pre_func` (transform keys/args before execution) and `post_func` (transform results after execution) hooks.
 
 #### Built-in Helpers
 
@@ -365,7 +358,7 @@ old_session = cache.eval_script(
 
 ### Custom Processing Hooks
 
-Create custom hooks using `ScriptHelpers`:
+Create custom hooks with `ScriptHelpers`:
 
 ```python
 from django_cachex import ScriptHelpers
@@ -408,4 +401,4 @@ count = await cache.aeval_script("rate_limit", keys=["user:123"], args=[60])
 
 ### Script Caching
 
-Scripts are automatically cached by SHA hash. On first execution, the script is loaded and its SHA is stored. Subsequent executions use `EVALSHA` for better performance. If Redis returns `NOSCRIPT` (e.g., after a server restart), the script is automatically reloaded.
+Scripts are cached by SHA hash. After the first execution, subsequent calls use `EVALSHA` for better performance. If the server returns `NOSCRIPT` (e.g., after a restart), the script is automatically reloaded.

@@ -1,9 +1,4 @@
-"""
-Helper functions for cache admin views.
-
-These functions provide additional logic on top of the cache interface
-that views can use. They're intentionally simple functions, not a service class.
-"""
+"""Helper functions for cache admin views."""
 
 from __future__ import annotations
 
@@ -23,20 +18,7 @@ if TYPE_CHECKING:
 
 
 def get_cache(cache_name: str) -> Any:
-    """Get a cache backend, wrapping if needed for admin compatibility.
-
-    For django-cachex backends, returns the cache directly.
-    For Django builtin backends, wraps them first.
-
-    Args:
-        cache_name: The name of the cache in CACHES setting.
-
-    Returns:
-        A cache backend with cachex extensions available.
-
-    Raises:
-        ValueError: If the cache is not configured.
-    """
+    """Get a cache backend, wrapping if needed for admin compatibility."""
     cache_config = settings.CACHES.get(cache_name)
     if not cache_config:
         msg = f"Cache '{cache_name}' is not configured in CACHES setting."
@@ -54,22 +36,7 @@ def get_cache(cache_name: str) -> Any:
 
 
 def get_metadata(cache: Any, cache_config: Mapping[str, Any]) -> dict[str, Any]:
-    """Get cache metadata with parsed server information.
-
-    Combines cache.info() with configuration metadata for display
-    in the cache admin.
-
-    Args:
-        cache: The cache backend (native or wrapped).
-        cache_config: The cache configuration dict from settings.CACHES.
-
-    Returns:
-        Dict with backend, location, key_prefix, version, and
-        parsed server/memory/clients/stats/keyspace sections.
-
-    Raises:
-        NotSupportedError: If info() is not supported.
-    """
+    """Get cache metadata with parsed server information."""
     # Get location from config
     location = cache_config.get("LOCATION", "")
     if isinstance(location, list):
@@ -154,17 +121,7 @@ def get_metadata(cache: Any, cache_config: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def get_type_data(cache: Any, key: str, key_type: str | None = None) -> dict[str, Any]:
-    """Get type-specific data for a key.
-
-    Args:
-        cache: The cache backend.
-        key: The cache key.
-        key_type: Optional type hint (avoids extra type() call).
-
-    Returns:
-        Dict with type-specific data (items for lists, members for sets, etc.)
-        Empty dict if not supported.
-    """
+    """Get type-specific data for a key."""
     try:
         if key_type is None:
             key_type = cache.type(key)
@@ -198,16 +155,7 @@ def get_type_data(cache: Any, key: str, key_type: str | None = None) -> dict[str
 
 
 def get_size(cache: Any, key: str, key_type: str | None = None) -> int | None:
-    """Get the size/length of a key.
-
-    Args:
-        cache: The cache backend.
-        key: The cache key.
-        key_type: Optional type hint.
-
-    Returns:
-        Size/length or None if not supported.
-    """
+    """Get the size/length of a key."""
     try:
         if key_type is None:
             key_type = cache.type(key)
@@ -271,18 +219,7 @@ def _parse_slowlog_entry(entry: Any) -> dict[str, Any]:
 
 
 def get_slowlog(cache: Any, count: int = 25) -> dict[str, Any]:
-    """Get slow query log entries.
-
-    Args:
-        cache: The cache backend.
-        count: Number of entries to retrieve.
-
-    Returns:
-        Dict with entries, length, error fields.
-
-    Raises:
-        NotSupportedError: If slowlog is not supported.
-    """
+    """Get slow query log entries."""
     result: dict[str, Any] = {
         "entries": [],
         "length": 0,

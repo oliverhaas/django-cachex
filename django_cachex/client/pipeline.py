@@ -19,18 +19,8 @@ _Set = set
 class Pipeline:
     """Pipeline wrapper that handles key prefixing and value serialization.
 
-    This class wraps a raw Redis/Valkey pipeline and provides the same interface
-    as the django-cachex client, but queues commands for batch execution.
-    On execute(), it applies the appropriate decoders to each result.
-
-    Usage:
-        with cache.pipeline() as pipe:
-            pipe.set("key1", "value1")
-            pipe.get("key1")
-            pipe.lpush("list1", "a", "b")
-            pipe.lrange("list1", 0, -1)
-            results = pipe.execute()
-        # results = [True, "value1", 2, ["b", "a"]]
+    Wraps a raw Redis/Valkey pipeline, queuing commands for batch execution
+    and applying appropriate decoders to each result on execute().
     """
 
     def __init__(
@@ -39,13 +29,7 @@ class Pipeline:
         pipeline: Any,
         version: int | None = None,
     ) -> None:
-        """Initialize the wrapped pipeline.
-
-        Args:
-            cache_client: The CacheClient (for encode, decode)
-            pipeline: The raw Redis/Valkey pipeline object
-            version: Default key version (uses client default if None)
-        """
+        """Initialize the wrapped pipeline."""
         self._client = cache_client
         self._pipeline = pipeline
         self._version = version
@@ -68,11 +52,7 @@ class Pipeline:
         pass
 
     def execute(self) -> list[Any]:
-        """Execute all queued commands and decode the results.
-
-        Returns:
-            List of decoded results, one per queued command.
-        """
+        """Execute all queued commands and decode the results."""
         results = self._pipeline.execute()
         decoded = []
         for result, decoder in zip(results, self._decoders, strict=True):
@@ -207,11 +187,7 @@ class Pipeline:
         return self
 
     def delete(self, key: KeyT, version: int | None = None) -> Self:
-        """Queue a DELETE command.
-
-        Note: Returns True if key was deleted, False otherwise.
-        For deleting multiple keys, call delete multiple times.
-        """
+        """Queue a DELETE command."""
         nkey = self._make_key(key, version)
         self._pipeline.delete(nkey)
         # DEL returns count of deleted keys, convert to bool
@@ -219,11 +195,7 @@ class Pipeline:
         return self
 
     def exists(self, key: KeyT, version: int | None = None) -> Self:
-        """Queue an EXISTS command.
-
-        Note: Returns True if key exists, False otherwise.
-        For checking multiple keys, call exists multiple times.
-        """
+        """Queue an EXISTS command."""
         nkey = self._make_key(key, version)
         self._pipeline.exists(nkey)
         # EXISTS returns count, convert to bool
@@ -1110,29 +1082,7 @@ class Pipeline:
         *,
         version: int | None = None,
     ) -> Self:
-        """Queue a registered Lua script for pipelined execution.
-
-        Args:
-            name: Name of the registered script.
-            keys: KEYS to pass to the script.
-            args: ARGV to pass to the script.
-            version: Key version for prefixing.
-
-        Returns:
-            Self for method chaining.
-
-        Raises:
-            ScriptNotRegisteredError: If script name is not registered.
-            AttributeError: If pipeline was not created from a cache with scripts.
-
-        Example:
-            Queue multiple script executions::
-
-                with cache.pipeline() as pipe:
-                    pipe.eval_script("rate_limit", keys=["user:1"], args=[60])
-                    pipe.eval_script("rate_limit", keys=["user:2"], args=[60])
-                    results = pipe.execute()  # [1, 1]
-        """
+        """Queue a registered Lua script for pipelined execution."""
         # Access scripts registry (set by KeyValueCache.pipeline())
         scripts: dict[str, LuaScript] = getattr(self, "_scripts", {})
         cache_version: int | None = getattr(self, "_cache_version", None)

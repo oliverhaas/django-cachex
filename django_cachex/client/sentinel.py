@@ -1,14 +1,4 @@
-"""Sentinel cache backend and client for Redis-compatible backends.
-
-This module provides cache backends that use Redis Sentinel for automatic
-primary/replica discovery and failover.
-
-Architecture (matching Django's RedisCache structure):
-- KeyValueSentinelCacheClient(KeyValueCacheClient): Base class with sentinel pooling
-- RedisSentinelCacheClient: Sets class attributes for redis-py
-- KeyValueSentinelCache(KeyValueCache): Base cache backend
-- RedisSentinelCache: Sets _class = RedisSentinelCacheClient
-"""
+"""Sentinel cache backend and client for Redis-compatible backends."""
 
 from __future__ import annotations
 
@@ -60,20 +50,7 @@ except ImportError:
 
 
 class KeyValueSentinelCacheClient(KeyValueCacheClient):
-    """Sentinel cache client base class.
-
-    Extends KeyValueCacheClient with Sentinel-specific connection pooling.
-    Automatically discovers primary and replica nodes via Sentinel.
-
-    Subclasses must set:
-    - _lib: The library module (redis or valkey)
-    - _client_class: The client class (e.g., redis.Redis)
-    - _pool_class: The connection pool class (typically SentinelConnectionPool)
-    - _sentinel_class: The Sentinel class
-    - _sentinel_pool_class: The SentinelConnectionPool class
-    - _async_sentinel_class: The async Sentinel class (optional, for async support)
-    - _async_sentinel_pool_class: The async SentinelConnectionPool class (optional)
-    """
+    """Sentinel cache client with automatic primary/replica discovery via Sentinel."""
 
     # Subclasses must set these to the appropriate sentinel classes
     _sentinel_class: type[Any] | None = None
@@ -292,11 +269,7 @@ class KeyValueSentinelCache(KeyValueCache):
 if _REDIS_AVAILABLE:
 
     class RedisSentinelCacheClient(KeyValueSentinelCacheClient):
-        """Redis Sentinel cache client.
-
-        Extends KeyValueSentinelCacheClient with Redis-specific classes.
-        Automatically discovers primary and replica nodes via Redis Sentinel.
-        """
+        """Redis Sentinel cache client using redis-py."""
 
         _lib = redis
         _client_class = redis.Redis
@@ -310,65 +283,8 @@ if _REDIS_AVAILABLE:
     class RedisSentinelCache(KeyValueSentinelCache):
         """Django cache backend for Redis Sentinel high availability.
 
-        Redis Sentinel provides automatic failover and service discovery for Redis.
-        When the primary server fails, Sentinel promotes a replica to primary and
-        updates clients automatically.
-
-        Requirements:
-            Requires redis-py to be installed::
-
-                pip install redis
-
-        How it Works:
-            - Sentinel monitors Redis primary and replica nodes
-            - On primary failure, Sentinel elects a new primary
-            - The cache backend automatically discovers the current primary
-            - Reads can be directed to replicas for better performance
-
-        Example:
-            Basic configuration with Sentinel service name::
-
-                CACHES = {
-                    "default": {
-                        "BACKEND": "django_cachex.client.RedisSentinelCache",
-                        "LOCATION": "redis://mymaster/0",  # Service name, not hostname
-                        "OPTIONS": {
-                            "sentinels": [
-                                ("sentinel1.example.com", 26379),
-                                ("sentinel2.example.com", 26379),
-                                ("sentinel3.example.com", 26379),
-                            ],
-                        }
-                    }
-                }
-
-            With authentication and additional options::
-
-                CACHES = {
-                    "default": {
-                        "BACKEND": "django_cachex.client.RedisSentinelCache",
-                        "LOCATION": "redis://mymaster/0",
-                        "OPTIONS": {
-                            "sentinels": [
-                                ("sentinel1.example.com", 26379),
-                                ("sentinel2.example.com", 26379),
-                            ],
-                            "sentinel_kwargs": {
-                                "password": "sentinel-password",
-                            },
-                            "password": "redis-password",
-                        }
-                    }
-                }
-
-        Note:
-            The ``LOCATION`` should use the Sentinel service name (e.g., "mymaster")
-            as the hostname, not the actual Redis server hostname. Sentinel will
-            resolve the service name to the current primary's address.
-
-        See Also:
-            - ``RedisCache``: For standalone Redis servers
-            - ``RedisClusterCache``: For Redis Cluster horizontal scaling
+        Provides automatic failover and service discovery via Redis Sentinel.
+        LOCATION should use the Sentinel service name as the hostname.
         """
 
         _class = RedisSentinelCacheClient
@@ -395,11 +311,7 @@ else:
 if _VALKEY_AVAILABLE:
 
     class ValkeySentinelCacheClient(KeyValueSentinelCacheClient):
-        """Valkey Sentinel cache client.
-
-        Extends KeyValueSentinelCacheClient with Valkey-specific classes.
-        Automatically discovers primary and replica nodes via Valkey Sentinel.
-        """
+        """Valkey Sentinel cache client using valkey-py."""
 
         _lib = valkey
         _client_class = valkey.Valkey
@@ -413,65 +325,8 @@ if _VALKEY_AVAILABLE:
     class ValkeySentinelCache(KeyValueSentinelCache):
         """Django cache backend for Valkey Sentinel high availability.
 
-        Valkey Sentinel provides automatic failover and service discovery for Valkey.
-        When the primary server fails, Sentinel promotes a replica to primary and
-        updates clients automatically.
-
-        Requirements:
-            Requires valkey-py to be installed::
-
-                pip install valkey
-
-        How it Works:
-            - Sentinel monitors Valkey primary and replica nodes
-            - On primary failure, Sentinel elects a new primary
-            - The cache backend automatically discovers the current primary
-            - Reads can be directed to replicas for better performance
-
-        Example:
-            Basic configuration with Sentinel service name::
-
-                CACHES = {
-                    "default": {
-                        "BACKEND": "django_cachex.client.ValkeySentinelCache",
-                        "LOCATION": "valkey://mymaster/0",  # Service name, not hostname
-                        "OPTIONS": {
-                            "sentinels": [
-                                ("sentinel1.example.com", 26379),
-                                ("sentinel2.example.com", 26379),
-                                ("sentinel3.example.com", 26379),
-                            ],
-                        }
-                    }
-                }
-
-            With authentication and additional options::
-
-                CACHES = {
-                    "default": {
-                        "BACKEND": "django_cachex.client.ValkeySentinelCache",
-                        "LOCATION": "valkey://mymaster/0",
-                        "OPTIONS": {
-                            "sentinels": [
-                                ("sentinel1.example.com", 26379),
-                                ("sentinel2.example.com", 26379),
-                            ],
-                            "sentinel_kwargs": {
-                                "password": "sentinel-password",
-                            },
-                            "password": "valkey-password",
-                        }
-                    }
-                }
-
-        Note:
-            The ``LOCATION`` should use the Sentinel service name (e.g., "mymaster")
-            as the hostname, not the actual Valkey server hostname. Sentinel will
-            resolve the service name to the current primary's address.
-
-        See Also:
-            - ``ValkeyCache``: For standalone Valkey servers
-            - ``ValkeyClusterCache``: For Valkey Cluster horizontal scaling
+        Provides automatic failover and service discovery via Valkey Sentinel.
+        LOCATION should use the Sentinel service name as the hostname.
         """
 
         _class = ValkeySentinelCacheClient

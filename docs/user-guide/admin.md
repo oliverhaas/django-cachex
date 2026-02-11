@@ -1,6 +1,6 @@
 # Cache Admin
 
-django-cachex provides a Django admin interface for inspecting and managing caches. It allows you to browse cache keys, view their values, and perform operations like adding, editing, and deleting cache entries.
+django-cachex provides a Django admin interface for browsing cache keys, viewing values, and adding, editing, or deleting entries.
 
 ## Installation
 
@@ -57,86 +57,47 @@ The admin uses Django's built-in permission system. Superusers have full access.
 
 ## Support Levels
 
-Different cache backends have different levels of support in the Cache Admin:
+Different cache backends have different levels of support:
 
 | Badge | Level | Description |
 |-------|-------|-------------|
-| **cachex** | Full Support | django-cachex backends (`ValkeyCache`, `RedisCache`, etc.) with full access to all features including key listing, pattern search, TTL inspection, and all data type operations. |
-| **wrapped** | Wrapped Support | Django builtin backends (`LocMemCache`, `DatabaseCache`, etc.). Most features available through wrapper compatibility. |
-| **limited** | Limited Support | Custom or unknown cache backends. Basic operations may work but key listing and advanced features may not be available. |
+| **cachex** | Full Support | django-cachex backends (`ValkeyCache`, `RedisCache`, etc.) -- all features including key listing, pattern search, TTL inspection, and data type operations. |
+| **wrapped** | Wrapped Support | Django builtin backends (`LocMemCache`, `DatabaseCache`, etc.) -- most features available through wrapper compatibility. |
+| **limited** | Limited Support | Custom or unknown backends -- basic operations may work but key listing and advanced features may not be available. |
 
 ### Using Redis/Valkey?
 
-If you are using Django's builtin Redis backend (`django.core.cache.backends.redis.RedisCache`), consider switching to django-cachex's `ValkeyCache` or `RedisCache` backends for full admin functionality including:
-
-- Key browsing and pattern search
-- TTL inspection and modification
-- Native Redis data type support (lists, sets, hashes, sorted sets)
-- Server info and memory statistics
-
-See the [quickstart guide](../getting-started/quickstart.md) for migration instructions.
+If you are using Django's builtin Redis backend (`django.core.cache.backends.redis.RedisCache`), consider switching to django-cachex's `ValkeyCache` or `RedisCache` backends for full admin functionality: key browsing, pattern search, TTL inspection, native data type support, and server statistics. See the [quickstart guide](../getting-started/quickstart.md) for migration instructions.
 
 ## Views
 
 ### Caches (Index)
 
-The main view lists all configured caches with:
+Lists all configured caches showing name, backend class, location, and support level.
 
-- **Cache Name**: The alias used in `settings.CACHES`
-- **Backend**: The full backend class path
-- **Location**: Connection string or path
-- **Support Level**: Badge indicating feature availability
-
-**Actions:**
-
-- **Flush selected caches**: Delete all entries from selected caches (available for backends that support it)
+**Actions:** Flush selected caches (delete all entries).
 
 ### Key Browser
 
-Click on a cache name to browse its keys. Features include:
+Click a cache name to browse its keys with wildcard search (`*`), data type display, TTL, and pagination.
 
-- **Search**: Use wildcards (`*`) to filter keys (e.g., `user:*`, `*:session`)
-- **Key Type**: Shows Redis/Valkey data types (string, list, set, hash, zset)
-- **TTL**: Shows remaining time-to-live for each key
-- **Pagination**: Browse large key sets with configurable page size
-
-**Actions:**
-
-- **Delete selected keys**: Remove multiple keys at once
-- **Add key**: Create a new cache entry (top-right button)
+**Actions:** Delete selected keys, add new key.
 
 ### Key Detail
 
-View and edit a specific key:
-
-- **Value Display**: Shows the key's value (formatted JSON for objects/arrays)
-- **Type Information**: For complex types (list, hash, set, zset), shows the data structure
-- **TTL**: Shows remaining expiry time
-- **Edit**: Modify value and timeout
-- **Delete**: Remove the key
+View and edit a specific key's value (formatted JSON for objects/arrays), data type, and TTL. Supports editing values/timeout and deleting the key.
 
 ### Cache Info
 
-View server information and statistics:
-
-- **Configuration**: Backend, location, key prefix, version
-- **Server**: Version, operating system, uptime
-- **Memory**: Used memory, peak memory, max memory, eviction policy
-- **Clients**: Connected clients, blocked clients
-- **Statistics**: Total connections, commands processed, hit/miss rates
-- **Keyspace**: Per-database key counts and TTL statistics
+View server information: configuration, server version/uptime, memory usage, connected clients, command statistics, and keyspace data.
 
 ### Add Key
 
-Create a new cache entry:
-
-- **Key Name**: Unique identifier for the cache entry
-- **Value**: JSON objects/arrays are parsed automatically, plain text for strings
-- **Timeout**: Optional expiration time in seconds (leave empty for cache default)
+Create a new cache entry with key name, value (JSON objects/arrays are parsed automatically), and optional timeout in seconds.
 
 ## Backend Abilities
 
-The admin adapts its interface based on what each backend supports:
+The admin adapts based on backend capabilities:
 
 | Feature | cachex | LocMemCache | DatabaseCache | FileBasedCache | limited |
 |---------|--------|-------------|---------------|----------------|---------|
@@ -153,7 +114,7 @@ The admin adapts its interface based on what each backend supports:
 
 ## Tips
 
-- **Pattern Search**: Use `*` as a wildcard. For example, `user:*` finds all keys starting with "user:".
-- **JSON Values**: When editing, you can enter valid JSON to store objects or arrays.
-- **Help Button**: Each view has a help button that shows context-specific tips.
+- **Pattern Search**: Use `*` as a wildcard (e.g., `user:*` finds all keys starting with "user:").
+- **JSON Values**: Enter valid JSON when editing to store objects or arrays.
+- **Help Button**: Each view has a help button with context-specific tips.
 - **Refresh**: Use the refresh action to update key lists and statistics.

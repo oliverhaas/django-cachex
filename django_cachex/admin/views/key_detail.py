@@ -34,10 +34,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     key: str,
     config: ViewConfig,
 ) -> HttpResponse:
-    """View for displaying the details of a specific cache key.
-
-    This is the internal implementation; use key_detail() for the decorated admin view.
-    """
+    """Display details of a specific cache key and handle mutations."""
     cache = get_cache(cache_name)
 
     # Handle POST requests (update or delete)

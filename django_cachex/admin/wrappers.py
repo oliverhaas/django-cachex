@@ -1,10 +1,4 @@
-"""
-Cache wrappers that extend Django builtin caches with cachex functionality.
-
-These mixins add extended operations (keys, ttl, info, etc.) to Django's
-cache backends via class patching. Operations that the underlying cache
-doesn't support raise NotSupportedError.
-"""
+"""Cache wrappers that extend Django builtin caches with cachex functionality."""
 
 from __future__ import annotations
 
@@ -61,12 +55,7 @@ _MISSING = object()
 
 
 class BaseCacheExtensions:
-    """Mixin providing CacheProtocol extension methods with NotSupportedError defaults.
-
-    This mixin adds all the extended cache operations that aren't part of
-    Django's BaseCache. Methods raise NotSupportedError by default;
-    Extended* classes override the ones they can actually implement.
-    """
+    """Mixin providing cachex extension methods. Most raise NotSupportedError by default."""
 
     # Marker to detect already-extended caches and support level
     # "cachex" = native django-cachex backends (full support)
@@ -87,11 +76,7 @@ class BaseCacheExtensions:
         raise NotSupportedError("pttl", self.__class__.__name__)
 
     def type(self, key: KeyT, version: int | None = None) -> KeyType | None:
-        """Get the data type of a key.
-
-        Wrapped backends only support Django's cache.set/get, so all values
-        are stored as serialized strings.
-        """
+        """Get the data type of a key."""
         return KeyType.STRING
 
     def persist(self, key: KeyT, version: int | None = None) -> bool:
@@ -139,18 +124,7 @@ class BaseCacheExtensions:
         version: int | None = None,
         key_type: str | None = None,
     ) -> tuple[int, list[str]]:
-        """Perform a single SCAN iteration.
-
-        Simulates cursor-based pagination using keys(). The cursor is treated
-        as an offset into the sorted list of keys.
-
-        Args:
-            key_type: Accepted for API compatibility but ignored — wrapped
-                backends don't have Redis-style key types.
-
-        Returns:
-            Tuple of (next_cursor, keys) where next_cursor is 0 if complete.
-        """
+        """Perform a single SCAN iteration using cursor-based pagination."""
         # Get all keys (may raise NotSupportedError if keys() not implemented)
         all_keys = self.keys(pattern, version=version)
 
@@ -738,11 +712,7 @@ def _deep_getsizeof(obj: Any, seen: set[int] | None = None) -> int:
 
 
 class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
-    """LocMemCache with cachex extensions.
-
-    Enables keys() by accessing the internal _cache dict.
-    Enables ttl()/expire()/persist() by accessing the internal _expire_info dict.
-    """
+    """LocMemCache with cachex extensions."""
 
     _cachex_support: Literal["cachex", "wrapped", "limited"] = "wrapped"
 
@@ -755,11 +725,7 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
         return getattr(self, "_expire_info", {})
 
     def ttl(self, key: KeyT, version: int | None = None) -> int | None:
-        """Get the TTL of a key in seconds.
-
-        Returns:
-            TTL in seconds, -1 for no expiry, -2 for key not found.
-        """
+        """Get the TTL of a key in seconds."""
         internal_key = self.make_key(str(key), version=version)
         internal_cache = self._get_internal_cache()
 
@@ -890,11 +856,7 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
     # =========================================================================
 
     def _get_list(self, key: KeyT, version: int | None = None) -> list[Any] | None:
-        """Get the stored list value, or None if key doesn't exist.
-
-        Raises:
-            TypeError: If the key exists but doesn't hold a list.
-        """
+        """Get the stored list value, or None if key doesn't exist."""
         value = self.get(key, default=_MISSING, version=version)
         if value is _MISSING:
             return None
@@ -904,11 +866,7 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
         return value
 
     def _get_ttl_timeout(self, key: KeyT, version: int | None = None) -> int | None:
-        """Convert ttl() result to a timeout value suitable for self.set().
-
-        Returns None (no expiry) for new keys or persistent keys,
-        or the remaining seconds for keys with a TTL.
-        """
+        """Convert ttl() result to a timeout value suitable for self.set()."""
         current_ttl = self.ttl(key, version=version)
         if current_ttl is None or current_ttl <= 0:
             # -1 = no expiry, -2 = missing, None = unknown → persist
@@ -999,10 +957,7 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
         value: Any,
         version: int | None = None,
     ) -> int:
-        """Remove occurrences of value from a list.
-
-        count=0: all, >0: first N from head, <0: first |N| from tail.
-        """
+        """Remove occurrences of value from a list."""
         current = self._get_list(key, version=version)
         if not current:
             return 0
@@ -1060,11 +1015,7 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
     # =========================================================================
 
     def _get_set(self, key: KeyT, version: int | None = None) -> _set[Any] | None:
-        """Get the stored set value, or None if key doesn't exist.
-
-        Raises:
-            TypeError: If the key exists but doesn't hold a set.
-        """
+        """Get the stored set value, or None if key doesn't exist."""
         value = self.get(key, default=_MISSING, version=version)
         if value is _MISSING:
             return None
@@ -1168,11 +1119,7 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
     # =========================================================================
 
     def _get_hash(self, key: KeyT, version: int | None = None) -> dict[str, Any] | None:
-        """Get the stored hash (dict with string keys), or None if key doesn't exist.
-
-        Raises:
-            TypeError: If the key exists but doesn't hold a hash.
-        """
+        """Get the stored hash value, or None if key doesn't exist."""
         value = self.get(key, default=_MISSING, version=version)
         if value is _MISSING:
             return None
@@ -1305,11 +1252,7 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
 
 
 class WrappedDatabaseCache(DatabaseCache, BaseCacheExtensions):
-    """DatabaseCache with cachex extensions.
-
-    Enables keys() by querying the database table.
-    Enables ttl() by reading the expires column.
-    """
+    """DatabaseCache with cachex extensions."""
 
     _cachex_support: Literal["cachex", "wrapped", "limited"] = "wrapped"
 
@@ -1363,11 +1306,7 @@ class WrappedDatabaseCache(DatabaseCache, BaseCacheExtensions):
         return keys
 
     def ttl(self, key: KeyT, version: int | None = None) -> int | None:
-        """Get TTL by reading the expires column from database.
-
-        Returns:
-            TTL in seconds, -2 for key not found or expired.
-        """
+        """Get TTL by reading the expires column from database."""
         table_name = self._get_table_name()
         quoted_table_name = connection.ops.quote_name(table_name)
         cache_key = self.make_key(str(key), version=version)
@@ -1455,10 +1394,7 @@ class WrappedDatabaseCache(DatabaseCache, BaseCacheExtensions):
 
 
 class WrappedFileBasedCache(FileBasedCache, BaseCacheExtensions):
-    """FileBasedCache with cachex extensions.
-
-    Lists keys as MD5 hash filenames (original keys cannot be recovered).
-    """
+    """FileBasedCache with cachex extensions."""
 
     _cachex_support: Literal["cachex", "wrapped", "limited"] = "wrapped"
 
@@ -1665,17 +1601,7 @@ if DjangoRedisCache is not None:
 
 
 def wrap_cache(cache: BaseCache) -> BaseCache:
-    """Extend a Django cache backend with cachex functionality.
-
-    This function patches the cache backend's class to add extended methods
-    (keys, ttl, info, etc.) while preserving all original functionality.
-
-    Args:
-        cache: A Django cache backend.
-
-    Returns:
-        The same cache backend, now with extended methods available.
-    """
+    """Extend a Django cache backend with cachex functionality via class patching."""
     # Idempotency check - already wrapped
     if hasattr(cache, "_cachex_support"):
         return cache

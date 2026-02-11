@@ -6,12 +6,7 @@ from django_cachex.exceptions import CompressorError
 
 
 class LzmaCompressor(BaseCompressor):
-    """LZMA compressor with configurable preset level.
-
-    Args:
-        preset: Compression level from 0 (fastest) to 9 (best compression).
-                Defaults to 4.
-    """
+    """LZMA compressor with configurable preset level."""
 
     preset: int = 4
 

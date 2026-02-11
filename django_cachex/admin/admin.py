@@ -1,9 +1,4 @@
-"""
-Django admin classes for cache management.
-
-This module provides ModelAdmin classes for managing caches
-and cache keys through Django's admin interface.
-"""
+"""Django admin classes for cache management."""
 
 from __future__ import annotations
 
@@ -30,12 +25,7 @@ else:
 
 @admin.register(Cache)
 class CacheAdmin(_CacheBase):
-    """
-    Admin for caches.
-
-    - changelist_view: Lists all caches (from settings.CACHES)
-    - change_view: Shows cache details (info + slowlog combined)
-    """
+    """Admin for caches."""
 
     _cachex_help_messages: ClassVar[dict[str, str]] = {
         "cache_list": mark_safe(
@@ -124,15 +114,7 @@ class CacheAdmin(_CacheBase):
 
 @admin.register(Key)
 class KeyAdmin(_KeyBase):
-    """
-    Admin for cache keys.
-
-    - changelist_view: Browse keys for a cache (requires ?cache=<name> parameter)
-    - change_view: View/edit a specific key
-    - add_view: Add a new key to a cache
-
-    This admin is accessed via CacheAdmin and is hidden from the sidebar.
-    """
+    """Admin for cache keys, accessed via CacheAdmin and hidden from the sidebar."""
 
     _cachex_help_messages: ClassVar[dict[str, str]] = {
         "key_list": mark_safe(

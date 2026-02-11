@@ -1,12 +1,10 @@
 # Async Support
 
-django-cachex provides full async support for all cache operations, enabling efficient use with Django's async views and ASGI servers.
+django-cachex implements Django's async cache methods (`aget`, `aset`, `adelete`, etc.) using native async clients from `redis.asyncio` and `valkey.asyncio`, providing true async operations without thread pool overhead.
 
 ## Overview
 
-Django 4.0+ added async methods to the cache framework with the `a` prefix (e.g., `aget`, `aset`, `adelete`). django-cachex implements these using native async clients from `redis.asyncio` and `valkey.asyncio`, providing true async operations without thread pool overhead.
-
-A single cache backend instance supports both sync and async operations simultaneously. This mirrors Django's approach where `cache.get()` and `await cache.aget()` work on the same backend - no separate "async backend" configuration needed.
+A single cache backend supports both sync and async operations simultaneously -- `cache.get()` and `await cache.aget()` work on the same backend with no separate configuration needed.
 
 ## Basic Usage
 
@@ -34,7 +32,7 @@ async def my_view(request):
 
 ### Standard Django Cache Methods
 
-All standard Django cache methods have async equivalents:
+All standard Django cache methods have async equivalents with the `a` prefix:
 
 | Sync | Async |
 |------|-------|
@@ -57,63 +55,66 @@ All standard Django cache methods have async equivalents:
 
 ### Extended Methods
 
-django-cachex extended methods also have async versions:
+django-cachex extended methods also have async versions at the client level (`cache._cache`):
 
 ```python
+client = cache._cache  # Access the cache client for extended async methods
+
 # TTL operations
-ttl = await cache.attl("key")           # Get TTL in seconds
-pttl = await cache.apttl("key")         # Get TTL in milliseconds
-await cache.aexpire("key", timeout=60)  # Set expiration
-await cache.apersist("key")             # Remove expiration
+ttl = await client.attl(key)             # Get TTL in seconds
+pttl = await client.apttl(key)           # Get TTL in milliseconds
+await client.aexpire(key, timeout=60)    # Set expiration
+await client.apersist(key)               # Remove expiration
 
 # Key operations
-keys = await cache.akeys("pattern:*")
-await cache.adelete_pattern("session:*")
-await cache.arename("old_key", "new_key")
+keys = await client.akeys("pattern:*")
+await client.adelete_pattern("session:*")
+await client.arename(key, new_key)
 
 # Iterate keys (memory-efficient)
-async for key in cache.aiter_keys("user:*"):
+async for key in client.aiter_keys("user:*"):
     print(key)
 ```
 
+!!! note "Key prefixing"
+    Client-level methods operate on raw (already-prefixed) keys. Use `cache.make_and_validate_key()` to prefix keys when calling client methods directly.
+
 ### Data Structures
 
-All data structure operations have async equivalents:
+Data structure operations have async equivalents at the client level:
 
 ```python
+client = cache._cache
+
 # Hashes
-await cache.ahset("user:1", "name", "Alice")
-name = await cache.ahget("user:1", "name")
-user = await cache.ahgetall("user:1")
+await client.ahset(key, "name", "Alice")
+name = await client.ahget(key, "name")
+user = await client.ahgetall(key)
 
 # Lists
-await cache.alpush("queue", "item")
-item = await cache.alpop("queue")
-items = await cache.alrange("queue", 0, -1)
+await client.alpush(key, "item")
+item = await client.alpop(key)
+items = await client.alrange(key, 0, -1)
 
 # Sets
-await cache.asadd("tags", "python", "django")
-members = await cache.asmembers("tags")
-is_member = await cache.asismember("tags", "python")
+await client.asadd(key, "python", "django")
+members = await client.asmembers(key)
+is_member = await client.asismember(key, "python")
 
 # Sorted Sets
-await cache.azadd("leaderboard", {"alice": 100, "bob": 85})
-rank = await cache.azrank("leaderboard", "alice")
-top_players = await cache.azrange("leaderboard", 0, 9, withscores=True)
-
-# Streams
-entry_id = await cache.axadd("events", {"type": "login", "user": "alice"})
-entries = await cache.axrange("events", "-", "+", count=10)
+await client.azadd(key, {"alice": 100, "bob": 85})
+rank = await client.azrank(key, "alice")
+top_players = await client.azrange(key, 0, 9, withscores=True)
 ```
 
 ## How It Works
 
 ### Connection Pool Architecture
 
-django-cachex maintains separate connection pools for sync and async operations:
+Separate connection pools are maintained for sync and async operations:
 
-- **Sync pools**: Standard connection pools (`redis.ConnectionPool` / `valkey.ConnectionPool`), one per server
-- **Async pools**: Async connection pools (`redis.asyncio.ConnectionPool` / `valkey.asyncio.ConnectionPool`), cached per event loop
+- **Sync pools**: Standard pools (`redis.ConnectionPool` / `valkey.ConnectionPool`), one per server
+- **Async pools**: Async pools (`redis.asyncio.ConnectionPool` / `valkey.asyncio.ConnectionPool`), cached per event loop
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -129,20 +130,16 @@ django-cachex maintains separate connection pools for sync and async operations:
 
 ### Per-Event-Loop Caching
 
-Async pools are stored in a `WeakKeyDictionary` keyed by event loop. This provides:
-
-1. **Automatic cleanup**: When an event loop is garbage collected, its pools are automatically cleaned up
-2. **Thread safety**: Each event loop gets its own set of pools
-3. **Connection reuse**: Within the same event loop, connections are efficiently reused
+Async pools are stored in a `WeakKeyDictionary` keyed by event loop, providing automatic cleanup when loops are garbage collected, thread safety (each loop gets its own pools), and connection reuse within the same loop.
 
 ## Performance Considerations
 
 !!! warning "Event Loop Lifecycle"
-    Async pool connections are cached **per event loop**. This works efficiently for long-lived event loops but has implications for short-lived ones.
+    Async pools are cached **per event loop**. This is efficient for long-lived loops but wasteful for short-lived ones.
 
 ### Efficient: Long-Lived Event Loops
 
-ASGI servers (uvicorn, daphne, hypercorn) maintain long-lived event loops, making async operations very efficient:
+ASGI servers (uvicorn, daphne, hypercorn) maintain long-lived event loops where connections are reused across requests:
 
 ```python
 # In an ASGI application - efficient!
@@ -155,7 +152,7 @@ async def my_view(request):
 
 ### Inefficient: Short-Lived Event Loops
 
-Avoid async cache methods when event loops are frequently created and destroyed:
+Avoid async methods when event loops are frequently created and destroyed:
 
 ```python
 # BAD: Each asyncio.run() creates a new event loop = new connection pool
@@ -185,7 +182,7 @@ def wrapped_function():
 
 ### Custom Async Pool Class
 
-You can provide a custom async connection pool class:
+Provide a custom async connection pool class:
 
 ```python
 CACHES = {
@@ -202,17 +199,15 @@ CACHES = {
 
 ### Closing Async Connections
 
-To explicitly close async connections (e.g., during shutdown):
-
 ```python
 await cache.aclose()
 ```
 
-This closes the async connection pool for the current event loop. The sync pools remain open.
+Closes the async connection pool for the current event loop. Sync pools remain open.
 
 ## Mixed Sync/Async Usage
 
-A single cache backend works for both sync and async code:
+A single backend works for both sync and async code:
 
 ```python
 from django.core.cache import cache
@@ -230,11 +225,11 @@ async def async_view(request):
     return JsonResponse({"value": value})
 ```
 
-Both views can use the same cache backend configured in settings - no separate configuration needed.
+Both views use the same cache backend configured in settings.
 
 ## Cluster and Sentinel
 
-Async support is available for all backend types:
+Async works identically with Cluster and Sentinel backends:
 
 ```python
 # Cluster - async works the same way
@@ -281,12 +276,11 @@ async def user_profile(request, user_id):
     return JsonResponse(profile)
 
 async def leaderboard(request):
-    # Get top 10 from sorted set
-    top_players = await cache.azrange(
+    # Get top 10 from sorted set (descending by score)
+    top_players = cache.zrevrange(
         "game:leaderboard",
         0, 9,
-        desc=True,
-        withscores=True
+        withscores=True,
     )
 
     return JsonResponse({"leaderboard": top_players})

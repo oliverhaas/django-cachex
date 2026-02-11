@@ -8,12 +8,7 @@ from django.db import models
 
 
 class Cache(models.Model):
-    """
-    Fake model representing a Django cache backend.
-
-    This model is not managed by Django (no migrations, no database table).
-    It provides a hook for Django admin to display caches.
-    """
+    """Unmanaged model representing a Django cache backend for admin display."""
 
     # Fake primary key - corresponds to cache name
     name = models.CharField(max_length=255, primary_key=True)
@@ -82,13 +77,7 @@ class Cache(models.Model):
 
     @property
     def support_level(self) -> str:
-        """Determine the support level for this cache backend.
-
-        Returns:
-            - "cachex": Full support (django-cachex backends)
-            - "wrapped": Django core builtin backends (wrapped for almost full support)
-            - "limited": Custom/unknown backends with limited support
-        """
+        """Determine the support level for this cache backend."""
         # Check for _cachex_support attribute on the cache backend (set by wrap_cache
         # or native django-cachex backends)
         cache = self._get_cache()
@@ -130,12 +119,7 @@ class Cache(models.Model):
 
 
 class Key(models.Model):
-    """
-    Fake model representing a cache key.
-
-    This model is not managed by Django (no migrations, no database table).
-    Keys are identified by a composite of (cache_name, key_name).
-    """
+    """Unmanaged model representing a cache key, identified by (cache_name, key_name)."""
 
     # Composite identifier: cache_name:key_name
     id = models.CharField(max_length=2048, primary_key=True)
@@ -156,23 +140,12 @@ class Key(models.Model):
 
     @classmethod
     def make_pk(cls, cache_name: str, key_name: str) -> str:
-        """Create a primary key from cache name and key name.
-
-        Format: cache_name:key_name
-
-        Note: We don't URL-encode here because Django's {% url %} template tag
-        handles URL encoding automatically. The key_name can contain any
-        characters including colons - parse_pk uses split(':', 1) to only
-        split on the first colon.
-        """
+        """Create a primary key from cache name and key name."""
         return f"{cache_name}:{key_name}"
 
     @classmethod
     def parse_pk(cls, pk: str) -> tuple[str, str]:
-        """Parse a primary key into (cache_name, key_name).
-
-        Splits on the first colon only, so key names can contain colons.
-        """
+        """Parse a primary key into (cache_name, key_name)."""
         parts = pk.split(":", 1)
         if len(parts) == 2:
             return parts[0], parts[1]

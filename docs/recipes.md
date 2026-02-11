@@ -131,7 +131,7 @@ with cache.lock("process-payments", timeout=30):
 
 ## Development Without a Server
 
-For simple local development without running a server, [fakeredis](https://github.com/cunla/fakeredis-py) provides an in-memory implementation:
+For local development without a running server, [fakeredis](https://github.com/cunla/fakeredis-py) provides an in-memory implementation:
 
 ```python
 # settings_dev.py
