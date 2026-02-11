@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 (February 2026)
+
+### Breaking Changes
+
+- **Django permissions enforced**: The admin now uses Django's built-in permission system. Staff users without explicit permissions will get 403 errors. Superusers are unaffected. Grant `django_cachex.view_cache`, `django_cachex.change_cache`, `django_cachex.view_key`, `django_cachex.add_key`, `django_cachex.change_key`, and `django_cachex.delete_key` as needed.
+
+---
+
 ## 0.1.0 (February 2026)
 
 Initial stable release of django-cachex.

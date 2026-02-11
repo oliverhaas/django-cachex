@@ -45,6 +45,16 @@ pip install django-cachex[unfold]
     Use either `django_cachex.admin` OR `django_cachex.unfold`, not both.
     They provide the same functionality with different styling.
 
+## Permissions
+
+The admin uses Django's built-in permission system. Superusers have full access. Staff users need explicit permissions:
+
+- `django_cachex.view_cache` / `view_key` — view caches and keys
+- `django_cachex.change_cache` — flush caches, update TTL
+- `django_cachex.add_key` — create keys
+- `django_cachex.change_key` — edit values
+- `django_cachex.delete_key` — delete keys
+
 ## Support Levels
 
 Different cache backends have different levels of support in the Cache Admin:
