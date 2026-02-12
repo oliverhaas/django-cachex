@@ -997,11 +997,11 @@
 <h1 id="valkeyredis-cluster">Valkey/Redis Cluster<a class="headerlink" href="#valkeyredis-cluster" title="Permanent link">&para;</a></h1>
 <p>For basic cluster setup, see <a href="../configuration/#cluster-configuration">Configuration</a>.</p>
 <h2 id="slot-handling">Slot Handling<a class="headerlink" href="#slot-handling" title="Permanent link">&para;</a></h2>
-<p>Valkey/Redis Cluster distributes keys across 16384 hash slots. django-cachex handles this differently for Django cache methods vs direct commands:</p>
+<p>Valkey/Redis Cluster distributes keys across 16,384 hash slots. django-cachex handles Django cache methods and direct commands differently:</p>
 <p><strong>Django cache methods</strong> (<code>get_many</code>, <code>set_many</code>, <code>delete_many</code>, <code>keys</code>, <code>clear</code>) are cluster-aware and handle cross-slot operations automatically.</p>
 <p><strong>Direct commands</strong> (sets, lists, hashes, sorted sets) pass through to the server. Multi-key commands (<code>sdiff</code>, <code>sinter</code>, <code>sunion</code>, <code>lmove</code>) require all keys on the same slot.</p>
 <h2 id="hash-tags">Hash Tags<a class="headerlink" href="#hash-tags" title="Permanent link">&para;</a></h2>
-<p>Force keys to the same slot using hash tags - the substring between <code>{</code> and <code>}</code>:</p>
+<p>Force keys to the same slot using hash tags (the substring between <code>{</code> and <code>}</code>):</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Same slot (hash tag is &quot;user:123&quot;)</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">cache</span><span class="o">.</span><span class="n">sadd</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{user:123}</span><span class="s2">:followers&quot;</span><span class="p">,</span> <span class="s2">&quot;alice&quot;</span><span class="p">,</span> <span class="s2">&quot;bob&quot;</span><span class="p">)</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">cache</span><span class="o">.</span><span class="n">sadd</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{user:123}</span><span class="s2">:following&quot;</span><span class="p">,</span> <span class="s2">&quot;charlie&quot;</span><span class="p">)</span>

@@ -1295,7 +1295,7 @@
 
 
 <h1 id="cache-admin">Cache Admin<a class="headerlink" href="#cache-admin" title="Permanent link">&para;</a></h1>
-<p>django-cachex provides a Django admin interface for inspecting and managing caches. It allows you to browse cache keys, view their values, and perform operations like adding, editing, and deleting cache entries.</p>
+<p>django-cachex provides a Django admin interface for browsing cache keys, viewing values, and adding, editing, or deleting entries.</p>
 <h2 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h2>
 <h3 id="standard-django-admin">Standard Django Admin<a class="headerlink" href="#standard-django-admin" title="Permanent link">&para;</a></h3>
 <p>Add <code>django_cachex.admin</code> to your <code>INSTALLED_APPS</code>:</p>
@@ -1337,7 +1337,7 @@ They provide the same functionality with different styling.</p>
 <li><code>django_cachex.delete_key</code> — delete keys</li>
 </ul>
 <h2 id="support-levels">Support Levels<a class="headerlink" href="#support-levels" title="Permanent link">&para;</a></h2>
-<p>Different cache backends have different levels of support in the Cache Admin:</p>
+<p>Different cache backends have different levels of support:</p>
 <table>
 <thead>
 <tr>
@@ -1350,83 +1350,37 @@ They provide the same functionality with different styling.</p>
 <tr>
 <td><strong>cachex</strong></td>
 <td>Full Support</td>
-<td>django-cachex backends (<code>ValkeyCache</code>, <code>RedisCache</code>, etc.) with full access to all features including key listing, pattern search, TTL inspection, and all data type operations.</td>
+<td>django-cachex backends (<code>ValkeyCache</code>, <code>RedisCache</code>, etc.) -- all features including key listing, pattern search, TTL inspection, and data type operations.</td>
 </tr>
 <tr>
 <td><strong>wrapped</strong></td>
 <td>Wrapped Support</td>
-<td>Django builtin backends (<code>LocMemCache</code>, <code>DatabaseCache</code>, etc.). Most features available through wrapper compatibility.</td>
+<td>Django builtin backends (<code>LocMemCache</code>, <code>DatabaseCache</code>, etc.) -- most features available through wrapper compatibility.</td>
 </tr>
 <tr>
 <td><strong>limited</strong></td>
 <td>Limited Support</td>
-<td>Custom or unknown cache backends. Basic operations may work but key listing and advanced features may not be available.</td>
+<td>Custom or unknown backends -- basic operations may work but key listing and advanced features may not be available.</td>
 </tr>
 </tbody>
 </table>
 <h3 id="using-redisvalkey">Using Redis/Valkey?<a class="headerlink" href="#using-redisvalkey" title="Permanent link">&para;</a></h3>
-<p>If you are using Django's builtin Redis backend (<code>django.core.cache.backends.redis.RedisCache</code>), consider switching to django-cachex's <code>ValkeyCache</code> or <code>RedisCache</code> backends for full admin functionality including:</p>
-<ul>
-<li>Key browsing and pattern search</li>
-<li>TTL inspection and modification</li>
-<li>Native Redis data type support (lists, sets, hashes, sorted sets)</li>
-<li>Server info and memory statistics</li>
-</ul>
-<p>See the <a href="../../getting-started/quickstart/">quickstart guide</a> for migration instructions.</p>
+<p>If you are using Django's builtin Redis backend (<code>django.core.cache.backends.redis.RedisCache</code>), consider switching to django-cachex's <code>ValkeyCache</code> or <code>RedisCache</code> backends for full admin functionality: key browsing, pattern search, TTL inspection, native data type support, and server statistics. See the <a href="../../getting-started/quickstart/">quickstart guide</a> for migration instructions.</p>
 <h2 id="views">Views<a class="headerlink" href="#views" title="Permanent link">&para;</a></h2>
 <h3 id="caches-index">Caches (Index)<a class="headerlink" href="#caches-index" title="Permanent link">&para;</a></h3>
-<p>The main view lists all configured caches with:</p>
-<ul>
-<li><strong>Cache Name</strong>: The alias used in <code>settings.CACHES</code></li>
-<li><strong>Backend</strong>: The full backend class path</li>
-<li><strong>Location</strong>: Connection string or path</li>
-<li><strong>Support Level</strong>: Badge indicating feature availability</li>
-</ul>
-<p><strong>Actions:</strong></p>
-<ul>
-<li><strong>Flush selected caches</strong>: Delete all entries from selected caches (available for backends that support it)</li>
-</ul>
+<p>Lists all configured caches showing name, backend class, location, and support level.</p>
+<p><strong>Actions:</strong> Flush selected caches (delete all entries).</p>
 <h3 id="key-browser">Key Browser<a class="headerlink" href="#key-browser" title="Permanent link">&para;</a></h3>
-<p>Click on a cache name to browse its keys. Features include:</p>
-<ul>
-<li><strong>Search</strong>: Use wildcards (<code>*</code>) to filter keys (e.g., <code>user:*</code>, <code>*:session</code>)</li>
-<li><strong>Key Type</strong>: Shows Redis/Valkey data types (string, list, set, hash, zset)</li>
-<li><strong>TTL</strong>: Shows remaining time-to-live for each key</li>
-<li><strong>Pagination</strong>: Browse large key sets with configurable page size</li>
-</ul>
-<p><strong>Actions:</strong></p>
-<ul>
-<li><strong>Delete selected keys</strong>: Remove multiple keys at once</li>
-<li><strong>Add key</strong>: Create a new cache entry (top-right button)</li>
-</ul>
+<p>Click a cache name to browse its keys with wildcard search (<code>*</code>), data type display, TTL, and pagination.</p>
+<p><strong>Actions:</strong> Delete selected keys, add new key.</p>
 <h3 id="key-detail">Key Detail<a class="headerlink" href="#key-detail" title="Permanent link">&para;</a></h3>
-<p>View and edit a specific key:</p>
-<ul>
-<li><strong>Value Display</strong>: Shows the key's value (formatted JSON for objects/arrays)</li>
-<li><strong>Type Information</strong>: For complex types (list, hash, set, zset), shows the data structure</li>
-<li><strong>TTL</strong>: Shows remaining expiry time</li>
-<li><strong>Edit</strong>: Modify value and timeout</li>
-<li><strong>Delete</strong>: Remove the key</li>
-</ul>
+<p>View and edit a specific key's value (formatted JSON for objects/arrays), data type, and TTL. Supports editing values/timeout and deleting the key.</p>
 <h3 id="cache-info">Cache Info<a class="headerlink" href="#cache-info" title="Permanent link">&para;</a></h3>
-<p>View server information and statistics:</p>
-<ul>
-<li><strong>Configuration</strong>: Backend, location, key prefix, version</li>
-<li><strong>Server</strong>: Version, operating system, uptime</li>
-<li><strong>Memory</strong>: Used memory, peak memory, max memory, eviction policy</li>
-<li><strong>Clients</strong>: Connected clients, blocked clients</li>
-<li><strong>Statistics</strong>: Total connections, commands processed, hit/miss rates</li>
-<li><strong>Keyspace</strong>: Per-database key counts and TTL statistics</li>
-</ul>
+<p>View server information: configuration, server version/uptime, memory usage, connected clients, command statistics, and keyspace data.</p>
 <h3 id="add-key">Add Key<a class="headerlink" href="#add-key" title="Permanent link">&para;</a></h3>
-<p>Create a new cache entry:</p>
-<ul>
-<li><strong>Key Name</strong>: Unique identifier for the cache entry</li>
-<li><strong>Value</strong>: JSON objects/arrays are parsed automatically, plain text for strings</li>
-<li><strong>Timeout</strong>: Optional expiration time in seconds (leave empty for cache default)</li>
-</ul>
+<p>Create a new cache entry with key name, value (JSON objects/arrays are parsed automatically), and optional timeout in seconds.</p>
 <h2 id="backend-abilities">Backend Abilities<a class="headerlink" href="#backend-abilities" title="Permanent link">&para;</a></h2>
-<p>The admin adapts its interface based on what each backend supports:</p>
+<p>The admin adapts based on backend capabilities:</p>
 <table>
 <thead>
 <tr>
@@ -1508,9 +1462,9 @@ They provide the same functionality with different styling.</p>
 <p>*FileBasedCache shows MD5 hashes instead of original key names (one-way hash)</p>
 <h2 id="tips">Tips<a class="headerlink" href="#tips" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Pattern Search</strong>: Use <code>*</code> as a wildcard. For example, <code>user:*</code> finds all keys starting with "user:".</li>
-<li><strong>JSON Values</strong>: When editing, you can enter valid JSON to store objects or arrays.</li>
-<li><strong>Help Button</strong>: Each view has a help button that shows context-specific tips.</li>
+<li><strong>Pattern Search</strong>: Use <code>*</code> as a wildcard (e.g., <code>user:*</code> finds all keys starting with "user:").</li>
+<li><strong>JSON Values</strong>: Enter valid JSON when editing to store objects or arrays.</li>
+<li><strong>Help Button</strong>: Each view has a help button with context-specific tips.</li>
 <li><strong>Refresh</strong>: Use the refresh action to update key lists and statistics.</li>
 </ul>
 

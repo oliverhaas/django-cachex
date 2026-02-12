@@ -1425,8 +1425,16 @@
 <td>Set a value</td>
 </tr>
 <tr>
+<td><code>add(key, value, timeout=DEFAULT)</code></td>
+<td>Set only if key doesn't exist</td>
+</tr>
+<tr>
 <td><code>delete(key)</code></td>
 <td>Delete a key</td>
+</tr>
+<tr>
+<td><code>touch(key, timeout=DEFAULT)</code></td>
+<td>Update timeout on a key</td>
 </tr>
 <tr>
 <td><code>get_many(keys)</code></td>
@@ -1439,6 +1447,10 @@
 <tr>
 <td><code>delete_many(keys)</code></td>
 <td>Delete multiple keys</td>
+</tr>
+<tr>
+<td><code>get_or_set(key, default, timeout=DEFAULT)</code></td>
+<td>Get value or set default</td>
 </tr>
 <tr>
 <td><code>clear()</code></td>
@@ -1455,6 +1467,14 @@
 <tr>
 <td><code>decr(key, delta=1)</code></td>
 <td>Decrement a value</td>
+</tr>
+<tr>
+<td><code>incr_version(key, delta=1)</code></td>
+<td>Increment key version</td>
+</tr>
+<tr>
+<td><code>decr_version(key, delta=1)</code></td>
+<td>Decrement key version</td>
 </tr>
 <tr>
 <td><code>close()</code></td>
@@ -1474,11 +1494,11 @@
 <tbody>
 <tr>
 <td><code>ttl(key)</code></td>
-<td>Get TTL in seconds (-1 = no expiry, -2 = not found)</td>
+<td>Get TTL in seconds (<code>None</code> = no expiry, <code>-2</code> = not found)</td>
 </tr>
 <tr>
 <td><code>pttl(key)</code></td>
-<td>Get TTL in milliseconds</td>
+<td>Get TTL in milliseconds (<code>None</code> = no expiry, <code>-2</code> = not found)</td>
 </tr>
 <tr>
 <td><code>expire(key, timeout)</code></td>
@@ -1501,6 +1521,10 @@
 <td>Remove expiration</td>
 </tr>
 <tr>
+<td><code>type(key)</code></td>
+<td>Get the data type of a key</td>
+</tr>
+<tr>
 <td><code>lock(key, ...)</code></td>
 <td>Get a distributed lock</td>
 </tr>
@@ -1513,8 +1537,20 @@
 <td>Iterate keys matching pattern</td>
 </tr>
 <tr>
+<td><code>scan(cursor, pattern, count)</code></td>
+<td>Single SCAN iteration</td>
+</tr>
+<tr>
 <td><code>delete_pattern(pattern)</code></td>
 <td>Delete keys matching pattern</td>
+</tr>
+<tr>
+<td><code>rename(src, dst)</code></td>
+<td>Rename a key</td>
+</tr>
+<tr>
+<td><code>renamenx(src, dst)</code></td>
+<td>Rename key only if dest doesn't exist</td>
 </tr>
 </tbody>
 </table>
@@ -1547,6 +1583,10 @@
 <tr>
 <td><code>hgetall(key)</code></td>
 <td>Get all fields and values in a hash</td>
+</tr>
+<tr>
+<td><code>hkeys(key)</code></td>
+<td>Get all field names in a hash</td>
 </tr>
 <tr>
 <td><code>hincrby(key, field, amount=1)</code></td>
@@ -1625,28 +1665,36 @@
 <td>Move member between sets</td>
 </tr>
 <tr>
-<td><code>sdiff(keys)</code></td>
+<td><code>sdiff(*keys)</code></td>
 <td>Get difference of sets</td>
 </tr>
 <tr>
-<td><code>sdiffstore(dest, keys)</code></td>
+<td><code>sdiffstore(dest, *keys)</code></td>
 <td>Store difference of sets</td>
 </tr>
 <tr>
-<td><code>sinter(keys)</code></td>
+<td><code>sinter(*keys)</code></td>
 <td>Get intersection of sets</td>
 </tr>
 <tr>
-<td><code>sinterstore(dest, keys)</code></td>
+<td><code>sinterstore(dest, *keys)</code></td>
 <td>Store intersection of sets</td>
 </tr>
 <tr>
-<td><code>sunion(keys)</code></td>
+<td><code>sunion(*keys)</code></td>
 <td>Get union of sets</td>
 </tr>
 <tr>
-<td><code>sunionstore(dest, keys)</code></td>
+<td><code>sunionstore(dest, *keys)</code></td>
 <td>Store union of sets</td>
+</tr>
+<tr>
+<td><code>sscan(key, cursor=0, ...)</code></td>
+<td>Incrementally iterate set members</td>
+</tr>
+<tr>
+<td><code>sscan_iter(key, ...)</code></td>
+<td>Iterate over set members using SSCAN</td>
 </tr>
 </tbody>
 </table>
@@ -1661,7 +1709,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>zadd(key, *args, **kwargs)</code></td>
+<td><code>zadd(key, mapping, *, nx, xx, ch, gt, lt)</code></td>
 <td>Add member(s) with scores</td>
 </tr>
 <tr>
@@ -1707,6 +1755,10 @@
 <tr>
 <td><code>zremrangebyrank(key, start, end)</code></td>
 <td>Remove members by rank range</td>
+</tr>
+<tr>
+<td><code>zremrangebyscore(key, min, max)</code></td>
+<td>Remove members by score range</td>
 </tr>
 <tr>
 <td><code>zscore(key, member)</code></td>
@@ -1773,12 +1825,32 @@
 <td>Trim list to range</td>
 </tr>
 <tr>
-<td><code>lpos(key, element, ...)</code></td>
+<td><code>lrem(key, count, value)</code></td>
+<td>Remove elements equal to value</td>
+</tr>
+<tr>
+<td><code>lpos(key, value, ...)</code></td>
 <td>Find element position in list</td>
 </tr>
 <tr>
-<td><code>lmove(src, dst, src_side, dst_side)</code></td>
+<td><code>linsert(key, where, pivot, value)</code></td>
+<td>Insert value before or after pivot</td>
+</tr>
+<tr>
+<td><code>lmove(src, dst, wherefrom, whereto)</code></td>
 <td>Atomically move element between lists</td>
+</tr>
+<tr>
+<td><code>blpop(*keys, timeout=0)</code></td>
+<td>Blocking pop from head of list</td>
+</tr>
+<tr>
+<td><code>brpop(*keys, timeout=0)</code></td>
+<td>Blocking pop from tail of list</td>
+</tr>
+<tr>
+<td><code>blmove(src, dst, timeout, ...)</code></td>
+<td>Blocking move between lists</td>
 </tr>
 </tbody>
 </table>
@@ -1924,29 +1996,37 @@
 </tbody>
 </table>
 <h2 id="async-methods">Async Methods<a class="headerlink" href="#async-methods" title="Permanent link">&para;</a></h2>
-<p>All extended methods have async versions prefixed with <code>a</code>:</p>
+<p>Standard Django cache methods have async versions on the cache object:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Sync</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">value</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;key&quot;</span><span class="p">)</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">cache</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">&quot;hash&quot;</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1"># Async</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="n">value</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="s2">&quot;key&quot;</span><span class="p">)</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">ahset</span><span class="p">(</span><span class="s2">&quot;hash&quot;</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Async</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">value</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="s2">&quot;key&quot;</span><span class="p">)</span>
 </span></code></pre></div>
-<p>Async methods available:</p>
 <ul>
-<li><code>aget</code>, <code>aset</code>, <code>adelete</code>, <code>aget_many</code>, <code>aset_many</code>, <code>adelete_many</code></li>
-<li><code>ahas_key</code>, <code>aincr</code>, <code>adecr</code>, <code>aclear</code>, <code>aclose</code></li>
-<li><code>attl</code>, <code>apttl</code>, <code>aexpire</code>, <code>apexpire</code>, <code>aexpire_at</code>, <code>apexpire_at</code>, <code>apersist</code></li>
-<li><code>akeys</code>, <code>aiter_keys</code>, <code>adelete_pattern</code></li>
-<li><code>ahset</code>, <code>ahdel</code>, <code>ahexists</code>, <code>ahget</code>, <code>ahgetall</code>, <code>ahincrby</code>, <code>ahincrbyfloat</code>, <code>ahlen</code>, <code>ahmget</code>, <code>ahmset</code>, <code>ahsetnx</code>, <code>ahvals</code></li>
-<li><code>asadd</code>, <code>asrem</code>, <code>asmembers</code>, <code>asismember</code>, <code>ascard</code>, <code>aspop</code>, <code>asrandmember</code></li>
-<li><code>azadd</code>, <code>azcard</code>, <code>azcount</code>, <code>azincrby</code>, <code>azrange</code>, <code>azrangebyscore</code>, <code>azrank</code>, <code>azrevrank</code>, <code>azrem</code>, <code>azremrangebyrank</code>, <code>azscore</code>, <code>azmscore</code>, <code>azpopmin</code>, <code>azpopmax</code></li>
-<li><code>allen</code>, <code>alpush</code>, <code>arpush</code>, <code>alpop</code>, <code>arpop</code>, <code>alindex</code>, <code>alrange</code>, <code>alset</code>, <code>altrim</code>, <code>alpos</code>, <code>almove</code></li>
+<li><code>aadd</code>, <code>aget</code>, <code>aset</code>, <code>adelete</code>, <code>atouch</code>, <code>aget_many</code>, <code>aset_many</code>, <code>adelete_many</code></li>
+<li><code>ahas_key</code>, <code>aincr</code>, <code>adecr</code>, <code>aget_or_set</code>, <code>aclear</code>, <code>aclose</code></li>
+<li><code>aincr_version</code>, <code>adecr_version</code></li>
 <li><code>aeval_script</code></li>
 </ul>
+<p>Extended methods (data structures, TTL, patterns) have async versions on the cache client, accessible via <code>cache._cache</code>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Sync (on cache object directly)</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">cache</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">&quot;hash&quot;</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># Async (on cache client -- note: client methods use raw/prefixed keys)</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="n">key</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">make_and_validate_key</span><span class="p">(</span><span class="s2">&quot;hash&quot;</span><span class="p">)</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">_cache</span><span class="o">.</span><span class="n">ahset</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
+</span></code></pre></div>
+<ul>
+<li><code>attl</code>, <code>apttl</code>, <code>aexpire</code>, <code>apexpire</code>, <code>aexpireat</code>, <code>apexpireat</code>, <code>apersist</code></li>
+<li><code>akeys</code>, <code>aiter_keys</code>, <code>adelete_pattern</code></li>
+<li><code>ahset</code>, <code>ahdel</code>, <code>ahexists</code>, <code>ahget</code>, <code>ahgetall</code>, <code>ahincrby</code>, <code>ahincrbyfloat</code>, <code>ahkeys</code>, <code>ahlen</code>, <code>ahmget</code>, <code>ahmset</code>, <code>ahsetnx</code>, <code>ahvals</code></li>
+<li><code>asadd</code>, <code>asrem</code>, <code>asmembers</code>, <code>asismember</code>, <code>asmismember</code>, <code>ascard</code>, <code>aspop</code>, <code>asrandmember</code>, <code>asmove</code>, <code>asdiff</code>, <code>asdiffstore</code>, <code>asinter</code>, <code>asinterstore</code>, <code>asunion</code>, <code>asunionstore</code></li>
+<li><code>azadd</code>, <code>azcard</code>, <code>azcount</code>, <code>azincrby</code>, <code>azrange</code>, <code>azrevrange</code>, <code>azrangebyscore</code>, <code>azrevrangebyscore</code>, <code>azrank</code>, <code>azrevrank</code>, <code>azrem</code>, <code>azremrangebyrank</code>, <code>azremrangebyscore</code>, <code>azscore</code>, <code>azmscore</code>, <code>azpopmin</code>, <code>azpopmax</code></li>
+<li><code>allen</code>, <code>alpush</code>, <code>arpush</code>, <code>alpop</code>, <code>arpop</code>, <code>alindex</code>, <code>alrange</code>, <code>alset</code>, <code>altrim</code>, <code>alrem</code>, <code>alpos</code>, <code>almove</code>, <code>alinsert</code>, <code>ablpop</code>, <code>abrpop</code>, <code>ablmove</code></li>
+</ul>
 <h2 id="raw-client-access">Raw Client Access<a class="headerlink" href="#raw-client-access" title="Permanent link">&para;</a></h2>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">client</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get_client</span><span class="p">(</span><span class="n">write</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">client</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get_client</span><span class="p">(</span><span class="n">write</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </span></code></pre></div>
 <table>
 <thead>
@@ -1958,13 +2038,13 @@
 <tbody>
 <tr>
 <td><code>write</code></td>
-<td>Get write connection for primary (default: <code>True</code>)</td>
+<td>Get write connection for primary (default: <code>False</code>)</td>
 </tr>
 </tbody>
 </table>
 <p>Returns the underlying <code>valkey.Valkey</code> or <code>redis.Redis</code> client instance.</p>
 <h2 id="lock-interface">Lock Interface<a class="headerlink" href="#lock-interface" title="Permanent link">&para;</a></h2>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sleep</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">blocking_timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sleep</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">blocking_timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 </span></code></pre></div>
 <table>
 <thead>
@@ -1997,25 +2077,25 @@
 </tbody>
 </table>
 <p>Compatible with <code>threading.Lock</code>:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Context manager</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">&quot;mylock&quot;</span><span class="p">):</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">do_work</span><span class="p">()</span>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># Manual acquire/release</span>
-</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">&quot;mylock&quot;</span><span class="p">)</span>
-</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="k">if</span> <span class="n">lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">():</span>
-</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="k">try</span><span class="p">:</span>
-</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>        <span class="n">do_work</span><span class="p">()</span>
-</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="k">finally</span><span class="p">:</span>
-</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>        <span class="n">lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Context manager</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">&quot;mylock&quot;</span><span class="p">):</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="n">do_work</span><span class="p">()</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="c1"># Manual acquire/release</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">&quot;mylock&quot;</span><span class="p">)</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="k">if</span> <span class="n">lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">():</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>    <span class="k">try</span><span class="p">:</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>        <span class="n">do_work</span><span class="p">()</span>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>    <span class="k">finally</span><span class="p">:</span>
+</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a>        <span class="n">lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
 </span></code></pre></div>
 <h2 id="pipelines">Pipelines<a class="headerlink" href="#pipelines" title="Permanent link">&para;</a></h2>
 <p>Batch multiple operations for efficiency:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">pipe</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">pipeline</span><span class="p">()</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">&quot;key1&quot;</span><span class="p">,</span> <span class="s2">&quot;value1&quot;</span><span class="p">)</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">&quot;key2&quot;</span><span class="p">,</span> <span class="s2">&quot;value2&quot;</span><span class="p">)</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">pipe</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">&quot;hash&quot;</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="n">results</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">pipe</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">pipeline</span><span class="p">()</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">&quot;key1&quot;</span><span class="p">,</span> <span class="s2">&quot;value1&quot;</span><span class="p">)</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">&quot;key2&quot;</span><span class="p">,</span> <span class="s2">&quot;value2&quot;</span><span class="p">)</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">pipe</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">&quot;hash&quot;</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="n">results</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
 </span></code></pre></div>
 <p>All cache methods are available on the pipeline. Results are returned as a list in the same order as the commands.</p>
 <h2 id="settings-reference">Settings Reference<a class="headerlink" href="#settings-reference" title="Permanent link">&para;</a></h2>

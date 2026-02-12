@@ -1162,11 +1162,11 @@
 </table>
 <div class="admonition note">
 <p class="admonition-title">Valkey and Redis Compatibility</p>
-<p>Valkey and Redis are probably still fully compatible, meaning you could use either backend with either server.
-We recommend Valkey as it remains fully open source.</p>
+<p>Valkey and Redis are protocol-compatible, so either backend works with either server.
+Valkey is recommended as it remains fully open source.</p>
 </div>
 <h2 id="connection-url-formats">Connection URL Formats<a class="headerlink" href="#connection-url-formats" title="Permanent link">&para;</a></h2>
-<p>django-cachex uses the valkey-py/redis-py native URL notation for connection strings:</p>
+<p>Uses the valkey-py/redis-py native URL notation:</p>
 <ul>
 <li><code>valkey://[[username]:[password]]@localhost:6379/0</code> - Valkey TCP connection</li>
 <li><code>redis://[[username]:[password]]@localhost:6379/0</code> - Redis TCP connection</li>
@@ -1175,13 +1175,13 @@ We recommend Valkey as it remains fully open source.</p>
 <li><code>unix://[[username]:[password]]@/path/to/socket.sock?db=0</code> - Unix socket</li>
 </ul>
 <h3 id="database-selection">Database Selection<a class="headerlink" href="#database-selection" title="Permanent link">&para;</a></h3>
-<p>There are two ways to specify the database number:</p>
+<p>Two ways to specify the database number:</p>
 <ol>
 <li>Query string: <code>valkey://localhost?db=0</code></li>
 <li>Path (for <code>valkey://</code> or <code>redis://</code> scheme): <code>valkey://localhost/0</code></li>
 </ol>
 <h2 id="configure-as-session-backend">Configure as Session Backend<a class="headerlink" href="#configure-as-session-backend" title="Permanent link">&para;</a></h2>
-<p>Django can use any cache backend as session storage:</p>
+<p>Use django-cachex as a session backend:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">SESSION_ENGINE</span> <span class="o">=</span> <span class="s2">&quot;django.contrib.sessions.backends.cache&quot;</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">SESSION_CACHE_ALIAS</span> <span class="o">=</span> <span class="s2">&quot;default&quot;</span>
 </span></code></pre></div>
@@ -1196,9 +1196,9 @@ We recommend Valkey as it remains fully open source.</p>
 </span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">cache</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">&quot;user:1&quot;</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;Alice&quot;</span><span class="p">)</span>
 </span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="n">cache</span><span class="o">.</span><span class="n">zrange</span><span class="p">(</span><span class="s2">&quot;leaderboard&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
 </span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>
-</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="c1"># Async versions</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="c1"># Async versions (standard Django methods)</span>
 </span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="s2">&quot;key&quot;</span><span class="p">)</span>
-</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">ahset</span><span class="p">(</span><span class="s2">&quot;user:1&quot;</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;Alice&quot;</span><span class="p">)</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aset</span><span class="p">(</span><span class="s2">&quot;key&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">300</span><span class="p">)</span>
 </span></code></pre></div>
 <h2 id="raw-client-access">Raw Client Access<a class="headerlink" href="#raw-client-access" title="Permanent link">&para;</a></h2>
 <p>For operations not exposed by the cache interface:</p>

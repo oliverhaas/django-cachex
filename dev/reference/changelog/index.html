@@ -1452,16 +1452,16 @@
 </ul>
 <h3 id="data-structure-operations">Data Structure Operations<a class="headerlink" href="#data-structure-operations" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Hash operations</strong>: <code>hset</code>, <code>hdel</code>, <code>hexists</code>, <code>hget</code>, <code>hgetall</code>, <code>hincrby</code>, <code>hincrbyfloat</code>, <code>hlen</code>, <code>hmget</code>, <code>hmset</code>, <code>hsetnx</code>, <code>hvals</code></li>
-<li><strong>Sorted set operations</strong>: <code>zadd</code>, <code>zcard</code>, <code>zcount</code>, <code>zincrby</code>, <code>zrange</code>, <code>zrangebyscore</code>, <code>zrank</code>, <code>zrevrank</code>, <code>zrem</code>, <code>zremrangebyrank</code>, <code>zscore</code>, <code>zmscore</code></li>
-<li><strong>List operations</strong>: <code>llen</code>, <code>lpush</code>, <code>rpush</code>, <code>lpop</code>, <code>rpop</code>, <code>lindex</code>, <code>lrange</code>, <code>lset</code>, <code>ltrim</code>, <code>lpos</code>, <code>lmove</code></li>
-<li><strong>Set operations</strong>: <code>sadd</code>, <code>srem</code>, <code>smembers</code>, <code>sismember</code>, <code>smismember</code>, <code>scard</code>, <code>spop</code>, <code>srandmember</code>, <code>sdiff</code>, <code>sinter</code>, <code>sunion</code></li>
+<li><strong>Hash operations</strong>: <code>hset</code>, <code>hdel</code>, <code>hexists</code>, <code>hget</code>, <code>hgetall</code>, <code>hincrby</code>, <code>hincrbyfloat</code>, <code>hkeys</code>, <code>hlen</code>, <code>hmget</code>, <code>hmset</code>, <code>hsetnx</code>, <code>hvals</code></li>
+<li><strong>Sorted set operations</strong>: <code>zadd</code>, <code>zcard</code>, <code>zcount</code>, <code>zincrby</code>, <code>zrange</code>, <code>zrevrange</code>, <code>zrangebyscore</code>, <code>zrevrangebyscore</code>, <code>zrank</code>, <code>zrevrank</code>, <code>zrem</code>, <code>zremrangebyrank</code>, <code>zremrangebyscore</code>, <code>zscore</code>, <code>zmscore</code>, <code>zpopmin</code>, <code>zpopmax</code></li>
+<li><strong>List operations</strong>: <code>llen</code>, <code>lpush</code>, <code>rpush</code>, <code>lpop</code>, <code>rpop</code>, <code>lindex</code>, <code>lrange</code>, <code>lset</code>, <code>ltrim</code>, <code>lrem</code>, <code>lpos</code>, <code>linsert</code>, <code>lmove</code>, <code>blpop</code>, <code>brpop</code>, <code>blmove</code></li>
+<li><strong>Set operations</strong>: <code>sadd</code>, <code>srem</code>, <code>smembers</code>, <code>sismember</code>, <code>smismember</code>, <code>scard</code>, <code>spop</code>, <code>srandmember</code>, <code>smove</code>, <code>sdiff</code>, <code>sdiffstore</code>, <code>sinter</code>, <code>sinterstore</code>, <code>sunion</code>, <code>sunionstore</code>, <code>sscan</code>, <code>sscan_iter</code></li>
 </ul>
 <h3 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Python 3.12+</li>
 <li>Django 5.2+</li>
-<li>valkey-py 6+ or redis-py 6+</li>
+<li>valkey-py 6.1+ or redis-py 6+</li>
 </ul>
 <hr />
 <h2 id="pre-release-history">Pre-release History<a class="headerlink" href="#pre-release-history" title="Permanent link">&para;</a></h2>

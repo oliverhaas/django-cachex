@@ -1059,7 +1059,7 @@
 
 
 <h1 id="django-cachex">django-cachex<a class="headerlink" href="#django-cachex" title="Permanent link">&para;</a></h1>
-<p>Cache extensions for django, including full featured Valkey and Redis cache backend for Django and a built-in admin interface.</p>
+<p>Full featured Valkey and Redis cache backend for Django with a built-in admin interface.</p>
 <p><a href="https://pypi.org/project/django-cachex/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/django-cachex.svg?style=flat" /></a>
 <a href="https://pypi.org/project/django-cachex/"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/django-cachex.svg" /></a>
 <a href="https://pypi.org/project/django-cachex/"><img alt="Django versions" src="https://img.shields.io/pypi/frameworkversions/django/django-cachex.svg" /></a></p>
@@ -1069,8 +1069,7 @@
 <li><strong>Built-in admin interface</strong> - Browse, search, edit, and delete cache keys from Django admin</li>
 <li><strong>Unified Valkey and Redis support</strong> - Single package for both backends</li>
 <li><strong>Extended data structures</strong> - Hashes, lists, sets, sorted sets</li>
-<li><strong>Async support</strong> - Async versions of all extended methods</li>
-<li><strong>Mixing sync &amp; async support</strong> - Async cache still works in sync code</li>
+<li><strong>Sync and async support</strong> - All extended methods available in both sync and async</li>
 <li><strong>TTL and pattern operations</strong> - <code>ttl()</code>, <code>expire()</code>, <code>keys()</code>, <code>delete_pattern()</code></li>
 <li><strong>Lua script support</strong> - Register and execute Lua scripts with automatic key prefixing</li>
 <li><strong>Distributed locking</strong> - <code>cache.lock()</code> for cross-process synchronization</li>
@@ -1082,7 +1081,7 @@
 <ul>
 <li>Python 3.12+</li>
 <li>Django 5.2+</li>
-<li>valkey-py 6.0+ or redis-py 6.0+</li>
+<li>valkey-py 6.1+ or redis-py 6.0+</li>
 </ul>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <p>Install with pip:</p>
@@ -1103,9 +1102,9 @@
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="p">]</span>
 </span></code></pre></div>
 <h2 id="acknowledgments">Acknowledgments<a class="headerlink" href="#acknowledgments" title="Permanent link">&para;</a></h2>
-<p>This project was inspired by <a href="https://github.com/jazzband/django-redis">django-redis</a> and Django's official <a href="https://docs.djangoproject.com/en/stable/topics/cache/#redis">Redis cache backend</a>. Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause. The admin functionality was inspired by <a href="https://github.com/ionelmc/django-redisboard">django-redisboard</a>. All of the aboved I used in production, noticed some flaws over the years, and for one reason or another a new package ended up the best way for progress for me here.</p>
+<p>This project was inspired by <a href="https://github.com/jazzband/django-redis">django-redis</a> and Django's official <a href="https://docs.djangoproject.com/en/stable/topics/cache/#redis">Redis cache backend</a>. Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause. The admin functionality was inspired by <a href="https://github.com/ionelmc/django-redisboard">django-redisboard</a>.</p>
 <p>The Unfold theme integration optionally uses <a href="https://unfoldadmin.com/">django-unfold</a>.</p>
-<p>I also want to mention <a href="https://github.com/amirreza8002/django-valkey">django-valkey</a> and <a href="https://github.com/vinitkumar/dj-cache-panel">dj-cache-panel</a>, which I never really used, but are newer and interesting efforts of similar goals as this package has.</p>
+<p>See also <a href="https://github.com/amirreza8002/django-valkey">django-valkey</a> and <a href="https://github.com/vinitkumar/dj-cache-panel">dj-cache-panel</a> for related projects with similar goals.</p>
 <h2 id="license">License<a class="headerlink" href="#license" title="Permanent link">&para;</a></h2>
 <p>MIT License. See <a href="https://github.com/oliverhaas/django-cachex/blob/main/LICENSE">LICENSE</a> for details.</p>
 
