@@ -123,6 +123,36 @@ class TestPTTLOperations:
         assert pttl is not None and pttl < 0  # Missing keys return -2
 
 
+class TestExpireTimeOperation:
+    """Tests for expiretime() method (Redis 7.0+)."""
+
+    def test_expiretime_returns_unix_timestamp(self, cache: KeyValueCache):
+        cache.set("et_key", "data", timeout=3600)
+        result = cache.expiretime("et_key")
+        assert result is not None
+        # Should be roughly now + 3600 seconds
+        import time
+
+        expected = int(time.time()) + 3600
+        assert abs(result - expected) < 5
+
+    def test_expiretime_returns_none_for_persistent_key(self, cache: KeyValueCache):
+        cache.set("et_persist", "permanent", timeout=None)
+        assert cache.expiretime("et_persist") is None
+
+    def test_expiretime_negative_for_nonexistent_key(self, cache: KeyValueCache):
+        result = cache.expiretime("et_missing")
+        assert result is not None and result < 0
+
+    def test_expiretime_after_expire_at(self, cache: KeyValueCache):
+        cache.set("et_at", "data", timeout=None)
+        target = int(time.time()) + 7200
+        cache.expire_at("et_at", target)
+        result = cache.expiretime("et_at")
+        assert result is not None
+        assert abs(result - target) < 2
+
+
 class TestPersistOperation:
     """Tests for persist() method."""
 

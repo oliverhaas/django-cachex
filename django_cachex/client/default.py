@@ -342,14 +342,54 @@ class KeyValueCacheClient:
         *,
         nx: bool = False,
         xx: bool = False,
-    ) -> bool:
-        """Set a value with nx/xx flags, returning success status."""
+        get: bool = False,
+    ) -> bool | Any:
+        """Set a value with nx/xx/get flags.
+
+        Returns bool for nx/xx (success status), or the previous value
+        (decoded) when get=True.
+        """
         client = self.get_client(key, write=True)
         nvalue = self.encode(value)
 
         if timeout == 0:
+            if get:
+                return None
             return False
-        result = client.set(key, nvalue, ex=timeout, nx=nx, xx=xx)
+        result = client.set(key, nvalue, ex=timeout, nx=nx, xx=xx, get=get)
+        if get:
+            if result is None:
+                return None
+            return self.decode(result)
+        return bool(result)
+
+    async def aset_with_flags(
+        self,
+        key: KeyT,
+        value: Any,
+        timeout: int | None,
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        get: bool = False,
+    ) -> bool | Any:
+        """Set a value with nx/xx/get flags asynchronously.
+
+        Returns bool for nx/xx (success status), or the previous value
+        (decoded) when get=True.
+        """
+        client = self.get_async_client(key, write=True)
+        nvalue = self.encode(value)
+
+        if timeout == 0:
+            if get:
+                return None
+            return False
+        result = await client.set(key, nvalue, ex=timeout, nx=nx, xx=xx, get=get)
+        if get:
+            if result is None:
+                return None
+            return self.decode(result)
         return bool(result)
 
     def touch(self, key: KeyT, timeout: int | None) -> bool:
@@ -574,6 +614,21 @@ class KeyValueCacheClient:
             return -2
         return result
 
+    def expiretime(self, key: KeyT) -> int | None:
+        """Get the absolute Unix timestamp (seconds) when a key will expire.
+
+        Returns None if the key has no expiry, -2 if the key doesn't exist.
+        Requires Redis 7.0+ / Valkey 7.2+.
+        """
+        client = self.get_client(key, write=False)
+
+        result = client.expiretime(key)
+        if result == -1:
+            return None
+        if result == -2:
+            return -2
+        return result
+
     def expire(self, key: KeyT, timeout: ExpiryT) -> bool:
         """Set expiry on a key."""
         client = self.get_client(key, write=True)
@@ -620,6 +675,21 @@ class KeyValueCacheClient:
         client = self.get_async_client(key, write=False)
 
         result = await client.pttl(key)
+        if result == -1:
+            return None
+        if result == -2:
+            return -2
+        return result
+
+    async def aexpiretime(self, key: KeyT) -> int | None:
+        """Get the absolute Unix timestamp (seconds) when a key will expire asynchronously.
+
+        Returns None if the key has no expiry, -2 if the key doesn't exist.
+        Requires Redis 7.0+ / Valkey 7.2+.
+        """
+        client = self.get_async_client(key, write=False)
+
+        result = await client.expiretime(key)
         if result == -1:
             return None
         if result == -2:

@@ -33,6 +33,45 @@ class TestSetIfNotExists:
         assert cache.get("nx_cleanup") is None
 
 
+class TestSetWithGet:
+    """Tests for set() with get=True (Redis 6.2+ SET GET)."""
+
+    def test_set_get_returns_old_value(self, cache: KeyValueCache):
+        cache.set("get_key", "old_value")
+        old = cache.set("get_key", "new_value", get=True)
+        assert old == "old_value"
+        assert cache.get("get_key") == "new_value"
+
+    def test_set_get_returns_none_for_missing_key(self, cache: KeyValueCache):
+        cache.delete("get_missing")
+        old = cache.set("get_missing", "first_value", get=True)
+        assert old is None
+        assert cache.get("get_missing") == "first_value"
+
+    def test_set_get_with_different_types(self, cache: KeyValueCache):
+        cache.set("get_typed", 42)
+        old = cache.set("get_typed", "now_a_string", get=True)
+        assert old == 42
+        assert cache.get("get_typed") == "now_a_string"
+
+    def test_set_get_with_timeout(self, cache: KeyValueCache):
+        cache.set("get_ttl", "original", timeout=None)
+        old = cache.set("get_ttl", "updated", timeout=60, get=True)
+        assert old == "original"
+        ttl = cache.ttl("get_ttl")
+        assert ttl is not None and ttl > 0
+
+    def test_set_get_preserves_none_vs_missing(self, cache: KeyValueCache):
+        """Successive set-get calls chain correctly."""
+        cache.delete("get_chain")
+        old1 = cache.set("get_chain", "a", get=True)
+        assert old1 is None
+        old2 = cache.set("get_chain", "b", get=True)
+        assert old2 == "a"
+        old3 = cache.set("get_chain", "c", get=True)
+        assert old3 == "b"
+
+
 class TestUnicodeSupport:
     """Tests for unicode key and value handling."""
 

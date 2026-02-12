@@ -194,10 +194,28 @@ class KeyValueCache(BaseCache):
         value: Any,
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
-    ) -> None:
-        """Set a value in the cache asynchronously."""
+        **kwargs: Any,
+    ) -> Any:
+        """Set a value in the cache asynchronously.
+
+        Supports nx/xx/get kwargs: nx=True only sets if key doesn't exist,
+        xx=True only sets if key exists, get=True returns the old value.
+        """
+        nx = kwargs.get("nx", False)
+        xx = kwargs.get("xx", False)
+        get = kwargs.get("get", False)
         key = self.make_and_validate_key(key, version=version)
+        if nx or xx or get:
+            return await self._cache.aset_with_flags(
+                key,
+                value,
+                self.get_backend_timeout(timeout),
+                nx=nx,
+                xx=xx,
+                get=get,
+            )
         await self._cache.aset(key, value, self.get_backend_timeout(timeout))
+        return None
 
     @omit_exception
     @override
@@ -208,18 +226,26 @@ class KeyValueCache(BaseCache):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         **kwargs: Any,
-    ) -> bool | None:
+    ) -> bool | Any:
         """Set a value in the cache.
 
-        Supports nx/xx kwargs: nx=True only sets if key doesn't exist,
-        xx=True only sets if key exists. Returns bool when nx/xx is used.
+        Supports nx/xx/get kwargs: nx=True only sets if key doesn't exist,
+        xx=True only sets if key exists, get=True returns the old value.
+        Returns bool when nx/xx is used, old value when get=True, None otherwise.
         """
         nx = kwargs.get("nx", False)
         xx = kwargs.get("xx", False)
+        get = kwargs.get("get", False)
         key = self.make_and_validate_key(key, version=version)
-        if nx or xx:
-            # Use extended method with flags - returns bool for success
-            return self._cache.set_with_flags(key, value, self.get_backend_timeout(timeout), nx=nx, xx=xx)
+        if nx or xx or get:
+            return self._cache.set_with_flags(
+                key,
+                value,
+                self.get_backend_timeout(timeout),
+                nx=nx,
+                xx=xx,
+                get=get,
+            )
         # Use standard Django method - returns None
         self._cache.set(key, value, self.get_backend_timeout(timeout))
         return None
@@ -483,6 +509,15 @@ class KeyValueCache(BaseCache):
         """Set expiry to an absolute time with millisecond precision."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.pexpireat(key, when)
+
+    def expiretime(self, key: KeyT, version: int | None = None) -> int | None:
+        """Get the absolute Unix timestamp (seconds) when a key will expire.
+
+        Returns None if the key has no expiry, -2 if the key doesn't exist.
+        Requires Redis 7.0+ / Valkey 7.2+.
+        """
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.expiretime(key)
 
     def keys(
         self,
