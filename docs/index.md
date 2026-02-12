@@ -1,6 +1,6 @@
 # django-cachex
 
-Cache extensions for django, including full featured Valkey and Redis cache backend for Django and a built-in admin interface.
+Full featured Valkey and Redis cache backend for Django with a built-in admin interface.
 
 [![PyPI version](https://img.shields.io/pypi/v/django-cachex.svg?style=flat)](https://pypi.org/project/django-cachex/)
 [![Python versions](https://img.shields.io/pypi/pyversions/django-cachex.svg)](https://pypi.org/project/django-cachex/)
@@ -13,8 +13,7 @@ Cache extensions for django, including full featured Valkey and Redis cache back
 - **Built-in admin interface** - Browse, search, edit, and delete cache keys from Django admin
 - **Unified Valkey and Redis support** - Single package for both backends
 - **Extended data structures** - Hashes, lists, sets, sorted sets
-- **Async support** - Async versions of all extended methods
-- **Mixing sync & async support** - Async cache still works in sync code
+- **Sync and async support** - All extended methods available in both sync and async
 - **TTL and pattern operations** - `ttl()`, `expire()`, `keys()`, `delete_pattern()`
 - **Lua script support** - Register and execute Lua scripts with automatic key prefixing
 - **Distributed locking** - `cache.lock()` for cross-process synchronization
@@ -26,7 +25,7 @@ Cache extensions for django, including full featured Valkey and Redis cache back
 
 - Python 3.12+
 - Django 5.2+
-- valkey-py 6.0+ or redis-py 6.0+
+- valkey-py 6.1+ or redis-py 6.0+
 
 ## Quick Start
 
@@ -58,11 +57,11 @@ INSTALLED_APPS = [
 
 ## Acknowledgments
 
-This project was inspired by [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause. The admin functionality was inspired by [django-redisboard](https://github.com/ionelmc/django-redisboard). All of the aboved I used in production, noticed some flaws over the years, and for one reason or another a new package ended up the best way for progress for me here.
+This project was inspired by [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause. The admin functionality was inspired by [django-redisboard](https://github.com/ionelmc/django-redisboard).
 
 The Unfold theme integration optionally uses [django-unfold](https://unfoldadmin.com/).
 
-I also want to mention [django-valkey](https://github.com/amirreza8002/django-valkey) and [dj-cache-panel](https://github.com/vinitkumar/dj-cache-panel), which I never really used, but are newer and interesting efforts of similar goals as this package has.
+See also [django-valkey](https://github.com/amirreza8002/django-valkey) and [dj-cache-panel](https://github.com/vinitkumar/dj-cache-panel) for related projects with similar goals.
 
 ## License
 

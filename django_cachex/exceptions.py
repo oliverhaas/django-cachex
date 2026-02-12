@@ -5,11 +5,7 @@
 #
 # django-redis was used as inspiration for this project.
 
-"""Exceptions for django-cachex.
-
-This module defines exceptions that may be raised during cache operations.
-Users can catch these to handle specific error conditions.
-"""
+"""Exceptions for django-cachex."""
 
 import socket
 
@@ -53,46 +49,19 @@ _ResponseError = tuple(_response_errors) if _response_errors else (Exception,)
 class CompressorError(Exception):
     """Raised when compression or decompression fails.
 
-    This can occur when:
-    - The data is corrupted and cannot be decompressed
-    - The compressor is misconfigured
-    - The compression library encounters an error
-
-    When using compressor fallback, this error triggers fallback to the
-    next compressor in the list.
+    Caught by the client's fallback logic to try the next compressor in the chain.
     """
 
 
 class SerializerError(Exception):
     """Raised when serialization or deserialization fails.
 
-    This can occur when:
-    - The data format doesn't match the expected serializer format
-    - The data is corrupted
-    - The serializer encounters an incompatible type
-
-    When using serializer fallback, this error triggers fallback to the
-    next serializer in the list, enabling safe migrations between formats.
+    Caught by the client's fallback logic to try the next serializer in the chain.
     """
 
 
 class ScriptNotRegisteredError(KeyError):
-    """Raised when eval_script is called with an unregistered script name.
-
-    Attributes:
-        name: The script name that was not found.
-
-    Example:
-        Handling missing scripts::
-
-            from django.core.cache import cache
-            from django_cachex.exceptions import ScriptNotRegisteredError
-
-            try:
-                cache.eval_script("unknown_script", keys=["key1"])
-            except ScriptNotRegisteredError as e:
-                logger.error(f"Script not registered: {e.name}")
-    """
+    """Raised when eval_script is called with an unregistered script name."""
 
     def __init__(self, name: str) -> None:
         self.name = name
@@ -103,26 +72,7 @@ class ScriptNotRegisteredError(KeyError):
 
 
 class NotSupportedError(Exception):
-    """Raised when an operation is not supported by the cache backend.
-
-    This exception is used by the cache admin interface when a cache
-    backend (or its wrapper) does not support a particular operation.
-    Views catch this exception to display user-friendly warning messages.
-
-    Attributes:
-        operation: The operation that is not supported.
-        backend: Optional name of the backend that doesn't support it.
-
-    Example:
-        Handling unsupported operations::
-
-            from django_cachex.exceptions import NotSupportedError
-
-            try:
-                service.ttl(key)
-            except NotSupportedError:
-                messages.warning(request, "TTL not supported for this backend.")
-    """
+    """Raised when an operation is not supported by the cache backend."""
 
     def __init__(self, operation: str, backend: str | None = None) -> None:
         self.operation = operation

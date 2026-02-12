@@ -13,7 +13,7 @@
 "BACKEND": "django_cachex.cache.RedisCache"
 ```
 
-All Django options work unchanged. You gain extended features (data structures, TTL ops, locking, compression, unified Valkey/Redis support).
+All existing Django cache options work unchanged.
 
 ## From django-valkey
 

@@ -6,12 +6,7 @@ from django_cachex.exceptions import CompressorError
 
 
 class ZlibCompressor(BaseCompressor):
-    """Zlib compressor with configurable compression level.
-
-    Args:
-        level: Compression level from 0 (no compression) to 9 (best compression).
-               Defaults to 6.
-    """
+    """Zlib compressor with configurable compression level."""
 
     level: int = 6
 

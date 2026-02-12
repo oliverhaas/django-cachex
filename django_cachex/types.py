@@ -1,12 +1,7 @@
 """Type aliases for django-cachex.
 
-These types are designed to be 100% compatible with:
-- redis-py's type system (redis.typing)
-- valkey-py's type system (valkey.typing)
-- Django's cache backend types
-
-By defining these ourselves, we avoid a runtime dependency on redis-py/valkey-py
-just for type annotations.
+Compatible with redis-py and valkey-py type systems, defined locally
+to avoid a runtime dependency on either library for type annotations.
 """
 
 from __future__ import annotations
@@ -54,15 +49,8 @@ _set = set
 class CacheProtocol(Protocol):
     """Protocol defining the public interface for django-cachex cache backends.
 
-    This protocol captures all public methods of KeyValueCache, including:
-    - Django BaseCache interface (get, set, delete, etc.)
-    - Async variants (aget, aset, adelete, etc.)
-    - TTL operations (ttl, pttl, expire, persist, etc.)
-    - Data structures (hash, list, set, sorted set operations)
-    - Advanced operations (pipeline, lock, scripts)
-
-    Since protocols cannot inherit from regular classes, this replicates
-    the BaseCache interface plus all django-cachex extensions.
+    Covers Django's BaseCache interface plus all django-cachex extensions
+    (TTL, data structures, pipelines, locks, Lua scripts).
     """
 
     # Support level: "cachex" (native), "wrapped" (Django builtin), "limited" (unknown)

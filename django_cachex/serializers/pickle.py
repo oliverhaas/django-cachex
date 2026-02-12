@@ -8,12 +8,7 @@ from django_cachex.serializers.base import BaseSerializer
 
 
 class PickleSerializer(BaseSerializer):
-    """Pickle-based serializer matching Django's RedisSerializer interface.
-
-    Args:
-        protocol: Pickle protocol version (default: pickle.DEFAULT_PROTOCOL).
-                  Matches Django's RedisSerializer parameter name.
-    """
+    """Pickle-based serializer matching Django's RedisSerializer interface."""
 
     def __init__(self, *, protocol: int | None = None, **kwargs: Any) -> None:
         super().__init__(**kwargs)

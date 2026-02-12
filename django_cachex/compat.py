@@ -8,12 +8,7 @@ from django.utils.module_loading import import_string
 
 
 def create_serializer(config: str | type | Any | None, **kwargs: Any) -> Any:
-    """Create a serializer instance from config.
-
-    Args:
-        config: A dotted path string, a class, an instance, or None for default pickle
-        **kwargs: Keyword arguments to pass to serializer constructor
-    """
+    """Create a serializer from a dotted path, class, instance, or None (default: pickle)."""
     if config is None:
         config = "django_cachex.serializers.pickle.PickleSerializer"
 
@@ -27,12 +22,7 @@ def create_serializer(config: str | type | Any | None, **kwargs: Any) -> Any:
 
 
 def create_compressor(config: str | type | Any, **kwargs: Any) -> Any:
-    """Create a compressor instance from config.
-
-    Args:
-        config: A dotted path string, a class, or an instance
-        **kwargs: Keyword arguments to pass to compressor constructor
-    """
+    """Create a compressor from a dotted path, class, or instance."""
     if isinstance(config, str):
         config = import_string(config)
 

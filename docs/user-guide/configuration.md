@@ -1,6 +1,6 @@
 # Configuration Reference
 
-Complete reference for all django-cachex configuration options.
+Reference for all django-cachex configuration options.
 
 ## Basic Configuration
 
@@ -33,12 +33,11 @@ CACHES = {
 All backends are in `django_cachex.cache`.
 
 !!! note "Valkey and Redis Compatibility"
-    Valkey and Redis are probably still fully compatible, meaning you could use either backend with either server.
-    We recommend Valkey as it remains fully open source.
+    Valkey and Redis are likely still fully compatible, so either backend works with either server. Valkey is recommended as it remains fully open source.
 
 ## LOCATION
 
-Server URL(s). Supports multiple formats:
+Server URL(s):
 
 ```python
 # Single server (Valkey)
@@ -158,15 +157,6 @@ Compression is only applied to values larger than `min_length` bytes (default: 2
 }
 ```
 
-### Connection Lifecycle
-
-```python
-"OPTIONS": {
-    # Close connections after each request
-    "close_connection": True,
-}
-```
-
 ## Authentication
 
 ### Password in URL
@@ -177,7 +167,7 @@ Compression is only applied to values larger than `min_length` bytes (default: 2
 
 ### Password with Special Characters
 
-For passwords with special characters, pass separately:
+For passwords with special characters, pass via OPTIONS:
 
 ```python
 "LOCATION": "valkey://127.0.0.1:6379/1",

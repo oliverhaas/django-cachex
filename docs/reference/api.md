@@ -10,14 +10,19 @@ All standard Django cache methods are supported:
 |--------|-------------|
 | `get(key, default=None)` | Get a value |
 | `set(key, value, timeout=DEFAULT)` | Set a value |
+| `add(key, value, timeout=DEFAULT)` | Set only if key doesn't exist |
 | `delete(key)` | Delete a key |
+| `touch(key, timeout=DEFAULT)` | Update timeout on a key |
 | `get_many(keys)` | Get multiple values |
 | `set_many(mapping, timeout=DEFAULT)` | Set multiple values |
 | `delete_many(keys)` | Delete multiple keys |
+| `get_or_set(key, default, timeout=DEFAULT)` | Get value or set default |
 | `clear()` | Clear the cache |
 | `has_key(key)` | Check if key exists |
 | `incr(key, delta=1)` | Increment a value |
 | `decr(key, delta=1)` | Decrement a value |
+| `incr_version(key, delta=1)` | Increment key version |
+| `decr_version(key, delta=1)` | Decrement key version |
 | `close()` | Close connections |
 
 ### Extended Methods
@@ -26,17 +31,21 @@ django-cachex adds these extended methods:
 
 | Method | Description |
 |--------|-------------|
-| `ttl(key)` | Get TTL in seconds (-1 = no expiry, -2 = not found) |
-| `pttl(key)` | Get TTL in milliseconds |
+| `ttl(key)` | Get TTL in seconds (`None` = no expiry, `-2` = not found) |
+| `pttl(key)` | Get TTL in milliseconds (`None` = no expiry, `-2` = not found) |
 | `expire(key, timeout)` | Set expiration in seconds |
 | `pexpire(key, timeout)` | Set expiration in milliseconds |
 | `expire_at(key, when)` | Set expiration at datetime |
 | `pexpire_at(key, when)` | Set expiration at datetime (ms precision) |
 | `persist(key)` | Remove expiration |
+| `type(key)` | Get the data type of a key |
 | `lock(key, ...)` | Get a distributed lock |
 | `keys(pattern)` | Get keys matching pattern |
 | `iter_keys(pattern)` | Iterate keys matching pattern |
+| `scan(cursor, pattern, count)` | Single SCAN iteration |
 | `delete_pattern(pattern)` | Delete keys matching pattern |
+| `rename(src, dst)` | Rename a key |
+| `renamenx(src, dst)` | Rename key only if dest doesn't exist |
 
 ### Hash Methods
 
@@ -49,6 +58,7 @@ Hash operations for field-value data structures:
 | `hexists(key, field)` | Check if hash field exists |
 | `hget(key, field)` | Get a hash field value |
 | `hgetall(key)` | Get all fields and values in a hash |
+| `hkeys(key)` | Get all field names in a hash |
 | `hincrby(key, field, amount=1)` | Increment hash field by integer |
 | `hincrbyfloat(key, field, amount=1.0)` | Increment hash field by float |
 | `hlen(key)` | Get number of fields in hash |
@@ -72,12 +82,14 @@ Set operations for unordered collections of unique elements:
 | `spop(key, count=None)` | Remove and return random member(s) |
 | `srandmember(key, count=None)` | Get random member(s) without removing |
 | `smove(src, dst, member)` | Move member between sets |
-| `sdiff(keys)` | Get difference of sets |
-| `sdiffstore(dest, keys)` | Store difference of sets |
-| `sinter(keys)` | Get intersection of sets |
-| `sinterstore(dest, keys)` | Store intersection of sets |
-| `sunion(keys)` | Get union of sets |
-| `sunionstore(dest, keys)` | Store union of sets |
+| `sdiff(*keys)` | Get difference of sets |
+| `sdiffstore(dest, *keys)` | Store difference of sets |
+| `sinter(*keys)` | Get intersection of sets |
+| `sinterstore(dest, *keys)` | Store intersection of sets |
+| `sunion(*keys)` | Get union of sets |
+| `sunionstore(dest, *keys)` | Store union of sets |
+| `sscan(key, cursor=0, ...)` | Incrementally iterate set members |
+| `sscan_iter(key, ...)` | Iterate over set members using SSCAN |
 
 ### Sorted Set Methods
 
@@ -85,7 +97,7 @@ Sorted set operations for scored, ordered collections:
 
 | Method | Description |
 |--------|-------------|
-| `zadd(key, *args, **kwargs)` | Add member(s) with scores |
+| `zadd(key, mapping, *, nx, xx, ch, gt, lt)` | Add member(s) with scores |
 | `zcard(key)` | Get number of members |
 | `zcount(key, min, max)` | Count members with scores in range |
 | `zincrby(key, amount, member)` | Increment member's score |
@@ -97,6 +109,7 @@ Sorted set operations for scored, ordered collections:
 | `zrevrank(key, member)` | Get member's rank (descending) |
 | `zrem(key, *members)` | Remove member(s) |
 | `zremrangebyrank(key, start, end)` | Remove members by rank range |
+| `zremrangebyscore(key, min, max)` | Remove members by score range |
 | `zscore(key, member)` | Get member's score |
 | `zmscore(key, *members)` | Get multiple members' scores |
 | `zpopmin(key, count=1)` | Remove and return members with lowest scores |
@@ -117,8 +130,13 @@ List operations for ordered, indexable collections:
 | `lrange(key, start, end)` | Get elements in range |
 | `lset(key, index, value)` | Set element at index |
 | `ltrim(key, start, end)` | Trim list to range |
-| `lpos(key, element, ...)` | Find element position in list |
-| `lmove(src, dst, src_side, dst_side)` | Atomically move element between lists |
+| `lrem(key, count, value)` | Remove elements equal to value |
+| `lpos(key, value, ...)` | Find element position in list |
+| `linsert(key, where, pivot, value)` | Insert value before or after pivot |
+| `lmove(src, dst, wherefrom, whereto)` | Atomically move element between lists |
+| `blpop(*keys, timeout=0)` | Blocking pop from head of list |
+| `brpop(*keys, timeout=0)` | Blocking pop from tail of list |
+| `blmove(src, dst, timeout, ...)` | Blocking move between lists |
 
 ### Lua Script Methods
 
@@ -192,29 +210,38 @@ cache.set(key, value, timeout=300, nx=False, xx=False)
 
 ## Async Methods
 
-All extended methods have async versions prefixed with `a`:
+Standard Django cache methods have async versions on the cache object:
 
 ```python
 # Sync
 value = cache.get("key")
-cache.hset("hash", "field", "value")
 
 # Async
 value = await cache.aget("key")
-await cache.ahset("hash", "field", "value")
 ```
 
-Async methods available:
-
-- `aget`, `aset`, `adelete`, `aget_many`, `aset_many`, `adelete_many`
-- `ahas_key`, `aincr`, `adecr`, `aclear`, `aclose`
-- `attl`, `apttl`, `aexpire`, `apexpire`, `aexpire_at`, `apexpire_at`, `apersist`
-- `akeys`, `aiter_keys`, `adelete_pattern`
-- `ahset`, `ahdel`, `ahexists`, `ahget`, `ahgetall`, `ahincrby`, `ahincrbyfloat`, `ahlen`, `ahmget`, `ahmset`, `ahsetnx`, `ahvals`
-- `asadd`, `asrem`, `asmembers`, `asismember`, `ascard`, `aspop`, `asrandmember`
-- `azadd`, `azcard`, `azcount`, `azincrby`, `azrange`, `azrangebyscore`, `azrank`, `azrevrank`, `azrem`, `azremrangebyrank`, `azscore`, `azmscore`, `azpopmin`, `azpopmax`
-- `allen`, `alpush`, `arpush`, `alpop`, `arpop`, `alindex`, `alrange`, `alset`, `altrim`, `alpos`, `almove`
+- `aadd`, `aget`, `aset`, `adelete`, `atouch`, `aget_many`, `aset_many`, `adelete_many`
+- `ahas_key`, `aincr`, `adecr`, `aget_or_set`, `aclear`, `aclose`
+- `aincr_version`, `adecr_version`
 - `aeval_script`
+
+Extended methods (data structures, TTL, patterns) have async versions on the cache client, accessible via `cache._cache`:
+
+```python
+# Sync (on cache object directly)
+cache.hset("hash", "field", "value")
+
+# Async (on cache client -- note: client methods use raw/prefixed keys)
+key = cache.make_and_validate_key("hash")
+await cache._cache.ahset(key, "field", "value")
+```
+
+- `attl`, `apttl`, `aexpire`, `apexpire`, `aexpireat`, `apexpireat`, `apersist`
+- `akeys`, `aiter_keys`, `adelete_pattern`
+- `ahset`, `ahdel`, `ahexists`, `ahget`, `ahgetall`, `ahincrby`, `ahincrbyfloat`, `ahkeys`, `ahlen`, `ahmget`, `ahmset`, `ahsetnx`, `ahvals`
+- `asadd`, `asrem`, `asmembers`, `asismember`, `asmismember`, `ascard`, `aspop`, `asrandmember`, `asmove`, `asdiff`, `asdiffstore`, `asinter`, `asinterstore`, `asunion`, `asunionstore`
+- `azadd`, `azcard`, `azcount`, `azincrby`, `azrange`, `azrevrange`, `azrangebyscore`, `azrevrangebyscore`, `azrank`, `azrevrank`, `azrem`, `azremrangebyrank`, `azremrangebyscore`, `azscore`, `azmscore`, `azpopmin`, `azpopmax`
+- `allen`, `alpush`, `arpush`, `alpop`, `arpop`, `alindex`, `alrange`, `alset`, `altrim`, `alrem`, `alpos`, `almove`, `alinsert`, `ablpop`, `abrpop`, `ablmove`
 
 ## Raw Client Access
 
@@ -224,7 +251,7 @@ client = cache.get_client(write=True)
 
 | Parameter | Description |
 |-----------|-------------|
-| `write` | Get write connection for primary (default: `True`) |
+| `write` | Get write connection for primary (default: `False`) |
 
 Returns the underlying `valkey.Valkey` or `redis.Redis` client instance.
 

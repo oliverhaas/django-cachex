@@ -4,7 +4,7 @@ For basic cluster setup, see [Configuration](configuration.md#cluster-configurat
 
 ## Slot Handling
 
-Valkey/Redis Cluster distributes keys across 16384 hash slots. django-cachex handles this differently for Django cache methods vs direct commands:
+Valkey/Redis Cluster distributes keys across 16,384 hash slots. django-cachex handles Django cache methods and direct commands differently:
 
 **Django cache methods** (`get_many`, `set_many`, `delete_many`, `keys`, `clear`) are cluster-aware and handle cross-slot operations automatically.
 
@@ -12,7 +12,7 @@ Valkey/Redis Cluster distributes keys across 16384 hash slots. django-cachex han
 
 ## Hash Tags
 
-Force keys to the same slot using hash tags - the substring between `{` and `}`:
+Force keys to the same slot using hash tags (the substring between `{` and `}`):
 
 ```python
 # Same slot (hash tag is "user:123")

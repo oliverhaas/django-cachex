@@ -1,10 +1,4 @@
-"""
-Views for the django-cachex cache admin.
-
-Provides cache inspection and management functionality.
-These views can be configured with different template prefixes and URL builders
-to support both the standard Django admin and alternative admin themes like Unfold.
-"""
+"""Views for the django-cachex cache admin."""
 
 from .base import (
     ADMIN_CONFIG,

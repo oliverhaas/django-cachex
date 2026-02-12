@@ -23,12 +23,12 @@ CACHES = {
 | `RedisClusterCache` | Redis Cluster sharding |
 
 !!! note "Valkey and Redis Compatibility"
-    Valkey and Redis are probably still fully compatible, meaning you could use either backend with either server.
-    We recommend Valkey as it remains fully open source.
+    Valkey and Redis are protocol-compatible, so either backend works with either server.
+    Valkey is recommended as it remains fully open source.
 
 ## Connection URL Formats
 
-django-cachex uses the valkey-py/redis-py native URL notation for connection strings:
+Uses the valkey-py/redis-py native URL notation:
 
 - `valkey://[[username]:[password]]@localhost:6379/0` - Valkey TCP connection
 - `redis://[[username]:[password]]@localhost:6379/0` - Redis TCP connection
@@ -38,14 +38,14 @@ django-cachex uses the valkey-py/redis-py native URL notation for connection str
 
 ### Database Selection
 
-There are two ways to specify the database number:
+Two ways to specify the database number:
 
 1. Query string: `valkey://localhost?db=0`
 2. Path (for `valkey://` or `redis://` scheme): `valkey://localhost/0`
 
 ## Configure as Session Backend
 
-Django can use any cache backend as session storage:
+Use django-cachex as a session backend:
 
 ```python
 SESSION_ENGINE = "django.contrib.sessions.backends.cache"
@@ -65,9 +65,9 @@ value = cache.get("key")
 cache.hset("user:1", "name", "Alice")
 cache.zrange("leaderboard", 0, 10)
 
-# Async versions
+# Async versions (standard Django methods)
 await cache.aget("key")
-await cache.ahset("user:1", "name", "Alice")
+await cache.aset("key", "value", timeout=300)
 ```
 
 ## Raw Client Access

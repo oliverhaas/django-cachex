@@ -1,28 +1,7 @@
 """Cache client classes for Redis-compatible backends.
 
-This module provides cache client classes that replicate Django's RedisCacheClient
-structure but with configurable library selection via class attributes.
-
-Architecture:
-- KeyValueCacheClient: Base class with all logic, library-agnostic
-- RedisCacheClient: Sets class attributes for redis-py
-- ValkeyCacheClient: Sets class attributes for valkey-py
-
-The class attributes pattern allows subclasses to swap the underlying library
-while inheriting all the extended functionality.
-
-Internal attributes (matching Django's RedisCacheClient):
-- _lib: The library module (redis or valkey)
-- _servers: List of server URLs
-- _pools: Dict of connection pools by index
-- _client: The client class (Redis or Valkey)
-- _pool_class: The connection pool class
-- _pool_options: Options passed to connection pool
-
-Extended attributes (our additions):
-- _options: Full options dict
-- _compressors: List of compressor instances
-- _serializers: List of serializer instances (for fallback)
+Provides library-agnostic KeyValueCacheClient base class with RedisCacheClient
+and ValkeyCacheClient subclasses that swap the underlying library via class attributes.
 """
 
 from __future__ import annotations
@@ -74,15 +53,7 @@ except ImportError:
 class KeyValueCacheClient:
     """Base cache client class with configurable library.
 
-    This class replicates Django's RedisCacheClient structure but uses class
-    attributes to allow subclasses to swap the underlying library.
-
-    Subclasses must set:
-    - _lib: The library module (e.g., valkey or redis)
-    - _client_class: The client class (e.g., valkey.Valkey)
-    - _pool_class: The connection pool class
-
-    Internal attributes match Django's RedisCacheClient for compatibility.
+    Subclasses must set _lib, _client_class, and _pool_class class attributes.
     """
 
     # Class attributes - subclasses override these
@@ -118,16 +89,7 @@ class KeyValueCacheClient:
         async_pool_class: str | builtins.type[Any] | None = None,
         **options: Any,
     ) -> None:
-        """Initialize the cache client.
-
-        Args:
-            servers: List of server URLs
-            serializer: Serializer instance or import path (Django compatibility)
-            pool_class: Connection pool class or import path
-            parser_class: Parser class or import path
-            async_pool_class: Async connection pool class or import path
-            **options: Additional options passed to connection pool
-        """
+        """Initialize the cache client."""
         # Store servers
         self._servers = servers
         self._pools: dict[int, Any] = {}
@@ -226,7 +188,7 @@ class KeyValueCacheClient:
     # =========================================================================
 
     def encode(self, value: Any) -> bytes | int:
-        """Encode a value for storage (serialize + compress)."""
+        """Encode a value for storage (serialize + compress). Plain ints pass through unchanged."""
         if isinstance(value, bool) or not isinstance(value, int):
             value = self._serializers[0].dumps(value)
             if self._compressors:
@@ -235,7 +197,7 @@ class KeyValueCacheClient:
         return value
 
     def decode(self, value: Any) -> Any:
-        """Decode a value from storage (decompress + deserialize)."""
+        """Decode a value from storage. Returns int directly if parseable, otherwise decompress + deserialize."""
         try:
             return int(value)
         except (ValueError, TypeError):
@@ -248,7 +210,7 @@ class KeyValueCacheClient:
 
     def _get_connection_pool_index(self, *, write: bool) -> int:
         """Get the pool index for read/write operations."""
-        # Write to first server, read from any
+        # Write to first server, read from any replica
         if write or len(self._servers) == 1:
             return 0
         import random
@@ -267,12 +229,7 @@ class KeyValueCacheClient:
         return self._pools[index]
 
     def get_client(self, key: KeyT | None = None, *, write: bool = False) -> Any:
-        """Get a client connection.
-
-        Args:
-            key: Optional key (for sharding implementations)
-            write: Whether this is a write operation
-        """
+        """Get a client connection."""
         pool = self._get_connection_pool(write=write)
         assert self._client_class is not None, "Subclasses must set _client_class"  # noqa: S101
         return self._client_class(connection_pool=pool)
@@ -282,21 +239,7 @@ class KeyValueCacheClient:
     # =========================================================================
 
     def _get_async_connection_pool(self, *, write: bool) -> Any:
-        """Get an async connection pool for the given operation type.
-
-        Async pools are cached per event loop to ensure proper asyncio semantics.
-        Each event loop gets its own set of connection pools. Using WeakKeyDictionary
-        ensures automatic cleanup when the event loop is garbage collected.
-
-        Args:
-            write: Whether this is a write operation
-
-        Returns:
-            An async connection pool for the current event loop
-
-        Raises:
-            RuntimeError: If no event loop is running or async pool class is not set
-        """
+        """Get an async connection pool, cached per event loop."""
         loop = asyncio.get_running_loop()
         index = self._get_connection_pool_index(write=write)
 
@@ -322,18 +265,7 @@ class KeyValueCacheClient:
         return pool
 
     def get_async_client(self, key: KeyT | None = None, *, write: bool = False) -> Any:
-        """Get an async client connection.
-
-        Args:
-            key: Optional key (for sharding implementations)
-            write: Whether this is a write operation
-
-        Returns:
-            An async Redis/Valkey client for the current event loop
-
-        Raises:
-            RuntimeError: If no event loop is running or async client class is not set
-        """
+        """Get an async client connection."""
         pool = self._get_async_connection_pool(write=write)
         if self._async_client_class is None:
             msg = "Async operations require _async_client_class to be set. Use RedisCacheClient or ValkeyCacheClient."
@@ -367,10 +299,7 @@ class KeyValueCacheClient:
         return bool(await client.set(key, nvalue, nx=True, ex=timeout))
 
     def get(self, key: KeyT) -> Any:
-        """Fetch a value from the cache.
-
-        Returns the decoded value or None if not found.
-        """
+        """Fetch a value from the cache."""
         client = self.get_client(key, write=False)
         val = client.get(key)
         if val is None:
@@ -378,10 +307,7 @@ class KeyValueCacheClient:
         return self.decode(val)
 
     async def aget(self, key: KeyT) -> Any:
-        """Fetch a value from the cache asynchronously.
-
-        Returns the decoded value or None if not found.
-        """
+        """Fetch a value from the cache asynchronously."""
         client = self.get_async_client(key, write=False)
         val = await client.get(key)
         if val is None:
@@ -487,11 +413,7 @@ class KeyValueCacheClient:
         return bool(await client.exists(key))
 
     def type(self, key: KeyT) -> KeyType | None:
-        """Get the Redis data type of a key.
-
-        Returns the type of the value stored at key as a ``KeyType``
-        enum member, or ``None`` if the key does not exist.
-        """
+        """Get the Redis data type of a key."""
         client = self.get_client(key, write=False)
 
         result = client.type(key)
@@ -509,12 +431,7 @@ class KeyValueCacheClient:
         return None if result == "none" else KeyType(result)
 
     def incr(self, key: KeyT, delta: int = 1) -> int:
-        """Increment a value.
-
-        Uses Redis INCR for atomic increments, but falls back to GET+SET
-        for values that would overflow Redis's 64-bit signed integer limit
-        or for non-integer (serialized) values.
-        """
+        """Increment a value. Raises ValueError if key doesn't exist. Falls back to GET+SET on overflow."""
         client = self.get_client(key, write=True)
 
         try:
@@ -535,12 +452,7 @@ class KeyValueCacheClient:
             raise
 
     async def aincr(self, key: KeyT, delta: int = 1) -> int:
-        """Increment a value asynchronously.
-
-        Uses Redis INCR for atomic increments, but falls back to GET+SET
-        for values that would overflow Redis's 64-bit signed integer limit
-        or for non-integer (serialized) values.
-        """
+        """Async increment. Raises ValueError if key doesn't exist. Falls back to GET+SET on overflow."""
         client = self.get_async_client(key, write=True)
 
         try:
@@ -561,7 +473,7 @@ class KeyValueCacheClient:
             raise
 
     def set_many(self, data: Mapping[KeyT, Any], timeout: int | None) -> list:
-        """Set multiple values."""
+        """Set multiple values. timeout=0 deletes keys, None sets without expiry."""
         if not data:
             return []
 
@@ -652,7 +564,7 @@ class KeyValueCacheClient:
         return result
 
     def pttl(self, key: KeyT) -> int | None:
-        """Get TTL in milliseconds."""
+        """Get TTL in milliseconds. Returns None if no expiry, -2 if key doesn't exist."""
         client = self.get_client(key, write=False)
 
         result = client.pttl(key)
@@ -768,18 +680,7 @@ class KeyValueCacheClient:
         count: int | None = None,
         _type: str | None = None,
     ) -> tuple[int, list[str]]:
-        """Perform a single SCAN iteration returning cursor and keys.
-
-        Args:
-            cursor: Cursor position (0 to start a new scan)
-            match: Pattern to match keys against
-            count: Hint for number of keys to return per call
-            _type: Filter by key type (e.g. "string", "list", "set")
-
-        Returns:
-            Tuple of (next_cursor, list of keys). When next_cursor is 0,
-            the scan is complete.
-        """
+        """Perform a single SCAN iteration returning (next_cursor, keys)."""
         client = self.get_client(write=False)
 
         if count is None:
@@ -807,20 +708,7 @@ class KeyValueCacheClient:
         return cast("int", client.delete(*keys_list))
 
     def rename(self, src: KeyT, dst: KeyT) -> bool:
-        """Rename a key.
-
-        Atomically renames src to dst. If dst already exists, it is overwritten.
-
-        Args:
-            src: Source key name
-            dst: Destination key name
-
-        Returns:
-            True on success
-
-        Raises:
-            ValueError: If src does not exist
-        """
+        """Rename a key."""
         client = self.get_client(src, write=True)
 
         try:
@@ -834,20 +722,7 @@ class KeyValueCacheClient:
             return True
 
     def renamenx(self, src: KeyT, dst: KeyT) -> bool:
-        """Rename a key only if the destination does not exist.
-
-        Atomically renames src to dst only if dst does not already exist.
-
-        Args:
-            src: Source key name
-            dst: Destination key name
-
-        Returns:
-            True if renamed, False if dst already exists
-
-        Raises:
-            ValueError: If src does not exist
-        """
+        """Rename a key only if the destination does not exist."""
         client = self.get_client(src, write=True)
 
         try:
@@ -888,20 +763,7 @@ class KeyValueCacheClient:
         return cast("int", await client.delete(*keys_list))
 
     async def arename(self, src: KeyT, dst: KeyT) -> bool:
-        """Rename a key asynchronously.
-
-        Atomically renames src to dst. If dst already exists, it is overwritten.
-
-        Args:
-            src: Source key name
-            dst: Destination key name
-
-        Returns:
-            True on success
-
-        Raises:
-            ValueError: If src does not exist
-        """
+        """Rename a key asynchronously."""
         client = self.get_async_client(src, write=True)
 
         try:
@@ -915,20 +777,7 @@ class KeyValueCacheClient:
             return True
 
     async def arenamenx(self, src: KeyT, dst: KeyT) -> bool:
-        """Rename a key only if the destination does not exist, asynchronously.
-
-        Atomically renames src to dst only if dst does not already exist.
-
-        Args:
-            src: Source key name
-            dst: Destination key name
-
-        Returns:
-            True if renamed, False if dst already exists
-
-        Raises:
-            ValueError: If src does not exist
-        """
+        """Rename a key only if the destination does not exist, asynchronously."""
         client = self.get_async_client(src, write=True)
 
         try:
@@ -1238,15 +1087,7 @@ class KeyValueCacheClient:
         return cast("int", client.rpush(key, *nvalues))
 
     def lpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
-        """Pop value(s) from the left of a list.
-
-        Args:
-            key: The list key
-            count: Optional number of elements to pop (default: 1, returns single value)
-
-        Returns:
-            Single value if count is None, list of values if count is specified
-        """
+        """Pop value(s) from the left of a list."""
         client = self.get_client(key, write=True)
 
         if count is not None:
@@ -1256,15 +1097,7 @@ class KeyValueCacheClient:
         return self.decode(val) if val is not None else None
 
     def rpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
-        """Pop value(s) from the right of a list.
-
-        Args:
-            key: The list key
-            count: Optional number of elements to pop (default: 1, returns single value)
-
-        Returns:
-            Single value if count is None, list of values if count is specified
-        """
+        """Pop value(s) from the right of a list."""
         client = self.get_client(key, write=True)
 
         if count is not None:
@@ -1287,18 +1120,7 @@ class KeyValueCacheClient:
         count: int | None = None,
         maxlen: int | None = None,
     ) -> int | list[int] | None:
-        """Find position(s) of element in list.
-
-        Args:
-            key: List key
-            value: Value to search for
-            rank: Rank of first match to return (1 for first, -1 for last, etc.)
-            count: Number of matches to return (0 for all)
-            maxlen: Limit search to first N elements
-
-        Returns:
-            Index if count is None, list of indices if count is specified, None if not found
-        """
+        """Find position(s) of element in list."""
         client = self.get_client(key, write=False)
         encoded_value = self.encode(value)
 
@@ -1319,17 +1141,7 @@ class KeyValueCacheClient:
         wherefrom: str,
         whereto: str,
     ) -> Any | None:
-        """Atomically move an element from one list to another.
-
-        Args:
-            src: Source list key
-            dst: Destination list key
-            wherefrom: Where to pop from source ('LEFT' or 'RIGHT')
-            whereto: Where to push to destination ('LEFT' or 'RIGHT')
-
-        Returns:
-            The moved element, or None if src is empty
-        """
+        """Atomically move an element from one list to another."""
         client = self.get_client(src, write=True)
 
         val = client.lmove(src, dst, wherefrom, whereto)
@@ -1390,17 +1202,7 @@ class KeyValueCacheClient:
         keys: Sequence[KeyT],
         timeout: float = 0,
     ) -> tuple[str, Any] | None:
-        """Blocking pop from head of list.
-
-        Blocks until an element is available or timeout expires.
-
-        Args:
-            keys: One or more list keys to pop from (first available)
-            timeout: Seconds to block (0 = block indefinitely)
-
-        Returns:
-            Tuple of (key, value) or None if timeout expires.
-        """
+        """Blocking pop from head of list."""
         client = self.get_client(write=True)
 
         result = client.blpop(keys, timeout=timeout)
@@ -1415,17 +1217,7 @@ class KeyValueCacheClient:
         keys: Sequence[KeyT],
         timeout: float = 0,
     ) -> tuple[str, Any] | None:
-        """Blocking pop from tail of list.
-
-        Blocks until an element is available or timeout expires.
-
-        Args:
-            keys: One or more list keys to pop from (first available)
-            timeout: Seconds to block (0 = block indefinitely)
-
-        Returns:
-            Tuple of (key, value) or None if timeout expires.
-        """
+        """Blocking pop from tail of list."""
         client = self.get_client(write=True)
 
         result = client.brpop(keys, timeout=timeout)
@@ -1443,20 +1235,7 @@ class KeyValueCacheClient:
         wherefrom: str = "LEFT",
         whereto: str = "RIGHT",
     ) -> Any | None:
-        """Blocking atomically move element from one list to another.
-
-        Blocks until an element is available in src or timeout expires.
-
-        Args:
-            src: Source list key
-            dst: Destination list key
-            timeout: Seconds to block (0 = block indefinitely)
-            wherefrom: Where to pop from source ('LEFT' or 'RIGHT')
-            whereto: Where to push to destination ('LEFT' or 'RIGHT')
-
-        Returns:
-            The moved element, or None if timeout expires.
-        """
+        """Blocking atomically move element from one list to another."""
         client = self.get_client(src, write=True)
 
         val = client.blmove(src, dst, timeout, wherefrom, whereto)
@@ -1477,15 +1256,7 @@ class KeyValueCacheClient:
         return cast("int", await client.rpush(key, *nvalues))
 
     async def alpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
-        """Pop value(s) from the left of a list asynchronously.
-
-        Args:
-            key: The list key
-            count: Optional number of elements to pop (default: 1, returns single value)
-
-        Returns:
-            Single value if count is None, list of values if count is specified
-        """
+        """Pop value(s) from the left of a list asynchronously."""
         client = self.get_async_client(key, write=True)
 
         if count is not None:
@@ -1495,15 +1266,7 @@ class KeyValueCacheClient:
         return self.decode(val) if val is not None else None
 
     async def arpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
-        """Pop value(s) from the right of a list asynchronously.
-
-        Args:
-            key: The list key
-            count: Optional number of elements to pop (default: 1, returns single value)
-
-        Returns:
-            Single value if count is None, list of values if count is specified
-        """
+        """Pop value(s) from the right of a list asynchronously."""
         client = self.get_async_client(key, write=True)
 
         if count is not None:
@@ -1526,18 +1289,7 @@ class KeyValueCacheClient:
         count: int | None = None,
         maxlen: int | None = None,
     ) -> int | list[int] | None:
-        """Find position(s) of element in list asynchronously.
-
-        Args:
-            key: List key
-            value: Value to search for
-            rank: Rank of first match to return (1 for first, -1 for last, etc.)
-            count: Number of matches to return (0 for all)
-            maxlen: Limit search to first N elements
-
-        Returns:
-            Index if count is None, list of indices if count is specified, None if not found
-        """
+        """Find position(s) of element in list asynchronously."""
         client = self.get_async_client(key, write=False)
         encoded_value = self.encode(value)
 
@@ -1558,17 +1310,7 @@ class KeyValueCacheClient:
         wherefrom: str,
         whereto: str,
     ) -> Any | None:
-        """Atomically move an element from one list to another asynchronously.
-
-        Args:
-            src: Source list key
-            dst: Destination list key
-            wherefrom: Where to pop from source ('LEFT' or 'RIGHT')
-            whereto: Where to push to destination ('LEFT' or 'RIGHT')
-
-        Returns:
-            The moved element, or None if src is empty
-        """
+        """Atomically move an element from one list to another asynchronously."""
         client = self.get_async_client(src, write=True)
 
         val = await client.lmove(src, dst, wherefrom, whereto)
@@ -1629,17 +1371,7 @@ class KeyValueCacheClient:
         keys: Sequence[KeyT],
         timeout: float = 0,
     ) -> tuple[str, Any] | None:
-        """Blocking pop from head of list asynchronously.
-
-        Blocks until an element is available or timeout expires.
-
-        Args:
-            keys: One or more list keys to pop from (first available)
-            timeout: Seconds to block (0 = block indefinitely)
-
-        Returns:
-            Tuple of (key, value) or None if timeout expires.
-        """
+        """Blocking pop from head of list asynchronously."""
         client = self.get_async_client(write=True)
 
         result = await client.blpop(keys, timeout=timeout)
@@ -1654,17 +1386,7 @@ class KeyValueCacheClient:
         keys: Sequence[KeyT],
         timeout: float = 0,
     ) -> tuple[str, Any] | None:
-        """Blocking pop from tail of list asynchronously.
-
-        Blocks until an element is available or timeout expires.
-
-        Args:
-            keys: One or more list keys to pop from (first available)
-            timeout: Seconds to block (0 = block indefinitely)
-
-        Returns:
-            Tuple of (key, value) or None if timeout expires.
-        """
+        """Blocking pop from tail of list asynchronously."""
         client = self.get_async_client(write=True)
 
         result = await client.brpop(keys, timeout=timeout)
@@ -1682,20 +1404,7 @@ class KeyValueCacheClient:
         wherefrom: str = "LEFT",
         whereto: str = "RIGHT",
     ) -> Any | None:
-        """Blocking atomically move element from one list to another asynchronously.
-
-        Blocks until an element is available in src or timeout expires.
-
-        Args:
-            src: Source list key
-            dst: Destination list key
-            timeout: Seconds to block (0 = block indefinitely)
-            wherefrom: Where to pop from source ('LEFT' or 'RIGHT')
-            whereto: Where to push to destination ('LEFT' or 'RIGHT')
-
-        Returns:
-            The moved element, or None if timeout expires.
-        """
+        """Blocking atomically move element from one list to another asynchronously."""
         client = self.get_async_client(src, write=True)
 
         val = await client.blmove(src, dst, timeout, wherefrom, whereto)
@@ -1820,17 +1529,7 @@ class KeyValueCacheClient:
         match: str | None = None,
         count: int | None = None,
     ) -> tuple[int, _Set[Any]]:
-        """Incrementally iterate over set members.
-
-        Args:
-            key: The set key
-            cursor: Cursor position (0 to start)
-            match: Pattern to filter members
-            count: Hint for number of elements per batch
-
-        Returns:
-            Tuple of (next_cursor, set of members)
-        """
+        """Incrementally iterate over set members."""
         client = self.get_client(key, write=False)
 
         next_cursor, members = client.sscan(key, cursor=cursor, match=match, count=count)
@@ -1842,16 +1541,7 @@ class KeyValueCacheClient:
         match: str | None = None,
         count: int | None = None,
     ) -> Iterator[Any]:
-        """Iterate over set members using SSCAN.
-
-        Args:
-            key: The set key
-            match: Pattern to filter members
-            count: Hint for number of elements per batch
-
-        Yields:
-            Decoded member values
-        """
+        """Iterate over set members using SSCAN."""
         client = self.get_client(key, write=False)
 
         for member in client.sscan_iter(key, match=match, count=count):
@@ -1972,17 +1662,7 @@ class KeyValueCacheClient:
         match: str | None = None,
         count: int | None = None,
     ) -> tuple[int, _Set[Any]]:
-        """Incrementally iterate over set members asynchronously.
-
-        Args:
-            key: The set key
-            cursor: Cursor position (0 to start)
-            match: Pattern to filter members
-            count: Hint for number of elements per batch
-
-        Returns:
-            Tuple of (next_cursor, set of members)
-        """
+        """Incrementally iterate over set members asynchronously."""
         client = self.get_async_client(key, write=False)
 
         next_cursor, members = await client.sscan(key, cursor=cursor, match=match, count=count)
@@ -1994,16 +1674,7 @@ class KeyValueCacheClient:
         match: str | None = None,
         count: int | None = None,
     ) -> AsyncIterator[Any]:
-        """Iterate over set members using SSCAN asynchronously.
-
-        Args:
-            key: The set key
-            match: Pattern to filter members
-            count: Hint for number of elements per batch
-
-        Yields:
-            Decoded member values
-        """
+        """Iterate over set members using SSCAN asynchronously."""
         client = self.get_async_client(key, write=False)
 
         async for member in client.sscan_iter(key, match=match, count=count):
@@ -2390,21 +2061,7 @@ class KeyValueCacheClient:
         minid: str | None = None,
         limit: int | None = None,
     ) -> str:
-        """Add an entry to a stream.
-
-        Args:
-            key: Stream key
-            fields: Dictionary of field-value pairs
-            entry_id: Entry ID ("*" for auto-generated)
-            maxlen: Maximum stream length (trim after adding)
-            approximate: Use "~" for approximate trimming (more efficient)
-            nomkstream: Don't create stream if it doesn't exist
-            minid: Trim entries with IDs lower than this
-            limit: Maximum entries to trim in one call
-
-        Returns:
-            The entry ID of the added entry
-        """
+        """Add an entry to a stream."""
         client = self.get_client(key, write=True)
         encoded_fields = {k: self.encode(v) for k, v in fields.items()}
 
@@ -2433,17 +2090,7 @@ class KeyValueCacheClient:
         end: str = "+",
         count: int | None = None,
     ) -> list[tuple[str, dict[str, Any]]]:
-        """Get entries from a stream in ascending order.
-
-        Args:
-            key: Stream key
-            start: Minimum entry ID ("-" for beginning)
-            end: Maximum entry ID ("+" for end)
-            count: Maximum number of entries to return
-
-        Returns:
-            List of (entry_id, fields_dict) tuples
-        """
+        """Get entries from a stream in ascending order."""
         client = self.get_client(key, write=False)
 
         results = client.xrange(key, min=start, max=end, count=count)
@@ -2462,17 +2109,7 @@ class KeyValueCacheClient:
         start: str = "-",
         count: int | None = None,
     ) -> list[tuple[str, dict[str, Any]]]:
-        """Get entries from a stream in descending order.
-
-        Args:
-            key: Stream key
-            end: Maximum entry ID ("+" for end)
-            start: Minimum entry ID ("-" for beginning)
-            count: Maximum number of entries to return
-
-        Returns:
-            List of (entry_id, fields_dict) tuples
-        """
+        """Get entries from a stream in descending order."""
         client = self.get_client(key, write=False)
 
         results = client.xrevrange(key, max=end, min=start, count=count)
@@ -2490,18 +2127,7 @@ class KeyValueCacheClient:
         count: int | None = None,
         block: int | None = None,
     ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
-        """Read entries from one or more streams.
-
-        Args:
-            streams: Dict mapping stream keys to last-seen entry IDs
-                    (use "0" or "$" for beginning/end)
-            count: Maximum entries per stream
-            block: Block for N milliseconds (None = don't block, 0 = block forever)
-
-        Returns:
-            Dict mapping stream keys to list of (entry_id, fields) tuples,
-            or None if blocking timed out
-        """
+        """Read entries from one or more streams."""
         client = self.get_client(write=False)
 
         results = client.xread(streams=streams, count=count, block=block)
@@ -2527,18 +2153,7 @@ class KeyValueCacheClient:
         minid: str | None = None,
         limit: int | None = None,
     ) -> int:
-        """Trim a stream to a maximum length or minimum ID.
-
-        Args:
-            key: Stream key
-            maxlen: Maximum stream length
-            approximate: Use "~" for approximate trimming (more efficient)
-            minid: Remove entries with IDs lower than this
-            limit: Maximum entries to trim in one call
-
-        Returns:
-            Number of entries removed
-        """
+        """Trim a stream to a maximum length or minimum ID."""
         client = self.get_client(key, write=True)
 
         return cast(
@@ -2547,29 +2162,13 @@ class KeyValueCacheClient:
         )
 
     def xdel(self, key: KeyT, *entry_ids: str) -> int:
-        """Delete entries from a stream.
-
-        Args:
-            key: Stream key
-            entry_ids: Entry IDs to delete
-
-        Returns:
-            Number of entries deleted
-        """
+        """Delete entries from a stream."""
         client = self.get_client(key, write=True)
 
         return cast("int", client.xdel(key, *entry_ids))
 
     def xinfo_stream(self, key: KeyT, full: bool = False) -> dict[str, Any]:
-        """Get information about a stream.
-
-        Args:
-            key: Stream key
-            full: Return full stream info including entries
-
-        Returns:
-            Dictionary with stream information
-        """
+        """Get information about a stream."""
         client = self.get_client(key, write=False)
 
         if full:
@@ -2577,28 +2176,13 @@ class KeyValueCacheClient:
         return client.xinfo_stream(key)
 
     def xinfo_groups(self, key: KeyT) -> list[dict[str, Any]]:
-        """Get information about consumer groups for a stream.
-
-        Args:
-            key: Stream key
-
-        Returns:
-            List of dictionaries with group information
-        """
+        """Get information about consumer groups for a stream."""
         client = self.get_client(key, write=False)
 
         return client.xinfo_groups(key)
 
     def xinfo_consumers(self, key: KeyT, group: str) -> list[dict[str, Any]]:
-        """Get information about consumers in a group.
-
-        Args:
-            key: Stream key
-            group: Consumer group name
-
-        Returns:
-            List of dictionaries with consumer information
-        """
+        """Get information about consumers in a group."""
         client = self.get_client(key, write=False)
 
         return client.xinfo_consumers(key, group)
@@ -2611,33 +2195,14 @@ class KeyValueCacheClient:
         mkstream: bool = False,
         entries_read: int | None = None,
     ) -> bool:
-        """Create a consumer group.
-
-        Args:
-            key: Stream key
-            group: Group name
-            entry_id: ID from which to start reading ("$" for new entries only, "0" for all)
-            mkstream: Create stream if it doesn't exist
-            entries_read: Set the group's entries-read counter
-
-        Returns:
-            True if successful
-        """
+        """Create a consumer group."""
         client = self.get_client(key, write=True)
 
         client.xgroup_create(key, group, id=entry_id, mkstream=mkstream, entries_read=entries_read)
         return True
 
     def xgroup_destroy(self, key: KeyT, group: str) -> int:
-        """Destroy a consumer group.
-
-        Args:
-            key: Stream key
-            group: Group name
-
-        Returns:
-            Number of destroyed groups (0 or 1)
-        """
+        """Destroy a consumer group."""
         client = self.get_client(key, write=True)
 
         return cast("int", client.xgroup_destroy(key, group))
@@ -2649,33 +2214,14 @@ class KeyValueCacheClient:
         entry_id: str,
         entries_read: int | None = None,
     ) -> bool:
-        """Set the last delivered ID for a consumer group.
-
-        Args:
-            key: Stream key
-            group: Group name
-            entry_id: New last delivered ID
-            entries_read: Set the group's entries-read counter
-
-        Returns:
-            True if successful
-        """
+        """Set the last delivered ID for a consumer group."""
         client = self.get_client(key, write=True)
 
         client.xgroup_setid(key, group, id=entry_id, entries_read=entries_read)
         return True
 
     def xgroup_delconsumer(self, key: KeyT, group: str, consumer: str) -> int:
-        """Remove a consumer from a group.
-
-        Args:
-            key: Stream key
-            group: Group name
-            consumer: Consumer name
-
-        Returns:
-            Number of pending messages that were deleted
-        """
+        """Remove a consumer from a group."""
         client = self.get_client(key, write=True)
 
         return cast("int", client.xgroup_delconsumer(key, group, consumer))
@@ -2689,20 +2235,7 @@ class KeyValueCacheClient:
         block: int | None = None,
         noack: bool = False,
     ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
-        """Read entries from streams as a consumer group member.
-
-        Args:
-            group: Consumer group name
-            consumer: Consumer name
-            streams: Dict mapping stream keys to entry IDs (">" for new messages)
-            count: Maximum entries per stream
-            block: Block for N milliseconds (None = don't block, 0 = block forever)
-            noack: Don't add messages to pending list
-
-        Returns:
-            Dict mapping stream keys to list of (entry_id, fields) tuples,
-            or None if blocking timed out
-        """
+        """Read entries from streams as a consumer group member."""
         client = self.get_client(write=True)
 
         results = client.xreadgroup(
@@ -2728,16 +2261,7 @@ class KeyValueCacheClient:
         }
 
     def xack(self, key: KeyT, group: str, *entry_ids: str) -> int:
-        """Acknowledge message processing.
-
-        Args:
-            key: Stream key
-            group: Consumer group name
-            entry_ids: Entry IDs to acknowledge
-
-        Returns:
-            Number of messages acknowledged
-        """
+        """Acknowledge message processing."""
         client = self.get_client(key, write=True)
 
         return cast("int", client.xack(key, group, *entry_ids))
@@ -2752,23 +2276,7 @@ class KeyValueCacheClient:
         consumer: str | None = None,
         idle: int | None = None,
     ) -> dict[str, Any] | list[dict[str, Any]]:
-        """Get pending entries information.
-
-        Without start/end/count: returns summary info.
-        With start/end/count: returns detailed list of pending entries.
-
-        Args:
-            key: Stream key
-            group: Consumer group name
-            start: Minimum entry ID (for detailed query)
-            end: Maximum entry ID (for detailed query)
-            count: Maximum entries (for detailed query)
-            consumer: Filter by consumer name
-            idle: Filter by minimum idle time in ms
-
-        Returns:
-            Summary dict or list of pending entry details
-        """
+        """Get pending entries information."""
         client = self.get_client(key, write=False)
 
         if start is not None and end is not None and count is not None:
@@ -2796,23 +2304,7 @@ class KeyValueCacheClient:
         force: bool = False,
         justid: bool = False,
     ) -> list[tuple[str, dict[str, Any]]] | list[str]:
-        """Claim pending messages.
-
-        Args:
-            key: Stream key
-            group: Consumer group name
-            consumer: Consumer name to claim for
-            min_idle_time: Minimum idle time in ms
-            entry_ids: Entry IDs to claim
-            idle: Set idle time (ms)
-            time: Set idle time as Unix timestamp (ms)
-            retrycount: Set retry counter
-            force: Create entry in PEL even if it doesn't exist
-            justid: Return only entry IDs, not full entries
-
-        Returns:
-            List of (entry_id, fields) tuples, or list of entry IDs if justid=True
-        """
+        """Claim pending messages."""
         client = self.get_client(key, write=True)
 
         results = client.xclaim(
@@ -2847,20 +2339,7 @@ class KeyValueCacheClient:
         count: int | None = None,
         justid: bool = False,
     ) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
-        """Auto-claim pending messages that have been idle.
-
-        Args:
-            key: Stream key
-            group: Consumer group name
-            consumer: Consumer name to claim for
-            min_idle_time: Minimum idle time in ms
-            start_id: Start scanning from this ID
-            count: Maximum messages to claim
-            justid: Return only entry IDs, not full entries
-
-        Returns:
-            Tuple of (next_start_id, claimed_entries, deleted_ids)
-        """
+        """Auto-claim pending messages that have been idle."""
         client = self.get_client(key, write=True)
 
         result = client.xautoclaim(
@@ -3217,16 +2696,7 @@ class KeyValueCacheClient:
         numkeys: int,
         *keys_and_args: Any,
     ) -> Any:
-        """Execute a Lua script server-side.
-
-        Args:
-            script: The Lua script to execute
-            numkeys: Number of keys in keys_and_args
-            *keys_and_args: Keys followed by arguments
-
-        Returns:
-            The result of the script execution
-        """
+        """Execute a Lua script server-side."""
         client = self.get_client(write=True)
         return client.eval(script, numkeys, *keys_and_args)
 
@@ -3236,16 +2706,7 @@ class KeyValueCacheClient:
         numkeys: int,
         *keys_and_args: Any,
     ) -> Any:
-        """Execute a Lua script server-side asynchronously.
-
-        Args:
-            script: The Lua script to execute
-            numkeys: Number of keys in keys_and_args
-            *keys_and_args: Keys followed by arguments
-
-        Returns:
-            The result of the script execution
-        """
+        """Execute a Lua script server-side asynchronously."""
         client = self.get_async_client(write=True)
         return await client.eval(script, numkeys, *keys_and_args)
 
@@ -3255,16 +2716,7 @@ class KeyValueCacheClient:
         numkeys: int,
         *keys_and_args: Any,
     ) -> Any:
-        """Execute a cached Lua script by its SHA1 hash.
-
-        Args:
-            sha: The SHA1 hash of the script
-            numkeys: Number of keys in keys_and_args
-            *keys_and_args: Keys followed by arguments
-
-        Returns:
-            The result of the script execution
-        """
+        """Execute a cached Lua script by its SHA1 hash."""
         client = self.get_client(write=True)
         return client.evalsha(sha, numkeys, *keys_and_args)
 
@@ -3274,106 +2726,47 @@ class KeyValueCacheClient:
         numkeys: int,
         *keys_and_args: Any,
     ) -> Any:
-        """Execute a cached Lua script by its SHA1 hash asynchronously.
-
-        Args:
-            sha: The SHA1 hash of the script
-            numkeys: Number of keys in keys_and_args
-            *keys_and_args: Keys followed by arguments
-
-        Returns:
-            The result of the script execution
-        """
+        """Execute a cached Lua script by its SHA1 hash asynchronously."""
         client = self.get_async_client(write=True)
         return await client.evalsha(sha, numkeys, *keys_and_args)
 
     def script_load(self, script: str) -> str:
-        """Load a Lua script into the script cache.
-
-        Args:
-            script: The Lua script to load
-
-        Returns:
-            The SHA1 hash of the script
-        """
+        """Load a Lua script into the script cache."""
         client = self.get_client(write=True)
         return cast("str", client.script_load(script))
 
     async def ascript_load(self, script: str) -> str:
-        """Load a Lua script into the script cache asynchronously.
-
-        Args:
-            script: The Lua script to load
-
-        Returns:
-            The SHA1 hash of the script
-        """
+        """Load a Lua script into the script cache asynchronously."""
         client = self.get_async_client(write=True)
         return cast("str", await client.script_load(script))
 
     def script_exists(self, *shas: str) -> list[bool]:
-        """Check if scripts exist in the script cache.
-
-        Args:
-            *shas: SHA1 hashes to check
-
-        Returns:
-            List of booleans indicating existence
-        """
+        """Check if scripts exist in the script cache."""
         client = self.get_client(write=False)
         return cast("list[bool]", client.script_exists(*shas))
 
     async def ascript_exists(self, *shas: str) -> list[bool]:
-        """Check if scripts exist in the script cache asynchronously.
-
-        Args:
-            *shas: SHA1 hashes to check
-
-        Returns:
-            List of booleans indicating existence
-        """
+        """Check if scripts exist in the script cache asynchronously."""
         client = self.get_async_client(write=False)
         return cast("list[bool]", await client.script_exists(*shas))
 
     def script_flush(self, sync_type: str = "SYNC") -> bool:
-        """Remove all scripts from the script cache.
-
-        Args:
-            sync_type: SYNC or ASYNC flush mode
-
-        Returns:
-            True if successful
-        """
+        """Remove all scripts from the script cache."""
         client = self.get_client(write=True)
         return cast("bool", client.script_flush(sync_type))
 
     async def ascript_flush(self, sync_type: str = "SYNC") -> bool:
-        """Remove all scripts from the script cache asynchronously.
-
-        Args:
-            sync_type: SYNC or ASYNC flush mode
-
-        Returns:
-            True if successful
-        """
+        """Remove all scripts from the script cache asynchronously."""
         client = self.get_async_client(write=True)
         return cast("bool", await client.script_flush(sync_type))
 
     def script_kill(self) -> bool:
-        """Kill the currently executing Lua script.
-
-        Returns:
-            True if successful
-        """
+        """Kill the currently executing Lua script."""
         client = self.get_client(write=True)
         return cast("bool", client.script_kill())
 
     async def ascript_kill(self) -> bool:
-        """Kill the currently executing Lua script asynchronously.
-
-        Returns:
-            True if successful
-        """
+        """Kill the currently executing Lua script asynchronously."""
         client = self.get_async_client(write=True)
         return cast("bool", await client.script_kill())
 

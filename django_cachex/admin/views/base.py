@@ -52,17 +52,7 @@ def key_add_url(cache_name: str) -> str:
 
 
 class ViewConfig:
-    """Configuration for cache admin views.
-
-    Holds template prefix and help messages for views. Supports both Django admin
-    and alternative admin themes (like Unfold).
-
-    Args:
-        template_prefix: Base path for templates (e.g., "admin/django_cachex")
-        template_overrides: Dict mapping canonical names to actual template paths.
-            Use this when template names differ between themes.
-        help_messages: Dict mapping view names to HTML help content.
-    """
+    """Configuration for cache admin views, supporting Django admin and alternative themes."""
 
     def __init__(
         self,
@@ -75,10 +65,7 @@ class ViewConfig:
         self.help_messages = help_messages or {}
 
     def template(self, name: str) -> str:
-        """Get the full template path for a template name.
-
-        Checks template_overrides first, then falls back to prefix + name.
-        """
+        """Get the full template path for a template name."""
         if name in self.template_overrides:
             return f"{self.template_prefix}/{self.template_overrides[name]}"
         return f"{self.template_prefix}/{name}"
@@ -108,21 +95,7 @@ def show_help(
 
 
 def is_json_serializable(value: Any) -> bool:
-    """Check if a value can be safely serialized to JSON and back without loss.
-
-    This performs a round-trip check to ensure the value can be serialized
-    to JSON and deserialized back to an equivalent Python object.
-
-    Returns True for: None, bool, int, float, str, and dicts/lists containing only
-    these types. Returns False for: bytes, datetime, custom objects, or any value
-    where the round-trip changes the data.
-
-    Args:
-        value: The Python value to check.
-
-    Returns:
-        True if the value can round-trip through JSON without information loss.
-    """
+    """Check if a value can be safely round-tripped through JSON without loss."""
     try:
         serialized = json.dumps(value)
         deserialized = json.loads(serialized)
@@ -132,16 +105,7 @@ def is_json_serializable(value: Any) -> bool:
 
 
 def format_value_for_display(value: Any) -> tuple[str, bool]:
-    """Format a value for display in the admin UI.
-
-    Args:
-        value: The Python value to format.
-
-    Returns:
-        A tuple of (display_string, is_editable).
-        - JSON-serializable values are displayed as formatted JSON and are editable.
-        - Non-JSON-serializable values are displayed using repr() and are read-only.
-    """
+    """Format a value for display in the admin UI, returning (display_string, is_editable)."""
     if value is None:
         return "null", True
 

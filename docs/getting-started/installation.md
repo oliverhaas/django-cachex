@@ -4,7 +4,7 @@
 
 - Python 3.12+
 - Django 5.2+
-- valkey-py 6+ or redis-py 6+
+- valkey-py 6.1+ or redis-py 6+
 - Valkey server 7+ or Redis server 6+
 
 ## Install with uv
@@ -25,4 +25,4 @@ uv add django-cachex[libvalkey]
 uv add django-cachex[hiredis]
 ```
 
-These packages provide C-based parsers that can significantly improve performance when parsing replies.
+These provide C-based parsers that significantly improve performance.

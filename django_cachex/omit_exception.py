@@ -14,18 +14,12 @@ def omit_exception(
     method: Callable | None = None,
     return_value: Any | None = None,
 ) -> Callable:
-    """Decorator that intercepts connection errors and ignores them if configured.
+    """Decorator that catches backend errors (connection, timeout, response) based on _ignore_exceptions setting.
 
-    When applied to a cache method (sync or async), this decorator catches
-    connection and timeout errors from the underlying library (redis-py or
-    valkey-py) and either ignores them (returning return_value) or re-raises,
-    depending on the cache's _ignore_exceptions setting.
+    Supports both sync and async methods. When ignoring, returns ``return_value``.
 
-    Args:
-        method: The method to wrap (when used without parentheses)
-        return_value: Value to return when exception is ignored (default: None)
+    Usage::
 
-    Usage:
         @omit_exception
         def set(self, key, value): ...
 
