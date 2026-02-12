@@ -208,6 +208,8 @@ class CacheProtocol(Protocol):
 
     def pexpire_at(self, key: KeyT, when: AbsExpiryT, version: int | None = None) -> bool: ...
 
+    def expiretime(self, key: KeyT, version: int | None = None) -> int | None: ...
+
     # =========================================================================
     # Key Operations
     # =========================================================================

@@ -56,6 +56,31 @@ class TestAsyncPTTL:
         assert pttl is not None and pttl < 0
 
 
+class TestAsyncExpireTime:
+    """Tests for aexpiretime() method (Redis 7.0+)."""
+
+    @pytest.mark.asyncio
+    async def test_aexpiretime_returns_unix_timestamp(self, cache: KeyValueCache, mk):
+        import time
+
+        cache.set("aet_key", "data", timeout=3600)
+        result = await cache._cache.aexpiretime(mk("aet_key"))
+        assert result is not None
+        expected = int(time.time()) + 3600
+        assert abs(result - expected) < 5
+
+    @pytest.mark.asyncio
+    async def test_aexpiretime_returns_none_for_persistent_key(self, cache: KeyValueCache, mk):
+        cache.set("aet_persist", "permanent", timeout=None)
+        result = await cache._cache.aexpiretime(mk("aet_persist"))
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_aexpiretime_negative_for_nonexistent_key(self, cache: KeyValueCache, mk):
+        result = await cache._cache.aexpiretime(mk("aet_missing"))
+        assert result is not None and result < 0
+
+
 class TestAsyncExpire:
     """Tests for aexpire() method."""
 
