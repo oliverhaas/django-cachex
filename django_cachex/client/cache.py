@@ -27,9 +27,8 @@ from django_cachex.client.default import (
     RedisCacheClient,
     ValkeyCacheClient,
 )
-from django_cachex.exceptions import ScriptNotRegisteredError
 from django_cachex.omit_exception import omit_exception
-from django_cachex.script import LuaScript, ScriptHelpers
+from django_cachex.script import ScriptHelpers
 
 # Sentinel value for methods with dynamic return values (e.g., get() returns default arg)
 CONNECTION_INTERRUPTED = object()
@@ -88,9 +87,6 @@ class KeyValueCache(BaseCache):
         self._ignore_exceptions = self._options.get("ignore_exceptions", False)
         self._log_ignored_exceptions = self._options.get("log_ignored_exceptions", False)
         self._logger = logging.getLogger(__name__) if self._log_ignored_exceptions else None
-
-        # Lua script registry
-        self._scripts: dict[str, LuaScript] = {}
 
     @cached_property
     def _cache(self) -> KeyValueCacheClient:
@@ -603,8 +599,6 @@ class KeyValueCache(BaseCache):
         )
         # Set key_func for proper key prefixing
         pipe._key_func = self.make_and_validate_key
-        # Set scripts registry for eval_script support
-        pipe._scripts = self._scripts
         pipe._cache_version = self.version
         return pipe
 
@@ -1397,36 +1391,6 @@ class KeyValueCache(BaseCache):
     # Lua Script Operations
     # =========================================================================
 
-    def register_script(
-        self,
-        name: str,
-        script: str,
-        *,
-        num_keys: int | None = None,
-        pre_func: Callable[[ScriptHelpers, Sequence[Any], Sequence[Any]], tuple[list[Any], list[Any]]] | None = None,
-        post_func: Callable[[ScriptHelpers, Any], Any] | None = None,
-    ) -> LuaScript:
-        """Register a Lua script for later execution.
-
-        Args:
-            name: Unique name for the script within this cache backend.
-            script: Lua script source code.
-            num_keys: Expected number of KEYS arguments (for documentation only).
-            pre_func: Optional function to process keys/args before execution.
-                Signature: ``(helpers, keys, args) -> (processed_keys, processed_args)``
-            post_func: Optional function to process result after execution.
-                Signature: ``(helpers, result) -> processed_result``
-        """
-        lua_script = LuaScript(
-            name=name,
-            script=script,
-            num_keys=num_keys,
-            pre_func=pre_func,
-            post_func=post_func,
-        )
-        self._scripts[name] = lua_script
-        return lua_script
-
     def _create_script_helpers(self, version: int | None) -> ScriptHelpers:
         """Create a ScriptHelpers instance for script processing."""
         return ScriptHelpers(
@@ -1438,99 +1402,69 @@ class KeyValueCache(BaseCache):
 
     def eval_script(
         self,
-        name: str,
+        script: str,
+        *,
         keys: Sequence[Any] = (),
         args: Sequence[Any] = (),
-        *,
+        pre_hook: Callable[[ScriptHelpers, Sequence[Any], Sequence[Any]], tuple[list[Any], list[Any]]] | None = None,
+        post_hook: Callable[[ScriptHelpers, Any], Any] | None = None,
         version: int | None = None,
     ) -> Any:
-        """Execute a registered Lua script.
+        """Execute a Lua script.
 
         Args:
-            name: Name of the registered script.
+            script: Lua script source code.
             keys: KEYS to pass to the script.
             args: ARGV to pass to the script.
+            pre_hook: Pre-processing hook: ``(helpers, keys, args) -> (keys, args)``.
+            post_hook: Post-processing hook: ``(helpers, result) -> result``.
             version: Key version for prefixing.
         """
-        if name not in self._scripts:
-            raise ScriptNotRegisteredError(name)
-
-        script = self._scripts[name]
         helpers = self._create_script_helpers(version)
 
-        # Process keys and args through pre_func
         proc_keys: list[Any] = list(keys)
         proc_args: list[Any] = list(args)
-        if script.pre_func is not None:
-            proc_keys, proc_args = script.pre_func(helpers, proc_keys, proc_args)
+        if pre_hook is not None:
+            proc_keys, proc_args = pre_hook(helpers, proc_keys, proc_args)
 
-        # Ensure SHA is cached
-        if script._sha is None:
-            script._sha = self._cache.script_load(script.script)
+        result = self._cache.eval(script, len(proc_keys), *proc_keys, *proc_args)
 
-        # Execute via evalsha with NOSCRIPT fallback
-        try:
-            result = self._cache.evalsha(script._sha, len(proc_keys), *proc_keys, *proc_args)
-        except Exception as e:
-            # NoScriptError means the script SHA was evicted from the server cache
-            if type(e).__name__ == "NoScriptError" or "NOSCRIPT" in str(e):
-                script._sha = self._cache.script_load(script.script)
-                result = self._cache.evalsha(script._sha, len(proc_keys), *proc_keys, *proc_args)
-            else:
-                raise
-
-        # Process result through post_func
-        if script.post_func is not None:
-            result = script.post_func(helpers, result)
+        if post_hook is not None:
+            result = post_hook(helpers, result)
 
         return result
 
     async def aeval_script(
         self,
-        name: str,
+        script: str,
+        *,
         keys: Sequence[Any] = (),
         args: Sequence[Any] = (),
-        *,
+        pre_hook: Callable[[ScriptHelpers, Sequence[Any], Sequence[Any]], tuple[list[Any], list[Any]]] | None = None,
+        post_hook: Callable[[ScriptHelpers, Any], Any] | None = None,
         version: int | None = None,
     ) -> Any:
-        """Execute a registered Lua script asynchronously.
+        """Execute a Lua script asynchronously.
 
         Args:
-            name: Name of the registered script.
+            script: Lua script source code.
             keys: KEYS to pass to the script.
             args: ARGV to pass to the script.
+            pre_hook: Pre-processing hook: ``(helpers, keys, args) -> (keys, args)``.
+            post_hook: Post-processing hook: ``(helpers, result) -> result``.
             version: Key version for prefixing.
         """
-        if name not in self._scripts:
-            raise ScriptNotRegisteredError(name)
-
-        script = self._scripts[name]
         helpers = self._create_script_helpers(version)
 
-        # Process keys and args through pre_func
         proc_keys: list[Any] = list(keys)
         proc_args: list[Any] = list(args)
-        if script.pre_func is not None:
-            proc_keys, proc_args = script.pre_func(helpers, proc_keys, proc_args)
+        if pre_hook is not None:
+            proc_keys, proc_args = pre_hook(helpers, proc_keys, proc_args)
 
-        # Ensure SHA is cached
-        if script._sha is None:
-            script._sha = await self._cache.ascript_load(script.script)
+        result = await self._cache.aeval(script, len(proc_keys), *proc_keys, *proc_args)
 
-        # Execute via evalsha with NOSCRIPT fallback
-        try:
-            result = await self._cache.aevalsha(script._sha, len(proc_keys), *proc_keys, *proc_args)
-        except Exception as e:
-            # NoScriptError means the script SHA was evicted from the server cache
-            if type(e).__name__ == "NoScriptError" or "NOSCRIPT" in str(e):
-                script._sha = await self._cache.ascript_load(script.script)
-                result = await self._cache.aevalsha(script._sha, len(proc_keys), *proc_keys, *proc_args)
-            else:
-                raise
-
-        # Process result through post_func
-        if script.post_func is not None:
-            result = script.post_func(helpers, result)
+        if post_hook is not None:
+            result = post_hook(helpers, result)
 
         return result
 

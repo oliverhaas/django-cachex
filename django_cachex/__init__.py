@@ -8,11 +8,9 @@ except PackageNotFoundError:
 # Re-export commonly used items for convenience
 from django_cachex.exceptions import (
     CompressorError,
-    ScriptNotRegisteredError,
     SerializerError,
 )
 from django_cachex.script import (
-    LuaScript,
     ScriptHelpers,
     decode_list_or_none_post,
     decode_list_post,
@@ -24,9 +22,7 @@ from django_cachex.script import (
 
 __all__ = [
     "CompressorError",
-    "LuaScript",
     "ScriptHelpers",
-    "ScriptNotRegisteredError",
     "SerializerError",
     "__version__",
     "decode_list_or_none_post",

@@ -284,41 +284,27 @@ client.publish("channel", "message")
 
 ## Lua Scripts
 
-High-level interface for Lua scripts with automatic key prefixing and value encoding/decoding.
+Execute Lua scripts with automatic key prefixing and value encoding/decoding.
 
-### Registering Scripts
+### Basic Usage
 
 ```python
 from django.core.cache import cache
-from django_cachex import keys_only_pre
 
-# Simple script - only needs key prefixing
-cache.register_script(
-    "rate_limit",
-    """
-    local current = redis.call('INCR', KEYS[1])
-    if current == 1 then
-        redis.call('EXPIRE', KEYS[1], ARGV[1])
-    end
-    return current
-    """,
-    num_keys=1,
-    pre_func=keys_only_pre,
+# Simple script
+result = cache.eval_script("return 42")
+
+# With keys and args
+count = cache.eval_script(
+    "return redis.call('INCR', KEYS[1])",
+    keys=["counter"],
+    args=[],
 )
-```
-
-### Executing Scripts
-
-```python
-# Execute the rate limiter
-count = cache.eval_script("rate_limit", keys=["user:123:requests"], args=[60])
-if count > 100:
-    raise RateLimitExceeded()
 ```
 
 ### Pre/Post Processing Hooks
 
-Scripts support `pre_func` (transform keys/args before execution) and `post_func` (transform results after execution) hooks.
+Scripts support `pre_hook` (transform keys/args before execution) and `post_hook` (transform results after execution).
 
 #### Built-in Helpers
 
@@ -332,27 +318,41 @@ from django_cachex import (
 )
 ```
 
-#### Example with Encoding
+#### Key Prefixing
+
+```python
+from django_cachex import keys_only_pre
+
+count = cache.eval_script(
+    """
+    local current = redis.call('INCR', KEYS[1])
+    if current == 1 then
+        redis.call('EXPIRE', KEYS[1], ARGV[1])
+    end
+    return current
+    """,
+    keys=["user:123:requests"],
+    args=[60],
+    pre_hook=keys_only_pre,
+)
+```
+
+#### Encoding Values
 
 ```python
 from django_cachex import full_encode_pre, decode_single_post
 
-cache.register_script(
-    "get_and_set",
+# Works with any serializable Python object
+old_session = cache.eval_script(
     """
     local old = redis.call('GET', KEYS[1])
     redis.call('SET', KEYS[1], ARGV[1])
     return old
     """,
-    pre_func=full_encode_pre,    # Encode the new value
-    post_func=decode_single_post, # Decode the old value
-)
-
-# Works with any serializable Python object
-old_session = cache.eval_script(
-    "get_and_set",
     keys=["session:abc"],
     args=[{"user_id": 123, "permissions": ["read", "write"]}],
+    pre_hook=full_encode_pre,
+    post_hook=decode_single_post,
 )
 ```
 
@@ -376,7 +376,7 @@ def my_post(helpers: ScriptHelpers, result):
         "values": helpers.decode_values(result[1]) if result[1] else [],
     }
 
-cache.register_script("custom_op", "...", pre_func=my_pre, post_func=my_post)
+result = cache.eval_script("...", pre_hook=my_pre, post_hook=my_post)
 ```
 
 ### Pipeline Support
@@ -384,11 +384,16 @@ cache.register_script("custom_op", "...", pre_func=my_pre, post_func=my_post)
 Scripts can be queued in pipelines:
 
 ```python
+from django_cachex import keys_only_pre
+
 with cache.pipeline() as pipe:
     pipe.set("key1", "value1")
-    pipe.eval_script("rate_limit", keys=["user:1"], args=[60])
-    pipe.eval_script("rate_limit", keys=["user:2"], args=[60])
-    results = pipe.execute()  # [True, 1, 1]
+    pipe.eval_script(
+        "return redis.call('INCR', KEYS[1])",
+        keys=["user:1"],
+        pre_hook=keys_only_pre,
+    )
+    results = pipe.execute()  # [True, 1]
 ```
 
 ### Async Support
@@ -396,9 +401,17 @@ with cache.pipeline() as pipe:
 Use `aeval_script()` for async execution:
 
 ```python
-count = await cache.aeval_script("rate_limit", keys=["user:123"], args=[60])
-```
+from django_cachex import keys_only_pre
 
-### Script Caching
-
-Scripts are cached by SHA hash. After the first execution, subsequent calls use `EVALSHA` for better performance. If the server returns `NOSCRIPT` (e.g., after a restart), the script is automatically reloaded.
+count = await cache.aeval_script(
+    """
+    local current = redis.call('INCR', KEYS[1])
+    if current == 1 then
+        redis.call('EXPIRE', KEYS[1], ARGV[1])
+    end
+    return current
+    """,
+    keys=["user:123:requests"],
+    args=[60],
+    pre_hook=keys_only_pre,
+)

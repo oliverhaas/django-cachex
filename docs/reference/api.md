@@ -140,41 +140,30 @@ List operations for ordered, indexable collections:
 
 ### Lua Script Methods
 
-Lua script registration and execution:
+Execute Lua scripts with optional key prefixing and value encoding/decoding:
 
 | Method | Description |
 |--------|-------------|
-| `register_script(name, script, ...)` | Register a Lua script |
-| `eval_script(name, keys=(), args=())` | Execute a registered script |
-| `aeval_script(name, keys=(), args=())` | Execute a registered script (async) |
-
-#### register_script
-
-```python
-cache.register_script(
-    name,           # Unique script name
-    script,         # Lua script source
-    num_keys=None,  # Expected KEYS count (documentation only)
-    pre_func=None,  # Pre-processing hook: (helpers, keys, args) -> (keys, args)
-    post_func=None, # Post-processing hook: (helpers, result) -> result
-)
-```
+| `eval_script(script, *, keys, args, ...)` | Execute a Lua script |
+| `aeval_script(script, *, keys, args, ...)` | Execute a Lua script (async) |
 
 #### eval_script / aeval_script
 
 ```python
 result = cache.eval_script(
-    name,           # Registered script name
-    keys=(),        # KEYS to pass to script
-    args=(),        # ARGV to pass to script
-    version=None,   # Key version for prefixing
+    script,           # Lua script source code
+    keys=(),          # KEYS to pass to script
+    args=(),          # ARGV to pass to script
+    pre_hook=None,    # Pre-processing hook: (helpers, keys, args) -> (keys, args)
+    post_hook=None,   # Post-processing hook: (helpers, result) -> result
+    version=None,     # Key version for prefixing
 )
 ```
 
-#### Pre-built Helpers
+#### Pre-built Hooks
 
-| Helper | Description |
-|--------|-------------|
+| Hook | Description |
+|------|-------------|
 | `keys_only_pre` | Prefix keys, leave args unchanged |
 | `full_encode_pre` | Prefix keys AND encode all args |
 | `decode_single_post` | Decode a single returned value |
@@ -184,7 +173,7 @@ result = cache.eval_script(
 
 #### ScriptHelpers
 
-The helpers object passed to pre/post functions:
+The helpers object passed to pre/post hooks:
 
 | Attribute/Method | Description |
 |------------------|-------------|

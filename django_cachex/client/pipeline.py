@@ -6,10 +6,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from types import TracebackType
 
-    from django_cachex.script import LuaScript
     from django_cachex.types import KeyT
 
-from django_cachex.exceptions import ScriptNotRegisteredError
 from django_cachex.script import ScriptHelpers
 
 # Alias builtin set type to avoid shadowing by the set() method
@@ -35,8 +33,6 @@ class Pipeline:
         self._version = version
         self._key_func: Callable[..., str] | None = None
         self._decoders: list[Callable[[Any], Any]] = []
-        # Script support (set by KeyValueCache.pipeline())
-        self._scripts: dict[str, LuaScript] = {}
         self._cache_version: int | None = None
 
     def __enter__(self) -> Self:
@@ -1076,26 +1072,19 @@ class Pipeline:
 
     def eval_script(
         self,
-        name: str,
+        script: str,
+        *,
         keys: Sequence[Any] = (),
         args: Sequence[Any] = (),
-        *,
+        pre_hook: Callable[[ScriptHelpers, Sequence[Any], Sequence[Any]], tuple[list[Any], list[Any]]] | None = None,
+        post_hook: Callable[[ScriptHelpers, Any], Any] | None = None,
         version: int | None = None,
     ) -> Self:
-        """Queue a registered Lua script for pipelined execution."""
-        # Access scripts registry (set by KeyValueCache.pipeline())
-        scripts: dict[str, LuaScript] = getattr(self, "_scripts", {})
-        cache_version: int | None = getattr(self, "_cache_version", None)
-
-        if name not in scripts:
-            raise ScriptNotRegisteredError(name)
-
-        script = scripts[name]
-
+        """Queue a Lua script for pipelined execution."""
         # Determine version for key prefixing
         v = version if version is not None else self._version
         if v is None:
-            v = cache_version
+            v = getattr(self, "_cache_version", None)
 
         # Create helpers for pre/post processing
         helpers = ScriptHelpers(
@@ -1105,29 +1094,27 @@ class Pipeline:
             version=v,
         )
 
-        # Process keys and args through pre_func
         proc_keys: list[Any] = list(keys)
         proc_args: list[Any] = list(args)
-        if script.pre_func is not None:
-            proc_keys, proc_args = script.pre_func(helpers, proc_keys, proc_args)
+        if pre_hook is not None:
+            proc_keys, proc_args = pre_hook(helpers, proc_keys, proc_args)
 
         # Queue EVAL command using execute_command for cluster compatibility
         # Note: We use EVAL instead of EVALSHA in pipelines because:
         # 1. EVALSHA is blocked in Redis Cluster mode pipelines
         # 2. ClusterPipeline.eval() has a different signature than regular Pipeline.eval()
         # 3. execute_command works uniformly across both pipeline types
-        self._pipeline.execute_command("EVAL", script.script, len(proc_keys), *proc_keys, *proc_args)
+        self._pipeline.execute_command("EVAL", script, len(proc_keys), *proc_keys, *proc_args)
 
-        # Create decoder that applies post_func
-        if script.post_func is not None:
+        if post_hook is not None:
 
-            def make_decoder(pf: Any, h: ScriptHelpers) -> Any:
+            def make_decoder(ph: Any, h: ScriptHelpers) -> Any:
                 def decoder(result: Any) -> Any:
-                    return pf(h, result)
+                    return ph(h, result)
 
                 return decoder
 
-            self._decoders.append(make_decoder(script.post_func, helpers))
+            self._decoders.append(make_decoder(post_hook, helpers))
         else:
             self._decoders.append(self._noop)
 
