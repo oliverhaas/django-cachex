@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
 
     from django_cachex.client.pipeline import Pipeline
-    from django_cachex.script import LuaScript, ScriptHelpers
+    from django_cachex.script import ScriptHelpers
 
 # =============================================================================
 # Types matching redis-py / valkey-py (for compatibility with their APIs)
@@ -566,30 +566,24 @@ class CacheProtocol(Protocol):
     # Lua Script Operations
     # =========================================================================
 
-    def register_script(
-        self,
-        name: str,
-        script: str,
-        *,
-        num_keys: int | None = None,
-        pre_func: Callable[[ScriptHelpers, Sequence[Any], Sequence[Any]], tuple[list[Any], list[Any]]] | None = None,
-        post_func: Callable[[ScriptHelpers, Any], Any] | None = None,
-    ) -> LuaScript: ...
-
     def eval_script(
         self,
-        name: str,
+        script: str,
+        *,
         keys: Sequence[Any] = (),
         args: Sequence[Any] = (),
-        *,
+        pre_hook: Callable[[ScriptHelpers, Sequence[Any], Sequence[Any]], tuple[list[Any], list[Any]]] | None = None,
+        post_hook: Callable[[ScriptHelpers, Any], Any] | None = None,
         version: int | None = None,
     ) -> Any: ...
 
     async def aeval_script(
         self,
-        name: str,
+        script: str,
+        *,
         keys: Sequence[Any] = (),
         args: Sequence[Any] = (),
-        *,
+        pre_hook: Callable[[ScriptHelpers, Sequence[Any], Sequence[Any]], tuple[list[Any], list[Any]]] | None = None,
+        post_hook: Callable[[ScriptHelpers, Any], Any] | None = None,
         version: int | None = None,
     ) -> Any: ...

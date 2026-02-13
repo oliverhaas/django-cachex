@@ -60,17 +60,6 @@ class SerializerError(Exception):
     """
 
 
-class ScriptNotRegisteredError(KeyError):
-    """Raised when eval_script is called with an unregistered script name."""
-
-    def __init__(self, name: str) -> None:
-        self.name = name
-        super().__init__(f"Script '{name}' is not registered")
-
-    def __str__(self) -> str:
-        return f"Script '{self.name}' is not registered"
-
-
 class NotSupportedError(Exception):
     """Raised when an operation is not supported by the cache backend."""
 

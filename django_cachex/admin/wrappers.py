@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from django.core.cache.backends.base import BaseCache
 
     from django_cachex.client.pipeline import Pipeline
-    from django_cachex.script import LuaScript, ScriptHelpers
+    from django_cachex.script import ScriptHelpers
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT
 
 # Alias to avoid shadowing by method names
@@ -632,38 +632,30 @@ class BaseCacheExtensions:
     # Lua Script Operations
     # =========================================================================
 
-    def register_script(
-        self,
-        name: str,
-        script: str,
-        *,
-        num_keys: int | None = None,
-        pre_func: Callable[[ScriptHelpers, Sequence[Any], Sequence[Any]], tuple[list[Any], list[Any]]] | None = None,
-        post_func: Callable[[ScriptHelpers, Any], Any] | None = None,
-    ) -> LuaScript:
-        """Register a Lua script."""
-        raise NotSupportedError("register_script", self.__class__.__name__)
-
     def eval_script(
         self,
-        name: str,
+        script: str,
+        *,
         keys: Sequence[Any] = (),
         args: Sequence[Any] = (),
-        *,
+        pre_hook: Callable[[ScriptHelpers, Sequence[Any], Sequence[Any]], tuple[list[Any], list[Any]]] | None = None,
+        post_hook: Callable[[ScriptHelpers, Any], Any] | None = None,
         version: int | None = None,
     ) -> Any:
-        """Execute a registered Lua script."""
+        """Execute a Lua script."""
         raise NotSupportedError("eval_script", self.__class__.__name__)
 
     async def aeval_script(
         self,
-        name: str,
+        script: str,
+        *,
         keys: Sequence[Any] = (),
         args: Sequence[Any] = (),
-        *,
+        pre_hook: Callable[[ScriptHelpers, Sequence[Any], Sequence[Any]], tuple[list[Any], list[Any]]] | None = None,
+        post_hook: Callable[[ScriptHelpers, Any], Any] | None = None,
         version: int | None = None,
     ) -> Any:
-        """Execute a registered Lua script asynchronously."""
+        """Execute a Lua script asynchronously."""
         raise NotSupportedError("aeval_script", self.__class__.__name__)
 
 

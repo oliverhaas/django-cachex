@@ -43,7 +43,19 @@ def _get_container_internal_ip(container: DockerContainer) -> str:
     """Get the internal Docker network IP of a container."""
     client = docker.from_env()
     container_info = client.containers.get(container.get_wrapped_container().id)
-    return container_info.attrs["NetworkSettings"]["IPAddress"]
+    network_settings = container_info.attrs["NetworkSettings"]
+    # Try top-level IPAddress first (default bridge network)
+    ip = network_settings.get("IPAddress")
+    if ip:
+        return ip
+    # Fall back to first network's IPAddress (custom networks)
+    networks = network_settings.get("Networks", {})
+    for net in networks.values():
+        ip = net.get("IPAddress")
+        if ip:
+            return ip
+    msg = f"Could not determine internal IP for container {container_info.id[:12]}"
+    raise RuntimeError(msg)
 
 
 def _start_redis_container(image: str) -> ContainerInfo:
