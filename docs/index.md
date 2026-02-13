@@ -61,7 +61,7 @@ This project was inspired by [django-redis](https://github.com/jazzband/django-r
 
 The Unfold theme integration optionally uses [django-unfold](https://unfoldadmin.com/).
 
-See also [django-valkey](https://github.com/amirreza8002/django-valkey) and [dj-cache-panel](https://github.com/vinitkumar/dj-cache-panel) for related projects with similar goals.
+See also [django-valkey](https://github.com/django-commons/django-valkey) and [dj-cache-panel](https://github.com/yassi/dj-cache-panel) for related projects with similar goals.
 
 ## License
 
