@@ -52,7 +52,47 @@
 <!-- List Items -->
 <fieldset class="module aligned">
     <h2>{% trans 'List Items' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
-    {% if type_data.items %}
+    {% if type_data.item_entries %}
+    <div class="results">
+        <table id="result_list" style="width: 100%;">
+            <thead>
+                <tr>
+                    <th scope="col" style="width: 60px;">{% trans 'Index' %}</th>
+                    <th scope="col">{% trans 'Value' %}</th>
+                    <th scope="col" style="width: 150px;">{% trans 'Actions' %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for index, item, sha1 in type_data.item_entries %}
+                <tr class="{% cycle 'row1' 'row2' %}">
+                    <td class="quiet">{{ index }}</td>
+                    <td>
+                        <input type="text" name="item_value" value="{{ item }}" class="vTextField" form="list-update-{{ forloop.counter0 }}" style="width: 100%; box-sizing: border-box;">
+                    </td>
+                    <td>
+                        <button type="submit" form="list-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
+                        <form method="post" style="display: inline;">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="lrem">
+                            <input type="hidden" name="item_value" value="{{ item }}">
+                            <button type="submit" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Remove this item?' %}');">{% trans 'Remove' %}</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <!-- Forms for list update operations (outside table for valid HTML) -->
+    {% for index, item, sha1 in type_data.item_entries %}
+    <form id="list-update-{{ forloop.counter0 }}" method="post" style="display: none;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="lset">
+        <input type="hidden" name="index" value="{{ index }}">
+        {% if sha1 %}<input type="hidden" name="original_sha1" value="{{ sha1 }}">{% endif %}
+    </form>
+    {% endfor %}
+    {% elif type_data.items %}
     <div class="results">
         <table id="result_list" style="width: 100%;">
             <thead>

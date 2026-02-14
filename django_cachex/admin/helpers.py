@@ -131,27 +131,62 @@ def get_type_data(cache: Any, key: str, key_type: str | None = None) -> dict[str
     if not key_type or key_type == KeyType.STRING:
         return {}
 
-    result: dict[str, Any] = {}
+    result = _fetch_type_data(cache, key, key_type)
+
+    # Add SHA1 fingerprints for CAS (compare-and-swap) protection.
+    if result and hasattr(cache, "eval_script"):
+        _add_cas_fingerprints(cache, key, key_type, result)
+
+    return result
+
+
+def _fetch_type_data(cache: Any, key: str, key_type: str) -> dict[str, Any]:
+    """Fetch raw type-specific data from cache."""
     try:
         match key_type:
             case KeyType.LIST:
                 items = [str(i) for i in cache.lrange(key, 0, -1)]
-                result = {"items": items, "length": len(items)}
+                return {"items": items, "length": len(items)}
             case KeyType.HASH:
                 fields = {str(k): str(v) for k, v in cache.hgetall(key).items()}
-                result = {"fields": fields, "length": len(fields)}
+                return {"fields": fields, "length": len(fields)}
             case KeyType.SET:
                 members = sorted(str(m) for m in cache.smembers(key))
-                result = {"members": members, "length": len(members)}
+                return {"members": members, "length": len(members)}
             case KeyType.ZSET:
                 zset_members = [(str(m), s) for m, s in cache.zrange(key, 0, -1, withscores=True)]
-                result = {"members": zset_members, "length": len(zset_members)}
+                return {"members": zset_members, "length": len(zset_members)}
             case KeyType.STREAM if hasattr(cache, "_cache") and hasattr(cache._cache, "xrange"):
                 entries = cache._cache.xrange(key, count=100)
-                result = {"entries": entries, "length": cache._cache.xlen(key)}
+                return {"entries": entries, "length": cache._cache.xlen(key)}
     except Exception:  # noqa: BLE001, S110
         pass
-    return result
+    return {}
+
+
+def _add_cas_fingerprints(cache: Any, key: str, key_type: str | None, result: dict[str, Any]) -> None:
+    """Add SHA1 fingerprints to type data for CAS protection.
+
+    Produces combined list structures usable in Django templates
+    (since templates can't do variable-key dict lookups).
+    """
+    try:
+        from django_cachex.admin.cas import get_hash_field_sha1s, get_list_sha1s
+
+        match key_type:
+            case KeyType.LIST:
+                list_sha1s = get_list_sha1s(cache, key)
+                items = result.get("items", [])
+                result["item_entries"] = [
+                    (i, item, list_sha1s[i] if i < len(list_sha1s) else "") for i, item in enumerate(items)
+                ]
+            case KeyType.HASH:
+                hash_sha1s = get_hash_field_sha1s(cache, key)
+                result["field_entries"] = [
+                    (field, value, hash_sha1s.get(field, "")) for field, value in result.get("fields", {}).items()
+                ]
+    except Exception:  # noqa: BLE001, S110
+        pass
 
 
 def get_size(cache: Any, key: str, key_type: str | None = None) -> int | None:

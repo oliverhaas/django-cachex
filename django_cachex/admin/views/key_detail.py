@@ -61,9 +61,23 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 with contextlib.suppress(json.JSONDecodeError, ValueError):
                     new_value = json.loads(new_value)
 
-                # Update value only (TTL is handled separately via set_ttl action)
-                cache.set(key, new_value, timeout=None)
-                messages.success(request, "Key updated successfully.")
+                original_sha1 = request.POST.get("original_sha1", "").strip()
+                if original_sha1 and hasattr(cache, "eval_script"):
+                    from django_cachex.admin.cas import cas_update_string
+
+                    cas_result = cas_update_string(cache, key, original_sha1, new_value)
+                    if cas_result == 1:
+                        messages.success(request, "Key updated successfully.")
+                    elif cas_result == 0:
+                        messages.warning(
+                            request,
+                            "Conflict: this value was modified since you loaded the page. Please refresh and try again.",
+                        )
+                    else:
+                        messages.error(request, "Key no longer exists.")
+                else:
+                    cache.set(key, new_value, timeout=None)
+                    messages.success(request, "Key updated successfully.")
                 return redirect(key_detail_url(cache_name, key))
             except Exception as e:  # noqa: BLE001
                 messages.error(request, str(e))
@@ -194,6 +208,34 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 messages.error(request, str(e))
             return redirect(key_detail_url(cache_name, key))
 
+        elif action == "lset":
+            try:
+                index = int(request.POST.get("index", "0"))
+                value = request.POST.get("item_value", "").strip()
+                original_sha1 = request.POST.get("original_sha1", "").strip()
+                if original_sha1 and hasattr(cache, "eval_script"):
+                    from django_cachex.admin.cas import cas_update_list_element
+
+                    cas_result = cas_update_list_element(cache, key, index, original_sha1, value)
+                    if cas_result == 1:
+                        messages.success(request, f"Updated element at index {index}.")
+                    elif cas_result == 0:
+                        messages.warning(
+                            request,
+                            f"Conflict: element at index {index} was modified since you loaded the page. "
+                            "Please refresh and try again.",
+                        )
+                    else:
+                        messages.error(request, f"Index {index} no longer exists.")
+                else:
+                    cache.lset(key, index, value)
+                    messages.success(request, f"Updated element at index {index}.")
+            except ValueError:
+                messages.error(request, "Index must be an integer.")
+            except Exception as e:  # noqa: BLE001
+                messages.error(request, str(e))
+            return redirect(key_detail_url(cache_name, key))
+
         # Set operations
         elif action == "sadd":
             member = request.POST.get("member_value", "").strip()
@@ -229,8 +271,24 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             value = request.POST.get("field_value", "").strip()
             if field:
                 try:
-                    cache.hset(key, field, value)
-                    messages.success(request, f"Set field '{field}'.")
+                    original_sha1 = request.POST.get("original_sha1", "").strip()
+                    if original_sha1 and hasattr(cache, "eval_script"):
+                        from django_cachex.admin.cas import cas_update_hash_field
+
+                        cas_result = cas_update_hash_field(cache, key, field, original_sha1, value)
+                        if cas_result == 1:
+                            messages.success(request, f"Updated field '{field}'.")
+                        elif cas_result == 0:
+                            messages.warning(
+                                request,
+                                f"Conflict: field '{field}' was modified since you loaded the page. "
+                                "Please refresh and try again.",
+                            )
+                        else:
+                            messages.error(request, f"Field '{field}' no longer exists.")
+                    else:
+                        cache.hset(key, field, value)
+                        messages.success(request, f"Set field '{field}'.")
                 except Exception as e:  # noqa: BLE001
                     messages.error(request, str(e))
             else:
@@ -254,19 +312,35 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         elif action == "zadd":
             member = request.POST.get("member_value", "").strip()
             score_str = request.POST.get("score_value", "").strip()
-            # Get ZADD flags
-            nx = request.POST.get("zadd_nx") == "on"
-            xx = request.POST.get("zadd_xx") == "on"
-            gt = request.POST.get("zadd_gt") == "on"
-            lt = request.POST.get("zadd_lt") == "on"
             if member and score_str:
                 try:
                     score = float(score_str)
-                    added = cache.zadd(key, {member: score}, nx=nx, xx=xx, gt=gt, lt=lt)
-                    if added:
-                        messages.success(request, f"Added '{member}' with score {score}.")
+                    original_score = request.POST.get("original_score", "").strip()
+                    if original_score and hasattr(cache, "eval_script"):
+                        from django_cachex.admin.cas import cas_update_zset_score
+
+                        cas_result = cas_update_zset_score(cache, key, member, original_score, score)
+                        if cas_result == 1:
+                            messages.success(request, f"Updated '{member}' score to {score}.")
+                        elif cas_result == 0:
+                            messages.warning(
+                                request,
+                                f"Conflict: score of '{member}' was modified since you loaded the page. "
+                                "Please refresh and try again.",
+                            )
+                        else:
+                            messages.error(request, f"Member '{member}' no longer exists.")
                     else:
-                        messages.success(request, f"Updated '{member}' score to {score}.")
+                        # New member add (no original_score) or non-CAS backend
+                        nx = request.POST.get("zadd_nx") == "on"
+                        xx = request.POST.get("zadd_xx") == "on"
+                        gt = request.POST.get("zadd_gt") == "on"
+                        lt = request.POST.get("zadd_lt") == "on"
+                        added = cache.zadd(key, {member: score}, nx=nx, xx=xx, gt=gt, lt=lt)
+                        if added:
+                            messages.success(request, f"Added '{member}' with score {score}.")
+                        else:
+                            messages.success(request, f"Updated '{member}' score to {score}.")
                 except ValueError:
                     messages.error(request, "Score must be a number.")
                 except Exception as e:  # noqa: BLE001
@@ -420,8 +494,14 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     # Get value for string keys (cache.get() only works for strings)
     raw_value = None
     value_is_editable = True
+    string_sha1 = None
     if key_exists and (not key_type or key_type == KeyType.STRING):
         raw_value = cache.get(key)
+        if hasattr(cache, "eval_script"):
+            with contextlib.suppress(Exception):
+                from django_cachex.admin.cas import get_string_sha1
+
+                string_sha1 = get_string_sha1(cache, key)
 
     if raw_value is not None:
         # Format value for display - JSON-serializable values are editable
@@ -456,6 +536,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             "create_mode": create_mode,
             "value_display": value_display,
             "value_is_editable": value_is_editable,
+            "string_sha1": string_sha1,
             "key_type": key_type,
             "ttl": ttl,
             "ttl_expires_at": ttl_expires_at,

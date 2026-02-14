@@ -16,7 +16,47 @@
 <!-- Hash Fields -->
 <fieldset class="module aligned">
     <h2>{% trans 'Hash Fields' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
-    {% if type_data.fields %}
+    {% if type_data.field_entries %}
+    <div class="results">
+        <table id="result_list" style="width: 100%;">
+            <thead>
+                <tr>
+                    <th scope="col">{% trans 'Field' %}</th>
+                    <th scope="col">{% trans 'Value' %}</th>
+                    <th scope="col" style="width: 150px;">{% trans 'Actions' %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for field, value, sha1 in type_data.field_entries %}
+                <tr class="{% cycle 'row1' 'row2' %}">
+                    <td><code>{{ field }}</code></td>
+                    <td>
+                        <input type="text" name="field_value" value="{{ value }}" class="vTextField" form="hash-update-{{ forloop.counter0 }}" style="width: 100%; box-sizing: border-box;">
+                    </td>
+                    <td>
+                        <button type="submit" form="hash-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
+                        <button type="submit" form="hash-delete-{{ forloop.counter0 }}" class="button delete-btn btn-small">{% trans 'Delete' %}</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <!-- Forms for hash operations (outside table for valid HTML) -->
+    {% for field, value, sha1 in type_data.field_entries %}
+    <form id="hash-update-{{ forloop.counter0 }}" method="post" style="display: none;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="hset">
+        <input type="hidden" name="field_name" value="{{ field }}">
+        {% if sha1 %}<input type="hidden" name="original_sha1" value="{{ sha1 }}">{% endif %}
+    </form>
+    <form id="hash-delete-{{ forloop.counter0 }}" method="post" style="display: none;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="hdel">
+        <input type="hidden" name="field" value="{{ field }}">
+    </form>
+    {% endfor %}
+    {% elif type_data.fields %}
     <div class="results">
         <table id="result_list" style="width: 100%;">
             <thead>
@@ -42,7 +82,6 @@
             </tbody>
         </table>
     </div>
-    <!-- Forms for hash operations (outside table for valid HTML) -->
     {% for field, value in type_data.fields.items %}
     <form id="hash-update-{{ forloop.counter0 }}" method="post" style="display: none;">
         {% csrf_token %}

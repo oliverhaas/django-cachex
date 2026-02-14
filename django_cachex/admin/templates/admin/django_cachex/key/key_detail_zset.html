@@ -70,6 +70,7 @@
         {% csrf_token %}
         <input type="hidden" name="action" value="zadd">
         <input type="hidden" name="member_value" value="{{ member }}">
+        <input type="hidden" name="original_score" value="{{ score }}">
     </form>
     <form id="zset-remove-{{ forloop.counter0 }}" method="post" style="display: none;">
         {% csrf_token %}
