@@ -48,4 +48,4 @@ jobs:
       - name: Deploy docs (main branch)
         if: github.ref == 'refs/heads/main'
         run: |
-          uv run mike deploy --push dev
+          uv run mike deploy --push main
