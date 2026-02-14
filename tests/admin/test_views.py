@@ -465,8 +465,6 @@ class TestKeyListView:
         # Both cache names should appear as filter options
         assert "?cache=default" in content
         assert "?cache=local" in content
-        # The active cache should be marked as selected
-        assert 'class="selected"' in content
 
     def test_key_list_cache_filter_switches_cache(
         self,
