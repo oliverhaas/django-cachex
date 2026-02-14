@@ -1,0 +1,20 @@
+{% load i18n %}
+{% if type_data.pagination and type_data.pagination.total_pages > 1 %}
+<nav class="paginator" style="padding: 10px 0;">
+    <ul>
+        {% if type_data.pagination.has_previous %}
+        <li><a href="?page=1" class="button btn-small">{% trans 'First' %}</a></li>
+        <li><a href="?page={{ type_data.pagination.previous_page }}" class="button btn-small">{% trans 'Previous' %}</a></li>
+        {% endif %}
+        <li class="quiet" style="padding: 6px 0;">
+            {% blocktrans with page=type_data.pagination.page total_pages=type_data.pagination.total_pages total=type_data.pagination.total %}
+            Page {{ page }} of {{ total_pages }} ({{ total }} total)
+            {% endblocktrans %}
+        </li>
+        {% if type_data.pagination.has_next %}
+        <li><a href="?page={{ type_data.pagination.next_page }}" class="button btn-small">{% trans 'Next' %}</a></li>
+        <li><a href="?page={{ type_data.pagination.total_pages }}" class="button btn-small">{% trans 'Last' %}</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}

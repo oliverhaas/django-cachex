@@ -37,6 +37,18 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     """Display details of a specific cache key and handle mutations."""
     cache = get_cache(cache_name)
 
+    # Read pagination state (query string is preserved on POST to current URL)
+    try:
+        page = max(1, int(request.GET.get("page", 1)))
+    except (ValueError, TypeError):
+        page = 1
+
+    def _redirect_to_key() -> HttpResponse:
+        url = key_detail_url(cache_name, key)
+        if page > 1:
+            url += f"?page={page}"
+        return redirect(url)
+
     # Handle POST requests (update or delete)
     if request.method == "POST":
         action = request.POST.get("action")
@@ -78,7 +90,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 else:
                     cache.set(key, new_value, timeout=None)
                     messages.success(request, "Key updated successfully.")
-                return redirect(key_detail_url(cache_name, key))
+                return _redirect_to_key()
             except Exception as e:  # noqa: BLE001
                 messages.error(request, str(e))
 
@@ -99,7 +111,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                         messages.success(request, f"TTL set to {ttl_int} seconds.")
                     else:
                         messages.error(request, "Key does not exist or TTL could not be set.")
-                return redirect(key_detail_url(cache_name, key))
+                return _redirect_to_key()
             except ValueError:
                 messages.error(request, "Invalid TTL value. Must be a number.")
             except Exception as e:  # noqa: BLE001
@@ -111,7 +123,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.success(request, "TTL removed. Key will not expire.")
                 else:
                     messages.error(request, "Key does not exist or has no TTL.")
-                return redirect(key_detail_url(cache_name, key))
+                return _redirect_to_key()
             except Exception as e:  # noqa: BLE001
                 messages.error(request, f"Error removing TTL: {e!s}")
 
@@ -132,7 +144,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.success(request, f"Popped {len(result)} item(s): {result}")
             except Exception as e:  # noqa: BLE001
                 messages.error(request, str(e))
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
         elif action == "rpop":
             count = 1
@@ -150,7 +162,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.success(request, f"Popped {len(result)} item(s): {result}")
             except Exception as e:  # noqa: BLE001
                 messages.error(request, str(e))
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
         elif action == "lpush":
             value = request.POST.get("push_value", "").strip()
@@ -162,7 +174,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.error(request, str(e))
             else:
                 messages.error(request, "Value is required.")
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
         elif action == "rpush":
             value = request.POST.get("push_value", "").strip()
@@ -174,7 +186,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.error(request, str(e))
             else:
                 messages.error(request, "Value is required.")
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
         elif action == "lrem":
             value = request.POST.get("item_value", "").strip()
@@ -194,7 +206,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.error(request, str(e))
             else:
                 messages.error(request, "Value is required.")
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
         elif action == "ltrim":
             try:
@@ -206,7 +218,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 messages.error(request, "Start and stop must be integers.")
             except Exception as e:  # noqa: BLE001
                 messages.error(request, str(e))
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
         elif action == "lset":
             try:
@@ -234,7 +246,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 messages.error(request, "Index must be an integer.")
             except Exception as e:  # noqa: BLE001
                 messages.error(request, str(e))
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
         # Set operations
         elif action == "sadd":
@@ -250,7 +262,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.error(request, str(e))
             else:
                 messages.error(request, "Member is required.")
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
         elif action == "srem":
             member = request.POST.get("member", "").strip()
@@ -263,7 +275,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                         messages.warning(request, f"'{member}' not found in set.")
                 except Exception as e:  # noqa: BLE001
                     messages.error(request, str(e))
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
         # Hash operations
         elif action == "hset":
@@ -293,7 +305,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.error(request, str(e))
             else:
                 messages.error(request, "Field name is required.")
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
         elif action == "hdel":
             field = request.POST.get("field", "").strip()
@@ -306,7 +318,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                         messages.warning(request, f"Field '{field}' not found.")
                 except Exception as e:  # noqa: BLE001
                     messages.error(request, str(e))
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
         # Sorted set operations
         elif action == "zadd":
@@ -347,7 +359,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.error(request, str(e))
             else:
                 messages.error(request, "Member and score are required.")
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
         elif action == "zrem":
             member = request.POST.get("member", "").strip()
@@ -360,7 +372,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                         messages.warning(request, f"'{member}' not found in sorted set.")
                 except Exception as e:  # noqa: BLE001
                     messages.error(request, str(e))
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
         # Set pop operation
         elif action == "spop":
@@ -379,7 +391,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.success(request, f"Popped {len(result)} member(s): {result}")
             except Exception as e:  # noqa: BLE001
                 messages.error(request, str(e))
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
         # Sorted set pop operations
         elif action == "zpopmin":
@@ -396,7 +408,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.success(request, f"Popped {len(result)} member(s): {', '.join(members)}")
             except Exception as e:  # noqa: BLE001
                 messages.error(request, str(e))
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
         elif action == "zpopmax":
             pop_count = int(request.POST.get("pop_count", 1) or 1)
@@ -412,7 +424,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.success(request, f"Popped {len(result)} member(s): {', '.join(members)}")
             except Exception as e:  # noqa: BLE001
                 messages.error(request, str(e))
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
         # Stream operations
         elif action == "xadd":
@@ -426,7 +438,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.error(request, str(e))
             else:
                 messages.error(request, "Field name and value are required.")
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
         elif action == "xdel":
             entry_id = request.POST.get("entry_id", "").strip()
@@ -441,7 +453,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.error(request, str(e))
             else:
                 messages.error(request, "Entry ID is required.")
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
         elif action == "xtrim":
             maxlen_str = request.POST.get("maxlen", "").strip()
@@ -456,7 +468,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     messages.error(request, str(e))
             else:
                 messages.error(request, "Max length is required.")
-            return redirect(key_detail_url(cache_name, key))
+            return _redirect_to_key()
 
     # GET request - display the key
     key_exists = cache.has_key(key)
@@ -486,7 +498,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 ttl_expires_at = timezone.now() + timedelta(seconds=ttl)
         # Get type-specific data for non-string types
         if key_type and key_type != KeyType.STRING:
-            type_data = get_type_data(cache, key, key_type)
+            type_data = get_type_data(cache, key, key_type, page=page)
     elif create_mode:
         # In create mode, use the type from query param
         key_type = create_type

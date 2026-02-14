@@ -12,7 +12,9 @@ from django_cachex.admin.cas import (
     cas_update_string,
     cas_update_zset_score,
     get_hash_field_sha1s,
+    get_hash_field_sha1s_for,
     get_list_sha1s,
+    get_list_sha1s_range,
     get_string_sha1,
 )
 
@@ -268,3 +270,67 @@ class TestCASListElementUpdate:
         assert result == 1
 
         assert test_cache.lrange("cas_list", 0, -1) == ["FIRST", "middle", "LAST"]
+
+
+class TestListSHA1sRange:
+    """Test range-based list SHA1 fingerprinting."""
+
+    def test_range_matches_full(self, test_cache: KeyValueCache):
+        test_cache.rpush("range_list", "a", "b", "c", "d", "e")
+        full = get_list_sha1s(test_cache, "range_list")
+        subset = get_list_sha1s_range(test_cache, "range_list", 1, 3)
+        assert subset == full[1:4]
+
+    def test_range_first_page(self, test_cache: KeyValueCache):
+        test_cache.rpush("range_list", "a", "b", "c", "d", "e")
+        sha1s = get_list_sha1s_range(test_cache, "range_list", 0, 2)
+        assert len(sha1s) == 3
+        assert all(len(s) == 40 for s in sha1s)
+
+    def test_range_last_elements(self, test_cache: KeyValueCache):
+        test_cache.rpush("range_list", "a", "b", "c")
+        sha1s = get_list_sha1s_range(test_cache, "range_list", 2, 2)
+        assert len(sha1s) == 1
+
+    def test_range_empty(self, test_cache: KeyValueCache):
+        sha1s = get_list_sha1s_range(test_cache, "nonexistent", 0, 99)
+        assert sha1s == []
+
+    def test_range_beyond_length(self, test_cache: KeyValueCache):
+        test_cache.rpush("range_list", "a", "b")
+        sha1s = get_list_sha1s_range(test_cache, "range_list", 0, 99)
+        assert len(sha1s) == 2
+
+
+class TestHashFieldSHA1sFor:
+    """Test field-specific hash SHA1 fingerprinting."""
+
+    def test_specific_fields(self, test_cache: KeyValueCache):
+        test_cache.hset("hash_key", "f1", "v1")
+        test_cache.hset("hash_key", "f2", "v2")
+        test_cache.hset("hash_key", "f3", "v3")
+        sha1s = get_hash_field_sha1s_for(test_cache, "hash_key", ["f1", "f3"])
+        assert len(sha1s) == 2
+        assert "f1" in sha1s
+        assert "f3" in sha1s
+        assert "f2" not in sha1s
+
+    def test_matches_full_fetch(self, test_cache: KeyValueCache):
+        test_cache.hset("hash_key", "f1", "v1")
+        test_cache.hset("hash_key", "f2", "v2")
+        full = get_hash_field_sha1s(test_cache, "hash_key")
+        specific = get_hash_field_sha1s_for(test_cache, "hash_key", ["f1", "f2"])
+        assert specific == full
+
+    def test_nonexistent_fields(self, test_cache: KeyValueCache):
+        test_cache.hset("hash_key", "f1", "v1")
+        sha1s = get_hash_field_sha1s_for(test_cache, "hash_key", ["missing"])
+        assert sha1s == {}
+
+    def test_empty_fields_list(self, test_cache: KeyValueCache):
+        sha1s = get_hash_field_sha1s_for(test_cache, "hash_key", [])
+        assert sha1s == {}
+
+    def test_nonexistent_key(self, test_cache: KeyValueCache):
+        sha1s = get_hash_field_sha1s_for(test_cache, "nonexistent", ["f1"])
+        assert sha1s == {}

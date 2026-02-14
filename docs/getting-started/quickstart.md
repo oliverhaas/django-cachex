@@ -43,15 +43,6 @@ Two ways to specify the database number:
 1. Query string: `valkey://localhost?db=0`
 2. Path (for `valkey://` or `redis://` scheme): `valkey://localhost/0`
 
-## Configure as Session Backend
-
-Use django-cachex as a session backend:
-
-```python
-SESSION_ENGINE = "django.contrib.sessions.backends.cache"
-SESSION_CACHE_ALIAS = "default"
-```
-
 ## Basic Usage
 
 ```python

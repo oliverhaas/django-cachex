@@ -120,7 +120,36 @@ def get_metadata(cache: Any, cache_config: Mapping[str, Any]) -> dict[str, Any]:
     return base_info
 
 
-def get_type_data(cache: Any, key: str, key_type: str | None = None) -> dict[str, Any]:
+PAGE_SIZE = 100
+
+
+def _paginate(total: int, page: int) -> dict[str, Any]:
+    """Compute pagination metadata."""
+    total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * PAGE_SIZE
+    end = min(start + PAGE_SIZE, total)
+    return {
+        "page": page,
+        "page_size": PAGE_SIZE,
+        "total": total,
+        "total_pages": total_pages,
+        "has_previous": page > 1,
+        "has_next": page < total_pages,
+        "previous_page": page - 1 if page > 1 else None,
+        "next_page": page + 1 if page < total_pages else None,
+        "start_index": start,
+        "end_index": end,
+    }
+
+
+def get_type_data(
+    cache: Any,
+    key: str,
+    key_type: str | None = None,
+    *,
+    page: int = 1,
+) -> dict[str, Any]:
     """Get type-specific data for a key."""
     try:
         if key_type is None:
@@ -131,7 +160,7 @@ def get_type_data(cache: Any, key: str, key_type: str | None = None) -> dict[str
     if not key_type or key_type == KeyType.STRING:
         return {}
 
-    result = _fetch_type_data(cache, key, key_type)
+    result = _fetch_type_data(cache, key, key_type, page=page)
 
     # Add SHA1 fingerprints for CAS (compare-and-swap) protection.
     if result and hasattr(cache, "eval_script"):
@@ -140,25 +169,46 @@ def get_type_data(cache: Any, key: str, key_type: str | None = None) -> dict[str
     return result
 
 
-def _fetch_type_data(cache: Any, key: str, key_type: str) -> dict[str, Any]:
-    """Fetch raw type-specific data from cache."""
+def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> dict[str, Any]:
+    """Fetch type-specific data from cache, paginated."""
     try:
         match key_type:
             case KeyType.LIST:
-                items = [str(i) for i in cache.lrange(key, 0, -1)]
-                return {"items": items, "length": len(items)}
+                length = cache.llen(key)
+                pagination = _paginate(length, page)
+                start = pagination["start_index"]
+                stop = pagination["end_index"] - 1  # LRANGE stop is inclusive
+                items = [str(i) for i in cache.lrange(key, start, stop)]
+                # Pre-build item_entries with offset-aware indices (CAS overwrites with SHA1s)
+                item_entries = [(start + i, item, "") for i, item in enumerate(items)]
+                return {"items": items, "length": length, "pagination": pagination, "item_entries": item_entries}
             case KeyType.HASH:
                 fields = {str(k): str(v) for k, v in cache.hgetall(key).items()}
-                return {"fields": fields, "length": len(fields)}
+                length = len(fields)
+                pagination = _paginate(length, page)
+                s, e = pagination["start_index"], pagination["end_index"]
+                sliced = dict(list(fields.items())[s:e])
+                return {"fields": sliced, "length": length, "pagination": pagination}
             case KeyType.SET:
                 members = sorted(str(m) for m in cache.smembers(key))
-                return {"members": members, "length": len(members)}
+                length = len(members)
+                pagination = _paginate(length, page)
+                s, e = pagination["start_index"], pagination["end_index"]
+                return {"members": members[s:e], "length": length, "pagination": pagination}
             case KeyType.ZSET:
-                zset_members = [(str(m), s) for m, s in cache.zrange(key, 0, -1, withscores=True)]
-                return {"members": zset_members, "length": len(zset_members)}
+                length = cache.zcard(key)
+                pagination = _paginate(length, page)
+                start = pagination["start_index"]
+                stop = pagination["end_index"] - 1  # ZRANGE stop is inclusive
+                zset_members = [(str(m), s) for m, s in cache.zrange(key, start, stop, withscores=True)]
+                return {"members": zset_members, "length": length, "pagination": pagination}
             case KeyType.STREAM if hasattr(cache, "_cache") and hasattr(cache._cache, "xrange"):
-                entries = cache._cache.xrange(key, count=100)
-                return {"entries": entries, "length": cache._cache.xlen(key)}
+                length = cache._cache.xlen(key)
+                pagination = _paginate(length, page)
+                # Fetch up to page*PAGE_SIZE entries and slice to the last page
+                entries = cache._cache.xrange(key, count=pagination["end_index"])
+                sliced = entries[pagination["start_index"] :]
+                return {"entries": sliced, "length": length, "pagination": pagination}
     except Exception:  # noqa: BLE001, S110
         pass
     return {}
@@ -171,20 +221,35 @@ def _add_cas_fingerprints(cache: Any, key: str, key_type: str | None, result: di
     (since templates can't do variable-key dict lookups).
     """
     try:
-        from django_cachex.admin.cas import get_hash_field_sha1s, get_list_sha1s
-
+        pagination = result.get("pagination")
         match key_type:
             case KeyType.LIST:
-                list_sha1s = get_list_sha1s(cache, key)
+                if pagination:
+                    from django_cachex.admin.cas import get_list_sha1s_range
+
+                    start = pagination["start_index"]
+                    stop = pagination["end_index"] - 1  # inclusive for LRANGE
+                    list_sha1s = get_list_sha1s_range(cache, key, start, stop)
+                else:
+                    from django_cachex.admin.cas import get_list_sha1s
+
+                    list_sha1s = get_list_sha1s(cache, key)
                 items = result.get("items", [])
+                offset = pagination["start_index"] if pagination else 0
                 result["item_entries"] = [
-                    (i, item, list_sha1s[i] if i < len(list_sha1s) else "") for i, item in enumerate(items)
+                    (offset + i, item, list_sha1s[i] if i < len(list_sha1s) else "") for i, item in enumerate(items)
                 ]
             case KeyType.HASH:
-                hash_sha1s = get_hash_field_sha1s(cache, key)
-                result["field_entries"] = [
-                    (field, value, hash_sha1s.get(field, "")) for field, value in result.get("fields", {}).items()
-                ]
+                fields = result.get("fields", {})
+                if pagination and fields:
+                    from django_cachex.admin.cas import get_hash_field_sha1s_for
+
+                    hash_sha1s = get_hash_field_sha1s_for(cache, key, list(fields.keys()))
+                else:
+                    from django_cachex.admin.cas import get_hash_field_sha1s
+
+                    hash_sha1s = get_hash_field_sha1s(cache, key)
+                result["field_entries"] = [(field, value, hash_sha1s.get(field, "")) for field, value in fields.items()]
     except Exception:  # noqa: BLE001, S110
         pass
 
