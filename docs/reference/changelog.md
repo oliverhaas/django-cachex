@@ -1,9 +1,18 @@
 # Changelog
 
+## 0.3.0 (February 2026)
+
+- **`expiretime()` and `set(get=True)` support**: New cache methods for retrieving absolute expiry timestamps and atomic get-and-set operations.
+- **Atomic CAS operations in admin**: Key detail edits use compare-and-swap via Lua-computed SHA1 fingerprints to prevent concurrent edit conflicts.
+- **Key detail pagination**: Collection types (list, hash, set, zset, stream) are paginated at 100 items per page with `?page=N` navigation.
+- **Keys in admin sidebar**: The key list is now a first-class sidebar entry with a cache filter for switching between configured caches.
+- **Simplified Lua script execution**: `eval_script()` replaces the `register_script`/`LuaScript` registry with direct `EVAL` calls; redis-py handles script caching.
+
+---
+
 ## 0.2.0 (February 2026)
 
 - **Django permissions enforced**: The admin now uses Django's built-in permission system for granular access control. Staff users need explicit permissions; superusers are unaffected.
-- **Keys in admin sidebar**: The key list is now accessible directly from the Django admin sidebar. A cache filter lets you switch between configured caches.
 
 ---
 
