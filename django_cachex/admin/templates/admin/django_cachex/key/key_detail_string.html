@@ -11,6 +11,7 @@
     <form method="post" id="key-form">
         {% csrf_token %}
         <input type="hidden" name="action" value="update">
+        {% if string_sha1 %}<input type="hidden" name="original_sha1" value="{{ string_sha1 }}">{% endif %}
         <div class="form-row">
             <div>
                 <label for="id_value" class="{% if not value_is_editable %}readonly{% endif %}">{% trans 'Value:' %}</label>
