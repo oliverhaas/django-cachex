@@ -3,6 +3,7 @@
 ## 0.2.0 (February 2026)
 
 - **Django permissions enforced**: The admin now uses Django's built-in permission system for granular access control. Staff users need explicit permissions; superusers are unaffected.
+- **Keys in admin sidebar**: The key list is now accessible directly from the Django admin sidebar. A cache filter lets you switch between configured caches.
 
 ---
 

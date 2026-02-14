@@ -8,6 +8,7 @@ import contextlib
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
+from django.conf import settings
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect, render
@@ -74,6 +75,7 @@ def _key_list_view(  # noqa: C901, PLR0912, PLR0915
         {
             "title": f"Keys in '{cache_name}'",
             "cache_name": cache_name,
+            "cache_names": list(settings.CACHES.keys()),
             "help_active": help_active,
             "type_filter": type_filter,
             "key_types": KEY_TYPES,

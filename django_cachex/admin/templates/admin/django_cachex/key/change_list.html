@@ -70,9 +70,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
     <div class="module{% if type_filter %} filtered{% endif %}" id="changelist">
         <div class="changelist-form-container">
-            {% if key_types %}
             <search id="changelist-filter" aria-labelledby="changelist-filter-header">
                 <h2 id="changelist-filter-header">{% trans 'Filter' %}</h2>
+                {% if cache_names|length > 1 %}
+                <details data-filter-title="cache" open>
+                    <summary>{% trans 'By Cache' %}</summary>
+                    <ul>
+                        {% for cn in cache_names %}
+                        <li{% if cache_name == cn %} class="selected"{% endif %}>
+                            <a href="?cache={{ cn }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if type_filter %}&type={{ type_filter }}{% endif %}">{{ cn }}</a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </details>
+                {% endif %}
+                {% if key_types %}
                 <details data-filter-title="type" open>
                     <summary>{% trans 'By Type' %}</summary>
                     <ul>
@@ -86,8 +98,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         {% endfor %}
                     </ul>
                 </details>
+                {% endif %}
             </search>
-            {% endif %}
 
             <div>
                 {% if error %}

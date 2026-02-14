@@ -60,7 +60,7 @@
                            class="bg-white border-base-200 hover:text-primary-600 dark:bg-base-900 dark:border-base-700 dark:hover:text-primary-500 border cursor-pointer flex font-medium gap-2 items-center px-3 py-2 rounded-default shadow-xs text-sm">
                             {% trans 'Help' %}
                         </a>
-                        {% if key_types %}
+                        {% if key_types or cache_names|length > 1 %}
                         <a class="bg-white border-base-200 hover:text-primary-600 dark:bg-base-900 dark:border-base-700 dark:hover:text-primary-500 border cursor-pointer flex font-medium gap-2 group items-center px-3 py-2 rounded-default shadow-xs text-sm" x-on:click="filterOpen = true" x-on:keydown.escape.window="filterOpen = false">
                             {% trans 'Filters' %}
                             <span class="material-symbols-outlined md-18 ml-auto">filter_list</span>
@@ -214,7 +214,6 @@
             </div>
         </div>
 
-                {% if key_types %}
                 <div id="changelist-filter" class="backdrop-blur-xs bg-base-900/80 flex inset-0 z-60 fixed" x-show="filterOpen" x-cloak>
                     <div id="changelist-filter-close" class="grow" x-on:click="filterOpen = false"></div>
                     <div class="bg-white flex m-4 overflow-hidden rounded-default shadow-xs w-80 dark:bg-base-800">
@@ -222,6 +221,23 @@
                             <div class="flex flex-col h-full">
                                 <div class="flex flex-col grow gap-4 overflow-auto *:mb-0">
                                     <div class="flex flex-col gap-4 px-3 py-2.5 *:mb-0">
+                                        {% if cache_names|length > 1 %}
+                                        <div>
+                                            <h3 class="font-semibold mb-2 text-font-important-light dark:text-font-important-dark">
+                                                {% trans 'By cache' %}
+                                            </h3>
+                                            <ul class="flex flex-col dark:bg-base-900 border border-base-200 min-w-20 rounded-default shadow-xs text-font-default-light dark:border-base-700 dark:text-font-default-dark w-full">
+                                                {% for cn in cache_names %}
+                                                <li class="border-b border-base-200 last:border-b-0 dark:border-base-700 {% if cache_name == cn %}font-semibold text-primary-600 dark:text-primary-500{% else %}hover:text-base-700 dark:hover:text-base-200{% endif %}">
+                                                    <a href="?cache={{ cn }}{% if search_query %}&amp;q={{ search_query|urlencode }}{% endif %}{% if type_filter %}&amp;type={{ type_filter }}{% endif %}" title="{{ cn }}" class="block py-2 px-3 hover:text-primary-600 dark:hover:text-primary-500">
+                                                        {{ cn }}
+                                                    </a>
+                                                </li>
+                                                {% endfor %}
+                                            </ul>
+                                        </div>
+                                        {% endif %}
+                                        {% if key_types %}
                                         <div>
                                             <h3 class="font-semibold mb-2 text-font-important-light dark:text-font-important-dark">
                                                 {% trans 'By type' %}
@@ -241,13 +257,13 @@
                                                 {% endfor %}
                                             </ul>
                                         </div>
+                                        {% endif %}
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
-                {% endif %}
 
     </div>
 </div>

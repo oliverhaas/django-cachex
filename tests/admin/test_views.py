@@ -451,6 +451,52 @@ class TestKeyListView:
         # Should not show the list key
         assert "typefilter:lst" not in content
 
+    def test_key_list_cache_filter_shown(
+        self,
+        admin_client: Client,
+        test_cache: KeyValueCache,
+    ):
+        """Cache filter should render when multiple caches are configured."""
+        url = _key_list_url("default")
+        response = admin_client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "By Cache" in content
+        # Both cache names should appear as filter options
+        assert "?cache=default" in content
+        assert "?cache=local" in content
+        # The active cache should be marked as selected
+        assert 'class="selected"' in content
+
+    def test_key_list_cache_filter_switches_cache(
+        self,
+        admin_client: Client,
+        test_cache: KeyValueCache,
+    ):
+        """Selecting a different cache in the filter should switch the view."""
+        from django.core.cache import caches
+
+        caches["local"].set("localonly:key", "localvalue")
+        url = _key_list_url("local")
+        response = admin_client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "localonly:key" in content
+        assert "Keys in &#x27;local&#x27;" in content
+
+    def test_key_list_no_cache_param_defaults_to_first(
+        self,
+        admin_client: Client,
+        test_cache: KeyValueCache,
+    ):
+        """Key list without ?cache= should default to the first configured cache."""
+        url = reverse("admin:django_cachex_key_changelist")
+        response = admin_client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        # Should default to "default" (first cache in settings.CACHES)
+        assert "Keys in" in content
+
 
 class TestKeyDetailView:
     """Tests for the key detail view."""
@@ -2181,8 +2227,8 @@ class TestCacheAdmin:
 class TestKeyAdminPermissions:
     """Test KeyAdmin permission methods with Django's permission system."""
 
-    def test_module_permission_always_false(self, admin_user, test_cache):
-        """KeyAdmin should always hide from sidebar."""
+    def test_module_permission_true(self, admin_user, test_cache):
+        """KeyAdmin should be visible in sidebar."""
         from django.contrib.admin import site
         from django.test import RequestFactory
 
@@ -2194,7 +2240,7 @@ class TestKeyAdminPermissions:
         request = factory.get("/admin/")
         request.user = admin_user
 
-        assert key_admin.has_module_permission(request) is False
+        assert key_admin.has_module_permission(request) is True
 
     def test_superuser_has_all_key_permissions(self, admin_user, test_cache):
         """Superusers should have all key permissions."""

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from django.conf import settings
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseRedirect
@@ -114,7 +115,7 @@ class CacheAdmin(_CacheBase):
 
 @admin.register(Key)
 class KeyAdmin(_KeyBase):
-    """Admin for cache keys, accessed via CacheAdmin and hidden from the sidebar."""
+    """Admin for cache keys."""
 
     _cachex_help_messages: ClassVar[dict[str, str]] = {
         "key_list": mark_safe(
@@ -225,9 +226,8 @@ class KeyAdmin(_KeyBase):
         ),
     }
 
-    # Hide from sidebar — accessed via Cache
     def has_module_permission(self, request: HttpRequest) -> bool:
-        return False
+        return True
 
     def get_urls(self) -> list:
         """Add custom URL patterns for key operations."""
@@ -255,7 +255,7 @@ class KeyAdmin(_KeyBase):
 
         from .views.key_list import _key_list_view
 
-        cache_name = request.GET.get("cache", "default")
+        cache_name = request.GET.get("cache") or next(iter(settings.CACHES))
 
         # Verify cache exists
         if Cache.get_by_name(cache_name) is None:
@@ -301,7 +301,7 @@ class KeyAdmin(_KeyBase):
 
         from .views.key_add import _key_add_view
 
-        cache_name = request.GET.get("cache", "default")
+        cache_name = request.GET.get("cache") or next(iter(settings.CACHES))
 
         if Cache.get_by_name(cache_name) is None:
             messages.error(request, f"Cache '{cache_name}' not found.")
