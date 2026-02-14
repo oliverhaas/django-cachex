@@ -887,6 +887,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#030-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.3.0 (February 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#020-february-2026" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1163,6 +1174,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#030-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.3.0 (February 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#020-february-2026" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1417,10 +1439,18 @@
 
 
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
+<h2 id="030-february-2026">0.3.0 (February 2026)<a class="headerlink" href="#030-february-2026" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong><code>expiretime()</code> and <code>set(get=True)</code> support</strong>: New cache methods for retrieving absolute expiry timestamps and atomic get-and-set operations.</li>
+<li><strong>Atomic CAS operations in admin</strong>: Key detail edits use compare-and-swap via Lua-computed SHA1 fingerprints to prevent concurrent edit conflicts.</li>
+<li><strong>Key detail pagination</strong>: Collection types (list, hash, set, zset, stream) are paginated at 100 items per page with <code>?page=N</code> navigation.</li>
+<li><strong>Keys in admin sidebar</strong>: The key list is now a first-class sidebar entry with a cache filter for switching between configured caches.</li>
+<li><strong>Simplified Lua script execution</strong>: <code>eval_script()</code> replaces the <code>register_script</code>/<code>LuaScript</code> registry with direct <code>EVAL</code> calls; redis-py handles script caching.</li>
+</ul>
+<hr />
 <h2 id="020-february-2026">0.2.0 (February 2026)<a class="headerlink" href="#020-february-2026" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Django permissions enforced</strong>: The admin now uses Django's built-in permission system for granular access control. Staff users need explicit permissions; superusers are unaffected.</li>
-<li><strong>Keys in admin sidebar</strong>: The key list is now accessible directly from the Django admin sidebar. A cache filter lets you switch between configured caches.</li>
 </ul>
 <hr />
 <h2 id="010-february-2026">0.1.0 (February 2026)<a class="headerlink" href="#010-february-2026" title="Permanent link">&para;</a></h2>
