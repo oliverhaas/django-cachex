@@ -1,0 +1,2182 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Full featured Redis and Valkey cache backend for Django">
+      
+      
+      
+        <link rel="canonical" href="https://oliverhaas.github.io/django-cachex/0.3.0/reference/api/">
+      
+      
+        <link rel="prev" href="../../migration/">
+      
+      
+        <link rel="next" href="../changelog/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>API - Django CacheX</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="red" data-md-color-accent="red">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#api-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Django CacheX" class="md-header__button md-logo" aria-label="Django CacheX" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Django CacheX
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              API
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="red" data-md-color-accent="red"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="red" data-md-color-accent="red"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/oliverhaas/django-cachex" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    oliverhaas/django-cachex
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Django CacheX" class="md-nav__button md-logo" aria-label="Django CacheX" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Django CacheX
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/oliverhaas/django-cachex" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    oliverhaas/django-cachex
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/admin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cache Admin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/async/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Async Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/serializers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serializers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/compression/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compression
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/sentinel/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sentinel
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#cache-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache Methods
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Cache Methods">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#standard-django-cache-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standard Django Cache Methods
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extended-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extended Methods
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hash-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hash Methods
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#set-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Set Methods
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sorted-set-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sorted Set Methods
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#list-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        List Methods
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lua-script-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lua Script Methods
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Lua Script Methods">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#eval_script-aeval_script" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        eval_script / aeval_script
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pre-built-hooks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-built Hooks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scripthelpers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ScriptHelpers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#set-method-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Set Method Options
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#async-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Async Methods
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#raw-client-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Raw Client Access
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lock-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lock Interface
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pipelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pipelines
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings Reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Settings Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cache-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache OPTIONS
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#cache-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache Methods
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Cache Methods">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#standard-django-cache-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standard Django Cache Methods
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extended-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extended Methods
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hash-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hash Methods
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#set-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Set Methods
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sorted-set-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sorted Set Methods
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#list-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        List Methods
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lua-script-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lua Script Methods
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Lua Script Methods">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#eval_script-aeval_script" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        eval_script / aeval_script
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pre-built-hooks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-built Hooks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scripthelpers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ScriptHelpers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#set-method-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Set Method Options
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#async-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Async Methods
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#raw-client-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Raw Client Access
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lock-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lock Interface
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pipelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pipelines
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings Reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Settings Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cache-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache OPTIONS
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h1>
+<h2 id="cache-methods">Cache Methods<a class="headerlink" href="#cache-methods" title="Permanent link">&para;</a></h2>
+<h3 id="standard-django-cache-methods">Standard Django Cache Methods<a class="headerlink" href="#standard-django-cache-methods" title="Permanent link">&para;</a></h3>
+<p>All standard Django cache methods are supported:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>get(key, default=None)</code></td>
+<td>Get a value</td>
+</tr>
+<tr>
+<td><code>set(key, value, timeout=DEFAULT)</code></td>
+<td>Set a value</td>
+</tr>
+<tr>
+<td><code>add(key, value, timeout=DEFAULT)</code></td>
+<td>Set only if key doesn't exist</td>
+</tr>
+<tr>
+<td><code>delete(key)</code></td>
+<td>Delete a key</td>
+</tr>
+<tr>
+<td><code>touch(key, timeout=DEFAULT)</code></td>
+<td>Update timeout on a key</td>
+</tr>
+<tr>
+<td><code>get_many(keys)</code></td>
+<td>Get multiple values</td>
+</tr>
+<tr>
+<td><code>set_many(mapping, timeout=DEFAULT)</code></td>
+<td>Set multiple values</td>
+</tr>
+<tr>
+<td><code>delete_many(keys)</code></td>
+<td>Delete multiple keys</td>
+</tr>
+<tr>
+<td><code>get_or_set(key, default, timeout=DEFAULT)</code></td>
+<td>Get value or set default</td>
+</tr>
+<tr>
+<td><code>clear()</code></td>
+<td>Clear the cache</td>
+</tr>
+<tr>
+<td><code>has_key(key)</code></td>
+<td>Check if key exists</td>
+</tr>
+<tr>
+<td><code>incr(key, delta=1)</code></td>
+<td>Increment a value</td>
+</tr>
+<tr>
+<td><code>decr(key, delta=1)</code></td>
+<td>Decrement a value</td>
+</tr>
+<tr>
+<td><code>incr_version(key, delta=1)</code></td>
+<td>Increment key version</td>
+</tr>
+<tr>
+<td><code>decr_version(key, delta=1)</code></td>
+<td>Decrement key version</td>
+</tr>
+<tr>
+<td><code>close()</code></td>
+<td>Close connections</td>
+</tr>
+</tbody>
+</table>
+<h3 id="extended-methods">Extended Methods<a class="headerlink" href="#extended-methods" title="Permanent link">&para;</a></h3>
+<p>django-cachex adds these extended methods:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ttl(key)</code></td>
+<td>Get TTL in seconds (<code>None</code> = no expiry, <code>-2</code> = not found)</td>
+</tr>
+<tr>
+<td><code>pttl(key)</code></td>
+<td>Get TTL in milliseconds (<code>None</code> = no expiry, <code>-2</code> = not found)</td>
+</tr>
+<tr>
+<td><code>expire(key, timeout)</code></td>
+<td>Set expiration in seconds</td>
+</tr>
+<tr>
+<td><code>pexpire(key, timeout)</code></td>
+<td>Set expiration in milliseconds</td>
+</tr>
+<tr>
+<td><code>expire_at(key, when)</code></td>
+<td>Set expiration at datetime</td>
+</tr>
+<tr>
+<td><code>pexpire_at(key, when)</code></td>
+<td>Set expiration at datetime (ms precision)</td>
+</tr>
+<tr>
+<td><code>persist(key)</code></td>
+<td>Remove expiration</td>
+</tr>
+<tr>
+<td><code>type(key)</code></td>
+<td>Get the data type of a key</td>
+</tr>
+<tr>
+<td><code>lock(key, ...)</code></td>
+<td>Get a distributed lock</td>
+</tr>
+<tr>
+<td><code>keys(pattern)</code></td>
+<td>Get keys matching pattern</td>
+</tr>
+<tr>
+<td><code>iter_keys(pattern)</code></td>
+<td>Iterate keys matching pattern</td>
+</tr>
+<tr>
+<td><code>scan(cursor, pattern, count)</code></td>
+<td>Single SCAN iteration</td>
+</tr>
+<tr>
+<td><code>delete_pattern(pattern)</code></td>
+<td>Delete keys matching pattern</td>
+</tr>
+<tr>
+<td><code>rename(src, dst)</code></td>
+<td>Rename a key</td>
+</tr>
+<tr>
+<td><code>renamenx(src, dst)</code></td>
+<td>Rename key only if dest doesn't exist</td>
+</tr>
+</tbody>
+</table>
+<h3 id="hash-methods">Hash Methods<a class="headerlink" href="#hash-methods" title="Permanent link">&para;</a></h3>
+<p>Hash operations for field-value data structures:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>hset(key, field, value)</code></td>
+<td>Set a hash field value</td>
+</tr>
+<tr>
+<td><code>hdel(key, *fields)</code></td>
+<td>Delete hash field(s)</td>
+</tr>
+<tr>
+<td><code>hexists(key, field)</code></td>
+<td>Check if hash field exists</td>
+</tr>
+<tr>
+<td><code>hget(key, field)</code></td>
+<td>Get a hash field value</td>
+</tr>
+<tr>
+<td><code>hgetall(key)</code></td>
+<td>Get all fields and values in a hash</td>
+</tr>
+<tr>
+<td><code>hkeys(key)</code></td>
+<td>Get all field names in a hash</td>
+</tr>
+<tr>
+<td><code>hincrby(key, field, amount=1)</code></td>
+<td>Increment hash field by integer</td>
+</tr>
+<tr>
+<td><code>hincrbyfloat(key, field, amount=1.0)</code></td>
+<td>Increment hash field by float</td>
+</tr>
+<tr>
+<td><code>hlen(key)</code></td>
+<td>Get number of fields in hash</td>
+</tr>
+<tr>
+<td><code>hmget(key, *fields)</code></td>
+<td>Get multiple hash field values</td>
+</tr>
+<tr>
+<td><code>hmset(key, mapping)</code></td>
+<td>Set multiple hash fields</td>
+</tr>
+<tr>
+<td><code>hsetnx(key, field, value)</code></td>
+<td>Set hash field only if it doesn't exist</td>
+</tr>
+<tr>
+<td><code>hvals(key)</code></td>
+<td>Get all values in a hash</td>
+</tr>
+</tbody>
+</table>
+<h3 id="set-methods">Set Methods<a class="headerlink" href="#set-methods" title="Permanent link">&para;</a></h3>
+<p>Set operations for unordered collections of unique elements:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sadd(key, *members)</code></td>
+<td>Add member(s) to set</td>
+</tr>
+<tr>
+<td><code>srem(key, *members)</code></td>
+<td>Remove member(s) from set</td>
+</tr>
+<tr>
+<td><code>smembers(key)</code></td>
+<td>Get all members of set</td>
+</tr>
+<tr>
+<td><code>sismember(key, member)</code></td>
+<td>Check if member exists in set</td>
+</tr>
+<tr>
+<td><code>smismember(key, *members)</code></td>
+<td>Check if multiple members exist</td>
+</tr>
+<tr>
+<td><code>scard(key)</code></td>
+<td>Get number of members</td>
+</tr>
+<tr>
+<td><code>spop(key, count=None)</code></td>
+<td>Remove and return random member(s)</td>
+</tr>
+<tr>
+<td><code>srandmember(key, count=None)</code></td>
+<td>Get random member(s) without removing</td>
+</tr>
+<tr>
+<td><code>smove(src, dst, member)</code></td>
+<td>Move member between sets</td>
+</tr>
+<tr>
+<td><code>sdiff(*keys)</code></td>
+<td>Get difference of sets</td>
+</tr>
+<tr>
+<td><code>sdiffstore(dest, *keys)</code></td>
+<td>Store difference of sets</td>
+</tr>
+<tr>
+<td><code>sinter(*keys)</code></td>
+<td>Get intersection of sets</td>
+</tr>
+<tr>
+<td><code>sinterstore(dest, *keys)</code></td>
+<td>Store intersection of sets</td>
+</tr>
+<tr>
+<td><code>sunion(*keys)</code></td>
+<td>Get union of sets</td>
+</tr>
+<tr>
+<td><code>sunionstore(dest, *keys)</code></td>
+<td>Store union of sets</td>
+</tr>
+<tr>
+<td><code>sscan(key, cursor=0, ...)</code></td>
+<td>Incrementally iterate set members</td>
+</tr>
+<tr>
+<td><code>sscan_iter(key, ...)</code></td>
+<td>Iterate over set members using SSCAN</td>
+</tr>
+</tbody>
+</table>
+<h3 id="sorted-set-methods">Sorted Set Methods<a class="headerlink" href="#sorted-set-methods" title="Permanent link">&para;</a></h3>
+<p>Sorted set operations for scored, ordered collections:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>zadd(key, mapping, *, nx, xx, ch, gt, lt)</code></td>
+<td>Add member(s) with scores</td>
+</tr>
+<tr>
+<td><code>zcard(key)</code></td>
+<td>Get number of members</td>
+</tr>
+<tr>
+<td><code>zcount(key, min, max)</code></td>
+<td>Count members with scores in range</td>
+</tr>
+<tr>
+<td><code>zincrby(key, amount, member)</code></td>
+<td>Increment member's score</td>
+</tr>
+<tr>
+<td><code>zrange(key, start, end, ...)</code></td>
+<td>Get members by index range</td>
+</tr>
+<tr>
+<td><code>zrevrange(key, start, end, ...)</code></td>
+<td>Get members by index range (descending)</td>
+</tr>
+<tr>
+<td><code>zrangebyscore(key, min, max, ...)</code></td>
+<td>Get members by score range</td>
+</tr>
+<tr>
+<td><code>zrevrangebyscore(key, max, min, ...)</code></td>
+<td>Get members by score range (descending)</td>
+</tr>
+<tr>
+<td><code>zrank(key, member)</code></td>
+<td>Get member's rank (ascending)</td>
+</tr>
+<tr>
+<td><code>zrevrank(key, member)</code></td>
+<td>Get member's rank (descending)</td>
+</tr>
+<tr>
+<td><code>zrem(key, *members)</code></td>
+<td>Remove member(s)</td>
+</tr>
+<tr>
+<td><code>zremrangebyrank(key, start, end)</code></td>
+<td>Remove members by rank range</td>
+</tr>
+<tr>
+<td><code>zremrangebyscore(key, min, max)</code></td>
+<td>Remove members by score range</td>
+</tr>
+<tr>
+<td><code>zscore(key, member)</code></td>
+<td>Get member's score</td>
+</tr>
+<tr>
+<td><code>zmscore(key, *members)</code></td>
+<td>Get multiple members' scores</td>
+</tr>
+<tr>
+<td><code>zpopmin(key, count=1)</code></td>
+<td>Remove and return members with lowest scores</td>
+</tr>
+<tr>
+<td><code>zpopmax(key, count=1)</code></td>
+<td>Remove and return members with highest scores</td>
+</tr>
+</tbody>
+</table>
+<h3 id="list-methods">List Methods<a class="headerlink" href="#list-methods" title="Permanent link">&para;</a></h3>
+<p>List operations for ordered, indexable collections:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>llen(key)</code></td>
+<td>Get list length</td>
+</tr>
+<tr>
+<td><code>lpush(key, *values)</code></td>
+<td>Prepend value(s) to list</td>
+</tr>
+<tr>
+<td><code>rpush(key, *values)</code></td>
+<td>Append value(s) to list</td>
+</tr>
+<tr>
+<td><code>lpop(key)</code></td>
+<td>Remove and return first element</td>
+</tr>
+<tr>
+<td><code>rpop(key)</code></td>
+<td>Remove and return last element</td>
+</tr>
+<tr>
+<td><code>lindex(key, index)</code></td>
+<td>Get element by index</td>
+</tr>
+<tr>
+<td><code>lrange(key, start, end)</code></td>
+<td>Get elements in range</td>
+</tr>
+<tr>
+<td><code>lset(key, index, value)</code></td>
+<td>Set element at index</td>
+</tr>
+<tr>
+<td><code>ltrim(key, start, end)</code></td>
+<td>Trim list to range</td>
+</tr>
+<tr>
+<td><code>lrem(key, count, value)</code></td>
+<td>Remove elements equal to value</td>
+</tr>
+<tr>
+<td><code>lpos(key, value, ...)</code></td>
+<td>Find element position in list</td>
+</tr>
+<tr>
+<td><code>linsert(key, where, pivot, value)</code></td>
+<td>Insert value before or after pivot</td>
+</tr>
+<tr>
+<td><code>lmove(src, dst, wherefrom, whereto)</code></td>
+<td>Atomically move element between lists</td>
+</tr>
+<tr>
+<td><code>blpop(*keys, timeout=0)</code></td>
+<td>Blocking pop from head of list</td>
+</tr>
+<tr>
+<td><code>brpop(*keys, timeout=0)</code></td>
+<td>Blocking pop from tail of list</td>
+</tr>
+<tr>
+<td><code>blmove(src, dst, timeout, ...)</code></td>
+<td>Blocking move between lists</td>
+</tr>
+</tbody>
+</table>
+<h3 id="lua-script-methods">Lua Script Methods<a class="headerlink" href="#lua-script-methods" title="Permanent link">&para;</a></h3>
+<p>Execute Lua scripts with optional key prefixing and value encoding/decoding:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>eval_script(script, *, keys, args, ...)</code></td>
+<td>Execute a Lua script</td>
+</tr>
+<tr>
+<td><code>aeval_script(script, *, keys, args, ...)</code></td>
+<td>Execute a Lua script (async)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="eval_script-aeval_script">eval_script / aeval_script<a class="headerlink" href="#eval_script-aeval_script" title="Permanent link">&para;</a></h4>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">eval_script</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">script</span><span class="p">,</span>           <span class="c1"># Lua script source code</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">keys</span><span class="o">=</span><span class="p">(),</span>          <span class="c1"># KEYS to pass to script</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">args</span><span class="o">=</span><span class="p">(),</span>          <span class="c1"># ARGV to pass to script</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">pre_hook</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>    <span class="c1"># Pre-processing hook: (helpers, keys, args) -&gt; (keys, args)</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">post_hook</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>   <span class="c1"># Post-processing hook: (helpers, result) -&gt; result</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">version</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>     <span class="c1"># Key version for prefixing</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="p">)</span>
+</span></code></pre></div>
+<h4 id="pre-built-hooks">Pre-built Hooks<a class="headerlink" href="#pre-built-hooks" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Hook</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>keys_only_pre</code></td>
+<td>Prefix keys, leave args unchanged</td>
+</tr>
+<tr>
+<td><code>full_encode_pre</code></td>
+<td>Prefix keys AND encode all args</td>
+</tr>
+<tr>
+<td><code>decode_single_post</code></td>
+<td>Decode a single returned value</td>
+</tr>
+<tr>
+<td><code>decode_list_post</code></td>
+<td>Decode a list of returned values</td>
+</tr>
+<tr>
+<td><code>decode_list_or_none_post</code></td>
+<td>Decode list or return None</td>
+</tr>
+<tr>
+<td><code>noop_post</code></td>
+<td>Return result unchanged</td>
+</tr>
+</tbody>
+</table>
+<h4 id="scripthelpers">ScriptHelpers<a class="headerlink" href="#scripthelpers" title="Permanent link">&para;</a></h4>
+<p>The helpers object passed to pre/post hooks:</p>
+<table>
+<thead>
+<tr>
+<th>Attribute/Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>make_key(key, version)</code></td>
+<td>Apply cache key prefix</td>
+</tr>
+<tr>
+<td><code>make_keys(keys)</code></td>
+<td>Prefix multiple keys</td>
+</tr>
+<tr>
+<td><code>encode(value)</code></td>
+<td>Encode a value (serialize + compress)</td>
+</tr>
+<tr>
+<td><code>encode_values(values)</code></td>
+<td>Encode multiple values</td>
+</tr>
+<tr>
+<td><code>decode(value)</code></td>
+<td>Decode a value</td>
+</tr>
+<tr>
+<td><code>decode_values(values)</code></td>
+<td>Decode multiple values</td>
+</tr>
+<tr>
+<td><code>version</code></td>
+<td>Current key version</td>
+</tr>
+</tbody>
+</table>
+<h3 id="set-method-options">Set Method Options<a class="headerlink" href="#set-method-options" title="Permanent link">&para;</a></h3>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">cache</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">nx</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">xx</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>timeout</code></td>
+<td>Expiration in seconds (<code>None</code> = never, <code>0</code> = immediate)</td>
+</tr>
+<tr>
+<td><code>nx</code></td>
+<td>Only set if key doesn't exist (SETNX)</td>
+</tr>
+<tr>
+<td><code>xx</code></td>
+<td>Only set if key exists</td>
+</tr>
+</tbody>
+</table>
+<h2 id="async-methods">Async Methods<a class="headerlink" href="#async-methods" title="Permanent link">&para;</a></h2>
+<p>Standard Django cache methods have async versions on the cache object:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Sync</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">value</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;key&quot;</span><span class="p">)</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Async</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">value</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="s2">&quot;key&quot;</span><span class="p">)</span>
+</span></code></pre></div>
+<ul>
+<li><code>aadd</code>, <code>aget</code>, <code>aset</code>, <code>adelete</code>, <code>atouch</code>, <code>aget_many</code>, <code>aset_many</code>, <code>adelete_many</code></li>
+<li><code>ahas_key</code>, <code>aincr</code>, <code>adecr</code>, <code>aget_or_set</code>, <code>aclear</code>, <code>aclose</code></li>
+<li><code>aincr_version</code>, <code>adecr_version</code></li>
+<li><code>aeval_script</code></li>
+</ul>
+<p>Extended methods (data structures, TTL, patterns) have async versions on the cache client, accessible via <code>cache._cache</code>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Sync (on cache object directly)</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">cache</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">&quot;hash&quot;</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Async (on cache client -- note: client methods use raw/prefixed keys)</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">key</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">make_and_validate_key</span><span class="p">(</span><span class="s2">&quot;hash&quot;</span><span class="p">)</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">_cache</span><span class="o">.</span><span class="n">ahset</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
+</span></code></pre></div>
+<ul>
+<li><code>attl</code>, <code>apttl</code>, <code>aexpire</code>, <code>apexpire</code>, <code>aexpireat</code>, <code>apexpireat</code>, <code>apersist</code></li>
+<li><code>akeys</code>, <code>aiter_keys</code>, <code>adelete_pattern</code></li>
+<li><code>ahset</code>, <code>ahdel</code>, <code>ahexists</code>, <code>ahget</code>, <code>ahgetall</code>, <code>ahincrby</code>, <code>ahincrbyfloat</code>, <code>ahkeys</code>, <code>ahlen</code>, <code>ahmget</code>, <code>ahmset</code>, <code>ahsetnx</code>, <code>ahvals</code></li>
+<li><code>asadd</code>, <code>asrem</code>, <code>asmembers</code>, <code>asismember</code>, <code>asmismember</code>, <code>ascard</code>, <code>aspop</code>, <code>asrandmember</code>, <code>asmove</code>, <code>asdiff</code>, <code>asdiffstore</code>, <code>asinter</code>, <code>asinterstore</code>, <code>asunion</code>, <code>asunionstore</code></li>
+<li><code>azadd</code>, <code>azcard</code>, <code>azcount</code>, <code>azincrby</code>, <code>azrange</code>, <code>azrevrange</code>, <code>azrangebyscore</code>, <code>azrevrangebyscore</code>, <code>azrank</code>, <code>azrevrank</code>, <code>azrem</code>, <code>azremrangebyrank</code>, <code>azremrangebyscore</code>, <code>azscore</code>, <code>azmscore</code>, <code>azpopmin</code>, <code>azpopmax</code></li>
+<li><code>allen</code>, <code>alpush</code>, <code>arpush</code>, <code>alpop</code>, <code>arpop</code>, <code>alindex</code>, <code>alrange</code>, <code>alset</code>, <code>altrim</code>, <code>alrem</code>, <code>alpos</code>, <code>almove</code>, <code>alinsert</code>, <code>ablpop</code>, <code>abrpop</code>, <code>ablmove</code></li>
+</ul>
+<h2 id="raw-client-access">Raw Client Access<a class="headerlink" href="#raw-client-access" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">client</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get_client</span><span class="p">(</span><span class="n">write</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>write</code></td>
+<td>Get write connection for primary (default: <code>False</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>Returns the underlying <code>valkey.Valkey</code> or <code>redis.Redis</code> client instance.</p>
+<h2 id="lock-interface">Lock Interface<a class="headerlink" href="#lock-interface" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sleep</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">blocking_timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>key</code></td>
+<td>Lock name</td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td>Lock auto-release timeout</td>
+</tr>
+<tr>
+<td><code>sleep</code></td>
+<td>Time between acquire attempts</td>
+</tr>
+<tr>
+<td><code>blocking</code></td>
+<td>Wait for lock if held</td>
+</tr>
+<tr>
+<td><code>blocking_timeout</code></td>
+<td>Max wait time for lock</td>
+</tr>
+</tbody>
+</table>
+<p>Compatible with <code>threading.Lock</code>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Context manager</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">&quot;mylock&quot;</span><span class="p">):</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">do_work</span><span class="p">()</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># Manual acquire/release</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">&quot;mylock&quot;</span><span class="p">)</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="k">if</span> <span class="n">lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">():</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="k">try</span><span class="p">:</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>        <span class="n">do_work</span><span class="p">()</span>
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="k">finally</span><span class="p">:</span>
+</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>        <span class="n">lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+</span></code></pre></div>
+<h2 id="pipelines">Pipelines<a class="headerlink" href="#pipelines" title="Permanent link">&para;</a></h2>
+<p>Batch multiple operations for efficiency:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">pipe</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">pipeline</span><span class="p">()</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">&quot;key1&quot;</span><span class="p">,</span> <span class="s2">&quot;value1&quot;</span><span class="p">)</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">&quot;key2&quot;</span><span class="p">,</span> <span class="s2">&quot;value2&quot;</span><span class="p">)</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">pipe</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">&quot;hash&quot;</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="n">results</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
+</span></code></pre></div>
+<p>All cache methods are available on the pipeline. Results are returned as a list in the same order as the commands.</p>
+<h2 id="settings-reference">Settings Reference<a class="headerlink" href="#settings-reference" title="Permanent link">&para;</a></h2>
+<h3 id="cache-options">Cache OPTIONS<a class="headerlink" href="#cache-options" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>serializer</code></td>
+<td>Serializer class or list for fallback</td>
+</tr>
+<tr>
+<td><code>compressor</code></td>
+<td>Compressor class or list for fallback</td>
+</tr>
+<tr>
+<td><code>password</code></td>
+<td>Server password</td>
+</tr>
+<tr>
+<td><code>socket_connect_timeout</code></td>
+<td>Connection timeout</td>
+</tr>
+<tr>
+<td><code>socket_timeout</code></td>
+<td>Read/write timeout</td>
+</tr>
+<tr>
+<td><code>ignore_exceptions</code></td>
+<td>Ignore connection errors</td>
+</tr>
+<tr>
+<td><code>log_ignored_exceptions</code></td>
+<td>Log ignored exceptions</td>
+</tr>
+<tr>
+<td><code>pool_class</code></td>
+<td>Custom connection pool class</td>
+</tr>
+<tr>
+<td><code>max_connections</code></td>
+<td>Maximum pool connections</td>
+</tr>
+<tr>
+<td><code>sentinels</code></td>
+<td>Sentinel server list (for Sentinel backends)</td>
+</tr>
+<tr>
+<td><code>sentinel_kwargs</code></td>
+<td>Sentinel configuration</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.sections", "navigation.expand", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
