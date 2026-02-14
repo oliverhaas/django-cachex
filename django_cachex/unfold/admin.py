@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING, Any
 
+from django.conf import settings
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseRedirect
@@ -113,9 +114,8 @@ class CacheAdmin(_CacheBase):
 class KeyAdmin(_KeyBase):
     """Unfold-themed admin for cache keys."""
 
-    # Hide from sidebar — accessed via Cache
     def has_module_permission(self, request: HttpRequest) -> bool:
-        return False
+        return True
 
     def get_urls(self) -> list:
         """Add custom URL patterns for key operations."""
@@ -140,7 +140,7 @@ class KeyAdmin(_KeyBase):
 
         from django.contrib import messages
 
-        cache_name = request.GET.get("cache", "default")
+        cache_name = request.GET.get("cache") or next(iter(settings.CACHES))
 
         if Cache.get_by_name(cache_name) is None:
             messages.error(request, f"Cache '{cache_name}' not found.")
@@ -185,7 +185,7 @@ class KeyAdmin(_KeyBase):
 
         from django.contrib import messages
 
-        cache_name = request.GET.get("cache", "default")
+        cache_name = request.GET.get("cache") or next(iter(settings.CACHES))
 
         if Cache.get_by_name(cache_name) is None:
             messages.error(request, f"Cache '{cache_name}' not found.")

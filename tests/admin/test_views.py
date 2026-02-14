@@ -461,7 +461,7 @@ class TestKeyListView:
         response = admin_client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        assert "By Cache" in content
+        assert "by cache" in content.lower()
         # Both cache names should appear as filter options
         assert "?cache=default" in content
         assert "?cache=local" in content
