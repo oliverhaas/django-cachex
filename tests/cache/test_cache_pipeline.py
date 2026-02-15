@@ -382,10 +382,10 @@ class TestPipelineHashOperations:
         assert results[2] == "value1"
         assert results[3] == {"nested": "value"}
 
-    def test_pipeline_hmset_hmget(self, cache: KeyValueCache):
-        """Test hmset/hmget in pipeline."""
+    def test_pipeline_hset_mapping_hmget(self, cache: KeyValueCache):
+        """Test hset with mapping / hmget in pipeline."""
         pipe = cache.pipeline()
-        pipe.hmset("pipe_hash2", {"f1": "v1", "f2": "v2", "f3": "v3"})
+        pipe.hset("pipe_hash2", mapping={"f1": "v1", "f2": "v2", "f3": "v3"})
         pipe.hmget("pipe_hash2", "f1", "f3", "nonexistent")
         results = pipe.execute()
 
@@ -394,7 +394,7 @@ class TestPipelineHashOperations:
 
     def test_pipeline_hgetall(self, cache: KeyValueCache):
         """Test hgetall in pipeline."""
-        cache.hmset("pipe_hash3", {"a": "1", "b": "2"})
+        cache.hset("pipe_hash3", mapping={"a": "1", "b": "2"})
 
         pipe = cache.pipeline()
         pipe.hgetall("pipe_hash3")
@@ -404,7 +404,7 @@ class TestPipelineHashOperations:
 
     def test_pipeline_hdel_hlen(self, cache: KeyValueCache):
         """Test hdel/hlen in pipeline."""
-        cache.hmset("pipe_hash4", {"a": "1", "b": "2", "c": "3"})
+        cache.hset("pipe_hash4", mapping={"a": "1", "b": "2", "c": "3"})
 
         pipe = cache.pipeline()
         pipe.hdel("pipe_hash4", "b")
@@ -416,7 +416,7 @@ class TestPipelineHashOperations:
 
     def test_pipeline_hkeys_hvals(self, cache: KeyValueCache):
         """Test hkeys/hvals in pipeline."""
-        cache.hmset("pipe_hash5", {"a": "1", "b": "2"})
+        cache.hset("pipe_hash5", mapping={"a": "1", "b": "2"})
 
         pipe = cache.pipeline()
         pipe.hkeys("pipe_hash5")

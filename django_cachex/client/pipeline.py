@@ -620,27 +620,16 @@ class Pipeline:
     def hset(
         self,
         key: KeyT,
-        field: str,
-        value: Any,
+        field: str | None = None,
+        value: Any = None,
         version: int | None = None,
+        mapping: dict[str, Any] | None = None,
     ) -> Self:
-        """Queue HSET command (set field value)."""
+        """Queue HSET command. Use field/value for a single field, mapping for multiple."""
         nkey = self._make_key(key, version)
-        nvalue = self._encode(value)
-        self._pipeline.hset(nkey, field, nvalue)
-        self._decoders.append(self._noop)  # Returns count of fields added
-        return self
-
-    def hmset(
-        self,
-        key: KeyT,
-        mapping: dict[str, Any],
-        version: int | None = None,
-    ) -> Self:
-        """Queue HSET with mapping (set multiple fields)."""
-        nkey = self._make_key(key, version)
-        encoded_mapping = {field: self._encode(value) for field, value in mapping.items()}
-        self._pipeline.hset(nkey, mapping=encoded_mapping)
+        nvalue = self._encode(value) if field is not None else None
+        nmapping = {f: self._encode(v) for f, v in mapping.items()} if mapping else None
+        self._pipeline.hset(nkey, field, nvalue, mapping=nmapping)
         self._decoders.append(self._noop)  # Returns count of fields added
         return self
 

@@ -706,15 +706,15 @@ class TestLocMemCacheHashOperations:
     def test_hmget_missing_key(self):
         assert self.cache.hmget("missing", "a", "b") == [None, None]
 
-    # -- hmset() --------------------------------------------------------------
+    # -- hset(mapping=...) ----------------------------------------------------
 
-    def test_hmset_creates_hash(self):
-        assert self.cache.hmset("k", {"a": 1, "b": 2}) is True
+    def test_hset_mapping_creates_hash(self):
+        assert self.cache.hset("k", mapping={"a": 1, "b": 2}) == 2
         assert self.cache.get("k") == {"a": 1, "b": 2}
 
-    def test_hmset_merges_fields(self):
+    def test_hset_mapping_merges_fields(self):
         self.cache.set("k", {"a": 1})
-        self.cache.hmset("k", {"b": 2, "c": 3})
+        self.cache.hset("k", mapping={"b": 2, "c": 3})
         assert self.cache.get("k") == {"a": 1, "b": 2, "c": 3}
 
     # -- hsetnx() -------------------------------------------------------------

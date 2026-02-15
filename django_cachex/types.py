@@ -286,7 +286,14 @@ class CacheProtocol(Protocol):
     # Hash Operations
     # =========================================================================
 
-    def hset(self, key: KeyT, field: str, value: Any, version: int | None = None) -> int: ...
+    def hset(
+        self,
+        key: KeyT,
+        field: str | None = None,
+        value: Any = None,
+        version: int | None = None,
+        mapping: Mapping[str, Any] | None = None,
+    ) -> int: ...
 
     def hdel(self, key: KeyT, *fields: str, version: int | None = None) -> int: ...
 
@@ -301,8 +308,6 @@ class CacheProtocol(Protocol):
     def hgetall(self, key: KeyT, version: int | None = None) -> dict[str, Any]: ...
 
     def hmget(self, key: KeyT, *fields: str, version: int | None = None) -> list[Any]: ...
-
-    def hmset(self, key: KeyT, mapping: Mapping[str, Any], version: int | None = None) -> bool: ...
 
     def hincrby(self, key: KeyT, field: str, amount: int = 1, version: int | None = None) -> int: ...
 

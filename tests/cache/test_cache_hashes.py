@@ -4,7 +4,7 @@ from django_cachex.cache import KeyValueCache
 
 
 class TestHashSetAndGet:
-    """Tests for hset, hget, hmset, hmget, hgetall."""
+    """Tests for hset, hget, hmget, hgetall."""
 
     def test_hset_creates_hash_field(self, cache: KeyValueCache):
         cache.hset("user:100", "username", "alice")
@@ -43,8 +43,8 @@ class TestHashSetAndGet:
         result = cache.hmget("session:abc", "user_id", "expires", "missing")
         assert result == [123, 3600, None]
 
-    def test_hmset_creates_multiple_fields(self, cache: KeyValueCache):
-        cache.hmset("order:999", {"customer": "Bob", "total": 59.99, "items": 3})
+    def test_hset_mapping_creates_multiple_fields(self, cache: KeyValueCache):
+        cache.hset("order:999", mapping={"customer": "Bob", "total": 59.99, "items": 3})
 
         assert cache.hget("order:999", "customer") == "Bob"
         assert cache.hget("order:999", "total") == 59.99

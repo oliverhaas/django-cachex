@@ -210,7 +210,14 @@ class BaseCacheExtensions:
     # Hash Operations
     # =========================================================================
 
-    def hset(self, key: KeyT, field: str, value: Any, version: int | None = None) -> int:
+    def hset(
+        self,
+        key: KeyT,
+        field: str | None = None,
+        value: Any = None,
+        version: int | None = None,
+        mapping: Mapping[str, Any] | None = None,
+    ) -> int:
         """Set field in hash."""
         raise NotSupportedError("hset", self.__class__.__name__)
 
@@ -241,10 +248,6 @@ class BaseCacheExtensions:
     def hmget(self, key: KeyT, *fields: str, version: int | None = None) -> list[Any]:
         """Get values of multiple fields."""
         raise NotSupportedError("hmget", self.__class__.__name__)
-
-    def hmset(self, key: KeyT, mapping: Mapping[str, Any], version: int | None = None) -> bool:
-        """Set multiple hash fields."""
-        raise NotSupportedError("hmset", self.__class__.__name__)
 
     def hincrby(self, key: KeyT, field: str, amount: int = 1, version: int | None = None) -> int:
         """Increment value of field in hash."""
@@ -1124,16 +1127,31 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
     # Hash Operations
     # =========================================================================
 
-    def hset(self, key: KeyT, field: str, value: Any, version: int | None = None) -> int:
-        """Set field in hash."""
+    def hset(
+        self,
+        key: KeyT,
+        field: str | None = None,
+        value: Any = None,
+        version: int | None = None,
+        mapping: Mapping[str, Any] | None = None,
+    ) -> int:
+        """Set hash field(s). Use field/value for a single field, mapping for multiple."""
         current = self._get_hash(key, version=version)
         timeout = self._get_ttl_timeout(key, version=version)
         if current is None:
             current = {}
-        is_new = field not in current
-        current[field] = value
+        added = 0
+        if field is not None:
+            if field not in current:
+                added += 1
+            current[field] = value
+        if mapping:
+            for f, v in mapping.items():
+                if f not in current:
+                    added += 1
+                current[f] = v
         self.set(key, current, timeout=timeout, version=version)
-        return int(is_new)
+        return added
 
     def hdel(self, key: KeyT, *fields: str, version: int | None = None) -> int:
         """Delete hash fields."""
@@ -1199,16 +1217,6 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
         if current is None:
             return [None] * len(fields)
         return [current.get(f) for f in fields]
-
-    def hmset(self, key: KeyT, mapping: Mapping[str, Any], version: int | None = None) -> bool:
-        """Set multiple hash fields."""
-        current = self._get_hash(key, version=version)
-        timeout = self._get_ttl_timeout(key, version=version)
-        if current is None:
-            current = {}
-        current.update(mapping)
-        self.set(key, current, timeout=timeout, version=version)
-        return True
 
     def hsetnx(self, key: KeyT, field: str, value: Any, version: int | None = None) -> bool:
         """Set field in hash only if it doesn't exist."""

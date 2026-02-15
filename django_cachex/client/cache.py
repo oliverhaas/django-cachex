@@ -606,13 +606,14 @@ class KeyValueCache(BaseCache):
     def hset(
         self,
         key: KeyT,
-        field: str,
-        value: Any,
+        field: str | None = None,
+        value: Any = None,
         version: int | None = None,
+        mapping: Mapping[str, Any] | None = None,
     ) -> int:
-        """Set field in hash at key to value."""
+        """Set hash field(s). Use field/value for a single field, mapping for multiple."""
         key = self.make_and_validate_key(key, version=version)
-        return self._cache.hset(key, field, value)
+        return self._cache.hset(key, field, value, mapping=mapping)
 
     def hdel(
         self,
@@ -672,16 +673,6 @@ class KeyValueCache(BaseCache):
         """Get values of multiple fields in hash."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.hmget(key, *fields)
-
-    def hmset(
-        self,
-        key: KeyT,
-        mapping: Mapping[str, Any],
-        version: int | None = None,
-    ) -> bool:
-        """Set multiple hash fields to multiple values."""
-        key = self.make_and_validate_key(key, version=version)
-        return self._cache.hmset(key, mapping)
 
     def hincrby(
         self,

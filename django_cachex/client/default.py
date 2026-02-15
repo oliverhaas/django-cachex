@@ -959,12 +959,19 @@ class KeyValueCacheClient:
     # Hash Operations
     # =========================================================================
 
-    def hset(self, key: KeyT, field: str, value: Any) -> int:
-        """Set a hash field."""
+    def hset(
+        self,
+        key: KeyT,
+        field: str | None = None,
+        value: Any = None,
+        mapping: Mapping[str, Any] | None = None,
+    ) -> int:
+        """Set hash field(s). Use field/value for a single field, mapping for multiple."""
         client = self.get_client(key, write=True)
-        nvalue = self.encode(value)
+        nvalue = self.encode(value) if field is not None else None
+        nmapping = {f: self.encode(v) for f, v in mapping.items()} if mapping else None
 
-        return cast("int", client.hset(key, field, nvalue))
+        return cast("int", client.hset(key, field, nvalue, mapping=nmapping))
 
     def hsetnx(self, key: KeyT, field: str, value: Any) -> bool:
         """Set a hash field only if it doesn't exist."""
@@ -979,15 +986,6 @@ class KeyValueCacheClient:
 
         val = client.hget(key, field)
         return self.decode(val) if val is not None else None
-
-    def hmset(self, key: KeyT, mapping: Mapping[str, Any]) -> bool:
-        """Set multiple hash fields."""
-        client = self.get_client(key, write=True)
-        nmap = {f: self.encode(v) for f, v in mapping.items()}
-
-        # hmset is deprecated, use hset with mapping
-        client.hset(key, mapping=nmap)
-        return True
 
     def hmget(self, key: KeyT, *fields: str) -> list[Any | None]:
         """Get multiple hash fields."""
@@ -1047,12 +1045,19 @@ class KeyValueCacheClient:
 
         return float(client.hincrbyfloat(key, field, amount))
 
-    async def ahset(self, key: KeyT, field: str, value: Any) -> int:
-        """Set a hash field asynchronously."""
+    async def ahset(
+        self,
+        key: KeyT,
+        field: str | None = None,
+        value: Any = None,
+        mapping: Mapping[str, Any] | None = None,
+    ) -> int:
+        """Set hash field(s) asynchronously. Use field/value for a single field, mapping for multiple."""
         client = self.get_async_client(key, write=True)
-        nvalue = self.encode(value)
+        nvalue = self.encode(value) if field is not None else None
+        nmapping = {f: self.encode(v) for f, v in mapping.items()} if mapping else None
 
-        return cast("int", await client.hset(key, field, nvalue))
+        return cast("int", await client.hset(key, field, nvalue, mapping=nmapping))
 
     async def ahsetnx(self, key: KeyT, field: str, value: Any) -> bool:
         """Set a hash field only if it doesn't exist, asynchronously."""
@@ -1067,15 +1072,6 @@ class KeyValueCacheClient:
 
         val = await client.hget(key, field)
         return self.decode(val) if val is not None else None
-
-    async def ahmset(self, key: KeyT, mapping: Mapping[str, Any]) -> bool:
-        """Set multiple hash fields asynchronously."""
-        client = self.get_async_client(key, write=True)
-        nmap = {f: self.encode(v) for f, v in mapping.items()}
-
-        # hmset is deprecated, use hset with mapping
-        await client.hset(key, mapping=nmap)
-        return True
 
     async def ahmget(self, key: KeyT, *fields: str) -> list[Any | None]:
         """Get multiple hash fields asynchronously."""
