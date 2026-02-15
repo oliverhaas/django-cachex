@@ -1,45 +1,5 @@
-{% extends "admin/base_site.html" %}
-{% load i18n static %}
-
-{% block extrastyle %}
-{{ block.super }}
-<link rel="stylesheet" href="{% static "admin/css/changelists.css" %}">
-<style type="text/css">
-    {% include "admin/django_cachex/cache/styles.css" %}
-</style>
-{% endblock %}
-
-{% block extrahead %}
-{{ block.super }}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Handle select all checkbox
-    const selectAll = document.getElementById('action-toggle');
-    if (selectAll) {
-        selectAll.addEventListener('change', function() {
-            const checkboxes = document.querySelectorAll('input[name="_selected_action"]');
-            checkboxes.forEach(cb => cb.checked = this.checked);
-            updateActionCounter();
-        });
-    }
-
-    // Handle individual checkboxes
-    document.querySelectorAll('input[name="_selected_action"]').forEach(function(cb) {
-        cb.addEventListener('change', updateActionCounter);
-    });
-
-    function updateActionCounter() {
-        const checked = document.querySelectorAll('input[name="_selected_action"]:checked').length;
-        const counter = document.querySelector('.action-counter');
-        if (counter) {
-            counter.textContent = checked + ' of ' + document.querySelectorAll('input[name="_selected_action"]').length + ' selected';
-        }
-    }
-});
-</script>
-{% endblock %}
-
-{% block bodyclass %}{{ block.super }} app-django_cachex model-cache change-list{% endblock %}
+{% extends "admin/change_list.html" %}
+{% load i18n %}
 
 {% block breadcrumbs %}
 <div class="breadcrumbs">
@@ -50,197 +10,32 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 {% endblock %}
 
-{% block content %}
-<div id="content-main">
-    {% block object-tools %}
-    <ul class="object-tools">
-        {% block object-tools-items %}
-        <li>
-            <a href="?{% if not help_active %}help=1{% endif %}">{% trans 'Help' %}</a>
-        </li>
-        <li>
-            <a href="{% url 'admin:django_cachex_cache_change' cache_name %}">{% trans 'Cache Details' %}</a>
-        </li>
-        <li>
-            <a href="{% url 'admin:django_cachex_key_add' %}?cache={{ cache_name }}" class="addlink">{% trans 'Add key' %}</a>
-        </li>
-        {% endblock %}
-    </ul>
+{% block object-tools %}
+<ul class="object-tools">
+    {% block object-tools-items %}
+    <li>
+        <a href="?cache={{ cache_name }}{% if not help_active %}&amp;help=1{% endif %}">{% trans 'Help' %}</a>
+    </li>
+    <li>
+        <a href="{% url 'admin:django_cachex_cache_change' cache_name %}">{% trans 'Cache Details' %}</a>
+    </li>
+    <li>
+        <a href="{% url 'admin:django_cachex_key_add' %}?cache={{ cache_name }}" class="addlink">{% trans 'Add key' %}</a>
+    </li>
     {% endblock %}
+</ul>
+{% endblock %}
 
-    <div class="module{% if type_filter %} filtered{% endif %}" id="changelist">
-        <div class="changelist-form-container">
-            <search id="changelist-filter" aria-labelledby="changelist-filter-header">
-                <h2 id="changelist-filter-header">{% trans 'Filter' %}</h2>
-                {% if cache_names|length > 1 %}
-                <details data-filter-title="cache" open>
-                    <summary>{% trans 'By Cache' %}</summary>
-                    <ul>
-                        {% for cn in cache_names %}
-                        <li{% if cache_name == cn %} class="selected"{% endif %}>
-                            <a href="?cache={{ cn }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if type_filter %}&type={{ type_filter }}{% endif %}">{{ cn }}</a>
-                        </li>
-                        {% endfor %}
-                    </ul>
-                </details>
-                {% endif %}
-                {% if key_types %}
-                <details data-filter-title="type" open>
-                    <summary>{% trans 'By Type' %}</summary>
-                    <ul>
-                        <li{% if not type_filter %} class="selected"{% endif %}>
-                            <a href="?cache={{ cache_name }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}">{% trans 'All' %}</a>
-                        </li>
-                        {% for kt in key_types %}
-                        <li{% if type_filter == kt %} class="selected"{% endif %}>
-                            <a href="?cache={{ cache_name }}&type={{ kt }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}">{{ kt }}</a>
-                        </li>
-                        {% endfor %}
-                    </ul>
-                </details>
-                {% endif %}
-            </search>
-
-            <div>
-                {% if error %}
-                <p class="errornote">
-                    <strong>Error:</strong> {{ error }}
-                </p>
-                {% endif %}
-
-                {% if error_message %}
-                <p class="errornote">{{ error_message }}</p>
-                {% endif %}
-
-                <!-- Search Form -->
-                <div id="toolbar">
-                    <form id="changelist-search" method="get" role="search">
-                        <div>
-                            <input type="hidden" name="cache" value="{{ cache_name }}">
-                            {% if type_filter %}<input type="hidden" name="type" value="{{ type_filter }}">{% endif %}
-                            <label for="searchbar"><img src="{% static "admin/img/search.svg" %}" alt="Search"></label>
-                            <input type="text" size="40" name="q" value="{{ search_query }}" id="searchbar">
-                            <input type="submit" value="{% trans 'Search' %}">
-                            {% if total_keys %}
-                            <span class="small quiet">{{ total_keys }} {% blocktrans count counter=total_keys %}result{% plural %}results{% endblocktrans %}</span>
-                            {% endif %}
-                        </div>
-                    </form>
-                </div>
-
-                <form id="changelist-form" method="post">
-                {% csrf_token %}
-
-                {% if keys_data %}
-                <!-- Actions -->
-                <div class="actions">
-                    <label>{% trans 'Action:' %}
-                        <select name="action">
-                            <option value="" selected>---------</option>
-                            <option value="delete_selected">{% trans 'Delete selected keys' %}</option>
-                        </select>
-                    </label>
-                    <button type="submit" class="button" onclick="return confirm('{% trans 'Are you sure you want to delete the selected keys?' %}');">{% trans 'Run' %}</button>
-                    <span class="action-counter">0 of {{ keys_data|length }} selected</span>
-                </div>
-                {% endif %}
-
-                {% if keys_data %}
-                <!-- Results Table -->
-                <div class="results">
-                    <table id="result_list">
-                        <thead>
-                            <tr>
-                                <th scope="col" class="action-checkbox-column">
-                                    <div class="text"><span><input type="checkbox" id="action-toggle"></span></div>
-                                </th>
-                                <th scope="col">
-                                    <div class="text"><span>{% trans 'Key' %}</span></div>
-                                </th>
-                                {% if show_type %}
-                                <th scope="col">
-                                    <div class="text"><span>{% trans 'Type' %}</span></div>
-                                </th>
-                                {% endif %}
-                                {% if show_ttl %}
-                                <th scope="col">
-                                    <div class="text"><span>{% trans 'TTL' %}</span></div>
-                                </th>
-                                {% endif %}
-                                {% if show_size %}
-                                <th scope="col">
-                                    <div class="text"><span>{% trans 'Size' %}</span></div>
-                                </th>
-                                {% endif %}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for key_info in keys_data %}
-                            <tr class="{% cycle 'row1' 'row2' %}">
-                                <td class="action-checkbox">
-                                    <input type="checkbox" name="_selected_action" value="{{ key_info.key }}">
-                                </td>
-                                <th scope="row">
-                                    <a href="{% url 'admin:django_cachex_key_change' key_info.pk %}"><code>{{ key_info.key }}</code></a>
-                                </th>
-                                {% if show_type %}
-                                <td>
-                                    {% if key_info.type %}
-                                    <span class="type-badge type-{{ key_info.type }}">{{ key_info.type }}</span>
-                                    {% else %}
-                                    <span class="quiet">-</span>
-                                    {% endif %}
-                                </td>
-                                {% endif %}
-                                {% if show_ttl %}
-                                <td>
-                                    {% if key_info.ttl_expires_at %}
-                                    <code title="{{ key_info.ttl }}s">{{ key_info.ttl_expires_at|timeuntil }}</code>
-                                    {% else %}
-                                    <span class="quiet">-</span>
-                                    {% endif %}
-                                </td>
-                                {% endif %}
-                                {% if show_size %}
-                                <td>
-                                    {% if key_info.size is not None %}
-                                    <code>{{ key_info.size }}</code>
-                                    {% else %}
-                                    <span class="quiet">-</span>
-                                    {% endif %}
-                                </td>
-                                {% endif %}
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Pagination -->
-                <nav class="paginator">
-                    <ul>
-                        {% if cursor > 0 %}
-                        <li><a href="?cache={{ cache_name }}{% if type_filter %}&type={{ type_filter }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}&count={{ count }}" class="button btn-small">{% trans 'Start' %}</a></li>
-                        {% endif %}
-                        {% if has_next %}
-                        <li><a href="?cache={{ cache_name }}{% if type_filter %}&type={{ type_filter }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}&count={{ count }}&cursor={{ next_cursor }}" class="button btn-small">{% trans 'Next' %}</a></li>
-                        {% endif %}
-                    </ul>
-                    {% if total_keys is not None %}
-                    {{ total_keys }} {% blocktrans count counter=total_keys %}key{% plural %}keys{% endblocktrans %}
-                    {% else %}
-                    {{ keys_count }} {% trans 'keys shown' %}
-                    {% endif %}
-                </nav>
-                {% else %}
-                <nav class="paginator">
-                    0 {% trans 'keys' %}
-                </nav>
-                <p class="quiet" style="text-align: center; padding: 20px;">{% trans 'No keys found.' %}</p>
-                {% endif %}
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
+{% block pagination %}
+<nav class="paginator">
+    <ul>
+        {% if cl.result_list.cursor > 0 %}
+        <li><a role="button" href="?cache={{ cache_name }}{% for k, v in cl.params.items %}{% if k != 'cursor' %}&amp;{{ k }}={{ v|urlencode }}{% endif %}{% endfor %}&amp;count={{ cl.result_list.scan_count }}">{% trans 'Start' %}</a></li>
+        {% endif %}
+        {% if cl.result_list.has_next %}
+        <li><a role="button" href="?cache={{ cache_name }}{% for k, v in cl.params.items %}{% if k != 'cursor' %}&amp;{{ k }}={{ v|urlencode }}{% endif %}{% endfor %}&amp;count={{ cl.result_list.scan_count }}&amp;cursor={{ cl.result_list.next_cursor }}">{% trans 'Next' %}</a></li>
+        {% endif %}
+    </ul>
+    {{ cl.result_list|length }} {% trans 'keys shown' %}
+</nav>
 {% endblock %}

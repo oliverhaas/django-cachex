@@ -6,13 +6,14 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from django.conf import settings
 from django.contrib import admin, messages
+from django.contrib.admin.utils import unquote
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseRedirect
 from django.urls import path, reverse
 from django.utils.safestring import mark_safe
 
 from .models import Cache, Key
-from .queryset import CacheAdminMixin
+from .queryset import CacheAdminMixin, KeyAdminMixin
 from .views import ViewConfig, _cache_detail_view
 
 if TYPE_CHECKING:
@@ -112,8 +113,15 @@ class CacheAdmin(CacheAdminMixin, _CacheBase):  # type: ignore[misc]
 
 
 @admin.register(Key)
-class KeyAdmin(_KeyBase):
-    """Admin for cache keys."""
+class KeyAdmin(KeyAdminMixin, _KeyBase):  # type: ignore[misc]
+    """Admin for cache keys.
+
+    Uses KeyAdminMixin for list_display, filtering, search, and delete action.
+    The changelist is driven by KeyQuerySet (backed by Redis SCAN) instead of
+    database queries.
+    """
+
+    change_list_template = "admin/django_cachex/key/change_list.html"
 
     _cachex_help_messages: ClassVar[dict[str, str]] = {
         "key_list": mark_safe(
@@ -242,28 +250,6 @@ class KeyAdmin(_KeyBase):
     def _get_config(self) -> ViewConfig:
         return ViewConfig(help_messages=self._cachex_help_messages)
 
-    def changelist_view(
-        self,
-        request: HttpRequest,
-        extra_context: dict[str, Any] | None = None,
-    ) -> HttpResponse:
-        """Browse keys for a specific cache."""
-        if not self.has_view_or_change_permission(request):
-            raise PermissionDenied
-
-        from .views.key_list import _key_list_view
-
-        cache_name = request.GET.get("cache") or next(iter(settings.CACHES))
-
-        # Verify cache exists
-        if Cache.get_by_name(cache_name) is None:
-            messages.error(request, f"Cache '{cache_name}' not found.")
-            return HttpResponseRedirect(
-                reverse("admin:django_cachex_cache_changelist"),
-            )
-
-        return _key_list_view(request, cache_name, self._get_config())
-
     def change_view(
         self,
         request: HttpRequest,
@@ -277,7 +263,7 @@ class KeyAdmin(_KeyBase):
 
         from .views.key_detail import _key_detail_view
 
-        cache_name, key_name = Key.parse_pk(object_id)
+        cache_name, key_name = Key.parse_pk(unquote(object_id))
 
         if not cache_name:
             messages.error(request, "Invalid key identifier.")
