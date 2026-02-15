@@ -62,6 +62,7 @@ class CacheAdmin(CacheAdminMixin, _CacheBase):  # type: ignore[misc]
     Uses CacheAdminMixin for list_display, filtering, search, and flush action.
     """
 
+    change_list_template = "unfold/django_cachex/cache/change_list.html"
     _cachex_help_messages = StandardCacheAdmin._cachex_help_messages
 
     # Caches are defined in settings — add/delete don't apply
@@ -111,6 +112,7 @@ class KeyAdmin(KeyAdminMixin, _KeyBase):  # type: ignore[misc]
     Uses KeyAdminMixin for list_display, filtering, search, and delete action.
     """
 
+    change_list_template = "unfold/django_cachex/key/change_list.html"
     _cachex_help_messages = StandardKeyAdmin._cachex_help_messages
 
     def has_module_permission(self, request: HttpRequest) -> bool:
