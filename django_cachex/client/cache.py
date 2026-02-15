@@ -610,10 +610,11 @@ class KeyValueCache(BaseCache):
         value: Any = None,
         version: int | None = None,
         mapping: Mapping[str, Any] | None = None,
+        items: list[Any] | None = None,
     ) -> int:
-        """Set hash field(s). Use field/value for a single field, mapping for multiple."""
+        """Set hash field(s). Use field/value, mapping, or items (flat key-value pairs)."""
         key = self.make_and_validate_key(key, version=version)
-        return self._cache.hset(key, field, value, mapping=mapping)
+        return self._cache.hset(key, field, value, mapping=mapping, items=items)
 
     def hdel(
         self,

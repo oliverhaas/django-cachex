@@ -965,13 +965,15 @@ class KeyValueCacheClient:
         field: str | None = None,
         value: Any = None,
         mapping: Mapping[str, Any] | None = None,
+        items: list[Any] | None = None,
     ) -> int:
-        """Set hash field(s). Use field/value for a single field, mapping for multiple."""
+        """Set hash field(s). Use field/value, mapping, or items (flat key-value pairs)."""
         client = self.get_client(key, write=True)
         nvalue = self.encode(value) if field is not None else None
         nmapping = {f: self.encode(v) for f, v in mapping.items()} if mapping else None
+        nitems = [self.encode(v) if i % 2 else v for i, v in enumerate(items)] if items else None
 
-        return cast("int", client.hset(key, field, nvalue, mapping=nmapping))
+        return cast("int", client.hset(key, field, nvalue, mapping=nmapping, items=nitems))
 
     def hsetnx(self, key: KeyT, field: str, value: Any) -> bool:
         """Set a hash field only if it doesn't exist."""
@@ -1051,13 +1053,15 @@ class KeyValueCacheClient:
         field: str | None = None,
         value: Any = None,
         mapping: Mapping[str, Any] | None = None,
+        items: list[Any] | None = None,
     ) -> int:
-        """Set hash field(s) asynchronously. Use field/value for a single field, mapping for multiple."""
+        """Set hash field(s) asynchronously. Use field/value, mapping, or items (flat key-value pairs)."""
         client = self.get_async_client(key, write=True)
         nvalue = self.encode(value) if field is not None else None
         nmapping = {f: self.encode(v) for f, v in mapping.items()} if mapping else None
+        nitems = [self.encode(v) if i % 2 else v for i, v in enumerate(items)] if items else None
 
-        return cast("int", await client.hset(key, field, nvalue, mapping=nmapping))
+        return cast("int", await client.hset(key, field, nvalue, mapping=nmapping, items=nitems))
 
     async def ahsetnx(self, key: KeyT, field: str, value: Any) -> bool:
         """Set a hash field only if it doesn't exist, asynchronously."""

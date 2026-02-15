@@ -293,6 +293,7 @@ class CacheProtocol(Protocol):
         value: Any = None,
         version: int | None = None,
         mapping: Mapping[str, Any] | None = None,
+        items: list[Any] | None = None,
     ) -> int: ...
 
     def hdel(self, key: KeyT, *fields: str, version: int | None = None) -> int: ...

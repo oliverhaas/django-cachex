@@ -217,6 +217,7 @@ class BaseCacheExtensions:
         value: Any = None,
         version: int | None = None,
         mapping: Mapping[str, Any] | None = None,
+        items: list[Any] | None = None,
     ) -> int:
         """Set field in hash."""
         raise NotSupportedError("hset", self.__class__.__name__)
@@ -1134,8 +1135,9 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
         value: Any = None,
         version: int | None = None,
         mapping: Mapping[str, Any] | None = None,
+        items: list[Any] | None = None,
     ) -> int:
-        """Set hash field(s). Use field/value for a single field, mapping for multiple."""
+        """Set hash field(s). Use field/value, mapping, or items (flat key-value pairs)."""
         current = self._get_hash(key, version=version)
         timeout = self._get_ttl_timeout(key, version=version)
         if current is None:
@@ -1147,6 +1149,12 @@ class WrappedLocMemCache(LocMemCache, BaseCacheExtensions):
             current[field] = value
         if mapping:
             for f, v in mapping.items():
+                if f not in current:
+                    added += 1
+                current[f] = v
+        if items:
+            for i in range(0, len(items), 2):
+                f, v = items[i], items[i + 1]
                 if f not in current:
                     added += 1
                 current[f] = v
