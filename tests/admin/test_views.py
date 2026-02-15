@@ -2400,7 +2400,11 @@ class TestPermissionViewAccess:
         assert response.status_code == 200
 
     def test_view_only_user_cannot_flush_cache(self, db, test_cache):
-        """Staff user with only view_cache perm gets 403 on flush POST."""
+        """Staff user with only view_cache perm cannot flush via action.
+
+        Django's standard admin action handling rejects the action silently
+        (the action isn't in the user's available choices) and redirects.
+        """
         from django.contrib.auth.models import Permission, User
 
         staff_user = User.objects.create_user(
@@ -2417,11 +2421,17 @@ class TestPermissionViewAccess:
         client = Client()
         client.force_login(staff_user)
 
+        # Set a key so we can verify it wasn't flushed
+        test_cache.set("flush_test_key", "value")
+
         response = client.post(
             _cache_list_url(),
             {"action": "flush_selected", "_selected_action": ["default"]},
         )
-        assert response.status_code == 403
+        # Django standard admin re-renders changelist (action not available)
+        assert response.status_code == 200
+        # Verify the cache was NOT flushed
+        assert test_cache.get("flush_test_key") == "value"
 
     def test_view_only_user_cannot_delete_keys(self, db, test_cache):
         """Staff user with only view_key perm gets 403 on bulk delete POST."""

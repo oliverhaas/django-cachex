@@ -12,7 +12,6 @@ from .base import (
     show_help,
 )
 from .cache_detail import _cache_detail_view
-from .cache_list import _index_view
 from .key_add import _key_add_view
 from .key_detail import _key_detail_view
 from .key_list import _key_list_view
@@ -21,7 +20,6 @@ __all__ = [
     "ADMIN_CONFIG",
     "ViewConfig",
     "_cache_detail_view",
-    "_index_view",
     "_key_add_view",
     "_key_detail_view",
     "_key_list_view",
