@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
 
     from django_cachex.client.pipeline import Pipeline
-    from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, KeyType
+    from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, KeyType, _Set
 
 from django_cachex.client.default import (
     KeyValueCacheClient,
@@ -32,9 +32,6 @@ from django_cachex.script import ScriptHelpers
 
 # Sentinel value for methods with dynamic return values (e.g., get() returns default arg)
 CONNECTION_INTERRUPTED = object()
-
-# Alias builtin set type to avoid shadowing by the set() method
-_Set = set
 
 # Regex for escaping glob special characters
 _special_re = re.compile("([*?[])")

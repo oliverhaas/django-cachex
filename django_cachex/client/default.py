@@ -16,15 +16,12 @@ from django_cachex.compat import create_compressor, create_serializer
 from django_cachex.exceptions import CompressorError, SerializerError, _main_exceptions, _ResponseError
 from django_cachex.types import KeyType
 
-# Alias builtin set type to avoid shadowing by the set() method
-_Set = set
-
 if TYPE_CHECKING:
     import builtins
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
 
     from django_cachex.client.pipeline import Pipeline
-    from django_cachex.types import AbsExpiryT, ExpiryT, KeyT
+    from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, _Set
 
 # Try to import redis-py and/or valkey-py
 _REDIS_AVAILABLE = False

@@ -6,12 +6,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from types import TracebackType
 
-    from django_cachex.types import KeyT
+    from django_cachex.types import KeyT, _Set
 
 from django_cachex.script import ScriptHelpers
-
-# Alias builtin set type to avoid shadowing by the set() method
-_Set = set
 
 
 class Pipeline:
