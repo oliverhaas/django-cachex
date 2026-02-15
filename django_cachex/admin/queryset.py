@@ -122,6 +122,17 @@ class SupportLevelFilter(admin.SimpleListFilter):
             return CacheQuerySet([c for c in queryset if c.support_level == value])
         return queryset
 
+    def get_facet_queryset(self, changelist: Any) -> dict[str, int]:
+        """Compute facet counts in-memory (CacheQuerySet has no .aggregate)."""
+        filtered_qs = changelist.get_queryset(
+            self.request,
+            exclude_parameters=self.expected_parameters(),
+        )
+        return {
+            f"{i}__c": sum(1 for c in filtered_qs if c.support_level == value)
+            for i, (value, _) in enumerate(self.lookup_choices)
+        }
+
 
 class CacheAdminMixin:
     """Shared cache list admin behaviour for default and unfold themes.
