@@ -2,62 +2,62 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://oliverhaas.github.io/django-cachex/main/</loc>
-         <lastmod>2026-02-14</lastmod>
+         <lastmod>2026-02-15</lastmod>
     </url>
     <url>
          <loc>https://oliverhaas.github.io/django-cachex/main/migration/</loc>
-         <lastmod>2026-02-14</lastmod>
+         <lastmod>2026-02-15</lastmod>
     </url>
     <url>
          <loc>https://oliverhaas.github.io/django-cachex/main/recipes/</loc>
-         <lastmod>2026-02-14</lastmod>
+         <lastmod>2026-02-15</lastmod>
     </url>
     <url>
          <loc>https://oliverhaas.github.io/django-cachex/main/getting-started/installation/</loc>
-         <lastmod>2026-02-14</lastmod>
+         <lastmod>2026-02-15</lastmod>
     </url>
     <url>
          <loc>https://oliverhaas.github.io/django-cachex/main/getting-started/quickstart/</loc>
-         <lastmod>2026-02-14</lastmod>
+         <lastmod>2026-02-15</lastmod>
     </url>
     <url>
          <loc>https://oliverhaas.github.io/django-cachex/main/reference/api/</loc>
-         <lastmod>2026-02-14</lastmod>
+         <lastmod>2026-02-15</lastmod>
     </url>
     <url>
          <loc>https://oliverhaas.github.io/django-cachex/main/reference/changelog/</loc>
-         <lastmod>2026-02-14</lastmod>
+         <lastmod>2026-02-15</lastmod>
     </url>
     <url>
          <loc>https://oliverhaas.github.io/django-cachex/main/user-guide/admin/</loc>
-         <lastmod>2026-02-14</lastmod>
+         <lastmod>2026-02-15</lastmod>
     </url>
     <url>
          <loc>https://oliverhaas.github.io/django-cachex/main/user-guide/advanced/</loc>
-         <lastmod>2026-02-14</lastmod>
+         <lastmod>2026-02-15</lastmod>
     </url>
     <url>
          <loc>https://oliverhaas.github.io/django-cachex/main/user-guide/async/</loc>
-         <lastmod>2026-02-14</lastmod>
+         <lastmod>2026-02-15</lastmod>
     </url>
     <url>
          <loc>https://oliverhaas.github.io/django-cachex/main/user-guide/cluster/</loc>
-         <lastmod>2026-02-14</lastmod>
+         <lastmod>2026-02-15</lastmod>
     </url>
     <url>
          <loc>https://oliverhaas.github.io/django-cachex/main/user-guide/compression/</loc>
-         <lastmod>2026-02-14</lastmod>
+         <lastmod>2026-02-15</lastmod>
     </url>
     <url>
          <loc>https://oliverhaas.github.io/django-cachex/main/user-guide/configuration/</loc>
-         <lastmod>2026-02-14</lastmod>
+         <lastmod>2026-02-15</lastmod>
     </url>
     <url>
          <loc>https://oliverhaas.github.io/django-cachex/main/user-guide/sentinel/</loc>
-         <lastmod>2026-02-14</lastmod>
+         <lastmod>2026-02-15</lastmod>
     </url>
     <url>
          <loc>https://oliverhaas.github.io/django-cachex/main/user-guide/serializers/</loc>
-         <lastmod>2026-02-14</lastmod>
+         <lastmod>2026-02-15</lastmod>
     </url>
 </urlset>
