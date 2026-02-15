@@ -2777,66 +2777,6 @@ class KeyValueCacheClient:
         client = self.get_async_client(write=True)
         return await client.eval(script, numkeys, *keys_and_args)
 
-    def evalsha(
-        self,
-        sha: str,
-        numkeys: int,
-        *keys_and_args: Any,
-    ) -> Any:
-        """Execute a cached Lua script by its SHA1 hash."""
-        client = self.get_client(write=True)
-        return client.evalsha(sha, numkeys, *keys_and_args)
-
-    async def aevalsha(
-        self,
-        sha: str,
-        numkeys: int,
-        *keys_and_args: Any,
-    ) -> Any:
-        """Execute a cached Lua script by its SHA1 hash asynchronously."""
-        client = self.get_async_client(write=True)
-        return await client.evalsha(sha, numkeys, *keys_and_args)
-
-    def script_load(self, script: str) -> str:
-        """Load a Lua script into the script cache."""
-        client = self.get_client(write=True)
-        return cast("str", client.script_load(script))
-
-    async def ascript_load(self, script: str) -> str:
-        """Load a Lua script into the script cache asynchronously."""
-        client = self.get_async_client(write=True)
-        return cast("str", await client.script_load(script))
-
-    def script_exists(self, *shas: str) -> list[bool]:
-        """Check if scripts exist in the script cache."""
-        client = self.get_client(write=False)
-        return cast("list[bool]", client.script_exists(*shas))
-
-    async def ascript_exists(self, *shas: str) -> list[bool]:
-        """Check if scripts exist in the script cache asynchronously."""
-        client = self.get_async_client(write=False)
-        return cast("list[bool]", await client.script_exists(*shas))
-
-    def script_flush(self, sync_type: str = "SYNC") -> bool:
-        """Remove all scripts from the script cache."""
-        client = self.get_client(write=True)
-        return cast("bool", client.script_flush(sync_type))
-
-    async def ascript_flush(self, sync_type: str = "SYNC") -> bool:
-        """Remove all scripts from the script cache asynchronously."""
-        client = self.get_async_client(write=True)
-        return cast("bool", await client.script_flush(sync_type))
-
-    def script_kill(self) -> bool:
-        """Kill the currently executing Lua script."""
-        client = self.get_client(write=True)
-        return cast("bool", client.script_kill())
-
-    async def ascript_kill(self) -> bool:
-        """Kill the currently executing Lua script asynchronously."""
-        client = self.get_async_client(write=True)
-        return cast("bool", await client.script_kill())
-
 
 # =============================================================================
 # RedisCacheClient - concrete implementation for redis-py
