@@ -480,6 +480,10 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         if create_type:
             # Create mode: key doesn't exist but type is specified
             create_mode = True
+            messages.warning(
+                request,
+                "This key does not exist yet. Use the operations below to add your first item and create the key.",
+            )
         else:
             messages.error(request, f"Key '{key}' does not exist in cache '{cache_name}'.")
             return redirect(key_list_url(cache_name))

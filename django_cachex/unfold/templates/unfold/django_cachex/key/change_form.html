@@ -107,14 +107,6 @@
         </div>
     </div>
 
-    {% if create_mode %}
-    <div class="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-default">
-        <p class="text-yellow-700 dark:text-yellow-400">
-            {% trans 'This key does not exist yet. Use the operations below to add your first item and create the key.' %}
-        </p>
-    </div>
-    {% endif %}
-
     {% if key_exists or create_mode %}
 
     {% if key_type == 'list' %}

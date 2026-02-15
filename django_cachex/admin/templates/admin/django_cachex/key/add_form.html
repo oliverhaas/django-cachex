@@ -33,46 +33,41 @@
     <form method="post" id="key-form">
         {% csrf_token %}
 
-        <fieldset class="module aligned">
+        <fieldset class="module aligned wide">
             <h2>{% trans 'Key Details' %}</h2>
-            <div class="form-row" id="key-row">
+            <div class="form-row field-key" id="key-row">
                 <div>
-                    <label for="id_key" class="required">{% trans 'Key Name:' %}</label>
-                    <input
-                        type="text"
-                        id="id_key"
-                        name="key"
-                        class="vTextField"
-                        style="width: 400px;"
-                        value="{{ prefill_key }}"
-                        required
-                    >
-                    <p class="help">{% trans 'The unique identifier for this cache entry.' %}</p>
+                    <div class="flex-container">
+                        <label class="required" for="id_key">{% trans 'Key name:' %}</label>
+                        <input type="text" name="key" class="vTextField" value="{{ prefill_key }}" required id="id_key">
+                    </div>
+                    <div class="help">
+                        <div>{% trans 'The unique identifier for this cache entry.' %}</div>
+                    </div>
                 </div>
             </div>
-            <div class="form-row">
+            <div class="form-row field-type">
                 <div>
-                    <label for="id_type" class="required">{% trans 'Type:' %}</label>
-                    <select
-                        id="id_type"
-                        name="type"
-                        class="vTextField"
-                        style="width: 200px;"
-                    >
-                        <option value="string" {% if prefill_type == "string" %}selected{% endif %}>{% trans 'String' %}</option>
-                        <option value="list" {% if prefill_type == "list" %}selected{% endif %}>{% trans 'List' %}</option>
-                        <option value="set" {% if prefill_type == "set" %}selected{% endif %}>{% trans 'Set' %}</option>
-                        <option value="hash" {% if prefill_type == "hash" %}selected{% endif %}>{% trans 'Hash' %}</option>
-                        <option value="zset" {% if prefill_type == "zset" %}selected{% endif %}>{% trans 'Sorted Set' %}</option>
-                    </select>
-                    <p class="help">{% trans 'Select the data type for this key.' %}</p>
+                    <div class="flex-container">
+                        <label class="required" for="id_type">{% trans 'Type:' %}</label>
+                        <select name="type" id="id_type">
+                            <option value="string" {% if prefill_type == "string" %}selected{% endif %}>{% trans 'String' %}</option>
+                            <option value="list" {% if prefill_type == "list" %}selected{% endif %}>{% trans 'List' %}</option>
+                            <option value="set" {% if prefill_type == "set" %}selected{% endif %}>{% trans 'Set' %}</option>
+                            <option value="hash" {% if prefill_type == "hash" %}selected{% endif %}>{% trans 'Hash' %}</option>
+                            <option value="zset" {% if prefill_type == "zset" %}selected{% endif %}>{% trans 'Sorted Set' %}</option>
+                        </select>
+                    </div>
+                    <div class="help">
+                        <div>{% trans 'Select the data type for this key.' %}</div>
+                    </div>
                 </div>
             </div>
         </fieldset>
 
         <div class="submit-row">
             <input type="submit" value="{% trans 'Continue' %}" class="default" name="_continue">
-            <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="closelink">{% trans 'Cancel' %}</a>
+            <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="closelink" style="margin-left: auto; text-decoration: none;">{% trans 'Back' %}</a>
         </div>
     </form>
 </div>
