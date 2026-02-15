@@ -238,11 +238,14 @@ class TestKeyListView:
         response = admin_client.post(
             url,
             {
-                "action": "delete_selected",
-                "_selected_action": ["bulk:delete:1", "bulk:delete:2"],
+                "action": "delete_selected_keys",
+                "_selected_action": [
+                    Key.make_pk("default", "bulk:delete:1"),
+                    Key.make_pk("default", "bulk:delete:2"),
+                ],
             },
         )
-        # Should redirect on success
+        # Admin action redirects back to changelist
         assert response.status_code == 302
 
         # Verify only selected keys were deleted
@@ -2434,7 +2437,7 @@ class TestPermissionViewAccess:
         assert test_cache.get("flush_test_key") == "value"
 
     def test_view_only_user_cannot_delete_keys(self, db, test_cache):
-        """Staff user with only view_key perm gets 403 on bulk delete POST."""
+        """Staff user with only view_key perm cannot bulk-delete keys."""
         from django.contrib.auth.models import Permission, User
 
         staff_user = User.objects.create_user(
@@ -2452,11 +2455,15 @@ class TestPermissionViewAccess:
         client.force_login(staff_user)
 
         test_cache.set("test_key", "value")
-        response = client.post(
+        client.post(
             _key_list_url("default"),
-            {"action": "delete_selected", "_selected_action": ["test_key"]},
+            {
+                "action": "delete_selected_keys",
+                "_selected_action": [Key.make_pk("default", "test_key")],
+            },
         )
-        assert response.status_code == 403
+        # Django admin silently ignores unauthorized actions; verify key not deleted
+        assert test_cache.get("test_key") == "value"
 
     def test_superuser_can_access_all_views(self, admin_client, test_cache):
         """Superuser can access all views (unchanged behavior)."""
