@@ -14,10 +14,10 @@ from django.urls import path, reverse
 from django_cachex.admin.admin import CacheAdmin as StandardCacheAdmin
 from django_cachex.admin.admin import KeyAdmin as StandardKeyAdmin
 from django_cachex.admin.models import Cache, Key
+from django_cachex.admin.queryset import CacheAdminMixin
 from django_cachex.admin.views import (
     ViewConfig,
     _cache_detail_view,
-    _index_view,
     _key_add_view,
     _key_detail_view,
     _key_list_view,
@@ -39,12 +39,8 @@ else:
         _KeyBase = admin.ModelAdmin
 
 
-# Configuration for unfold-themed views
-# Uses admin URLs but with unfold template prefix
-UNFOLD_CACHE_CONFIG = ViewConfig(
-    template_prefix="unfold/django_cachex",
-    help_messages=StandardCacheAdmin._cachex_help_messages,
-)
+# Configuration for unfold-themed key views
+# Cache list now uses CacheAdminMixin instead of _index_view
 UNFOLD_KEY_CONFIG = ViewConfig(
     template_prefix="unfold/django_cachex",
     help_messages=StandardKeyAdmin._cachex_help_messages,
@@ -61,8 +57,13 @@ with contextlib.suppress(admin.sites.NotRegistered):  # type: ignore[attr-define
 
 
 @admin.register(Cache)
-class CacheAdmin(_CacheBase):
-    """Unfold-themed admin for caches."""
+class CacheAdmin(CacheAdminMixin, _CacheBase):  # type: ignore[misc]
+    """Unfold-themed admin for caches.
+
+    Uses CacheAdminMixin for list_display, filtering, search, and flush action.
+    """
+
+    _cachex_help_messages = StandardCacheAdmin._cachex_help_messages
 
     # Caches are defined in settings — add/delete don't apply
     def has_add_permission(self, request: HttpRequest) -> bool:
@@ -87,16 +88,6 @@ class CacheAdmin(_CacheBase):
         ]
         return custom_urls + urls
 
-    def changelist_view(
-        self,
-        request: HttpRequest,
-        extra_context: dict[str, Any] | None = None,
-    ) -> HttpResponse:
-        """List all configured caches using unfold templates."""
-        if not self.has_view_or_change_permission(request):
-            raise PermissionDenied
-        return _index_view(request, UNFOLD_CACHE_CONFIG)
-
     def change_view(
         self,
         request: HttpRequest,
@@ -107,7 +98,11 @@ class CacheAdmin(_CacheBase):
         """Display cache details using unfold templates."""
         if not self.has_view_or_change_permission(request):
             raise PermissionDenied
-        return _cache_detail_view(request, object_id, UNFOLD_CACHE_CONFIG)
+        unfold_config = ViewConfig(
+            template_prefix="unfold/django_cachex",
+            help_messages=self._cachex_help_messages,
+        )
+        return _cache_detail_view(request, object_id, unfold_config)
 
 
 @admin.register(Key)
