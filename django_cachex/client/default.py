@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import weakref
+from itertools import batched
 from typing import TYPE_CHECKING, Any, cast
 
 from django.utils.module_loading import import_string
@@ -737,10 +738,10 @@ class KeyValueCacheClient:
         if itersize is None:
             itersize = self._default_scan_itersize
 
-        keys_list = list(client.scan_iter(match=pattern, count=itersize))
-        if not keys_list:
-            return 0
-        return cast("int", client.delete(*keys_list))
+        count = 0
+        for batch in batched(client.scan_iter(match=pattern, count=itersize), itersize, strict=False):
+            count += cast("int", client.delete(*batch))
+        return count
 
     def rename(self, src: KeyT, dst: KeyT) -> bool:
         """Rename a key."""
@@ -792,10 +793,16 @@ class KeyValueCacheClient:
         if itersize is None:
             itersize = self._default_scan_itersize
 
-        keys_list = [key async for key in client.scan_iter(match=pattern, count=itersize)]
-        if not keys_list:
-            return 0
-        return cast("int", await client.delete(*keys_list))
+        count = 0
+        batch: list[Any] = []
+        async for key in client.scan_iter(match=pattern, count=itersize):
+            batch.append(key)
+            if len(batch) >= itersize:
+                count += cast("int", await client.delete(*batch))
+                batch.clear()
+        if batch:
+            count += cast("int", await client.delete(*batch))
+        return count
 
     async def arename(self, src: KeyT, dst: KeyT) -> bool:
         """Rename a key asynchronously."""

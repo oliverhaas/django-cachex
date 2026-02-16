@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import weakref
+from itertools import batched
 from typing import TYPE_CHECKING, Any, cast, override
 
 from django_cachex.client.cache import KeyValueCache
@@ -257,24 +258,18 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         if itersize is None:
             itersize = self._default_scan_itersize
 
-        # Collect all matching keys from all primaries
-        keys_list = list(
+        total_deleted = 0
+        for batch in batched(
             client.scan_iter(
                 match=pattern,
                 count=itersize,
                 target_nodes=self._cluster.PRIMARIES,
             ),
-        )
-
-        if not keys_list:
-            return 0
-
-        # Group keys by slot for efficient deletion
-        slots = self._group_keys_by_slot(keys_list)
-
-        total_deleted = 0
-        for slot_keys in slots.values():
-            total_deleted += cast("int", client.delete(*slot_keys))
+            itersize,
+            strict=False,
+        ):
+            for slot_keys in self._group_keys_by_slot(batch).values():
+                total_deleted += cast("int", client.delete(*slot_keys))
         return total_deleted
 
     @override
@@ -398,25 +393,21 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         if itersize is None:
             itersize = self._default_scan_itersize
 
-        # Collect all matching keys from all primaries
-        keys_list = [
-            key
-            async for key in client.scan_iter(
-                match=pattern,
-                count=itersize,
-                target_nodes=self._async_cluster.PRIMARIES,
-            )
-        ]
-
-        if not keys_list:
-            return 0
-
-        # Group keys by slot for efficient deletion
-        slots = self._group_keys_by_slot(keys_list)
-
         total_deleted = 0
-        for slot_keys in slots.values():
-            total_deleted += cast("int", await client.delete(*slot_keys))
+        batch: list[Any] = []
+        async for key in client.scan_iter(
+            match=pattern,
+            count=itersize,
+            target_nodes=self._async_cluster.PRIMARIES,
+        ):
+            batch.append(key)
+            if len(batch) >= itersize:
+                for slot_keys in self._group_keys_by_slot(batch).values():
+                    total_deleted += cast("int", await client.delete(*slot_keys))
+                batch.clear()
+        if batch:
+            for slot_keys in self._group_keys_by_slot(batch).values():
+                total_deleted += cast("int", await client.delete(*slot_keys))
         return total_deleted
 
     @override
