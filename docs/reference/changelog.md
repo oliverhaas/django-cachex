@@ -7,6 +7,13 @@
 - **Key detail pagination**: Collection types (list, hash, set, zset, stream) are paginated at 100 items per page with `?page=N` navigation.
 - **Keys in admin sidebar**: The key list is now a first-class sidebar entry with a cache filter for switching between configured caches.
 - **Simplified Lua script execution**: `eval_script()` replaces the `register_script`/`LuaScript` registry with direct `EVAL` calls; redis-py handles script caching.
+- **Async data structure methods**: All hash, list, set, and sorted set operations now have async counterparts on `KeyValueCache` (e.g. `ahset`, `alpush`, `asadd`, `azadd`).
+- **Stream operations**: Full sync and async support for Redis streams (`xadd`, `xread`, `xrange`, `xlen`, `xdel`, `xtrim`, `xinfo_stream`, `xgroup_create`, `xreadgroup`, `xack`, `xpending`, `xclaim`, `xautoclaim`, and more).
+- **Safe `clear()`**: `clear()` now uses `delete_pattern("*")` to only remove keys for the current cache version and prefix, instead of `FLUSHDB`. Use `flush_db()` for the old behavior.
+- **Danger zone in admin**: Cache detail view has a "Danger Zone" section with "Clear all versions" and "Flush database" actions. Key list view has a "Clear" button for safe prefix-scoped clearing.
+- **`hset` items param**: `hset()` now accepts an `items` parameter (flat key-value list), matching the redis-py/valkey-py signature. `hmset` is removed.
+- **`delete_pattern` batched deletes**: Deletes are now batched to prevent OOM on broad patterns.
+- **Multi-key params standardized**: Set operations (`sdiff`, `sinter`, `sunion`, etc.) accept `KeyT | Sequence[KeyT]` consistently.
 
 ---
 
