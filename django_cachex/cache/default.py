@@ -91,7 +91,11 @@ class KeyValueCache(BaseCache):
         return self._class(self._servers, **self._options)
 
     def get_backend_timeout(self, timeout: float | None = DEFAULT_TIMEOUT) -> int | None:
-        """Convert timeout to backend format (matches Django's RedisCache)."""
+        """Convert timeout to backend format (matches Django's RedisCache).
+
+        Negative values are clamped to 0, causing immediate key deletion.
+        This matches Django's behavior where negative timeouts expire keys.
+        """
         if timeout == DEFAULT_TIMEOUT:
             timeout = self.default_timeout
         # The key will be made persistent if None used as a timeout.
