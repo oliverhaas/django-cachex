@@ -2119,6 +2119,31 @@ class KeyValueCacheClient:
         )
         return result.decode() if isinstance(result, bytes) else result
 
+    def _decode_stream_entries(
+        self,
+        results: list[tuple[Any, dict[Any, Any]]],
+    ) -> list[tuple[str, dict[str, Any]]]:
+        """Decode raw stream entries (entry_id + field dict) from Redis."""
+        return [
+            (
+                entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
+                {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
+            )
+            for entry_id, fields in results
+        ]
+
+    def _decode_stream_results(
+        self,
+        results: list[tuple[Any, list[tuple[Any, dict[Any, Any]]]]],
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]]:
+        """Decode multi-stream results (xread/xreadgroup) from Redis."""
+        return {
+            (stream_key.decode() if isinstance(stream_key, bytes) else stream_key): self._decode_stream_entries(
+                entries,
+            )
+            for stream_key, entries in results
+        }
+
     def xlen(self, key: KeyT) -> int:
         """Get the number of entries in a stream."""
         client = self.get_client(key, write=False)
@@ -2136,13 +2161,7 @@ class KeyValueCacheClient:
         client = self.get_client(key, write=False)
 
         results = client.xrange(key, min=start, max=end, count=count)
-        return [
-            (
-                entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
-                {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
-            )
-            for entry_id, fields in results
-        ]
+        return self._decode_stream_entries(results)
 
     def xrevrange(
         self,
@@ -2155,13 +2174,7 @@ class KeyValueCacheClient:
         client = self.get_client(key, write=False)
 
         results = client.xrevrange(key, max=end, min=start, count=count)
-        return [
-            (
-                entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
-                {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
-            )
-            for entry_id, fields in results
-        ]
+        return self._decode_stream_entries(results)
 
     def xread(
         self,
@@ -2176,16 +2189,7 @@ class KeyValueCacheClient:
         if results is None:
             return None
 
-        return {
-            (stream_key.decode() if isinstance(stream_key, bytes) else stream_key): [
-                (
-                    entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
-                    {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
-                )
-                for entry_id, fields in entries
-            ]
-            for stream_key, entries in results
-        }
+        return self._decode_stream_results(results)
 
     def xtrim(
         self,
@@ -2291,16 +2295,7 @@ class KeyValueCacheClient:
         if results is None:
             return None
 
-        return {
-            (stream_key.decode() if isinstance(stream_key, bytes) else stream_key): [
-                (
-                    entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
-                    {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
-                )
-                for entry_id, fields in entries
-            ]
-            for stream_key, entries in results
-        }
+        return self._decode_stream_results(results)
 
     def xack(self, key: KeyT, group: str, *entry_ids: str) -> int:
         """Acknowledge message processing."""
@@ -2363,13 +2358,7 @@ class KeyValueCacheClient:
         )
         if justid:
             return [r.decode() if isinstance(r, bytes) else r for r in results]
-        return [
-            (
-                entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
-                {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
-            )
-            for entry_id, fields in results
-        ]
+        return self._decode_stream_entries(results)
 
     def xautoclaim(
         self,
@@ -2399,13 +2388,7 @@ class KeyValueCacheClient:
         if justid:
             claimed = [r.decode() if isinstance(r, bytes) else r for r in result[1]]
         else:
-            claimed = [
-                (
-                    entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
-                    {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
-                )
-                for entry_id, fields in result[1]
-            ]
+            claimed = self._decode_stream_entries(result[1])
         return (next_id, claimed, deleted)
 
     # =========================================================================
@@ -2456,13 +2439,7 @@ class KeyValueCacheClient:
         client = self.get_async_client(key, write=False)
 
         results = await client.xrange(key, min=start, max=end, count=count)
-        return [
-            (
-                entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
-                {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
-            )
-            for entry_id, fields in results
-        ]
+        return self._decode_stream_entries(results)
 
     async def axrevrange(
         self,
@@ -2475,13 +2452,7 @@ class KeyValueCacheClient:
         client = self.get_async_client(key, write=False)
 
         results = await client.xrevrange(key, max=end, min=start, count=count)
-        return [
-            (
-                entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
-                {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
-            )
-            for entry_id, fields in results
-        ]
+        return self._decode_stream_entries(results)
 
     async def axread(
         self,
@@ -2496,16 +2467,7 @@ class KeyValueCacheClient:
         if results is None:
             return None
 
-        return {
-            (stream_key.decode() if isinstance(stream_key, bytes) else stream_key): [
-                (
-                    entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
-                    {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
-                )
-                for entry_id, fields in entries
-            ]
-            for stream_key, entries in results
-        }
+        return self._decode_stream_results(results)
 
     async def axtrim(
         self,
@@ -2611,16 +2573,7 @@ class KeyValueCacheClient:
         if results is None:
             return None
 
-        return {
-            (stream_key.decode() if isinstance(stream_key, bytes) else stream_key): [
-                (
-                    entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
-                    {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
-                )
-                for entry_id, fields in entries
-            ]
-            for stream_key, entries in results
-        }
+        return self._decode_stream_results(results)
 
     async def axack(self, key: KeyT, group: str, *entry_ids: str) -> int:
         """Acknowledge message processing asynchronously."""
@@ -2683,13 +2636,7 @@ class KeyValueCacheClient:
         )
         if justid:
             return [r.decode() if isinstance(r, bytes) else r for r in results]
-        return [
-            (
-                entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
-                {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
-            )
-            for entry_id, fields in results
-        ]
+        return self._decode_stream_entries(results)
 
     async def axautoclaim(
         self,
@@ -2719,13 +2666,7 @@ class KeyValueCacheClient:
         if justid:
             claimed = [r.decode() if isinstance(r, bytes) else r for r in result[1]]
         else:
-            claimed = [
-                (
-                    entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
-                    {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
-                )
-                for entry_id, fields in result[1]
-            ]
+            claimed = self._decode_stream_entries(result[1])
         return (next_id, claimed, deleted)
 
     # =========================================================================
