@@ -307,6 +307,43 @@
     </fieldset>
     {% endif %}
 
+    {% if show_danger_zone %}
+    <!-- Danger Zone -->
+    <fieldset class="module aligned danger-zone">
+        <h2 class="danger-zone-header">{% trans 'Danger Zone' %}</h2>
+        <div class="danger-zone-content">
+            <div class="danger-action">
+                <div>
+                    <strong>{% trans 'Clear all versions' %}</strong>
+                    <p class="help">{% trans 'Delete all keys for this cache across every version. More destructive than the regular clear which only removes the current version.' %}</p>
+                </div>
+                <form method="post" style="flex-shrink: 0;">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="clear_all_versions">
+                    <button type="submit" class="button delete-btn"
+                        onclick="return confirm('Delete ALL keys across ALL versions for \'{{ cache_name }}\'?\n\nThis cannot be undone.');">
+                        {% trans 'Clear all versions' %}
+                    </button>
+                </form>
+            </div>
+            <div class="danger-action">
+                <div>
+                    <strong>{% trans 'Flush database' %}</strong>
+                    <p class="help">{% trans 'Execute FLUSHDB — removes ALL keys in the Redis database, not just those belonging to this cache. Only safe if this cache has a dedicated database.' %}</p>
+                </div>
+                <form method="post" style="flex-shrink: 0;">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="flush_db">
+                    <button type="submit" class="button delete-btn"
+                        onclick="return confirm('FLUSH the entire Redis database for \'{{ cache_name }}\'?\n\nThis removes ALL keys in the database, including those from other applications.\n\nThis cannot be undone.');">
+                        {% trans 'Flush database' %}
+                    </button>
+                </form>
+            </div>
+        </div>
+    </fieldset>
+    {% endif %}
+
     <div class="submit-row">
         <a role="button" href="{% url 'admin:django_cachex_cache_changelist' %}" class="closelink">{% trans 'Back' %}</a>
     </div>

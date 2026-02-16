@@ -23,6 +23,41 @@ if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
 
 
+def _handle_danger_zone_post(
+    request: HttpRequest,
+    cache_name: str,
+) -> HttpResponse | None:
+    """Handle danger zone POST actions. Returns a redirect or None."""
+    from django.core.exceptions import PermissionDenied
+
+    if request.method != "POST":
+        return None
+
+    if not request.user.has_perm("django_cachex.change_cache"):
+        raise PermissionDenied
+
+    action = request.POST.get("action")
+    cache = get_cache(cache_name)
+
+    if action == "clear_all_versions":
+        try:
+            deleted = cache.clear_all_versions()
+            messages.success(request, f"Deleted {deleted} key(s) across all versions of '{cache_name}'.")
+        except Exception as exc:  # noqa: BLE001
+            messages.error(request, f"Error: {exc}")
+        return redirect(request.get_full_path())
+
+    if action == "flush_db":
+        try:
+            cache.flush_db()
+            messages.success(request, f"Database flushed for '{cache_name}'.")
+        except Exception as exc:  # noqa: BLE001
+            messages.error(request, f"Error: {exc}")
+        return redirect(request.get_full_path())
+
+    return None
+
+
 def _cache_detail_view(
     request: HttpRequest,
     cache_name: str,
@@ -34,6 +69,10 @@ def _cache_detail_view(
     if cache_obj is None:
         messages.error(request, f"Cache '{cache_name}' not found.")
         return redirect(cache_list_url())
+
+    response = _handle_danger_zone_post(request, cache_name)
+    if response is not None:
+        return response
 
     # Show help message if requested
     help_active = show_help(request, "cache_detail", config.help_messages)
@@ -65,6 +104,10 @@ def _cache_detail_view(
     if raw_info:
         raw_info_json = json.dumps(raw_info, indent=2, default=str)
 
+    # Check if the cache supports destructive operations (cachex backends only)
+    is_cachex = cache_obj.support_level == "cachex"
+    can_change = request.user.has_perm("django_cachex.change_cache")
+
     context = admin.site.each_context(request)
     context.update(
         {
@@ -76,6 +119,7 @@ def _cache_detail_view(
             "slowlog_data": slowlog_data,
             "slowlog_count": slowlog_count,
             "help_active": help_active,
+            "show_danger_zone": is_cachex and can_change,
         },
     )
     return render(request, config.template("cache/change_form.html"), context)

@@ -20,6 +20,14 @@
         <a href="{% url 'admin:django_cachex_cache_change' cache_name %}">{% trans 'Cache Details' %}</a>
     </li>
     <li>
+        <form method="post" style="display: inline;" id="clear-cache-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="clear_cache">
+            <input type="hidden" name="cache_name" value="{{ cache_name }}">
+            <a href="#" onclick="if(confirm('Clear all keys in \'{{ cache_name }}\'? This removes keys for the current cache version.')) document.getElementById('clear-cache-form').submit(); return false;" class="deletelink">{% trans 'Clear' %}</a>
+        </form>
+    </li>
+    <li>
         <a href="{% url 'admin:django_cachex_key_add' %}?cache={{ cache_name }}" class="addlink">{% trans 'Add key' %}</a>
     </li>
     {% endblock %}

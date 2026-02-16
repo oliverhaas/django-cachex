@@ -561,12 +561,28 @@ class KeyAdminMixin:
         extra_context = extra_context or {}
 
         # Cache validation
-        cache_name = request.GET.get("cache") or next(iter(settings.CACHES))
+        cache_name = request.GET.get("cache") or request.POST.get("cache_name") or next(iter(settings.CACHES))
         if Cache.get_by_name(cache_name) is None:
             messages.error(request, f"Cache '{cache_name}' not found.")
             return HttpResponseRedirect(reverse("admin:django_cachex_cache_changelist"))
         extra_context["cache_name"] = cache_name
         extra_context["title"] = f"Keys in '{cache_name}'"
+
+        # Handle "Clear cache" POST action
+        if request.method == "POST" and request.POST.get("action") == "clear_cache":
+            if not self.has_change_permission(request):  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+                from django.core.exceptions import PermissionDenied
+
+                raise PermissionDenied
+            try:
+                cache = get_cache(cache_name)
+                cache.clear()
+                messages.success(request, f"Cache '{cache_name}' cleared (current version).")
+            except Exception as exc:  # noqa: BLE001
+                messages.error(request, f"Error clearing cache: {exc}")
+            return HttpResponseRedirect(
+                reverse("admin:django_cachex_key_changelist") + f"?cache={cache_name}",
+            )
 
         # Help handling
         if request.GET.get("help"):

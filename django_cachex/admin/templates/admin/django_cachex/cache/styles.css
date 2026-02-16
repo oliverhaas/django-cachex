@@ -231,6 +231,40 @@
     text-decoration: none;
 }
 
+/* ===== DANGER ZONE ===== */
+/* Destructive operations section in cache detail */
+
+.danger-zone {
+    border: 1px solid var(--delete-button-bg) !important;
+}
+
+.danger-zone-header {
+    background: var(--delete-button-bg) !important;
+    color: var(--button-fg) !important;
+}
+
+.danger-zone-content {
+    padding: 15px;
+}
+
+.danger-action {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    padding: 12px 0;
+}
+
+.danger-action + .danger-action {
+    border-top: 1px solid var(--hairline-color);
+}
+
+.danger-action .help {
+    margin: 4px 0 0;
+    font-size: 0.8125rem;
+    color: var(--body-quiet-color);
+}
+
 /* ===== MISC ===== */
 
 /* Backend error display */

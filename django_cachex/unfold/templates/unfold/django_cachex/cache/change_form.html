@@ -366,6 +366,49 @@
     </div>
     {% endif %}
 
+    {% if show_danger_zone %}
+    <!-- Danger Zone -->
+    <div class="lg:border lg:border-red-300 lg:dark:border-red-700 lg:rounded-default lg:shadow-xs mb-6">
+        <div class="px-4 py-3 border-b border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 lg:rounded-t-default">
+            <h2 class="text-lg font-semibold text-red-700 dark:text-red-400">{% trans 'Danger Zone' %}</h2>
+        </div>
+        <div class="p-4 divide-y divide-base-200 dark:divide-base-800">
+            <div class="flex items-center justify-between gap-6 py-3">
+                <div>
+                    <strong class="text-sm font-medium text-base-900 dark:text-base-100">{% trans 'Clear all versions' %}</strong>
+                    <p class="text-xs text-base-500 dark:text-base-400 mt-1">{% trans 'Delete all keys for this cache across every version. More destructive than the regular clear which only removes the current version.' %}</p>
+                </div>
+                <form method="post" class="flex-shrink-0">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="clear_all_versions">
+                    <button type="submit"
+                            onclick="return confirm('Delete ALL keys across ALL versions for \'{{ cache_name }}\'?\n\nThis cannot be undone.');"
+                            class="px-3 py-2 text-sm font-medium rounded-default border border-red-300 dark:border-red-700
+                                   text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                        {% trans 'Clear all versions' %}
+                    </button>
+                </form>
+            </div>
+            <div class="flex items-center justify-between gap-6 py-3">
+                <div>
+                    <strong class="text-sm font-medium text-base-900 dark:text-base-100">{% trans 'Flush database' %}</strong>
+                    <p class="text-xs text-base-500 dark:text-base-400 mt-1">{% trans 'Execute FLUSHDB — removes ALL keys in the Redis database, not just those belonging to this cache. Only safe if this cache has a dedicated database.' %}</p>
+                </div>
+                <form method="post" class="flex-shrink-0">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="flush_db">
+                    <button type="submit"
+                            onclick="return confirm('FLUSH the entire Redis database for \'{{ cache_name }}\'?\n\nThis removes ALL keys in the database, including those from other applications.\n\nThis cannot be undone.');"
+                            class="px-3 py-2 text-sm font-medium rounded-default bg-red-600 text-white
+                                   hover:bg-red-700 transition-colors">
+                        {% trans 'Flush database' %}
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Back button -->
     <div class="flex items-center">
         <a href="{% url 'admin:django_cachex_cache_changelist' %}"
