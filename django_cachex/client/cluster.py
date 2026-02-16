@@ -19,19 +19,6 @@ if TYPE_CHECKING:
     from django_cachex.client.pipeline import Pipeline
     from django_cachex.types import KeyT
 
-# Known options that shouldn't be passed to the cluster client
-_KNOWN_OPTIONS = frozenset(
-    {
-        "sentinels",
-        "sentinel_kwargs",
-        "compressor",
-        "serializer",
-        "ignore_exceptions",
-        "log_ignored_exceptions",
-    },
-)
-
-
 # =============================================================================
 # CacheClient Classes (actual Redis operations)
 # =============================================================================
@@ -88,7 +75,9 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         url = self._servers[0]
         parsed_url = urlparse(url)
         # Pass through options
-        cluster_options = {key_opt: value for key_opt, value in self._options.items() if key_opt not in _KNOWN_OPTIONS}
+        cluster_options = {
+            key_opt: value for key_opt, value in self._options.items() if key_opt not in self._CLIENT_ONLY_OPTIONS
+        }
 
         if parsed_url.hostname:
             cluster_options["host"] = parsed_url.hostname
@@ -112,7 +101,9 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         url = self._servers[0]
         parsed_url = urlparse(url)
         # Pass through options
-        cluster_options = {key_opt: value for key_opt, value in self._options.items() if key_opt not in _KNOWN_OPTIONS}
+        cluster_options = {
+            key_opt: value for key_opt, value in self._options.items() if key_opt not in self._CLIENT_ONLY_OPTIONS
+        }
 
         if parsed_url.hostname:
             cluster_options["host"] = parsed_url.hostname
