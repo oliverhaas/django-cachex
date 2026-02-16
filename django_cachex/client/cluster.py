@@ -168,7 +168,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         return recovered_data
 
     @override
-    def set_many(self, data: Mapping[KeyT, Any], timeout: float | None = None) -> list[KeyT]:
+    def set_many(self, data: Mapping[KeyT, Any], timeout: int | None = None) -> list[KeyT]:
         """Set multiple values, handling cross-slot keys."""
         if not data:
             return []
@@ -303,7 +303,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         return recovered_data
 
     @override
-    async def aset_many(self, data: Mapping[KeyT, Any], timeout: float | None = None) -> list[KeyT]:
+    async def aset_many(self, data: Mapping[KeyT, Any], timeout: int | None = None) -> list[KeyT]:
         """Set multiple values asynchronously, handling cross-slot keys."""
         if not data:
             return []
