@@ -218,7 +218,7 @@ For passwords with special characters, pass via OPTIONS:
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.client.RedisSentinelCache",
+        "BACKEND": "django_cachex.cache.RedisSentinelCache",
         "LOCATION": "redis://mymaster/0",  # Master name
         "OPTIONS": {
             "sentinels": [
@@ -239,7 +239,7 @@ CACHES = {
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.client.RedisClusterCache",
+        "BACKEND": "django_cachex.cache.RedisClusterCache",
         "LOCATION": "redis://127.0.0.1:7000",
     }
 }

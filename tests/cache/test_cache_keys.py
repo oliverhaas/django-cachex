@@ -182,7 +182,7 @@ class TestIterKeysOperations:
 
 class TestClientSwitching:
     def test_primary_replica_switching(self, cache: KeyValueCache):
-        from django_cachex.client import KeyValueClusterCache
+        from django_cachex.cache import KeyValueClusterCache
 
         cache = cast("KeyValueCache", caches["sample"])
         # Cluster cache doesn't support primary/replica switching - cluster handles routing
@@ -196,7 +196,7 @@ class TestClientSwitching:
         pytest.skip("Test needs restructuring for new architecture")
 
     def test_primary_replica_switching_with_index(self, cache: KeyValueCache):
-        from django_cachex.client import KeyValueClusterCache
+        from django_cachex.cache import KeyValueClusterCache
 
         cache = cast("KeyValueCache", caches["sample"])
         # Cluster cache doesn't support primary/replica switching - cluster handles routing

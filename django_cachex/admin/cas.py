@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 from django_cachex.script import keys_only_pre
 
 if TYPE_CHECKING:
-    from django_cachex.client.cache import KeyValueCache
+    from django_cachex.cache.default import KeyValueCache
 
 # =============================================================================
 # SHA1 reader scripts (used at page load to fingerprint current values)

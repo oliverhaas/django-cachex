@@ -43,10 +43,10 @@ class TestSentinelSetup:
 
         # Use appropriate backend based on client library
         if client_library == "valkey":
-            backend = "django_cachex.client.ValkeySentinelCache"
+            backend = "django_cachex.cache.ValkeySentinelCache"
             scheme = "valkey"
         else:
-            backend = "django_cachex.client.RedisSentinelCache"
+            backend = "django_cachex.cache.RedisSentinelCache"
             scheme = "redis"
 
         caches_config = {
@@ -95,10 +95,10 @@ class TestSentinelSetup:
         _image, client_library = redis_images
 
         if client_library == "valkey":
-            backend = "django_cachex.client.ValkeySentinelCache"
+            backend = "django_cachex.cache.ValkeySentinelCache"
             scheme = "valkey"
         else:
-            backend = "django_cachex.client.RedisSentinelCache"
+            backend = "django_cachex.cache.RedisSentinelCache"
             scheme = "redis"
 
         caches_config = {
@@ -148,10 +148,10 @@ class TestSentinelAsync:
         image, client_library = redis_images
 
         if client_library == "valkey":
-            backend = "django_cachex.client.ValkeySentinelCache"
+            backend = "django_cachex.cache.ValkeySentinelCache"
             scheme = "valkey"
         else:
-            backend = "django_cachex.client.RedisSentinelCache"
+            backend = "django_cachex.cache.RedisSentinelCache"
             scheme = "redis"
 
         caches_config = {

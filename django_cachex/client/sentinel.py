@@ -1,4 +1,4 @@
-"""Sentinel cache backend and client for Redis-compatible backends."""
+"""Sentinel cache clients for Redis-compatible backends."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from django.core.exceptions import ImproperlyConfigured
 
-from django_cachex.client.cache import KeyValueCache, ValkeyCache
 from django_cachex.client.default import KeyValueCacheClient, ValkeyCacheClient
 
 if TYPE_CHECKING:
@@ -248,21 +247,6 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
 
 
 # =============================================================================
-# Cache Classes (extend BaseCache, delegate to CacheClient)
-# =============================================================================
-
-
-class KeyValueSentinelCache(KeyValueCache):
-    """Sentinel cache backend base class.
-
-    Extends KeyValueCache for sentinel-specific behavior.
-    Subclasses set `_class` class attribute to their specific SentinelCacheClient.
-    """
-
-    _class: type[KeyValueSentinelCacheClient] = KeyValueSentinelCacheClient
-
-
-# =============================================================================
 # Concrete Implementations
 # =============================================================================
 
@@ -280,15 +264,6 @@ if _REDIS_AVAILABLE:
         _async_sentinel_class = AsyncRedisSentinel
         _async_sentinel_pool_class = AsyncRedisSentinelConnectionPool
 
-    class RedisSentinelCache(KeyValueSentinelCache):
-        """Django cache backend for Redis Sentinel high availability.
-
-        Provides automatic failover and service discovery via Redis Sentinel.
-        LOCATION should use the Sentinel service name as the hostname.
-        """
-
-        _class = RedisSentinelCacheClient
-
 else:
 
     class RedisSentinelCacheClient(KeyValueCacheClient):  # type: ignore[no-redef]
@@ -297,14 +272,6 @@ else:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             raise ImportError(
                 "RedisSentinelCacheClient requires redis-py to be installed. Install it with: pip install redis",
-            )
-
-    class RedisSentinelCache(KeyValueCache):  # type: ignore[no-redef]
-        """Redis Sentinel cache backend (requires redis-py to be installed)."""
-
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            raise ImportError(
-                "RedisSentinelCache requires redis-py to be installed. Install it with: pip install redis",
             )
 
 
@@ -322,15 +289,6 @@ if _VALKEY_AVAILABLE:
         _async_sentinel_class = AsyncValkeySentinel
         _async_sentinel_pool_class = AsyncValkeySentinelConnectionPool
 
-    class ValkeySentinelCache(KeyValueSentinelCache):
-        """Django cache backend for Valkey Sentinel high availability.
-
-        Provides automatic failover and service discovery via Valkey Sentinel.
-        LOCATION should use the Sentinel service name as the hostname.
-        """
-
-        _class = ValkeySentinelCacheClient
-
 else:
 
     class ValkeySentinelCacheClient(ValkeyCacheClient):  # type: ignore[no-redef]  # ty: ignore[unsupported-base]
@@ -341,24 +299,11 @@ else:
                 "ValkeySentinelCacheClient requires valkey-py to be installed. Install it with: pip install valkey",
             )
 
-    class ValkeySentinelCache(ValkeyCache):  # type: ignore[no-redef]
-        """Valkey Sentinel cache backend (requires valkey-py to be installed)."""
-
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            raise ImportError(
-                "ValkeySentinelCache requires valkey-py to be installed. Install it with: pip install valkey",
-            )
-
-
-# =============================================================================
-# Exports
-# =============================================================================
 
 __all__ = [
-    "KeyValueSentinelCache",
+    "_REDIS_AVAILABLE",
+    "_VALKEY_AVAILABLE",
     "KeyValueSentinelCacheClient",
-    "RedisSentinelCache",
     "RedisSentinelCacheClient",
-    "ValkeySentinelCache",
     "ValkeySentinelCacheClient",
 ]

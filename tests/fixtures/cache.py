@@ -32,13 +32,13 @@ SERIALIZERS = {
 # These are Cache classes (extend BaseCache) - used as BACKEND in Django settings
 BACKENDS = {
     # Valkey backends
-    ("default", "valkey"): "django_cachex.client.ValkeyCache",
-    ("sentinel", "valkey"): "django_cachex.client.ValkeySentinelCache",
-    ("cluster", "valkey"): "django_cachex.client.ValkeyClusterCache",
+    ("default", "valkey"): "django_cachex.cache.ValkeyCache",
+    ("sentinel", "valkey"): "django_cachex.cache.ValkeySentinelCache",
+    ("cluster", "valkey"): "django_cachex.cache.ValkeyClusterCache",
     # Redis backends
-    ("default", "redis"): "django_cachex.client.RedisCache",
-    ("sentinel", "redis"): "django_cachex.client.RedisSentinelCache",
-    ("cluster", "redis"): "django_cachex.client.RedisClusterCache",
+    ("default", "redis"): "django_cachex.cache.RedisCache",
+    ("sentinel", "redis"): "django_cachex.cache.RedisSentinelCache",
+    ("cluster", "redis"): "django_cachex.cache.RedisClusterCache",
 }
 
 # Client library configurations: maps client_library -> (pool_class, parser_class)

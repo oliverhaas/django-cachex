@@ -12,7 +12,7 @@ def mk(cache: KeyValueCache):
 
 
 class TestAsyncHashSetAndGet:
-    """Tests for ahset, ahget, ahmset, ahmget, ahgetall."""
+    """Tests for ahset, ahget, ahmget, ahgetall."""
 
     @pytest.mark.asyncio
     async def test_ahset_creates_hash_field(self, cache: KeyValueCache, mk):
@@ -56,9 +56,9 @@ class TestAsyncHashSetAndGet:
         assert result == [123, 3600, None]
 
     @pytest.mark.asyncio
-    async def test_ahmset_creates_multiple_fields(self, cache: KeyValueCache, mk):
+    async def test_ahset_mapping_creates_multiple_fields(self, cache: KeyValueCache, mk):
         key = mk("aorder:999")
-        await cache._cache.ahmset(key, {"customer": "Bob", "total": 59.99, "items": 3})
+        await cache._cache.ahset(key, mapping={"customer": "Bob", "total": 59.99, "items": 3})
 
         assert cache.hget("aorder:999", "customer") == "Bob"
         assert cache.hget("aorder:999", "total") == 59.99

@@ -1,15 +1,7 @@
-"""Cluster cache backend and client for Redis-compatible backends.
+"""Cluster cache clients for Redis-compatible backends.
 
-This module provides cache backends for Redis Cluster mode, handling
+This module provides cache clients for Redis Cluster mode, handling
 server-side sharding and slot-aware operations.
-
-Architecture (matching Django's RedisCache structure):
-- KeyValueClusterCacheClient(KeyValueCacheClient): Base class with cluster handling
-- RedisClusterCacheClient: Sets class attributes for redis-py cluster
-- ValkeyClusterCacheClient: Sets class attributes for valkey-py cluster
-- KeyValueClusterCache(KeyValueCache): Base cache backend
-- RedisClusterCache: Sets _class = RedisClusterCacheClient
-- ValkeyClusterCache: Sets _class = ValkeyClusterCacheClient
 """
 
 from __future__ import annotations
@@ -19,7 +11,6 @@ import weakref
 from itertools import batched
 from typing import TYPE_CHECKING, Any, cast, override
 
-from django_cachex.client.cache import KeyValueCache
 from django_cachex.client.default import KeyValueCacheClient
 
 if TYPE_CHECKING:
@@ -430,21 +421,6 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
 
 # =============================================================================
-# Cache Classes (extend BaseCache, delegate to CacheClient)
-# =============================================================================
-
-
-class KeyValueClusterCache(KeyValueCache):
-    """Cluster cache backend base class.
-
-    Extends KeyValueCache for cluster-specific behavior.
-    Subclasses set `_class` class attribute to their specific ClusterCacheClient.
-    """
-
-    _class: type[KeyValueClusterCacheClient] = KeyValueClusterCacheClient
-
-
-# =============================================================================
 # Concrete Implementations
 # =============================================================================
 
@@ -465,14 +441,6 @@ try:
         _async_cluster_class = AsyncRedisCluster
         _key_slot_func = staticmethod(redis_key_slot)
 
-    class RedisClusterCache(KeyValueClusterCache):
-        """Django cache backend for Redis Cluster mode.
-
-        Provides automatic sharding across multiple Redis nodes using hash slots.
-        """
-
-        _class = RedisClusterCacheClient
-
 except ImportError:
 
     class RedisClusterCacheClient(KeyValueCacheClient):  # type: ignore[no-redef]
@@ -481,14 +449,6 @@ except ImportError:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             raise ImportError(
                 "RedisClusterCacheClient requires redis-py to be installed. Install it with: pip install redis",
-            )
-
-    class RedisClusterCache(KeyValueCache):  # type: ignore[no-redef]
-        """Redis Cluster cache backend (requires redis-py to be installed)."""
-
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            raise ImportError(
-                "RedisClusterCache requires redis-py to be installed. Install it with: pip install redis",
             )
 
 
@@ -509,14 +469,6 @@ try:
         _async_cluster_class = AsyncValkeyCluster
         _key_slot_func = staticmethod(valkey_key_slot)
 
-    class ValkeyClusterCache(KeyValueClusterCache):
-        """Django cache backend for Valkey Cluster mode.
-
-        Provides automatic sharding across multiple Valkey nodes using hash slots.
-        """
-
-        _class = ValkeyClusterCacheClient
-
 except ImportError:
 
     class ValkeyClusterCacheClient(KeyValueCacheClient):  # type: ignore[no-redef]
@@ -527,24 +479,9 @@ except ImportError:
                 "ValkeyClusterCacheClient requires valkey-py with cluster support. Install it with: pip install valkey",
             )
 
-    class ValkeyClusterCache(KeyValueCache):  # type: ignore[no-redef]
-        """Valkey Cluster cache backend (requires valkey-py with cluster support)."""
-
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            raise ImportError(
-                "ValkeyClusterCache requires valkey-py with cluster support. Install it with: pip install valkey",
-            )
-
-
-# =============================================================================
-# Exports
-# =============================================================================
 
 __all__ = [
-    "KeyValueClusterCache",
     "KeyValueClusterCacheClient",
-    "RedisClusterCache",
     "RedisClusterCacheClient",
-    "ValkeyClusterCache",
     "ValkeyClusterCacheClient",
 ]

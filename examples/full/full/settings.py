@@ -92,7 +92,7 @@ CACHES = {
     # Note: ValkeyClusterCache unavailable due to upstream bug, use RedisClusterCache
     # -------------------------------------------------------------------------
     "cluster": {
-        "BACKEND": "django_cachex.client.cluster.RedisClusterCache",
+        "BACKEND": "django_cachex.cache.cluster.RedisClusterCache",
         "LOCATION": "redis://127.0.0.1:7001",
         "KEY_PREFIX": "cluster",
     },
@@ -101,7 +101,7 @@ CACHES = {
     # Note: ValkeySentinelCache unavailable due to upstream bug, use RedisSentinelCache
     # -------------------------------------------------------------------------
     "sentinel": {
-        "BACKEND": "django_cachex.client.sentinel.RedisSentinelCache",
+        "BACKEND": "django_cachex.cache.sentinel.RedisSentinelCache",
         "LOCATION": "redis://mymaster/0",
         "KEY_PREFIX": "sentinel",
         "OPTIONS": {
