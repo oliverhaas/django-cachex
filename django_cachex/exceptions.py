@@ -70,9 +70,3 @@ class NotSupportedError(Exception):
         if backend:
             msg += f" by {backend}"
         super().__init__(msg)
-
-    def __str__(self) -> str:
-        msg = f"Operation '{self.operation}' is not supported"
-        if self.backend:
-            msg += f" by {self.backend}"
-        return msg
