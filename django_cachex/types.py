@@ -238,6 +238,21 @@ class CacheProtocol(Protocol):
         itersize: int | None = None,
     ) -> int: ...
 
+    async def adelete_pattern(
+        self,
+        pattern: str,
+        version: int | None = None,
+        itersize: int | None = None,
+    ) -> int: ...
+
+    def clear_all_versions(self, itersize: int | None = None) -> int: ...
+
+    async def aclear_all_versions(self, itersize: int | None = None) -> int: ...
+
+    def flush_db(self) -> bool: ...
+
+    async def aflush_db(self) -> bool: ...
+
     def rename(
         self,
         src: KeyT,

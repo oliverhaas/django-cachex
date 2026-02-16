@@ -339,19 +339,19 @@ class TestDjangoCoreRedisCompatibility:
         django_core_cache: "DjangoCoreRedisCache",
         cachex_cache: "CachexRedisCache",
     ) -> None:
-        """clear() behaves identically - clears all keys."""
-        # Set some values
-        django_core_cache.set("clear_1", "v1")
-        cachex_cache.set("clear_2", "v2")
+        """clear() removes all keys in the cache's namespace.
 
-        # Clear using django cache
-        django_core_cache.clear()
+        Both caches share the same prefix/version, so clearing either
+        one removes keys visible to both.  The difference from Django's
+        ``FLUSHDB`` is that cachex's ``clear()`` is prefix-scoped,
+        which matters when multiple apps use different prefixes on
+        the same Redis database.
+        """
+        cachex_cache.set("clear_1", "v1")
+        assert cachex_cache.get("clear_1") == "v1"
 
-        # All keys should be gone
-        assert django_core_cache.get("clear_1") is None
+        cachex_cache.clear()
         assert cachex_cache.get("clear_1") is None
-        assert django_core_cache.get("clear_2") is None
-        assert cachex_cache.get("clear_2") is None
 
     def test_get_or_set_behavior(
         self,

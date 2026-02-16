@@ -189,7 +189,7 @@ class TestRedisClusterCacheClient:
         mock_cluster.delete.assert_called_once()
 
     def test_clear_flushes_all_primaries(self):
-        """Test clear flushes all primary nodes."""
+        """Test low-level clear() calls flushdb on all primary nodes."""
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
         mock_cluster_cls.return_value = mock_cluster
@@ -200,6 +200,7 @@ class TestRedisClusterCacheClient:
         client._log_ignored_exceptions = False
         client.logger = None
 
+        # Low-level clear() still calls flushdb (used by KeyValueCache.flush_db())
         client.clear()
 
         # Should call flushdb with target_nodes=PRIMARIES

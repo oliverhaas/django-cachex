@@ -163,6 +163,6 @@ def test_cache(db, redis_container):
         caches.close_all()
 
         cache = cast("KeyValueCache", caches["default"])
-        cache.clear()
+        cache.flush_db()
         yield cache
-        cache.clear()
+        cache.flush_db()

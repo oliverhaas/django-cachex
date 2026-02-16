@@ -316,9 +316,9 @@ def _make_cache(
         with override_settings(CACHES=caches):
             from django.core.cache import cache as default_cache
 
-            default_cache.clear()  # Clear before test
+            default_cache.flush_db()  # Flush DB before test
             yield cast("KeyValueCache", default_cache)
-            default_cache.clear()  # Clear after test
+            default_cache.flush_db()  # Flush DB after test
         return
 
     # Handle cluster client - needs cluster_container instead of redis_container
@@ -335,9 +335,9 @@ def _make_cache(
         with override_settings(CACHES=caches):
             from django.core.cache import cache as default_cache
 
-            default_cache.clear()  # Clear before test
+            default_cache.flush_db()  # Flush DB before test
             yield cast("KeyValueCache", default_cache)
-            default_cache.clear()  # Clear after test
+            default_cache.flush_db()  # Flush DB after test
         return
 
     # Build cache config for default client
@@ -356,9 +356,9 @@ def _make_cache(
     with override_settings(CACHES=caches):
         from django.core.cache import cache as default_cache
 
-        default_cache.clear()  # Clear before test
+        default_cache.flush_db()  # Flush DB before test
         yield cast("KeyValueCache", default_cache)
-        default_cache.clear()  # Clear after test
+        default_cache.flush_db()  # Flush DB after test
 
 
 @pytest.fixture

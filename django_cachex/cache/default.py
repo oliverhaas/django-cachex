@@ -424,14 +424,22 @@ class KeyValueCache(BaseCache):
     @omit_exception(return_value=False)
     @override
     def clear(self) -> bool:
-        """Flush the database."""
-        return self._cache.clear()
+        """Delete all keys in this cache's namespace (prefix + version).
+
+        Unlike Django's default ``RedisCache.clear()`` which calls ``FLUSHDB``
+        and destroys *all* data in the Redis database, this only removes keys
+        belonging to this cache instance. Safe when multiple apps share a
+        Redis database.
+
+        To flush the entire database, use ``cache.flush_db()``.
+        """
+        return self.delete_pattern("*") >= 0
 
     @omit_exception(return_value=False)
     @override
     async def aclear(self) -> bool:
-        """Flush the database asynchronously."""
-        return await self._cache.aclear()
+        """Delete all keys in this cache's namespace asynchronously."""
+        return (await self.adelete_pattern("*")) >= 0
 
     @override
     def close(self, **kwargs: Any) -> None:
@@ -565,6 +573,16 @@ class KeyValueCache(BaseCache):
         full_pattern = self.make_pattern(pattern, version=version)
         return self._cache.delete_pattern(full_pattern, itersize=itersize)
 
+    async def adelete_pattern(
+        self,
+        pattern: str,
+        version: int | None = None,
+        itersize: int | None = None,
+    ) -> int:
+        """Delete all keys matching pattern asynchronously."""
+        full_pattern = self.make_pattern(pattern, version=version)
+        return await self._cache.adelete_pattern(full_pattern, itersize=itersize)
+
     def lock(
         self,
         key: str,
@@ -602,6 +620,39 @@ class KeyValueCache(BaseCache):
         pipe._key_func = self.make_and_validate_key
         pipe._cache_version = self.version
         return pipe
+
+    # =========================================================================
+    # Destructive Operations
+    # =========================================================================
+
+    def clear_all_versions(self, itersize: int | None = None) -> int:
+        """Delete all keys for this cache's prefix, across ALL versions.
+
+        More destructive than ``clear()`` which only removes the current version.
+        Useful when rotating cache versions and cleaning up old keys.
+        """
+        escaped_prefix = _glob_escape(self.key_prefix)
+        full_pattern = self.key_func("*", escaped_prefix, "*")
+        return self._cache.delete_pattern(full_pattern, itersize=itersize)
+
+    async def aclear_all_versions(self, itersize: int | None = None) -> int:
+        """Delete all keys for this cache's prefix across ALL versions (async)."""
+        escaped_prefix = _glob_escape(self.key_prefix)
+        full_pattern = self.key_func("*", escaped_prefix, "*")
+        return await self._cache.adelete_pattern(full_pattern, itersize=itersize)
+
+    def flush_db(self) -> bool:
+        """Flush the entire Redis database (``FLUSHDB``).
+
+        **Danger:** This removes *all* keys in the database, not just those
+        belonging to this cache. Only use when this cache has a dedicated
+        Redis database.
+        """
+        return self._cache.clear()
+
+    async def aflush_db(self) -> bool:
+        """Flush the entire Redis database asynchronously (``FLUSHDB``)."""
+        return await self._cache.aclear()
 
     # =========================================================================
     # Hash Operations
