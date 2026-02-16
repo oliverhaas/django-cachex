@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
-    from types import TracebackType
 
     from django_cachex.types import KeyT, _Set
 
@@ -31,18 +30,6 @@ class Pipeline:
         self._key_func: Callable[..., str] | None = None
         self._decoders: list[Callable[[Any], Any]] = []
         self._cache_version: int | None = None
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> None:
-        # Pipeline cleanup is handled by the raw pipeline
-        pass
 
     def execute(self) -> list[Any]:
         """Execute all queued commands and decode the results."""
@@ -1082,7 +1069,7 @@ class Pipeline:
 
         # Create helpers for pre/post processing
         helpers = ScriptHelpers(
-            make_key=self._make_key_with_version,
+            make_key=self._make_key,
             encode=self._client.encode,
             decode=self._client.decode,
             version=v,
@@ -1113,10 +1100,6 @@ class Pipeline:
             self._decoders.append(self._noop)
 
         return self
-
-    def _make_key_with_version(self, key: Any, version: int | None) -> KeyT:
-        """Make a key with explicit version (for ScriptHelpers compatibility)."""
-        return self._make_key(key, version)
 
 
 __all__ = ["Pipeline"]

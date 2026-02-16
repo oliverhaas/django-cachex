@@ -229,11 +229,11 @@ class TestPipelineScripts:
         """Test eval_script in pipeline."""
         script = "return redis.call('INCR', KEYS[1])"
 
-        with cache.pipeline() as pipe:
-            pipe.eval_script(script, keys=["pipe_counter"], pre_hook=keys_only_pre)
-            pipe.eval_script(script, keys=["pipe_counter"], pre_hook=keys_only_pre)
-            pipe.eval_script(script, keys=["pipe_counter"], pre_hook=keys_only_pre)
-            results = pipe.execute()
+        pipe = cache.pipeline()
+        pipe.eval_script(script, keys=["pipe_counter"], pre_hook=keys_only_pre)
+        pipe.eval_script(script, keys=["pipe_counter"], pre_hook=keys_only_pre)
+        pipe.eval_script(script, keys=["pipe_counter"], pre_hook=keys_only_pre)
+        results = pipe.execute()
 
         assert results == [1, 2, 3]
 
@@ -241,11 +241,11 @@ class TestPipelineScripts:
         """Test mixing eval_script with other operations."""
         script = "redis.call('SET', KEYS[1], ARGV[1]); return 'ok'"
 
-        with cache.pipeline() as pipe:
-            pipe.set("regular_key", "regular_value")
-            pipe.eval_script(script, keys=["script_key"], args=["script_value"], pre_hook=keys_only_pre)
-            pipe.get("regular_key")
-            results = pipe.execute()
+        pipe = cache.pipeline()
+        pipe.set("regular_key", "regular_value")
+        pipe.eval_script(script, keys=["script_key"], args=["script_value"], pre_hook=keys_only_pre)
+        pipe.get("regular_key")
+        results = pipe.execute()
 
         assert results[0] is True  # set
         assert results[1] == b"ok"  # script
@@ -260,15 +260,15 @@ class TestPipelineScripts:
 
         test_obj = {"data": [1, 2, 3]}
 
-        with cache.pipeline() as pipe:
-            pipe.eval_script(
-                script,
-                keys=["objkey"],
-                args=[test_obj],
-                pre_hook=full_encode_pre,
-                post_hook=decode_single_post,
-            )
-            results = pipe.execute()
+        pipe = cache.pipeline()
+        pipe.eval_script(
+            script,
+            keys=["objkey"],
+            args=[test_obj],
+            pre_hook=full_encode_pre,
+            post_hook=decode_single_post,
+        )
+        results = pipe.execute()
 
         assert results[0] == test_obj
 

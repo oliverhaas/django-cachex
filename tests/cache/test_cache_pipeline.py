@@ -15,17 +15,6 @@ class TestPipelineBasic:
         pipe = cache.pipeline()
         assert isinstance(pipe, Pipeline)
 
-    def test_pipeline_context_manager(self, cache: KeyValueCache):
-        """Test pipeline works as context manager."""
-        cache.set("ctx_key", "value")
-
-        with cache.pipeline() as pipe:
-            pipe.get("ctx_key")
-            pipe.get("nonexistent")
-            results = pipe.execute()
-
-        assert results == ["value", None]
-
     def test_pipeline_manual_execute(self, cache: KeyValueCache):
         """Test pipeline with manual execute."""
         cache.set("manual_key", "manual_value")

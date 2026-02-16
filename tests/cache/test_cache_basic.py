@@ -209,9 +209,9 @@ class TestPipelineSetOperation:
         cache: KeyValueCache,
         mocker: MockerFixture,
     ):
-        with cache.pipeline() as pipe:
-            pipe.set("pipe_test", "pipe_val")
-            results = pipe.execute()
+        pipe = cache.pipeline()
+        pipe.set("pipe_test", "pipe_val")
+        results = pipe.execute()
 
         assert results == [True]
         assert cache.get("pipe_test") == "pipe_val"

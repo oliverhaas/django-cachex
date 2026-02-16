@@ -386,14 +386,14 @@ Scripts can be queued in pipelines:
 ```python
 from django_cachex import keys_only_pre
 
-with cache.pipeline() as pipe:
-    pipe.set("key1", "value1")
-    pipe.eval_script(
-        "return redis.call('INCR', KEYS[1])",
-        keys=["user:1"],
-        pre_hook=keys_only_pre,
-    )
-    results = pipe.execute()  # [True, 1]
+pipe = cache.pipeline()
+pipe.set("key1", "value1")
+pipe.eval_script(
+    "return redis.call('INCR', KEYS[1])",
+    keys=["user:1"],
+    pre_hook=keys_only_pre,
+)
+results = pipe.execute()  # [True, 1]
 ```
 
 ### Async Support
