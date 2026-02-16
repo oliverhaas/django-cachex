@@ -17,7 +17,7 @@ from django.utils.module_loading import import_string
 
 if TYPE_CHECKING:
     import builtins
-    from collections.abc import Callable, Iterator, Mapping, Sequence
+    from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 
     from django_cachex.client.pipeline import Pipeline
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, KeyType, _Set
@@ -717,6 +717,120 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return self._cache.hvals(key)
 
+    async def ahset(
+        self,
+        key: KeyT,
+        field: str | None = None,
+        value: Any = None,
+        version: int | None = None,
+        mapping: Mapping[str, Any] | None = None,
+        items: list[Any] | None = None,
+    ) -> int:
+        """Set hash field(s) asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.ahset(key, field, value, mapping=mapping, items=items)
+
+    async def ahdel(
+        self,
+        key: KeyT,
+        *fields: str,
+        version: int | None = None,
+    ) -> int:
+        """Delete one or more hash fields asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.ahdel(key, *fields)
+
+    async def ahlen(self, key: KeyT, version: int | None = None) -> int:
+        """Get number of fields in hash at key asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.ahlen(key)
+
+    async def ahkeys(self, key: KeyT, version: int | None = None) -> list[str]:
+        """Get all field names in hash at key asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.ahkeys(key)
+
+    async def ahexists(
+        self,
+        key: KeyT,
+        field: str,
+        version: int | None = None,
+    ) -> bool:
+        """Check if field exists in hash at key asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.ahexists(key, field)
+
+    async def ahget(
+        self,
+        key: KeyT,
+        field: str,
+        version: int | None = None,
+    ) -> Any:
+        """Get value of field in hash at key asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.ahget(key, field)
+
+    async def ahgetall(
+        self,
+        key: KeyT,
+        version: int | None = None,
+    ) -> dict[str, Any]:
+        """Get all fields and values in hash at key asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.ahgetall(key)
+
+    async def ahmget(
+        self,
+        key: KeyT,
+        *fields: str,
+        version: int | None = None,
+    ) -> list[Any]:
+        """Get values of multiple fields in hash asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.ahmget(key, *fields)
+
+    async def ahincrby(
+        self,
+        key: KeyT,
+        field: str,
+        amount: int = 1,
+        version: int | None = None,
+    ) -> int:
+        """Increment value of field in hash by amount asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.ahincrby(key, field, amount)
+
+    async def ahincrbyfloat(
+        self,
+        key: KeyT,
+        field: str,
+        amount: float = 1.0,
+        version: int | None = None,
+    ) -> float:
+        """Increment float value of field in hash by amount asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.ahincrbyfloat(key, field, amount)
+
+    async def ahsetnx(
+        self,
+        key: KeyT,
+        field: str,
+        value: Any,
+        version: int | None = None,
+    ) -> bool:
+        """Set field in hash only if it doesn't exist asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.ahsetnx(key, field, value)
+
+    async def ahvals(
+        self,
+        key: KeyT,
+        version: int | None = None,
+    ) -> list[Any]:
+        """Get all values in hash at key asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.ahvals(key)
+
     # =========================================================================
     # List Operations
     # =========================================================================
@@ -875,11 +989,12 @@ class KeyValueCache(BaseCache):
 
     def brpop(
         self,
-        keys: Sequence[KeyT],
+        keys: KeyT | Sequence[KeyT],
         timeout: float = 0,
         version: int | None = None,
     ) -> tuple[str, Any] | None:
         """Blocking pop from tail of list."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
         result = self._cache.brpop(nkeys, timeout=timeout)
         if result is None:
@@ -900,6 +1015,185 @@ class KeyValueCache(BaseCache):
         src = self.make_and_validate_key(src, version=version)
         dst = self.make_and_validate_key(dst, version=version)
         return self._cache.blmove(src, dst, timeout, wherefrom, whereto)
+
+    async def alpush(
+        self,
+        key: KeyT,
+        *values: Any,
+        version: int | None = None,
+    ) -> int:
+        """Push values onto head of list at key asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.alpush(key, *values)
+
+    async def arpush(
+        self,
+        key: KeyT,
+        *values: Any,
+        version: int | None = None,
+    ) -> int:
+        """Push values onto tail of list at key asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.arpush(key, *values)
+
+    async def alpop(
+        self,
+        key: KeyT,
+        count: int | None = None,
+        version: int | None = None,
+    ) -> Any | list[Any] | None:
+        """Remove and return element(s) from head of list asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.alpop(key, count=count)
+
+    async def arpop(
+        self,
+        key: KeyT,
+        count: int | None = None,
+        version: int | None = None,
+    ) -> Any | list[Any] | None:
+        """Remove and return element(s) from tail of list asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.arpop(key, count=count)
+
+    async def alrange(
+        self,
+        key: KeyT,
+        start: int,
+        end: int,
+        version: int | None = None,
+    ) -> list[Any]:
+        """Get a range of elements from list asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.alrange(key, start, end)
+
+    async def alindex(
+        self,
+        key: KeyT,
+        index: int,
+        version: int | None = None,
+    ) -> Any:
+        """Get element at index in list asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.alindex(key, index)
+
+    async def allen(self, key: KeyT, version: int | None = None) -> int:
+        """Get length of list at key asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.allen(key)
+
+    async def alpos(
+        self,
+        key: KeyT,
+        value: Any,
+        rank: int | None = None,
+        count: int | None = None,
+        maxlen: int | None = None,
+        version: int | None = None,
+    ) -> int | list[int] | None:
+        """Find position(s) of element in list asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.alpos(key, value, rank=rank, count=count, maxlen=maxlen)
+
+    async def almove(
+        self,
+        src: KeyT,
+        dst: KeyT,
+        wherefrom: str,
+        whereto: str,
+        version: int | None = None,
+    ) -> Any | None:
+        """Atomically move an element from one list to another asynchronously."""
+        src = self.make_and_validate_key(src, version=version)
+        dst = self.make_and_validate_key(dst, version=version)
+        return await self._cache.almove(src, dst, wherefrom, whereto)
+
+    async def alrem(
+        self,
+        key: KeyT,
+        count: int,
+        value: Any,
+        version: int | None = None,
+    ) -> int:
+        """Remove elements equal to value from list asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.alrem(key, count, value)
+
+    async def altrim(
+        self,
+        key: KeyT,
+        start: int,
+        end: int,
+        version: int | None = None,
+    ) -> bool:
+        """Trim list to specified range asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.altrim(key, start, end)
+
+    async def alset(
+        self,
+        key: KeyT,
+        index: int,
+        value: Any,
+        version: int | None = None,
+    ) -> bool:
+        """Set element at index in list asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.alset(key, index, value)
+
+    async def alinsert(
+        self,
+        key: KeyT,
+        where: str,
+        pivot: Any,
+        value: Any,
+        version: int | None = None,
+    ) -> int:
+        """Insert value before or after pivot in list asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.alinsert(key, where, pivot, value)
+
+    async def ablpop(
+        self,
+        keys: KeyT | Sequence[KeyT],
+        timeout: float = 0,
+        version: int | None = None,
+    ) -> tuple[str, Any] | None:
+        """Blocking pop from head of list asynchronously."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
+        result = await self._cache.ablpop(nkeys, timeout=timeout)
+        if result is None:
+            return None
+        return (self.reverse_key(result[0]), result[1])
+
+    async def abrpop(
+        self,
+        keys: KeyT | Sequence[KeyT],
+        timeout: float = 0,
+        version: int | None = None,
+    ) -> tuple[str, Any] | None:
+        """Blocking pop from tail of list asynchronously."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
+        result = await self._cache.abrpop(nkeys, timeout=timeout)
+        if result is None:
+            return None
+        return (self.reverse_key(result[0]), result[1])
+
+    async def ablmove(
+        self,
+        src: KeyT,
+        dst: KeyT,
+        timeout: float,
+        wherefrom: str = "LEFT",
+        whereto: str = "RIGHT",
+        version: int | None = None,
+    ) -> Any | None:
+        """Blocking atomically move element from one list to another asynchronously."""
+        src = self.make_and_validate_key(src, version=version)
+        dst = self.make_and_validate_key(dst, version=version)
+        return await self._cache.ablmove(src, dst, timeout, wherefrom, whereto)
 
     # =========================================================================
     # Set Operations
@@ -1095,6 +1389,194 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         yield from self._cache.sscan_iter(key, match=match, count=count)
 
+    async def asadd(
+        self,
+        key: KeyT,
+        *members: Any,
+        version: int | None = None,
+    ) -> int:
+        """Add members to a set asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.asadd(key, *members)
+
+    async def ascard(self, key: KeyT, version: int | None = None) -> int:
+        """Get the number of members in a set asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.ascard(key)
+
+    async def asdiff(
+        self,
+        keys: KeyT | Sequence[KeyT],
+        version: int | None = None,
+    ) -> _Set[Any]:
+        """Return the difference between the first set and all successive sets asynchronously."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
+        return await self._cache.asdiff(nkeys)
+
+    async def asdiffstore(
+        self,
+        dest: KeyT,
+        keys: KeyT | Sequence[KeyT],
+        version: int | None = None,
+        version_dest: int | None = None,
+        version_keys: int | None = None,
+    ) -> int:
+        """Store the difference of sets at dest asynchronously."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        dest_ver = version_dest if version_dest is not None else version
+        keys_ver = version_keys if version_keys is not None else version
+        dest = self.make_and_validate_key(dest, version=dest_ver)
+        nkeys = [self.make_and_validate_key(k, version=keys_ver) for k in keys]
+        return await self._cache.asdiffstore(dest, nkeys)
+
+    async def asinter(
+        self,
+        keys: KeyT | Sequence[KeyT],
+        version: int | None = None,
+    ) -> _Set[Any]:
+        """Return the intersection of all sets asynchronously."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
+        return await self._cache.asinter(nkeys)
+
+    async def asinterstore(
+        self,
+        dest: KeyT,
+        keys: KeyT | Sequence[KeyT],
+        version: int | None = None,
+        version_dest: int | None = None,
+        version_keys: int | None = None,
+    ) -> int:
+        """Store the intersection of sets at dest asynchronously."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        dest_ver = version_dest if version_dest is not None else version
+        keys_ver = version_keys if version_keys is not None else version
+        dest = self.make_and_validate_key(dest, version=dest_ver)
+        nkeys = [self.make_and_validate_key(k, version=keys_ver) for k in keys]
+        return await self._cache.asinterstore(dest, nkeys)
+
+    async def asismember(
+        self,
+        key: KeyT,
+        member: Any,
+        version: int | None = None,
+    ) -> bool:
+        """Check if member is in set asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.asismember(key, member)
+
+    async def asmembers(
+        self,
+        key: KeyT,
+        version: int | None = None,
+    ) -> _Set[Any]:
+        """Get all members of a set asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.asmembers(key)
+
+    async def asmove(
+        self,
+        src: KeyT,
+        dst: KeyT,
+        member: Any,
+        version: int | None = None,
+    ) -> bool:
+        """Move member from one set to another asynchronously."""
+        src = self.make_and_validate_key(src, version=version)
+        dst = self.make_and_validate_key(dst, version=version)
+        return await self._cache.asmove(src, dst, member)
+
+    async def aspop(
+        self,
+        key: KeyT,
+        count: int | None = None,
+        version: int | None = None,
+    ) -> Any | list[Any] | None:
+        """Remove and return random member(s) from set asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.aspop(key, count)
+
+    async def asrandmember(
+        self,
+        key: KeyT,
+        count: int | None = None,
+        version: int | None = None,
+    ) -> Any | list[Any]:
+        """Get random member(s) from set without removing asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.asrandmember(key, count)
+
+    async def asrem(
+        self,
+        key: KeyT,
+        *members: Any,
+        version: int | None = None,
+    ) -> int:
+        """Remove members from a set asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.asrem(key, *members)
+
+    async def asunion(
+        self,
+        keys: KeyT | Sequence[KeyT],
+        version: int | None = None,
+    ) -> _Set[Any]:
+        """Return the union of all sets asynchronously."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
+        return await self._cache.asunion(nkeys)
+
+    async def asunionstore(
+        self,
+        dest: KeyT,
+        keys: KeyT | Sequence[KeyT],
+        version: int | None = None,
+        version_dest: int | None = None,
+        version_keys: int | None = None,
+    ) -> int:
+        """Store the union of sets at dest asynchronously."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        dest_ver = version_dest if version_dest is not None else version
+        keys_ver = version_keys if version_keys is not None else version
+        dest = self.make_and_validate_key(dest, version=dest_ver)
+        nkeys = [self.make_and_validate_key(k, version=keys_ver) for k in keys]
+        return await self._cache.asunionstore(dest, nkeys)
+
+    async def asmismember(
+        self,
+        key: KeyT,
+        *members: Any,
+        version: int | None = None,
+    ) -> list[bool]:
+        """Check if multiple values are members of a set asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.asmismember(key, *members)
+
+    async def asscan(
+        self,
+        key: KeyT,
+        cursor: int = 0,
+        match: str | None = None,
+        count: int | None = None,
+        version: int | None = None,
+    ) -> tuple[int, _Set[Any]]:
+        """Incrementally iterate over set members asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.asscan(key, cursor=cursor, match=match, count=count)
+
+    async def asscan_iter(
+        self,
+        key: KeyT,
+        match: str | None = None,
+        count: int | None = None,
+        version: int | None = None,
+    ) -> AsyncIterator[Any]:
+        """Iterate over set members using SSCAN asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        async for member in self._cache.asscan_iter(key, match=match, count=count):
+            yield member
+
     # =========================================================================
     # Sorted Set Operations
     # =========================================================================
@@ -1289,6 +1771,630 @@ class KeyValueCache(BaseCache):
         """Get the scores of multiple members."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.zmscore(key, *members)
+
+    async def azadd(
+        self,
+        key: KeyT,
+        mapping: Mapping[Any, float],
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        ch: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+        version: int | None = None,
+    ) -> int:
+        """Add members to a sorted set asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.azadd(key, mapping, nx=nx, xx=xx, ch=ch, gt=gt, lt=lt)
+
+    async def azcard(self, key: KeyT, version: int | None = None) -> int:
+        """Get the number of members in a sorted set asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.azcard(key)
+
+    async def azcount(
+        self,
+        key: KeyT,
+        min_score: float | str,
+        max_score: float | str,
+        version: int | None = None,
+    ) -> int:
+        """Count members with scores between min and max asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.azcount(key, min_score, max_score)
+
+    async def azincrby(
+        self,
+        key: KeyT,
+        amount: float,
+        member: Any,
+        version: int | None = None,
+    ) -> float:
+        """Increment the score of a member asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.azincrby(key, amount, member)
+
+    async def azpopmax(
+        self,
+        key: KeyT,
+        count: int = 1,
+        version: int | None = None,
+    ) -> list[tuple[Any, float]]:
+        """Remove and return members with highest scores asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.azpopmax(key, count)
+
+    async def azpopmin(
+        self,
+        key: KeyT,
+        count: int = 1,
+        version: int | None = None,
+    ) -> list[tuple[Any, float]]:
+        """Remove and return members with lowest scores asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.azpopmin(key, count)
+
+    async def azrange(
+        self,
+        key: KeyT,
+        start: int,
+        end: int,
+        *,
+        withscores: bool = False,
+        version: int | None = None,
+    ) -> list[Any] | list[tuple[Any, float]]:
+        """Return a range of members by index asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.azrange(key, start, end, withscores=withscores)
+
+    async def azrangebyscore(
+        self,
+        key: KeyT,
+        min_score: float | str,
+        max_score: float | str,
+        *,
+        withscores: bool = False,
+        start: int | None = None,
+        num: int | None = None,
+        version: int | None = None,
+    ) -> list[Any] | list[tuple[Any, float]]:
+        """Return members with scores between min and max asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.azrangebyscore(key, min_score, max_score, withscores=withscores, start=start, num=num)
+
+    async def azrank(
+        self,
+        key: KeyT,
+        member: Any,
+        version: int | None = None,
+    ) -> int | None:
+        """Get the rank of a member (0-based, lowest score first) asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.azrank(key, member)
+
+    async def azrem(
+        self,
+        key: KeyT,
+        *members: Any,
+        version: int | None = None,
+    ) -> int:
+        """Remove members from a sorted set asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.azrem(key, *members)
+
+    async def azremrangebyscore(
+        self,
+        key: KeyT,
+        min_score: float | str,
+        max_score: float | str,
+        version: int | None = None,
+    ) -> int:
+        """Remove members with scores between min and max asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.azremrangebyscore(key, min_score, max_score)
+
+    async def azremrangebyrank(
+        self,
+        key: KeyT,
+        start: int,
+        end: int,
+        version: int | None = None,
+    ) -> int:
+        """Remove members by rank range asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.azremrangebyrank(key, start, end)
+
+    async def azrevrange(
+        self,
+        key: KeyT,
+        start: int,
+        end: int,
+        *,
+        withscores: bool = False,
+        version: int | None = None,
+    ) -> list[Any] | list[tuple[Any, float]]:
+        """Return a range of members by index, highest to lowest, asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.azrevrange(key, start, end, withscores=withscores)
+
+    async def azrevrangebyscore(
+        self,
+        key: KeyT,
+        max_score: float | str,
+        min_score: float | str,
+        *,
+        withscores: bool = False,
+        start: int | None = None,
+        num: int | None = None,
+        version: int | None = None,
+    ) -> list[Any] | list[tuple[Any, float]]:
+        """Return members with scores between max and min, highest first, asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.azrevrangebyscore(
+            key,
+            max_score,
+            min_score,
+            withscores=withscores,
+            start=start,
+            num=num,
+        )
+
+    async def azscore(
+        self,
+        key: KeyT,
+        member: Any,
+        version: int | None = None,
+    ) -> float | None:
+        """Get the score of a member asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.azscore(key, member)
+
+    async def azrevrank(
+        self,
+        key: KeyT,
+        member: Any,
+        version: int | None = None,
+    ) -> int | None:
+        """Get the rank of a member (0-based, highest score first) asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.azrevrank(key, member)
+
+    async def azmscore(
+        self,
+        key: KeyT,
+        *members: Any,
+        version: int | None = None,
+    ) -> list[float | None]:
+        """Get the scores of multiple members asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.azmscore(key, *members)
+
+    # =========================================================================
+    # Stream Operations
+    # =========================================================================
+
+    def xadd(
+        self,
+        key: KeyT,
+        fields: dict[str, Any],
+        entry_id: str = "*",
+        maxlen: int | None = None,
+        approximate: bool = True,
+        nomkstream: bool = False,
+        minid: str | None = None,
+        limit: int | None = None,
+        version: int | None = None,
+    ) -> str:
+        """Add an entry to a stream."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.xadd(
+            key,
+            fields,
+            entry_id,
+            maxlen=maxlen,
+            approximate=approximate,
+            nomkstream=nomkstream,
+            minid=minid,
+            limit=limit,
+        )
+
+    async def axadd(
+        self,
+        key: KeyT,
+        fields: dict[str, Any],
+        entry_id: str = "*",
+        maxlen: int | None = None,
+        approximate: bool = True,
+        nomkstream: bool = False,
+        minid: str | None = None,
+        limit: int | None = None,
+        version: int | None = None,
+    ) -> str:
+        """Add an entry to a stream asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.axadd(
+            key,
+            fields,
+            entry_id,
+            maxlen=maxlen,
+            approximate=approximate,
+            nomkstream=nomkstream,
+            minid=minid,
+            limit=limit,
+        )
+
+    def xlen(self, key: KeyT, version: int | None = None) -> int:
+        """Get the number of entries in a stream."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.xlen(key)
+
+    async def axlen(self, key: KeyT, version: int | None = None) -> int:
+        """Get the number of entries in a stream asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.axlen(key)
+
+    def xrange(
+        self,
+        key: KeyT,
+        start: str = "-",
+        end: str = "+",
+        count: int | None = None,
+        version: int | None = None,
+    ) -> list[tuple[str, dict[str, Any]]]:
+        """Get entries from a stream in ascending order."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.xrange(key, start, end, count=count)
+
+    async def axrange(
+        self,
+        key: KeyT,
+        start: str = "-",
+        end: str = "+",
+        count: int | None = None,
+        version: int | None = None,
+    ) -> list[tuple[str, dict[str, Any]]]:
+        """Get entries from a stream in ascending order asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.axrange(key, start, end, count=count)
+
+    def xrevrange(
+        self,
+        key: KeyT,
+        end: str = "+",
+        start: str = "-",
+        count: int | None = None,
+        version: int | None = None,
+    ) -> list[tuple[str, dict[str, Any]]]:
+        """Get entries from a stream in descending order."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.xrevrange(key, end, start, count=count)
+
+    async def axrevrange(
+        self,
+        key: KeyT,
+        end: str = "+",
+        start: str = "-",
+        count: int | None = None,
+        version: int | None = None,
+    ) -> list[tuple[str, dict[str, Any]]]:
+        """Get entries from a stream in descending order asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.axrevrange(key, end, start, count=count)
+
+    def xread(
+        self,
+        streams: dict[KeyT, str],
+        count: int | None = None,
+        block: int | None = None,
+        version: int | None = None,
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+        """Read entries from one or more streams."""
+        nstreams = {self.make_and_validate_key(k, version=version): v for k, v in streams.items()}
+        return self._cache.xread(nstreams, count=count, block=block)
+
+    async def axread(
+        self,
+        streams: dict[KeyT, str],
+        count: int | None = None,
+        block: int | None = None,
+        version: int | None = None,
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+        """Read entries from one or more streams asynchronously."""
+        nstreams = {self.make_and_validate_key(k, version=version): v for k, v in streams.items()}
+        return await self._cache.axread(nstreams, count=count, block=block)
+
+    def xtrim(
+        self,
+        key: KeyT,
+        maxlen: int | None = None,
+        approximate: bool = True,
+        minid: str | None = None,
+        limit: int | None = None,
+        version: int | None = None,
+    ) -> int:
+        """Trim a stream to a maximum length or minimum ID."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.xtrim(key, maxlen=maxlen, approximate=approximate, minid=minid, limit=limit)
+
+    async def axtrim(
+        self,
+        key: KeyT,
+        maxlen: int | None = None,
+        approximate: bool = True,
+        minid: str | None = None,
+        limit: int | None = None,
+        version: int | None = None,
+    ) -> int:
+        """Trim a stream asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.axtrim(key, maxlen=maxlen, approximate=approximate, minid=minid, limit=limit)
+
+    def xdel(self, key: KeyT, *entry_ids: str, version: int | None = None) -> int:
+        """Delete entries from a stream."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.xdel(key, *entry_ids)
+
+    async def axdel(self, key: KeyT, *entry_ids: str, version: int | None = None) -> int:
+        """Delete entries from a stream asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.axdel(key, *entry_ids)
+
+    def xinfo_stream(self, key: KeyT, full: bool = False, version: int | None = None) -> dict[str, Any]:
+        """Get information about a stream."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.xinfo_stream(key, full=full)
+
+    async def axinfo_stream(self, key: KeyT, full: bool = False, version: int | None = None) -> dict[str, Any]:
+        """Get information about a stream asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.axinfo_stream(key, full=full)
+
+    def xinfo_groups(self, key: KeyT, version: int | None = None) -> list[dict[str, Any]]:
+        """Get information about consumer groups for a stream."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.xinfo_groups(key)
+
+    async def axinfo_groups(self, key: KeyT, version: int | None = None) -> list[dict[str, Any]]:
+        """Get information about consumer groups for a stream asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.axinfo_groups(key)
+
+    def xinfo_consumers(self, key: KeyT, group: str, version: int | None = None) -> list[dict[str, Any]]:
+        """Get information about consumers in a group."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.xinfo_consumers(key, group)
+
+    async def axinfo_consumers(self, key: KeyT, group: str, version: int | None = None) -> list[dict[str, Any]]:
+        """Get information about consumers in a group asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.axinfo_consumers(key, group)
+
+    def xgroup_create(
+        self,
+        key: KeyT,
+        group: str,
+        entry_id: str = "$",
+        mkstream: bool = False,
+        entries_read: int | None = None,
+        version: int | None = None,
+    ) -> bool:
+        """Create a consumer group."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.xgroup_create(key, group, entry_id, mkstream=mkstream, entries_read=entries_read)
+
+    async def axgroup_create(
+        self,
+        key: KeyT,
+        group: str,
+        entry_id: str = "$",
+        mkstream: bool = False,
+        entries_read: int | None = None,
+        version: int | None = None,
+    ) -> bool:
+        """Create a consumer group asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.axgroup_create(key, group, entry_id, mkstream=mkstream, entries_read=entries_read)
+
+    def xgroup_destroy(self, key: KeyT, group: str, version: int | None = None) -> int:
+        """Destroy a consumer group."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.xgroup_destroy(key, group)
+
+    async def axgroup_destroy(self, key: KeyT, group: str, version: int | None = None) -> int:
+        """Destroy a consumer group asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.axgroup_destroy(key, group)
+
+    def xgroup_setid(
+        self,
+        key: KeyT,
+        group: str,
+        entry_id: str,
+        entries_read: int | None = None,
+        version: int | None = None,
+    ) -> bool:
+        """Set the last delivered ID for a consumer group."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.xgroup_setid(key, group, entry_id, entries_read=entries_read)
+
+    async def axgroup_setid(
+        self,
+        key: KeyT,
+        group: str,
+        entry_id: str,
+        entries_read: int | None = None,
+        version: int | None = None,
+    ) -> bool:
+        """Set the last delivered ID for a consumer group asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.axgroup_setid(key, group, entry_id, entries_read=entries_read)
+
+    def xgroup_delconsumer(self, key: KeyT, group: str, consumer: str, version: int | None = None) -> int:
+        """Remove a consumer from a group."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.xgroup_delconsumer(key, group, consumer)
+
+    async def axgroup_delconsumer(self, key: KeyT, group: str, consumer: str, version: int | None = None) -> int:
+        """Remove a consumer from a group asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.axgroup_delconsumer(key, group, consumer)
+
+    def xreadgroup(
+        self,
+        group: str,
+        consumer: str,
+        streams: dict[KeyT, str],
+        count: int | None = None,
+        block: int | None = None,
+        noack: bool = False,
+        version: int | None = None,
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+        """Read entries from streams as a consumer group member."""
+        nstreams = {self.make_and_validate_key(k, version=version): v for k, v in streams.items()}
+        return self._cache.xreadgroup(group, consumer, nstreams, count=count, block=block, noack=noack)
+
+    async def axreadgroup(
+        self,
+        group: str,
+        consumer: str,
+        streams: dict[KeyT, str],
+        count: int | None = None,
+        block: int | None = None,
+        noack: bool = False,
+        version: int | None = None,
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+        """Read entries from streams as a consumer group member asynchronously."""
+        nstreams = {self.make_and_validate_key(k, version=version): v for k, v in streams.items()}
+        return await self._cache.axreadgroup(group, consumer, nstreams, count=count, block=block, noack=noack)
+
+    def xack(self, key: KeyT, group: str, *entry_ids: str, version: int | None = None) -> int:
+        """Acknowledge message processing."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.xack(key, group, *entry_ids)
+
+    async def axack(self, key: KeyT, group: str, *entry_ids: str, version: int | None = None) -> int:
+        """Acknowledge message processing asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.axack(key, group, *entry_ids)
+
+    def xpending(
+        self,
+        key: KeyT,
+        group: str,
+        start: str | None = None,
+        end: str | None = None,
+        count: int | None = None,
+        consumer: str | None = None,
+        idle: int | None = None,
+        version: int | None = None,
+    ) -> dict[str, Any] | list[dict[str, Any]]:
+        """Get pending entries information."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.xpending(key, group, start=start, end=end, count=count, consumer=consumer, idle=idle)
+
+    async def axpending(
+        self,
+        key: KeyT,
+        group: str,
+        start: str | None = None,
+        end: str | None = None,
+        count: int | None = None,
+        consumer: str | None = None,
+        idle: int | None = None,
+        version: int | None = None,
+    ) -> dict[str, Any] | list[dict[str, Any]]:
+        """Get pending entries information asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.axpending(key, group, start=start, end=end, count=count, consumer=consumer, idle=idle)
+
+    def xclaim(
+        self,
+        key: KeyT,
+        group: str,
+        consumer: str,
+        min_idle_time: int,
+        entry_ids: list[str],
+        idle: int | None = None,
+        time: int | None = None,
+        retrycount: int | None = None,
+        force: bool = False,
+        justid: bool = False,
+        version: int | None = None,
+    ) -> list[tuple[str, dict[str, Any]]] | list[str]:
+        """Claim pending messages."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.xclaim(
+            key,
+            group,
+            consumer,
+            min_idle_time,
+            entry_ids,
+            idle=idle,
+            time=time,
+            retrycount=retrycount,
+            force=force,
+            justid=justid,
+        )
+
+    async def axclaim(
+        self,
+        key: KeyT,
+        group: str,
+        consumer: str,
+        min_idle_time: int,
+        entry_ids: list[str],
+        idle: int | None = None,
+        time: int | None = None,
+        retrycount: int | None = None,
+        force: bool = False,
+        justid: bool = False,
+        version: int | None = None,
+    ) -> list[tuple[str, dict[str, Any]]] | list[str]:
+        """Claim pending messages asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.axclaim(
+            key,
+            group,
+            consumer,
+            min_idle_time,
+            entry_ids,
+            idle=idle,
+            time=time,
+            retrycount=retrycount,
+            force=force,
+            justid=justid,
+        )
+
+    def xautoclaim(
+        self,
+        key: KeyT,
+        group: str,
+        consumer: str,
+        min_idle_time: int,
+        start_id: str = "0-0",
+        count: int | None = None,
+        justid: bool = False,
+        version: int | None = None,
+    ) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
+        """Auto-claim pending messages that have been idle."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.xautoclaim(key, group, consumer, min_idle_time, start_id, count=count, justid=justid)
+
+    async def axautoclaim(
+        self,
+        key: KeyT,
+        group: str,
+        consumer: str,
+        min_idle_time: int,
+        start_id: str = "0-0",
+        count: int | None = None,
+        justid: bool = False,
+        version: int | None = None,
+    ) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
+        """Auto-claim pending messages asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.axautoclaim(key, group, consumer, min_idle_time, start_id, count=count, justid=justid)
 
     # =========================================================================
     # Direct Client Access
