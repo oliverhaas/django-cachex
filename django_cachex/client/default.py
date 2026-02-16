@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 from django.utils.module_loading import import_string
 
 from django_cachex.compat import create_compressor, create_serializer
-from django_cachex.exceptions import CompressorError, SerializerError, _main_exceptions, _ResponseError
+from django_cachex.exceptions import CompressorError, SerializerError, _main_exceptions
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
@@ -468,46 +468,14 @@ class KeyValueCacheClient:
         return None if result == "none" else KeyType(result)
 
     def incr(self, key: KeyT, delta: int = 1) -> int:
-        """Increment a value. Raises ValueError if key doesn't exist. Falls back to GET+SET on overflow."""
+        """Increment a value."""
         client = self.get_client(key, write=True)
-
-        try:
-            if not client.exists(key):
-                raise ValueError(f"Key {key!r} not found.")
-            return client.incr(key, delta)
-        except _ResponseError as e:
-            # Handle overflow or non-integer by falling back to GET + SET
-            err_msg = str(e).lower()
-            if "overflow" in err_msg or "not an integer" in err_msg:
-                val = client.get(key)
-                if val is None:
-                    raise ValueError(f"Key {key!r} not found.") from None
-                new_value = self.decode(val) + delta
-                nvalue = self.encode(new_value)
-                client.set(key, nvalue, keepttl=True)
-                return new_value
-            raise
+        return client.incr(key, delta)
 
     async def aincr(self, key: KeyT, delta: int = 1) -> int:
-        """Async increment. Raises ValueError if key doesn't exist. Falls back to GET+SET on overflow."""
+        """Increment a value asynchronously."""
         client = self.get_async_client(key, write=True)
-
-        try:
-            if not await client.exists(key):
-                raise ValueError(f"Key {key!r} not found.")
-            return await client.incr(key, delta)
-        except _ResponseError as e:
-            # Handle overflow or non-integer by falling back to GET + SET
-            err_msg = str(e).lower()
-            if "overflow" in err_msg or "not an integer" in err_msg:
-                val = await client.get(key)
-                if val is None:
-                    raise ValueError(f"Key {key!r} not found.") from None
-                new_value = self.decode(val) + delta
-                nvalue = self.encode(new_value)
-                await client.set(key, nvalue, keepttl=True)
-                return new_value
-            raise
+        return await client.incr(key, delta)
 
     def set_many(self, data: Mapping[KeyT, Any], timeout: int | None) -> list:
         """Set multiple values. timeout=0 deletes keys, None sets without expiry."""

@@ -1,7 +1,5 @@
 """Tests for increment and decrement operations."""
 
-import pytest
-
 from django_cachex.cache import KeyValueCache
 
 
@@ -17,12 +15,6 @@ class TestIncrementOperations:
         cache.set("counter", 10)
         cache.incr("counter", 7)
         assert cache.get("counter") == 17
-
-    def test_increment_large_number(self, cache: KeyValueCache):
-        # Max signed 64-bit integer
-        cache.set("big_num", 9223372036854775807)
-        cache.incr("big_num")
-        assert cache.get("big_num") == 9223372036854775808
 
     def test_increment_chain(self, cache: KeyValueCache):
         cache.set("chain", 0)
@@ -45,19 +37,14 @@ class TestIncrementWithoutTimeout:
         cache.incr("persistent2", 25)
         assert cache.get("persistent2") == 75
 
-    def test_increment_persistent_large(self, cache: KeyValueCache):
-        cache.set("persistent_big", 9223372036854775807, timeout=None)
-        cache.incr("persistent_big", 3)
-        assert cache.get("persistent_big") == 9223372036854775810
-
 
 class TestIncrementErrors:
     """Tests for error conditions in incr()."""
 
-    def test_increment_missing_key_raises(self, cache: KeyValueCache):
+    def test_increment_missing_key_creates_it(self, cache: KeyValueCache):
         cache.delete("nonexistent_counter")
-        with pytest.raises(ValueError):
-            cache.incr("nonexistent_counter")
+        result = cache.incr("nonexistent_counter")
+        assert result == 1
 
 
 class TestDecrementOperations:
@@ -84,15 +71,3 @@ class TestDecrementOperations:
         cache.decr("chain_dec", 9)
         cache.decr("chain_dec", 40)
         assert cache.get("chain_dec") == 50
-
-    def test_decrement_large_number(self, cache: KeyValueCache):
-        # Slightly above max signed 64-bit
-        cache.set("big_dec", 9223372036854775808)
-        cache.decr("big_dec")
-        assert cache.get("big_dec") == 9223372036854775807
-
-    def test_decrement_multiple_times(self, cache: KeyValueCache):
-        cache.set("multi_dec", 9223372036854775808)
-        cache.decr("multi_dec")
-        cache.decr("multi_dec", 3)
-        assert cache.get("multi_dec") == 9223372036854775804

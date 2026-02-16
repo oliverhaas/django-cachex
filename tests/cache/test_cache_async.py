@@ -172,11 +172,11 @@ class TestAsyncIncr:
         assert result == 15
 
     @pytest.mark.asyncio
-    async def test_aincr_missing_key_raises(self, cache: KeyValueCache):
-        """Test aincr raises ValueError for missing key."""
+    async def test_aincr_missing_key_creates_it(self, cache: KeyValueCache):
+        """Test aincr creates a missing key with the delta value."""
         cache.delete("async_missing_counter")
-        with pytest.raises(ValueError):
-            await cache.aincr("async_missing_counter")
+        result = await cache.aincr("async_missing_counter")
+        assert result == 1
 
     @pytest.mark.asyncio
     async def test_adecr_decrements(self, cache: KeyValueCache):
