@@ -447,13 +447,16 @@ class Pipeline:
         self,
         dest: KeyT,
         keys: KeyT | Sequence[KeyT],
+        version: int | None = None,
         version_dest: int | None = None,
         version_keys: int | None = None,
     ) -> Self:
         """Queue SDIFFSTORE command (store set difference)."""
         keys = [keys] if isinstance(keys, (str, bytes)) else keys
-        ndest = self._make_key(dest, version_dest)
-        nkeys = [self._make_key(key, version_keys) for key in keys]
+        dest_ver = version_dest if version_dest is not None else version
+        keys_ver = version_keys if version_keys is not None else version
+        ndest = self._make_key(dest, dest_ver)
+        nkeys = [self._make_key(key, keys_ver) for key in keys]
         self._pipeline.sdiffstore(ndest, *nkeys)
         self._decoders.append(self._noop)  # Returns count
         return self
@@ -475,11 +478,15 @@ class Pipeline:
         dest: KeyT,
         keys: KeyT | Sequence[KeyT],
         version: int | None = None,
+        version_dest: int | None = None,
+        version_keys: int | None = None,
     ) -> Self:
         """Queue SINTERSTORE command (store set intersection)."""
         keys = [keys] if isinstance(keys, (str, bytes)) else keys
-        ndest = self._make_key(dest, version)
-        nkeys = [self._make_key(key, version) for key in keys]
+        dest_ver = version_dest if version_dest is not None else version
+        keys_ver = version_keys if version_keys is not None else version
+        ndest = self._make_key(dest, dest_ver)
+        nkeys = [self._make_key(key, keys_ver) for key in keys]
         self._pipeline.sinterstore(ndest, *nkeys)
         self._decoders.append(self._noop)  # Returns count
         return self
@@ -597,11 +604,15 @@ class Pipeline:
         destination: KeyT,
         keys: KeyT | Sequence[KeyT],
         version: int | None = None,
+        version_dest: int | None = None,
+        version_keys: int | None = None,
     ) -> Self:
         """Queue SUNIONSTORE command (store set union)."""
         keys = [keys] if isinstance(keys, (str, bytes)) else keys
-        ndestination = self._make_key(destination, version)
-        nkeys = [self._make_key(key, version) for key in keys]
+        dest_ver = version_dest if version_dest is not None else version
+        keys_ver = version_keys if version_keys is not None else version
+        ndestination = self._make_key(destination, dest_ver)
+        nkeys = [self._make_key(key, keys_ver) for key in keys]
         self._pipeline.sunionstore(ndestination, *nkeys)
         self._decoders.append(self._noop)  # Returns count
         return self
