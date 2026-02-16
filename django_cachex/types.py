@@ -365,14 +365,14 @@ class CacheProtocol(Protocol):
 
     def blpop(
         self,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         timeout: float = 0,
         version: int | None = None,
     ) -> tuple[str, Any] | None: ...
 
     def brpop(
         self,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         timeout: float = 0,
         version: int | None = None,
     ) -> tuple[str, Any] | None: ...
@@ -395,23 +395,23 @@ class CacheProtocol(Protocol):
 
     def scard(self, key: KeyT, version: int | None = None) -> int: ...
 
-    def sdiff(self, *keys: KeyT, version: int | None = None) -> _Set[Any]: ...
+    def sdiff(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _Set[Any]: ...
 
     def sdiffstore(
         self,
         dest: KeyT,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         version: int | None = None,
         version_dest: int | None = None,
         version_keys: int | None = None,
     ) -> int: ...
 
-    def sinter(self, *keys: KeyT, version: int | None = None) -> _Set[Any]: ...
+    def sinter(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _Set[Any]: ...
 
     def sinterstore(
         self,
         dest: KeyT,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         version: int | None = None,
         version_dest: int | None = None,
         version_keys: int | None = None,
@@ -429,12 +429,12 @@ class CacheProtocol(Protocol):
 
     def srem(self, key: KeyT, *members: Any, version: int | None = None) -> int: ...
 
-    def sunion(self, *keys: KeyT, version: int | None = None) -> _Set[Any]: ...
+    def sunion(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _Set[Any]: ...
 
     def sunionstore(
         self,
         dest: KeyT,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         version: int | None = None,
         version_dest: int | None = None,
         version_keys: int | None = None,

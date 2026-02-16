@@ -339,7 +339,7 @@ class BaseCacheExtensions:
 
     def blpop(
         self,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         timeout: float = 0,
         version: int | None = None,
     ) -> tuple[str, Any] | None:
@@ -348,7 +348,7 @@ class BaseCacheExtensions:
 
     def brpop(
         self,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         timeout: float = 0,
         version: int | None = None,
     ) -> tuple[str, Any] | None:
@@ -379,14 +379,14 @@ class BaseCacheExtensions:
         """Get the number of members in a set."""
         raise NotSupportedError("scard", self.__class__.__name__)
 
-    def sdiff(self, *keys: KeyT, version: int | None = None) -> _set[Any]:
+    def sdiff(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _set[Any]:
         """Return the difference between sets."""
         raise NotSupportedError("sdiff", self.__class__.__name__)
 
     def sdiffstore(
         self,
         dest: KeyT,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         version: int | None = None,
         version_dest: int | None = None,
         version_keys: int | None = None,
@@ -394,14 +394,14 @@ class BaseCacheExtensions:
         """Store the difference of sets."""
         raise NotSupportedError("sdiffstore", self.__class__.__name__)
 
-    def sinter(self, *keys: KeyT, version: int | None = None) -> _set[Any]:
+    def sinter(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _set[Any]:
         """Return the intersection of sets."""
         raise NotSupportedError("sinter", self.__class__.__name__)
 
     def sinterstore(
         self,
         dest: KeyT,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         version: int | None = None,
         version_dest: int | None = None,
         version_keys: int | None = None,
@@ -433,14 +433,14 @@ class BaseCacheExtensions:
         """Remove members from a set."""
         raise NotSupportedError("srem", self.__class__.__name__)
 
-    def sunion(self, *keys: KeyT, version: int | None = None) -> _set[Any]:
+    def sunion(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _set[Any]:
         """Return the union of sets."""
         raise NotSupportedError("sunion", self.__class__.__name__)
 
     def sunionstore(
         self,
         dest: KeyT,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         version: int | None = None,
         version_dest: int | None = None,
         version_keys: int | None = None,

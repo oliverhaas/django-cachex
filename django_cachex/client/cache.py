@@ -860,11 +860,12 @@ class KeyValueCache(BaseCache):
 
     def blpop(
         self,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         timeout: float = 0,
         version: int | None = None,
     ) -> tuple[str, Any] | None:
         """Blocking pop from head of list."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
         result = self._cache.blpop(nkeys, timeout=timeout)
         if result is None:
@@ -874,7 +875,7 @@ class KeyValueCache(BaseCache):
 
     def brpop(
         self,
-        *keys: KeyT,
+        keys: Sequence[KeyT],
         timeout: float = 0,
         version: int | None = None,
     ) -> tuple[str, Any] | None:
@@ -921,22 +922,24 @@ class KeyValueCache(BaseCache):
 
     def sdiff(
         self,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         version: int | None = None,
     ) -> _Set[Any]:
         """Return the difference between the first set and all successive sets."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
         return self._cache.sdiff(nkeys)
 
     def sdiffstore(
         self,
         dest: KeyT,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         version: int | None = None,
         version_dest: int | None = None,
         version_keys: int | None = None,
     ) -> int:
         """Store the difference of sets at dest."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
         # Use specific versions if provided, otherwise fall back to version
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
@@ -946,22 +949,24 @@ class KeyValueCache(BaseCache):
 
     def sinter(
         self,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         version: int | None = None,
     ) -> _Set[Any]:
         """Return the intersection of all sets."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
         return self._cache.sinter(nkeys)
 
     def sinterstore(
         self,
         dest: KeyT,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         version: int | None = None,
         version_dest: int | None = None,
         version_keys: int | None = None,
     ) -> int:
         """Store the intersection of sets at dest."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
         # Use specific versions if provided, otherwise fall back to version
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
@@ -1032,22 +1037,24 @@ class KeyValueCache(BaseCache):
 
     def sunion(
         self,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         version: int | None = None,
     ) -> _Set[Any]:
         """Return the union of all sets."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
         return self._cache.sunion(nkeys)
 
     def sunionstore(
         self,
         dest: KeyT,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         version: int | None = None,
         version_dest: int | None = None,
         version_keys: int | None = None,
     ) -> int:
         """Store the union of sets at dest."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
         # Use specific versions if provided, otherwise fall back to version
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version

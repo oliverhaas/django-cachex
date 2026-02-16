@@ -446,10 +446,11 @@ class Pipeline:
 
     def sdiff(
         self,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         version: int | None = None,
     ) -> Self:
         """Queue SDIFF command (set difference)."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
         nkeys = [self._make_key(key, version) for key in keys]
         self._pipeline.sdiff(*nkeys)
         self._decoders.append(self._decode_set)
@@ -458,11 +459,12 @@ class Pipeline:
     def sdiffstore(
         self,
         dest: KeyT,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         version_dest: int | None = None,
         version_keys: int | None = None,
     ) -> Self:
         """Queue SDIFFSTORE command (store set difference)."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
         ndest = self._make_key(dest, version_dest)
         nkeys = [self._make_key(key, version_keys) for key in keys]
         self._pipeline.sdiffstore(ndest, *nkeys)
@@ -471,10 +473,11 @@ class Pipeline:
 
     def sinter(
         self,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         version: int | None = None,
     ) -> Self:
         """Queue SINTER command (set intersection)."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
         nkeys = [self._make_key(key, version) for key in keys]
         self._pipeline.sinter(*nkeys)
         self._decoders.append(self._decode_set)
@@ -483,10 +486,11 @@ class Pipeline:
     def sinterstore(
         self,
         dest: KeyT,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         version: int | None = None,
     ) -> Self:
         """Queue SINTERSTORE command (store set intersection)."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
         ndest = self._make_key(dest, version)
         nkeys = [self._make_key(key, version) for key in keys]
         self._pipeline.sinterstore(ndest, *nkeys)
@@ -591,10 +595,11 @@ class Pipeline:
 
     def sunion(
         self,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         version: int | None = None,
     ) -> Self:
         """Queue SUNION command (set union)."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
         nkeys = [self._make_key(key, version) for key in keys]
         self._pipeline.sunion(*nkeys)
         self._decoders.append(self._decode_set)
@@ -603,10 +608,11 @@ class Pipeline:
     def sunionstore(
         self,
         destination: KeyT,
-        *keys: KeyT,
+        keys: KeyT | Sequence[KeyT],
         version: int | None = None,
     ) -> Self:
         """Queue SUNIONSTORE command (store set union)."""
+        keys = [keys] if isinstance(keys, (str, bytes)) else keys
         ndestination = self._make_key(destination, version)
         nkeys = [self._make_key(key, version) for key in keys]
         self._pipeline.sunionstore(ndestination, *nkeys)

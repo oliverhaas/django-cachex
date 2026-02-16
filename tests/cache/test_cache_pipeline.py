@@ -313,9 +313,9 @@ class TestPipelineSetOperations:
         cache.sadd("{pipe_set}2", "b", "c", "d")
 
         pipe = cache.pipeline()
-        pipe.sdiff("{pipe_set}1", "{pipe_set}2")
-        pipe.sinter("{pipe_set}1", "{pipe_set}2")
-        pipe.sunion("{pipe_set}1", "{pipe_set}2")
+        pipe.sdiff(["{pipe_set}1", "{pipe_set}2"])
+        pipe.sinter(["{pipe_set}1", "{pipe_set}2"])
+        pipe.sunion(["{pipe_set}1", "{pipe_set}2"])
         results = pipe.execute()
 
         assert results[0] == {"a"}
@@ -746,7 +746,7 @@ class TestPipelineMissingOperations:
         cache.sadd("{sdiff}set2", "b", "c", "d")
 
         pipe = cache.pipeline()
-        pipe.sdiffstore("{sdiff}dest", "{sdiff}set1", "{sdiff}set2")
+        pipe.sdiffstore("{sdiff}dest", ["{sdiff}set1", "{sdiff}set2"])
         pipe.smembers("{sdiff}dest")
         results = pipe.execute()
 
@@ -764,7 +764,7 @@ class TestPipelineMissingOperations:
         cache.sadd("{sinter}set2", "b", "c", "d")
 
         pipe = cache.pipeline()
-        pipe.sinterstore("{sinter}dest", "{sinter}set1", "{sinter}set2")
+        pipe.sinterstore("{sinter}dest", ["{sinter}set1", "{sinter}set2"])
         pipe.smembers("{sinter}dest")
         results = pipe.execute()
 
@@ -782,7 +782,7 @@ class TestPipelineMissingOperations:
         cache.sadd("{sunion}set2", "c", "d")
 
         pipe = cache.pipeline()
-        pipe.sunionstore("{sunion}dest", "{sunion}set1", "{sunion}set2")
+        pipe.sunionstore("{sunion}dest", ["{sunion}set1", "{sunion}set2"])
         pipe.smembers("{sunion}dest")
         results = pipe.execute()
 

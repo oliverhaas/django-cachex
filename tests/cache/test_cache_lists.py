@@ -250,7 +250,7 @@ class TestListOperations:
         # Use hash tags to ensure keys are on same cluster slot
         cache.rpush("{blpop}list2", "x", "y")
 
-        result = cache.blpop("{blpop}list1", "{blpop}list2", timeout=1)
+        result = cache.blpop(["{blpop}list1", "{blpop}list2"], timeout=1)
         assert result is not None
         key, value = result
         assert "{blpop}list2" in key

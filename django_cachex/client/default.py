@@ -1266,7 +1266,7 @@ class KeyValueCacheClient:
 
     def blpop(
         self,
-        keys: Sequence[KeyT],
+        keys: KeyT | Sequence[KeyT],
         timeout: float = 0,
     ) -> tuple[str, Any] | None:
         """Blocking pop from head of list."""
@@ -1281,7 +1281,7 @@ class KeyValueCacheClient:
 
     def brpop(
         self,
-        keys: Sequence[KeyT],
+        keys: KeyT | Sequence[KeyT],
         timeout: float = 0,
     ) -> tuple[str, Any] | None:
         """Blocking pop from tail of list."""
@@ -1435,7 +1435,7 @@ class KeyValueCacheClient:
 
     async def ablpop(
         self,
-        keys: Sequence[KeyT],
+        keys: KeyT | Sequence[KeyT],
         timeout: float = 0,
     ) -> tuple[str, Any] | None:
         """Blocking pop from head of list asynchronously."""
@@ -1450,7 +1450,7 @@ class KeyValueCacheClient:
 
     async def abrpop(
         self,
-        keys: Sequence[KeyT],
+        keys: KeyT | Sequence[KeyT],
         timeout: float = 0,
     ) -> tuple[str, Any] | None:
         """Blocking pop from tail of list asynchronously."""
@@ -1542,44 +1542,44 @@ class KeyValueCacheClient:
 
         return bool(client.smove(src, dst, nmember))
 
-    def sdiff(self, keys: Sequence[KeyT]) -> _Set[Any]:
+    def sdiff(self, keys: KeyT | Sequence[KeyT]) -> _Set[Any]:
         """Return the difference of sets."""
         client = self.get_client(write=False)
 
-        result = client.sdiff(*keys)
+        result = client.sdiff(keys)
         return {self.decode(v) for v in result}
 
-    def sdiffstore(self, dest: KeyT, keys: Sequence[KeyT]) -> int:
+    def sdiffstore(self, dest: KeyT, keys: KeyT | Sequence[KeyT]) -> int:
         """Store the difference of sets."""
         client = self.get_client(write=True)
 
-        return cast("int", client.sdiffstore(dest, *keys))
+        return cast("int", client.sdiffstore(dest, keys))
 
-    def sinter(self, keys: Sequence[KeyT]) -> _Set[Any]:
+    def sinter(self, keys: KeyT | Sequence[KeyT]) -> _Set[Any]:
         """Return the intersection of sets."""
         client = self.get_client(write=False)
 
-        result = client.sinter(*keys)
+        result = client.sinter(keys)
         return {self.decode(v) for v in result}
 
-    def sinterstore(self, dest: KeyT, keys: Sequence[KeyT]) -> int:
+    def sinterstore(self, dest: KeyT, keys: KeyT | Sequence[KeyT]) -> int:
         """Store the intersection of sets."""
         client = self.get_client(write=True)
 
-        return cast("int", client.sinterstore(dest, *keys))
+        return cast("int", client.sinterstore(dest, keys))
 
-    def sunion(self, keys: Sequence[KeyT]) -> _Set[Any]:
+    def sunion(self, keys: KeyT | Sequence[KeyT]) -> _Set[Any]:
         """Return the union of sets."""
         client = self.get_client(write=False)
 
-        result = client.sunion(*keys)
+        result = client.sunion(keys)
         return {self.decode(v) for v in result}
 
-    def sunionstore(self, dest: KeyT, keys: Sequence[KeyT]) -> int:
+    def sunionstore(self, dest: KeyT, keys: KeyT | Sequence[KeyT]) -> int:
         """Store the union of sets."""
         client = self.get_client(write=True)
 
-        return cast("int", client.sunionstore(dest, *keys))
+        return cast("int", client.sunionstore(dest, keys))
 
     def smismember(self, key: KeyT, *members: Any) -> list[bool]:
         """Check if multiple values are members of a set."""
@@ -1675,44 +1675,44 @@ class KeyValueCacheClient:
 
         return bool(await client.smove(src, dst, nmember))
 
-    async def asdiff(self, keys: Sequence[KeyT]) -> _Set[Any]:
+    async def asdiff(self, keys: KeyT | Sequence[KeyT]) -> _Set[Any]:
         """Return the difference of sets asynchronously."""
         client = self.get_async_client(write=False)
 
-        result = await client.sdiff(*keys)
+        result = await client.sdiff(keys)
         return {self.decode(v) for v in result}
 
-    async def asdiffstore(self, dest: KeyT, keys: Sequence[KeyT]) -> int:
+    async def asdiffstore(self, dest: KeyT, keys: KeyT | Sequence[KeyT]) -> int:
         """Store the difference of sets asynchronously."""
         client = self.get_async_client(write=True)
 
-        return cast("int", await client.sdiffstore(dest, *keys))
+        return cast("int", await client.sdiffstore(dest, keys))
 
-    async def asinter(self, keys: Sequence[KeyT]) -> _Set[Any]:
+    async def asinter(self, keys: KeyT | Sequence[KeyT]) -> _Set[Any]:
         """Return the intersection of sets asynchronously."""
         client = self.get_async_client(write=False)
 
-        result = await client.sinter(*keys)
+        result = await client.sinter(keys)
         return {self.decode(v) for v in result}
 
-    async def asinterstore(self, dest: KeyT, keys: Sequence[KeyT]) -> int:
+    async def asinterstore(self, dest: KeyT, keys: KeyT | Sequence[KeyT]) -> int:
         """Store the intersection of sets asynchronously."""
         client = self.get_async_client(write=True)
 
-        return cast("int", await client.sinterstore(dest, *keys))
+        return cast("int", await client.sinterstore(dest, keys))
 
-    async def asunion(self, keys: Sequence[KeyT]) -> _Set[Any]:
+    async def asunion(self, keys: KeyT | Sequence[KeyT]) -> _Set[Any]:
         """Return the union of sets asynchronously."""
         client = self.get_async_client(write=False)
 
-        result = await client.sunion(*keys)
+        result = await client.sunion(keys)
         return {self.decode(v) for v in result}
 
-    async def asunionstore(self, dest: KeyT, keys: Sequence[KeyT]) -> int:
+    async def asunionstore(self, dest: KeyT, keys: KeyT | Sequence[KeyT]) -> int:
         """Store the union of sets asynchronously."""
         client = self.get_async_client(write=True)
 
-        return cast("int", await client.sunionstore(dest, *keys))
+        return cast("int", await client.sunionstore(dest, keys))
 
     async def asmismember(self, key: KeyT, *members: Any) -> list[bool]:
         """Check if multiple values are members of a set asynchronously."""

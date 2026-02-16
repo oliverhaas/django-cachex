@@ -18,20 +18,20 @@ class TestSetOperations:
         # Use hash tags {foo} to ensure keys are on same cluster slot
         cache.sadd("{foo}1", "bar1", "bar2")
         cache.sadd("{foo}2", "bar2", "bar3")
-        assert cache.sdiff("{foo}1", "{foo}2") == {"bar1"}
+        assert cache.sdiff(["{foo}1", "{foo}2"]) == {"bar1"}
 
     def test_sdiffstore(self, cache: KeyValueCache):
         # Use hash tags {foo} to ensure keys are on same cluster slot
         cache.sadd("{foo}1", "bar1", "bar2")
         cache.sadd("{foo}2", "bar2", "bar3")
-        assert cache.sdiffstore("{foo}3", "{foo}1", "{foo}2") == 1
+        assert cache.sdiffstore("{foo}3", ["{foo}1", "{foo}2"]) == 1
         assert cache.smembers("{foo}3") == {"bar1"}
 
     def test_sdiffstore_with_keys_version(self, cache: KeyValueCache):
         # Use hash tags {foo} to ensure keys are on same cluster slot
         cache.sadd("{foo}1", "bar1", "bar2", version=2)
         cache.sadd("{foo}2", "bar2", "bar3", version=2)
-        assert cache.sdiffstore("{foo}3", "{foo}1", "{foo}2", version_keys=2) == 1
+        assert cache.sdiffstore("{foo}3", ["{foo}1", "{foo}2"], version_keys=2) == 1
         assert cache.smembers("{foo}3") == {"bar1"}
 
     def test_sdiffstore_with_different_keys_versions_without_initial_set_in_version(
@@ -41,7 +41,7 @@ class TestSetOperations:
         # Use hash tags {foo} to ensure keys are on same cluster slot
         cache.sadd("{foo}1", "bar1", "bar2", version=1)
         cache.sadd("{foo}2", "bar2", "bar3", version=2)
-        assert cache.sdiffstore("{foo}3", "{foo}1", "{foo}2", version_keys=2) == 0
+        assert cache.sdiffstore("{foo}3", ["{foo}1", "{foo}2"], version_keys=2) == 0
 
     def test_sdiffstore_with_different_keys_versions_with_initial_set_in_version(
         self,
@@ -50,19 +50,19 @@ class TestSetOperations:
         # Use hash tags {foo} to ensure keys are on same cluster slot
         cache.sadd("{foo}1", "bar1", "bar2", version=2)
         cache.sadd("{foo}2", "bar2", "bar3", version=1)
-        assert cache.sdiffstore("{foo}3", "{foo}1", "{foo}2", version_keys=2) == 2
+        assert cache.sdiffstore("{foo}3", ["{foo}1", "{foo}2"], version_keys=2) == 2
 
     def test_sinter(self, cache: KeyValueCache):
         # Use hash tags {foo} to ensure keys are on same cluster slot
         cache.sadd("{foo}1", "bar1", "bar2")
         cache.sadd("{foo}2", "bar2", "bar3")
-        assert cache.sinter("{foo}1", "{foo}2") == {"bar2"}
+        assert cache.sinter(["{foo}1", "{foo}2"]) == {"bar2"}
 
     def test_interstore(self, cache: KeyValueCache):
         # Use hash tags {foo} to ensure keys are on same cluster slot
         cache.sadd("{foo}1", "bar1", "bar2")
         cache.sadd("{foo}2", "bar2", "bar3")
-        assert cache.sinterstore("{foo}3", "{foo}1", "{foo}2") == 1
+        assert cache.sinterstore("{foo}3", ["{foo}1", "{foo}2"]) == 1
         assert cache.smembers("{foo}3") == {"bar2"}
 
     def test_sismember(self, cache: KeyValueCache):
@@ -130,11 +130,11 @@ class TestSetOperations:
         # Use hash tags {foo} to ensure keys are on same cluster slot
         cache.sadd("{foo}1", "bar1", "bar2")
         cache.sadd("{foo}2", "bar2", "bar3")
-        assert cache.sunion("{foo}1", "{foo}2") == {"bar1", "bar2", "bar3"}
+        assert cache.sunion(["{foo}1", "{foo}2"]) == {"bar1", "bar2", "bar3"}
 
     def test_sunionstore(self, cache: KeyValueCache):
         # Use hash tags {foo} to ensure keys are on same cluster slot
         cache.sadd("{foo}1", "bar1", "bar2")
         cache.sadd("{foo}2", "bar2", "bar3")
-        assert cache.sunionstore("{foo}3", "{foo}1", "{foo}2") == 3
+        assert cache.sunionstore("{foo}3", ["{foo}1", "{foo}2"]) == 3
         assert cache.smembers("{foo}3") == {"bar1", "bar2", "bar3"}
