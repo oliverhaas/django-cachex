@@ -2,7 +2,6 @@
 
 from collections.abc import Iterable
 from contextlib import suppress
-from typing import cast
 
 import pytest
 from django.core.cache import caches
@@ -195,30 +194,3 @@ class TestIterKeysOperations:
         result = cache.iter_keys("foo*")
         next_value = next(result)
         assert next_value is not None
-
-
-class TestClientSwitching:
-    def test_primary_replica_switching(self, cache: KeyValueCache):
-        from django_cachex.cache import KeyValueClusterCache
-
-        cache = cast("KeyValueCache", caches["sample"])
-        # Cluster cache doesn't support primary/replica switching - cluster handles routing
-        if isinstance(cache, KeyValueClusterCache):
-            pytest.skip("Cluster cache doesn't support primary/replica switching")
-        # With the new architecture, we access the client through cache._cache
-        cache._cache._servers = ["foo", "bar"]
-
-        # Note: With the new architecture, we can't mock _clients directly
-        # This test may need to be restructured
-        pytest.skip("Test needs restructuring for new architecture")
-
-    def test_primary_replica_switching_with_index(self, cache: KeyValueCache):
-        from django_cachex.cache import KeyValueClusterCache
-
-        cache = cast("KeyValueCache", caches["sample"])
-        # Cluster cache doesn't support primary/replica switching - cluster handles routing
-        if isinstance(cache, KeyValueClusterCache):
-            pytest.skip("Cluster cache doesn't support primary/replica switching")
-        # Note: With the new architecture, we can't mock _clients directly
-        # This test may need to be restructured
-        pytest.skip("Test needs restructuring for new architecture")
