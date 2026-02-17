@@ -2385,6 +2385,7 @@ class KeyValueCacheClient:
         next_id = result[0].decode() if isinstance(result[0], bytes) else result[0]
         deleted = [d.decode() if isinstance(d, bytes) else d for d in result[2]] if len(result) > 2 else []
 
+        claimed: list[tuple[str, dict[str, Any]]] | list[str]
         if justid:
             claimed = [r.decode() if isinstance(r, bytes) else r for r in result[1]]
         else:
@@ -2663,6 +2664,7 @@ class KeyValueCacheClient:
         next_id = result[0].decode() if isinstance(result[0], bytes) else result[0]
         deleted = [d.decode() if isinstance(d, bytes) else d for d in result[2]] if len(result) > 2 else []
 
+        claimed: list[tuple[str, dict[str, Any]]] | list[str]
         if justid:
             claimed = [r.decode() if isinstance(r, bytes) else r for r in result[1]]
         else:

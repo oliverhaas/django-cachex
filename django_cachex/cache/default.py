@@ -1034,7 +1034,7 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> tuple[str, Any] | None:
         """Blocking pop from head of list."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
         result = self._cache.blpop(nkeys, timeout=timeout)
         if result is None:
@@ -1049,7 +1049,7 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> tuple[str, Any] | None:
         """Blocking pop from tail of list."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
         result = self._cache.brpop(nkeys, timeout=timeout)
         if result is None:
@@ -1215,7 +1215,7 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> tuple[str, Any] | None:
         """Blocking pop from head of list asynchronously."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
         result = await self._cache.ablpop(nkeys, timeout=timeout)
         if result is None:
@@ -1229,7 +1229,7 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> tuple[str, Any] | None:
         """Blocking pop from tail of list asynchronously."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
         result = await self._cache.abrpop(nkeys, timeout=timeout)
         if result is None:
@@ -1275,7 +1275,7 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> _Set[Any]:
         """Return the difference between the first set and all successive sets."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
         return self._cache.sdiff(nkeys)
 
@@ -1288,7 +1288,7 @@ class KeyValueCache(BaseCache):
         version_keys: int | None = None,
     ) -> int:
         """Store the difference of sets at dest."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         # Use specific versions if provided, otherwise fall back to version
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
@@ -1302,7 +1302,7 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> _Set[Any]:
         """Return the intersection of all sets."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
         return self._cache.sinter(nkeys)
 
@@ -1315,7 +1315,7 @@ class KeyValueCache(BaseCache):
         version_keys: int | None = None,
     ) -> int:
         """Store the intersection of sets at dest."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         # Use specific versions if provided, otherwise fall back to version
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
@@ -1390,7 +1390,7 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> _Set[Any]:
         """Return the union of all sets."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
         return self._cache.sunion(nkeys)
 
@@ -1403,7 +1403,7 @@ class KeyValueCache(BaseCache):
         version_keys: int | None = None,
     ) -> int:
         """Store the union of sets at dest."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         # Use specific versions if provided, otherwise fall back to version
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
@@ -1465,7 +1465,7 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> _Set[Any]:
         """Return the difference between the first set and all successive sets asynchronously."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
         return await self._cache.asdiff(nkeys)
 
@@ -1478,7 +1478,7 @@ class KeyValueCache(BaseCache):
         version_keys: int | None = None,
     ) -> int:
         """Store the difference of sets at dest asynchronously."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
         dest = self.make_and_validate_key(dest, version=dest_ver)
@@ -1491,7 +1491,7 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> _Set[Any]:
         """Return the intersection of all sets asynchronously."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
         return await self._cache.asinter(nkeys)
 
@@ -1504,7 +1504,7 @@ class KeyValueCache(BaseCache):
         version_keys: int | None = None,
     ) -> int:
         """Store the intersection of sets at dest asynchronously."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
         dest = self.make_and_validate_key(dest, version=dest_ver)
@@ -1578,7 +1578,7 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> _Set[Any]:
         """Return the union of all sets asynchronously."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
         return await self._cache.asunion(nkeys)
 
@@ -1591,7 +1591,7 @@ class KeyValueCache(BaseCache):
         version_keys: int | None = None,
     ) -> int:
         """Store the union of sets at dest asynchronously."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
         dest = self.make_and_validate_key(dest, version=dest_ver)
@@ -2145,7 +2145,7 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
         """Read entries from one or more streams."""
-        nstreams = {self.make_and_validate_key(k, version=version): v for k, v in streams.items()}
+        nstreams: dict[KeyT, str] = {self.make_and_validate_key(k, version=version): v for k, v in streams.items()}
         return self._cache.xread(nstreams, count=count, block=block)
 
     async def axread(
@@ -2156,7 +2156,7 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
         """Read entries from one or more streams asynchronously."""
-        nstreams = {self.make_and_validate_key(k, version=version): v for k, v in streams.items()}
+        nstreams: dict[KeyT, str] = {self.make_and_validate_key(k, version=version): v for k, v in streams.items()}
         return await self._cache.axread(nstreams, count=count, block=block)
 
     def xtrim(
@@ -2306,7 +2306,7 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
         """Read entries from streams as a consumer group member."""
-        nstreams = {self.make_and_validate_key(k, version=version): v for k, v in streams.items()}
+        nstreams: dict[KeyT, str] = {self.make_and_validate_key(k, version=version): v for k, v in streams.items()}
         return self._cache.xreadgroup(group, consumer, nstreams, count=count, block=block, noack=noack)
 
     async def axreadgroup(
@@ -2320,7 +2320,7 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
         """Read entries from streams as a consumer group member asynchronously."""
-        nstreams = {self.make_and_validate_key(k, version=version): v for k, v in streams.items()}
+        nstreams: dict[KeyT, str] = {self.make_and_validate_key(k, version=version): v for k, v in streams.items()}
         return await self._cache.axreadgroup(group, consumer, nstreams, count=count, block=block, noack=noack)
 
     def xack(self, key: KeyT, group: str, *entry_ids: str, version: int | None = None) -> int:

@@ -437,7 +437,7 @@ class Pipeline:
         version: int | None = None,
     ) -> Self:
         """Queue SDIFF command (set difference)."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self._make_key(key, version) for key in keys]
         self._pipeline.sdiff(*nkeys)
         self._decoders.append(self._decode_set)
@@ -452,7 +452,7 @@ class Pipeline:
         version_keys: int | None = None,
     ) -> Self:
         """Queue SDIFFSTORE command (store set difference)."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
         ndest = self._make_key(dest, dest_ver)
@@ -467,7 +467,7 @@ class Pipeline:
         version: int | None = None,
     ) -> Self:
         """Queue SINTER command (set intersection)."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self._make_key(key, version) for key in keys]
         self._pipeline.sinter(*nkeys)
         self._decoders.append(self._decode_set)
@@ -482,7 +482,7 @@ class Pipeline:
         version_keys: int | None = None,
     ) -> Self:
         """Queue SINTERSTORE command (store set intersection)."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
         ndest = self._make_key(dest, dest_ver)
@@ -593,7 +593,7 @@ class Pipeline:
         version: int | None = None,
     ) -> Self:
         """Queue SUNION command (set union)."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self._make_key(key, version) for key in keys]
         self._pipeline.sunion(*nkeys)
         self._decoders.append(self._decode_set)
@@ -608,7 +608,7 @@ class Pipeline:
         version_keys: int | None = None,
     ) -> Self:
         """Queue SUNIONSTORE command (store set union)."""
-        keys = [keys] if isinstance(keys, (str, bytes)) else keys
+        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
         ndestination = self._make_key(destination, dest_ver)
