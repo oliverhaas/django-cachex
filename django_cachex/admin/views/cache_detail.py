@@ -33,7 +33,7 @@ def _handle_danger_zone_post(
     if request.method != "POST":
         return None
 
-    if not request.user.has_perm("django_cachex.change_cache"):
+    if not request.user.has_perm("django_cachex.change_cache"):  # ty: ignore[unresolved-attribute]
         raise PermissionDenied
 
     action = request.POST.get("action")
@@ -106,7 +106,7 @@ def _cache_detail_view(
 
     # Check if the cache supports destructive operations (cachex backends only)
     is_cachex = cache_obj.support_level == "cachex"
-    can_change = request.user.has_perm("django_cachex.change_cache")
+    can_change = request.user.has_perm("django_cachex.change_cache")  # ty: ignore[unresolved-attribute]
 
     context = admin.site.each_context(request)
     context.update(

@@ -33,7 +33,7 @@ def _key_add_view(
     cache = get_cache(cache_name)
 
     if request.method == "POST":
-        if not request.user.has_perm("django_cachex.add_key"):
+        if not request.user.has_perm("django_cachex.add_key"):  # ty: ignore[unresolved-attribute]
             raise PermissionDenied
         key_name = request.POST.get("key", "").strip()
         key_type = request.POST.get("type", KeyType.STRING).strip()

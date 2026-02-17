@@ -54,9 +54,9 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         action = request.POST.get("action")
 
         # Permission gates: delete needs delete_key, all other mutations need change_key
-        if action == "delete" and not request.user.has_perm("django_cachex.delete_key"):
+        if action == "delete" and not request.user.has_perm("django_cachex.delete_key"):  # ty: ignore[unresolved-attribute]
             raise PermissionDenied
-        if action and action != "delete" and not request.user.has_perm("django_cachex.change_key"):
+        if action and action != "delete" and not request.user.has_perm("django_cachex.change_key"):  # ty: ignore[unresolved-attribute]
             raise PermissionDenied
 
         if action == "delete":
