@@ -535,8 +535,8 @@ class TestPipelineSortedSetOperations:
         pipe.zrange("pipe_zset6", 0, -1)
         results = pipe.execute()
 
-        assert results[0] == ("a", 1.0)
-        assert results[1] == ("c", 3.0)
+        assert results[0] == [("a", 1.0)]
+        assert results[1] == [("c", 3.0)]
         assert results[2] == ["b"]
 
     def test_pipeline_zrangebyscore(self, cache: KeyValueCache):
