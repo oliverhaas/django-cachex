@@ -244,7 +244,7 @@ class CacheProtocol(Protocol):
         itersize: int | None = None,
     ) -> Iterator[str]: ...
 
-    def aiter_keys(
+    async def aiter_keys(
         self,
         pattern: str = "*",
         version: int | None = None,

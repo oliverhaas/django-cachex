@@ -223,7 +223,7 @@ class KeyValueCache(BaseCache):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         **kwargs: Any,
-    ) -> bool | Any:
+    ) -> Any:
         """Set a value in the cache.
 
         Supports nx/xx/get kwargs: nx=True only sets if key doesn't exist,
