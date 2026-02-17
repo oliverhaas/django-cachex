@@ -4,10 +4,15 @@ from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+    from datetime import datetime, timedelta
 
     from django_cachex.types import KeyT, _Set
 
 from django_cachex.script import ScriptHelpers
+
+# Type aliases matching django_cachex.types for convenience
+type ExpiryT = int | timedelta
+type AbsExpiryT = int | datetime
 
 
 class Pipeline:
@@ -30,6 +35,14 @@ class Pipeline:
         self._key_func: Callable[..., str] | None = None
         self._decoders: list[Callable[[Any], Any]] = []
         self._cache_version: int | None = None
+
+    def __enter__(self) -> Self:
+        """Enter context manager."""
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        """Exit context manager, resetting the underlying pipeline."""
+        self._pipeline.reset()
 
     def execute(self) -> list[Any]:
         """Execute all queued commands and decode the results."""
@@ -108,6 +121,38 @@ class Pipeline:
         if not value:
             return []
         return [(self._client.decode(member), score) for member, score in value]
+
+    def _decode_type(self, value: bytes | str) -> str:
+        """Decode TYPE result to string."""
+        return value.decode() if isinstance(value, bytes) else value
+
+    def _decode_entry_id(self, value: bytes | str) -> str:
+        """Decode stream entry ID."""
+        return value.decode() if isinstance(value, bytes) else value
+
+    def _decode_stream_entries(self, results: list[tuple[Any, dict[Any, Any]]]) -> list[tuple[str, dict[str, Any]]]:
+        """Decode raw stream entries from Redis."""
+        return [
+            (
+                entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
+                {k.decode() if isinstance(k, bytes) else k: self._client.decode(v) for k, v in fields.items()},
+            )
+            for entry_id, fields in results
+        ]
+
+    def _decode_stream_results(
+        self,
+        results: list[tuple[Any, list[tuple[Any, dict[Any, Any]]]]] | None,
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+        """Decode multi-stream results (xread/xreadgroup)."""
+        if results is None:
+            return None
+        return {
+            (stream_key.decode() if isinstance(stream_key, bytes) else stream_key): self._decode_stream_entries(
+                entries,
+            )
+            for stream_key, entries in results
+        }
 
     # -------------------------------------------------------------------------
     # Key/value helpers
@@ -220,6 +265,104 @@ class Pipeline:
         nkey = self._make_key(key, version)
         self._pipeline.decrby(nkey, delta)
         self._decoders.append(self._noop)
+        return self
+
+    def persist(self, key: KeyT, version: int | None = None) -> Self:
+        """Queue a PERSIST command (remove expiry)."""
+        nkey = self._make_key(key, version)
+        self._pipeline.persist(nkey)
+        self._decoders.append(bool)
+        return self
+
+    def pttl(self, key: KeyT, version: int | None = None) -> Self:
+        """Queue a PTTL command (TTL in milliseconds)."""
+        nkey = self._make_key(key, version)
+        self._pipeline.pttl(nkey)
+        self._decoders.append(self._noop)
+        return self
+
+    def expire_at(
+        self,
+        key: KeyT,
+        when: AbsExpiryT,
+        version: int | None = None,
+    ) -> Self:
+        """Queue an EXPIREAT command (set expiry to absolute time)."""
+        nkey = self._make_key(key, version)
+        self._pipeline.expireat(nkey, when)
+        self._decoders.append(bool)
+        return self
+
+    def pexpire(
+        self,
+        key: KeyT,
+        timeout: ExpiryT,
+        version: int | None = None,
+    ) -> Self:
+        """Queue a PEXPIRE command (set expiry in milliseconds)."""
+        nkey = self._make_key(key, version)
+        self._pipeline.pexpire(nkey, timeout)
+        self._decoders.append(bool)
+        return self
+
+    def pexpire_at(
+        self,
+        key: KeyT,
+        when: AbsExpiryT,
+        version: int | None = None,
+    ) -> Self:
+        """Queue a PEXPIREAT command (set expiry to absolute time, ms precision)."""
+        nkey = self._make_key(key, version)
+        self._pipeline.pexpireat(nkey, when)
+        self._decoders.append(bool)
+        return self
+
+    def expiretime(self, key: KeyT, version: int | None = None) -> Self:
+        """Queue an EXPIRETIME command (get absolute expiry timestamp)."""
+        nkey = self._make_key(key, version)
+        self._pipeline.expiretime(nkey)
+        self._decoders.append(self._noop)
+        return self
+
+    def type(self, key: KeyT, version: int | None = None) -> Self:
+        """Queue a TYPE command (get key data type)."""
+        nkey = self._make_key(key, version)
+        self._pipeline.type(nkey)
+        self._decoders.append(self._decode_type)
+        return self
+
+    def rename(
+        self,
+        src: KeyT,
+        dst: KeyT,
+        version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
+    ) -> Self:
+        """Queue a RENAME command."""
+        src_ver = version_src if version_src is not None else version
+        dst_ver = version_dst if version_dst is not None else version
+        nsrc = self._make_key(src, src_ver)
+        ndst = self._make_key(dst, dst_ver)
+        self._pipeline.rename(nsrc, ndst)
+        self._decoders.append(self._noop)
+        return self
+
+    def renamenx(
+        self,
+        src: KeyT,
+        dst: KeyT,
+        version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
+    ) -> Self:
+        """Queue a RENAMENX command (rename only if dest doesn't exist)."""
+        src_ver = version_src if version_src is not None else version
+        dst_ver = version_dst if version_dst is not None else version
+        nsrc = self._make_key(src, src_ver)
+        ndst = self._make_key(dst, dst_ver)
+        self._pipeline.renamenx(nsrc, ndst)
+        self._decoders.append(bool)
         return self
 
     # -------------------------------------------------------------------------
@@ -1059,6 +1202,282 @@ class Pipeline:
         encoded_members = [self._encode(member) for member in members]
         self._pipeline.zmscore(nkey, encoded_members)
         self._decoders.append(self._noop)  # Returns list[float | None]
+        return self
+
+    # -------------------------------------------------------------------------
+    # Stream operations
+    # -------------------------------------------------------------------------
+
+    def xadd(
+        self,
+        key: KeyT,
+        fields: dict[str, Any],
+        entry_id: str = "*",
+        maxlen: int | None = None,
+        approximate: bool = True,
+        nomkstream: bool = False,
+        minid: str | None = None,
+        limit: int | None = None,
+        version: int | None = None,
+    ) -> Self:
+        """Queue XADD command (add entry to stream)."""
+        nkey = self._make_key(key, version)
+        encoded_fields = {k: self._encode(v) for k, v in fields.items()}
+        self._pipeline.xadd(
+            nkey,
+            encoded_fields,
+            id=entry_id,
+            maxlen=maxlen,
+            approximate=approximate,
+            nomkstream=nomkstream,
+            minid=minid,
+            limit=limit,
+        )
+        self._decoders.append(self._decode_entry_id)
+        return self
+
+    def xlen(self, key: KeyT, version: int | None = None) -> Self:
+        """Queue XLEN command (get stream length)."""
+        nkey = self._make_key(key, version)
+        self._pipeline.xlen(nkey)
+        self._decoders.append(self._noop)
+        return self
+
+    def xrange(
+        self,
+        key: KeyT,
+        start: str = "-",
+        end: str = "+",
+        count: int | None = None,
+        version: int | None = None,
+    ) -> Self:
+        """Queue XRANGE command (get entries in ascending order)."""
+        nkey = self._make_key(key, version)
+        self._pipeline.xrange(nkey, min=start, max=end, count=count)
+        self._decoders.append(self._decode_stream_entries)
+        return self
+
+    def xrevrange(
+        self,
+        key: KeyT,
+        end: str = "+",
+        start: str = "-",
+        count: int | None = None,
+        version: int | None = None,
+    ) -> Self:
+        """Queue XREVRANGE command (get entries in descending order)."""
+        nkey = self._make_key(key, version)
+        self._pipeline.xrevrange(nkey, max=end, min=start, count=count)
+        self._decoders.append(self._decode_stream_entries)
+        return self
+
+    def xread(
+        self,
+        streams: dict[KeyT, str],
+        count: int | None = None,
+        block: int | None = None,
+        version: int | None = None,
+    ) -> Self:
+        """Queue XREAD command (read from streams)."""
+        nstreams: dict[KeyT, str] = {self._make_key(k, version): v for k, v in streams.items()}
+        self._pipeline.xread(nstreams, count=count, block=block)
+        self._decoders.append(self._decode_stream_results)
+        return self
+
+    def xtrim(
+        self,
+        key: KeyT,
+        maxlen: int | None = None,
+        approximate: bool = True,
+        minid: str | None = None,
+        limit: int | None = None,
+        version: int | None = None,
+    ) -> Self:
+        """Queue XTRIM command (trim stream)."""
+        nkey = self._make_key(key, version)
+        self._pipeline.xtrim(nkey, maxlen=maxlen, approximate=approximate, minid=minid, limit=limit)
+        self._decoders.append(self._noop)
+        return self
+
+    def xdel(self, key: KeyT, *entry_ids: str, version: int | None = None) -> Self:
+        """Queue XDEL command (delete stream entries)."""
+        nkey = self._make_key(key, version)
+        self._pipeline.xdel(nkey, *entry_ids)
+        self._decoders.append(self._noop)
+        return self
+
+    def xinfo_stream(self, key: KeyT, full: bool = False, version: int | None = None) -> Self:
+        """Queue XINFO STREAM command."""
+        nkey = self._make_key(key, version)
+        self._pipeline.xinfo_stream(nkey, full=full)
+        self._decoders.append(self._noop)
+        return self
+
+    def xinfo_groups(self, key: KeyT, version: int | None = None) -> Self:
+        """Queue XINFO GROUPS command."""
+        nkey = self._make_key(key, version)
+        self._pipeline.xinfo_groups(nkey)
+        self._decoders.append(self._noop)
+        return self
+
+    def xinfo_consumers(self, key: KeyT, group: str, version: int | None = None) -> Self:
+        """Queue XINFO CONSUMERS command."""
+        nkey = self._make_key(key, version)
+        self._pipeline.xinfo_consumers(nkey, group)
+        self._decoders.append(self._noop)
+        return self
+
+    def xgroup_create(
+        self,
+        key: KeyT,
+        group: str,
+        entry_id: str = "$",
+        mkstream: bool = False,
+        entries_read: int | None = None,
+        version: int | None = None,
+    ) -> Self:
+        """Queue XGROUP CREATE command."""
+        nkey = self._make_key(key, version)
+        self._pipeline.xgroup_create(nkey, group, entry_id, mkstream=mkstream, entries_read=entries_read)
+        self._decoders.append(self._noop)
+        return self
+
+    def xgroup_destroy(self, key: KeyT, group: str, version: int | None = None) -> Self:
+        """Queue XGROUP DESTROY command."""
+        nkey = self._make_key(key, version)
+        self._pipeline.xgroup_destroy(nkey, group)
+        self._decoders.append(self._noop)
+        return self
+
+    def xgroup_setid(
+        self,
+        key: KeyT,
+        group: str,
+        entry_id: str,
+        entries_read: int | None = None,
+        version: int | None = None,
+    ) -> Self:
+        """Queue XGROUP SETID command."""
+        nkey = self._make_key(key, version)
+        self._pipeline.xgroup_setid(nkey, group, entry_id, entries_read=entries_read)
+        self._decoders.append(self._noop)
+        return self
+
+    def xgroup_delconsumer(self, key: KeyT, group: str, consumer: str, version: int | None = None) -> Self:
+        """Queue XGROUP DELCONSUMER command."""
+        nkey = self._make_key(key, version)
+        self._pipeline.xgroup_delconsumer(nkey, group, consumer)
+        self._decoders.append(self._noop)
+        return self
+
+    def xreadgroup(
+        self,
+        group: str,
+        consumer: str,
+        streams: dict[KeyT, str],
+        count: int | None = None,
+        block: int | None = None,
+        noack: bool = False,
+        version: int | None = None,
+    ) -> Self:
+        """Queue XREADGROUP command (read as consumer group member)."""
+        nstreams: dict[KeyT, str] = {self._make_key(k, version): v for k, v in streams.items()}
+        self._pipeline.xreadgroup(group, consumer, nstreams, count=count, block=block, noack=noack)
+        self._decoders.append(self._decode_stream_results)
+        return self
+
+    def xack(self, key: KeyT, group: str, *entry_ids: str, version: int | None = None) -> Self:
+        """Queue XACK command (acknowledge messages)."""
+        nkey = self._make_key(key, version)
+        self._pipeline.xack(nkey, group, *entry_ids)
+        self._decoders.append(self._noop)
+        return self
+
+    def xpending(
+        self,
+        key: KeyT,
+        group: str,
+        start: str | None = None,
+        end: str | None = None,
+        count: int | None = None,
+        consumer: str | None = None,
+        idle: int | None = None,
+        version: int | None = None,
+    ) -> Self:
+        """Queue XPENDING command (get pending entries info)."""
+        nkey = self._make_key(key, version)
+        kwargs: dict[str, Any] = {}
+        if start is not None:
+            kwargs["min"] = start
+        if end is not None:
+            kwargs["max"] = end
+        if count is not None:
+            kwargs["count"] = count
+        if consumer is not None:
+            kwargs["consumername"] = consumer
+        if idle is not None:
+            kwargs["idle"] = idle
+        self._pipeline.xpending(nkey, group, **kwargs)
+        self._decoders.append(self._noop)
+        return self
+
+    def xclaim(
+        self,
+        key: KeyT,
+        group: str,
+        consumer: str,
+        min_idle_time: int,
+        entry_ids: list[str],
+        idle: int | None = None,
+        time: int | None = None,
+        retrycount: int | None = None,
+        force: bool = False,
+        justid: bool = False,
+        version: int | None = None,
+    ) -> Self:
+        """Queue XCLAIM command (claim pending messages)."""
+        nkey = self._make_key(key, version)
+        self._pipeline.xclaim(
+            nkey,
+            group,
+            consumer,
+            min_idle_time,
+            entry_ids,
+            idle=idle,
+            time=time,
+            retrycount=retrycount,
+            force=force,
+            justid=justid,
+        )
+        if justid:
+            self._decoders.append(self._noop)
+        else:
+            self._decoders.append(self._decode_stream_entries)
+        return self
+
+    def xautoclaim(
+        self,
+        key: KeyT,
+        group: str,
+        consumer: str,
+        min_idle_time: int,
+        start_id: str = "0-0",
+        count: int | None = None,
+        justid: bool = False,
+        version: int | None = None,
+    ) -> Self:
+        """Queue XAUTOCLAIM command (auto-claim idle messages)."""
+        nkey = self._make_key(key, version)
+        self._pipeline.xautoclaim(
+            nkey,
+            group,
+            consumer,
+            min_idle_time,
+            start_id=start_id,
+            count=count,
+            justid=justid,
+        )
+        self._decoders.append(self._noop)
         return self
 
     # -------------------------------------------------------------------------
