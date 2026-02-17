@@ -2616,8 +2616,8 @@ class KeyValueCache(BaseCache):
         Optionally filter by section (e.g., 'server', 'memory', 'stats').
         """
         if section:
-            return dict(self._cache.info(section))
-        return dict(self._cache.info())
+            return self._cache.info(section)
+        return self._cache.info()
 
     def slowlog_get(self, count: int = 10) -> list[Any]:
         """Get slow query log entries.
