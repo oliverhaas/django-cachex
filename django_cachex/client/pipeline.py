@@ -395,10 +395,14 @@ class Pipeline:
         src_direction: str = "LEFT",
         dest_direction: str = "RIGHT",
         version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
     ) -> Self:
         """Queue LMOVE command (move element between lists)."""
-        nsrc = self._make_key(source, version)
-        ndst = self._make_key(destination, version)
+        src_ver = version_src if version_src is not None else version
+        dst_ver = version_dst if version_dst is not None else version
+        nsrc = self._make_key(source, src_ver)
+        ndst = self._make_key(destination, dst_ver)
         self._pipeline.lmove(nsrc, ndst, src_direction, dest_direction)
         self._decoders.append(self._decode_single)
         return self
@@ -534,10 +538,14 @@ class Pipeline:
         destination: KeyT,
         member: Any,
         version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
     ) -> Self:
         """Queue SMOVE command (move member between sets)."""
-        nsource = self._make_key(source, version)
-        ndestination = self._make_key(destination, version)
+        src_ver = version_src if version_src is not None else version
+        dst_ver = version_dst if version_dst is not None else version
+        nsource = self._make_key(source, src_ver)
+        ndestination = self._make_key(destination, dst_ver)
         nmember = self._encode(member)
         self._pipeline.smove(nsource, ndestination, nmember)
         self._decoders.append(bool)  # Returns bool
@@ -642,12 +650,12 @@ class Pipeline:
     def hdel(
         self,
         key: KeyT,
-        field: str,
+        *fields: str,
         version: int | None = None,
     ) -> Self:
-        """Queue HDEL command (delete field)."""
+        """Queue HDEL command (delete one or more fields)."""
         nkey = self._make_key(key, version)
-        self._pipeline.hdel(nkey, field)
+        self._pipeline.hdel(nkey, *fields)
         self._decoders.append(self._noop)  # Returns count deleted
         return self
 
