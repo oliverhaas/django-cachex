@@ -731,6 +731,28 @@ class KeyValueCacheClient:
         decoded_keys = [k.decode() if isinstance(k, bytes) else k for k in keys]
         return next_cursor, decoded_keys
 
+    async def ascan(
+        self,
+        cursor: int = 0,
+        match: str | None = None,
+        count: int | None = None,
+        _type: str | None = None,
+    ) -> tuple[int, list[str]]:
+        """Perform a single SCAN iteration asynchronously returning (next_cursor, keys)."""
+        client = self.get_async_client(write=False)
+
+        if count is None:
+            count = self._default_scan_itersize
+
+        next_cursor, keys = await client.scan(
+            cursor=cursor,
+            match=match,
+            count=count,
+            _type=_type,
+        )
+        decoded_keys = [k.decode() if isinstance(k, bytes) else k for k in keys]
+        return next_cursor, decoded_keys
+
     def delete_pattern(self, pattern: str, itersize: int | None = None) -> int:
         """Delete all keys matching pattern (already prefixed)."""
         client = self.get_client(write=True)
@@ -842,6 +864,27 @@ class KeyValueCacheClient:
     ) -> Any:
         """Get a distributed lock."""
         client = self.get_client(key, write=True)
+        return client.lock(
+            key,
+            timeout=timeout,
+            sleep=sleep,
+            blocking=blocking,
+            blocking_timeout=blocking_timeout,
+            thread_local=thread_local,
+        )
+
+    def alock(
+        self,
+        key: str,
+        timeout: float | None = None,
+        sleep: float = 0.1,
+        *,
+        blocking: bool = True,
+        blocking_timeout: float | None = None,
+        thread_local: bool = True,
+    ) -> Any:
+        """Get an async distributed lock."""
+        client = self.get_async_client(key, write=True)
         return client.lock(
             key,
             timeout=timeout,

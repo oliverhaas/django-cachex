@@ -460,20 +460,40 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return self._cache.ttl(key)
 
+    async def attl(self, key: KeyT, version: int | None = None) -> int | None:
+        """Get TTL in seconds asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.attl(key)
+
     def pttl(self, key: KeyT, version: int | None = None) -> int | None:
         """Get TTL in milliseconds. Returns None if no expiry, -2 if key doesn't exist."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.pttl(key)
+
+    async def apttl(self, key: KeyT, version: int | None = None) -> int | None:
+        """Get TTL in milliseconds asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.apttl(key)
 
     def type(self, key: KeyT, version: int | None = None) -> KeyType | None:
         """Get the Redis data type of a key."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.type(key)
 
+    async def atype(self, key: KeyT, version: int | None = None) -> KeyType | None:
+        """Get the Redis data type of a key asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.atype(key)
+
     def persist(self, key: KeyT, version: int | None = None) -> bool:
         """Remove the expiry from a key, making it persistent."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.persist(key)
+
+    async def apersist(self, key: KeyT, version: int | None = None) -> bool:
+        """Remove the expiry from a key asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.apersist(key)
 
     def expire(
         self,
@@ -485,6 +505,16 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return self._cache.expire(key, timeout)
 
+    async def aexpire(
+        self,
+        key: KeyT,
+        timeout: ExpiryT,
+        version: int | None = None,
+    ) -> bool:
+        """Set expiry time on a key in seconds asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.aexpire(key, timeout)
+
     def expire_at(
         self,
         key: KeyT,
@@ -494,6 +524,16 @@ class KeyValueCache(BaseCache):
         """Set expiry to an absolute time."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.expireat(key, when)
+
+    async def aexpire_at(
+        self,
+        key: KeyT,
+        when: AbsExpiryT,
+        version: int | None = None,
+    ) -> bool:
+        """Set expiry to an absolute time asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.aexpireat(key, when)
 
     def pexpire(
         self,
@@ -505,6 +545,16 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return self._cache.pexpire(key, timeout)
 
+    async def apexpire(
+        self,
+        key: KeyT,
+        timeout: ExpiryT,
+        version: int | None = None,
+    ) -> bool:
+        """Set expiry time on a key in milliseconds asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.apexpire(key, timeout)
+
     def pexpire_at(
         self,
         key: KeyT,
@@ -515,6 +565,16 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return self._cache.pexpireat(key, when)
 
+    async def apexpire_at(
+        self,
+        key: KeyT,
+        when: AbsExpiryT,
+        version: int | None = None,
+    ) -> bool:
+        """Set expiry to an absolute time with millisecond precision asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.apexpireat(key, when)
+
     def expiretime(self, key: KeyT, version: int | None = None) -> int | None:
         """Get the absolute Unix timestamp (seconds) when a key will expire.
 
@@ -524,6 +584,11 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return self._cache.expiretime(key)
 
+    async def aexpiretime(self, key: KeyT, version: int | None = None) -> int | None:
+        """Get the absolute Unix timestamp (seconds) when a key will expire asynchronously."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self._cache.aexpiretime(key)
+
     def keys(
         self,
         pattern: str = "*",
@@ -532,6 +597,16 @@ class KeyValueCache(BaseCache):
         """Return all keys matching pattern (returns original keys without prefix)."""
         full_pattern = self.make_pattern(pattern, version=version)
         raw_keys = self._cache.keys(full_pattern)
+        return [self.reverse_key(k) for k in raw_keys]
+
+    async def akeys(
+        self,
+        pattern: str = "*",
+        version: int | None = None,
+    ) -> list[str]:
+        """Return all keys matching pattern asynchronously."""
+        full_pattern = self.make_pattern(pattern, version=version)
+        raw_keys = await self._cache.akeys(full_pattern)
         return [self.reverse_key(k) for k in raw_keys]
 
     def iter_keys(
@@ -545,6 +620,17 @@ class KeyValueCache(BaseCache):
         for key in self._cache.iter_keys(full_pattern, itersize=itersize):
             yield self.reverse_key(key)
 
+    async def aiter_keys(
+        self,
+        pattern: str = "*",
+        version: int | None = None,
+        itersize: int | None = None,
+    ) -> AsyncIterator[str]:
+        """Iterate over keys matching pattern using SCAN asynchronously."""
+        full_pattern = self.make_pattern(pattern, version=version)
+        async for key in self._cache.aiter_keys(full_pattern, itersize=itersize):
+            yield self.reverse_key(key)
+
     def scan(
         self,
         cursor: int = 0,
@@ -556,6 +642,24 @@ class KeyValueCache(BaseCache):
         """Perform a single SCAN iteration returning cursor and keys."""
         full_pattern = self.make_pattern(pattern, version=version)
         next_cursor, raw_keys = self._cache.scan(
+            cursor=cursor,
+            match=full_pattern,
+            count=count,
+            _type=key_type,
+        )
+        return next_cursor, [self.reverse_key(k) for k in raw_keys]
+
+    async def ascan(
+        self,
+        cursor: int = 0,
+        pattern: str = "*",
+        count: int | None = None,
+        version: int | None = None,
+        key_type: str | None = None,
+    ) -> tuple[int, list[str]]:
+        """Perform a single SCAN iteration asynchronously."""
+        full_pattern = self.make_pattern(pattern, version=version)
+        next_cursor, raw_keys = await self._cache.ascan(
             cursor=cursor,
             match=full_pattern,
             count=count,
@@ -597,6 +701,28 @@ class KeyValueCache(BaseCache):
         """Return a Lock object for distributed locking."""
         key = self.make_and_validate_key(key, version=version)
         return self._cache.lock(
+            key,
+            timeout=timeout,
+            sleep=sleep,
+            blocking=blocking,
+            blocking_timeout=blocking_timeout,
+            thread_local=thread_local,
+        )
+
+    def alock(
+        self,
+        key: str,
+        version: int | None = None,
+        timeout: float | None = None,
+        sleep: float = 0.1,
+        *,
+        blocking: bool = True,
+        blocking_timeout: float | None = None,
+        thread_local: bool = True,
+    ) -> Any:
+        """Return an async Lock object for distributed locking."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._cache.alock(
             key,
             timeout=timeout,
             sleep=sleep,
@@ -976,10 +1102,14 @@ class KeyValueCache(BaseCache):
         wherefrom: str,
         whereto: str,
         version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
     ) -> Any | None:
         """Atomically move an element from one list to another."""
-        src = self.make_and_validate_key(src, version=version)
-        dst = self.make_and_validate_key(dst, version=version)
+        src_ver = version_src if version_src is not None else version
+        dst_ver = version_dst if version_dst is not None else version
+        src = self.make_and_validate_key(src, version=src_ver)
+        dst = self.make_and_validate_key(dst, version=dst_ver)
         return self._cache.lmove(src, dst, wherefrom, whereto)
 
     def lrem(
@@ -1065,10 +1195,14 @@ class KeyValueCache(BaseCache):
         wherefrom: str = "LEFT",
         whereto: str = "RIGHT",
         version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
     ) -> Any | None:
         """Blocking atomically move element from one list to another."""
-        src = self.make_and_validate_key(src, version=version)
-        dst = self.make_and_validate_key(dst, version=version)
+        src_ver = version_src if version_src is not None else version
+        dst_ver = version_dst if version_dst is not None else version
+        src = self.make_and_validate_key(src, version=src_ver)
+        dst = self.make_and_validate_key(dst, version=dst_ver)
         return self._cache.blmove(src, dst, timeout, wherefrom, whereto)
 
     async def alpush(
@@ -1157,10 +1291,14 @@ class KeyValueCache(BaseCache):
         wherefrom: str,
         whereto: str,
         version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
     ) -> Any | None:
         """Atomically move an element from one list to another asynchronously."""
-        src = self.make_and_validate_key(src, version=version)
-        dst = self.make_and_validate_key(dst, version=version)
+        src_ver = version_src if version_src is not None else version
+        dst_ver = version_dst if version_dst is not None else version
+        src = self.make_and_validate_key(src, version=src_ver)
+        dst = self.make_and_validate_key(dst, version=dst_ver)
         return await self._cache.almove(src, dst, wherefrom, whereto)
 
     async def alrem(
@@ -1244,10 +1382,14 @@ class KeyValueCache(BaseCache):
         wherefrom: str = "LEFT",
         whereto: str = "RIGHT",
         version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
     ) -> Any | None:
         """Blocking atomically move element from one list to another asynchronously."""
-        src = self.make_and_validate_key(src, version=version)
-        dst = self.make_and_validate_key(dst, version=version)
+        src_ver = version_src if version_src is not None else version
+        dst_ver = version_dst if version_dst is not None else version
+        src = self.make_and_validate_key(src, version=src_ver)
+        dst = self.make_and_validate_key(dst, version=dst_ver)
         return await self._cache.ablmove(src, dst, timeout, wherefrom, whereto)
 
     # =========================================================================
@@ -1348,10 +1490,14 @@ class KeyValueCache(BaseCache):
         dst: KeyT,
         member: Any,
         version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
     ) -> bool:
         """Move member from one set to another."""
-        src = self.make_and_validate_key(src, version=version)
-        dst = self.make_and_validate_key(dst, version=version)
+        src_ver = version_src if version_src is not None else version
+        dst_ver = version_dst if version_dst is not None else version
+        src = self.make_and_validate_key(src, version=src_ver)
+        dst = self.make_and_validate_key(dst, version=dst_ver)
         return self._cache.smove(src, dst, member)
 
     def spop(
@@ -1536,10 +1682,14 @@ class KeyValueCache(BaseCache):
         dst: KeyT,
         member: Any,
         version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
     ) -> bool:
         """Move member from one set to another asynchronously."""
-        src = self.make_and_validate_key(src, version=version)
-        dst = self.make_and_validate_key(dst, version=version)
+        src_ver = version_src if version_src is not None else version
+        dst_ver = version_dst if version_dst is not None else version
+        src = self.make_and_validate_key(src, version=src_ver)
+        dst = self.make_and_validate_key(dst, version=dst_ver)
         return await self._cache.asmove(src, dst, member)
 
     async def aspop(
@@ -2499,6 +2649,21 @@ class KeyValueCache(BaseCache):
         dst_key = self.make_and_validate_key(dst, version=dst_ver)
         return self._cache.rename(src_key, dst_key)
 
+    async def arename(
+        self,
+        src: KeyT,
+        dst: KeyT,
+        version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
+    ) -> bool:
+        """Rename a key atomically asynchronously."""
+        src_ver = version_src if version_src is not None else version
+        dst_ver = version_dst if version_dst is not None else version
+        src_key = self.make_and_validate_key(src, version=src_ver)
+        dst_key = self.make_and_validate_key(dst, version=dst_ver)
+        return await self._cache.arename(src_key, dst_key)
+
     def renamenx(
         self,
         src: KeyT,
@@ -2513,6 +2678,21 @@ class KeyValueCache(BaseCache):
         src_key = self.make_and_validate_key(src, version=src_ver)
         dst_key = self.make_and_validate_key(dst, version=dst_ver)
         return self._cache.renamenx(src_key, dst_key)
+
+    async def arenamenx(
+        self,
+        src: KeyT,
+        dst: KeyT,
+        version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
+    ) -> bool:
+        """Rename a key only if the destination does not exist asynchronously."""
+        src_ver = version_src if version_src is not None else version
+        dst_ver = version_dst if version_dst is not None else version
+        src_key = self.make_and_validate_key(src, version=src_ver)
+        dst_key = self.make_and_validate_key(dst, version=dst_ver)
+        return await self._cache.arenamenx(src_key, dst_key)
 
     @override
     def incr_version(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
