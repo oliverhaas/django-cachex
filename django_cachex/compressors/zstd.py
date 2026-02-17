@@ -14,5 +14,5 @@ class ZStdCompressor(BaseCompressor):
     def decompress(self, data: bytes) -> bytes:
         try:
             return zstd.decompress(data)
-        except zstd.ZstdError as e:
+        except Exception as e:
             raise CompressorError from e

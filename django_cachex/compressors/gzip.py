@@ -19,5 +19,5 @@ class GzipCompressor(BaseCompressor):
     def decompress(self, data: bytes) -> bytes:
         try:
             return gzip.decompress(data)
-        except (gzip.BadGzipFile, EOFError) as e:
+        except Exception as e:
             raise CompressorError from e

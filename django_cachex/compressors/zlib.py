@@ -21,5 +21,5 @@ class ZlibCompressor(BaseCompressor):
     def decompress(self, data: bytes) -> bytes:
         try:
             return zlib.decompress(data)
-        except zlib.error as e:
+        except Exception as e:
             raise CompressorError from e

@@ -21,5 +21,5 @@ class LzmaCompressor(BaseCompressor):
     def decompress(self, data: bytes) -> bytes:
         try:
             return lzma.decompress(data)
-        except lzma.LZMAError as e:
+        except Exception as e:
             raise CompressorError from e
