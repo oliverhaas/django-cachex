@@ -1446,6 +1446,13 @@
 <li><strong>Key detail pagination</strong>: Collection types (list, hash, set, zset, stream) are paginated at 100 items per page with <code>?page=N</code> navigation.</li>
 <li><strong>Keys in admin sidebar</strong>: The key list is now a first-class sidebar entry with a cache filter for switching between configured caches.</li>
 <li><strong>Simplified Lua script execution</strong>: <code>eval_script()</code> replaces the <code>register_script</code>/<code>LuaScript</code> registry with direct <code>EVAL</code> calls; redis-py handles script caching.</li>
+<li><strong>Async data structure methods</strong>: All hash, list, set, and sorted set operations now have async counterparts on <code>KeyValueCache</code> (e.g. <code>ahset</code>, <code>alpush</code>, <code>asadd</code>, <code>azadd</code>).</li>
+<li><strong>Stream operations</strong>: Full sync and async support for Redis streams (<code>xadd</code>, <code>xread</code>, <code>xrange</code>, <code>xlen</code>, <code>xdel</code>, <code>xtrim</code>, <code>xinfo_stream</code>, <code>xgroup_create</code>, <code>xreadgroup</code>, <code>xack</code>, <code>xpending</code>, <code>xclaim</code>, <code>xautoclaim</code>, and more).</li>
+<li><strong>Safe <code>clear()</code></strong>: <code>clear()</code> now uses <code>delete_pattern("*")</code> to only remove keys for the current cache version and prefix, instead of <code>FLUSHDB</code>. Use <code>flush_db()</code> for the old behavior.</li>
+<li><strong>Danger zone in admin</strong>: Cache detail view has a "Danger Zone" section with "Clear all versions" and "Flush database" actions. Key list view has a "Clear" button for safe prefix-scoped clearing.</li>
+<li><strong><code>hset</code> items param</strong>: <code>hset()</code> now accepts an <code>items</code> parameter (flat key-value list), matching the redis-py/valkey-py signature. <code>hmset</code> is removed.</li>
+<li><strong><code>delete_pattern</code> batched deletes</strong>: Deletes are now batched to prevent OOM on broad patterns.</li>
+<li><strong>Multi-key params standardized</strong>: Set operations (<code>sdiff</code>, <code>sinter</code>, <code>sunion</code>, etc.) accept <code>KeyT | Sequence[KeyT]</code> consistently.</li>
 </ul>
 <hr />
 <h2 id="020-february-2026">0.2.0 (February 2026)<a class="headerlink" href="#020-february-2026" title="Permanent link">&para;</a></h2>
