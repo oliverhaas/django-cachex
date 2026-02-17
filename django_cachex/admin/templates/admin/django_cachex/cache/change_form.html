@@ -321,7 +321,7 @@
                     {% csrf_token %}
                     <input type="hidden" name="action" value="clear_all_versions">
                     <button type="submit" class="button delete-btn"
-                        onclick="return confirm('Delete ALL keys across ALL versions for \'{{ cache_name }}\'?\n\nThis cannot be undone.');">
+                        onclick="return confirm('Delete ALL keys across ALL versions for \'{{ cache_name|escapejs }}\'?\n\nThis cannot be undone.');">
                         {% trans 'Clear all versions' %}
                     </button>
                 </form>
@@ -335,7 +335,7 @@
                     {% csrf_token %}
                     <input type="hidden" name="action" value="flush_db">
                     <button type="submit" class="button delete-btn"
-                        onclick="return confirm('FLUSH the entire Redis database for \'{{ cache_name }}\'?\n\nThis removes ALL keys in the database, including those from other applications.\n\nThis cannot be undone.');">
+                        onclick="return confirm('FLUSH the entire Redis database for \'{{ cache_name|escapejs }}\'?\n\nThis removes ALL keys in the database, including those from other applications.\n\nThis cannot be undone.');">
                         {% trans 'Flush database' %}
                     </button>
                 </form>

@@ -24,7 +24,7 @@
             {% csrf_token %}
             <input type="hidden" name="action" value="clear_cache">
             <input type="hidden" name="cache_name" value="{{ cache_name }}">
-            <a href="#" onclick="if(confirm('Clear all keys in \'{{ cache_name }}\'? This removes keys for the current cache version.')) document.getElementById('clear-cache-form').submit(); return false;" class="deletelink">{% trans 'Clear' %}</a>
+            <a href="#" onclick="if(confirm('Clear all keys in \'{{ cache_name|escapejs }}\'? This removes keys for the current cache version.')) document.getElementById('clear-cache-form').submit(); return false;" class="deletelink">{% trans 'Clear' %}</a>
         </form>
     </li>
     <li>
