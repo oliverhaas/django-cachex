@@ -1,4 +1,5 @@
-*.py[c|o]
+*.py[cod]
+__pycache__/
 .DS_Store
 *.sql
 *.bz2
