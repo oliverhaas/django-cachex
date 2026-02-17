@@ -395,7 +395,11 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
 
         # Sorted set pop operations
         elif action == "zpopmin":
-            pop_count = int(request.POST.get("pop_count", 1) or 1)
+            pop_count = 1
+            pop_count_str = request.POST.get("pop_count", "").strip()
+            if pop_count_str:
+                with contextlib.suppress(ValueError):
+                    pop_count = max(1, int(pop_count_str))
             try:
                 result = cache.zpopmin(key, count=pop_count)
                 if not result:
@@ -411,7 +415,11 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             return _redirect_to_key()
 
         elif action == "zpopmax":
-            pop_count = int(request.POST.get("pop_count", 1) or 1)
+            pop_count = 1
+            pop_count_str = request.POST.get("pop_count", "").strip()
+            if pop_count_str:
+                with contextlib.suppress(ValueError):
+                    pop_count = max(1, int(pop_count_str))
             try:
                 result = cache.zpopmax(key, count=pop_count)
                 if not result:
