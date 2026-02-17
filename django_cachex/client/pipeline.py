@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
+    import builtins
     from collections.abc import Callable, Sequence
     from datetime import datetime, timedelta
 
@@ -1023,7 +1024,7 @@ class Pipeline:
         *,
         desc: bool = False,
         withscores: bool = False,
-        score_cast_func: type = float,
+        score_cast_func: builtins.type = float,
         version: int | None = None,
     ) -> Self:
         """Queue ZRANGE command (get members by index range)."""
@@ -1048,7 +1049,7 @@ class Pipeline:
         num: int | None = None,
         *,
         withscores: bool = False,
-        score_cast_func: type = float,
+        score_cast_func: builtins.type = float,
         version: int | None = None,
     ) -> Self:
         """Queue ZRANGEBYSCORE command (get members by score range)."""
@@ -1124,7 +1125,7 @@ class Pipeline:
         end: int,
         *,
         withscores: bool = False,
-        score_cast_func: type = float,
+        score_cast_func: builtins.type = float,
         version: int | None = None,
     ) -> Self:
         """Queue ZREVRANGE command (get members by index, high to low)."""
@@ -1148,7 +1149,7 @@ class Pipeline:
         num: int | None = None,
         *,
         withscores: bool = False,
-        score_cast_func: type = float,
+        score_cast_func: builtins.type = float,
         version: int | None = None,
     ) -> Self:
         """Queue ZREVRANGEBYSCORE command (get by score, high to low)."""
