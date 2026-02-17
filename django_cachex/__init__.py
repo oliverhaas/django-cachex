@@ -8,6 +8,7 @@ except PackageNotFoundError:
 # Re-export commonly used items for convenience
 from django_cachex.exceptions import (
     CompressorError,
+    NotSupportedError,
     SerializerError,
 )
 from django_cachex.script import (
@@ -22,6 +23,7 @@ from django_cachex.script import (
 
 __all__ = [
     "CompressorError",
+    "NotSupportedError",
     "ScriptHelpers",
     "SerializerError",
     "__version__",

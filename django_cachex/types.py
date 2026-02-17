@@ -112,7 +112,7 @@ class CacheProtocol(Protocol):
         timeout: float | None = ...,
         version: int | None = None,
         **kwargs: Any,
-    ) -> bool | None: ...
+    ) -> Any: ...
 
     async def aset(
         self,
@@ -120,7 +120,8 @@ class CacheProtocol(Protocol):
         value: Any,
         timeout: float | None = ...,
         version: int | None = None,
-    ) -> None: ...
+        **kwargs: Any,
+    ) -> Any: ...
 
     def touch(self, key: KeyT, timeout: float | None = ..., version: int | None = None) -> bool: ...
 
@@ -194,27 +195,47 @@ class CacheProtocol(Protocol):
 
     def ttl(self, key: KeyT, version: int | None = None) -> int | None: ...
 
+    async def attl(self, key: KeyT, version: int | None = None) -> int | None: ...
+
     def pttl(self, key: KeyT, version: int | None = None) -> int | None: ...
+
+    async def apttl(self, key: KeyT, version: int | None = None) -> int | None: ...
 
     def type(self, key: KeyT, version: int | None = None) -> KeyType | None: ...
 
+    async def atype(self, key: KeyT, version: int | None = None) -> KeyType | None: ...
+
     def persist(self, key: KeyT, version: int | None = None) -> bool: ...
+
+    async def apersist(self, key: KeyT, version: int | None = None) -> bool: ...
 
     def expire(self, key: KeyT, timeout: ExpiryT, version: int | None = None) -> bool: ...
 
+    async def aexpire(self, key: KeyT, timeout: ExpiryT, version: int | None = None) -> bool: ...
+
     def expire_at(self, key: KeyT, when: AbsExpiryT, version: int | None = None) -> bool: ...
+
+    async def aexpire_at(self, key: KeyT, when: AbsExpiryT, version: int | None = None) -> bool: ...
 
     def pexpire(self, key: KeyT, timeout: ExpiryT, version: int | None = None) -> bool: ...
 
+    async def apexpire(self, key: KeyT, timeout: ExpiryT, version: int | None = None) -> bool: ...
+
     def pexpire_at(self, key: KeyT, when: AbsExpiryT, version: int | None = None) -> bool: ...
 
+    async def apexpire_at(self, key: KeyT, when: AbsExpiryT, version: int | None = None) -> bool: ...
+
     def expiretime(self, key: KeyT, version: int | None = None) -> int | None: ...
+
+    async def aexpiretime(self, key: KeyT, version: int | None = None) -> int | None: ...
 
     # =========================================================================
     # Key Operations
     # =========================================================================
 
     def keys(self, pattern: str = "*", version: int | None = None) -> list[str]: ...
+
+    async def akeys(self, pattern: str = "*", version: int | None = None) -> list[str]: ...
 
     def iter_keys(
         self,
@@ -223,12 +244,29 @@ class CacheProtocol(Protocol):
         itersize: int | None = None,
     ) -> Iterator[str]: ...
 
+    def aiter_keys(
+        self,
+        pattern: str = "*",
+        version: int | None = None,
+        itersize: int | None = None,
+    ) -> AsyncIterator[str]: ...
+
     def scan(
         self,
         cursor: int = 0,
         pattern: str = "*",
         count: int | None = None,
         version: int | None = None,
+        key_type: str | None = None,
+    ) -> tuple[int, list[str]]: ...
+
+    async def ascan(
+        self,
+        cursor: int = 0,
+        pattern: str = "*",
+        count: int | None = None,
+        version: int | None = None,
+        key_type: str | None = None,
     ) -> tuple[int, list[str]]: ...
 
     def delete_pattern(
@@ -262,7 +300,25 @@ class CacheProtocol(Protocol):
         version_dst: int | None = None,
     ) -> bool: ...
 
+    async def arename(
+        self,
+        src: KeyT,
+        dst: KeyT,
+        version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
+    ) -> bool: ...
+
     def renamenx(
+        self,
+        src: KeyT,
+        dst: KeyT,
+        version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
+    ) -> bool: ...
+
+    async def arenamenx(
         self,
         src: KeyT,
         dst: KeyT,
@@ -284,6 +340,18 @@ class CacheProtocol(Protocol):
     # =========================================================================
 
     def lock(
+        self,
+        key: str,
+        version: int | None = None,
+        timeout: float | None = None,
+        sleep: float = 0.1,
+        *,
+        blocking: bool = True,
+        blocking_timeout: float | None = None,
+        thread_local: bool = True,
+    ) -> Any: ...
+
+    def alock(
         self,
         key: str,
         version: int | None = None,
@@ -400,6 +468,8 @@ class CacheProtocol(Protocol):
         wherefrom: str,
         whereto: str,
         version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
     ) -> Any | None: ...
 
     def lrem(self, key: KeyT, count: int, value: Any, version: int | None = None) -> int: ...
@@ -432,6 +502,8 @@ class CacheProtocol(Protocol):
         wherefrom: str = "LEFT",
         whereto: str = "RIGHT",
         version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
     ) -> Any | None: ...
 
     async def alpush(self, key: KeyT, *values: Any, version: int | None = None) -> int: ...
@@ -475,6 +547,8 @@ class CacheProtocol(Protocol):
         wherefrom: str,
         whereto: str,
         version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
     ) -> Any | None: ...
 
     async def alrem(self, key: KeyT, count: int, value: Any, version: int | None = None) -> int: ...
@@ -507,6 +581,8 @@ class CacheProtocol(Protocol):
         wherefrom: str = "LEFT",
         whereto: str = "RIGHT",
         version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
     ) -> Any | None: ...
 
     # =========================================================================
@@ -543,7 +619,15 @@ class CacheProtocol(Protocol):
 
     def smembers(self, key: KeyT, version: int | None = None) -> _Set[Any]: ...
 
-    def smove(self, src: KeyT, dst: KeyT, member: Any, version: int | None = None) -> bool: ...
+    def smove(
+        self,
+        src: KeyT,
+        dst: KeyT,
+        member: Any,
+        version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
+    ) -> bool: ...
 
     def spop(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | _Set[Any]: ...
 
@@ -611,7 +695,15 @@ class CacheProtocol(Protocol):
 
     async def asmembers(self, key: KeyT, version: int | None = None) -> _Set[Any]: ...
 
-    async def asmove(self, src: KeyT, dst: KeyT, member: Any, version: int | None = None) -> bool: ...
+    async def asmove(
+        self,
+        src: KeyT,
+        dst: KeyT,
+        member: Any,
+        version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
+    ) -> bool: ...
 
     async def aspop(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | _Set[Any]: ...
 
