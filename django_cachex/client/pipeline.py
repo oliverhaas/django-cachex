@@ -1478,8 +1478,26 @@ class Pipeline:
             count=count,
             justid=justid,
         )
-        self._decoders.append(self._noop)
+        self._decoders.append(self._make_xautoclaim_decoder(justid=justid))
         return self
+
+    def _make_xautoclaim_decoder(
+        self,
+        *,
+        justid: bool,
+    ) -> Callable[[tuple[Any, list, list]], tuple[str, list, list[str]]]:
+        """Create decoder for XAUTOCLAIM result tuple (next_id, claimed, deleted)."""
+
+        def decode(result: tuple[Any, list, list]) -> tuple[str, list, list[str]]:
+            next_id = result[0].decode() if isinstance(result[0], bytes) else result[0]
+            deleted = [d.decode() if isinstance(d, bytes) else d for d in result[2]] if len(result) > 2 else []
+            if justid:
+                claimed = [r.decode() if isinstance(r, bytes) else r for r in result[1]]
+            else:
+                claimed = self._decode_stream_entries(result[1])
+            return (next_id, claimed, deleted)
+
+        return decode
 
     # -------------------------------------------------------------------------
     # Lua Script Operations
