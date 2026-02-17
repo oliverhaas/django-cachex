@@ -160,17 +160,21 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         # Prepare data with encoded values
         prepared_data = {k: self.encode(v) for k, v in data.items()}
 
-        # mset_nonatomic handles slot splitting
-        client.mset_nonatomic(prepared_data)
-
-        # Set expiry if needed
-        if timeout is not None:
+        if timeout == 0:
+            # timeout=0 means "delete immediately" (matches base client behavior)
+            for slot_keys in self._group_keys_by_slot(prepared_data.keys()).values():
+                client.delete(*slot_keys)
+        elif timeout is None:
+            # No expiry
+            client.mset_nonatomic(prepared_data)
+        else:
+            # mset_nonatomic handles slot splitting
+            client.mset_nonatomic(prepared_data)
             timeout_ms = int(timeout * 1000)
-            if timeout_ms > 0:
-                pipe = client.pipeline()
-                for key in prepared_data:
-                    pipe.pexpire(key, timeout_ms)
-                pipe.execute()
+            pipe = client.pipeline()
+            for key in prepared_data:
+                pipe.pexpire(key, timeout_ms)
+            pipe.execute()
         return []
 
     @override
@@ -295,17 +299,21 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         # Prepare data with encoded values
         prepared_data = {k: self.encode(v) for k, v in data.items()}
 
-        # mset_nonatomic handles slot splitting
-        await client.mset_nonatomic(prepared_data)
-
-        # Set expiry if needed
-        if timeout is not None:
+        if timeout == 0:
+            # timeout=0 means "delete immediately" (matches base client behavior)
+            for slot_keys in self._group_keys_by_slot(prepared_data.keys()).values():
+                await client.delete(*slot_keys)
+        elif timeout is None:
+            # No expiry
+            await client.mset_nonatomic(prepared_data)
+        else:
+            # mset_nonatomic handles slot splitting
+            await client.mset_nonatomic(prepared_data)
             timeout_ms = int(timeout * 1000)
-            if timeout_ms > 0:
-                pipe = client.pipeline()
-                for key in prepared_data:
-                    pipe.pexpire(key, timeout_ms)
-                await pipe.execute()
+            pipe = client.pipeline()
+            for key in prepared_data:
+                pipe.pexpire(key, timeout_ms)
+            await pipe.execute()
         return []
 
     @override
