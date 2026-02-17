@@ -103,14 +103,11 @@ class Pipeline:
             return self._decode_zset_with_scores
         return self._decode_zset_members  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
 
-    def _decode_zpop(self, value: list[tuple[bytes, float]], count: int | None) -> Any:
+    def _decode_zpop(self, value: list[tuple[bytes, float]]) -> list[tuple[Any, float]]:
         """Decode zpopmin/zpopmax result."""
         if not value:
-            return None if count is None else []
-        decoded = [(self._client.decode(member), score) for member, score in value]
-        if count is None:
-            return decoded[0] if decoded else None
-        return decoded
+            return []
+        return [(self._client.decode(member), score) for member, score in value]
 
     # -------------------------------------------------------------------------
     # Key/value helpers
@@ -854,27 +851,25 @@ class Pipeline:
     def zpopmax(
         self,
         key: KeyT,
-        count: int | None = None,
+        count: int = 1,
         version: int | None = None,
     ) -> Self:
         """Queue ZPOPMAX command (pop highest scoring members)."""
         nkey = self._make_key(key, version)
         self._pipeline.zpopmax(nkey, count)
-        # Capture count for decoder
-        self._decoders.append(lambda x, c=count: self._decode_zpop(x, c))  # type: ignore[misc]
+        self._decoders.append(self._decode_zpop)
         return self
 
     def zpopmin(
         self,
         key: KeyT,
-        count: int | None = None,
+        count: int = 1,
         version: int | None = None,
     ) -> Self:
         """Queue ZPOPMIN command (pop lowest scoring members)."""
         nkey = self._make_key(key, version)
         self._pipeline.zpopmin(nkey, count)
-        # Capture count for decoder
-        self._decoders.append(lambda x, c=count: self._decode_zpop(x, c))  # type: ignore[misc]
+        self._decoders.append(self._decode_zpop)
         return self
 
     def zrange(
