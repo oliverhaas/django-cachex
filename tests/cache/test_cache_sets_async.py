@@ -160,3 +160,18 @@ class TestAsyncSetScan:
         async for item in cache.asscan_iter("afoo_scan_iter"):
             items.add(item)
         assert items == {"bar1", "bar2"}
+
+
+class TestAsyncVersionSrcDst:
+    """Tests for version_src/version_dst on asmove."""
+
+    @pytest.mark.asyncio
+    async def test_asmove_version_src_dst(self, cache: KeyValueCache):
+        """asmove with different source and destination versions."""
+        cache.sadd("{vs}:assrc", "a", "b", version=1)
+        cache.sadd("{vs}:asdst", "x", version=2)
+
+        result = await cache.asmove("{vs}:assrc", "{vs}:asdst", "a", version_src=1, version_dst=2)
+        assert result is True
+        assert cache.smembers("{vs}:assrc", version=1) == {"b"}
+        assert cache.smembers("{vs}:asdst", version=2) == {"x", "a"}

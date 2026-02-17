@@ -138,3 +138,17 @@ class TestSetOperations:
         cache.sadd("{foo}2", "bar2", "bar3")
         assert cache.sunionstore("{foo}3", ["{foo}1", "{foo}2"]) == 3
         assert cache.smembers("{foo}3") == {"bar1", "bar2", "bar3"}
+
+
+class TestVersionSrcDst:
+    """Tests for version_src/version_dst on smove."""
+
+    def test_smove_version_src_dst(self, cache: KeyValueCache):
+        """smove with different source and destination versions."""
+        cache.sadd("{vs}:ssrc", "a", "b", version=1)
+        cache.sadd("{vs}:sdst", "x", version=2)
+
+        result = cache.smove("{vs}:ssrc", "{vs}:sdst", "a", version_src=1, version_dst=2)
+        assert result is True
+        assert cache.smembers("{vs}:ssrc", version=1) == {"b"}
+        assert cache.smembers("{vs}:sdst", version=2) == {"x", "a"}

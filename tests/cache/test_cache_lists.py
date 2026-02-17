@@ -299,3 +299,35 @@ class TestListOperations:
         assert result is not None
         _key, value = result
         assert value == {"name": "Alice"}
+
+
+class TestVersionSrcDst:
+    """Tests for version_src/version_dst on lmove and blmove."""
+
+    def test_lmove_version_src_dst(self, cache: KeyValueCache):
+        """lmove with different source and destination versions."""
+        cache.rpush("{vs}:lsrc", "a", "b", version=1)
+        cache.rpush("{vs}:ldst", "x", version=2)
+
+        result = cache.lmove("{vs}:lsrc", "{vs}:ldst", "LEFT", "RIGHT", version_src=1, version_dst=2)
+        assert result == "a"
+        assert cache.lrange("{vs}:lsrc", 0, -1, version=1) == ["b"]
+        assert cache.lrange("{vs}:ldst", 0, -1, version=2) == ["x", "a"]
+
+    def test_blmove_version_src_dst(self, cache: KeyValueCache):
+        """blmove with different source and destination versions."""
+        cache.rpush("{vs}:blsrc", "a", "b", version=1)
+        cache.rpush("{vs}:bldst", "x", version=2)
+
+        result = cache.blmove(
+            "{vs}:blsrc",
+            "{vs}:bldst",
+            timeout=1,
+            wherefrom="LEFT",
+            whereto="RIGHT",
+            version_src=1,
+            version_dst=2,
+        )
+        assert result == "a"
+        assert cache.lrange("{vs}:blsrc", 0, -1, version=1) == ["b"]
+        assert cache.lrange("{vs}:bldst", 0, -1, version=2) == ["x", "a"]

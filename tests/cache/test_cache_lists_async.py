@@ -254,3 +254,37 @@ class TestAsyncBlockingOps:
             timeout=0.1,
         )
         assert result is None
+
+
+class TestAsyncVersionSrcDst:
+    """Tests for version_src/version_dst on almove and ablmove."""
+
+    @pytest.mark.asyncio
+    async def test_almove_version_src_dst(self, cache: KeyValueCache):
+        """almove with different source and destination versions."""
+        cache.rpush("{vs}:alsrc", "a", "b", version=1)
+        cache.rpush("{vs}:aldst", "x", version=2)
+
+        result = await cache.almove("{vs}:alsrc", "{vs}:aldst", "LEFT", "RIGHT", version_src=1, version_dst=2)
+        assert result == "a"
+        assert cache.lrange("{vs}:alsrc", 0, -1, version=1) == ["b"]
+        assert cache.lrange("{vs}:aldst", 0, -1, version=2) == ["x", "a"]
+
+    @pytest.mark.asyncio
+    async def test_ablmove_version_src_dst(self, cache: KeyValueCache):
+        """ablmove with different source and destination versions."""
+        cache.rpush("{vs}:ablsrc", "a", "b", version=1)
+        cache.rpush("{vs}:abldst", "x", version=2)
+
+        result = await cache.ablmove(
+            "{vs}:ablsrc",
+            "{vs}:abldst",
+            timeout=1,
+            wherefrom="LEFT",
+            whereto="RIGHT",
+            version_src=1,
+            version_dst=2,
+        )
+        assert result == "a"
+        assert cache.lrange("{vs}:ablsrc", 0, -1, version=1) == ["b"]
+        assert cache.lrange("{vs}:abldst", 0, -1, version=2) == ["x", "a"]

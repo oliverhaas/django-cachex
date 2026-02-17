@@ -102,6 +102,23 @@ class TestRenameOperations:
         assert cache.get("{slot6}:src") == "src_value"
         assert cache.get("{slot6}:dest") == "existing_value"
 
+    def test_rename_version_src_dst(self, cache: KeyValueCache):
+        """rename with different source and destination versions."""
+        cache.set("{vs}:rsrc", "value", version=1)
+
+        cache.rename("{vs}:rsrc", "{vs}:rdst", version_src=1, version_dst=2)
+        assert cache.get("{vs}:rsrc", version=1) is None
+        assert cache.get("{vs}:rdst", version=2) == "value"
+
+    def test_renamenx_version_src_dst(self, cache: KeyValueCache):
+        """renamenx with different source and destination versions."""
+        cache.set("{vs}:rnxsrc", "value", version=1)
+
+        result = cache.renamenx("{vs}:rnxsrc", "{vs}:rnxdst", version_src=1, version_dst=2)
+        assert result is True
+        assert cache.get("{vs}:rnxsrc", version=1) is None
+        assert cache.get("{vs}:rnxdst", version=2) == "value"
+
 
 class TestDeletePatternOperations:
     def test_delete_pattern(self, cache: KeyValueCache):
