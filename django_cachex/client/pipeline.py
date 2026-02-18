@@ -1485,17 +1485,23 @@ class Pipeline:
         self,
         *,
         justid: bool,
-    ) -> Callable[[tuple[Any, list, list]], tuple[str, list, list[str]]]:
-        """Create decoder for XAUTOCLAIM result tuple (next_id, claimed, deleted)."""
+    ) -> Callable[[Any], tuple[str, list, list[str]]]:
+        """Create decoder for XAUTOCLAIM result.
 
-        def decode(result: tuple[Any, list, list]) -> tuple[str, list, list[str]]:
+        redis-py returns different formats based on justid:
+        - justid=False: [next_id, [[id, fields], ...], [deleted]] (3-tuple)
+        - justid=True:  [id1, id2, ...] (flat list of claimed IDs)
+        """
+
+        def decode(result: Any) -> tuple[str, list, list[str]]:
+            if justid:
+                # redis-py returns flat list of claimed IDs (strips next_id/deleted)
+                claimed = [r.decode() if isinstance(r, bytes) else r for r in result]
+                return ("", claimed, [])
+
             next_id = result[0].decode() if isinstance(result[0], bytes) else result[0]
             deleted = [d.decode() if isinstance(d, bytes) else d for d in result[2]] if len(result) > 2 else []
-            if justid:
-                claimed = [r.decode() if isinstance(r, bytes) else r for r in result[1]]
-            else:
-                claimed = self._decode_stream_entries(result[1])
-            return (next_id, claimed, deleted)
+            return (next_id, self._decode_stream_entries(result[1]), deleted)
 
         return decode
 

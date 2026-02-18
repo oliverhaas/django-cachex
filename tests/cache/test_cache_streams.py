@@ -200,6 +200,22 @@ class TestStreamConsumerGroups:
         assert isinstance(next_id, str)
         assert len(claimed) >= 1
 
+    def test_xautoclaim_justid(self, cache: KeyValueCache):
+        eid = cache.xadd("stream_autoclaim_jid", {"msg": "auto"})
+        cache.xgroup_create("stream_autoclaim_jid", "ac_jid_grp", entry_id="0")
+        cache.xreadgroup("ac_jid_grp", "consumer1", {"stream_autoclaim_jid": ">"})
+
+        time.sleep(0.01)
+        _next_id, claimed, _deleted = cache.xautoclaim(
+            "stream_autoclaim_jid",
+            "ac_jid_grp",
+            "consumer2",
+            0,
+            justid=True,
+        )
+        assert isinstance(claimed, list)
+        assert eid in claimed
+
     def test_xpending_range(self, cache: KeyValueCache):
         cache.xadd("stream_pend_range", {"msg": "test"})
         cache.xgroup_create("stream_pend_range", "pr_grp", entry_id="0")
@@ -430,3 +446,20 @@ class TestAsyncStreamConsumerGroups:
         next_id, claimed, _deleted = await cache.axautoclaim("astream_autoclaim", "auto_grp", "consumer2", 0)
         assert isinstance(next_id, str)
         assert len(claimed) >= 1
+
+    @pytest.mark.asyncio
+    async def test_axautoclaim_justid(self, cache: KeyValueCache):
+        eid = await cache.axadd("astream_autoclaim_jid", {"msg": "auto"})
+        await cache.axgroup_create("astream_autoclaim_jid", "ac_jid_grp", entry_id="0")
+        await cache.axreadgroup("ac_jid_grp", "consumer1", {"astream_autoclaim_jid": ">"})
+
+        await asyncio.sleep(0.01)
+        _next_id, claimed, _deleted = await cache.axautoclaim(
+            "astream_autoclaim_jid",
+            "ac_jid_grp",
+            "consumer2",
+            0,
+            justid=True,
+        )
+        assert isinstance(claimed, list)
+        assert eid in claimed

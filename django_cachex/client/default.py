@@ -2425,15 +2425,15 @@ class KeyValueCacheClient:
             count=count,
             justid=justid,
         )
+
+        if justid:
+            # redis-py returns flat list of claimed IDs (strips next_id/deleted)
+            claimed: list[str] = [r.decode() if isinstance(r, bytes) else r for r in result]
+            return ("", claimed, [])
+
         next_id = result[0].decode() if isinstance(result[0], bytes) else result[0]
         deleted = [d.decode() if isinstance(d, bytes) else d for d in result[2]] if len(result) > 2 else []
-
-        claimed: list[tuple[str, dict[str, Any]]] | list[str]
-        if justid:
-            claimed = [r.decode() if isinstance(r, bytes) else r for r in result[1]]
-        else:
-            claimed = self._decode_stream_entries(result[1])
-        return (next_id, claimed, deleted)
+        return (next_id, self._decode_stream_entries(result[1]), deleted)
 
     # =========================================================================
     # Streams Operations (Async)
@@ -2704,15 +2704,15 @@ class KeyValueCacheClient:
             count=count,
             justid=justid,
         )
+
+        if justid:
+            # redis-py returns flat list of claimed IDs (strips next_id/deleted)
+            claimed: list[str] = [r.decode() if isinstance(r, bytes) else r for r in result]
+            return ("", claimed, [])
+
         next_id = result[0].decode() if isinstance(result[0], bytes) else result[0]
         deleted = [d.decode() if isinstance(d, bytes) else d for d in result[2]] if len(result) > 2 else []
-
-        claimed: list[tuple[str, dict[str, Any]]] | list[str]
-        if justid:
-            claimed = [r.decode() if isinstance(r, bytes) else r for r in result[1]]
-        else:
-            claimed = self._decode_stream_entries(result[1])
-        return (next_id, claimed, deleted)
+        return (next_id, self._decode_stream_entries(result[1]), deleted)
 
     # =========================================================================
     # Lua Scripting Operations
