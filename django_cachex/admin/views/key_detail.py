@@ -88,7 +88,9 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     else:
                         messages.error(request, "Key no longer exists.")
                 else:
-                    cache.set(key, new_value, timeout=None)
+                    existing_ttl = cache.ttl(key)
+                    timeout = existing_ttl if existing_ttl and existing_ttl > 0 else None
+                    cache.set(key, new_value, timeout=timeout)
                     messages.success(request, "Key updated successfully.")
                 return _redirect_to_key()
             except Exception as e:  # noqa: BLE001
@@ -440,7 +442,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             field_value = request.POST.get("field_value", "").strip()
             if field_name and field_value:
                 try:
-                    entry_id = cache._cache.xadd(key, {field_name: field_value})
+                    entry_id = cache.xadd(key, {field_name: field_value})
                     messages.success(request, f"Added entry {entry_id}.")
                 except Exception as e:  # noqa: BLE001
                     messages.error(request, str(e))
@@ -452,7 +454,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             entry_id = request.POST.get("entry_id", "").strip()
             if entry_id:
                 try:
-                    deleted = cache._cache.xdel(key, entry_id)
+                    deleted = cache.xdel(key, entry_id)
                     if deleted:
                         messages.success(request, f"Deleted entry {entry_id}.")
                     else:
@@ -468,7 +470,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             if maxlen_str:
                 try:
                     maxlen = int(maxlen_str)
-                    trimmed = cache._cache.xtrim(key, maxlen=maxlen)
+                    trimmed = cache.xtrim(key, maxlen=maxlen)
                     messages.success(request, f"Trimmed {trimmed} entries.")
                 except ValueError:
                     messages.error(request, "Max length must be a number.")

@@ -24,6 +24,6 @@ class MessagePackSerializer(BaseSerializer):
         try:
             if isinstance(data, int):
                 return data
-            return msgpack.loads(data, raw=False)
+            return msgpack.loads(data, raw=False, strict_map_key=False)
         except Exception as e:
             raise SerializerError from e

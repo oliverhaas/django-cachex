@@ -75,6 +75,14 @@ class TestMessagePackSerializer:
         decoded = serializer.loads(encoded)
         assert decoded is None
 
+    def test_non_string_key_dict_roundtrip(self):
+        """Dicts with non-string keys (e.g. int) must roundtrip correctly."""
+        serializer = MessagePackSerializer()
+        data = {1: "a", 2: "b"}
+        encoded = serializer.dumps(data)
+        decoded = serializer.loads(encoded)
+        assert decoded == data
+
 
 def _reverse_key(key: str) -> str:
     """Reverse a made key back to original (strip version:prefix:)."""

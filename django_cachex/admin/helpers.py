@@ -202,11 +202,11 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
                 stop = pagination["end_index"] - 1  # ZRANGE stop is inclusive
                 zset_members = [(str(m), s) for m, s in cache.zrange(key, start, stop, withscores=True)]
                 return {"members": zset_members, "length": length, "pagination": pagination}
-            case KeyType.STREAM if hasattr(cache, "_cache") and hasattr(cache._cache, "xrange"):
-                length = cache._cache.xlen(key)
+            case KeyType.STREAM if hasattr(cache, "xrange"):
+                length = cache.xlen(key)
                 pagination = _paginate(length, page)
                 # Fetch up to page*PAGE_SIZE entries and slice to the last page
-                entries = cache._cache.xrange(key, count=pagination["end_index"])
+                entries = cache.xrange(key, count=pagination["end_index"])
                 sliced = entries[pagination["start_index"] :]
                 return {"entries": sliced, "length": length, "pagination": pagination}
     except Exception:  # noqa: BLE001, S110

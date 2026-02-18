@@ -77,7 +77,7 @@ _CAS_STRING_UPDATE = """\
 local v = redis.call('GET', KEYS[1])
 if v == false then return -1 end
 if redis.sha1hex(v) == ARGV[1] then
-    redis.call('SET', KEYS[1], ARGV[2])
+    redis.call('SET', KEYS[1], ARGV[2], 'KEEPTTL')
     return 1
 end
 return 0

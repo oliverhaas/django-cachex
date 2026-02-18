@@ -2295,8 +2295,12 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
         """Read entries from one or more streams."""
-        nstreams: dict[KeyT, str] = {self.make_and_validate_key(k, version=version): v for k, v in streams.items()}
-        return self._cache.xread(nstreams, count=count, block=block)
+        key_map = {self.make_and_validate_key(k, version=version): k for k in streams}
+        nstreams: dict[KeyT, str] = {nk: streams[ok] for nk, ok in key_map.items()}
+        result = self._cache.xread(nstreams, count=count, block=block)
+        if result is None:
+            return None
+        return {str(key_map.get(k, k)): v for k, v in result.items()}
 
     async def axread(
         self,
@@ -2306,8 +2310,12 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
         """Read entries from one or more streams asynchronously."""
-        nstreams: dict[KeyT, str] = {self.make_and_validate_key(k, version=version): v for k, v in streams.items()}
-        return await self._cache.axread(nstreams, count=count, block=block)
+        key_map = {self.make_and_validate_key(k, version=version): k for k in streams}
+        nstreams: dict[KeyT, str] = {nk: streams[ok] for nk, ok in key_map.items()}
+        result = await self._cache.axread(nstreams, count=count, block=block)
+        if result is None:
+            return None
+        return {str(key_map.get(k, k)): v for k, v in result.items()}
 
     def xtrim(
         self,
@@ -2456,8 +2464,12 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
         """Read entries from streams as a consumer group member."""
-        nstreams: dict[KeyT, str] = {self.make_and_validate_key(k, version=version): v for k, v in streams.items()}
-        return self._cache.xreadgroup(group, consumer, nstreams, count=count, block=block, noack=noack)
+        key_map = {self.make_and_validate_key(k, version=version): k for k in streams}
+        nstreams: dict[KeyT, str] = {nk: streams[ok] for nk, ok in key_map.items()}
+        result = self._cache.xreadgroup(group, consumer, nstreams, count=count, block=block, noack=noack)
+        if result is None:
+            return None
+        return {str(key_map.get(k, k)): v for k, v in result.items()}
 
     async def axreadgroup(
         self,
@@ -2470,8 +2482,12 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
         """Read entries from streams as a consumer group member asynchronously."""
-        nstreams: dict[KeyT, str] = {self.make_and_validate_key(k, version=version): v for k, v in streams.items()}
-        return await self._cache.axreadgroup(group, consumer, nstreams, count=count, block=block, noack=noack)
+        key_map = {self.make_and_validate_key(k, version=version): k for k in streams}
+        nstreams: dict[KeyT, str] = {nk: streams[ok] for nk, ok in key_map.items()}
+        result = await self._cache.axreadgroup(group, consumer, nstreams, count=count, block=block, noack=noack)
+        if result is None:
+            return None
+        return {str(key_map.get(k, k)): v for k, v in result.items()}
 
     def xack(self, key: KeyT, group: str, *entry_ids: str, version: int | None = None) -> int:
         """Acknowledge message processing."""

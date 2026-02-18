@@ -1407,18 +1407,15 @@ class Pipeline:
     ) -> Self:
         """Queue XPENDING command (get pending entries info)."""
         nkey = self._make_key(key, version)
-        kwargs: dict[str, Any] = {}
-        if start is not None:
-            kwargs["min"] = start
-        if end is not None:
-            kwargs["max"] = end
-        if count is not None:
-            kwargs["count"] = count
-        if consumer is not None:
-            kwargs["consumername"] = consumer
-        if idle is not None:
-            kwargs["idle"] = idle
-        self._pipeline.xpending(nkey, group, **kwargs)
+        if start is not None and end is not None and count is not None:
+            kwargs: dict[str, Any] = {}
+            if consumer is not None:
+                kwargs["consumername"] = consumer
+            if idle is not None:
+                kwargs["idle"] = idle
+            self._pipeline.xpending_range(nkey, group, min=start, max=end, count=count, **kwargs)
+        else:
+            self._pipeline.xpending(nkey, group)
         self._decoders.append(self._noop)
         return self
 

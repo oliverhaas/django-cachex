@@ -596,11 +596,8 @@ class TestKeyDetailView:
         test_cache: KeyValueCache,
     ):
         """Detail view should work for Redis stream keys."""
-        # Stream operations go directly to Redis, so we need to use the prefixed key
-        raw_cache = test_cache._cache  # type: ignore[attr-defined]
-        raw_key = test_cache.make_key("stream:detail:test")
-        raw_cache.xadd(raw_key, {"field1": "value1"})
-        raw_cache.xadd(raw_key, {"field2": "value2"})
+        test_cache.xadd("stream:detail:test", {"field1": "value1"})
+        test_cache.xadd("stream:detail:test", {"field2": "value2"})
 
         url = _key_detail_url("default", "stream:detail:test")
         response = admin_client.get(url)
@@ -1713,10 +1710,8 @@ class TestKeyOperations:
         test_cache: KeyValueCache,
     ):
         """XADD action should add an entry to the stream."""
-        # Stream operations are on the underlying _cache client
-        raw_cache = test_cache._cache  # type: ignore[attr-defined]
-        # Create a stream with initial entry
-        raw_cache.xadd("xadd:test", {"field1": "value1"})
+        # Create a stream with initial entry via high-level API (key gets prefixed)
+        test_cache.xadd("xadd:test", {"field1": "value1"})
 
         url = _key_detail_url("default", "xadd:test")
         response = admin_client.post(
@@ -1726,7 +1721,7 @@ class TestKeyOperations:
         assert response.status_code == 302
 
         # Verify a second entry was added
-        entries = raw_cache.xrange("xadd:test")
+        entries = test_cache.xrange("xadd:test")
         assert len(entries) == 2
         # Verify the new entry has the expected field
         last_entry = entries[-1]
@@ -1738,14 +1733,13 @@ class TestKeyOperations:
         test_cache: KeyValueCache,
     ):
         """XDEL action should delete an entry from the stream."""
-        raw_cache = test_cache._cache  # type: ignore[attr-defined]
-        # Create a stream with multiple entries
-        entry_id1 = raw_cache.xadd("xdel:test", {"field1": "value1"})
-        entry_id2 = raw_cache.xadd("xdel:test", {"field2": "value2"})
-        raw_cache.xadd("xdel:test", {"field3": "value3"})
+        # Create a stream with multiple entries via high-level API
+        test_cache.xadd("xdel:test", {"field1": "value1"})
+        entry_id2 = test_cache.xadd("xdel:test", {"field2": "value2"})
+        test_cache.xadd("xdel:test", {"field3": "value3"})
 
         # Verify 3 entries exist
-        assert raw_cache.xlen("xdel:test") == 3
+        assert test_cache.xlen("xdel:test") == 3
 
         url = _key_detail_url("default", "xdel:test")
         response = admin_client.post(
@@ -1755,7 +1749,7 @@ class TestKeyOperations:
         assert response.status_code == 302
 
         # Verify entry was deleted (2 entries remain)
-        assert raw_cache.xlen("xdel:test") == 2
+        assert test_cache.xlen("xdel:test") == 2
 
     def test_stream_xtrim(
         self,
@@ -1768,13 +1762,12 @@ class TestKeyOperations:
         small streams as it optimizes for performance by trimming in batches.
         This test verifies the action executes without error.
         """
-        raw_cache = test_cache._cache  # type: ignore[attr-defined]
-        # Create a stream with entries
+        # Create a stream with entries via high-level API
         for i in range(10):
-            raw_cache.xadd("xtrim:test", {f"field{i}": f"value{i}"})
+            test_cache.xadd("xtrim:test", {f"field{i}": f"value{i}"})
 
         # Verify stream exists
-        assert raw_cache.xlen("xtrim:test") == 10
+        assert test_cache.xlen("xtrim:test") == 10
 
         url = _key_detail_url("default", "xtrim:test")
         response = admin_client.post(

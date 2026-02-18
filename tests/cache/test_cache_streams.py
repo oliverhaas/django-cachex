@@ -81,9 +81,9 @@ class TestStreamRead:
 
         result = cache.xread({"stream_read": "0-0"}, count=10)
         assert result is not None
-        # result is dict: {stream_key: [(entry_id, fields), ...]}
-        stream_entries = list(result.values())[0]
-        assert len(stream_entries) == 2
+        # result keys must be the original user key, not the prefixed Redis key
+        assert "stream_read" in result
+        assert len(result["stream_read"]) == 2
 
 
 class TestStreamInfo:
@@ -129,8 +129,9 @@ class TestStreamConsumerGroups:
 
         result = cache.xreadgroup("readers", "consumer1", {"stream_rg": ">"}, count=10)
         assert result is not None
-        entries = list(result.values())[0]
-        assert len(entries) == 2
+        # result keys must be the original user key, not the prefixed Redis key
+        assert "stream_rg" in result
+        assert len(result["stream_rg"]) == 2
 
     def test_xack(self, cache: KeyValueCache):
         eid = cache.xadd("stream_ack", {"msg": "test"})
@@ -307,8 +308,9 @@ class TestAsyncStreamRead:
 
         result = await cache.axread({"astream_read": "0-0"}, count=10)
         assert result is not None
-        stream_entries = list(result.values())[0]
-        assert len(stream_entries) == 2
+        # result keys must be the original user key, not the prefixed Redis key
+        assert "astream_read" in result
+        assert len(result["astream_read"]) == 2
 
 
 class TestAsyncStreamInfo:
@@ -359,8 +361,9 @@ class TestAsyncStreamConsumerGroups:
 
         result = await cache.axreadgroup("readers", "consumer1", {"astream_rg": ">"}, count=10)
         assert result is not None
-        entries = list(result.values())[0]
-        assert len(entries) == 2
+        # result keys must be the original user key, not the prefixed Redis key
+        assert "astream_rg" in result
+        assert len(result["astream_rg"]) == 2
 
     @pytest.mark.asyncio
     async def test_axack(self, cache: KeyValueCache):

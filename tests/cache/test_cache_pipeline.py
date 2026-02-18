@@ -867,3 +867,20 @@ class TestPipelineCommandCombinations:
         assert results[2] == 105.0  # bob's new score
         assert results[3] == ["bob"]  # bob is now #1
         assert results[4] == 0  # charlie is lowest (rank 0 in ascending order)
+
+
+class TestPipelineStreamOps:
+    """Test pipeline stream operations."""
+
+    def test_pipeline_xpending_range(self, cache: KeyValueCache):
+        """Pipeline xpending with range params must use xpending_range."""
+        cache.xadd("pipe_pend", {"msg": "test"})
+        cache.xgroup_create("pipe_pend", "grp", entry_id="0")
+        cache.xreadgroup("grp", "c1", {"pipe_pend": ">"})
+
+        pipe = cache.pipeline()
+        pipe.xpending("pipe_pend", "grp", start="-", end="+", count=10)
+        results = pipe.execute()
+
+        assert isinstance(results[0], list)
+        assert len(results[0]) == 1
