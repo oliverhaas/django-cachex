@@ -3,24 +3,27 @@
 import pytest
 
 from django_cachex.cache import KeyValueCache
+from django_cachex.exceptions import NotSupportedError
 
 
 class TestAsyncScan:
     @pytest.mark.asyncio
-    async def test_ascan_returns_keys(self, cache: KeyValueCache):
+    async def test_ascan_returns_keys(self, cache: KeyValueCache, client_class: str, sentinel_mode: str | bool):
+        if client_class == "cluster" and not sentinel_mode:
+            with pytest.raises(NotSupportedError):
+                await cache.ascan(pattern="ascantest_*")
+            return
+
         cache.set("ascantest_a", 1)
         cache.set("ascantest_b", 2)
 
         cursor, keys = await cache.ascan(pattern="ascantest_*")
         assert isinstance(keys, list)
-        if isinstance(cursor, int):
-            all_keys = set(keys)
-            while cursor != 0:
-                cursor, keys = await cache.ascan(cursor=cursor, pattern="ascantest_*")
-                all_keys.update(keys)
-            assert all_keys == {"ascantest_a", "ascantest_b"}
-        else:
-            assert set(keys) == {"ascantest_a", "ascantest_b"}
+        all_keys = set(keys)
+        while cursor != 0:
+            cursor, keys = await cache.ascan(cursor=cursor, pattern="ascantest_*")
+            all_keys.update(keys)
+        assert all_keys == {"ascantest_a", "ascantest_b"}
 
 
 class TestAsyncLock:

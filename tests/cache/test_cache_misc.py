@@ -1,27 +1,39 @@
 """Tests for miscellaneous cache operations: scan, decr_version, clear_all_versions, flush_db."""
 
+import pytest
+
 from django_cachex.cache import KeyValueCache
+from django_cachex.exceptions import NotSupportedError
 
 
 class TestScanOperations:
-    def test_scan_returns_keys(self, cache: KeyValueCache):
+    def _is_cluster(self, client_class: str, sentinel_mode: str | bool) -> bool:
+        """Check if using a real cluster client (sentinel mode overrides cluster)."""
+        return client_class == "cluster" and not sentinel_mode
+
+    def test_scan_returns_keys(self, cache: KeyValueCache, client_class: str, sentinel_mode: str | bool):
+        if self._is_cluster(client_class, sentinel_mode):
+            with pytest.raises(NotSupportedError):
+                cache.scan(pattern="scantest_*")
+            return
+
         cache.set("scantest_a", 1)
         cache.set("scantest_b", 2)
 
         cursor, keys = cache.scan(pattern="scantest_*")
         assert isinstance(keys, list)
-        # Cluster returns all matching keys in one shot; standalone may need iteration
-        if isinstance(cursor, int):
-            all_keys = set(keys)
-            while cursor != 0:
-                cursor, keys = cache.scan(cursor=cursor, pattern="scantest_*")
-                all_keys.update(keys)
-            assert all_keys == {"scantest_a", "scantest_b"}
-        else:
-            # Cluster: scan returns all keys across nodes in one call
-            assert set(keys) == {"scantest_a", "scantest_b"}
+        all_keys = set(keys)
+        while cursor != 0:
+            cursor, keys = cache.scan(cursor=cursor, pattern="scantest_*")
+            all_keys.update(keys)
+        assert all_keys == {"scantest_a", "scantest_b"}
 
-    def test_scan_empty(self, cache: KeyValueCache):
+    def test_scan_empty(self, cache: KeyValueCache, client_class: str, sentinel_mode: str | bool):
+        if self._is_cluster(client_class, sentinel_mode):
+            with pytest.raises(NotSupportedError):
+                cache.scan(pattern="nonexistent_pattern_xyz_*")
+            return
+
         _cursor, keys = cache.scan(pattern="nonexistent_pattern_xyz_*")
         assert keys == []
 

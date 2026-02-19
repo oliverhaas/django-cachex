@@ -12,6 +12,7 @@ from itertools import batched
 from typing import TYPE_CHECKING, Any, cast, override
 
 from django_cachex.client.default import KeyValueCacheClient
+from django_cachex.exceptions import NotSupportedError
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
@@ -259,6 +260,17 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         return total_deleted
 
     @override
+    def scan(
+        self,
+        cursor: int = 0,
+        match: str | None = None,
+        count: int | None = None,
+        _type: str | None = None,
+    ) -> tuple[int, list[str]]:
+        """SCAN is not supported in cluster mode (per-node cursors can't be combined). Use iter_keys() instead."""
+        raise NotSupportedError("scan", "cluster")
+
+    @override
     def close(self, **kwargs: Any) -> None:
         """No-op. Cluster lives for the instance's lifetime (matches Django's BaseCache)."""
 
@@ -401,18 +413,39 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         return total_deleted
 
     @override
+    async def ascan(
+        self,
+        cursor: int = 0,
+        match: str | None = None,
+        count: int | None = None,
+        _type: str | None = None,
+    ) -> tuple[int, list[str]]:
+        """SCAN is not supported in cluster mode (per-node cursors can't be combined). Use aiter_keys() instead."""
+        raise NotSupportedError("scan", "cluster")
+
+    @override
     async def aclose(self, **kwargs: Any) -> None:
         """No-op. Cluster lives for the instance's lifetime (matches Django's BaseCache)."""
+
+    _PIPELINE_DEFAULT = object()
 
     @override
     def pipeline(
         self,
         *,
-        transaction: bool = True,
+        transaction: bool | object = _PIPELINE_DEFAULT,
         version: int | None = None,
     ) -> Pipeline:
         """Create a pipeline for batched operations. Transactions are not supported in cluster mode."""
+        import warnings
+
         from django_cachex.client.pipeline import Pipeline
+
+        if transaction is not self._PIPELINE_DEFAULT and transaction:
+            warnings.warn(
+                "Cluster pipelines do not support transactions (MULTI/EXEC). The transaction parameter is ignored.",
+                stacklevel=2,
+            )
 
         client = self.get_client(write=True)
         raw_pipeline = client.pipeline(transaction=False)
