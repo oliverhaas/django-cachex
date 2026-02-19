@@ -11,6 +11,7 @@ from django_cachex.client.default import (
     ValkeyCacheClient,
 )
 from django_cachex.client.pipeline import Pipeline
+from django_cachex.client.postgres import PostgreSQLCacheClient
 
 # Sentinel cache clients
 from django_cachex.client.sentinel import (
@@ -24,6 +25,7 @@ __all__ = [
     "KeyValueClusterCacheClient",
     "KeyValueSentinelCacheClient",
     "Pipeline",
+    "PostgreSQLCacheClient",
     "RedisCacheClient",
     "RedisClusterCacheClient",
     "RedisSentinelCacheClient",

@@ -11,6 +11,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.sessions",
     "django_cachex.admin",
+    "django_cachex.postgres",
 ]
 
 # Database configuration for tests
