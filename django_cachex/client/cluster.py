@@ -145,7 +145,14 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
         recovered_data = {}
         for key, value in zip(keys, results, strict=True):
-            if value is not None:
+            if value is None:
+                continue
+            if isinstance(value, bytes):
+                unwrapped = self._unwrap_from_storage(value, key)
+                if unwrapped is None:
+                    continue
+                recovered_data[key] = self.decode(unwrapped)
+            else:
                 recovered_data[key] = self.decode(value)
 
         return recovered_data
@@ -158,20 +165,22 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
         client = self.get_client(write=True)
 
-        # Prepare data with encoded values
-        prepared_data = {k: self.encode(v) for k, v in data.items()}
+        # Prepare data with encoded values (wrapped in stampede envelope if enabled)
+        prepared_data = {k: self._wrap_for_storage(self.encode(v), k, timeout)[0] for k, v in data.items()}
+        config = getattr(self, "_stampede_config", None)
+        actual_timeout = timeout + config.buffer if config and timeout and timeout > 0 else timeout
 
-        if timeout == 0:
+        if actual_timeout == 0:
             # timeout=0 means "delete immediately" (matches base client behavior)
             for slot_keys in self._group_keys_by_slot(prepared_data.keys()).values():
                 client.delete(*slot_keys)
-        elif timeout is None:
+        elif actual_timeout is None:
             # No expiry
             client.mset_nonatomic(prepared_data)
         else:
             # mset_nonatomic handles slot splitting
             client.mset_nonatomic(prepared_data)
-            timeout_ms = int(timeout * 1000)
+            timeout_ms = int(actual_timeout * 1000)
             pipe = client.pipeline()
             for key in prepared_data:
                 pipe.pexpire(key, timeout_ms)
@@ -295,7 +304,14 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
         recovered_data = {}
         for key, value in zip(keys, results, strict=True):
-            if value is not None:
+            if value is None:
+                continue
+            if isinstance(value, bytes):
+                unwrapped = self._unwrap_from_storage(value, key)
+                if unwrapped is None:
+                    continue
+                recovered_data[key] = self.decode(unwrapped)
+            else:
                 recovered_data[key] = self.decode(value)
 
         return recovered_data
@@ -308,20 +324,22 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
         client = self.get_async_client(write=True)
 
-        # Prepare data with encoded values
-        prepared_data = {k: self.encode(v) for k, v in data.items()}
+        # Prepare data with encoded values (wrapped in stampede envelope if enabled)
+        prepared_data = {k: self._wrap_for_storage(self.encode(v), k, timeout)[0] for k, v in data.items()}
+        config = getattr(self, "_stampede_config", None)
+        actual_timeout = timeout + config.buffer if config and timeout and timeout > 0 else timeout
 
-        if timeout == 0:
+        if actual_timeout == 0:
             # timeout=0 means "delete immediately" (matches base client behavior)
             for slot_keys in self._group_keys_by_slot(prepared_data.keys()).values():
                 await client.delete(*slot_keys)
-        elif timeout is None:
+        elif actual_timeout is None:
             # No expiry
             await client.mset_nonatomic(prepared_data)
         else:
             # mset_nonatomic handles slot splitting
             await client.mset_nonatomic(prepared_data)
-            timeout_ms = int(timeout * 1000)
+            timeout_ms = int(actual_timeout * 1000)
             pipe = client.pipeline()
             for key in prepared_data:
                 pipe.pexpire(key, timeout_ms)
