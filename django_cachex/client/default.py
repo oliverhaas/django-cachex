@@ -15,6 +15,13 @@ from django.utils.module_loading import import_string
 
 from django_cachex.compat import create_compressor, create_serializer
 from django_cachex.exceptions import CompressorError, SerializerError, _main_exceptions
+from django_cachex.stampede import (
+    StampedeConfig,
+    get_recomputation_delta,
+    record_recomputation_start,
+    unwrap_envelope,
+    wrap_envelope,
+)
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
@@ -75,6 +82,7 @@ class KeyValueCacheClient:
             "sentinel_kwargs",
             "async_pool_class",
             "reverse_key_function",
+            "stampede_prevention",
         },
     )
 
@@ -140,6 +148,16 @@ class KeyValueCacheClient:
         )
         self._serializers = self._create_serializers(serializer_config)
 
+        # Setup stampede prevention (XFetch algorithm)
+        stampede_config = options.get("stampede_prevention")
+        if stampede_config:
+            if isinstance(stampede_config, dict):
+                self._stampede_config: StampedeConfig | None = StampedeConfig(**stampede_config)
+            else:
+                self._stampede_config = StampedeConfig()
+        else:
+            self._stampede_config = None
+
     # =========================================================================
     # Serializer/Compressor Setup
     # =========================================================================
@@ -201,6 +219,35 @@ class KeyValueCacheClient:
         except (ValueError, TypeError):
             value = self._decompress(value)
             return self._deserialize(value)
+
+    # =========================================================================
+    # Stampede Prevention Helpers
+    # =========================================================================
+
+    def _wrap_for_storage(
+        self,
+        encoded: bytes | int,
+        key: KeyT,
+        timeout: int | None,
+    ) -> tuple[bytes | int, int | None]:
+        """Wrap encoded value in stampede envelope, return (value, adjusted_timeout)."""
+        config = getattr(self, "_stampede_config", None)
+        if not config or isinstance(encoded, int) or not timeout or timeout <= 0:
+            return encoded, timeout
+        delta = get_recomputation_delta(key)
+        wrapped = wrap_envelope(encoded, timeout, config, delta)
+        return wrapped, timeout + config.buffer
+
+    def _unwrap_from_storage(self, raw: bytes, key: KeyT) -> bytes | None:
+        """Unwrap stampede envelope. Returns None if XFetch says recompute."""
+        config = getattr(self, "_stampede_config", None)
+        if not config:
+            return raw
+        raw, should_recompute = unwrap_envelope(raw, config)
+        if should_recompute:
+            record_recomputation_start(key)
+            return None
+        return raw
 
     # =========================================================================
     # Connection Pool Management (matches Django's structure)
@@ -278,6 +325,7 @@ class KeyValueCacheClient:
         """Set a value only if the key doesn't exist."""
         client = self.get_client(key, write=True)
         nvalue = self.encode(value)
+        nvalue, timeout = self._wrap_for_storage(nvalue, key, timeout)
 
         if timeout == 0:
             if ret := bool(client.set(key, nvalue, nx=True)):
@@ -289,6 +337,7 @@ class KeyValueCacheClient:
         """Set a value only if the key doesn't exist, asynchronously."""
         client = self.get_async_client(key, write=True)
         nvalue = self.encode(value)
+        nvalue, timeout = self._wrap_for_storage(nvalue, key, timeout)
 
         if timeout == 0:
             if ret := bool(await client.set(key, nvalue, nx=True)):
@@ -302,6 +351,10 @@ class KeyValueCacheClient:
         val = client.get(key)
         if val is None:
             return None
+        if isinstance(val, bytes):
+            val = self._unwrap_from_storage(val, key)
+            if val is None:
+                return None
         return self.decode(val)
 
     async def aget(self, key: KeyT) -> Any:
@@ -310,12 +363,17 @@ class KeyValueCacheClient:
         val = await client.get(key)
         if val is None:
             return None
+        if isinstance(val, bytes):
+            val = self._unwrap_from_storage(val, key)
+            if val is None:
+                return None
         return self.decode(val)
 
     def set(self, key: KeyT, value: Any, timeout: int | None) -> None:
         """Set a value in the cache (standard Django interface)."""
         client = self.get_client(key, write=True)
         nvalue = self.encode(value)
+        nvalue, timeout = self._wrap_for_storage(nvalue, key, timeout)
 
         if timeout == 0:
             client.delete(key)
@@ -326,6 +384,7 @@ class KeyValueCacheClient:
         """Set a value in the cache asynchronously."""
         client = self.get_async_client(key, write=True)
         nvalue = self.encode(value)
+        nvalue, timeout = self._wrap_for_storage(nvalue, key, timeout)
 
         if timeout == 0:
             await client.delete(key)
@@ -349,6 +408,7 @@ class KeyValueCacheClient:
         """
         client = self.get_client(key, write=True)
         nvalue = self.encode(value)
+        nvalue, timeout = self._wrap_for_storage(nvalue, key, timeout)
 
         if timeout == 0:
             if get:
@@ -358,6 +418,8 @@ class KeyValueCacheClient:
         if get:
             if result is None:
                 return None
+            if isinstance(result, bytes):
+                result = self._unwrap_from_storage(result, key) or result
             return self.decode(result)
         return bool(result)
 
@@ -378,6 +440,7 @@ class KeyValueCacheClient:
         """
         client = self.get_async_client(key, write=True)
         nvalue = self.encode(value)
+        nvalue, timeout = self._wrap_for_storage(nvalue, key, timeout)
 
         if timeout == 0:
             if get:
@@ -387,6 +450,8 @@ class KeyValueCacheClient:
         if get:
             if result is None:
                 return None
+            if isinstance(result, bytes):
+                result = self._unwrap_from_storage(result, key) or result
             return self.decode(result)
         return bool(result)
 
@@ -426,7 +491,18 @@ class KeyValueCacheClient:
 
         client = self.get_client(write=False)
         results = client.mget(keys)
-        return {k: self.decode(v) for k, v in zip(keys, results, strict=False) if v is not None}
+        recovered = {}
+        for k, v in zip(keys, results, strict=False):
+            if v is None:
+                continue
+            if isinstance(v, bytes):
+                unwrapped = self._unwrap_from_storage(v, k)
+                if unwrapped is None:
+                    continue
+                recovered[k] = self.decode(unwrapped)
+            else:
+                recovered[k] = self.decode(v)
+        return recovered
 
     async def aget_many(self, keys: Iterable[KeyT]) -> dict[KeyT, Any]:
         """Retrieve many keys asynchronously."""
@@ -436,7 +512,18 @@ class KeyValueCacheClient:
 
         client = self.get_async_client(write=False)
         results = await client.mget(keys)
-        return {k: self.decode(v) for k, v in zip(keys, results, strict=False) if v is not None}
+        recovered = {}
+        for k, v in zip(keys, results, strict=False):
+            if v is None:
+                continue
+            if isinstance(v, bytes):
+                unwrapped = self._unwrap_from_storage(v, k)
+                if unwrapped is None:
+                    continue
+                recovered[k] = self.decode(unwrapped)
+            else:
+                recovered[k] = self.decode(v)
+        return recovered
 
     def has_key(self, key: KeyT) -> bool:
         """Check if a key exists."""
@@ -484,17 +571,19 @@ class KeyValueCacheClient:
             return []
 
         client = self.get_client(write=True)
-        prepared = {k: self.encode(v) for k, v in data.items()}
+        prepared = {k: self._wrap_for_storage(self.encode(v), k, timeout)[0] for k, v in data.items()}
+        config = getattr(self, "_stampede_config", None)
+        actual_timeout = timeout + config.buffer if config and timeout and timeout > 0 else timeout
 
-        if timeout == 0:
+        if actual_timeout == 0:
             client.delete(*prepared.keys())
-        elif timeout is None:
+        elif actual_timeout is None:
             client.mset(prepared)
         else:
             pipe = client.pipeline()
             pipe.mset(prepared)
             for key in prepared:
-                pipe.expire(key, timeout)
+                pipe.expire(key, actual_timeout)
             pipe.execute()
         return []
 
@@ -504,17 +593,19 @@ class KeyValueCacheClient:
             return []
 
         client = self.get_async_client(write=True)
-        prepared = {k: self.encode(v) for k, v in data.items()}
+        prepared = {k: self._wrap_for_storage(self.encode(v), k, timeout)[0] for k, v in data.items()}
+        config = getattr(self, "_stampede_config", None)
+        actual_timeout = timeout + config.buffer if config and timeout and timeout > 0 else timeout
 
-        if timeout == 0:
+        if actual_timeout == 0:
             await client.delete(*prepared.keys())
-        elif timeout is None:
+        elif actual_timeout is None:
             await client.mset(prepared)
         else:
             pipe = client.pipeline()
             pipe.mset(prepared)
             for key in prepared:
-                pipe.expire(key, timeout)
+                pipe.expire(key, actual_timeout)
             await pipe.execute()
         return []
 
