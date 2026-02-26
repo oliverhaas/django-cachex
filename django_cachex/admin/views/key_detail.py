@@ -226,6 +226,8 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             try:
                 index = int(request.POST.get("index", "0"))
                 value = request.POST.get("item_value", "").strip()
+                with contextlib.suppress(json.JSONDecodeError, ValueError):
+                    value = json.loads(value)
                 original_sha1 = request.POST.get("original_sha1", "").strip()
                 if original_sha1 and hasattr(cache, "eval_script"):
                     from django_cachex.admin.cas import cas_update_list_element
@@ -283,6 +285,8 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         elif action == "hset":
             field = request.POST.get("field_name", "").strip()
             value = request.POST.get("field_value", "").strip()
+            with contextlib.suppress(json.JSONDecodeError, ValueError):
+                value = json.loads(value)
             if field:
                 try:
                     original_sha1 = request.POST.get("original_sha1", "").strip()

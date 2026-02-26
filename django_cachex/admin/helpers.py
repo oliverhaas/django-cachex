@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -169,6 +170,24 @@ def get_type_data(
     return result
 
 
+def _format_value(value: Any) -> str:
+    """Format a cache value for display — JSON for round-trippable values, repr() otherwise.
+
+    Uses the same approach as format_value_for_display() for string keys:
+    JSON-serializes anything that round-trips cleanly, so types are distinguishable
+    (e.g. 42 vs "42", null vs "null").
+    """
+    if value is None:
+        return "null"
+    try:
+        serialized = json.dumps(value, indent=2, ensure_ascii=False)
+        if json.loads(serialized) == value:
+            return serialized
+    except (TypeError, ValueError, OverflowError):
+        pass
+    return repr(value)
+
+
 def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> dict[str, Any]:
     """Fetch type-specific data from cache, paginated."""
     try:
@@ -178,12 +197,12 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
                 pagination = _paginate(length, page)
                 start = pagination["start_index"]
                 stop = pagination["end_index"] - 1  # LRANGE stop is inclusive
-                items = [str(i) for i in cache.lrange(key, start, stop)]
+                items = [_format_value(i) for i in cache.lrange(key, start, stop)]
                 # Pre-build item_entries with offset-aware indices (CAS overwrites with SHA1s)
                 item_entries = [(start + i, item, "") for i, item in enumerate(items)]
                 return {"items": items, "length": length, "pagination": pagination, "item_entries": item_entries}
             case KeyType.HASH:
-                fields = {str(k): str(v) for k, v in cache.hgetall(key).items()}
+                fields = {str(k): _format_value(v) for k, v in cache.hgetall(key).items()}
                 length = len(fields)
                 pagination = _paginate(length, page)
                 s, e = pagination["start_index"], pagination["end_index"]
