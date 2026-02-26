@@ -67,7 +67,7 @@
                 <tr class="{% cycle 'row1' 'row2' %}">
                     <td class="quiet">{{ index }}</td>
                     <td>
-                        <input type="text" name="item_value" value="{{ item }}" class="vTextField" form="list-update-{{ forloop.counter0 }}" style="width: 100%; box-sizing: border-box;">
+                        <textarea name="item_value" class="vTextField" form="list-update-{{ forloop.counter0 }}" style="field-sizing: content; width: 100%; box-sizing: border-box; min-height: 1.5em; max-height: 15em; overflow-y: auto; resize: vertical;">{{ item }}</textarea>
                     </td>
                     <td>
                         <button type="submit" form="list-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
@@ -106,7 +106,7 @@
                 {% for item in type_data.items %}
                 <tr class="{% cycle 'row1' 'row2' %}">
                     <td class="quiet">{{ forloop.counter0 }}</td>
-                    <td><code>{{ item }}</code></td>
+                    <td style="word-break: break-all; max-height: 15em; overflow-y: auto;"><code>{{ item }}</code></td>
                     <td>
                         <form method="post" style="display: inline;">
                             {% csrf_token %}

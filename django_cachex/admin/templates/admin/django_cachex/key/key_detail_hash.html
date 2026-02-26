@@ -31,7 +31,7 @@
                 <tr class="{% cycle 'row1' 'row2' %}">
                     <td><code>{{ field }}</code></td>
                     <td>
-                        <input type="text" name="field_value" value="{{ value }}" class="vTextField" form="hash-update-{{ forloop.counter0 }}" style="width: 100%; box-sizing: border-box;">
+                        <textarea name="field_value" class="vTextField" form="hash-update-{{ forloop.counter0 }}" style="field-sizing: content; width: 100%; box-sizing: border-box; min-height: 1.5em; max-height: 15em; overflow-y: auto; resize: vertical;">{{ value }}</textarea>
                     </td>
                     <td>
                         <button type="submit" form="hash-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
@@ -71,7 +71,7 @@
                 <tr class="{% cycle 'row1' 'row2' %}">
                     <td><code>{{ field }}</code></td>
                     <td>
-                        <input type="text" name="field_value" value="{{ value }}" class="vTextField" form="hash-update-{{ forloop.counter0 }}" style="width: 100%; box-sizing: border-box;">
+                        <textarea name="field_value" class="vTextField" form="hash-update-{{ forloop.counter0 }}" style="field-sizing: content; width: 100%; box-sizing: border-box; min-height: 1.5em; max-height: 15em; overflow-y: auto; resize: vertical;">{{ value }}</textarea>
                     </td>
                     <td>
                         <button type="submit" form="hash-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>

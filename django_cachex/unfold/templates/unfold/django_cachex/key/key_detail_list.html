@@ -97,7 +97,7 @@
             {% for item in type_data.items %}
             <tr class="hover:bg-base-50 dark:hover:bg-base-800">
                 <td class="px-4 py-3 text-sm text-base-400">{{ forloop.counter0 }}</td>
-                <td class="px-4 py-3 font-mono text-sm text-base-900 dark:text-base-100">{{ item }}</td>
+                <td class="px-4 py-3 font-mono text-sm text-base-900 dark:text-base-100" style="word-break: break-all; max-height: 15em; overflow-y: auto;">{{ item }}</td>
                 <td class="px-4 py-3">
                     <form method="post" class="inline">
                         {% csrf_token %}
