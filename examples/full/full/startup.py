@@ -102,6 +102,11 @@ def populate_cache_if_needed(cache_alias: str) -> None:
         print(f"  [{cache_alias}] Skipping DummyCache (doesn't store data)")
         return
 
+    # Skip celery cache - it should only contain keys created by Celery itself
+    if cache_alias == "celery":
+        print(f"  [{cache_alias}] Skipping (populated by Celery via ./run.sh send-tasks)")
+        return
+
     cache = caches[cache_alias]
 
     # Check current key count

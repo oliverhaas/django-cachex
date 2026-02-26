@@ -13,9 +13,9 @@ case "${1:-}" in
         sleep 10
 
         echo "Checking for celery[redis]..."
-        source "$VENV" && pip show celery >/dev/null 2>&1 || {
+        source "$VENV" && python -c "import celery" 2>/dev/null || {
             echo "Installing celery[redis]..."
-            source "$VENV" && pip install "celery[redis]"
+            uv pip install "celery[redis]" 2>/dev/null || pip install "celery[redis]"
         }
 
         echo "Running migrations..."
