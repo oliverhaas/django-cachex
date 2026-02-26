@@ -12,6 +12,12 @@ case "${1:-}" in
         echo "Waiting for cluster initialization (10s)..."
         sleep 10
 
+        echo "Checking for celery[redis]..."
+        source "$VENV" && pip show celery >/dev/null 2>&1 || {
+            echo "Installing celery[redis]..."
+            source "$VENV" && pip install "celery[redis]"
+        }
+
         echo "Running migrations..."
         source "$VENV" && python manage.py migrate --verbosity=0
 
@@ -27,7 +33,7 @@ case "${1:-}" in
         echo ""
         echo "Containers running:"
         echo "  - Valkey standalone    (6381)"
-        echo "  - Redis standalone     (6380)"
+        echo "  - Redis standalone     (6380, db 0 = cache, db 1 = Celery)"
         echo "  - Redis Cluster        (7001-7006)"
         echo "  - Redis Sentinel       (26379-26381, master: 6390)"
         ;;
@@ -39,6 +45,7 @@ case "${1:-}" in
         echo "Configured caches:"
         echo "  - default   : Valkey standalone"
         echo "  - redis     : Redis standalone"
+        echo "  - celery    : Celery broker/results (Redis db 1)"
         echo "  - cluster   : Redis Cluster (6 nodes)"
         echo "  - sentinel  : Redis Sentinel (3 sentinels)"
         echo "  - locmem    : Django LocMemCache"
@@ -110,6 +117,44 @@ print('Done! Visit the admin to see all caches.')
 "
         ;;
 
+    worker)
+        echo "Starting Celery worker..."
+        echo "Listening for tasks on the default queue."
+        echo ""
+        source "$VENV" && celery -A full worker --loglevel=info
+        ;;
+
+    send-tasks)
+        source "$VENV" && python manage.py shell -c "
+from full.tasks import add, send_email, generate_report
+
+print('Sending Celery tasks...')
+print('')
+
+# Send several add tasks
+for i in range(5):
+    r = add.delay(i, i * 2)
+    print(f'  add({i}, {i*2}) -> task_id={r.id}')
+
+# Send email tasks
+r = send_email.delay('alice@example.com', 'Hello!', 'Test body')
+print(f'  send_email(alice) -> task_id={r.id}')
+r = send_email.delay('bob@example.com', 'Meeting', 'Tomorrow at 10')
+print(f'  send_email(bob) -> task_id={r.id}')
+
+# Send report task
+r = generate_report.delay('monthly')
+print(f'  generate_report(monthly) -> task_id={r.id}')
+
+print('')
+print('Done! Check the admin to see Celery keys in the \"celery\" cache.')
+print('Keys to look for:')
+print('  - celery                  (list)   task queue')
+print('  - _kombu.binding.*        (set)    queue binding metadata')
+print('  - celery-task-meta-*      (string) task results (after worker processes)')
+"
+        ;;
+
     shell)
         source "$VENV" && python manage.py shell
         ;;
@@ -147,6 +192,8 @@ print('Done! Visit the admin to see all caches.')
         echo "  setup      Start all containers, run migrations, create admin user"
         echo "  server     Start the Django development server"
         echo "  test-data  Add sample cache entries to all backends"
+        echo "  worker     Start Celery worker (processes tasks from the queue)"
+        echo "  send-tasks Send sample Celery tasks (shows queue keys in admin)"
         echo "  shell      Open Django shell"
         echo "  stop       Stop all containers"
         echo "  clean      Stop containers and remove all data"

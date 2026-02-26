@@ -159,7 +159,7 @@ def ensure_sample_data() -> None:
 
     # Process caches in a specific order for readability
     # Standalone first, then cluster, sentinel, then Django builtins
-    cache_order = ["default", "redis", "cluster", "sentinel", "locmem", "database", "file", "dummy"]
+    cache_order = ["default", "redis", "celery", "cluster", "sentinel", "locmem", "database", "file", "dummy"]
     other_caches = [c for c in settings.CACHES if c not in cache_order]
 
     for cache_alias in cache_order + other_caches:
