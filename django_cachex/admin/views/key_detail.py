@@ -170,6 +170,8 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             value = request.POST.get("push_value", "").strip()
             if value:
                 try:
+                    with contextlib.suppress(json.JSONDecodeError, ValueError):
+                        value = json.loads(value)
                     new_len = cache.lpush(key, value)
                     messages.success(request, f"Pushed to left. Length: {new_len}")
                 except Exception as e:  # noqa: BLE001
@@ -182,6 +184,8 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             value = request.POST.get("push_value", "").strip()
             if value:
                 try:
+                    with contextlib.suppress(json.JSONDecodeError, ValueError):
+                        value = json.loads(value)
                     new_len = cache.rpush(key, value)
                     messages.success(request, f"Pushed to right. Length: {new_len}")
                 except Exception as e:  # noqa: BLE001
@@ -192,6 +196,8 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
 
         elif action == "lrem":
             value = request.POST.get("item_value", "").strip()
+            with contextlib.suppress(json.JSONDecodeError, ValueError):
+                value = json.loads(value)
             count = 0  # Default: remove all occurrences
             count_str = request.POST.get("lrem_count", "").strip()
             if count_str:
@@ -257,6 +263,8 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             member = request.POST.get("member_value", "").strip()
             if member:
                 try:
+                    with contextlib.suppress(json.JSONDecodeError, ValueError):
+                        member = json.loads(member)
                     added = cache.sadd(key, member)
                     if added:
                         messages.success(request, f"Added '{member}' to set.")
@@ -272,6 +280,8 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             member = request.POST.get("member", "").strip()
             if member:
                 try:
+                    with contextlib.suppress(json.JSONDecodeError, ValueError):
+                        member = json.loads(member)
                     removed = cache.srem(key, member)
                     if removed:
                         messages.success(request, f"Removed '{member}' from set.")
@@ -332,6 +342,8 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             score_str = request.POST.get("score_value", "").strip()
             if member and score_str:
                 try:
+                    with contextlib.suppress(json.JSONDecodeError, ValueError):
+                        member = json.loads(member)
                     score = float(score_str)
                     original_score = request.POST.get("original_score", "").strip()
                     if original_score and hasattr(cache, "eval_script"):
@@ -371,6 +383,8 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             member = request.POST.get("member", "").strip()
             if member:
                 try:
+                    with contextlib.suppress(json.JSONDecodeError, ValueError):
+                        member = json.loads(member)
                     removed = cache.zrem(key, member)
                     if removed:
                         messages.success(request, f"Removed '{member}' from sorted set.")

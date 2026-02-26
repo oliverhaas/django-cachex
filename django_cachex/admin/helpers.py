@@ -209,7 +209,7 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
                 sliced = dict(list(fields.items())[s:e])
                 return {"fields": sliced, "length": length, "pagination": pagination}
             case KeyType.SET:
-                members = sorted(str(m) for m in cache.smembers(key))
+                members = sorted(_format_value(m) for m in cache.smembers(key))
                 length = len(members)
                 pagination = _paginate(length, page)
                 s, e = pagination["start_index"], pagination["end_index"]
@@ -219,7 +219,7 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
                 pagination = _paginate(length, page)
                 start = pagination["start_index"]
                 stop = pagination["end_index"] - 1  # ZRANGE stop is inclusive
-                zset_members = [(str(m), s) for m, s in cache.zrange(key, start, stop, withscores=True)]
+                zset_members = [(_format_value(m), s) for m, s in cache.zrange(key, start, stop, withscores=True)]
                 return {"members": zset_members, "length": length, "pagination": pagination}
             case KeyType.STREAM if hasattr(cache, "xrange"):
                 length = cache.xlen(key)
