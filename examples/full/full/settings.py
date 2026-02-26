@@ -110,6 +110,7 @@ CACHES = {
         "KEY_FUNCTION": "full.settings.passthrough_key",
         "OPTIONS": {
             "reverse_key_function": "full.settings.passthrough_reverse_key",
+            "serializer": "django_cachex.serializers.json.JSONSerializer",
         },
     },
     # -------------------------------------------------------------------------
