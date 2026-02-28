@@ -1,187 +1,55 @@
-"""Tests for cache stampede prevention via XFetch algorithm."""
-
-import time
+"""Tests for cache stampede prevention via XFetch algorithm (TTL-based)."""
 
 from django_cachex.cache import KeyValueCache
-from django_cachex.stampede import (
-    _HEADER_SIZE,
-    _HEADER_STRUCT,
-    ENVELOPE_MARKER,
-    StampedeConfig,
-    get_recomputation_delta,
-    record_recomputation_start,
-    unwrap_envelope,
-    wrap_envelope,
-)
+from django_cachex.stampede import StampedeConfig, should_recompute
 
 # =============================================================================
 # Unit tests for stampede module (no Redis needed)
 # =============================================================================
 
 
-class TestEnvelopeFormat:
-    """Tests for the binary envelope format."""
+class TestShouldRecompute:
+    """Tests for the should_recompute() XFetch function."""
 
-    def test_wrap_creates_envelope_with_marker(self):
-        config = StampedeConfig()
-        result = wrap_envelope(b"hello", 300, config)
-        assert result.startswith(ENVELOPE_MARKER)
-
-    def test_wrap_has_correct_header_size(self):
-        config = StampedeConfig()
-        result = wrap_envelope(b"hello", 300, config)
-        assert len(result) == _HEADER_SIZE + 5  # 16 + len("hello")
-
-    def test_wrap_preserves_value_bytes(self):
-        config = StampedeConfig()
-        value = b"test_value_bytes"
-        result = wrap_envelope(value, 300, config)
-        assert result[_HEADER_SIZE:] == value
-
-    def test_wrap_stores_logical_expiry(self):
-        config = StampedeConfig()
-        before_ms = int(time.time() * 1000)
-        result = wrap_envelope(b"v", 300, config)
-        after_ms = int(time.time() * 1000)
-
-        expiry_ms, _delta_ms = _HEADER_STRUCT.unpack(result[4:_HEADER_SIZE])
-        expected_min = before_ms + 300_000
-        expected_max = after_ms + 300_000
-        assert expected_min <= expiry_ms <= expected_max
-
-    def test_wrap_stores_default_delta(self):
-        config = StampedeConfig(default_delta=2.5)
-        result = wrap_envelope(b"v", 300, config)
-
-        _expiry_ms, delta_ms = _HEADER_STRUCT.unpack(result[4:_HEADER_SIZE])
-        assert delta_ms == 2500
-
-    def test_wrap_stores_custom_delta(self):
-        config = StampedeConfig()
-        result = wrap_envelope(b"v", 300, config, delta_seconds=0.5)
-
-        _expiry_ms, delta_ms = _HEADER_STRUCT.unpack(result[4:_HEADER_SIZE])
-        assert delta_ms == 500
-
-    def test_unwrap_non_envelope_returns_unchanged(self):
-        config = StampedeConfig()
-        raw = b"\x80\x05some_pickle_data"
-        value, should_recompute = unwrap_envelope(raw, config)
-        assert value == raw
-        assert should_recompute is False
-
-    def test_unwrap_fresh_value_not_stale(self):
-        config = StampedeConfig()
-        envelope = wrap_envelope(b"value", 300, config)
-
-        value, should_recompute = unwrap_envelope(envelope, config)
-        assert value == b"value"
-        assert should_recompute is False
-
-    def test_unwrap_expired_value_is_stale(self):
-        """Value past logical expiry should trigger recompute."""
-        config = StampedeConfig()
-        # Create an envelope that expired 1 second ago
-        now_ms = int(time.time() * 1000)
-        expired_expiry_ms = now_ms - 1000
-        header = _HEADER_STRUCT.pack(expired_expiry_ms, 1000)
-        envelope = ENVELOPE_MARKER + header + b"stale"
-
-        value, should_recompute = unwrap_envelope(envelope, config)
-        assert value == b"stale"
-        assert should_recompute is True
-
-    def test_unwrap_truncated_envelope_returns_raw(self):
-        """Corrupted/truncated envelope is treated as regular value."""
-        config = StampedeConfig()
-        truncated = ENVELOPE_MARKER + b"\x00"  # Too short
-        value, should_recompute = unwrap_envelope(truncated, config)
-        assert value == truncated
-        assert should_recompute is False
-
-
-class TestXFetchAlgorithm:
-    """Tests for the XFetch probabilistic early expiration."""
-
-    def test_xfetch_never_triggers_for_fresh_values(self):
-        """With 5 minutes remaining, XFetch should almost never trigger."""
-        config = StampedeConfig(default_delta=1.0, beta=1.0)
-        envelope = wrap_envelope(b"v", 300, config, delta_seconds=1.0)
-
-        # Run 1000 trials - with 300s remaining and 1s delta, should never trigger
-        triggers = 0
-        for _ in range(1000):
-            _, should = unwrap_envelope(envelope, config)
-            if should:
-                triggers += 1
+    def test_fresh_value_no_recompute(self):
+        """With plenty of TTL remaining, should never trigger."""
+        config = StampedeConfig(buffer=60, delta=1.0, beta=1.0)
+        # TTL = 350 → remaining = 350 - 60 = 290s
+        triggers = sum(1 for _ in range(1000) if should_recompute(350, config))
         assert triggers == 0
 
-    def test_xfetch_likely_triggers_near_expiry(self):
-        """With very little time remaining and large delta, XFetch should often trigger."""
-        config = StampedeConfig(beta=1.0)
-        # Create envelope expiring in 100ms with delta of 10 seconds
-        now_ms = int(time.time() * 1000)
-        near_expiry_ms = now_ms + 100
-        header = _HEADER_STRUCT.pack(near_expiry_ms, 10_000)
-        envelope = ENVELOPE_MARKER + header + b"v"
+    def test_expired_always_recomputes(self):
+        """When TTL <= buffer, always triggers (logically expired)."""
+        config = StampedeConfig(buffer=60, delta=1.0, beta=1.0)
+        # TTL = 50 → remaining = 50 - 60 = -10 → always True
+        assert should_recompute(50, config) is True
+        assert should_recompute(60, config) is True
+        assert should_recompute(0, config) is True
 
-        triggers = 0
-        for _ in range(100):
-            _, should = unwrap_envelope(envelope, config)
-            if should:
-                triggers += 1
-        # With 100ms remaining and 10s delta, should trigger most of the time
+    def test_near_expiry_likely_triggers(self):
+        """With very little logical time remaining and large delta, triggers often."""
+        config = StampedeConfig(buffer=60, delta=10.0, beta=1.0)
+        # TTL = 61 → remaining = 1s, delta = 10s → very likely
+        triggers = sum(1 for _ in range(100) if should_recompute(61, config))
         assert triggers > 50
 
-    def test_higher_beta_triggers_earlier(self):
-        """Higher beta should increase the probability of early recomputation."""
-        now_ms = int(time.time() * 1000)
-        # 5 seconds remaining, 2 second delta
-        expiry_ms = now_ms + 5000
-        header = _HEADER_STRUCT.pack(expiry_ms, 2000)
-        envelope = ENVELOPE_MARKER + header + b"v"
+    def test_higher_beta_triggers_more(self):
+        """Higher beta increases recomputation probability."""
+        low_beta = StampedeConfig(buffer=60, delta=2.0, beta=0.5)
+        high_beta = StampedeConfig(buffer=60, delta=2.0, beta=5.0)
+        # TTL = 65 → remaining = 5s
+        low = sum(1 for _ in range(1000) if should_recompute(65, low_beta))
+        high = sum(1 for _ in range(1000) if should_recompute(65, high_beta))
+        assert high > low
 
-        low_beta = StampedeConfig(beta=0.5)
-        high_beta = StampedeConfig(beta=5.0)
-
-        low_triggers = sum(1 for _ in range(1000) if unwrap_envelope(envelope, low_beta)[1])
-        high_triggers = sum(1 for _ in range(1000) if unwrap_envelope(envelope, high_beta)[1])
-
-        assert high_triggers > low_triggers
-
-
-class TestDeltaTracking:
-    """Tests for recomputation time measurement via ContextVar."""
-
-    def test_record_and_retrieve_delta(self):
-        record_recomputation_start("key1")
-        time.sleep(0.05)
-        delta = get_recomputation_delta("key1")
-        assert delta is not None
-        assert 0.04 <= delta <= 0.2  # Allow some tolerance
-
-    def test_delta_is_none_for_unrecorded_key(self):
-        delta = get_recomputation_delta("never_recorded")
-        assert delta is None
-
-    def test_delta_is_consumed_on_retrieval(self):
-        record_recomputation_start("key2")
-        time.sleep(0.01)
-        delta1 = get_recomputation_delta("key2")
-        delta2 = get_recomputation_delta("key2")
-        assert delta1 is not None
-        assert delta2 is None
-
-    def test_multiple_keys_tracked_independently(self):
-        record_recomputation_start("key_a")
-        time.sleep(0.01)
-        record_recomputation_start("key_b")
-
-        delta_a = get_recomputation_delta("key_a")
-        delta_b = get_recomputation_delta("key_b")
-        assert delta_a is not None
-        assert delta_b is not None
-        assert delta_a > delta_b  # key_a was recorded earlier
+    def test_zero_delta_never_triggers_early(self):
+        """With delta=0, only triggers when logically expired."""
+        config = StampedeConfig(buffer=60, delta=0.0, beta=1.0)
+        # TTL = 65 → remaining = 5s, but delta=0 means no probabilistic trigger
+        triggers = sum(1 for _ in range(1000) if should_recompute(65, config))
+        assert triggers == 0
+        # But when logically expired, still triggers
+        assert should_recompute(60, config) is True
 
 
 class TestStampedeConfig:
@@ -191,13 +59,13 @@ class TestStampedeConfig:
         config = StampedeConfig()
         assert config.buffer == 60
         assert config.beta == 1.0
-        assert config.default_delta == 1.0
+        assert config.delta == 1.0
 
     def test_custom_values(self):
-        config = StampedeConfig(buffer=30, beta=2.0, default_delta=0.5)
+        config = StampedeConfig(buffer=30, beta=2.0, delta=0.5)
         assert config.buffer == 30
         assert config.beta == 2.0
-        assert config.default_delta == 0.5
+        assert config.delta == 0.5
 
 
 # =============================================================================
@@ -245,7 +113,7 @@ class TestStampedeBasicOperations:
 
 
 class TestStampedeIntegerPassthrough:
-    """Integers should bypass stampede envelope, keeping incr/decr working."""
+    """Integers bypass stampede TTL check (int values parsed by decode, not bytes)."""
 
     def test_integer_set_get(self, stampede_cache: KeyValueCache):
         stampede_cache.set("sp_int", 42, timeout=300)
@@ -272,8 +140,8 @@ class TestStampedeExtendedTTL:
         assert ttl is not None
         assert 300 < ttl <= 360
 
-    def test_no_timeout_no_envelope(self, stampede_cache: KeyValueCache):
-        """Persistent keys (timeout=None) should not be wrapped."""
+    def test_no_timeout_no_buffer(self, stampede_cache: KeyValueCache):
+        """Persistent keys (timeout=None) should not have TTL extended."""
         stampede_cache.set("sp_persist", "val", timeout=None)
         ttl = stampede_cache.ttl("sp_persist")
         assert ttl is None  # No expiry
@@ -292,6 +160,15 @@ class TestStampedeGetMany:
         assert "v2" in result.values()
         assert len(result) == 2
 
+    def test_get_many_filters_expired(self, stampede_cache: KeyValueCache):
+        """get_many should filter out logically expired keys."""
+        stampede_cache.set("sp_gm_exp", "val", timeout=300)
+        # Shrink TTL below buffer → logically expired
+        stampede_cache.expire("sp_gm_exp", 50)
+
+        result = stampede_cache.get_many(["sp_gm_exp"])
+        assert len(result) == 0
+
 
 class TestStampedeSetMany:
     """Batch set operations with stampede prevention."""
@@ -308,70 +185,45 @@ class TestStampedeSetMany:
         assert 300 < ttl <= 360
 
 
-class TestStampedeBackwardCompat:
-    """Test migration: values stored without stampede should be readable with it."""
-
-    def test_non_envelope_value_decoded(self, stampede_cache: KeyValueCache):
-        """Directly store a value bypassing stampede, then read with stampede enabled."""
-        # Temporarily disable stampede to write a raw (non-envelope) value
-        client = stampede_cache._cache
-        orig_config = client._stampede_config
-        client._stampede_config = None
-
-        stampede_cache.set("sp_compat", "raw_value", timeout=300)
-
-        # Re-enable stampede
-        client._stampede_config = orig_config
-
-        # Should still decode correctly (no marker prefix → treated as raw value)
-        assert stampede_cache.get("sp_compat") == "raw_value"
-
-
 class TestStampedeEarlyRecompute:
-    """Test that XFetch triggers early recomputation."""
+    """Test that XFetch triggers early recomputation.
+
+    Uses expire() to simulate logical expiry deterministically:
+    set with timeout=300 (TTL=360), then expire(key, 50) → TTL=50 < buffer=60 → logically expired.
+    """
 
     def test_returns_none_after_logical_expiry(self, stampede_cache: KeyValueCache):
         """After logical expiry, get() returns None even though key is still in Redis."""
-        stampede_cache.set("sp_expire", "val", timeout=1)
-        # Value is fresh immediately
+        stampede_cache.set("sp_expire", "val", timeout=300)
         assert stampede_cache.get("sp_expire") == "val"
 
-        # Wait for logical expiry (1 second)
-        time.sleep(1.1)
-
-        # Key still exists in Redis (TTL was 1 + 60 buffer), but logically expired
+        # Shrink TTL below buffer → logically expired
+        stampede_cache.expire("sp_expire", 50)
         assert stampede_cache.get("sp_expire") is None
 
     def test_get_or_set_recomputes_after_expiry(self, stampede_cache: KeyValueCache):
         """get_or_set() should trigger recomputation after logical expiry."""
-        stampede_cache.set("sp_gos", "old", timeout=1)
+        stampede_cache.set("sp_gos", "old", timeout=300)
         assert stampede_cache.get("sp_gos") == "old"
 
-        time.sleep(1.1)
+        # Shrink TTL below buffer → logically expired
+        stampede_cache.expire("sp_gos", 50)
 
         # get_or_set should see None, call the default callable, and set new value
         result = stampede_cache.get_or_set("sp_gos", lambda: "recomputed", timeout=300)
         assert result == "recomputed"
 
-    def test_delta_measurement_flow(self, stampede_cache: KeyValueCache):
-        """Full flow: get triggers recompute, set measures delta."""
-        stampede_cache.set("sp_delta", "initial", timeout=1)
-        time.sleep(1.1)
+    def test_recompute_stores_with_buffer(self, stampede_cache: KeyValueCache):
+        """After recomputation, the new value should have buffered TTL."""
+        stampede_cache.set("sp_recomp", "initial", timeout=300)
+        stampede_cache.expire("sp_recomp", 50)
 
-        # get() returns None and records recomputation start
-        assert stampede_cache.get("sp_delta") is None
+        # Recompute
+        stampede_cache.set("sp_recomp", "recomputed", timeout=300)
 
-        # Simulate recomputation taking 50ms
-        time.sleep(0.05)
-
-        # set() should measure and store the delta
-        stampede_cache.set("sp_delta", "recomputed", timeout=300)
-
-        # Verify value is correct
-        assert stampede_cache.get("sp_delta") == "recomputed"
-
-        # Verify the TTL is extended
-        ttl = stampede_cache.ttl("sp_delta")
+        # Verify value and TTL
+        assert stampede_cache.get("sp_recomp") == "recomputed"
+        ttl = stampede_cache.ttl("sp_recomp")
         assert ttl is not None
         assert ttl > 300
 
@@ -393,12 +245,51 @@ class TestStampedePipeline:
 
     def test_pipeline_serves_stale_data(self, stampede_cache: KeyValueCache):
         """Pipeline should serve stale data (not return None) during buffer window."""
-        stampede_cache.set("sp_pipe_stale", "stale_val", timeout=1)
-        time.sleep(1.1)
+        stampede_cache.set("sp_pipe_stale", "stale_val", timeout=300)
+        # Shrink TTL below buffer → logically expired, but pipeline should still serve
+        stampede_cache.expire("sp_pipe_stale", 50)
 
-        # Pipeline should still return the value (stale serving)
         with stampede_cache.pipeline() as pipe:
             pipe.get("sp_pipe_stale")
             results = pipe.execute()
 
         assert results[0] == "stale_val"
+
+
+class TestStampedeOverride:
+    """Test per-method stampede=True/False override."""
+
+    def test_stampede_false_skips_ttl_check(self, stampede_cache: KeyValueCache):
+        """stampede=False on get() should return value even if logically expired."""
+        stampede_cache.set("sp_ovr_get", "val", timeout=300)
+        stampede_cache.expire("sp_ovr_get", 50)  # logically expired
+
+        # Default behavior: returns None (logically expired)
+        assert stampede_cache.get("sp_ovr_get") is None
+        # Override: skip stampede check → returns value
+        assert stampede_cache.get("sp_ovr_get", stampede=False) == "val"
+
+    def test_stampede_false_skips_buffer_on_set(self, stampede_cache: KeyValueCache):
+        """stampede=False on set() should not add buffer to TTL."""
+        stampede_cache.set("sp_ovr_set", "val", timeout=300, stampede=False)
+        ttl = stampede_cache.ttl("sp_ovr_set")
+        assert ttl is not None
+        assert ttl <= 300  # No buffer added
+
+    def test_stampede_false_on_get_many(self, stampede_cache: KeyValueCache):
+        """stampede=False on get_many() should return logically expired values."""
+        stampede_cache.set("sp_ovr_gm", "val", timeout=300)
+        stampede_cache.expire("sp_ovr_gm", 50)  # logically expired
+
+        # Default behavior: filtered out (logically expired)
+        assert len(stampede_cache.get_many(["sp_ovr_gm"])) == 0
+        # With stampede=False, value is returned despite logical expiry
+        result = stampede_cache.get_many(["sp_ovr_gm"], stampede=False)
+        assert result.get("sp_ovr_gm") == "val"
+
+    def test_stampede_true_on_non_stampede_cache(self, cache: KeyValueCache):
+        """stampede=True on a cache without global stampede should still add buffer."""
+        cache.set("sp_ovr_force", "val", timeout=300, stampede=True)
+        ttl = cache.ttl("sp_ovr_force")
+        assert ttl is not None
+        assert ttl > 300  # Buffer was added

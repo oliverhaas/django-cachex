@@ -64,16 +64,10 @@ class Pipeline:
     def _decode_single(self, value: bytes | None) -> Any:
         """Decode a single value, returning None if None.
 
-        If stampede prevention is enabled, unwraps the envelope but always
-        serves the value (even if stale) since pipelines are batch-oriented.
+        Pipelines always serve values as-is (stale serving) — no stampede TTL checks.
         """
         if value is None:
             return None
-        stampede_config = getattr(self._client, "_stampede_config", None)
-        if stampede_config and isinstance(value, bytes):
-            from django_cachex.stampede import unwrap_envelope
-
-            value, _should_recompute = unwrap_envelope(value, stampede_config)
         return self._client.decode(value)
 
     def _decode_list(self, value: list[bytes]) -> list[Any]:
@@ -192,15 +186,16 @@ class Pipeline:
         *,
         nx: bool = False,
         xx: bool = False,
+        stampede: bool | None = None,
     ) -> Self:
         """Queue a SET command."""
         nkey = self._make_key(key, version)
         nvalue = self._encode(value)
-        nvalue, timeout = self._client._wrap_for_storage(nvalue, nkey, timeout)
+        actual_timeout = self._client._get_timeout_with_buffer(timeout, stampede)
 
         kwargs: dict[str, Any] = {}
-        if timeout is not None:
-            kwargs["ex"] = timeout
+        if actual_timeout is not None:
+            kwargs["ex"] = actual_timeout
         if nx:
             kwargs["nx"] = True
         if xx:

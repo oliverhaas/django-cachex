@@ -130,8 +130,10 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
     # Override methods that need cluster-specific handling
 
     @override
-    def get_many(self, keys: Iterable[KeyT]) -> dict[KeyT, Any]:
+    def get_many(self, keys: Iterable[KeyT], *, stampede: bool | None = None) -> dict[KeyT, Any]:
         """Retrieve many keys, handling cross-slot keys."""
+        from django_cachex.stampede import should_recompute
+
         keys = list(keys)
         if not keys:
             return {}
@@ -143,32 +145,39 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
             client.mget_nonatomic(keys),
         )
 
-        recovered_data = {}
-        for key, value in zip(keys, results, strict=True):
-            if value is None:
-                continue
-            if isinstance(value, bytes):
-                unwrapped = self._unwrap_from_storage(value, key)
-                if unwrapped is None:
-                    continue
-                recovered_data[key] = self.decode(unwrapped)
-            else:
-                recovered_data[key] = self.decode(value)
+        # Collect non-None results
+        found = {k: v for k, v in zip(keys, results, strict=True) if v is not None}
 
-        return recovered_data
+        # Stampede filtering: pipeline TTL for all found keys
+        config = self._resolve_stampede(stampede)
+        if config and found:
+            pipe = client.pipeline()
+            found_keys = list(found.keys())
+            for k in found_keys:
+                pipe.ttl(k)
+            ttls = pipe.execute()
+            for k, ttl in zip(found_keys, ttls, strict=False):
+                if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
+                    del found[k]
+
+        return {k: self.decode(v) for k, v in found.items()}
 
     @override
-    def set_many(self, data: Mapping[KeyT, Any], timeout: int | None = None) -> list[KeyT]:
+    def set_many(
+        self,
+        data: Mapping[KeyT, Any],
+        timeout: int | None = None,
+        *,
+        stampede: bool | None = None,
+    ) -> list[KeyT]:
         """Set multiple values, handling cross-slot keys."""
         if not data:
             return []
 
         client = self.get_client(write=True)
 
-        # Prepare data with encoded values (wrapped in stampede envelope if enabled)
-        prepared_data = {k: self._wrap_for_storage(self.encode(v), k, timeout)[0] for k, v in data.items()}
-        config = getattr(self, "_stampede_config", None)
-        actual_timeout = timeout + config.buffer if config and timeout and timeout > 0 else timeout
+        prepared_data = {k: self.encode(v) for k, v in data.items()}
+        actual_timeout = self._get_timeout_with_buffer(timeout, stampede)
 
         if actual_timeout == 0:
             # timeout=0 means "delete immediately" (matches base client behavior)
@@ -288,8 +297,10 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
     # =========================================================================
 
     @override
-    async def aget_many(self, keys: Iterable[KeyT]) -> dict[KeyT, Any]:
+    async def aget_many(self, keys: Iterable[KeyT], *, stampede: bool | None = None) -> dict[KeyT, Any]:
         """Retrieve many keys asynchronously, handling cross-slot keys."""
+        from django_cachex.stampede import should_recompute
+
         keys = list(keys)
         if not keys:
             return {}
@@ -302,32 +313,39 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
             await client.mget_nonatomic(keys),
         )
 
-        recovered_data = {}
-        for key, value in zip(keys, results, strict=True):
-            if value is None:
-                continue
-            if isinstance(value, bytes):
-                unwrapped = self._unwrap_from_storage(value, key)
-                if unwrapped is None:
-                    continue
-                recovered_data[key] = self.decode(unwrapped)
-            else:
-                recovered_data[key] = self.decode(value)
+        # Collect non-None results
+        found = {k: v for k, v in zip(keys, results, strict=True) if v is not None}
 
-        return recovered_data
+        # Stampede filtering: pipeline TTL for all found keys
+        config = self._resolve_stampede(stampede)
+        if config and found:
+            pipe = client.pipeline()
+            found_keys = list(found.keys())
+            for k in found_keys:
+                pipe.ttl(k)
+            ttls = await pipe.execute()
+            for k, ttl in zip(found_keys, ttls, strict=False):
+                if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
+                    del found[k]
+
+        return {k: self.decode(v) for k, v in found.items()}
 
     @override
-    async def aset_many(self, data: Mapping[KeyT, Any], timeout: int | None = None) -> list[KeyT]:
+    async def aset_many(
+        self,
+        data: Mapping[KeyT, Any],
+        timeout: int | None = None,
+        *,
+        stampede: bool | None = None,
+    ) -> list[KeyT]:
         """Set multiple values asynchronously, handling cross-slot keys."""
         if not data:
             return []
 
         client = self.get_async_client(write=True)
 
-        # Prepare data with encoded values (wrapped in stampede envelope if enabled)
-        prepared_data = {k: self._wrap_for_storage(self.encode(v), k, timeout)[0] for k, v in data.items()}
-        config = getattr(self, "_stampede_config", None)
-        actual_timeout = timeout + config.buffer if config and timeout and timeout > 0 else timeout
+        prepared_data = {k: self.encode(v) for k, v in data.items()}
+        actual_timeout = self._get_timeout_with_buffer(timeout, stampede)
 
         if actual_timeout == 0:
             # timeout=0 means "delete immediately" (matches base client behavior)
