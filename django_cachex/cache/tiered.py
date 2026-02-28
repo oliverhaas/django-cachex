@@ -2,8 +2,8 @@
 
 References two other cache backends (L1 and L2) from the CACHES setting.
 Hot reads are served from L1 (typically LocMemCache), falling through to
-L2 (typically Redis/Valkey) on miss. L1 TTL is capped by L2's remaining
-TTL to prevent serving stale data.
+L2 (typically Redis/Valkey) on miss. L1 TTL is capped to prevent serving
+stale data.
 
 Only the standard Django cache interface is supported. For advanced
 features (data structures, pipelines, etc.), use the tier caches directly.
@@ -13,7 +13,6 @@ Configuration::
     CACHES = {
         "l1": {
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-            "TIMEOUT": 5,
             "OPTIONS": {"MAX_ENTRIES": 1000},
         },
         "l2": {
@@ -22,12 +21,15 @@ Configuration::
         },
         "default": {
             "BACKEND": "django_cachex.cache.TieredCache",
-            "LOCATION": "tiered://",
             "OPTIONS": {
                 "TIERS": ["l1", "l2"],
+                "L1_TIMEOUT": 5,
             },
         },
     }
+
+``L1_TIMEOUT`` caps how long entries live in L1. If omitted, falls back
+to L1's own ``TIMEOUT`` setting.
 """
 
 from __future__ import annotations
@@ -53,7 +55,7 @@ class TieredCache(BaseCache):
     """Two-tiered cache referencing other CACHES entries as L1 and L2.
 
     L1 is checked first on reads; on miss, L2 is queried and L1 is populated.
-    L1 TTL is capped by min(L1's default timeout, L2's remaining TTL).
+    L1 TTL is capped by min(L1_TIMEOUT, L2's remaining TTL).
     """
 
     _cachex_support: str = "wrapped"
@@ -69,6 +71,8 @@ class TieredCache(BaseCache):
             raise ImproperlyConfigured(msg)
         self._l1_alias: str = tiers[0]
         self._l2_alias: str = tiers[1]
+        # L1 TTL cap: explicit option or fall back to L1's own default_timeout
+        self._l1_max_timeout: float | None = options.get("L1_TIMEOUT")
 
     @cached_property
     def _l1(self) -> BaseCache:
@@ -82,24 +86,30 @@ class TieredCache(BaseCache):
 
         return caches[self._l2_alias]
 
+    @property
+    def _l1_cap(self) -> float | None:
+        """L1 TTL cap: explicit L1_TIMEOUT option, or L1's own default_timeout."""
+        cap = self._l1_max_timeout
+        return cap if cap is not None else self._l1.default_timeout
+
     def _l1_timeout(self, l2_ttl: int | None = None) -> float | None:
-        """Calculate L1 TTL: min(L1's default timeout, L2's remaining TTL)."""
-        timeout = self._l1.default_timeout
+        """Calculate L1 TTL: min(L1 cap, L2's remaining TTL)."""
+        cap = self._l1_cap
         if l2_ttl is not None and l2_ttl > 0:
-            if timeout is not None:
-                return min(timeout, l2_ttl)
+            if cap is not None:
+                return min(cap, l2_ttl)
             return l2_ttl
-        return timeout
+        return cap
 
     def _l1_timeout_for_set(self, timeout: float | None) -> float | None:
         """Calculate L1 TTL for a set operation given the user-specified timeout."""
-        l1_default = self._l1.default_timeout
+        cap = self._l1_cap
         if timeout is None or timeout is DEFAULT_TIMEOUT:
-            return l1_default
+            return cap
         if timeout <= 0:
             return timeout  # 0 means delete immediately
-        if l1_default is not None:
-            return min(l1_default, timeout)
+        if cap is not None:
+            return min(cap, timeout)
         return timeout
 
     def _get_l2_ttl(self, key: KeyT, version: int | None = None) -> int | None:

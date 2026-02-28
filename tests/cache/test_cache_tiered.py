@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
     from tests.fixtures.containers import RedisContainerInfo
 
-L1_TIMEOUT = 2  # seconds — short for testing
+L1_TIMEOUT = 2  # seconds — short L1 cap for testing
 
 
 def _build_tiered_config(host: str, port: int, client_library: str = "redis") -> dict:
@@ -29,7 +29,6 @@ def _build_tiered_config(host: str, port: int, client_library: str = "redis") ->
     return {
         "l1": {
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-            "TIMEOUT": L1_TIMEOUT,
             "OPTIONS": {"MAX_ENTRIES": 100},
         },
         "l2": {
@@ -39,9 +38,9 @@ def _build_tiered_config(host: str, port: int, client_library: str = "redis") ->
         },
         "default": {
             "BACKEND": "django_cachex.cache.TieredCache",
-            "LOCATION": "tiered://",
             "OPTIONS": {
                 "TIERS": ["l1", "l2"],
+                "L1_TIMEOUT": L1_TIMEOUT,
             },
         },
     }
@@ -479,7 +478,6 @@ class TestTieredCacheConfig:
         config = {
             "default": {
                 "BACKEND": "django_cachex.cache.TieredCache",
-                "LOCATION": "tiered://",
                 "OPTIONS": {},
             },
         }
@@ -494,7 +492,6 @@ class TestTieredCacheConfig:
             },
             "default": {
                 "BACKEND": "django_cachex.cache.TieredCache",
-                "LOCATION": "tiered://",
                 "OPTIONS": {
                     "TIERS": ["l1"],
                 },
@@ -503,10 +500,9 @@ class TestTieredCacheConfig:
         with override_settings(CACHES=config), pytest.raises(ImproperlyConfigured, match="TIERS"):
             caches["default"].get("test")
 
-    def test_l1_uses_its_own_timeout(self, tiered_cache: BaseCache):
-        """L1's default timeout comes from its own CACHES config."""
-        l1 = caches["l1"]
-        assert l1.default_timeout == L1_TIMEOUT
+    def test_l1_timeout_from_option(self, tiered_cache: BaseCache):
+        """L1 TTL cap comes from TieredCache's L1_TIMEOUT option."""
+        assert tiered_cache._l1_cap == L1_TIMEOUT
 
     def test_cachex_support_level(self, tiered_cache: BaseCache):
         """TieredCache has 'wrapped' support level for admin."""
