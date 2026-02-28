@@ -1,33 +1,47 @@
-"""Two-tiered cache backends with L1 in-process memory + L2 Redis/Valkey.
+"""Two-tiered cache backend using Django's CACHES setting.
 
-Adds a fast in-process memory layer (Django's LocMemCache) on top of any
-django-cachex Redis/Valkey backend. Hot reads are served from local memory,
-falling through to the remote backend on miss. Staleness is bounded by a
-short L1 TTL (default 5 seconds).
+References two other cache backends (L1 and L2) from the CACHES setting.
+Hot reads are served from L1 (typically LocMemCache), falling through to
+L2 (typically Redis/Valkey) on miss. L1 TTL is capped by L2's remaining
+TTL to prevent serving stale data.
+
+Only the standard Django cache interface is supported. For advanced
+features (data structures, pipelines, etc.), use the tier caches directly.
 
 Configuration::
 
     CACHES = {
-        "default": {
-            "BACKEND": "django_cachex.cache.RedisTieredCache",
+        "l1": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "TIMEOUT": 5,
+            "OPTIONS": {"MAX_ENTRIES": 1000},
+        },
+        "l2": {
+            "BACKEND": "django_cachex.cache.RedisCache",
             "LOCATION": "redis://127.0.0.1:6379/0",
+        },
+        "default": {
+            "BACKEND": "django_cachex.cache.TieredCache",
+            "LOCATION": "tiered://",
             "OPTIONS": {
-                "TIERED_L1_TIMEOUT": 5,        # L1 TTL in seconds
-                "TIERED_L1_MAX_ENTRIES": 1000,  # L1 max entries before LRU cull
-            }
-        }
+                "TIERS": ["l1", "l2"],
+            },
+        },
     }
 """
 
 from __future__ import annotations
 
+from functools import cached_property
 from typing import TYPE_CHECKING, Any
 
-from django.core.cache.backends.base import DEFAULT_TIMEOUT
-from django.core.cache.backends.locmem import LocMemCache
+from django.core.cache.backends.base import DEFAULT_TIMEOUT, BaseCache
+from django.core.exceptions import ImproperlyConfigured
+
+from django_cachex.exceptions import NotSupportedError
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterable, Iterator
 
     from django_cachex.types import KeyT
 
@@ -35,96 +49,128 @@ if TYPE_CHECKING:
 _L1_MISS = object()
 
 
-class TieredCacheMixin:
-    """Mixin that adds L1 in-process caching to any KeyValueCache backend.
+class TieredCache(BaseCache):
+    """Two-tiered cache referencing other CACHES entries as L1 and L2.
 
-    Must appear before the cache backend in MRO::
-
-        class RedisTieredCache(TieredCacheMixin, RedisCache):
-            pass
-
-    Core operations (get/set/delete/get_many/set_many/delete_many/has_key/
-    incr/touch/clear) check L1 first and fall through to L2 on miss.
-    Data structure operations (hashes, lists, sets, sorted sets, streams)
-    bypass L1 and go directly to the remote backend.
+    L1 is checked first on reads; on miss, L2 is queried and L1 is populated.
+    L1 TTL is capped by min(L1's default timeout, L2's remaining TTL).
     """
 
-    _l1: LocMemCache
-    _l1_timeout: int
+    _cachex_support: str = "wrapped"
 
     def __init__(self, server: str, params: dict[str, Any]) -> None:
+        super().__init__(params)
         options = params.get("OPTIONS", {})
-        l1_timeout = options.pop("TIERED_L1_TIMEOUT", 5)
-        l1_max_entries = options.pop("TIERED_L1_MAX_ENTRIES", 1000)
-        super().__init__(server, params)  # type: ignore[call-arg]  # ty: ignore[too-many-positional-arguments]
-        self._l1_timeout = l1_timeout
-        self._l1 = LocMemCache(
-            f"django-cachex-tiered-{id(self)}",
-            {"TIMEOUT": l1_timeout, "OPTIONS": {"MAX_ENTRIES": l1_max_entries}},
-        )
+        tiers = options.get("TIERS")
+        if not tiers or len(tiers) != 2:
+            msg = (
+                f"TieredCache requires OPTIONS['TIERS'] with exactly 2 cache aliases, e.g. ['l1', 'l2']. Got: {tiers!r}"
+            )
+            raise ImproperlyConfigured(msg)
+        self._l1_alias: str = tiers[0]
+        self._l2_alias: str = tiers[1]
+
+    @cached_property
+    def _l1(self) -> BaseCache:
+        from django.core.cache import caches
+
+        return caches[self._l1_alias]
+
+    @cached_property
+    def _l2(self) -> BaseCache:
+        from django.core.cache import caches
+
+        return caches[self._l2_alias]
+
+    def _l1_timeout(self, l2_ttl: int | None = None) -> float | None:
+        """Calculate L1 TTL: min(L1's default timeout, L2's remaining TTL)."""
+        timeout = self._l1.default_timeout
+        if l2_ttl is not None and l2_ttl > 0:
+            if timeout is not None:
+                return min(timeout, l2_ttl)
+            return l2_ttl
+        return timeout
+
+    def _l1_timeout_for_set(self, timeout: float | None) -> float | None:
+        """Calculate L1 TTL for a set operation given the user-specified timeout."""
+        l1_default = self._l1.default_timeout
+        if timeout is None or timeout is DEFAULT_TIMEOUT:
+            return l1_default
+        if timeout <= 0:
+            return timeout  # 0 means delete immediately
+        if l1_default is not None:
+            return min(l1_default, timeout)
+        return timeout
+
+    def _get_l2_ttl(self, key: KeyT, version: int | None = None) -> int | None:
+        """Try to get L2's remaining TTL for a key. Returns None if unsupported."""
+        try:
+            ttl = self._l2.ttl(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            return ttl if isinstance(ttl, int) and ttl > 0 else None
+        except (AttributeError, NotSupportedError, TypeError):
+            return None
 
     # =========================================================================
-    # Core operations — L1 + L2
+    # Standard Django cache interface
     # =========================================================================
 
     def get(self, key: KeyT, default: Any = None, version: int | None = None) -> Any:
         val = self._l1.get(key, _L1_MISS, version=version)
         if val is not _L1_MISS:
             return val
-        val = super().get(key, _L1_MISS, version=version)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
-        if val is not _L1_MISS:
-            self._l1.set(key, val, self._l1_timeout, version=version)
-            return val
-        return default
+        val = self._l2.get(key, _L1_MISS, version=version)
+        if val is _L1_MISS:
+            return default
+        l2_ttl = self._get_l2_ttl(key, version=version)
+        self._l1.set(key, val, self._l1_timeout(l2_ttl), version=version)
+        return val
 
     async def aget(self, key: KeyT, default: Any = None, version: int | None = None) -> Any:
         val = self._l1.get(key, _L1_MISS, version=version)
         if val is not _L1_MISS:
             return val
-        val = await super().aget(key, _L1_MISS, version=version)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
-        if val is not _L1_MISS:
-            self._l1.set(key, val, self._l1_timeout, version=version)
-            return val
-        return default
+        val = await self._l2.aget(key, _L1_MISS, version=version)
+        if val is _L1_MISS:
+            return default
+        l2_ttl = self._get_l2_ttl(key, version=version)
+        self._l1.set(key, val, self._l1_timeout(l2_ttl), version=version)
+        return val
 
-    def set(
+    def set(  # type: ignore[override]
         self,
         key: KeyT,
         value: Any,
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         **kwargs: Any,
-    ) -> Any:
-        result = super().set(key, value, timeout, version=version, **kwargs)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+    ) -> bool:
+        result = self._l2.set(key, value, timeout, version=version, **kwargs)  # type: ignore[func-returns-value]
         nx = kwargs.get("nx", False)
         xx = kwargs.get("xx", False)
-        get = kwargs.get("get", False)
         if nx or xx:
-            # With nx/xx + get, the return value is ambiguous — skip L1
-            if not get and result:
-                self._l1.set(key, value, self._l1_timeout, version=version)
+            if result:
+                self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
         else:
-            self._l1.set(key, value, self._l1_timeout, version=version)
-        return result
+            self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
+        return result  # ty: ignore[invalid-return-type]
 
-    async def aset(
+    async def aset(  # type: ignore[override]
         self,
         key: KeyT,
         value: Any,
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         **kwargs: Any,
-    ) -> Any:
-        result = await super().aset(key, value, timeout, version=version, **kwargs)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+    ) -> bool:
+        result = await self._l2.aset(key, value, timeout, version=version, **kwargs)  # type: ignore[func-returns-value]
         nx = kwargs.get("nx", False)
         xx = kwargs.get("xx", False)
-        get = kwargs.get("get", False)
         if nx or xx:
-            if not get and result:
-                self._l1.set(key, value, self._l1_timeout, version=version)
+            if result:
+                self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
         else:
-            self._l1.set(key, value, self._l1_timeout, version=version)
-        return result
+            self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
+        return result  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
 
     def add(
         self,
@@ -133,9 +179,9 @@ class TieredCacheMixin:
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
     ) -> bool:
-        result = super().add(key, value, timeout, version=version)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        result = self._l2.add(key, value, timeout, version=version)
         if result:
-            self._l1.set(key, value, self._l1_timeout, version=version)
+            self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
         return result
 
     async def aadd(
@@ -145,20 +191,20 @@ class TieredCacheMixin:
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
     ) -> bool:
-        result = await super().aadd(key, value, timeout, version=version)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        result = await self._l2.aadd(key, value, timeout, version=version)
         if result:
-            self._l1.set(key, value, self._l1_timeout, version=version)
+            self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
         return result
 
     def delete(self, key: KeyT, version: int | None = None) -> bool:
         self._l1.delete(key, version=version)
-        return super().delete(key, version=version)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        return self._l2.delete(key, version=version)
 
     async def adelete(self, key: KeyT, version: int | None = None) -> bool:
         self._l1.delete(key, version=version)
-        return await super().adelete(key, version=version)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        return await self._l2.adelete(key, version=version)
 
-    def get_many(self, keys: list[KeyT], version: int | None = None) -> dict[KeyT, Any]:
+    def get_many(self, keys: Iterable[KeyT], version: int | None = None) -> dict[KeyT, Any]:
         l1_results: dict[KeyT, Any] = {}
         missed_keys: list[KeyT] = []
         for key in keys:
@@ -167,18 +213,16 @@ class TieredCacheMixin:
                 l1_results[key] = val
             else:
                 missed_keys.append(key)
-
         if not missed_keys:
             return l1_results
-
-        l2_results = super().get_many(missed_keys, version=version)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        l2_results = self._l2.get_many(missed_keys, version=version)
         for key, val in l2_results.items():
-            self._l1.set(key, val, self._l1_timeout, version=version)
-
+            l2_ttl = self._get_l2_ttl(key, version=version)
+            self._l1.set(key, val, self._l1_timeout(l2_ttl), version=version)
         l1_results.update(l2_results)
         return l1_results
 
-    async def aget_many(self, keys: list[KeyT], version: int | None = None) -> dict[KeyT, Any]:
+    async def aget_many(self, keys: Iterable[KeyT], version: int | None = None) -> dict[KeyT, Any]:
         l1_results: dict[KeyT, Any] = {}
         missed_keys: list[KeyT] = []
         for key in keys:
@@ -187,80 +231,167 @@ class TieredCacheMixin:
                 l1_results[key] = val
             else:
                 missed_keys.append(key)
-
         if not missed_keys:
             return l1_results
-
-        l2_results = await super().aget_many(missed_keys, version=version)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        l2_results = await self._l2.aget_many(missed_keys, version=version)
         for key, val in l2_results.items():
-            self._l1.set(key, val, self._l1_timeout, version=version)
-
+            l2_ttl = self._get_l2_ttl(key, version=version)
+            self._l1.set(key, val, self._l1_timeout(l2_ttl), version=version)
         l1_results.update(l2_results)
         return l1_results
 
     def set_many(
         self,
-        data: Mapping[KeyT, Any],
+        data: dict[KeyT, Any],
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
-    ) -> list:
+    ) -> list[Any]:
+        l1_timeout = self._l1_timeout_for_set(timeout)
         for key, value in data.items():
-            self._l1.set(key, value, self._l1_timeout, version=version)
-        return super().set_many(data, timeout, version=version)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+            self._l1.set(key, value, l1_timeout, version=version)
+        return self._l2.set_many(data, timeout, version=version)
 
     async def aset_many(
         self,
-        data: Mapping[KeyT, Any],
+        data: dict[KeyT, Any],
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
-    ) -> list:
+    ) -> list[Any]:
+        l1_timeout = self._l1_timeout_for_set(timeout)
         for key, value in data.items():
-            self._l1.set(key, value, self._l1_timeout, version=version)
-        return await super().aset_many(data, timeout, version=version)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+            self._l1.set(key, value, l1_timeout, version=version)
+        return await self._l2.aset_many(data, timeout, version=version)
 
-    def delete_many(self, keys: list[KeyT], version: int | None = None) -> int:
+    def delete_many(self, keys: Iterable[KeyT], version: int | None = None) -> None:
         for key in keys:
             self._l1.delete(key, version=version)
-        return super().delete_many(keys, version=version)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        self._l2.delete_many(keys, version=version)
 
-    async def adelete_many(self, keys: list[KeyT], version: int | None = None) -> int:
+    async def adelete_many(self, keys: Iterable[KeyT], version: int | None = None) -> None:
         for key in keys:
             self._l1.delete(key, version=version)
-        return await super().adelete_many(keys, version=version)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        await self._l2.adelete_many(keys, version=version)
 
     def has_key(self, key: KeyT, version: int | None = None) -> bool:
         if self._l1.has_key(key, version=version):
             return True
-        return super().has_key(key, version=version)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        return self._l2.has_key(key, version=version)
 
     async def ahas_key(self, key: KeyT, version: int | None = None) -> bool:
         if self._l1.has_key(key, version=version):
             return True
-        return await super().ahas_key(key, version=version)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        return await self._l2.ahas_key(key, version=version)
 
     def incr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
         self._l1.delete(key, version=version)
-        return super().incr(key, delta, version=version)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        return self._l2.incr(key, delta, version=version)
 
     async def aincr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
         self._l1.delete(key, version=version)
-        return await super().aincr(key, delta, version=version)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        return await self._l2.aincr(key, delta, version=version)
+
+    def decr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
+        self._l1.delete(key, version=version)
+        return self._l2.decr(key, delta, version=version)
+
+    async def adecr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
+        self._l1.delete(key, version=version)
+        return await self._l2.adecr(key, delta, version=version)
 
     def touch(self, key: KeyT, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
-        result = super().touch(key, timeout, version=version)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        result = self._l2.touch(key, timeout, version=version)
         if result:
-            self._l1.touch(key, self._l1_timeout, version=version)
+            self._l1.touch(key, self._l1_timeout_for_set(timeout), version=version)
         return result
 
     async def atouch(self, key: KeyT, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
-        result = await super().atouch(key, timeout, version=version)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        result = await self._l2.atouch(key, timeout, version=version)
         if result:
-            self._l1.touch(key, self._l1_timeout, version=version)
+            self._l1.touch(key, self._l1_timeout_for_set(timeout), version=version)
         return result
 
+    def clear(self) -> None:
+        self._l1.clear()
+        self._l2.clear()
+
+    async def aclear(self) -> None:
+        self._l1.clear()
+        await self._l2.aclear()
+
+    def close(self, **kwargs: Any) -> None:
+        self._l1.close(**kwargs)
+        self._l2.close(**kwargs)
+
+    async def aclose(self, **kwargs: Any) -> None:
+        await self._l1.aclose(**kwargs)
+        await self._l2.aclose(**kwargs)
+
     # =========================================================================
-    # Bulk / pattern operations — clear L1 entirely
+    # Admin delegation methods (delegate to L2)
     # =========================================================================
+
+    def _delegate(self, method: str, *args: Any, **kwargs: Any) -> Any:
+        """Delegate a method call to L2, raising NotSupportedError if unavailable."""
+        fn = getattr(self._l2, method, None)
+        if fn is None:
+            raise NotSupportedError(method, "TieredCache")
+        try:
+            return fn(*args, **kwargs)
+        except NotSupportedError:
+            raise
+        except AttributeError:
+            raise NotSupportedError(method, "TieredCache") from None
+
+    def make_key(self, key: str, version: int | None = None) -> str:
+        return self._delegate("make_key", key, version=version)
+
+    def reverse_key(self, key: str) -> str:
+        return self._delegate("reverse_key", key)
+
+    def make_pattern(self, pattern: str, version: int | None = None) -> str:
+        return self._delegate("make_pattern", pattern, version=version)
+
+    def keys(self, pattern: str = "*", version: int | None = None) -> list[str]:
+        return self._delegate("keys", pattern, version=version)
+
+    def iter_keys(self, pattern: str, itersize: int | None = None) -> Iterator[str]:
+        return self._delegate("iter_keys", pattern, itersize=itersize)
+
+    def scan(
+        self,
+        cursor: int = 0,
+        pattern: str = "*",
+        count: int | None = None,
+        version: int | None = None,
+        key_type: str | None = None,
+    ) -> tuple[int, list[str]]:
+        return self._delegate(
+            "scan",
+            cursor=cursor,
+            pattern=pattern,
+            count=count,
+            version=version,
+            key_type=key_type,
+        )
+
+    def ttl(self, key: KeyT, version: int | None = None) -> int:
+        return self._delegate("ttl", key, version=version)
+
+    def pttl(self, key: KeyT, version: int | None = None) -> int:
+        return self._delegate("pttl", key, version=version)
+
+    def type(self, key: KeyT, version: int | None = None) -> str:
+        return self._delegate("type", key, version=version)
+
+    def info(self, section: str | None = None) -> dict[str, Any]:
+        return self._delegate("info", section=section)
+
+    def persist(self, key: KeyT, version: int | None = None) -> bool:
+        return self._delegate("persist", key, version=version)
+
+    def expire(self, key: KeyT, timeout: int, version: int | None = None) -> bool:
+        self._l1.delete(key, version=version)
+        return self._delegate("expire", key, timeout, version=version)
 
     def delete_pattern(
         self,
@@ -269,79 +400,9 @@ class TieredCacheMixin:
         itersize: int | None = None,
     ) -> int:
         self._l1.clear()
-        return super().delete_pattern(pattern, version=version, itersize=itersize)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
-
-    async def adelete_pattern(
-        self,
-        pattern: str,
-        version: int | None = None,
-        itersize: int | None = None,
-    ) -> int:
-        self._l1.clear()
-        return await super().adelete_pattern(pattern, version=version, itersize=itersize)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
-
-    def flush_db(self) -> bool:
-        self._l1.clear()
-        return super().flush_db()  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
-
-    async def aflush_db(self) -> bool:
-        self._l1.clear()
-        return await super().aflush_db()  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
-
-    def close(self, **kwargs: Any) -> None:
-        self._l1.close()
-        super().close(**kwargs)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
-
-    async def aclose(self, **kwargs: Any) -> None:
-        self._l1.close()
-        await super().aclose(**kwargs)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
-
-
-# =============================================================================
-# Concrete tiered cache classes
-# =============================================================================
-
-from django_cachex.cache.default import RedisCache, ValkeyCache  # noqa: E402
-
-
-class RedisTieredCache(TieredCacheMixin, RedisCache):  # type: ignore[misc]
-    """Two-tiered cache: L1 in-process memory + L2 Redis."""
-
-
-class ValkeyTieredCache(TieredCacheMixin, ValkeyCache):  # type: ignore[misc]
-    """Two-tiered cache: L1 in-process memory + L2 Valkey."""
-
-
-# Cluster variants
-from django_cachex.cache.cluster import RedisClusterCache, ValkeyClusterCache  # noqa: E402
-
-
-class RedisClusterTieredCache(TieredCacheMixin, RedisClusterCache):  # type: ignore[misc]
-    """Two-tiered cache: L1 in-process memory + L2 Redis Cluster."""
-
-
-class ValkeyClusterTieredCache(TieredCacheMixin, ValkeyClusterCache):  # type: ignore[misc]
-    """Two-tiered cache: L1 in-process memory + L2 Valkey Cluster."""
-
-
-# Sentinel variants
-from django_cachex.cache.sentinel import RedisSentinelCache, ValkeySentinelCache  # noqa: E402
-
-
-class RedisSentinelTieredCache(TieredCacheMixin, RedisSentinelCache):  # type: ignore[misc]
-    """Two-tiered cache: L1 in-process memory + L2 Redis Sentinel."""
-
-
-class ValkeySentinelTieredCache(TieredCacheMixin, ValkeySentinelCache):  # type: ignore[misc]
-    """Two-tiered cache: L1 in-process memory + L2 Valkey Sentinel."""
+        return self._delegate("delete_pattern", pattern, version=version, itersize=itersize)
 
 
 __all__ = [
-    "RedisClusterTieredCache",
-    "RedisSentinelTieredCache",
-    "RedisTieredCache",
-    "TieredCacheMixin",
-    "ValkeyClusterTieredCache",
-    "ValkeySentinelTieredCache",
-    "ValkeyTieredCache",
+    "TieredCache",
 ]
