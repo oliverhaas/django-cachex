@@ -62,7 +62,10 @@ class Pipeline:
         return value
 
     def _decode_single(self, value: bytes | None) -> Any:
-        """Decode a single value, returning None if None."""
+        """Decode a single value, returning None if None.
+
+        Pipelines always serve values as-is (stale serving) — no stampede TTL checks.
+        """
         if value is None:
             return None
         return self._client.decode(value)
@@ -183,14 +186,16 @@ class Pipeline:
         *,
         nx: bool = False,
         xx: bool = False,
+        stampede_prevention: bool | dict | None = None,
     ) -> Self:
         """Queue a SET command."""
         nkey = self._make_key(key, version)
         nvalue = self._encode(value)
+        actual_timeout = self._client._get_timeout_with_buffer(timeout, stampede_prevention)
 
         kwargs: dict[str, Any] = {}
-        if timeout is not None:
-            kwargs["ex"] = timeout
+        if actual_timeout is not None:
+            kwargs["ex"] = actual_timeout
         if nx:
             kwargs["nx"] = True
         if xx:

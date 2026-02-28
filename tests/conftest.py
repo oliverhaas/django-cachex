@@ -20,6 +20,7 @@ from tests.fixtures import (
     sentinel_mode,
     serializers,
     settings,
+    stampede_cache,
 )
 
 # Re-export fixtures so pytest can discover them
@@ -40,6 +41,7 @@ __all__ = [
     "sentinel_mode",
     "serializers",
     "settings",
+    "stampede_cache",
 ]
 
 

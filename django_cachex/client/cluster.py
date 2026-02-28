@@ -130,8 +130,10 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
     # Override methods that need cluster-specific handling
 
     @override
-    def get_many(self, keys: Iterable[KeyT]) -> dict[KeyT, Any]:
+    def get_many(self, keys: Iterable[KeyT], *, stampede_prevention: bool | dict | None = None) -> dict[KeyT, Any]:
         """Retrieve many keys, handling cross-slot keys."""
+        from django_cachex.stampede import should_recompute
+
         keys = list(keys)
         if not keys:
             return {}
@@ -143,35 +145,51 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
             client.mget_nonatomic(keys),
         )
 
-        recovered_data = {}
-        for key, value in zip(keys, results, strict=True):
-            if value is not None:
-                recovered_data[key] = self.decode(value)
+        # Collect non-None results
+        found = {k: v for k, v in zip(keys, results, strict=True) if v is not None}
 
-        return recovered_data
+        # Stampede filtering: pipeline TTL for all found keys
+        config = self._resolve_stampede(stampede_prevention)
+        if config and found:
+            pipe = client.pipeline()
+            found_keys = list(found.keys())
+            for k in found_keys:
+                pipe.ttl(k)
+            ttls = pipe.execute()
+            for k, ttl in zip(found_keys, ttls, strict=False):
+                if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
+                    del found[k]
+
+        return {k: self.decode(v) for k, v in found.items()}
 
     @override
-    def set_many(self, data: Mapping[KeyT, Any], timeout: int | None = None) -> list[KeyT]:
+    def set_many(
+        self,
+        data: Mapping[KeyT, Any],
+        timeout: int | None = None,
+        *,
+        stampede_prevention: bool | dict | None = None,
+    ) -> list[KeyT]:
         """Set multiple values, handling cross-slot keys."""
         if not data:
             return []
 
         client = self.get_client(write=True)
 
-        # Prepare data with encoded values
         prepared_data = {k: self.encode(v) for k, v in data.items()}
+        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
-        if timeout == 0:
+        if actual_timeout == 0:
             # timeout=0 means "delete immediately" (matches base client behavior)
             for slot_keys in self._group_keys_by_slot(prepared_data.keys()).values():
                 client.delete(*slot_keys)
-        elif timeout is None:
+        elif actual_timeout is None:
             # No expiry
             client.mset_nonatomic(prepared_data)
         else:
             # mset_nonatomic handles slot splitting
             client.mset_nonatomic(prepared_data)
-            timeout_ms = int(timeout * 1000)
+            timeout_ms = int(actual_timeout * 1000)
             pipe = client.pipeline()
             for key in prepared_data:
                 pipe.pexpire(key, timeout_ms)
@@ -279,8 +297,15 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
     # =========================================================================
 
     @override
-    async def aget_many(self, keys: Iterable[KeyT]) -> dict[KeyT, Any]:
+    async def aget_many(
+        self,
+        keys: Iterable[KeyT],
+        *,
+        stampede_prevention: bool | dict | None = None,
+    ) -> dict[KeyT, Any]:
         """Retrieve many keys asynchronously, handling cross-slot keys."""
+        from django_cachex.stampede import should_recompute
+
         keys = list(keys)
         if not keys:
             return {}
@@ -293,35 +318,51 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
             await client.mget_nonatomic(keys),
         )
 
-        recovered_data = {}
-        for key, value in zip(keys, results, strict=True):
-            if value is not None:
-                recovered_data[key] = self.decode(value)
+        # Collect non-None results
+        found = {k: v for k, v in zip(keys, results, strict=True) if v is not None}
 
-        return recovered_data
+        # Stampede filtering: pipeline TTL for all found keys
+        config = self._resolve_stampede(stampede_prevention)
+        if config and found:
+            pipe = client.pipeline()
+            found_keys = list(found.keys())
+            for k in found_keys:
+                pipe.ttl(k)
+            ttls = await pipe.execute()
+            for k, ttl in zip(found_keys, ttls, strict=False):
+                if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
+                    del found[k]
+
+        return {k: self.decode(v) for k, v in found.items()}
 
     @override
-    async def aset_many(self, data: Mapping[KeyT, Any], timeout: int | None = None) -> list[KeyT]:
+    async def aset_many(
+        self,
+        data: Mapping[KeyT, Any],
+        timeout: int | None = None,
+        *,
+        stampede_prevention: bool | dict | None = None,
+    ) -> list[KeyT]:
         """Set multiple values asynchronously, handling cross-slot keys."""
         if not data:
             return []
 
         client = self.get_async_client(write=True)
 
-        # Prepare data with encoded values
         prepared_data = {k: self.encode(v) for k, v in data.items()}
+        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
-        if timeout == 0:
+        if actual_timeout == 0:
             # timeout=0 means "delete immediately" (matches base client behavior)
             for slot_keys in self._group_keys_by_slot(prepared_data.keys()).values():
                 await client.delete(*slot_keys)
-        elif timeout is None:
+        elif actual_timeout is None:
             # No expiry
             await client.mset_nonatomic(prepared_data)
         else:
             # mset_nonatomic handles slot splitting
             await client.mset_nonatomic(prepared_data)
-            timeout_ms = int(timeout * 1000)
+            timeout_ms = int(actual_timeout * 1000)
             pipe = client.pipeline()
             for key in prepared_data:
                 pipe.pexpire(key, timeout_ms)

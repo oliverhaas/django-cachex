@@ -399,3 +399,58 @@ def cache(
         serializer_val,
         native_parser_val,
     )
+
+
+def _make_stampede_cache(
+    redis_container: "RedisContainerInfo",
+    request: pytest.FixtureRequest,
+    backend_val: str,
+) -> Iterator[KeyValueCache]:
+    """Create a cache with stampede prevention enabled."""
+    redis_host = redis_container.host
+    redis_port = redis_container.port
+    client_library = redis_container.client_library
+
+    if backend_val == "cluster":
+        cluster_host, cluster_port = request.getfixturevalue("cluster_container")
+        caches = build_cluster_cache_config(
+            cluster_host,
+            cluster_port,
+            client_library=client_library,
+        )
+    else:
+        db = 15  # Use a dedicated db to avoid conflicts
+        caches = build_cache_config(
+            redis_host,
+            redis_port,
+            backend=backend_val,
+            client_library=client_library,
+            db=db,
+        )
+
+    # Enable stampede prevention on the default cache
+    caches["default"]["OPTIONS"]["stampede_prevention"] = True
+
+    with override_settings(CACHES=caches):
+        from django.core.cache import cache as default_cache
+
+        default_cache.flush_db()
+        yield cast("KeyValueCache", default_cache)
+        default_cache.flush_db()
+
+
+@pytest.fixture
+def stampede_cache(
+    client_class: str,
+    redis_container: "RedisContainerInfo",
+    request: pytest.FixtureRequest,
+) -> Iterator[KeyValueCache]:
+    """Django cache fixture with stampede prevention enabled.
+
+    Parametrized by client_class (default, cluster).
+    """
+    yield from _make_stampede_cache(
+        redis_container,
+        request,
+        client_class,
+    )

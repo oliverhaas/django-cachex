@@ -8,6 +8,7 @@ from tests.fixtures.cache import (
     native_parser,
     sentinel_mode,
     serializers,
+    stampede_cache,
 )
 from tests.fixtures.containers import (
     RedisContainerInfo,
@@ -46,4 +47,5 @@ __all__ = [
     "sentinel_mode",
     "serializers",
     "settings",
+    "stampede_cache",
 ]
