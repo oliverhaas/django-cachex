@@ -13,6 +13,7 @@ from django_cachex.cache.default import (
     RedisCache,
     ValkeyCache,
 )
+from django_cachex.cache.postgres import PostgreSQLCache
 from django_cachex.cache.sentinel import (
     KeyValueSentinelCache,
     RedisSentinelCache,
@@ -24,6 +25,7 @@ __all__ = [
     "KeyValueCache",
     "KeyValueClusterCache",
     "KeyValueSentinelCache",
+    "PostgreSQLCache",
     "RedisCache",
     "RedisClusterCache",
     "RedisSentinelCache",

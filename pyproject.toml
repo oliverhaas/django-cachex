@@ -39,6 +39,8 @@ lz4 = ["lz4>=4.4.0"]
 zstd = ["backports-zstd>=1.3.0; python_version < '3.14'"]
 # Serializers
 msgpack = ["msgpack>=1.1.0"]
+# PostgreSQL backend
+postgres = ["psycopg[binary]>=3.1"]
 # Admin
 unfold = ["django-unfold>=0.70.0"]
 
@@ -60,6 +62,7 @@ dev = [
   "msgpack==1.1.2",
   "mypy==1.19.1",
   "pre-commit==4.5.1",
+  "psycopg==3.3.3",
   "pytest-asyncio==1.3.0",
   "pytest-cov==7.0.0",
   "pytest-django==4.12.0",
@@ -116,6 +119,17 @@ allow-star-arg-any = true      # Allow Any for *args and **kwargs
 suppress-none-returning = true # Don't require -> None on functions
 
 [tool.ruff.lint.per-file-ignores]
+"django_cachex/client/postgres.py" = [
+  "ARG001", # _not_supported factory has unused args by design
+  "S608",   # Table names from trusted Django CACHES config, not user input
+]
+"django_cachex/postgres/models.py" = [
+  "DJ008",  # Cache table models are internal, __str__ not useful
+  "RUF012", # Meta.indexes is standard Django pattern
+]
+"django_cachex/postgres/migrations/**" = [
+  "RUF012", # Mutable class defaults are standard Django migration pattern
+]
 "tests/**" = [
   "ANN",    # Type annotations not required in tests
   "ARG",    # Unused arguments common in fixtures
