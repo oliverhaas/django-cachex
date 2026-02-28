@@ -257,39 +257,55 @@ class TestStampedePipeline:
 
 
 class TestStampedeOverride:
-    """Test per-method stampede=True/False override."""
+    """Test per-method stampede_prevention=True/False override."""
 
-    def test_stampede_false_skips_ttl_check(self, stampede_cache: KeyValueCache):
-        """stampede=False on get() should return value even if logically expired."""
+    def test_false_skips_ttl_check(self, stampede_cache: KeyValueCache):
+        """stampede_prevention=False on get() should return value even if logically expired."""
         stampede_cache.set("sp_ovr_get", "val", timeout=300)
         stampede_cache.expire("sp_ovr_get", 50)  # logically expired
 
         # Default behavior: returns None (logically expired)
         assert stampede_cache.get("sp_ovr_get") is None
         # Override: skip stampede check → returns value
-        assert stampede_cache.get("sp_ovr_get", stampede=False) == "val"
+        assert stampede_cache.get("sp_ovr_get", stampede_prevention=False) == "val"
 
-    def test_stampede_false_skips_buffer_on_set(self, stampede_cache: KeyValueCache):
-        """stampede=False on set() should not add buffer to TTL."""
-        stampede_cache.set("sp_ovr_set", "val", timeout=300, stampede=False)
+    def test_false_skips_buffer_on_set(self, stampede_cache: KeyValueCache):
+        """stampede_prevention=False on set() should not add buffer to TTL."""
+        stampede_cache.set("sp_ovr_set", "val", timeout=300, stampede_prevention=False)
         ttl = stampede_cache.ttl("sp_ovr_set")
         assert ttl is not None
         assert ttl <= 300  # No buffer added
 
-    def test_stampede_false_on_get_many(self, stampede_cache: KeyValueCache):
-        """stampede=False on get_many() should return logically expired values."""
+    def test_false_on_get_many(self, stampede_cache: KeyValueCache):
+        """stampede_prevention=False on get_many() should return logically expired values."""
         stampede_cache.set("sp_ovr_gm", "val", timeout=300)
         stampede_cache.expire("sp_ovr_gm", 50)  # logically expired
 
         # Default behavior: filtered out (logically expired)
         assert len(stampede_cache.get_many(["sp_ovr_gm"])) == 0
-        # With stampede=False, value is returned despite logical expiry
-        result = stampede_cache.get_many(["sp_ovr_gm"], stampede=False)
+        # With stampede_prevention=False, value is returned despite logical expiry
+        result = stampede_cache.get_many(["sp_ovr_gm"], stampede_prevention=False)
         assert result.get("sp_ovr_gm") == "val"
 
-    def test_stampede_true_on_non_stampede_cache(self, cache: KeyValueCache):
-        """stampede=True on a cache without global stampede should still add buffer."""
-        cache.set("sp_ovr_force", "val", timeout=300, stampede=True)
+    def test_true_on_non_stampede_cache(self, cache: KeyValueCache):
+        """stampede_prevention=True on a cache without global stampede should still add buffer."""
+        cache.set("sp_ovr_force", "val", timeout=300, stampede_prevention=True)
         ttl = cache.ttl("sp_ovr_force")
         assert ttl is not None
         assert ttl > 300  # Buffer was added
+
+    def test_dict_override_buffer(self, cache: KeyValueCache):
+        """stampede_prevention=dict should override specific config values."""
+        # Non-stampede cache with per-call dict override: buffer=120
+        cache.set("sp_ovr_dict", "val", timeout=300, stampede_prevention={"buffer": 120})
+        ttl = cache.ttl("sp_ovr_dict")
+        assert ttl is not None
+        assert 300 < ttl <= 420  # 300 + 120 buffer
+
+    def test_dict_override_merges_with_instance(self, stampede_cache: KeyValueCache):
+        """Dict override merges with instance config (buffer=60 default)."""
+        # Instance has buffer=60, override only changes delta — buffer stays 60
+        stampede_cache.set("sp_ovr_merge", "val", timeout=300, stampede_prevention={"delta": 5.0})
+        ttl = stampede_cache.ttl("sp_ovr_merge")
+        assert ttl is not None
+        assert 300 < ttl <= 360  # buffer=60 inherited from instance config

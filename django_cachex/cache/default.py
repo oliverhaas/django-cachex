@@ -134,11 +134,11 @@ class KeyValueCache(BaseCache):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> bool:
         """Set a value only if the key doesn't exist."""
         key = self.make_and_validate_key(key, version=version)
-        return self._cache.add(key, value, self.get_backend_timeout(timeout), stampede=stampede)
+        return self._cache.add(key, value, self.get_backend_timeout(timeout), stampede_prevention=stampede_prevention)
 
     @omit_exception(return_value=False)
     @override
@@ -149,17 +149,22 @@ class KeyValueCache(BaseCache):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> bool:
         """Set a value only if the key doesn't exist, asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self._cache.aadd(key, value, self.get_backend_timeout(timeout), stampede=stampede)
+        return await self._cache.aadd(
+            key,
+            value,
+            self.get_backend_timeout(timeout),
+            stampede_prevention=stampede_prevention,
+        )
 
     @omit_exception(return_value=CONNECTION_INTERRUPTED)
-    def _get(self, key: KeyT, version: int | None = None, *, stampede: bool | None = None) -> Any:
+    def _get(self, key: KeyT, version: int | None = None, *, stampede_prevention: bool | dict | None = None) -> Any:
         """Internal get with exception handling."""
         key = self.make_and_validate_key(key, version=version)
-        return self._cache.get(key, stampede=stampede)
+        return self._cache.get(key, stampede_prevention=stampede_prevention)
 
     @override
     def get(
@@ -168,10 +173,10 @@ class KeyValueCache(BaseCache):
         default: Any = None,
         version: int | None = None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> Any:
         """Fetch a value from the cache."""
-        value = self._get(key, version=version, stampede=stampede)
+        value = self._get(key, version=version, stampede_prevention=stampede_prevention)
         if value is CONNECTION_INTERRUPTED:
             return default
         if value is None:
@@ -179,10 +184,16 @@ class KeyValueCache(BaseCache):
         return value
 
     @omit_exception(return_value=CONNECTION_INTERRUPTED)
-    async def _aget(self, key: KeyT, version: int | None = None, *, stampede: bool | None = None) -> Any:
+    async def _aget(
+        self,
+        key: KeyT,
+        version: int | None = None,
+        *,
+        stampede_prevention: bool | dict | None = None,
+    ) -> Any:
         """Internal async get with exception handling."""
         key = self.make_and_validate_key(key, version=version)
-        return await self._cache.aget(key, stampede=stampede)
+        return await self._cache.aget(key, stampede_prevention=stampede_prevention)
 
     @override
     async def aget(
@@ -191,10 +202,10 @@ class KeyValueCache(BaseCache):
         default: Any = None,
         version: int | None = None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> Any:
         """Fetch a value from the cache asynchronously."""
-        value = await self._aget(key, version=version, stampede=stampede)
+        value = await self._aget(key, version=version, stampede_prevention=stampede_prevention)
         if value is CONNECTION_INTERRUPTED:
             return default
         if value is None:
@@ -210,7 +221,7 @@ class KeyValueCache(BaseCache):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
         **kwargs: Any,
     ) -> Any:
         """Set a value in the cache asynchronously.
@@ -230,9 +241,9 @@ class KeyValueCache(BaseCache):
                 nx=nx,
                 xx=xx,
                 get=get,
-                stampede=stampede,
+                stampede_prevention=stampede_prevention,
             )
-        await self._cache.aset(key, value, self.get_backend_timeout(timeout), stampede=stampede)
+        await self._cache.aset(key, value, self.get_backend_timeout(timeout), stampede_prevention=stampede_prevention)
         return None
 
     @omit_exception
@@ -244,7 +255,7 @@ class KeyValueCache(BaseCache):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
         **kwargs: Any,
     ) -> Any:
         """Set a value in the cache.
@@ -265,10 +276,10 @@ class KeyValueCache(BaseCache):
                 nx=nx,
                 xx=xx,
                 get=get,
-                stampede=stampede,
+                stampede_prevention=stampede_prevention,
             )
         # Use standard Django method - returns None
-        self._cache.set(key, value, self.get_backend_timeout(timeout), stampede=stampede)
+        self._cache.set(key, value, self.get_backend_timeout(timeout), stampede_prevention=stampede_prevention)
         return None
 
     @omit_exception(return_value=False)
@@ -305,11 +316,11 @@ class KeyValueCache(BaseCache):
         keys: list[KeyT],
         version: int | None = None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> dict[KeyT, Any]:
         """Internal get_many with exception handling."""
         key_map = {self.make_and_validate_key(key, version=version): key for key in keys}
-        ret = self._cache.get_many(key_map.keys(), stampede=stampede)
+        ret = self._cache.get_many(key_map.keys(), stampede_prevention=stampede_prevention)
         return {key_map[k]: v for k, v in ret.items()}  # type: ignore[index]
 
     @override
@@ -318,10 +329,10 @@ class KeyValueCache(BaseCache):
         keys: list[KeyT],
         version: int | None = None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> dict[KeyT, Any]:
         """Retrieve many keys."""
-        return self._get_many(keys, version=version, stampede=stampede)
+        return self._get_many(keys, version=version, stampede_prevention=stampede_prevention)
 
     @omit_exception(return_value={})
     async def _aget_many(
@@ -329,11 +340,11 @@ class KeyValueCache(BaseCache):
         keys: list[KeyT],
         version: int | None = None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> dict[KeyT, Any]:
         """Internal async get_many with exception handling."""
         key_map = {self.make_and_validate_key(key, version=version): key for key in keys}
-        ret = await self._cache.aget_many(key_map.keys(), stampede=stampede)
+        ret = await self._cache.aget_many(key_map.keys(), stampede_prevention=stampede_prevention)
         return {key_map[k]: v for k, v in ret.items()}  # type: ignore[index]
 
     @override
@@ -342,10 +353,10 @@ class KeyValueCache(BaseCache):
         keys: list[KeyT],
         version: int | None = None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> dict[KeyT, Any]:
         """Retrieve many keys asynchronously."""
-        return await self._aget_many(keys, version=version, stampede=stampede)
+        return await self._aget_many(keys, version=version, stampede_prevention=stampede_prevention)
 
     @omit_exception(return_value=False)
     @override
@@ -389,17 +400,17 @@ class KeyValueCache(BaseCache):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> Any:
         """Fetch a key from the cache, setting it to default if missing."""
-        val = self.get(key, self._missing_key, version=version, stampede=stampede)
+        val = self.get(key, self._missing_key, version=version, stampede_prevention=stampede_prevention)
         if val is self._missing_key:
             if callable(default):
                 default = default()
-            self.add(key, default, timeout=timeout, version=version, stampede=stampede)
+            self.add(key, default, timeout=timeout, version=version, stampede_prevention=stampede_prevention)
             # Fetch the value again to avoid a race condition if another caller
             # added a value between the first get() and the add() above.
-            return self.get(key, default, version=version, stampede=stampede)
+            return self.get(key, default, version=version, stampede_prevention=stampede_prevention)
         return val
 
     @override
@@ -410,17 +421,17 @@ class KeyValueCache(BaseCache):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> Any:
         """Fetch a key from the cache asynchronously, setting it to default if missing."""
-        val = await self.aget(key, self._missing_key, version=version, stampede=stampede)
+        val = await self.aget(key, self._missing_key, version=version, stampede_prevention=stampede_prevention)
         if val is self._missing_key:
             if callable(default):
                 default = default()
-            await self.aadd(key, default, timeout=timeout, version=version, stampede=stampede)
+            await self.aadd(key, default, timeout=timeout, version=version, stampede_prevention=stampede_prevention)
             # Fetch the value again to avoid a race condition if another caller
             # added a value between the first aget() and the aadd() above.
-            return await self.aget(key, default, version=version, stampede=stampede)
+            return await self.aget(key, default, version=version, stampede_prevention=stampede_prevention)
         return val
 
     @omit_exception(return_value=[])
@@ -431,13 +442,13 @@ class KeyValueCache(BaseCache):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> list:
         """Set multiple values."""
         if not data:
             return []
         safe_data = {self.make_and_validate_key(key, version=version): value for key, value in data.items()}
-        self._cache.set_many(safe_data, self.get_backend_timeout(timeout), stampede=stampede)  # type: ignore[arg-type]
+        self._cache.set_many(safe_data, self.get_backend_timeout(timeout), stampede_prevention=stampede_prevention)  # type: ignore[arg-type]
         return []
 
     @omit_exception(return_value=[])
@@ -448,13 +459,17 @@ class KeyValueCache(BaseCache):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> list:
         """Set multiple values asynchronously."""
         if not data:
             return []
         safe_data = {self.make_and_validate_key(key, version=version): value for key, value in data.items()}
-        await self._cache.aset_many(safe_data, self.get_backend_timeout(timeout), stampede=stampede)  # type: ignore[arg-type]
+        await self._cache.aset_many(
+            safe_data,  # type: ignore[arg-type]
+            self.get_backend_timeout(timeout),
+            stampede_prevention=stampede_prevention,
+        )
         return []
 
     @omit_exception(return_value=0)

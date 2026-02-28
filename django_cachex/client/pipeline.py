@@ -186,12 +186,12 @@ class Pipeline:
         *,
         nx: bool = False,
         xx: bool = False,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> Self:
         """Queue a SET command."""
         nkey = self._make_key(key, version)
         nvalue = self._encode(value)
-        actual_timeout = self._client._get_timeout_with_buffer(timeout, stampede)
+        actual_timeout = self._client._get_timeout_with_buffer(timeout, stampede_prevention)
 
         kwargs: dict[str, Any] = {}
         if actual_timeout is not None:

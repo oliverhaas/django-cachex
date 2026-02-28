@@ -130,7 +130,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
     # Override methods that need cluster-specific handling
 
     @override
-    def get_many(self, keys: Iterable[KeyT], *, stampede: bool | None = None) -> dict[KeyT, Any]:
+    def get_many(self, keys: Iterable[KeyT], *, stampede_prevention: bool | dict | None = None) -> dict[KeyT, Any]:
         """Retrieve many keys, handling cross-slot keys."""
         from django_cachex.stampede import should_recompute
 
@@ -149,7 +149,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         found = {k: v for k, v in zip(keys, results, strict=True) if v is not None}
 
         # Stampede filtering: pipeline TTL for all found keys
-        config = self._resolve_stampede(stampede)
+        config = self._resolve_stampede(stampede_prevention)
         if config and found:
             pipe = client.pipeline()
             found_keys = list(found.keys())
@@ -168,7 +168,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         data: Mapping[KeyT, Any],
         timeout: int | None = None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> list[KeyT]:
         """Set multiple values, handling cross-slot keys."""
         if not data:
@@ -177,7 +177,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         client = self.get_client(write=True)
 
         prepared_data = {k: self.encode(v) for k, v in data.items()}
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede)
+        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             # timeout=0 means "delete immediately" (matches base client behavior)
@@ -297,7 +297,12 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
     # =========================================================================
 
     @override
-    async def aget_many(self, keys: Iterable[KeyT], *, stampede: bool | None = None) -> dict[KeyT, Any]:
+    async def aget_many(
+        self,
+        keys: Iterable[KeyT],
+        *,
+        stampede_prevention: bool | dict | None = None,
+    ) -> dict[KeyT, Any]:
         """Retrieve many keys asynchronously, handling cross-slot keys."""
         from django_cachex.stampede import should_recompute
 
@@ -317,7 +322,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         found = {k: v for k, v in zip(keys, results, strict=True) if v is not None}
 
         # Stampede filtering: pipeline TTL for all found keys
-        config = self._resolve_stampede(stampede)
+        config = self._resolve_stampede(stampede_prevention)
         if config and found:
             pipe = client.pipeline()
             found_keys = list(found.keys())
@@ -336,7 +341,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         data: Mapping[KeyT, Any],
         timeout: int | None = None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> list[KeyT]:
         """Set multiple values asynchronously, handling cross-slot keys."""
         if not data:
@@ -345,7 +350,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         client = self.get_async_client(write=True)
 
         prepared_data = {k: self.encode(v) for k, v in data.items()}
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede)
+        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             # timeout=0 means "delete immediately" (matches base client behavior)

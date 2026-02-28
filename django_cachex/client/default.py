@@ -218,26 +218,40 @@ class KeyValueCacheClient:
     # Stampede Prevention Helpers
     # =========================================================================
 
-    def _resolve_stampede(self, stampede: bool | None = None) -> StampedeConfig | None:
-        """Resolve effective stampede config from per-call override and instance default.
+    def _resolve_stampede(
+        self,
+        stampede_prevention: bool | dict | None = None,
+    ) -> StampedeConfig | None:
+        """Resolve effective stampede config by merging defaults, instance config, and per-call override.
+
+        Merge order: StampedeConfig defaults → instance _stampede_config → per-call dict override.
 
         Args:
-            stampede: Per-call override. None = use instance default, True = force on,
-                      False = force off.
+            stampede_prevention: Per-call override. None = use instance default,
+                True = force on (using instance or default config), False = force off,
+                dict = force on with specific overrides (e.g. {"delta": 2.0}).
         """
-        if stampede is None:
+        if stampede_prevention is None:
             return getattr(self, "_stampede_config", None)
-        if stampede:
-            return getattr(self, "_stampede_config", None) or StampedeConfig()
-        return None
+        if stampede_prevention is False:
+            return None
+        # True or dict: start from instance config (or defaults)
+        base = getattr(self, "_stampede_config", None) or StampedeConfig()
+        if isinstance(stampede_prevention, dict):
+            return StampedeConfig(
+                buffer=stampede_prevention.get("buffer", base.buffer),
+                beta=stampede_prevention.get("beta", base.beta),
+                delta=stampede_prevention.get("delta", base.delta),
+            )
+        return base
 
     def _get_timeout_with_buffer(
         self,
         timeout: int | None,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> int | None:
         """Add stampede buffer to timeout. Returns timeout unchanged if stampede is disabled."""
-        config = self._resolve_stampede(stampede)
+        config = self._resolve_stampede(stampede_prevention)
         if not config or not timeout or timeout <= 0:
             return timeout
         return timeout + config.buffer
@@ -320,12 +334,12 @@ class KeyValueCacheClient:
         value: Any,
         timeout: int | None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> bool:
         """Set a value only if the key doesn't exist."""
         client = self.get_client(key, write=True)
         nvalue = self.encode(value)
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede)
+        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             if ret := bool(client.set(key, nvalue, nx=True)):
@@ -339,12 +353,12 @@ class KeyValueCacheClient:
         value: Any,
         timeout: int | None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> bool:
         """Set a value only if the key doesn't exist, asynchronously."""
         client = self.get_async_client(key, write=True)
         nvalue = self.encode(value)
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede)
+        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             if ret := bool(await client.set(key, nvalue, nx=True)):
@@ -352,48 +366,62 @@ class KeyValueCacheClient:
             return ret
         return bool(await client.set(key, nvalue, nx=True, ex=actual_timeout))
 
-    def get(self, key: KeyT, *, stampede: bool | None = None) -> Any:
+    def get(self, key: KeyT, *, stampede_prevention: bool | dict | None = None) -> Any:
         """Fetch a value from the cache."""
         client = self.get_client(key, write=False)
         val = client.get(key)
         if val is None:
             return None
-        config = self._resolve_stampede(stampede)
+        config = self._resolve_stampede(stampede_prevention)
         if config and isinstance(val, bytes):
             ttl = client.ttl(key)
             if ttl > 0 and should_recompute(ttl, config):
                 return None
         return self.decode(val)
 
-    async def aget(self, key: KeyT, *, stampede: bool | None = None) -> Any:
+    async def aget(self, key: KeyT, *, stampede_prevention: bool | dict | None = None) -> Any:
         """Fetch a value from the cache asynchronously."""
         client = self.get_async_client(key, write=False)
         val = await client.get(key)
         if val is None:
             return None
-        config = self._resolve_stampede(stampede)
+        config = self._resolve_stampede(stampede_prevention)
         if config and isinstance(val, bytes):
             ttl = await client.ttl(key)
             if ttl > 0 and should_recompute(ttl, config):
                 return None
         return self.decode(val)
 
-    def set(self, key: KeyT, value: Any, timeout: int | None, *, stampede: bool | None = None) -> None:
+    def set(
+        self,
+        key: KeyT,
+        value: Any,
+        timeout: int | None,
+        *,
+        stampede_prevention: bool | dict | None = None,
+    ) -> None:
         """Set a value in the cache (standard Django interface)."""
         client = self.get_client(key, write=True)
         nvalue = self.encode(value)
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede)
+        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             client.delete(key)
         else:
             client.set(key, nvalue, ex=actual_timeout)
 
-    async def aset(self, key: KeyT, value: Any, timeout: int | None, *, stampede: bool | None = None) -> None:
+    async def aset(
+        self,
+        key: KeyT,
+        value: Any,
+        timeout: int | None,
+        *,
+        stampede_prevention: bool | dict | None = None,
+    ) -> None:
         """Set a value in the cache asynchronously."""
         client = self.get_async_client(key, write=True)
         nvalue = self.encode(value)
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede)
+        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             await client.delete(key)
@@ -409,7 +437,7 @@ class KeyValueCacheClient:
         nx: bool = False,
         xx: bool = False,
         get: bool = False,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> bool | Any:
         """Set a value with nx/xx/get flags.
 
@@ -418,7 +446,7 @@ class KeyValueCacheClient:
         """
         client = self.get_client(key, write=True)
         nvalue = self.encode(value)
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede)
+        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             if get:
@@ -440,7 +468,7 @@ class KeyValueCacheClient:
         nx: bool = False,
         xx: bool = False,
         get: bool = False,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> bool | Any:
         """Set a value with nx/xx/get flags asynchronously.
 
@@ -449,7 +477,7 @@ class KeyValueCacheClient:
         """
         client = self.get_async_client(key, write=True)
         nvalue = self.encode(value)
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede)
+        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             if get:
@@ -490,7 +518,7 @@ class KeyValueCacheClient:
 
         return bool(await client.delete(key))
 
-    def get_many(self, keys: Iterable[KeyT], *, stampede: bool | None = None) -> dict[KeyT, Any]:
+    def get_many(self, keys: Iterable[KeyT], *, stampede_prevention: bool | dict | None = None) -> dict[KeyT, Any]:
         """Retrieve many keys."""
         keys = list(keys)
         if not keys:
@@ -503,7 +531,7 @@ class KeyValueCacheClient:
         found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
         # Stampede filtering: pipeline TTL for all found keys
-        config = self._resolve_stampede(stampede)
+        config = self._resolve_stampede(stampede_prevention)
         if config and found:
             pipe = client.pipeline()
             found_keys = list(found.keys())
@@ -516,7 +544,12 @@ class KeyValueCacheClient:
 
         return {k: self.decode(v) for k, v in found.items()}
 
-    async def aget_many(self, keys: Iterable[KeyT], *, stampede: bool | None = None) -> dict[KeyT, Any]:
+    async def aget_many(
+        self,
+        keys: Iterable[KeyT],
+        *,
+        stampede_prevention: bool | dict | None = None,
+    ) -> dict[KeyT, Any]:
         """Retrieve many keys asynchronously."""
         keys = list(keys)
         if not keys:
@@ -529,7 +562,7 @@ class KeyValueCacheClient:
         found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
         # Stampede filtering: pipeline TTL for all found keys
-        config = self._resolve_stampede(stampede)
+        config = self._resolve_stampede(stampede_prevention)
         if config and found:
             pipe = client.pipeline()
             found_keys = list(found.keys())
@@ -587,7 +620,7 @@ class KeyValueCacheClient:
         data: Mapping[KeyT, Any],
         timeout: int | None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> list:
         """Set multiple values. timeout=0 deletes keys, None sets without expiry."""
         if not data:
@@ -595,7 +628,7 @@ class KeyValueCacheClient:
 
         client = self.get_client(write=True)
         prepared = {k: self.encode(v) for k, v in data.items()}
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede)
+        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             client.delete(*prepared.keys())
@@ -614,7 +647,7 @@ class KeyValueCacheClient:
         data: Mapping[KeyT, Any],
         timeout: int | None,
         *,
-        stampede: bool | None = None,
+        stampede_prevention: bool | dict | None = None,
     ) -> list:
         """Set multiple values asynchronously."""
         if not data:
@@ -622,7 +655,7 @@ class KeyValueCacheClient:
 
         client = self.get_async_client(write=True)
         prepared = {k: self.encode(v) for k, v in data.items()}
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede)
+        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             await client.delete(*prepared.keys())
