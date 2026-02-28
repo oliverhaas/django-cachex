@@ -504,6 +504,34 @@ class TestTieredCacheConfig:
         """L1 TTL cap comes from TieredCache's L1_TIMEOUT option."""
         assert tiered_cache._l1_cap == L1_TIMEOUT
 
+    def test_l1_timeout_fallback_to_l1_default(self, redis_container: RedisContainerInfo):
+        """When L1_TIMEOUT is omitted, _l1_cap falls back to L1's default_timeout."""
+        options = _get_client_library_options(redis_container.client_library)
+        location = f"redis://{redis_container.host}:{redis_container.port}?db=1"
+        backend_class = BACKENDS[("default", redis_container.client_library)]
+
+        config = {
+            "l1": {
+                "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                "TIMEOUT": 42,
+            },
+            "l2": {
+                "BACKEND": backend_class,
+                "LOCATION": location,
+                "OPTIONS": options,
+            },
+            "default": {
+                "BACKEND": "django_cachex.cache.TieredCache",
+                "OPTIONS": {
+                    "TIERS": ["l1", "l2"],
+                    # No L1_TIMEOUT — should fall back to L1's TIMEOUT (42)
+                },
+            },
+        }
+        with override_settings(CACHES=config):
+            cache = caches["default"]
+            assert cache._l1_cap == 42
+
     def test_cachex_support_level(self, tiered_cache: BaseCache):
         """TieredCache has 'wrapped' support level for admin."""
         assert tiered_cache._cachex_support == "wrapped"

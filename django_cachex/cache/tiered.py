@@ -155,12 +155,7 @@ class TieredCache(BaseCache):
         **kwargs: Any,
     ) -> bool:
         result = self._l2.set(key, value, timeout, version=version, **kwargs)  # type: ignore[func-returns-value]
-        nx = kwargs.get("nx", False)
-        xx = kwargs.get("xx", False)
-        if nx or xx:
-            if result:
-                self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
-        else:
+        if result or not (kwargs.get("nx") or kwargs.get("xx")):
             self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
         return result  # ty: ignore[invalid-return-type]
 
@@ -173,12 +168,7 @@ class TieredCache(BaseCache):
         **kwargs: Any,
     ) -> bool:
         result = await self._l2.aset(key, value, timeout, version=version, **kwargs)  # type: ignore[func-returns-value]
-        nx = kwargs.get("nx", False)
-        xx = kwargs.get("xx", False)
-        if nx or xx:
-            if result:
-                self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
-        else:
+        if result or not (kwargs.get("nx") or kwargs.get("xx")):
             self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
         return result  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
 
@@ -273,11 +263,13 @@ class TieredCache(BaseCache):
         return await self._l2.aset_many(data, timeout, version=version)
 
     def delete_many(self, keys: Iterable[KeyT], version: int | None = None) -> None:
+        keys = list(keys)
         for key in keys:
             self._l1.delete(key, version=version)
         self._l2.delete_many(keys, version=version)
 
     async def adelete_many(self, keys: Iterable[KeyT], version: int | None = None) -> None:
+        keys = list(keys)
         for key in keys:
             self._l1.delete(key, version=version)
         await self._l2.adelete_many(keys, version=version)
@@ -347,9 +339,7 @@ class TieredCache(BaseCache):
             raise NotSupportedError(method, "TieredCache")
         try:
             return fn(*args, **kwargs)
-        except NotSupportedError:
-            raise
-        except AttributeError:
+        except (AttributeError, NotSupportedError):
             raise NotSupportedError(method, "TieredCache") from None
 
     def make_key(self, key: str, version: int | None = None) -> str:
