@@ -84,12 +84,15 @@ def sync_pair(redis_container: RedisContainerInfo) -> Iterator[tuple[SyncCache, 
     """Two SyncCache instances sharing one stream (simulates two pods).
 
     Uses separate cache aliases with the same STREAM_KEY but different
-    module-level storage keys to simulate independent pods.
+    _STORAGE_KEY values so each pod has its own local dict (simulating
+    separate processes sharing one Redis Stream).
     """
     options = _get_client_library_options(redis_container.client_library)
     location = f"redis://{redis_container.host}:{redis_container.port}?db=13"
     backend_class = BACKENDS[("default", redis_container.client_library)]
     stream_key = f"test:sync-pair:{uuid.uuid4().hex[:8]}"
+    storage_key_1 = f"{stream_key}:pod1"
+    storage_key_2 = f"{stream_key}:pod2"
 
     config = {
         "transport": {
@@ -102,6 +105,7 @@ def sync_pair(redis_container: RedisContainerInfo) -> Iterator[tuple[SyncCache, 
             "OPTIONS": {
                 "TRANSPORT": "transport",
                 "STREAM_KEY": stream_key,
+                "_STORAGE_KEY": storage_key_1,
                 "MAX_ENTRIES": 1000,
                 "MAXLEN": 10000,
                 "BLOCK_TIMEOUT": 100,
@@ -112,6 +116,7 @@ def sync_pair(redis_container: RedisContainerInfo) -> Iterator[tuple[SyncCache, 
             "OPTIONS": {
                 "TRANSPORT": "transport",
                 "STREAM_KEY": stream_key,
+                "_STORAGE_KEY": storage_key_2,
                 "MAX_ENTRIES": 1000,
                 "MAXLEN": 10000,
                 "BLOCK_TIMEOUT": 100,
@@ -123,10 +128,13 @@ def sync_pair(redis_container: RedisContainerInfo) -> Iterator[tuple[SyncCache, 
         pod1 = caches["pod1"]
         pod2 = caches["pod2"]
         pod1.clear()
+        pod1._flush_publishes()
+        pod2._drain()
         yield pod1, pod2
         pod1.shutdown()
         pod2.shutdown()
-        _cleanup_globals(stream_key)
+        _cleanup_globals(storage_key_1)
+        _cleanup_globals(storage_key_2)
 
 
 # =============================================================================
@@ -329,16 +337,19 @@ class TestSyncCrossInstance:
     def test_set_propagates(self, sync_pair: tuple[SyncCache, SyncCache]):
         pod1, pod2 = sync_pair
         pod1.set("cross_key", "hello")
+        pod1._flush_publishes()
         pod2._drain()
         assert pod2.get("cross_key") == "hello"
 
     def test_delete_propagates(self, sync_pair: tuple[SyncCache, SyncCache]):
         pod1, pod2 = sync_pair
         pod1.set("del_cross", "val")
+        pod1._flush_publishes()
         pod2._drain()
         assert pod2.get("del_cross") == "val"
 
         pod1.delete("del_cross")
+        pod1._flush_publishes()
         pod2._drain()
         assert pod2.get("del_cross") is None
 
@@ -346,10 +357,12 @@ class TestSyncCrossInstance:
         pod1, pod2 = sync_pair
         pod1.set("cl1", "a")
         pod1.set("cl2", "b")
+        pod1._flush_publishes()
         pod2._drain()
         assert pod2.get("cl1") == "a"
 
         pod1.clear()
+        pod1._flush_publishes()
         pod2._drain()
         assert pod2.get("cl1") is None
         assert pod2.get("cl2") is None
@@ -357,10 +370,12 @@ class TestSyncCrossInstance:
     def test_delete_many_propagates(self, sync_pair: tuple[SyncCache, SyncCache]):
         pod1, pod2 = sync_pair
         pod1.set_many({"dm1": 1, "dm2": 2, "dm3": 3})
+        pod1._flush_publishes()
         pod2._drain()
         assert pod2.get("dm1") == 1
 
         pod1.delete_many(["dm1", "dm2"])
+        pod1._flush_publishes()
         pod2._drain()
         assert pod2.get("dm1") is None
         assert pod2.get("dm2") is None
@@ -369,9 +384,11 @@ class TestSyncCrossInstance:
     def test_touch_propagates(self, sync_pair: tuple[SyncCache, SyncCache]):
         pod1, pod2 = sync_pair
         pod1.set("touch_cross", "val", timeout=10)
+        pod1._flush_publishes()
         pod2._drain()
 
         pod1.touch("touch_cross", timeout=120)
+        pod1._flush_publishes()
         pod2._drain()
         ttl = pod2.ttl("touch_cross")
         assert ttl is not None
@@ -392,6 +409,7 @@ class TestSyncCrossInstance:
         pod1.set("p_int", 42)
         pod1.set("p_list", [1, 2, 3])
         pod1.set("p_dict", {"a": 1})
+        pod1._flush_publishes()
         pod2._drain()
         assert pod2.get("p_str") == "hello"
         assert pod2.get("p_int") == 42
@@ -401,118 +419,14 @@ class TestSyncCrossInstance:
     def test_bidirectional_sync(self, sync_pair: tuple[SyncCache, SyncCache]):
         pod1, pod2 = sync_pair
         pod1.set("from1", "a")
+        pod1._flush_publishes()
         pod2._drain()
         assert pod2.get("from1") == "a"
 
         pod2.set("from2", "b")
+        pod2._flush_publishes()
         pod1._drain()
         assert pod1.get("from2") == "b"
-
-
-# =============================================================================
-# Stream replay tests
-# =============================================================================
-
-
-class TestSyncReplay:
-    def test_new_instance_sees_previous_writes(
-        self,
-        redis_container: RedisContainerInfo,
-    ):
-        """A new SyncCache instance replays the stream and sees prior data."""
-        options = _get_client_library_options(redis_container.client_library)
-        location = f"redis://{redis_container.host}:{redis_container.port}?db=13"
-        backend_class = BACKENDS[("default", redis_container.client_library)]
-        stream_key = f"test:replay:{uuid.uuid4().hex[:8]}"
-
-        base_config = {
-            "transport": {
-                "BACKEND": backend_class,
-                "LOCATION": location,
-                "OPTIONS": options,
-            },
-        }
-
-        sync_opts = {
-            "TRANSPORT": "transport",
-            "STREAM_KEY": stream_key,
-            "MAX_ENTRIES": 1000,
-            "MAXLEN": 10000,
-            "BLOCK_TIMEOUT": 100,
-        }
-
-        # Phase 1: create cache, write data
-        config1 = {
-            **base_config,
-            "default": {"BACKEND": "django_cachex.cache.SyncCache", "OPTIONS": sync_opts.copy()},
-        }
-        with override_settings(CACHES=config1):
-            cache1 = caches["default"]
-            cache1.set("replay_key", "replay_val", timeout=300)
-            cache1.shutdown()
-        _cleanup_globals(stream_key)
-
-        # Phase 2: create new cache instance, should see data from replay
-        config2 = {
-            **base_config,
-            "default": {"BACKEND": "django_cachex.cache.SyncCache", "OPTIONS": sync_opts.copy()},
-        }
-        with override_settings(CACHES=config2):
-            cache2 = caches["default"]
-            assert cache2.get("replay_key") == "replay_val"
-            cache2.shutdown()
-        _cleanup_globals(stream_key)
-
-    def test_replay_skips_expired_entries(
-        self,
-        redis_container: RedisContainerInfo,
-    ):
-        """Entries that expired before replay should not appear."""
-        options = _get_client_library_options(redis_container.client_library)
-        location = f"redis://{redis_container.host}:{redis_container.port}?db=13"
-        backend_class = BACKENDS[("default", redis_container.client_library)]
-        stream_key = f"test:replay-exp:{uuid.uuid4().hex[:8]}"
-
-        base_config = {
-            "transport": {
-                "BACKEND": backend_class,
-                "LOCATION": location,
-                "OPTIONS": options,
-            },
-        }
-
-        sync_opts = {
-            "TRANSPORT": "transport",
-            "STREAM_KEY": stream_key,
-            "MAX_ENTRIES": 1000,
-            "MAXLEN": 10000,
-            "BLOCK_TIMEOUT": 100,
-        }
-
-        # Write with very short TTL
-        config1 = {
-            **base_config,
-            "default": {"BACKEND": "django_cachex.cache.SyncCache", "OPTIONS": sync_opts.copy()},
-        }
-        with override_settings(CACHES=config1):
-            cache1 = caches["default"]
-            cache1.set("short_lived", "val", timeout=1)
-            cache1.shutdown()
-        _cleanup_globals(stream_key)
-
-        # Wait for expiry
-        time.sleep(1.5)
-
-        # New instance should not see expired key
-        config2 = {
-            **base_config,
-            "default": {"BACKEND": "django_cachex.cache.SyncCache", "OPTIONS": sync_opts.copy()},
-        }
-        with override_settings(CACHES=config2):
-            cache2 = caches["default"]
-            assert cache2.get("short_lived") is None
-            cache2.shutdown()
-        _cleanup_globals(stream_key)
 
 
 # =============================================================================

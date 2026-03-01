@@ -39,6 +39,7 @@ import pickle
 import time
 import uuid
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from functools import cached_property
 from threading import Event, Lock, Thread
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -98,13 +99,18 @@ class SyncCache(BaseCache):
         self._maxlen: int = options.get("MAXLEN", 10000)
         self._block_timeout: int = options.get("BLOCK_TIMEOUT", 1000)
 
-        # Local storage (module-level globals, keyed by stream_key)
-        self._cache: OrderedDict = _caches.setdefault(self._stream_key, OrderedDict())
+        # Local storage (module-level globals, keyed by storage_key).
+        # storage_key defaults to stream_key so all threads in a process share
+        # one local dict. Tests can override via _STORAGE_KEY to simulate
+        # separate pods in the same process.
+        storage_key = options.get("_STORAGE_KEY", self._stream_key)
+        self._storage_key: str = storage_key
+        self._cache: OrderedDict = _caches.setdefault(storage_key, OrderedDict())
         self._expire_info: dict[str, float | None] = _expire_info.setdefault(
-            self._stream_key,
+            storage_key,
             {},
         )
-        self._lock: Lock = _locks.setdefault(self._stream_key, Lock())
+        self._lock: Lock = _locks.setdefault(storage_key, Lock())
 
         # Pod identity for self-message dedup
         self._pod_id: str = f"{os.getpid()}-{id(self)}-{uuid.uuid4().hex[:8]}"
@@ -112,9 +118,13 @@ class SyncCache(BaseCache):
         # Consumer thread state
         self._consumer_thread: Thread | None = None
         self._stop_event = Event()
-        self._last_id: str = "0-0"
+        self._last_id: str = "$"
         self._initialized: bool = False
         self._init_lock = Lock()
+
+        # Non-blocking publish: single-worker executor serializes XADD calls
+        # without blocking the calling thread on network I/O.
+        self._publish_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sync-pub")
 
     # -- Transport (lazy) --
 
@@ -177,18 +187,28 @@ class SyncCache(BaseCache):
         exp: float | None = None,
         keys: str = "",
     ) -> None:
-        """Publish a cache mutation to the Redis Stream (best-effort)."""
+        """Publish a cache mutation to the Redis Stream (non-blocking, best-effort).
+
+        Submits the XADD call to a single-worker ThreadPoolExecutor so the
+        calling thread returns immediately without waiting for the network
+        round-trip. The single worker serializes publishes, preserving stream
+        order.
+        """
+        fields: dict[str, str | bytes] = {
+            "op": op,
+            "pod": self._pod_id,
+            "key": key,
+            "val": val,
+            "exp": str(exp) if exp is not None else "",
+        }
+        if keys:
+            fields["keys"] = keys
+        self._publish_executor.submit(self._do_xadd, fields)
+
+    def _do_xadd(self, fields: dict[str, str | bytes]) -> None:
+        """Execute a single XADD. Runs in the publish executor thread."""
         try:
             client = self._get_raw_client()
-            fields: dict[str, str | bytes] = {
-                "op": op,
-                "pod": self._pod_id,
-                "key": key,
-                "val": val,
-                "exp": str(exp) if exp is not None else "",
-            }
-            if keys:
-                fields["keys"] = keys
             client.xadd(
                 self._stream_key,
                 fields,
@@ -196,7 +216,11 @@ class SyncCache(BaseCache):
                 approximate=True,
             )
         except Exception:  # noqa: BLE001
-            logger.warning("SyncCache: Failed to publish %s to stream", op, exc_info=True)
+            logger.warning(
+                "SyncCache: Failed to publish %s to stream",
+                fields.get("op", "?"),
+                exc_info=True,
+            )
 
     # -- Consumer thread --
 
@@ -207,21 +231,8 @@ class SyncCache(BaseCache):
         with self._init_lock:
             if self._initialized:
                 return
-            self._replay_stream()
             self._start_consumer()
             self._initialized = True
-
-    def _replay_stream(self) -> None:
-        """Replay stream history to warm the local cache."""
-        try:
-            client = self._get_raw_client()
-            entries = client.xrange(self._stream_key)
-            with self._lock:
-                for entry_id, fields in entries:
-                    self._apply_message(fields, from_replay=True)
-                    self._last_id = entry_id.decode() if isinstance(entry_id, bytes) else str(entry_id)
-        except Exception:  # noqa: BLE001
-            logger.warning("SyncCache: Failed to replay stream history", exc_info=True)
 
     def _start_consumer(self) -> None:
         self._stop_event.clear()
@@ -247,7 +258,7 @@ class SyncCache(BaseCache):
                 for _stream_key, entries in result:
                     with self._lock:
                         for entry_id, fields in entries:
-                            self._apply_message(fields, from_replay=False)
+                            self._apply_message(fields)
                             self._last_id = entry_id.decode() if isinstance(entry_id, bytes) else str(entry_id)
             except Exception:  # noqa: BLE001
                 if not self._stop_event.is_set():
@@ -257,40 +268,38 @@ class SyncCache(BaseCache):
                     )
                     self._stop_event.wait(1.0)
 
-    def _apply_message(self, fields: dict, *, from_replay: bool) -> None:
+    def _apply_message(self, fields: dict) -> None:
         """Apply a single stream message to local cache. Caller holds self._lock."""
         op = _field(fields, "op")
         pod = _field(fields, "pod")
 
-        # Skip self-messages during live consumption (already applied locally)
-        if not from_replay and pod == self._pod_id:
+        # Skip self-messages (already applied locally by the writer)
+        if pod == self._pod_id:
             return
 
         handler = self._MESSAGE_HANDLERS.get(op)
         if handler:
-            handler(self, fields, from_replay=from_replay)
+            handler(self, fields)
 
-    def _handle_set(self, fields: dict, *, from_replay: bool) -> None:
+    def _handle_set(self, fields: dict) -> None:
         key = _field(fields, "key")
         val_bytes = _field_bytes(fields, "val")
         exp_str = _field(fields, "exp")
         exp_time = float(exp_str) if exp_str else None
-        if from_replay and exp_time is not None and exp_time <= time.time():
-            return
         self._local_set(key, val_bytes, exp_time)
 
-    def _handle_delete(self, fields: dict, *, from_replay: bool) -> None:
+    def _handle_delete(self, fields: dict) -> None:
         self._local_delete(_field(fields, "key"))
 
-    def _handle_delete_many(self, fields: dict, *, from_replay: bool) -> None:
+    def _handle_delete_many(self, fields: dict) -> None:
         for key in _field(fields, "keys").split("\x00"):
             if key:
                 self._local_delete(key)
 
-    def _handle_clear(self, fields: dict, *, from_replay: bool) -> None:
+    def _handle_clear(self, fields: dict) -> None:
         self._local_clear()
 
-    def _handle_touch(self, fields: dict, *, from_replay: bool) -> None:
+    def _handle_touch(self, fields: dict) -> None:
         key = _field(fields, "key")
         exp_str = _field(fields, "exp")
         exp_time = float(exp_str) if exp_str else None
@@ -305,14 +314,26 @@ class SyncCache(BaseCache):
         "touch": _handle_touch,
     }
 
+    def _flush_publishes(self) -> None:
+        """Block until all queued publishes have been sent. For testing only."""
+        # Submit a no-op and wait for it — when it completes, all prior
+        # submits have finished since the executor is single-threaded.
+        self._publish_executor.submit(lambda: None).result(timeout=5.0)
+
     def _drain(self, timeout: float = 1.0) -> None:
-        """Process all pending stream messages synchronously. For testing only."""
+        """Process all pending stream messages synchronously. For testing only.
+
+        If the consumer hasn't consumed anything yet (``_last_id`` is still
+        ``$``), this reads from the beginning of the stream so that messages
+        published before the drain call are visible.
+        """
+        read_from = self._last_id if self._last_id != "$" else "0-0"
         deadline = time.time() + timeout
         while time.time() < deadline:
             try:
                 client = self._get_raw_client()
                 result = client.xread(
-                    streams={self._stream_key: self._last_id},
+                    streams={self._stream_key: read_from},
                     count=100,
                     block=50,
                 )
@@ -321,13 +342,16 @@ class SyncCache(BaseCache):
                 for _stream_key, entries in result:
                     with self._lock:
                         for entry_id, fields in entries:
-                            self._apply_message(fields, from_replay=False)
-                            self._last_id = entry_id.decode() if isinstance(entry_id, bytes) else str(entry_id)
+                            self._apply_message(fields)
+                            eid = entry_id.decode() if isinstance(entry_id, bytes) else str(entry_id)
+                            read_from = eid
+                            self._last_id = eid
             except Exception:  # noqa: BLE001
                 return
 
     def shutdown(self) -> None:
-        """Stop the consumer thread explicitly. For testing/cleanup only."""
+        """Stop the consumer thread and publish executor. For testing/cleanup only."""
+        self._publish_executor.shutdown(wait=True, cancel_futures=False)
         if self._consumer_thread is not None:
             self._stop_event.set()
             self._consumer_thread.join(timeout=2.0)
