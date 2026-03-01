@@ -83,25 +83,53 @@ def _get_xdist_worker_id() -> int:
 CLUSTER_START_RETRIES = 3  # Number of retry attempts with different port ranges
 CLUSTER_READY_TIMEOUT = 30.0  # Seconds to wait for cluster to accept commands
 CLUSTER_READY_INTERVAL = 0.5  # Seconds between readiness checks
+CLUSTER_MASTER_COUNT = 3  # grokzen/redis-cluster runs 3 masters + 3 replicas
+CLUSTER_TOTAL_SLOTS = 16384  # Redis Cluster hash slot count
+
+
+def _check_cluster_nodes(host: str, port: int) -> bool:
+    """Check that all master nodes report cluster_state:ok and slots are covered."""
+    # Verify all master nodes report cluster_state:ok
+    for offset in range(CLUSTER_MASTER_COUNT):
+        client = redis.Redis(host=host, port=port + offset, socket_connect_timeout=2)
+        info = client.execute_command("CLUSTER", "INFO")
+        client.close()
+        if not (isinstance(info, bytes) and b"cluster_state:ok" in info):
+            return False
+
+    # Verify all 16384 slots are covered
+    client = redis.Redis(host=host, port=port, socket_connect_timeout=2)
+    slots = client.execute_command("CLUSTER", "SLOTS")
+    client.close()
+    covered = sum(end - start + 1 for start, end, *_ in slots)
+    if covered < CLUSTER_TOTAL_SLOTS:
+        return False
+
+    # End-to-end test through RedisCluster client
+    cluster = redis.RedisCluster(host=host, port=port, socket_connect_timeout=2)
+    cluster.set("__cluster_ready_check__", "1")
+    val = cluster.get("__cluster_ready_check__")
+    cluster.delete("__cluster_ready_check__")
+    cluster.close()
+    return val == b"1"
 
 
 def _wait_for_cluster_ready(host: str, port: int, *, timeout: float = CLUSTER_READY_TIMEOUT) -> None:
-    """Wait for Redis Cluster to be fully ready by verifying cluster_state via CLUSTER INFO.
+    """Wait for Redis Cluster to be fully ready for test traffic.
 
     The container log message "Cluster state changed: ok" can appear before all
-    nodes are ready to serve commands. This performs an actual connection check
-    to avoid ClusterDownError on the first operation.
+    nodes are ready to serve commands. This performs three levels of verification:
+
+    1. All master nodes report cluster_state:ok via CLUSTER INFO
+    2. CLUSTER SLOTS covers all 16384 hash slots
+    3. A RedisCluster client can perform an end-to-end SET/GET/DELETE
     """
     deadline = time.monotonic() + timeout
     last_error: Exception | None = None
 
     while time.monotonic() < deadline:
         try:
-            client = redis.Redis(host=host, port=port, socket_connect_timeout=2)
-            info = client.execute_command("CLUSTER", "INFO")
-            client.close()
-            # Response is bytes like b"cluster_state:ok\r\n..."
-            if isinstance(info, bytes) and b"cluster_state:ok" in info:
+            if _check_cluster_nodes(host, port):
                 return
         except Exception as e:  # noqa: BLE001
             last_error = e
