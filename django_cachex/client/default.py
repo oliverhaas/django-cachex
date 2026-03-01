@@ -7,6 +7,7 @@ and ValkeyCacheClient subclasses that swap the underlying library via class attr
 from __future__ import annotations
 
 import asyncio
+import random
 import weakref
 from itertools import batched
 from typing import TYPE_CHECKING, Any, cast
@@ -265,8 +266,6 @@ class KeyValueCacheClient:
         # Write to first server, read from any replica
         if write or len(self._servers) == 1:
             return 0
-        import random
-
         return random.randint(1, len(self._servers) - 1)  # noqa: S311
 
     def _get_connection_pool(self, *, write: bool) -> Any:

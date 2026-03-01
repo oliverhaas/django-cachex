@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import weakref
+from collections import defaultdict
 from itertools import batched
 from typing import TYPE_CHECKING, Any, cast, override
+from urllib.parse import urlparse
 
 from django_cachex.client.default import KeyValueCacheClient
 from django_cachex.exceptions import NotSupportedError
@@ -71,8 +73,6 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         if self._cluster_instance is not None:
             return self._cluster_instance
 
-        from urllib.parse import urlparse
-
         url = self._servers[0]
         parsed_url = urlparse(url)
         # Pass through options
@@ -97,8 +97,6 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         if loop in self._async_cluster_instances:
             return self._async_cluster_instances[loop]
 
-        from urllib.parse import urlparse
-
         url = self._servers[0]
         parsed_url = urlparse(url)
         # Pass through options
@@ -118,8 +116,6 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
     def _group_keys_by_slot(self, keys: Iterable[KeyT]) -> dict[int, list[KeyT]]:
         """Group keys by their cluster slot."""
-        from collections import defaultdict
-
         slots: dict[int, list[KeyT]] = defaultdict(list)
         for key in keys:
             key_bytes = key.encode() if isinstance(key, str) else key
@@ -146,7 +142,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         )
 
         # Collect non-None results
-        found = {k: v for k, v in zip(keys, results, strict=True) if v is not None}
+        found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
         # Stampede filtering: pipeline TTL for all found keys
         config = self._resolve_stampede(stampede_prevention)
@@ -319,7 +315,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         )
 
         # Collect non-None results
-        found = {k: v for k, v in zip(keys, results, strict=True) if v is not None}
+        found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
         # Stampede filtering: pipeline TTL for all found keys
         config = self._resolve_stampede(stampede_prevention)

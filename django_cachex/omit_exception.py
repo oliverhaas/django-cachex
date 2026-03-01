@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import functools
+import inspect
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -36,7 +36,7 @@ def omit_exception(
             return return_value
         raise exc
 
-    if asyncio.iscoroutinefunction(method):
+    if inspect.iscoroutinefunction(method):
 
         @functools.wraps(method)
         async def _async_decorator(self: Any, *args: Any, **kwargs: Any) -> Any:
