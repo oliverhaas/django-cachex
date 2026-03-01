@@ -51,7 +51,7 @@ Changelog = "https://oliverhaas.github.io/django-cachex/reference/changelog/"
 [dependency-groups]
 dev = [
   "valkey[libvalkey]==6.1.1",
-  "redis[hiredis]==7.2.0",
+  "redis[hiredis]==7.2.1",
   "backports-zstd==1.3.0; python_version < '3.14'",
   "beautifulsoup4==4.14.3",
   "django-stubs==5.2.9",
@@ -67,12 +67,12 @@ dev = [
   "pytest-mock==3.15.1",
   "pytest-xdist==3.8.0",
   "pytest==9.0.2",
-  "ruff==0.15.2",
+  "ruff==0.15.4",
   "testcontainers==4.14.1",
-  "ty==0.0.18",
+  "ty==0.0.19",
   "types-docker==7.1.0.20260109",
 ]
-docs = ["mkdocs==1.6.1", "mkdocs-material==9.7.2", "mike==2.1.3"]
+docs = ["mkdocs==1.6.1", "mkdocs-material==9.7.3", "mike==2.1.3"]
 
 [build-system]
 requires = ["hatchling"]
