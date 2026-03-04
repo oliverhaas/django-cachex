@@ -71,8 +71,6 @@ class KeyValueCacheClient:
         {
             "compressor",
             "serializer",
-            "ignore_exceptions",
-            "log_ignored_exceptions",
             "sentinels",
             "sentinel_kwargs",
             "async_pool_class",

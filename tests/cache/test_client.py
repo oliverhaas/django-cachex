@@ -41,9 +41,6 @@ class TestRedisCacheClient:
 
         client = RedisCacheClient.__new__(RedisCacheClient)
         client._default_scan_itersize = 10
-        client._ignore_exceptions = False
-        client._log_ignored_exceptions = False
-        client.logger = None
 
         client.delete_pattern(pattern="foo*")
         get_client_mock.assert_called_once_with(write=True)
@@ -62,9 +59,6 @@ class TestRedisCacheClient:
 
         client = RedisCacheClient.__new__(RedisCacheClient)
         client._default_scan_itersize = 10
-        client._ignore_exceptions = False
-        client._log_ignored_exceptions = False
-        client.logger = None
 
         client.delete_pattern(pattern="prefix:1:foo*")
 
@@ -86,9 +80,6 @@ class TestRedisCacheClient:
 
         client = RedisCacheClient.__new__(RedisCacheClient)
         client._default_scan_itersize = 10
-        client._ignore_exceptions = False
-        client._log_ignored_exceptions = False
-        client.logger = None
 
         client.delete_pattern(pattern="prefix:1:foo*", itersize=90210)
 
@@ -112,9 +103,6 @@ class TestRedisCacheClient:
 
         client = RedisCacheClient.__new__(RedisCacheClient)
         client._default_scan_itersize = 10
-        client._ignore_exceptions = False
-        client._log_ignored_exceptions = False
-        client.logger = None
 
         result = client.delete_pattern(pattern="prefix:1:foo*")
 

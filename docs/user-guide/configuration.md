@@ -145,18 +145,6 @@ Compression is only applied to values larger than `min_length` bytes (default: 2
 }
 ```
 
-### Exception Handling
-
-```python
-"OPTIONS": {
-    # Ignore connection errors (return default/None instead)
-    "ignore_exceptions": True,
-
-    # Log ignored exceptions
-    "log_ignored_exceptions": True,
-}
-```
-
 ## Authentication
 
 ### Password in URL
@@ -311,9 +299,6 @@ CACHES = {
             "max_connections": 50,
             "socket_connect_timeout": 5,
             "socket_timeout": 5,
-
-            # Exception handling
-            "ignore_exceptions": False,
         }
     }
 }
