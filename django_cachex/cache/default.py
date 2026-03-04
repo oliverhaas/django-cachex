@@ -406,7 +406,7 @@ class KeyValueCache(BaseCache):
         return []
 
     @override
-    def delete_many(self, keys: list[KeyT], version: int | None = None) -> int:
+    def delete_many(self, keys: list[KeyT], version: int | None = None) -> int:  # type: ignore[override]
         """Delete multiple keys from the cache."""
         keys = list(keys)  # Convert generator to list
         if not keys:
@@ -415,7 +415,7 @@ class KeyValueCache(BaseCache):
         return self._cache.delete_many(safe_keys)
 
     @override
-    async def adelete_many(self, keys: list[KeyT], version: int | None = None) -> int:
+    async def adelete_many(self, keys: list[KeyT], version: int | None = None) -> int:  # type: ignore[override]
         """Delete multiple keys from the cache asynchronously."""
         keys = list(keys)  # Convert generator to list
         if not keys:
@@ -424,7 +424,7 @@ class KeyValueCache(BaseCache):
         return await self._cache.adelete_many(safe_keys)
 
     @override
-    def clear(self) -> bool:
+    def clear(self) -> bool:  # type: ignore[override]
         """Delete all keys in this cache's namespace (prefix + version).
 
         Unlike Django's default ``RedisCache.clear()`` which calls ``FLUSHDB``
@@ -437,7 +437,7 @@ class KeyValueCache(BaseCache):
         return self.delete_pattern("*") >= 0
 
     @override
-    async def aclear(self) -> bool:
+    async def aclear(self) -> bool:  # type: ignore[override]
         """Delete all keys in this cache's namespace asynchronously."""
         return (await self.adelete_pattern("*")) >= 0
 
