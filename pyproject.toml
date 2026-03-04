@@ -108,6 +108,7 @@ ignore = [
   "SLF001",   # Private member access needed for Cache/CacheClient delegation
   "TRY003",   # Long exception messages are helpful for debugging
   "TRY300",   # return in try block is cleaner for this pattern (Redis call, decode, return)
+  "B911",     # batched(strict=) requires Python 3.13+, we support 3.12+
   "SIM108",   # Ternary not always clearer
 ]
 
@@ -135,7 +136,7 @@ suppress-none-returning = true # Don't require -> None on functions
 ]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.12"
 plugins = ["mypy_django_plugin.main"]
 pretty = true
 show_error_codes = true

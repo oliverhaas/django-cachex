@@ -270,7 +270,9 @@ class KeyValueCacheClient:
         """Get a connection pool for the given operation type."""
         index = self._get_connection_pool_index(write=write)
         if index not in self._pools:
-            assert self._pool_class is not None, "Subclasses must set _pool_class"  # noqa: S101
+            if self._pool_class is None:
+                msg = "Subclasses must set _pool_class"
+                raise RuntimeError(msg)
             self._pools[index] = self._pool_class.from_url(
                 self._servers[index],
                 **self._pool_options,
@@ -280,7 +282,9 @@ class KeyValueCacheClient:
     def get_client(self, key: KeyT | None = None, *, write: bool = False) -> Any:
         """Get a client connection."""
         pool = self._get_connection_pool(write=write)
-        assert self._client_class is not None, "Subclasses must set _client_class"  # noqa: S101
+        if self._client_class is None:
+            msg = "Subclasses must set _client_class"
+            raise RuntimeError(msg)
         return self._client_class(connection_pool=pool)
 
     # =========================================================================
@@ -706,27 +710,25 @@ class KeyValueCacheClient:
     # Extended Operations (beyond Django's BaseCache)
     # =========================================================================
 
+    @staticmethod
+    def _normalize_ttl(result: int) -> int | None:
+        """Normalize Redis TTL/PTTL/EXPIRETIME results.
+
+        -1 (no expiry) → None, -2 (key missing) → -2, positive → as-is.
+        """
+        if result == -1:
+            return None
+        return result
+
     def ttl(self, key: KeyT) -> int | None:
         """Get TTL in seconds. Returns None if no expiry, -2 if key doesn't exist."""
         client = self.get_client(key, write=False)
-
-        result = client.ttl(key)
-        if result == -1:
-            return None
-        if result == -2:
-            return -2
-        return result
+        return self._normalize_ttl(client.ttl(key))
 
     def pttl(self, key: KeyT) -> int | None:
         """Get TTL in milliseconds. Returns None if no expiry, -2 if key doesn't exist."""
         client = self.get_client(key, write=False)
-
-        result = client.pttl(key)
-        if result == -1:
-            return None
-        if result == -2:
-            return -2
-        return result
+        return self._normalize_ttl(client.pttl(key))
 
     def expiretime(self, key: KeyT) -> int | None:
         """Get the absolute Unix timestamp (seconds) when a key will expire.
@@ -735,13 +737,7 @@ class KeyValueCacheClient:
         Requires Redis 7.0+ / Valkey 7.2+.
         """
         client = self.get_client(key, write=False)
-
-        result = client.expiretime(key)
-        if result == -1:
-            return None
-        if result == -2:
-            return -2
-        return result
+        return self._normalize_ttl(client.expiretime(key))
 
     def expire(self, key: KeyT, timeout: ExpiryT) -> bool:
         """Set expiry on a key."""
@@ -776,24 +772,12 @@ class KeyValueCacheClient:
     async def attl(self, key: KeyT) -> int | None:
         """Get TTL in seconds asynchronously. Returns None if no expiry, -2 if key doesn't exist."""
         client = self.get_async_client(key, write=False)
-
-        result = await client.ttl(key)
-        if result == -1:
-            return None
-        if result == -2:
-            return -2
-        return result
+        return self._normalize_ttl(await client.ttl(key))
 
     async def apttl(self, key: KeyT) -> int | None:
         """Get TTL in milliseconds asynchronously."""
         client = self.get_async_client(key, write=False)
-
-        result = await client.pttl(key)
-        if result == -1:
-            return None
-        if result == -2:
-            return -2
-        return result
+        return self._normalize_ttl(await client.pttl(key))
 
     async def aexpiretime(self, key: KeyT) -> int | None:
         """Get the absolute Unix timestamp (seconds) when a key will expire asynchronously.
@@ -802,13 +786,7 @@ class KeyValueCacheClient:
         Requires Redis 7.0+ / Valkey 7.2+.
         """
         client = self.get_async_client(key, write=False)
-
-        result = await client.expiretime(key)
-        if result == -1:
-            return None
-        if result == -2:
-            return -2
-        return result
+        return self._normalize_ttl(await client.expiretime(key))
 
     async def aexpire(self, key: KeyT, timeout: ExpiryT) -> bool:
         """Set expiry on a key asynchronously."""
@@ -909,7 +887,7 @@ class KeyValueCacheClient:
             itersize = self._default_scan_itersize
 
         count = 0
-        for batch in batched(client.scan_iter(match=pattern, count=itersize), itersize, strict=False):
+        for batch in batched(client.scan_iter(match=pattern, count=itersize), itersize):
             count += cast("int", client.delete(*batch))
         return count
 

@@ -58,13 +58,17 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
     @property
     def _cluster(self) -> type[Any]:
         """Get the cluster class, asserting it's configured."""
-        assert self._cluster_class is not None, "Subclasses must set _cluster_class"  # noqa: S101
+        if self._cluster_class is None:
+            msg = "Subclasses must set _cluster_class"
+            raise RuntimeError(msg)
         return self._cluster_class
 
     @property
     def _async_cluster(self) -> type[Any]:
         """Get the async cluster class, asserting it's configured."""
-        assert self._async_cluster_class is not None, "Subclasses must set _async_cluster_class"  # noqa: S101
+        if self._async_cluster_class is None:
+            msg = "Subclasses must set _async_cluster_class"
+            raise RuntimeError(msg)
         return self._async_cluster_class
 
     @override
@@ -162,10 +166,10 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
     def set_many(
         self,
         data: Mapping[KeyT, Any],
-        timeout: int | None = None,
+        timeout: int | None,
         *,
         stampede_prevention: bool | dict | None = None,
-    ) -> list[KeyT]:
+    ) -> list:
         """Set multiple values, handling cross-slot keys."""
         if not data:
             return []
@@ -267,7 +271,6 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
                 target_nodes=self._cluster.PRIMARIES,
             ),
             itersize,
-            strict=False,
         ):
             for slot_keys in self._group_keys_by_slot(batch).values():
                 total_deleted += cast("int", client.delete(*slot_keys))
@@ -335,10 +338,10 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
     async def aset_many(
         self,
         data: Mapping[KeyT, Any],
-        timeout: int | None = None,
+        timeout: int | None,
         *,
         stampede_prevention: bool | dict | None = None,
-    ) -> list[KeyT]:
+    ) -> list:
         """Set multiple values asynchronously, handling cross-slot keys."""
         if not data:
             return []

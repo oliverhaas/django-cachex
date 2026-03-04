@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from django.core.exceptions import ImproperlyConfigured
 
-from django_cachex.client.default import KeyValueCacheClient, ValkeyCacheClient
+from django_cachex.client.default import KeyValueCacheClient
 
 if TYPE_CHECKING:
     from redis.connection import ConnectionPool
@@ -97,7 +97,9 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
         # Use _pool_options from parent class (already cleaned above)
         pool_options = dict(self._pool_options) if hasattr(self, "_pool_options") else {}
 
-        assert self._sentinel_class is not None, "Subclasses must set _sentinel_class"  # noqa: S101
+        if self._sentinel_class is None:
+            msg = "Subclasses must set _sentinel_class"
+            raise RuntimeError(msg)
         self._sentinel = self._sentinel_class(
             sentinels,
             sentinel_kwargs=sentinel_kwargs,
@@ -162,7 +164,9 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
             is_master=is_master,
         )
 
-        assert self._sentinel_pool_class is not None, "Subclasses must set _sentinel_pool_class"  # noqa: S101
+        if self._sentinel_pool_class is None:
+            msg = "Subclasses must set _sentinel_pool_class"
+            raise RuntimeError(msg)
         pool = self._sentinel_pool_class.from_url(clean_url, **pool_options)
         self._pools[index] = pool
 
@@ -175,7 +179,9 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
         if loop in self._async_sentinels:
             return self._async_sentinels[loop]
 
-        assert self._async_sentinel_class is not None, "Subclasses must set _async_sentinel_class"  # noqa: S101
+        if self._async_sentinel_class is None:
+            msg = "Subclasses must set _async_sentinel_class"
+            raise RuntimeError(msg)
 
         sentinels = self._options.get("sentinels")
         sentinel_kwargs = self._options.get("sentinel_kwargs", {})
@@ -219,7 +225,9 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
             is_master=is_master,
         )
 
-        assert self._async_sentinel_pool_class is not None, "Subclasses must set _async_sentinel_pool_class"  # noqa: S101
+        if self._async_sentinel_pool_class is None:
+            msg = "Subclasses must set _async_sentinel_pool_class"
+            raise RuntimeError(msg)
         pool = self._async_sentinel_pool_class.from_url(clean_url, **pool_options)
 
         # Cache the pool for this event loop
@@ -275,7 +283,7 @@ if _VALKEY_AVAILABLE:
 
 else:
 
-    class ValkeySentinelCacheClient(ValkeyCacheClient):  # type: ignore[no-redef]  # ty: ignore[unsupported-base]
+    class ValkeySentinelCacheClient(KeyValueCacheClient):  # type: ignore[no-redef]
         """Valkey Sentinel cache client (requires valkey-py to be installed)."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
