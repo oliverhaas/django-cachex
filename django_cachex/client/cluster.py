@@ -187,12 +187,12 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
             # No expiry
             client.mset_nonatomic(prepared_data)
         else:
-            # mset_nonatomic handles slot splitting
-            client.mset_nonatomic(prepared_data)
+            # Use SET with PX per key in a pipeline so each key is set
+            # atomically with its TTL (no window where keys exist without expiry)
             timeout_ms = int(actual_timeout * 1000)
             pipe = client.pipeline()
-            for key in prepared_data:
-                pipe.pexpire(key, timeout_ms)
+            for key, value in prepared_data.items():
+                pipe.set(key, value, px=timeout_ms)
             pipe.execute()
         return []
 
@@ -359,12 +359,12 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
             # No expiry
             await client.mset_nonatomic(prepared_data)
         else:
-            # mset_nonatomic handles slot splitting
-            await client.mset_nonatomic(prepared_data)
+            # Use SET with PX per key in a pipeline so each key is set
+            # atomically with its TTL (no window where keys exist without expiry)
             timeout_ms = int(actual_timeout * 1000)
             pipe = client.pipeline()
-            for key in prepared_data:
-                pipe.pexpire(key, timeout_ms)
+            for key, value in prepared_data.items():
+                pipe.set(key, value, px=timeout_ms)
             await pipe.execute()
         return []
 

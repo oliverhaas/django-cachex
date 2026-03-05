@@ -39,7 +39,7 @@ def should_recompute(ttl: int, config: StampedeConfig) -> bool:
         return True
 
     if config.delta > 0:
-        threshold = config.delta * config.beta * math.log(random.random())  # noqa: S311
+        threshold = config.delta * config.beta * math.log1p(random.random() - 1)  # noqa: S311
         if remaining + threshold <= 0:
             return True
 

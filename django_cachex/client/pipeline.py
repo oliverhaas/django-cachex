@@ -34,8 +34,8 @@ class Pipeline:
         self._pipeline = pipeline
         self._version = version
         self._key_func: Callable[..., str] | None = None
-        self._decoders: list[Callable[[Any], Any]] = []
         self._cache_version: int | None = None
+        self._decoders: list[Callable[[Any], Any]] = []
 
     def __enter__(self) -> Self:
         """Enter context manager."""
@@ -70,16 +70,16 @@ class Pipeline:
             return None
         return self._client.decode(value)
 
-    def _decode_list(self, value: list[bytes]) -> list[Any]:
+    def _decode_list(self, value: list[bytes | None]) -> list[Any]:
         """Decode a list of values."""
-        return [self._client.decode(item) for item in value]
+        return [self._client.decode(item) if item is not None else None for item in value]
 
-    def _decode_single_or_list(self, value: bytes | list[bytes] | None) -> Any:
+    def _decode_single_or_list(self, value: bytes | list[bytes | None] | None) -> Any:
         """Decode value that may be single item, list, or None (lpop/rpop with count)."""
         if value is None:
             return None
         if isinstance(value, list):
-            return [self._client.decode(item) for item in value]
+            return [self._client.decode(item) if item is not None else None for item in value]
         return self._client.decode(value)
 
     def _decode_set(self, value: _Set[bytes]) -> _Set[Any]:
@@ -192,6 +192,12 @@ class Pipeline:
         nkey = self._make_key(key, version)
         nvalue = self._encode(value)
         actual_timeout = self._client._get_timeout_with_buffer(timeout, stampede_prevention)
+
+        # timeout=0 means "expire immediately" (Django convention) — queue a DELETE
+        if actual_timeout == 0:
+            self._pipeline.delete(nkey)
+            self._decoders.append(bool)
+            return self
 
         kwargs: dict[str, Any] = {}
         if actual_timeout is not None:

@@ -7,6 +7,7 @@ multi-serializer/compressor support.
 
 from __future__ import annotations
 
+import inspect
 import re
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, override
@@ -362,7 +363,7 @@ class KeyValueCache(BaseCache):
         val = await self.aget(key, self._missing_key, version=version, stampede_prevention=stampede_prevention)
         if val is self._missing_key:
             if callable(default):
-                default = default()
+                default = await default() if inspect.iscoroutinefunction(default) else default()
             await self.aadd(key, default, timeout=timeout, version=version, stampede_prevention=stampede_prevention)
             # Fetch the value again to avoid a race condition if another caller
             # added a value between the first aget() and the aadd() above.

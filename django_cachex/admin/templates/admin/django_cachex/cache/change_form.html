@@ -282,9 +282,9 @@
                         </td>
                         <td class="{% if entry.duration_us >= 100000 %}duration-slow{% elif entry.duration_us >= 10000 %}duration-medium{% else %}duration-fast{% endif %}">
                             {% if entry.duration_us >= 1000000 %}
-                            <code>{{ entry.duration_us|floatformat:0 }} &micro;s ({{ entry.duration_us|divisibleby:1000000 }}s)</code>
+                            <code>{{ entry.duration_us|floatformat:0 }} &micro;s ({{ entry.duration_s|floatformat:1 }}s)</code>
                             {% elif entry.duration_us >= 1000 %}
-                            <code>{{ entry.duration_us }} &micro;s ({{ entry.duration_us|floatformat:0 }}ms)</code>
+                            <code>{{ entry.duration_us }} &micro;s ({{ entry.duration_ms|floatformat:1 }}ms)</code>
                             {% else %}
                             <code>{{ entry.duration_us }} &micro;s</code>
                             {% endif %}

@@ -316,20 +316,26 @@ def _parse_slowlog_entry(entry: Any) -> dict[str, Any]:
     """Parse a raw slowlog entry into structured format."""
     if isinstance(entry, dict):
         ts = entry.get("start_time")
+        dur = entry.get("duration", 0) or 0
         return {
             "id": entry.get("id"),
             "timestamp": datetime.fromtimestamp(ts, tz=UTC) if ts else None,
-            "duration_us": entry.get("duration"),
+            "duration_us": dur,
+            "duration_ms": dur / 1000,
+            "duration_s": dur / 1_000_000,
             "command": entry.get("command", []),
             "client": entry.get("client_address"),
             "client_name": entry.get("client_name"),
         }
     if isinstance(entry, (list, tuple)) and len(entry) >= 4:
         ts = entry[1]
+        dur = entry[2] or 0
         return {
             "id": entry[0],
             "timestamp": datetime.fromtimestamp(ts, tz=UTC) if ts else None,
-            "duration_us": entry[2],
+            "duration_us": dur,
+            "duration_ms": dur / 1000,
+            "duration_s": dur / 1_000_000,
             "command": entry[3] if len(entry) > 3 else [],
             "client": entry[4] if len(entry) > 4 else None,
             "client_name": entry[5] if len(entry) > 5 else None,

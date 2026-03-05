@@ -20,7 +20,10 @@ class JSONSerializer(BaseSerializer):
     encoder_class = DjangoJSONEncoder
 
     def dumps(self, obj: Any) -> bytes | int:
-        return json.dumps(obj, cls=self.encoder_class).encode()
+        try:
+            return json.dumps(obj, cls=self.encoder_class).encode()
+        except (TypeError, ValueError, OverflowError) as e:
+            raise SerializerError from e
 
     def loads(self, data: bytes | int) -> Any:
         try:

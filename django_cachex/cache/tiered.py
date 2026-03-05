@@ -120,6 +120,14 @@ class TieredCache(BaseCache):
         except (AttributeError, NotSupportedError, TypeError):
             return None
 
+    async def _aget_l2_ttl(self, key: KeyT, version: int | None = None) -> int | None:
+        """Try to get L2's remaining TTL for a key asynchronously."""
+        try:
+            ttl = await self._l2.attl(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            return ttl if isinstance(ttl, int) and ttl > 0 else None
+        except (AttributeError, NotSupportedError, TypeError):
+            return None
+
     # =========================================================================
     # Standard Django cache interface
     # =========================================================================
@@ -142,7 +150,7 @@ class TieredCache(BaseCache):
         val = await self._l2.aget(key, _L1_MISS, version=version)
         if val is _L1_MISS:
             return default
-        l2_ttl = self._get_l2_ttl(key, version=version)
+        l2_ttl = await self._aget_l2_ttl(key, version=version)
         self._l1.set(key, val, self._l1_timeout(l2_ttl), version=version)
         return val
 
@@ -235,7 +243,7 @@ class TieredCache(BaseCache):
             return l1_results
         l2_results = await self._l2.aget_many(missed_keys, version=version)
         for key, val in l2_results.items():
-            l2_ttl = self._get_l2_ttl(key, version=version)
+            l2_ttl = await self._aget_l2_ttl(key, version=version)
             self._l1.set(key, val, self._l1_timeout(l2_ttl), version=version)
         l1_results.update(l2_results)
         return l1_results
