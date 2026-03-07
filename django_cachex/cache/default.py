@@ -284,7 +284,7 @@ class KeyValueCache(BaseCache):
         """Retrieve many keys."""
         key_map = {self.make_and_validate_key(key, version=version): key for key in keys}
         ret = self._cache.get_many(key_map.keys(), stampede_prevention=stampede_prevention)
-        return {key_map[k]: v for k, v in ret.items()}  # type: ignore[index]
+        return {key_map[k]: v for k, v in ret.items()}  # type: ignore[index]  # ty: ignore[invalid-argument-type]
 
     @override
     async def aget_many(  # type: ignore[override]
@@ -297,7 +297,7 @@ class KeyValueCache(BaseCache):
         """Retrieve many keys asynchronously."""
         key_map = {self.make_and_validate_key(key, version=version): key for key in keys}
         ret = await self._cache.aget_many(key_map.keys(), stampede_prevention=stampede_prevention)
-        return {key_map[k]: v for k, v in ret.items()}  # type: ignore[index]
+        return {key_map[k]: v for k, v in ret.items()}  # type: ignore[index]  # ty: ignore[invalid-argument-type]
 
     @override
     def has_key(self, key: KeyT, version: int | None = None) -> bool:
@@ -394,7 +394,7 @@ class KeyValueCache(BaseCache):
         if not data:
             return []
         safe_data = {self.make_and_validate_key(key, version=version): value for key, value in data.items()}
-        self._cache.set_many(safe_data, self.get_backend_timeout(timeout), stampede_prevention=stampede_prevention)  # type: ignore[arg-type]
+        self._cache.set_many(safe_data, self.get_backend_timeout(timeout), stampede_prevention=stampede_prevention)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         return []
 
     @override
@@ -411,7 +411,7 @@ class KeyValueCache(BaseCache):
             return []
         safe_data = {self.make_and_validate_key(key, version=version): value for key, value in data.items()}
         await self._cache.aset_many(
-            safe_data,  # type: ignore[arg-type]
+            safe_data,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
             self.get_backend_timeout(timeout),
             stampede_prevention=stampede_prevention,
         )
