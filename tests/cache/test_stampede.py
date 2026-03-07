@@ -1,5 +1,9 @@
 """Tests for cache stampede prevention via XFetch algorithm (TTL-based)."""
 
+from unittest.mock import patch
+
+import pytest
+
 from django_cachex.cache import KeyValueCache
 from django_cachex.stampede import StampedeConfig, should_recompute
 
@@ -309,3 +313,113 @@ class TestStampedeOverride:
         ttl = stampede_cache.ttl("sp_ovr_merge")
         assert ttl is not None
         assert 300 < ttl <= 360  # buffer=60 inherited from instance config
+
+
+# =============================================================================
+# Robustness tests for XFetch algorithm
+# =============================================================================
+
+
+class TestShouldRecomputeEdgeCases:
+    """Edge cases for the should_recompute XFetch function."""
+
+    def test_extreme_random_values_do_not_crash(self):
+        """should_recompute never raises regardless of RNG output.
+
+        Regression: math.log(0.0) and math.log1p(-1.0) both raise ValueError.
+        Using -expovariate(1.0) avoids domain errors entirely.
+        """
+        config = StampedeConfig(buffer=60, delta=1.0, beta=1.0)
+        # Run many iterations — before the fix, one in ~9 quadrillion calls
+        # would crash. With expovariate, it never crashes.
+        for _ in range(10_000):
+            result = should_recompute(350, config)
+            assert isinstance(result, bool)
+
+    def test_expovariate_edge_via_mock(self):
+        """Mock expovariate to return extreme values and verify no crash."""
+        config = StampedeConfig(buffer=60, delta=1.0, beta=1.0)
+
+        # Very large expovariate value → large negative threshold → always triggers
+        with patch("django_cachex.stampede.random.expovariate", return_value=1000.0):
+            assert should_recompute(65, config) is True
+
+        # Very small expovariate value → threshold near 0 → doesn't trigger on fresh key
+        with patch("django_cachex.stampede.random.expovariate", return_value=0.001):
+            assert should_recompute(350, config) is False
+
+
+class TestStampedeGetOrSetRecompute:
+    """Test that get_or_set correctly overwrites stale values during stampede."""
+
+    def test_get_or_set_overwrites_stale_key(self, stampede_cache: KeyValueCache):
+        """get_or_set must use set() (not add/NX) when stampede triggers, so
+        the recomputed value actually replaces the stale one."""
+        stampede_cache.set("sp_gos_overwrite", "stale", timeout=300)
+        # Shrink TTL below buffer → logically expired
+        stampede_cache.expire("sp_gos_overwrite", 50)
+
+        result = stampede_cache.get_or_set(
+            "sp_gos_overwrite",
+            lambda: "fresh",
+            timeout=300,
+        )
+        assert result == "fresh"
+        # Verify the new value is actually stored (not just returned once)
+        assert stampede_cache.get("sp_gos_overwrite") == "fresh"
+
+    def test_get_or_set_returns_fresh_not_retrigger(self, stampede_cache: KeyValueCache):
+        """After recomputation, get_or_set should return the fresh value, not
+        re-trigger stampede on the confirmation get()."""
+        stampede_cache.set("sp_gos_retrig", "stale", timeout=300)
+        stampede_cache.expire("sp_gos_retrig", 50)
+
+        # With short timeout, stampede could re-trigger on confirmation get
+        # if stampede_prevention is passed to the final get(). It shouldn't be.
+        result = stampede_cache.get_or_set(
+            "sp_gos_retrig",
+            lambda: "recomputed",
+            timeout=300,
+        )
+        assert result == "recomputed"
+
+    @pytest.mark.asyncio
+    async def test_aget_or_set_overwrites_stale_key(self, stampede_cache: KeyValueCache):
+        """Async get_or_set must also overwrite stale keys."""
+        stampede_cache.set("sp_agos_overwrite", "stale", timeout=300)
+        stampede_cache.expire("sp_agos_overwrite", 50)
+
+        result = await stampede_cache.aget_or_set(
+            "sp_agos_overwrite",
+            lambda: "fresh_async",
+            timeout=300,
+        )
+        assert result == "fresh_async"
+        assert stampede_cache.get("sp_agos_overwrite") == "fresh_async"
+
+
+class TestStampedeGetManyConsistency:
+    """get_many() stampede behavior should match get() for various value types."""
+
+    def test_get_many_filters_logically_expired_consistently(self, stampede_cache: KeyValueCache):
+        """get_many() and get() should agree on which keys are logically expired."""
+        stampede_cache.set("sp_gmc_str", "hello", timeout=300)
+        stampede_cache.set("sp_gmc_int", 42, timeout=300)
+        # Shrink TTL below buffer → logically expired
+        stampede_cache.expire("sp_gmc_str", 50)
+        stampede_cache.expire("sp_gmc_int", 50)
+
+        # Both get() and get_many() should treat them as logically expired
+        assert stampede_cache.get("sp_gmc_str") is None
+        assert stampede_cache.get("sp_gmc_int") is None
+        result = stampede_cache.get_many(["sp_gmc_str", "sp_gmc_int"])
+        assert len(result) == 0
+
+    def test_get_many_preserves_fresh_values(self, stampede_cache: KeyValueCache):
+        """Fresh values (well above buffer) should never be filtered."""
+        stampede_cache.set("sp_gmc_fresh1", "val", timeout=300)
+        stampede_cache.set("sp_gmc_fresh2", 99, timeout=300)
+
+        result = stampede_cache.get_many(["sp_gmc_fresh1", "sp_gmc_fresh2"])
+        assert result["sp_gmc_fresh1"] == "val"
+        assert result["sp_gmc_fresh2"] == 99

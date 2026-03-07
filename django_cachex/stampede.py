@@ -9,7 +9,6 @@ recomputation.
 
 from __future__ import annotations
 
-import math
 import random
 from dataclasses import dataclass
 
@@ -39,7 +38,7 @@ def should_recompute(ttl: int, config: StampedeConfig) -> bool:
         return True
 
     if config.delta > 0:
-        threshold = config.delta * config.beta * math.log1p(random.random() - 1)  # noqa: S311
+        threshold = config.delta * config.beta * -random.expovariate(1.0)
         if remaining + threshold <= 0:
             return True
 

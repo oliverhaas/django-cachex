@@ -254,10 +254,11 @@ class TieredCache(BaseCache):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
     ) -> list[Any]:
+        result = self._l2.set_many(data, timeout, version=version)
         l1_timeout = self._l1_timeout_for_set(timeout)
         for key, value in data.items():
             self._l1.set(key, value, l1_timeout, version=version)
-        return self._l2.set_many(data, timeout, version=version)
+        return result
 
     async def aset_many(
         self,
@@ -265,10 +266,11 @@ class TieredCache(BaseCache):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
     ) -> list[Any]:
+        result = await self._l2.aset_many(data, timeout, version=version)
         l1_timeout = self._l1_timeout_for_set(timeout)
         for key, value in data.items():
             self._l1.set(key, value, l1_timeout, version=version)
-        return await self._l2.aset_many(data, timeout, version=version)
+        return result
 
     def delete_many(self, keys: Iterable[KeyT], version: int | None = None) -> None:
         keys = list(keys)

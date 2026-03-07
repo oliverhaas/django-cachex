@@ -467,25 +467,15 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
     async def aclose(self, **kwargs: Any) -> None:
         """No-op. Cluster lives for the instance's lifetime (matches Django's BaseCache)."""
 
-    _PIPELINE_DEFAULT = object()
-
     @override
     def pipeline(
         self,
         *,
-        transaction: bool | object = _PIPELINE_DEFAULT,
+        transaction: bool = True,
         version: int | None = None,
     ) -> Pipeline:
-        """Create a pipeline for batched operations. Transactions are not supported in cluster mode."""
-        import warnings
-
+        """Create a pipeline for batched operations. Transactions are ignored in cluster mode."""
         from django_cachex.client.pipeline import Pipeline
-
-        if transaction is not self._PIPELINE_DEFAULT and transaction:
-            warnings.warn(
-                "Cluster pipelines do not support transactions (MULTI/EXEC). The transaction parameter is ignored.",
-                stacklevel=2,
-            )
 
         client = self.get_client(write=True)
         raw_pipeline = client.pipeline(transaction=False)

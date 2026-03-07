@@ -343,10 +343,17 @@ class KeyValueCache(BaseCache):
         if val is self._missing_key:
             if callable(default):
                 default = default()
-            self.add(key, default, timeout=timeout, version=version, stampede_prevention=stampede_prevention)
+            if self._cache._resolve_stampede(stampede_prevention):
+                # Stampede may return "miss" for a key that still physically exists.
+                # Use set() (unconditional write) instead of add() (NX) so the
+                # recomputed value actually overwrites the stale key.
+                self.set(key, default, timeout=timeout, version=version, stampede_prevention=stampede_prevention)
+            else:
+                self.add(key, default, timeout=timeout, version=version)
             # Fetch the value again to avoid a race condition if another caller
-            # added a value between the first get() and the add() above.
-            return self.get(key, default, version=version, stampede_prevention=stampede_prevention)
+            # set between the first get() and the set/add() above.
+            # Disable stampede here — we just wrote the value, don't re-trigger.
+            return self.get(key, default, version=version)
         return val
 
     @override
@@ -364,10 +371,14 @@ class KeyValueCache(BaseCache):
         if val is self._missing_key:
             if callable(default):
                 default = await default() if inspect.iscoroutinefunction(default) else default()
-            await self.aadd(key, default, timeout=timeout, version=version, stampede_prevention=stampede_prevention)
+            if self._cache._resolve_stampede(stampede_prevention):
+                await self.aset(key, default, timeout=timeout, version=version, stampede_prevention=stampede_prevention)
+            else:
+                await self.aadd(key, default, timeout=timeout, version=version)
             # Fetch the value again to avoid a race condition if another caller
-            # added a value between the first aget() and the aadd() above.
-            return await self.aget(key, default, version=version, stampede_prevention=stampede_prevention)
+            # set between the first aget() and the aset/aadd() above.
+            # Disable stampede here — we just wrote the value, don't re-trigger.
+            return await self.aget(key, default, version=version)
         return val
 
     @override
@@ -745,7 +756,7 @@ class KeyValueCache(BaseCache):
         )
         # Set key_func for proper key prefixing
         pipe._key_func = self.make_and_validate_key
-        pipe._cache_version = self.version
+        pipe._cache_version = version if version is not None else self.version
         return pipe
 
     # =========================================================================
