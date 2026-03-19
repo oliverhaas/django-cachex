@@ -80,6 +80,18 @@ class SyncCache(BaseCache):
     All reads are local dict lookups. Writes update the local dict and publish
     to a Redis Stream. A daemon thread consumes the stream and applies remote
     changes. Eventual consistency across pods.
+
+    **Consistency model**: Operations like ``add``, ``incr``, and ``decr``
+    are locally atomic (protected by a thread lock) but **not** atomic across
+    pods. Concurrent ``incr`` calls from two pods may both read the same
+    value, each publish their result, and one increment is lost. Similarly,
+    two pods calling ``add`` concurrently may both succeed locally. Values
+    converge via stream propagation (last-writer-wins). This is acceptable
+    for the intended workloads (config, feature flags, read-heavy data).
+
+    **Fail-safe**: The consumer thread is automatically restarted if it dies.
+    Use ``info()["sync"]`` to monitor consumer health, last read age, and
+    stream position.
     """
 
     _cachex_support: str = "wrapped"
@@ -119,6 +131,7 @@ class SyncCache(BaseCache):
         self._consumer_thread: Thread | None = None
         self._stop_event = Event()
         self._last_id: str = "$"
+        self._last_read_time: float = 0.0
         self._initialized: bool = False
         self._init_lock = Lock()
 
@@ -224,13 +237,27 @@ class SyncCache(BaseCache):
 
     # -- Consumer thread --
 
+    def _consumer_alive(self) -> bool:
+        return self._consumer_thread is not None and self._consumer_thread.is_alive()
+
     def _ensure_consumer(self) -> None:
-        """Start the consumer thread on first access (double-checked locking)."""
-        if self._initialized:
+        """Start (or restart) the consumer thread.
+
+        Uses double-checked locking. On every call, verifies the thread is
+        actually alive — if it died (e.g. due to ``SystemExit`` or an
+        unhandled ``BaseException``), it is automatically restarted so the
+        pod doesn't silently fall out of sync.
+        """
+        if self._initialized and self._consumer_alive():
             return
         with self._init_lock:
-            if self._initialized:
+            if self._initialized and self._consumer_alive():
                 return
+            if self._initialized and not self._consumer_alive():
+                logger.warning(
+                    "SyncCache: Consumer thread died, restarting (stream=%s)",
+                    self._stream_key,
+                )
             self._start_consumer()
             self._initialized = True
 
@@ -254,12 +281,22 @@ class SyncCache(BaseCache):
                 )
                 if result is None:
                     continue
+                self._last_read_time = time.time()
                 # result is list of [stream_key, [(entry_id, fields), ...]]
                 for _stream_key, entries in result:
                     with self._lock:
                         for entry_id, fields in entries:
-                            self._apply_message(fields)
+                            # Advance cursor BEFORE processing so a bad
+                            # message is skipped, not retried forever.
                             self._last_id = entry_id.decode() if isinstance(entry_id, bytes) else str(entry_id)
+                            try:
+                                self._apply_message(fields)
+                            except Exception:  # noqa: BLE001
+                                logger.warning(
+                                    "SyncCache: Failed to apply message %s, skipping",
+                                    self._last_id,
+                                    exc_info=True,
+                                )
             except Exception:  # noqa: BLE001
                 if not self._stop_event.is_set():
                     logger.warning(
@@ -398,6 +435,12 @@ class SyncCache(BaseCache):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
     ) -> bool:
+        """Add a value only if the key doesn't already exist locally.
+
+        .. note:: Not atomic across pods — concurrent ``add`` calls from
+           different pods may both succeed. Values converge via the stream
+           (last-writer-wins).
+        """
         self._ensure_consumer()
         key = self.make_and_validate_key(key, version=version)
         with self._lock:
@@ -458,6 +501,13 @@ class SyncCache(BaseCache):
             return key in self._cache
 
     def incr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
+        """Increment a value locally and publish the result.
+
+        .. note:: Not atomic across pods — concurrent ``incr`` calls from
+           different pods may both read the same value, each compute their
+           own result, and one increment is lost. Values converge via the
+           stream (last-writer-wins).
+        """
         self._ensure_consumer()
         key = self.make_and_validate_key(key, version=version)
         with self._lock:
@@ -577,10 +627,12 @@ class SyncCache(BaseCache):
 
     def info(self, section: str | None = None) -> dict[str, Any]:
         self._ensure_consumer()
+        now = time.time()
         with self._lock:
             key_count = len(self._cache)
-            now = time.time()
             expires_count = sum(1 for exp in self._expire_info.values() if exp is not None and exp > now)
+        consumer_alive = self._consumer_alive()
+        last_read_age = round(now - self._last_read_time, 1) if self._last_read_time else None
         return {
             "server": {
                 "redis_version": f"SyncCache (stream: {self._stream_key})",
@@ -591,6 +643,12 @@ class SyncCache(BaseCache):
                     "keys": key_count,
                     "expires": expires_count,
                 },
+            },
+            "sync": {
+                "consumer_alive": consumer_alive,
+                "last_read_age_seconds": last_read_age,
+                "last_stream_id": self._last_id,
+                "pod_id": self._pod_id,
             },
         }
 
