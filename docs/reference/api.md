@@ -299,8 +299,6 @@ All cache methods are available on the pipeline. Results are returned as a list 
 | `password` | Server password |
 | `socket_connect_timeout` | Connection timeout |
 | `socket_timeout` | Read/write timeout |
-| `ignore_exceptions` | Ignore connection errors |
-| `log_ignored_exceptions` | Log ignored exceptions |
 | `pool_class` | Custom connection pool class |
 | `max_connections` | Maximum pool connections |
 | `sentinels` | Sentinel server list (for Sentinel backends) |

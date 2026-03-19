@@ -92,9 +92,7 @@ class TestRedisClusterCacheClient:
         client = setup_cluster_client(mock_cluster_cls)
         client._serializers = [MagicMock()]
         client._compressors = [MagicMock()]
-        client._ignore_exceptions = False
-        client._log_ignored_exceptions = False
-        client.logger = None
+
         client.key_prefix = ""
         client.version = 1
         client.key_func = lambda k, p, v: k
@@ -124,9 +122,6 @@ class TestRedisClusterCacheClient:
     def test_get_many_empty_keys(self):
         """Test get_many with empty keys list."""
         client = setup_cluster_client()
-        client._ignore_exceptions = False
-        client._log_ignored_exceptions = False
-        client.logger = None
 
         result = client.get_many([])
         assert result == {}
@@ -138,9 +133,7 @@ class TestRedisClusterCacheClient:
         mock_cluster_cls.return_value = mock_cluster
 
         client = setup_cluster_client(mock_cluster_cls)
-        client._ignore_exceptions = False
-        client._log_ignored_exceptions = False
-        client.logger = None
+
         client.key_prefix = ""
         client.version = 1
         client.key_func = lambda k, p, v: k
@@ -158,9 +151,6 @@ class TestRedisClusterCacheClient:
     def test_delete_many_empty_keys(self):
         """Test delete_many with empty keys list."""
         client = setup_cluster_client()
-        client._ignore_exceptions = False
-        client._log_ignored_exceptions = False
-        client.logger = None
 
         client.delete_many([])
         # Should not raise any errors
@@ -172,9 +162,7 @@ class TestRedisClusterCacheClient:
         mock_cluster_cls.return_value = mock_cluster
 
         client = setup_cluster_client(mock_cluster_cls)
-        client._ignore_exceptions = False
-        client._log_ignored_exceptions = False
-        client.logger = None
+
         client.key_prefix = ""
         client.version = 1
         client.key_func = lambda k, p, v: k
@@ -196,9 +184,6 @@ class TestRedisClusterCacheClient:
         mock_cluster_cls.PRIMARIES = "primaries"
 
         client = setup_cluster_client(mock_cluster_cls)
-        client._ignore_exceptions = False
-        client._log_ignored_exceptions = False
-        client.logger = None
 
         # Low-level clear() still calls flushdb (used by KeyValueCache.flush_db())
         client.clear()
@@ -214,9 +199,7 @@ class TestRedisClusterCacheClient:
         mock_cluster_cls.PRIMARIES = "primaries"
 
         client = setup_cluster_client(mock_cluster_cls)
-        client._ignore_exceptions = False
-        client._log_ignored_exceptions = False
-        client.logger = None
+
         client.key_prefix = "prefix"
         client.version = 1
         client.key_func = lambda k, p, v: f"{p}:{v}:{k}"
@@ -250,9 +233,7 @@ class TestRedisClusterCacheClient:
         mock_cluster_cls.PRIMARIES = "primaries"
 
         client = setup_cluster_client(mock_cluster_cls)
-        client._ignore_exceptions = False
-        client._log_ignored_exceptions = False
-        client.logger = None
+
         client.key_prefix = ""
         client.version = 1
         client.key_func = lambda k, p, v: k
@@ -273,9 +254,7 @@ class TestRedisClusterCacheClient:
         mock_cluster_cls.PRIMARIES = "primaries"
 
         client = setup_cluster_client(mock_cluster_cls)
-        client._ignore_exceptions = False
-        client._log_ignored_exceptions = False
-        client.logger = None
+
         client.key_prefix = "prefix"
         client.version = 1
         client._default_scan_itersize = 10
@@ -312,9 +291,7 @@ class TestRedisClusterCacheClient:
         mock_cluster_cls.PRIMARIES = "primaries"
 
         client = setup_cluster_client(mock_cluster_cls)
-        client._ignore_exceptions = False
-        client._log_ignored_exceptions = False
-        client.logger = None
+
         client.key_prefix = ""
         client.version = 1
         client._default_scan_itersize = 10
@@ -337,9 +314,7 @@ class TestRedisClusterCacheClient:
         mock_cluster_cls.PRIMARIES = "primaries"
 
         client = setup_cluster_client(mock_cluster_cls)
-        client._ignore_exceptions = False
-        client._log_ignored_exceptions = False
-        client.logger = None
+
         client.key_prefix = "prefix"
         client.version = 1
         client._default_scan_itersize = 10
@@ -373,9 +348,7 @@ class TestRedisClusterCacheClient:
         mock_cluster_cls.PRIMARIES = "primaries"
 
         client = setup_cluster_client(mock_cluster_cls)
-        client._ignore_exceptions = False
-        client._log_ignored_exceptions = False
-        client.logger = None
+
         client.key_prefix = ""
         client.version = 1
         client._default_scan_itersize = 10
@@ -397,9 +370,7 @@ class TestRedisClusterCacheClient:
         mock_cluster_cls.PRIMARIES = "primaries"
 
         client = setup_cluster_client(mock_cluster_cls)
-        client._ignore_exceptions = False
-        client._log_ignored_exceptions = False
-        client.logger = None
+
         client.key_prefix = ""
         client.version = 1
         client._default_scan_itersize = 10

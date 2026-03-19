@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from django_cachex.cache.default import KeyValueCache
 from django_cachex.client.cluster import KeyValueClusterCacheClient
+
+if TYPE_CHECKING:
+    from django_cachex.client.pipeline import Pipeline
 
 
 class KeyValueClusterCache(KeyValueCache):
@@ -16,6 +19,15 @@ class KeyValueClusterCache(KeyValueCache):
     """
 
     _class: type[KeyValueClusterCacheClient] = KeyValueClusterCacheClient
+
+    def pipeline(
+        self,
+        *,
+        transaction: bool = True,
+        version: int | None = None,
+    ) -> Pipeline:
+        """Create a pipeline. Cluster pipelines never use transactions."""
+        return super().pipeline(transaction=False, version=version)
 
 
 # Try to import Redis Cluster

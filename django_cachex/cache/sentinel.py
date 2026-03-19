@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from django_cachex.cache.default import KeyValueCache, ValkeyCache
+from django_cachex.cache.default import KeyValueCache
 from django_cachex.client.sentinel import _REDIS_AVAILABLE, _VALKEY_AVAILABLE, KeyValueSentinelCacheClient
 
 
@@ -57,7 +57,7 @@ if _VALKEY_AVAILABLE:
 
 else:
 
-    class ValkeySentinelCache(ValkeyCache):  # type: ignore[no-redef]
+    class ValkeySentinelCache(KeyValueCache):  # type: ignore[no-redef]
         """Valkey Sentinel cache backend (requires valkey-py to be installed)."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:

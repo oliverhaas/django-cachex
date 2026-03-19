@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from django.core.exceptions import ImproperlyConfigured
 
-from django_cachex.client.default import KeyValueCacheClient, ValkeyCacheClient
+from django_cachex.client.default import KeyValueCacheClient
 
 if TYPE_CHECKING:
     from redis.connection import ConnectionPool
@@ -97,7 +97,9 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
         # Use _pool_options from parent class (already cleaned above)
         pool_options = dict(self._pool_options) if hasattr(self, "_pool_options") else {}
 
-        assert self._sentinel_class is not None, "Subclasses must set _sentinel_class"  # noqa: S101
+        if self._sentinel_class is None:
+            msg = "Subclasses must set _sentinel_class"
+            raise RuntimeError(msg)
         self._sentinel = self._sentinel_class(
             sentinels,
             sentinel_kwargs=sentinel_kwargs,
@@ -117,32 +119,20 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
 
         return [replace_query(url, q) for q in (primary_query, replica_query)]
 
-    @override
-    def _get_connection_pool(self, *, write: bool) -> ConnectionPool:
-        """Get a sentinel-managed connection pool."""
-        index = self._get_connection_pool_index(write=write)
-        url = self._servers[index]
-        parsed = urlparse(url)
+    def _parse_sentinel_url(self, index: int) -> tuple[str | None, bool, str]:
+        """Parse a sentinel URL into (service_name, is_master, clean_url).
 
-        if index in self._pools:
-            return self._pools[index]
-
-        # Parse service name and is_master from URL
-        service_name = parsed.hostname
+        Extracts the service name from the hostname, the is_master flag from
+        query params, and returns a clean URL with is_master stripped.
+        """
+        parsed = urlparse(self._servers[index])
         query_params = parse_qs(parsed.query)
+
+        service_name = parsed.hostname
         is_master = True
         if "is_master" in query_params:
             is_master = query_params["is_master"][0] in ("1", "true", "True")
 
-        # Use _pool_options from parent class (already cleaned in __init__)
-        pool_options: dict[str, Any] = dict(self._pool_options) if hasattr(self, "_pool_options") else {}
-        pool_options.update(
-            service_name=service_name,
-            sentinel_manager=self._sentinel,
-            is_master=is_master,
-        )
-
-        # Create pool (strip is_master from URL for from_url)
         new_query = {k: v for k, v in query_params.items() if k != "is_master"}
         clean_url = urlunparse(
             (
@@ -154,8 +144,29 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
                 parsed.fragment,
             ),
         )
+        return service_name, is_master, clean_url
 
-        assert self._sentinel_pool_class is not None, "Subclasses must set _sentinel_pool_class"  # noqa: S101
+    @override
+    def _get_connection_pool(self, *, write: bool) -> ConnectionPool:
+        """Get a sentinel-managed connection pool."""
+        index = self._get_connection_pool_index(write=write)
+
+        if index in self._pools:
+            return self._pools[index]
+
+        service_name, is_master, clean_url = self._parse_sentinel_url(index)
+
+        # Use _pool_options from parent class (already cleaned in __init__)
+        pool_options: dict[str, Any] = dict(self._pool_options) if hasattr(self, "_pool_options") else {}
+        pool_options.update(
+            service_name=service_name,
+            sentinel_manager=self._sentinel,
+            is_master=is_master,
+        )
+
+        if self._sentinel_pool_class is None:
+            msg = "Subclasses must set _sentinel_pool_class"
+            raise RuntimeError(msg)
         pool = self._sentinel_pool_class.from_url(clean_url, **pool_options)
         self._pools[index] = pool
 
@@ -168,7 +179,9 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
         if loop in self._async_sentinels:
             return self._async_sentinels[loop]
 
-        assert self._async_sentinel_class is not None, "Subclasses must set _async_sentinel_class"  # noqa: S101
+        if self._async_sentinel_class is None:
+            msg = "Subclasses must set _async_sentinel_class"
+            raise RuntimeError(msg)
 
         sentinels = self._options.get("sentinels")
         sentinel_kwargs = self._options.get("sentinel_kwargs", {})
@@ -192,24 +205,14 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
         """Get an async sentinel-managed connection pool."""
         loop = asyncio.get_running_loop()
         index = self._get_connection_pool_index(write=write)
-        url = self._servers[index]
-        parsed = urlparse(url)
 
         # Check if we already have an async pool for this loop
         if loop in self._async_pools and index in self._async_pools[loop]:
             return self._async_pools[loop][index]
 
-        # Parse service name and is_master from URL
-        service_name = parsed.hostname
-        query_params = parse_qs(parsed.query)
-        is_master = True
-        if "is_master" in query_params:
-            is_master = query_params["is_master"][0] in ("1", "true", "True")
-
-        # Get the async sentinel for this event loop
+        service_name, is_master, clean_url = self._parse_sentinel_url(index)
         async_sentinel = self._get_async_sentinel()
 
-        # Use _pool_options from parent class (already cleaned in __init__)
         # Filter out parser_class - it's sync-specific and causes AttributeError on async connections
         pool_options: dict[str, Any] = (
             {k: v for k, v in self._pool_options.items() if k != "parser_class"}
@@ -222,20 +225,9 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
             is_master=is_master,
         )
 
-        # Create pool (strip is_master from URL for from_url)
-        new_query = {k: v for k, v in query_params.items() if k != "is_master"}
-        clean_url = urlunparse(
-            (
-                parsed.scheme,
-                parsed.netloc,
-                parsed.path,
-                parsed.params,
-                urlencode(new_query, doseq=True),
-                parsed.fragment,
-            ),
-        )
-
-        assert self._async_sentinel_pool_class is not None, "Subclasses must set _async_sentinel_pool_class"  # noqa: S101
+        if self._async_sentinel_pool_class is None:
+            msg = "Subclasses must set _async_sentinel_pool_class"
+            raise RuntimeError(msg)
         pool = self._async_sentinel_pool_class.from_url(clean_url, **pool_options)
 
         # Cache the pool for this event loop
@@ -291,7 +283,7 @@ if _VALKEY_AVAILABLE:
 
 else:
 
-    class ValkeySentinelCacheClient(ValkeyCacheClient):  # type: ignore[no-redef]  # ty: ignore[unsupported-base]
+    class ValkeySentinelCacheClient(KeyValueCacheClient):  # type: ignore[no-redef]
         """Valkey Sentinel cache client (requires valkey-py to be installed)."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:

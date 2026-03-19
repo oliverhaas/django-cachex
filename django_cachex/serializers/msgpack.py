@@ -18,7 +18,10 @@ class MessagePackSerializer(BaseSerializer):
     """MessagePack-based serializer for efficient binary serialization."""
 
     def dumps(self, obj: Any) -> bytes | int:
-        return msgpack.dumps(obj)
+        try:
+            return msgpack.dumps(obj)
+        except Exception as e:
+            raise SerializerError from e
 
     def loads(self, data: bytes | int) -> Any:
         try:

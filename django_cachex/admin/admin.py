@@ -232,9 +232,6 @@ class KeyAdmin(KeyAdminMixin, _KeyBase):  # type: ignore[misc]
         ),
     }
 
-    def has_module_permission(self, request: HttpRequest) -> bool:
-        return True
-
     def get_urls(self) -> list:
         """Add custom URL patterns for key operations."""
         urls = super().get_urls()

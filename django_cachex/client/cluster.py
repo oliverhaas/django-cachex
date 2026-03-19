@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import weakref
+from collections import defaultdict
 from itertools import batched
 from typing import TYPE_CHECKING, Any, cast, override
+from urllib.parse import urlparse
 
 from django_cachex.client.default import KeyValueCacheClient
 from django_cachex.exceptions import NotSupportedError
@@ -56,13 +58,17 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
     @property
     def _cluster(self) -> type[Any]:
         """Get the cluster class, asserting it's configured."""
-        assert self._cluster_class is not None, "Subclasses must set _cluster_class"  # noqa: S101
+        if self._cluster_class is None:
+            msg = "Subclasses must set _cluster_class"
+            raise RuntimeError(msg)
         return self._cluster_class
 
     @property
     def _async_cluster(self) -> type[Any]:
         """Get the async cluster class, asserting it's configured."""
-        assert self._async_cluster_class is not None, "Subclasses must set _async_cluster_class"  # noqa: S101
+        if self._async_cluster_class is None:
+            msg = "Subclasses must set _async_cluster_class"
+            raise RuntimeError(msg)
         return self._async_cluster_class
 
     @override
@@ -70,8 +76,6 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         """Get the Cluster client."""
         if self._cluster_instance is not None:
             return self._cluster_instance
-
-        from urllib.parse import urlparse
 
         url = self._servers[0]
         parsed_url = urlparse(url)
@@ -97,8 +101,6 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         if loop in self._async_cluster_instances:
             return self._async_cluster_instances[loop]
 
-        from urllib.parse import urlparse
-
         url = self._servers[0]
         parsed_url = urlparse(url)
         # Pass through options
@@ -118,8 +120,6 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
 
     def _group_keys_by_slot(self, keys: Iterable[KeyT]) -> dict[int, list[KeyT]]:
         """Group keys by their cluster slot."""
-        from collections import defaultdict
-
         slots: dict[int, list[KeyT]] = defaultdict(list)
         for key in keys:
             key_bytes = key.encode() if isinstance(key, str) else key
@@ -146,7 +146,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         )
 
         # Collect non-None results
-        found = {k: v for k, v in zip(keys, results, strict=True) if v is not None}
+        found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
         # Stampede filtering: pipeline TTL for all found keys
         config = self._resolve_stampede(stampede_prevention)
@@ -166,10 +166,10 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
     def set_many(
         self,
         data: Mapping[KeyT, Any],
-        timeout: int | None = None,
+        timeout: int | None,
         *,
         stampede_prevention: bool | dict | None = None,
-    ) -> list[KeyT]:
+    ) -> list:
         """Set multiple values, handling cross-slot keys."""
         if not data:
             return []
@@ -187,12 +187,12 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
             # No expiry
             client.mset_nonatomic(prepared_data)
         else:
-            # mset_nonatomic handles slot splitting
-            client.mset_nonatomic(prepared_data)
+            # Use SET with PX per key in a pipeline so each key is set
+            # atomically with its TTL (no window where keys exist without expiry)
             timeout_ms = int(actual_timeout * 1000)
             pipe = client.pipeline()
-            for key in prepared_data:
-                pipe.pexpire(key, timeout_ms)
+            for key, value in prepared_data.items():
+                pipe.set(key, value, px=timeout_ms)
             pipe.execute()
         return []
 
@@ -271,7 +271,6 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
                 target_nodes=self._cluster.PRIMARIES,
             ),
             itersize,
-            strict=False,
         ):
             for slot_keys in self._group_keys_by_slot(batch).values():
                 total_deleted += cast("int", client.delete(*slot_keys))
@@ -319,7 +318,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         )
 
         # Collect non-None results
-        found = {k: v for k, v in zip(keys, results, strict=True) if v is not None}
+        found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
         # Stampede filtering: pipeline TTL for all found keys
         config = self._resolve_stampede(stampede_prevention)
@@ -339,10 +338,10 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
     async def aset_many(
         self,
         data: Mapping[KeyT, Any],
-        timeout: int | None = None,
+        timeout: int | None,
         *,
         stampede_prevention: bool | dict | None = None,
-    ) -> list[KeyT]:
+    ) -> list:
         """Set multiple values asynchronously, handling cross-slot keys."""
         if not data:
             return []
@@ -360,12 +359,12 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
             # No expiry
             await client.mset_nonatomic(prepared_data)
         else:
-            # mset_nonatomic handles slot splitting
-            await client.mset_nonatomic(prepared_data)
+            # Use SET with PX per key in a pipeline so each key is set
+            # atomically with its TTL (no window where keys exist without expiry)
             timeout_ms = int(actual_timeout * 1000)
             pipe = client.pipeline()
-            for key in prepared_data:
-                pipe.pexpire(key, timeout_ms)
+            for key, value in prepared_data.items():
+                pipe.set(key, value, px=timeout_ms)
             await pipe.execute()
         return []
 
@@ -468,25 +467,15 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
     async def aclose(self, **kwargs: Any) -> None:
         """No-op. Cluster lives for the instance's lifetime (matches Django's BaseCache)."""
 
-    _PIPELINE_DEFAULT = object()
-
     @override
     def pipeline(
         self,
         *,
-        transaction: bool | object = _PIPELINE_DEFAULT,
+        transaction: bool = True,
         version: int | None = None,
     ) -> Pipeline:
-        """Create a pipeline for batched operations. Transactions are not supported in cluster mode."""
-        import warnings
-
+        """Create a pipeline for batched operations. Transactions are ignored in cluster mode."""
         from django_cachex.client.pipeline import Pipeline
-
-        if transaction is not self._PIPELINE_DEFAULT and transaction:
-            warnings.warn(
-                "Cluster pipelines do not support transactions (MULTI/EXEC). The transaction parameter is ignored.",
-                stacklevel=2,
-            )
 
         client = self.get_client(write=True)
         raw_pipeline = client.pipeline(transaction=False)

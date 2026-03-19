@@ -1,8 +1,5 @@
 """Pytest configuration for django-cachex tests."""
 
-import sys
-from pathlib import Path
-
 from tests.fixtures import (
     cache,
     client_class,
@@ -43,8 +40,3 @@ __all__ = [
     "settings",
     "stampede_cache",
 ]
-
-
-def pytest_configure(config):
-    """Add tests directory to Python path."""
-    sys.path.insert(0, str(Path(__file__).absolute().parent))

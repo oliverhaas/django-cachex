@@ -34,8 +34,8 @@ class Pipeline:
         self._pipeline = pipeline
         self._version = version
         self._key_func: Callable[..., str] | None = None
-        self._decoders: list[Callable[[Any], Any]] = []
         self._cache_version: int | None = None
+        self._decoders: list[Callable[[Any], Any]] = []
 
     def __enter__(self) -> Self:
         """Enter context manager."""
@@ -44,12 +44,15 @@ class Pipeline:
     def __exit__(self, *args: object) -> None:
         """Exit context manager, resetting the underlying pipeline."""
         self._pipeline.reset()
+        self._decoders.clear()
 
     def execute(self) -> list[Any]:
         """Execute all queued commands and decode the results."""
         results = self._pipeline.execute()
+        decoders = self._decoders
+        self._decoders = []
         decoded = []
-        for result, decoder in zip(results, self._decoders, strict=True):
+        for result, decoder in zip(results, decoders, strict=True):
             decoded.append(decoder(result))
         return decoded
 
@@ -70,16 +73,16 @@ class Pipeline:
             return None
         return self._client.decode(value)
 
-    def _decode_list(self, value: list[bytes]) -> list[Any]:
+    def _decode_list(self, value: list[bytes | None]) -> list[Any]:
         """Decode a list of values."""
-        return [self._client.decode(item) for item in value]
+        return [self._client.decode(item) if item is not None else None for item in value]
 
-    def _decode_single_or_list(self, value: bytes | list[bytes] | None) -> Any:
+    def _decode_single_or_list(self, value: bytes | list[bytes | None] | None) -> Any:
         """Decode value that may be single item, list, or None (lpop/rpop with count)."""
         if value is None:
             return None
         if isinstance(value, list):
-            return [self._client.decode(item) for item in value]
+            return [self._client.decode(item) if item is not None else None for item in value]
         return self._client.decode(value)
 
     def _decode_set(self, value: _Set[bytes]) -> _Set[Any]:
@@ -158,6 +161,26 @@ class Pipeline:
             for stream_key, entries in results
         }
 
+    def _make_stream_key_decoder(
+        self,
+        key_map: dict[str, Any],
+    ) -> Callable[[Any], dict[str, list[tuple[str, dict[str, Any]]]] | None]:
+        """Create a decoder that un-prefixes stream keys in xread/xreadgroup results."""
+
+        def decode(
+            results: list[tuple[Any, list[tuple[Any, dict[Any, Any]]]]] | None,
+        ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+            if results is None:
+                return None
+            decoded: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+            for stream_key, entries in results:
+                sk = stream_key.decode() if isinstance(stream_key, bytes) else str(stream_key)
+                original = key_map.get(sk, sk)
+                decoded[str(original)] = self._decode_stream_entries(entries)
+            return decoded
+
+        return decode
+
     # -------------------------------------------------------------------------
     # Key/value helpers
     # -------------------------------------------------------------------------
@@ -192,6 +215,12 @@ class Pipeline:
         nkey = self._make_key(key, version)
         nvalue = self._encode(value)
         actual_timeout = self._client._get_timeout_with_buffer(timeout, stampede_prevention)
+
+        # timeout=0 means "expire immediately" (Django convention) — queue a DELETE
+        if actual_timeout == 0:
+            self._pipeline.delete(nkey)
+            self._decoders.append(bool)
+            return self
 
         kwargs: dict[str, Any] = {}
         if actual_timeout is not None:
@@ -1285,9 +1314,14 @@ class Pipeline:
         version: int | None = None,
     ) -> Self:
         """Queue XREAD command (read from streams)."""
-        nstreams: dict[KeyT, str] = {self._make_key(k, version): v for k, v in streams.items()}
+        key_map: dict[str, KeyT] = {}
+        nstreams: dict[KeyT, str] = {}
+        for k, v in streams.items():
+            nk = self._make_key(k, version)
+            key_map[nk if isinstance(nk, str) else str(nk)] = k
+            nstreams[nk] = v
         self._pipeline.xread(nstreams, count=count, block=block)
-        self._decoders.append(self._decode_stream_results)
+        self._decoders.append(self._make_stream_key_decoder(key_map))
         return self
 
     def xtrim(
@@ -1387,9 +1421,14 @@ class Pipeline:
         version: int | None = None,
     ) -> Self:
         """Queue XREADGROUP command (read as consumer group member)."""
-        nstreams: dict[KeyT, str] = {self._make_key(k, version): v for k, v in streams.items()}
+        key_map: dict[str, KeyT] = {}
+        nstreams: dict[KeyT, str] = {}
+        for k, v in streams.items():
+            nk = self._make_key(k, version)
+            key_map[nk if isinstance(nk, str) else str(nk)] = k
+            nstreams[nk] = v
         self._pipeline.xreadgroup(group, consumer, nstreams, count=count, block=block, noack=noack)
-        self._decoders.append(self._decode_stream_results)
+        self._decoders.append(self._make_stream_key_decoder(key_map))
         return self
 
     def xack(self, key: KeyT, group: str, *entry_ids: str, version: int | None = None) -> Self:

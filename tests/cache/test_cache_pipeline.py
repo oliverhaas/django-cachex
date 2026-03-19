@@ -1,5 +1,7 @@
 """Tests for pipeline operations."""
 
+import warnings
+
 import pytest
 
 from django_cachex.cache import KeyValueCache
@@ -884,3 +886,94 @@ class TestPipelineStreamOps:
 
         assert isinstance(results[0], list)
         assert len(results[0]) == 1
+
+
+class TestPipelineReuse:
+    """Test that pipelines can be reused after execute() and context manager exit."""
+
+    def test_multiple_execute_calls(self, cache: KeyValueCache):
+        """Pipeline can be executed multiple times without decoder misalignment."""
+        pipe = cache.pipeline()
+
+        # First batch
+        pipe.set("reuse_a", "val1")
+        pipe.get("reuse_a")
+        results1 = pipe.execute()
+        assert results1 == [True, "val1"]
+
+        # Second batch on the same pipeline — must not crash
+        pipe.set("reuse_b", "val2")
+        pipe.get("reuse_b")
+        results2 = pipe.execute()
+        assert results2 == [True, "val2"]
+
+    def test_context_manager_resets_decoders(self, cache: KeyValueCache):
+        """After context manager exit, pipeline decoders are cleared."""
+        pipe = cache.pipeline()
+
+        with pipe:
+            pipe.set("ctx_key", "ctx_val")
+            pipe.get("ctx_key")
+            results = pipe.execute()
+            assert results == [True, "ctx_val"]
+
+        # After __exit__, decoders should be cleared.
+        # Queuing new commands and executing should work without length mismatch.
+        pipe.set("ctx_key2", "ctx_val2")
+        pipe.get("ctx_key2")
+        results2 = pipe.execute()
+        assert results2 == [True, "ctx_val2"]
+
+    def test_execute_empty_after_previous(self, cache: KeyValueCache):
+        """Executing with no commands after a previous execute returns empty list."""
+        pipe = cache.pipeline()
+        pipe.set("empty_test", "val")
+        pipe.execute()
+        # No new commands queued
+        assert pipe.execute() == []
+
+
+class TestPipelineXreadKeyUnprefixing:
+    """Test that pipeline xread/xreadgroup return user-facing keys, not prefixed ones."""
+
+    def test_pipeline_xread_returns_original_keys(self, cache: KeyValueCache):
+        """xread in pipeline should return unprefixed stream names."""
+        cache.xadd("pipe_xread_stream", {"msg": "hello"})
+
+        pipe = cache.pipeline()
+        pipe.xread({"pipe_xread_stream": "0-0"}, count=10)
+        results = pipe.execute()
+
+        assert results[0] is not None
+        # The key in the response must be the user's original key, not the prefixed one
+        assert "pipe_xread_stream" in results[0]
+        assert len(results[0]["pipe_xread_stream"]) == 1
+
+    def test_pipeline_xreadgroup_returns_original_keys(self, cache: KeyValueCache):
+        """xreadgroup in pipeline should return unprefixed stream names."""
+        cache.xadd("pipe_xrg_stream", {"msg": "world"})
+        cache.xgroup_create("pipe_xrg_stream", "pipe_grp", entry_id="0")
+
+        pipe = cache.pipeline()
+        pipe.xreadgroup("pipe_grp", "consumer1", {"pipe_xrg_stream": ">"}, count=10)
+        results = pipe.execute()
+
+        assert results[0] is not None
+        assert "pipe_xrg_stream" in results[0]
+        assert len(results[0]["pipe_xrg_stream"]) == 1
+
+
+class TestPipelineNoSpuriousWarnings:
+    """Ensure pipeline() does not emit unexpected warnings."""
+
+    def test_default_pipeline_no_warnings(self, cache: KeyValueCache):
+        """Creating a pipeline with default args should not emit warnings.
+
+        Regression: cluster pipelines warned about transactions on every call,
+        even when the user never asked for transactions.
+        """
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            pipe = cache.pipeline()
+            pipe.set("nowarn_key", "val")
+            pipe.execute()

@@ -10,7 +10,7 @@
 import socket
 
 # Build exception tuples from available libraries (redis-py / valkey-py).
-# These are used by omit_exception and the client layer.
+# These are used by the client layer.
 _exception_list: list[type[Exception]] = [socket.timeout]
 
 try:

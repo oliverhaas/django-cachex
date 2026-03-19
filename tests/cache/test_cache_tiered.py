@@ -535,3 +535,25 @@ class TestTieredCacheConfig:
     def test_cachex_support_level(self, tiered_cache: BaseCache):
         """TieredCache has 'wrapped' support level for admin."""
         assert tiered_cache._cachex_support == "wrapped"
+
+
+class TestTieredSetManyOrdering:
+    """Verify set_many writes L2 before L1 so L1 doesn't have phantom data on L2 failure."""
+
+    def test_set_many_data_in_both_tiers(self, tiered_cache: BaseCache):
+        """After set_many, data should be in both L1 and L2."""
+        data = {"order_a": "va", "order_b": "vb"}
+        tiered_cache.set_many(data)
+
+        # L1 should have the data
+        assert tiered_cache._l1.get("order_a") == "va"
+        assert tiered_cache._l1.get("order_b") == "vb"
+
+        # L2 should also have the data
+        assert tiered_cache._l2.get("order_a") == "va"
+        assert tiered_cache._l2.get("order_b") == "vb"
+
+    def test_set_many_returns_l2_result(self, tiered_cache: BaseCache):
+        """set_many should return L2's result (empty list = no failures)."""
+        result = tiered_cache.set_many({"order_c": "vc"})
+        assert result == []
