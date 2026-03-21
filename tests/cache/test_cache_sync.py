@@ -525,3 +525,139 @@ class TestSyncAdmin:
         mk = sync_cache.make_key("test_key")
         rk = sync_cache.reverse_key(mk)
         assert rk == "test_key"
+
+
+# =============================================================================
+# Write-through and atomic operation tests
+# =============================================================================
+
+
+class TestSyncWriteThrough:
+    def test_set_writes_through_to_transport(self, sync_cache: SyncCache):
+        sync_cache.set("wt_key", "wt_value")
+        sync_cache._flush_publishes()
+        assert sync_cache._transport.get("wt_key") == "wt_value"
+
+    def test_delete_writes_through_to_transport(self, sync_cache: SyncCache):
+        sync_cache.set("wt_del", "val")
+        sync_cache._flush_publishes()
+        assert sync_cache._transport.get("wt_del") == "val"
+        sync_cache.delete("wt_del")
+        sync_cache._flush_publishes()
+        assert sync_cache._transport.get("wt_del") is None
+
+    def test_clear_writes_through_to_transport(self, sync_cache: SyncCache):
+        sync_cache.set("wt_cl1", "a")
+        sync_cache.set("wt_cl2", "b")
+        sync_cache._flush_publishes()
+        assert sync_cache._transport.get("wt_cl1") == "a"
+        sync_cache.clear()
+        sync_cache._flush_publishes()
+        assert sync_cache._transport.get("wt_cl1") is None
+        assert sync_cache._transport.get("wt_cl2") is None
+
+    def test_touch_writes_through_to_transport(self, sync_cache: SyncCache):
+        sync_cache.set("wt_touch", "val", timeout=10)
+        sync_cache._flush_publishes()
+        sync_cache.touch("wt_touch", timeout=120)
+        sync_cache._flush_publishes()
+        ttl = sync_cache._transport.ttl("wt_touch")
+        assert ttl is not None
+        assert ttl > 60
+
+    def test_delete_many_writes_through_to_transport(self, sync_cache: SyncCache):
+        sync_cache.set("wt_dm1", 1)
+        sync_cache.set("wt_dm2", 2)
+        sync_cache._flush_publishes()
+        sync_cache.delete_many(["wt_dm1", "wt_dm2"])
+        sync_cache._flush_publishes()
+        assert sync_cache._transport.get("wt_dm1") is None
+        assert sync_cache._transport.get("wt_dm2") is None
+
+
+class TestSyncAtomicOps:
+    def test_add_atomic_across_pods(self, sync_pair: tuple[SyncCache, SyncCache]):
+        """Only one pod succeeds when both try to add the same key."""
+        pod1, pod2 = sync_pair
+        # Both pods try to add the same key
+        result1 = pod1.add("race_key", "from_pod1")
+        result2 = pod2.add("race_key", "from_pod2")
+        # Exactly one should succeed
+        assert result1 != result2, "Exactly one add() should succeed"
+        assert result1 or result2, "At least one add() should succeed"
+
+    def test_add_returns_false_if_key_exists_in_transport(
+        self,
+        sync_pair: tuple[SyncCache, SyncCache],
+    ):
+        """add() on pod2 fails if pod1 already set the key."""
+        pod1, pod2 = sync_pair
+        pod1.set("existing", "from_pod1")
+        pod1._flush_publishes()
+        # pod2 hasn't received the stream message yet — but transport has
+        # the key via write-through, so add() should fail
+        assert pod2.add("existing", "from_pod2") is False
+
+    def test_incr_atomic_across_pods(self, sync_pair: tuple[SyncCache, SyncCache]):
+        """Both increments are preserved when two pods incr concurrently."""
+        pod1, pod2 = sync_pair
+        pod1.set("counter", 0)
+        pod1._flush_publishes()
+        pod2._drain()
+
+        val1 = pod1.incr("counter")
+        val2 = pod2.incr("counter")
+
+        # Both increments should go through Redis INCR atomically
+        # so the final value should be 2, though the intermediate
+        # results may vary depending on ordering
+        assert {val1, val2} == {1, 2}
+        # Verify transport has the authoritative value
+        assert pod1._transport.get("counter") == 2
+
+    def test_incr_missing_key_raises(self, sync_cache: SyncCache):
+        with pytest.raises(ValueError):
+            sync_cache.incr("no_such_counter")
+
+    def test_decr_atomic(self, sync_pair: tuple[SyncCache, SyncCache]):
+        """decr is atomic via transport (delegates to incr with -delta)."""
+        pod1, pod2 = sync_pair
+        pod1.set("dcounter", 10)
+        pod1._flush_publishes()
+        pod2._drain()
+
+        pod1.decr("dcounter")
+        pod2.decr("dcounter")
+
+        assert pod1._transport.get("dcounter") == 8
+
+    def test_incr_propagates_to_other_pod(self, sync_pair: tuple[SyncCache, SyncCache]):
+        """After incr on pod1, the result propagates to pod2 via stream."""
+        pod1, pod2 = sync_pair
+        pod1.set("prop_counter", 5)
+        pod1._flush_publishes()
+        pod2._drain()
+
+        pod1.incr("prop_counter", 3)
+        pod1._flush_publishes()
+        pod2._drain()
+
+        assert pod2.get("prop_counter") == 8
+
+
+class TestSyncShutdown:
+    def test_shutdown_stops_consumer(self, redis_container: RedisContainerInfo):
+        config = _build_sync_config(
+            redis_container.host,
+            redis_container.port,
+            client_library=redis_container.client_library,
+        )
+        stream_key = config["default"]["OPTIONS"]["STREAM_KEY"]
+
+        with override_settings(CACHES=config):
+            cache = caches["default"]
+            cache.set("k", "v")  # triggers consumer start
+            assert cache._consumer_alive()
+            cache.shutdown()
+            assert not cache._consumer_alive()
+            _cleanup_globals(stream_key)
