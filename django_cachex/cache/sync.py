@@ -148,7 +148,7 @@ class SyncCache(LocMemCache):
         self._init_lock = Lock()
 
         # Non-blocking publish: single-worker executor serializes XADD calls
-        # and write-through operations without blocking the calling thread.
+        # without blocking the calling thread on network I/O.
         self._publish_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sync-pub")
 
         # Admin display: show stream key and transport alias as location
@@ -257,6 +257,9 @@ class SyncCache(LocMemCache):
             self._initialized = True
 
     def _start_consumer(self) -> None:
+        # Recreate executor if it was shut down (e.g. after shutdown() + reuse)
+        if self._publish_executor._shutdown:  # ty: ignore[unresolved-attribute]
+            self._publish_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sync-pub")
         if self._replay_count > 0:
             self._replay_stream(self._replay_count)
         self._stop_event.clear()
