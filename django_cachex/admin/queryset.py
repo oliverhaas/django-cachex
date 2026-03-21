@@ -361,6 +361,27 @@ class DashboardQuerySet:
         return self._clone()
 
 
+class DashboardPeriodFilter(admin.SimpleListFilter):
+    """Filter throughput chart by time period."""
+
+    title = _("chart period")
+    parameter_name = "period"
+
+    def lookups(
+        self,
+        request: HttpRequest,
+        model_admin: admin.ModelAdmin,
+    ) -> list[tuple[str, str]]:
+        return [
+            ("5m", "Last 5 minutes"),
+            ("15m", "Last 15 minutes"),
+            ("30m", "Last 30 minutes"),
+        ]
+
+    def queryset(self, request: HttpRequest, queryset: Any) -> Any:
+        return queryset  # No-op: period filtering handled in changelist_view
+
+
 class DashboardAdminMixin:
     """Admin mixin for the metrics dashboard.
 
@@ -379,6 +400,7 @@ class DashboardAdminMixin:
         "latency_display",
     ]
     list_display_links: ClassVar[Any] = None
+    list_filter: ClassVar[Any] = [DashboardPeriodFilter]
     ordering: ClassVar[Any] = []
     actions: ClassVar[Any] = []
     list_per_page: ClassVar[int] = 100
@@ -386,13 +408,19 @@ class DashboardAdminMixin:
     def get_queryset(self, request: HttpRequest) -> Any:
         return DashboardQuerySet()
 
+    search_fields: ClassVar[Any] = ["name"]
+
     def get_search_results(
         self,
         request: HttpRequest,
         queryset: Any,
         search_term: str,
     ) -> tuple[Any, bool]:
-        return queryset, False
+        if not search_term:
+            return queryset, False
+        term = search_term.lower()
+        filtered = [d for d in queryset if term in d.name.lower()]
+        return DashboardQuerySet(filtered), False
 
     def changelist_view(
         self,
@@ -406,8 +434,6 @@ class DashboardAdminMixin:
 
         extra_context = extra_context or {}
         extra_context["has_prometheus"] = HAS_PROMETHEUS
-        extra_context["process_host"] = socket.gethostname()
-        extra_context["process_pid"] = os.getpid()
         if HAS_PROMETHEUS:
             snapshot()  # record current counters for time-series history
             stats = get_stats()
@@ -419,7 +445,20 @@ class DashboardAdminMixin:
             extra_context["total_hits"] = total_hits
             extra_context["total_misses"] = total_misses
             extra_context["global_hit_rate"] = round(total_hits / total_gets * 100, 1) if total_gets > 0 else 0.0
-            extra_context["throughput_json"] = get_throughput_json()
+            period = request.GET.get("period", "")
+            extra_context["throughput_json"] = get_throughput_json(period)
+            host = socket.gethostname()
+            pid = os.getpid()
+            messages.warning(
+                request,
+                f"Metrics scoped to this process only (host: {host}, PID: {pid})."
+                " For cross-pod metrics, use the /metrics endpoint with Prometheus.",
+            )
+        else:
+            messages.warning(
+                request,
+                "prometheus-client not installed. Run: pip install django-cachex[prometheus]",
+            )
         return super().changelist_view(request, extra_context)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
 
     # ------------------------------------------------------------------

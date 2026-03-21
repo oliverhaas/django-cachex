@@ -196,8 +196,18 @@ def snapshot() -> None:
         _history.append((now, point))
 
 
-def get_throughput_json() -> str:
+_PERIOD_SECONDS = {
+    "5m": 300,
+    "15m": 900,
+    "30m": 1800,
+}
+
+
+def get_throughput_json(period: str = "") -> str:
     """Compute ops/sec rates from the snapshot history for Chart.js.
+
+    Args:
+        period: Filter to last "5m", "15m", or "30m". Empty = all history.
 
     Returns a JSON string with labels (timestamps) and datasets
     (hits/sec, misses/sec, sets/sec) aggregated across all caches.
@@ -207,6 +217,14 @@ def get_throughput_json() -> str:
 
     if len(points) < 2:
         return ""
+
+    # Filter by period
+    cutoff_seconds = _PERIOD_SECONDS.get(period, 0)
+    if cutoff_seconds:
+        cutoff = time.time() - cutoff_seconds
+        points = [(t, p) for t, p in points if t >= cutoff]
+        if len(points) < 2:
+            return ""
 
     labels: list[str] = []
     hits_rate: list[float] = []
