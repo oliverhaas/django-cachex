@@ -3,6 +3,7 @@
 
 {% block extrahead %}
 {{ block.super }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <style>
     .cachex-stats {
         display: flex;
@@ -43,56 +44,115 @@
     [data-theme="dark"] .cachex-color-ok { color: #5dade2; }
     [data-theme="dark"] .cachex-color-err { color: #e74c3c; }
     [data-theme="dark"] .cachex-color-warn { color: #f0ad4e; }
-
-    .cachex-table {
-        width: 100%;
-        border-collapse: collapse;
-        background: var(--body-bg);
+    .cachex-notice {
+        background: var(--darkened-bg);
         border: 1px solid var(--hairline-color);
         border-radius: 6px;
-        overflow: hidden;
-        margin-bottom: 20px;
-    }
-    .cachex-table th {
-        background: var(--darkened-bg);
-        text-align: left;
         padding: 10px 14px;
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        color: var(--body-quiet-color);
-        border-bottom: 1px solid var(--hairline-color);
-    }
-    .cachex-table td {
-        padding: 10px 14px;
-        border-bottom: 1px solid var(--hairline-color);
-        font-size: 13px;
-    }
-    .cachex-table tr:last-child td {
-        border-bottom: none;
-    }
-    .cachex-table code {
+        margin-bottom: 16px;
         font-size: 12px;
+        color: var(--body-quiet-color);
+    }
+    .cachex-notice code {
+        font-size: 11px;
+        background: var(--body-bg);
+        padding: 1px 4px;
+        border-radius: 3px;
     }
     .cachex-empty {
         text-align: center;
         padding: 40px 20px;
         color: var(--body-quiet-color);
     }
-    .cachex-empty p {
-        margin: 8px 0;
-    }
+    .cachex-empty p { margin: 8px 0; }
     .cachex-empty code {
         background: var(--darkened-bg);
         padding: 2px 6px;
         border-radius: 3px;
     }
+    .cachex-chart {
+        background: var(--body-bg);
+        border: 1px solid var(--hairline-color);
+        border-radius: 6px;
+        padding: 16px;
+        position: relative;
+        height: 280px;
+        overflow: hidden;
+        margin-bottom: 20px;
+    }
+    .cachex-chart canvas { width: 100% !important; }
 </style>
+{% if throughput_json %}
+<script>
+window._cachexRenderChart = function() {
+    const dataEl = document.getElementById('cachex-throughput-data');
+    if (!dataEl) return;
+    const D = JSON.parse(dataEl.textContent);
+    if (!D.labels || !D.labels.length) return;
+
+    const isDark = document.documentElement.dataset.theme === 'dark' ||
+        (document.documentElement.dataset.theme === 'auto' &&
+         window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+    const C = {
+        hits:     isDark ? '#5dade2' : '#417690',
+        hitsFill: isDark ? 'rgba(93,173,226,0.15)' : 'rgba(65,118,144,0.2)',
+        misses:   isDark ? '#e74c3c' : '#ba2121',
+        missFill: isDark ? 'rgba(231,76,60,0.15)' : 'rgba(186,33,33,0.2)',
+        sets:     isDark ? '#f0ad4e' : '#e09c3f',
+        setsFill: isDark ? 'rgba(240,173,78,0.10)' : 'rgba(224,156,63,0.15)',
+        text:     isDark ? '#ccc' : '#666',
+        grid:     isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+        title:    isDark ? '#ddd' : '#417690',
+    };
+
+    const canvas = document.getElementById('cachex-throughput');
+    if (!canvas) return;
+
+    window._cachexCharts = window._cachexCharts || {};
+    const config = {
+        type: 'line',
+        data: {
+            labels: D.labels,
+            datasets: [
+                { label: 'Hits/s', data: D.hits, borderColor: C.hits, backgroundColor: C.hitsFill, fill: true, tension: 0.35, pointRadius: 0, pointHitRadius: 10, borderWidth: 2 },
+                { label: 'Misses/s', data: D.misses, borderColor: C.misses, backgroundColor: C.missFill, fill: true, tension: 0.35, pointRadius: 0, pointHitRadius: 10, borderWidth: 2 },
+                { label: 'Sets/s', data: D.sets, borderColor: C.sets, backgroundColor: C.setsFill, fill: true, tension: 0.35, pointRadius: 0, pointHitRadius: 10, borderWidth: 2 },
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            animation: { duration: 600 },
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                title: { display: true, text: 'Throughput (ops/sec)', color: C.title, font: { size: 14, weight: '500' }, padding: { bottom: 12 } },
+                legend: { position: 'bottom', labels: { usePointStyle: true, pointStyle: 'circle', padding: 20, color: C.text, font: { size: 12 } } },
+            },
+            scales: {
+                x: { ticks: { maxTicksLimit: 10, color: C.text, font: { size: 11 } }, grid: { display: false }, border: { display: false } },
+                y: { beginAtZero: true, ticks: { color: C.text, font: { size: 11 } }, grid: { color: C.grid }, border: { display: false } }
+            }
+        }
+    };
+
+    if (window._cachexCharts.throughput) {
+        const ch = window._cachexCharts.throughput;
+        ch.data.labels = config.data.labels;
+        config.data.datasets.forEach((ds, i) => {
+            if (ch.data.datasets[i]) ch.data.datasets[i].data = ds.data;
+        });
+        ch.update('none');
+    } else {
+        window._cachexCharts.throughput = new Chart(canvas, config);
+    }
+};
+document.addEventListener('DOMContentLoaded', window._cachexRenderChart);
+</script>
+{% endif %}
 {% endblock %}
 
 {% block content_title %}<h1>{% translate "Dashboard" %}</h1>{% endblock %}
 {% block search %}{% endblock %}
-{% block pagination %}{% endblock %}
 {% block object-tools %}{% endblock %}
 
 {% block result_list %}
@@ -102,62 +162,42 @@
         <p>{% translate "Install it to enable cache metrics:" %}</p>
         <p><code>pip install django-cachex[prometheus]</code></p>
     </div>
-{% elif not cache_stats %}
-    <div class="cachex-empty">
-        <p>{% translate "No cache operations recorded yet." %}</p>
-        <p>{% translate "Metrics will appear after cache get/set/delete operations are performed." %}</p>
-    </div>
 {% else %}
-    {# Global summary #}
+    {# Process scope notice #}
+    <div class="cachex-notice">
+        {% translate "Metrics are scoped to this process only." %}
+        {% translate "Host:" %} <code>{{ process_host }}</code>
+        &middot; {% translate "PID:" %} <code>{{ process_pid }}</code>
+        &middot; {% translate "For cross-pod metrics, use the" %} <code>/metrics</code> {% translate "endpoint with Prometheus." %}
+    </div>
+
+    {# Stat tiles #}
     <div class="cachex-stats">
         <div class="cachex-stat">
-            <div class="cachex-stat-value">{{ total_ops }}</div>
+            <div class="cachex-stat-value">{{ total_ops|default:"0" }}</div>
             <div class="cachex-stat-label">{% translate "Total Ops" %}</div>
         </div>
         <div class="cachex-stat">
-            <div class="cachex-stat-value cachex-color-ok">{{ total_hits }}</div>
+            <div class="cachex-stat-value cachex-color-ok">{{ total_hits|default:"0" }}</div>
             <div class="cachex-stat-label">{% translate "Hits" %}</div>
         </div>
         <div class="cachex-stat">
-            <div class="cachex-stat-value cachex-color-err">{{ total_misses }}</div>
+            <div class="cachex-stat-value cachex-color-err">{{ total_misses|default:"0" }}</div>
             <div class="cachex-stat-label">{% translate "Misses" %}</div>
         </div>
         <div class="cachex-stat">
-            <div class="cachex-stat-value cachex-color-warn">{{ global_hit_rate }}%</div>
+            <div class="cachex-stat-value cachex-color-warn">{{ global_hit_rate|default:"0.0" }}%</div>
             <div class="cachex-stat-label">{% translate "Hit Rate" %}</div>
         </div>
     </div>
 
-    {# Per-cache breakdown #}
-    <table class="cachex-table">
-        <thead>
-            <tr>
-                <th>{% translate "Cache" %}</th>
-                <th>{% translate "Gets" %}</th>
-                <th>{% translate "Hits" %}</th>
-                <th>{% translate "Misses" %}</th>
-                <th>{% translate "Hit Rate" %}</th>
-                <th>{% translate "Sets" %}</th>
-                <th>{% translate "Deletes" %}</th>
-                <th>{% translate "Avg Latency" %}</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for alias, s in cache_stats.items %}
-            {% if s.total > 0 %}
-            <tr>
-                <td><strong>{{ alias }}</strong></td>
-                <td>{{ s.gets }}</td>
-                <td class="cachex-color-ok">{{ s.hits }}</td>
-                <td class="cachex-color-err">{{ s.misses }}</td>
-                <td>{{ s.hit_rate }}%</td>
-                <td>{{ s.sets }}</td>
-                <td>{{ s.deletes }}</td>
-                <td><code>{{ s.avg_latency_ms }} ms</code></td>
-            </tr>
-            {% endif %}
-            {% endfor %}
-        </tbody>
-    </table>
+    {# Throughput chart (only shown when history exists) #}
+    {% if throughput_json %}
+    <script type="application/json" id="cachex-throughput-data">{{ throughput_json|safe }}</script>
+    <div class="cachex-chart"><canvas id="cachex-throughput"></canvas></div>
+    {% endif %}
+
+    {# Standard admin result table (per-cache breakdown) #}
+    {{ block.super }}
 {% endif %}
 {% endblock %}

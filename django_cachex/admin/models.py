@@ -186,9 +186,9 @@ class Key(models.Model):
 
 
 class Dashboard(models.Model):
-    """Unmanaged model used as a sidebar entry for the metrics dashboard."""
+    """Unmanaged model representing per-cache metrics for the admin dashboard."""
 
-    name = models.CharField(max_length=1, primary_key=True)
+    name = models.CharField(max_length=255, primary_key=True)
 
     class Meta:
         managed = False
@@ -198,4 +198,29 @@ class Dashboard(models.Model):
         verbose_name_plural = "Dashboard"
 
     def __str__(self) -> str:
-        return "Dashboard"
+        return self.name or "Dashboard"
+
+    # Dynamic attributes set by from_stats() — not Django model fields.
+    total: int
+    gets: int
+    hits: int
+    misses: int
+    hit_rate: float
+    sets: int
+    deletes: int
+    avg_latency_ms: float
+
+    @classmethod
+    def from_stats(cls, alias: str, stats: dict) -> Dashboard:
+        """Create a Dashboard instance from a stats dict."""
+        obj = cls()
+        obj.name = alias
+        obj.total = stats.get("total", 0)
+        obj.gets = stats.get("gets", 0)
+        obj.hits = stats.get("hits", 0)
+        obj.misses = stats.get("misses", 0)
+        obj.hit_rate = stats.get("hit_rate", 0.0)
+        obj.sets = stats.get("sets", 0)
+        obj.deletes = stats.get("deletes", 0)
+        obj.avg_latency_ms = stats.get("avg_latency_ms", 0.0)
+        return obj

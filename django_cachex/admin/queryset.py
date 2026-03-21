@@ -23,7 +23,7 @@ from django.utils.timesince import timeuntil
 from django.utils.translation import gettext_lazy as _
 
 from django_cachex.admin.helpers import get_cache, get_size
-from django_cachex.admin.models import Cache, Key
+from django_cachex.admin.models import Cache, Dashboard, Key
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
@@ -291,6 +291,176 @@ class CacheAdminMixin:
     def keys_link(self, obj: Cache) -> str:
         url = reverse("admin:django_cachex_key_changelist") + f"?cache={obj.name}"
         return format_html('<a href="{}">{}</a>', url, _("List Keys"))
+
+
+# --- Dashboard: DashboardQuerySet and DashboardAdminMixin ---
+
+
+class DashboardQuerySet:
+    """In-memory queryset-like object backed by cache metrics.
+
+    Each item is a Dashboard instance with per-cache metrics from
+    prometheus_client counters/histograms.
+    """
+
+    model = Dashboard
+    ordered = True
+    db = "default"
+
+    def __init__(self, data: list[Dashboard] | None = None):
+        if data is None:
+            self._data = self._load()
+        else:
+            self._data = list(data)
+        self.query = _FakeQuery()
+
+    @staticmethod
+    def _load() -> list[Dashboard]:
+        from django_cachex.metrics import get_stats
+
+        stats = get_stats()
+        return [Dashboard.from_stats(alias, s) for alias, s in stats.items()]
+
+    def _clone(self) -> DashboardQuerySet:
+        return DashboardQuerySet(self._data)
+
+    def count(self) -> int:
+        return len(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __iter__(self) -> Iterator[Dashboard]:
+        return iter(self._data)
+
+    def __bool__(self) -> bool:
+        return bool(self._data)
+
+    def __getitem__(self, key: int | slice) -> DashboardQuerySet | Dashboard:
+        if isinstance(key, slice):
+            return DashboardQuerySet(self._data[key])
+        return self._data[key]
+
+    def filter(self, *args: Any, **kwargs: Any) -> DashboardQuerySet:
+        clone = self._clone()
+        if "pk__in" in kwargs:
+            names = set(kwargs["pk__in"])
+            clone._data = [d for d in clone._data if d.pk in names]
+        return clone
+
+    def order_by(self, *fields: str) -> DashboardQuerySet:
+        return self._clone()
+
+    def select_related(self, *args: Any) -> DashboardQuerySet:
+        return self._clone()
+
+    def distinct(self) -> DashboardQuerySet:
+        return self._clone()
+
+    def alias(self, **kwargs: Any) -> DashboardQuerySet:
+        return self._clone()
+
+
+class DashboardAdminMixin:
+    """Admin mixin for the metrics dashboard.
+
+    Uses standard list_display for per-cache metrics table, with
+    custom stat tiles rendered above via the template.
+    """
+
+    list_display: ClassVar[Any] = [
+        "name",
+        "total_display",
+        "hits_display",
+        "misses_display",
+        "hit_rate_display",
+        "sets_display",
+        "deletes_display",
+        "latency_display",
+    ]
+    list_display_links: ClassVar[Any] = None
+    ordering: ClassVar[Any] = []
+    actions: ClassVar[Any] = []
+    list_per_page: ClassVar[int] = 100
+
+    def get_queryset(self, request: HttpRequest) -> Any:
+        return DashboardQuerySet()
+
+    def get_search_results(
+        self,
+        request: HttpRequest,
+        queryset: Any,
+        search_term: str,
+    ) -> tuple[Any, bool]:
+        return queryset, False
+
+    def changelist_view(
+        self,
+        request: HttpRequest,
+        extra_context: dict[str, Any] | None = None,
+    ) -> HttpResponse:
+        import os
+        import socket
+
+        from django_cachex.metrics import HAS_PROMETHEUS, get_stats, get_throughput_json, snapshot
+
+        extra_context = extra_context or {}
+        extra_context["has_prometheus"] = HAS_PROMETHEUS
+        extra_context["process_host"] = socket.gethostname()
+        extra_context["process_pid"] = os.getpid()
+        if HAS_PROMETHEUS:
+            snapshot()  # record current counters for time-series history
+            stats = get_stats()
+            total_ops = sum(s["total"] for s in stats.values())
+            total_hits = sum(s["hits"] for s in stats.values())
+            total_misses = sum(s["misses"] for s in stats.values())
+            total_gets = total_hits + total_misses
+            extra_context["total_ops"] = total_ops
+            extra_context["total_hits"] = total_hits
+            extra_context["total_misses"] = total_misses
+            extra_context["global_hit_rate"] = round(total_hits / total_gets * 100, 1) if total_gets > 0 else 0.0
+            extra_context["throughput_json"] = get_throughput_json()
+        return super().changelist_view(request, extra_context)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+
+    # ------------------------------------------------------------------
+    # Display columns
+    # ------------------------------------------------------------------
+
+    @admin.display(description=_("Cache"))
+    def name_display(self, obj: Dashboard) -> str:
+        return format_html("<strong>{}</strong>", obj.name)
+
+    @admin.display(description=_("Total"))
+    def total_display(self, obj: Dashboard) -> str:
+        return format_html("{}", getattr(obj, "total", 0))
+
+    @admin.display(description=_("Hits"))
+    def hits_display(self, obj: Dashboard) -> str:
+        val = getattr(obj, "hits", 0)
+        return format_html('<span style="color:#15803d">{}</span>', val) if val else "0"
+
+    @admin.display(description=_("Misses"))
+    def misses_display(self, obj: Dashboard) -> str:
+        val = getattr(obj, "misses", 0)
+        return format_html('<span style="color:#ba2121">{}</span>', val) if val else "0"
+
+    @admin.display(description=_("Hit Rate"))
+    def hit_rate_display(self, obj: Dashboard) -> str:
+        rate = getattr(obj, "hit_rate", 0.0)
+        return format_html("{}%", rate)
+
+    @admin.display(description=_("Sets"))
+    def sets_display(self, obj: Dashboard) -> str:
+        return format_html("{}", getattr(obj, "sets", 0))
+
+    @admin.display(description=_("Deletes"))
+    def deletes_display(self, obj: Dashboard) -> str:
+        return format_html("{}", getattr(obj, "deletes", 0))
+
+    @admin.display(description=_("Avg Latency"))
+    def latency_display(self, obj: Dashboard) -> str:
+        val = getattr(obj, "avg_latency_ms", 0.0)
+        return format_html("<code>{} ms</code>", val)
 
 
 # ======================================================================

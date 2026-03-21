@@ -17,8 +17,11 @@ Exposed metrics:
 
 from __future__ import annotations
 
+import json
 import time
+from collections import deque
 from contextlib import contextmanager
+from threading import Lock
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -150,3 +153,93 @@ def _avg_latency_ms(cache: str) -> float:
     if total_count > 0:
         return round(total_sum / total_count * 1000, 3)
     return 0.0
+
+
+# ======================================================================
+# Time-series history (in-memory ring buffer)
+# ======================================================================
+
+# Each snapshot: (timestamp, {alias: {hits, misses, total}})
+_history: deque[tuple[float, dict[str, dict[str, float]]]] = deque(maxlen=360)
+_history_lock = Lock()
+_MIN_SNAPSHOT_INTERVAL = 2.0  # seconds between snapshots
+
+
+def snapshot() -> None:
+    """Take a snapshot of current counters and append to the ring buffer.
+
+    Called on each dashboard page load. Snapshots are throttled to at
+    most one every ``_MIN_SNAPSHOT_INTERVAL`` seconds.
+    """
+    if not HAS_PROMETHEUS:
+        return
+    now = time.time()
+    with _history_lock:
+        if _history and (now - _history[-1][0]) < _MIN_SNAPSHOT_INTERVAL:
+            return
+    from django.conf import settings
+
+    point: dict[str, dict[str, float]] = {}
+    for alias in settings.CACHES:
+        hits = _counter_value(alias, "get", "hit")
+        misses = _counter_value(alias, "get", "miss")
+        sets = _counter_value(alias, "set", "ok")
+        deletes = _counter_value(alias, "delete", "ok")
+        point[alias] = {
+            "hits": hits,
+            "misses": misses,
+            "sets": sets,
+            "deletes": deletes,
+            "total": hits + misses + sets + deletes,
+        }
+    with _history_lock:
+        _history.append((now, point))
+
+
+def get_throughput_json() -> str:
+    """Compute ops/sec rates from the snapshot history for Chart.js.
+
+    Returns a JSON string with labels (timestamps) and datasets
+    (hits/sec, misses/sec, sets/sec) aggregated across all caches.
+    """
+    with _history_lock:
+        points = list(_history)
+
+    if len(points) < 2:
+        return ""
+
+    labels: list[str] = []
+    hits_rate: list[float] = []
+    misses_rate: list[float] = []
+    sets_rate: list[float] = []
+
+    for i in range(1, len(points)):
+        t_prev, prev = points[i - 1]
+        t_curr, curr = points[i]
+        dt = t_curr - t_prev
+        if dt <= 0:
+            continue
+
+        # Aggregate deltas across all caches
+        d_hits = sum(curr.get(a, {}).get("hits", 0) - prev.get(a, {}).get("hits", 0) for a in curr)
+        d_misses = sum(curr.get(a, {}).get("misses", 0) - prev.get(a, {}).get("misses", 0) for a in curr)
+        d_sets = sum(curr.get(a, {}).get("sets", 0) - prev.get(a, {}).get("sets", 0) for a in curr)
+
+        # Format timestamp as HH:MM:SS
+        t = time.localtime(t_curr)
+        labels.append(f"{t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}")
+        hits_rate.append(round(d_hits / dt, 1))
+        misses_rate.append(round(d_misses / dt, 1))
+        sets_rate.append(round(d_sets / dt, 1))
+
+    if not labels:
+        return ""
+
+    return json.dumps(
+        {
+            "labels": labels,
+            "hits": hits_rate,
+            "misses": misses_rate,
+            "sets": sets_rate,
+        },
+    )

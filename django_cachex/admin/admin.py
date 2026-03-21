@@ -13,7 +13,7 @@ from django.urls import path, reverse
 from django.utils.safestring import mark_safe
 
 from .models import Cache, Dashboard, Key
-from .queryset import CacheAdminMixin, KeyAdminMixin
+from .queryset import CacheAdminMixin, DashboardAdminMixin, KeyAdminMixin
 from .views import ViewConfig, _cache_detail_view
 
 if TYPE_CHECKING:
@@ -296,12 +296,12 @@ class KeyAdmin(KeyAdminMixin, _KeyBase):  # type: ignore[misc]
 
 
 @admin.register(Dashboard)
-class DashboardAdmin(_DashboardBase):
+class DashboardAdmin(DashboardAdminMixin, _DashboardBase):
     """Metrics dashboard showing cache operation stats.
 
-    Only useful when ``prometheus-client`` is installed
-    (``pip install django-cachex[prometheus]``). Without it, the
-    dashboard shows a message pointing the user to install it.
+    Uses standard admin list view with DashboardQuerySet (backed by
+    prometheus_client counters). Stat tiles are rendered above the table
+    via a custom template.
     """
 
     change_list_template = "admin/django_cachex/dashboard/change_list.html"
@@ -315,29 +315,3 @@ class DashboardAdmin(_DashboardBase):
 
     def has_change_permission(self, request: HttpRequest, obj: Dashboard | None = None) -> bool:
         return False
-
-    def get_queryset(self, request: HttpRequest) -> Any:
-        return Dashboard.objects.none()
-
-    def changelist_view(
-        self,
-        request: HttpRequest,
-        extra_context: dict[str, Any] | None = None,
-    ) -> HttpResponse:
-        from django_cachex.metrics import HAS_PROMETHEUS, get_stats
-
-        extra_context = extra_context or {}
-        extra_context["has_prometheus"] = HAS_PROMETHEUS
-        if HAS_PROMETHEUS:
-            stats = get_stats()
-            extra_context["cache_stats"] = stats
-            # Compute global totals
-            total_ops = sum(s["total"] for s in stats.values())
-            total_hits = sum(s["hits"] for s in stats.values())
-            total_misses = sum(s["misses"] for s in stats.values())
-            total_gets = total_hits + total_misses
-            extra_context["total_ops"] = total_ops
-            extra_context["total_hits"] = total_hits
-            extra_context["total_misses"] = total_misses
-            extra_context["global_hit_rate"] = round(total_hits / total_gets * 100, 1) if total_gets > 0 else 0.0
-        return super().changelist_view(request, extra_context)
