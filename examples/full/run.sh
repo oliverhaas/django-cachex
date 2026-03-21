@@ -33,7 +33,7 @@ case "${1:-}" in
         echo ""
         echo "Containers running:"
         echo "  - Valkey standalone    (6381)"
-        echo "  - Redis standalone     (6380, db 0 = cache, db 1 = Celery)"
+        echo "  - Redis standalone     (6380, db 0 = cache, db 1 = Celery, db 2 = SyncCache transport)"
         echo "  - Redis Cluster        (7001-7006)"
         echo "  - Redis Sentinel       (26379-26381, master: 6390)"
         ;;
@@ -51,6 +51,7 @@ case "${1:-}" in
         echo "  - locmem    : Django LocMemCache"
         echo "  - database  : Django DatabaseCache"
         echo "  - file      : Django FileBasedCache"
+        echo "  - sync      : SyncCache (stream-synced local cache)"
         echo "  - dummy     : Django DummyCache"
         echo ""
         source "$VENV" && python manage.py runserver

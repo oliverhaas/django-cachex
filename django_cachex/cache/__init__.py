@@ -18,6 +18,7 @@ from django_cachex.cache.sentinel import (
     RedisSentinelCache,
     ValkeySentinelCache,
 )
+from django_cachex.cache.sync import SyncCache
 from django_cachex.cache.tiered import TieredCache
 
 __all__ = [
@@ -27,6 +28,7 @@ __all__ = [
     "RedisCache",
     "RedisClusterCache",
     "RedisSentinelCache",
+    "SyncCache",
     "TieredCache",
     "ValkeyCache",
     "ValkeyClusterCache",

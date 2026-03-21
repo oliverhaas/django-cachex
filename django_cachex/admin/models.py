@@ -60,7 +60,15 @@ class Cache(models.Model):
 
     @property
     def location(self) -> str:
-        """Get the cache location."""
+        """Get the cache location.
+
+        Checks for a ``_cachex_location`` attribute on the cache instance
+        first (used by backends like SyncCache that have no ``LOCATION``
+        setting), then falls back to the ``LOCATION`` config key.
+        """
+        cache = self._get_cache()
+        if cache is not None and hasattr(cache, "_cachex_location"):
+            return cache._cachex_location
         loc = self.config.get("LOCATION", "")
         if isinstance(loc, list):
             return ", ".join(str(item) for item in loc)
