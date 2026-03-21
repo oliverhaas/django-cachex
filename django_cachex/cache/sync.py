@@ -26,10 +26,7 @@ Configuration::
         },
     }
 
-``TRANSPORT`` is the alias of a Redis/Valkey cache used for stream I/O and
-as the authoritative store for atomic operations (``add``, ``incr``, ``decr``).
-A dedicated transport alias is recommended — ``clear()`` will clear all keys
-in the transport.
+``TRANSPORT`` is the alias of a Redis/Valkey cache used for stream I/O.
 ``STREAM_KEY`` is the Redis Stream key shared by all pods (default ``cache:sync``).
 ``MAXLEN`` caps stream length via approximate trimming (default 10000).
 ``BLOCK_TIMEOUT`` is the XREAD BLOCK timeout in milliseconds (default 1000).
@@ -57,6 +54,8 @@ from django.core.cache.backends.base import DEFAULT_TIMEOUT, BaseCache
 from django.core.cache.backends.locmem import LocMemCache
 from django.core.exceptions import ImproperlyConfigured
 
+from django_cachex.exceptions import NotSupportedError
+
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
@@ -82,19 +81,14 @@ class SyncCache(LocMemCache):
 
     Extends Django's ``LocMemCache`` with cross-pod synchronization.
     All reads are local dict lookups (inherited from ``LocMemCache``).
-    Writes update the local dict, publish to a Redis Stream, and
-    write-through to the transport cache (best-effort). A daemon thread
-    consumes the stream and applies remote changes.
+    Writes update the local dict and publish to a Redis Stream. A daemon
+    thread consumes the stream and applies remote changes. All supported
+    operations are **eventually consistent** (last-writer-wins).
 
-    **Atomic operations**: ``add``, ``incr``, and ``decr`` are routed through
-    the transport cache (Redis/Valkey) for cross-pod atomicity. ``add`` uses
-    ``SET NX``, ``incr``/``decr`` use Redis ``INCR``/``DECRBY``. These
-    operations require the transport to be healthy — they will raise if
-    Redis is unreachable.
-
-    **Write-through**: All mutations (``set``, ``delete``, ``touch``,
-    ``clear``) are written through to the transport (non-blocking,
-    best-effort) so that atomic operations see up-to-date state.
+    **Unsupported operations**: ``add``, ``incr``, and ``decr`` raise
+    ``NotSupportedError``. These operations have semantics (atomic
+    check-and-set, atomic increment) that cannot be provided with
+    eventual consistency. Use the transport cache directly for these.
 
     **Fail-safe**: The consumer thread is automatically restarted if it dies.
     Use ``info()["sync"]`` to monitor consumer health, last read age, and
@@ -191,7 +185,7 @@ class SyncCache(LocMemCache):
         self._cache.move_to_end(key, last=False)
         self._expire_info[key] = exp_time
 
-    # -- Stream publishing & write-through --
+    # -- Stream publishing --
 
     def _publish(
         self,
@@ -233,25 +227,6 @@ class SyncCache(LocMemCache):
             logger.warning(
                 "SyncCache: Failed to publish %s to stream",
                 fields.get("op", "?"),
-                exc_info=True,
-            )
-
-    def _write_through(self, method: str, *args: Any, **kwargs: Any) -> None:
-        """Non-blocking write-through to transport cache via publish executor.
-
-        Submits the call to the same single-worker executor used for XADD,
-        so write-throughs and stream publishes are serialized.
-        """
-        self._publish_executor.submit(self._do_write_through, method, args, kwargs)
-
-    def _do_write_through(self, method: str, args: tuple, kwargs: dict) -> None:
-        """Execute a single write-through. Runs in the publish executor thread."""
-        try:
-            getattr(self._transport, method)(*args, **kwargs)
-        except Exception:  # noqa: BLE001
-            logger.warning(
-                "SyncCache: write-through %s failed",
-                method,
                 exc_info=True,
             )
 
@@ -401,12 +376,10 @@ class SyncCache(LocMemCache):
     }
 
     def _flush_publishes(self) -> None:
-        """Block until all queued publishes and write-throughs have completed.
+        """Block until all queued publishes have been sent.
 
         Submits a no-op and waits — when it completes, all prior submits
-        have finished since the executor is single-threaded. Also used as a
-        fence before atomic operations (``add``, ``incr``) to ensure pending
-        write-throughs have reached the transport.
+        have finished since the executor is single-threaded.
         """
         self._publish_executor.submit(lambda: None).result(timeout=5.0)
 
@@ -471,39 +444,10 @@ class SyncCache(LocMemCache):
             self._set(made_key, pickled, timeout)
         exp_time = self._expire_info.get(made_key)
         self._publish("set", key=made_key, val=pickled, exp=exp_time)
-        self._write_through("set", key, value, timeout, version=version)
         return True
 
-    def add(
-        self,
-        key: KeyT,
-        value: Any,
-        timeout: float | None = DEFAULT_TIMEOUT,
-        version: int | None = None,
-    ) -> bool:
-        """Add a value only if the key doesn't already exist.
-
-        Atomic across pods — uses the transport's ``SET NX`` for the
-        existence check. Requires the transport to be reachable.
-        """
-        self._ensure_consumer()
-        made_key = self.make_and_validate_key(key, version=version)
-        # Fast path: if key exists locally and hasn't expired, skip transport
-        with self._lock:
-            if not self._has_expired(made_key):
-                return False
-        # Fence: flush pending write-throughs so transport state is current
-        self._flush_publishes()
-        # Atomic SET NX via transport
-        if not self._transport.add(key, value, timeout, version=version):
-            return False
-        # Transport accepted — store locally + publish to stream
-        pickled = pickle.dumps(value, self.pickle_protocol)
-        with self._lock:
-            self._set(made_key, pickled, timeout)
-        exp_time = self._expire_info.get(made_key)
-        self._publish("set", key=made_key, val=pickled, exp=exp_time)
-        return True
+    def add(self, key: KeyT, value: Any, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
+        raise NotSupportedError("add", "SyncCache")
 
     def delete(self, key: KeyT, version: int | None = None) -> bool:
         self._ensure_consumer()
@@ -511,7 +455,6 @@ class SyncCache(LocMemCache):
         with self._lock:
             existed = self._delete(made_key)
         self._publish("delete", key=made_key)
-        self._write_through("delete", key, version=version)
         return existed
 
     def get_many(self, keys: Iterable[KeyT], version: int | None = None) -> dict[KeyT, Any]:
@@ -544,42 +487,33 @@ class SyncCache(LocMemCache):
                 self._delete(mk)
         if made_keys:
             self._publish("delete_many", keys="\x00".join(made_keys))
-        self._write_through("delete_many", keys_list, version=version)
 
     def has_key(self, key: KeyT, version: int | None = None) -> bool:
         self._ensure_consumer()
         return super().has_key(key, version=version)
 
     def incr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
-        """Atomically increment a value via the transport (Redis INCR).
-
-        Requires the transport to be reachable and the key to have been
-        written through to the transport (which happens automatically on
-        ``set``). The authoritative result from Redis is then published to
-        the stream so all pods converge.
-        """
-        self._ensure_consumer()
-        made_key = self.make_and_validate_key(key, version=version)
-        # Check local existence first (Django convention: incr on missing key raises)
-        with self._lock:
-            if self._has_expired(made_key):
-                self._delete(made_key)
-                raise ValueError(f"Key '{made_key}' not found")
-        # Fence: flush pending write-throughs so transport has the value
-        self._flush_publishes()
-        # Atomic increment via transport (Redis INCR)
-        new_value = self._transport.incr(key, delta, version=version)
-        # Update local with authoritative result + publish to stream
-        new_pickled = pickle.dumps(new_value, self.pickle_protocol)
-        with self._lock:
-            exp_time = self._expire_info.get(made_key)
-            self._cache[made_key] = new_pickled
-            self._cache.move_to_end(made_key, last=False)
-        self._publish("set", key=made_key, val=new_pickled, exp=exp_time)
-        return new_value
+        raise NotSupportedError("incr", "SyncCache")
 
     def decr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
-        return self.incr(key, -delta, version=version)
+        raise NotSupportedError("decr", "SyncCache")
+
+    def get_or_set(
+        self,
+        key: KeyT,
+        default: Any,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+    ) -> Any:
+        """Get a value or set it if missing. Uses ``set`` (not ``add``)."""
+        val = self.get(key, version=version)
+        if val is None:
+            if callable(default):
+                default = default()
+            if default is not None:
+                self.set(key, default, timeout=timeout, version=version)
+            return default
+        return val
 
     def touch(
         self,
@@ -595,14 +529,12 @@ class SyncCache(LocMemCache):
             exp_time = self.get_backend_timeout(timeout)
             self._expire_info[made_key] = exp_time
         self._publish("touch", key=made_key, exp=exp_time)
-        self._write_through("touch", key, timeout, version=version)
         return True
 
     def clear(self) -> None:
         self._ensure_consumer()
         super().clear()
         self._publish("clear")
-        self._write_through("clear")
 
     def close(self, **kwargs: Any) -> None:
         """No-op: consumer thread persists across requests (daemon=True for cleanup)."""
