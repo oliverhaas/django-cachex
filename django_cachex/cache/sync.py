@@ -258,7 +258,7 @@ class SyncCache(LocMemCache):
 
     def _start_consumer(self) -> None:
         # Recreate executor if it was shut down (e.g. after shutdown() + reuse)
-        if self._publish_executor._shutdown:  # ty: ignore[unresolved-attribute]
+        if self._publish_executor._shutdown:
             self._publish_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sync-pub")
         if self._replay_count > 0:
             self._replay_stream(self._replay_count)

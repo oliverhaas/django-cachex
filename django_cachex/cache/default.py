@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any, override
 from django.core.cache.backends.base import DEFAULT_TIMEOUT, BaseCache
 from django.utils.module_loading import import_string
 
+from django_cachex.metrics import HAS_PROMETHEUS, record, record_latency
+
 if TYPE_CHECKING:
     import builtins
     from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
@@ -75,6 +77,20 @@ class KeyValueCache(BaseCache):
                 self._reverse_key_func = reverse_key_func
         else:
             self._reverse_key_func = None
+
+    @cached_property
+    def _cache_alias(self) -> str:
+        """Resolve the CACHES alias for this instance (for metrics labels)."""
+        from django.conf import settings
+        from django.core.cache import caches
+
+        for alias in settings.CACHES:
+            try:
+                if caches[alias] is self:
+                    return alias
+            except Exception:  # noqa: BLE001, S110
+                pass
+        return self.key_prefix or "unknown"
 
     @cached_property
     def _cache(self) -> KeyValueCacheClient:
@@ -160,7 +176,12 @@ class KeyValueCache(BaseCache):
     ) -> Any:
         """Fetch a value from the cache."""
         key = self.make_and_validate_key(key, version=version)
-        value = self._cache.get(key, stampede_prevention=stampede_prevention)
+        if HAS_PROMETHEUS:
+            with record_latency(self._cache_alias, "get"):
+                value = self._cache.get(key, stampede_prevention=stampede_prevention)
+            record(self._cache_alias, "get", "hit" if value is not None else "miss")
+        else:
+            value = self._cache.get(key, stampede_prevention=stampede_prevention)
         if value is None:
             return default
         return value
@@ -236,7 +257,7 @@ class KeyValueCache(BaseCache):
         get = kwargs.get("get", False)
         key = self.make_and_validate_key(key, version=version)
         if nx or xx or get:
-            return self._cache.set_with_flags(
+            result = self._cache.set_with_flags(
                 key,
                 value,
                 self.get_backend_timeout(timeout),
@@ -245,8 +266,16 @@ class KeyValueCache(BaseCache):
                 get=get,
                 stampede_prevention=stampede_prevention,
             )
+            if HAS_PROMETHEUS:
+                record(self._cache_alias, "set", "ok")
+            return result
         # Use standard Django method - returns None
-        self._cache.set(key, value, self.get_backend_timeout(timeout), stampede_prevention=stampede_prevention)
+        if HAS_PROMETHEUS:
+            with record_latency(self._cache_alias, "set"):
+                self._cache.set(key, value, self.get_backend_timeout(timeout), stampede_prevention=stampede_prevention)
+            record(self._cache_alias, "set", "ok")
+        else:
+            self._cache.set(key, value, self.get_backend_timeout(timeout), stampede_prevention=stampede_prevention)
         return None
 
     @override
@@ -265,6 +294,11 @@ class KeyValueCache(BaseCache):
     def delete(self, key: KeyT, version: int | None = None) -> bool:
         """Remove a key from the cache."""
         key = self.make_and_validate_key(key, version=version)
+        if HAS_PROMETHEUS:
+            with record_latency(self._cache_alias, "delete"):
+                result = self._cache.delete(key)
+            record(self._cache_alias, "delete", "ok")
+            return result
         return self._cache.delete(key)
 
     @override
@@ -283,7 +317,12 @@ class KeyValueCache(BaseCache):
     ) -> dict[KeyT, Any]:
         """Retrieve many keys."""
         key_map = {self.make_and_validate_key(key, version=version): key for key in keys}
-        ret = self._cache.get_many(key_map.keys(), stampede_prevention=stampede_prevention)
+        if HAS_PROMETHEUS:
+            with record_latency(self._cache_alias, "get_many"):
+                ret = self._cache.get_many(key_map.keys(), stampede_prevention=stampede_prevention)
+            record(self._cache_alias, "get_many", "ok")
+        else:
+            ret = self._cache.get_many(key_map.keys(), stampede_prevention=stampede_prevention)
         return {key_map[k]: v for k, v in ret.items()}  # type: ignore[index]  # ty: ignore[invalid-argument-type]
 
     @override
@@ -394,7 +433,16 @@ class KeyValueCache(BaseCache):
         if not data:
             return []
         safe_data = {self.make_and_validate_key(key, version=version): value for key, value in data.items()}
-        self._cache.set_many(safe_data, self.get_backend_timeout(timeout), stampede_prevention=stampede_prevention)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        if HAS_PROMETHEUS:
+            with record_latency(self._cache_alias, "set_many"):
+                self._cache.set_many(
+                    safe_data,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                    self.get_backend_timeout(timeout),
+                    stampede_prevention=stampede_prevention,
+                )
+            record(self._cache_alias, "set_many", "ok")
+        else:
+            self._cache.set_many(safe_data, self.get_backend_timeout(timeout), stampede_prevention=stampede_prevention)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         return []
 
     @override

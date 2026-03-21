@@ -183,3 +183,19 @@ class Key(models.Model):
     def cache(self) -> Cache | None:
         """Get the parent Cache object."""
         return Cache.get_by_name(self.cache_name)
+
+
+class Dashboard(models.Model):
+    """Unmanaged model used as a sidebar entry for the metrics dashboard."""
+
+    name = models.CharField(max_length=1, primary_key=True)
+
+    class Meta:
+        managed = False
+        app_label = "django_cachex"
+        default_permissions = ("view",)
+        verbose_name = "Dashboard"
+        verbose_name_plural = "Dashboard"
+
+    def __str__(self) -> str:
+        return "Dashboard"
