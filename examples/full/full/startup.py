@@ -87,6 +87,12 @@ def populate_redis_data_types(cache: Any, cache_alias: str) -> int:
     return created
 
 
+_SKIP_ALIASES: dict[str, str] = {
+    "sync_transport": "internal transport for SyncCache",
+    "celery": "populated by Celery via ./run.sh send-tasks",
+}
+
+
 def populate_cache_if_needed(cache_alias: str) -> None:
     """
     Check if cache has enough keys, populate if not.
@@ -97,14 +103,13 @@ def populate_cache_if_needed(cache_alias: str) -> None:
     cache_config = settings.CACHES.get(cache_alias, {})
     backend = cache_config.get("BACKEND", "")
 
+    if cache_alias in _SKIP_ALIASES:
+        print(f"  [{cache_alias}] Skipping ({_SKIP_ALIASES[cache_alias]})")
+        return
+
     # Skip dummy cache - it doesn't store anything
     if "DummyCache" in backend:
         print(f"  [{cache_alias}] Skipping DummyCache (doesn't store data)")
-        return
-
-    # Skip celery cache - it should only contain keys created by Celery itself
-    if cache_alias == "celery":
-        print(f"  [{cache_alias}] Skipping (populated by Celery via ./run.sh send-tasks)")
         return
 
     cache = caches[cache_alias]
@@ -164,7 +169,19 @@ def ensure_sample_data() -> None:
 
     # Process caches in a specific order for readability
     # Standalone first, then cluster, sentinel, then Django builtins
-    cache_order = ["default", "redis", "celery", "cluster", "sentinel", "locmem", "database", "file", "dummy"]
+    cache_order = [
+        "default",
+        "redis",
+        "celery",
+        "cluster",
+        "sentinel",
+        "sync",
+        "sync_transport",
+        "locmem",
+        "database",
+        "file",
+        "dummy",
+    ]
     other_caches = [c for c in settings.CACHES if c not in cache_order]
 
     for cache_alias in cache_order + other_caches:

@@ -8,10 +8,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 from django.core.cache import caches
+from django.core.cache.backends.locmem import _caches, _expire_info, _locks
 from django.core.exceptions import ImproperlyConfigured
 from django.test import override_settings
 
-from django_cachex.cache.sync import SyncCache, _caches, _expire_info, _locks
+from django_cachex.cache.sync import SyncCache
 from tests.fixtures.cache import BACKENDS, _get_client_library_options
 
 if TYPE_CHECKING:
@@ -162,7 +163,7 @@ class TestSyncConfig:
             _cleanup_globals("cache:sync")
 
     def test_cachex_support_level(self, sync_cache: BaseCache):
-        assert sync_cache._cachex_support == "wrapped"
+        assert sync_cache._cachex_support == "cachex"
 
 
 # =============================================================================

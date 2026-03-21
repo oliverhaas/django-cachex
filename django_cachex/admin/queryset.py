@@ -92,11 +92,18 @@ class CacheQuerySet:
         return clone
 
     def order_by(self, *fields: str) -> CacheQuerySet:
-        """Sort by name/pk. Unknown fields are ignored."""
+        """Sort by name when explicitly requested via column header click.
+
+        By default, caches are returned in settings definition order
+        (the insertion order of ``settings.CACHES``). Django's ChangeList
+        appends a ``-pk`` fallback which is intentionally ignored here so
+        that definition order is preserved unless the user clicks the
+        name column header.
+        """
         clone = self._clone()
         for field in fields:
             bare = field.lstrip("-")
-            if bare in ("name", "pk"):
+            if bare == "name":
                 clone._data.sort(key=lambda c: c.name, reverse=field.startswith("-"))
                 break
         return clone
@@ -164,7 +171,7 @@ class CacheAdminMixin:
     list_display_links: ClassVar[Any] = ["name"]
     list_filter: ClassVar[Any] = [SupportLevelFilter]
     search_fields: ClassVar[Any] = ["name"]
-    ordering: ClassVar[Any] = ["name"]
+    ordering: ClassVar[Any] = []
     actions: ClassVar[Any] = ["flush_selected"]
     list_per_page: ClassVar[int] = 100
 

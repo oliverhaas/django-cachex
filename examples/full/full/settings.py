@@ -5,6 +5,7 @@ Comprehensive setup showcasing ALL supported cache backends:
 - Standalone: Valkey, Redis
 - Cluster: Redis Cluster (6 nodes)
 - Sentinel: Redis Sentinel (1 master + 2 replicas + 3 sentinels)
+- Sync: Stream-synchronized local cache (zero-latency reads, cross-pod sync)
 - Django builtins: LocMem, Database, File, Dummy
 """
 
@@ -137,6 +138,26 @@ CACHES = {
                 ("127.0.0.1", 26381),
             ],
         },
+    },
+    # -------------------------------------------------------------------------
+    # SYNC BACKEND (stream-synchronized local cache)
+    # Zero-latency local reads, writes broadcast via Redis Stream.
+    # Uses a dedicated transport for stream I/O and atomic operations.
+    # -------------------------------------------------------------------------
+    "sync": {
+        "BACKEND": "django_cachex.cache.SyncCache",
+        "OPTIONS": {
+            "TRANSPORT": "sync_transport",
+            "STREAM_KEY": "cache:sync",
+            "MAXLEN": 10000,
+            "BLOCK_TIMEOUT": 1000,
+        },
+    },
+    # Dedicated transport for SyncCache (same Redis server, separate db)
+    "sync_transport": {
+        "BACKEND": "django_cachex.cache.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6380/2",
+        "KEY_PREFIX": "sync",
     },
     # -------------------------------------------------------------------------
     # DJANGO BUILTIN BACKENDS (for comparison/wrapped support)

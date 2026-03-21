@@ -1,8 +1,10 @@
 """Stream-synchronized in-memory cache backend.
 
-Reads are purely local (zero network). Writes go to a local dict and are
-broadcast to a Redis Stream via XADD. A background daemon thread on each
-pod consumes the stream via XREAD BLOCK and applies changes from all pods.
+Extends Django's ``LocMemCache`` with cross-pod synchronization via Redis
+Streams. Reads are purely local (zero network). Writes update the local
+dict and are broadcast to a Redis Stream via XADD. A background daemon
+thread on each pod consumes the stream via XREAD BLOCK and applies changes
+from all pods.
 
 Suitable for read-heavy, write-light workloads (config, feature flags, etc.).
 
@@ -26,8 +28,8 @@ Configuration::
 
 ``TRANSPORT`` is the alias of a Redis/Valkey cache used for stream I/O and
 as the authoritative store for atomic operations (``add``, ``incr``, ``decr``).
-The transport cache alias should be dedicated to SyncCache — ``clear()`` will
-clear all keys in the transport.
+A dedicated transport alias is recommended — ``clear()`` will clear all keys
+in the transport.
 ``STREAM_KEY`` is the Redis Stream key shared by all pods (default ``cache:sync``).
 ``MAXLEN`` caps stream length via approximate trimming (default 10000).
 ``BLOCK_TIMEOUT`` is the XREAD BLOCK timeout in milliseconds (default 1000).
@@ -42,13 +44,13 @@ import os
 import pickle
 import time
 import uuid
-from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import cached_property
 from threading import Event, Lock, Thread
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from django.core.cache.backends.base import DEFAULT_TIMEOUT, BaseCache
+from django.core.cache.backends.locmem import LocMemCache
 from django.core.exceptions import ImproperlyConfigured
 
 if TYPE_CHECKING:
@@ -57,13 +59,6 @@ if TYPE_CHECKING:
     from django_cachex.types import KeyT
 
 logger = logging.getLogger(__name__)
-
-# Module-level globals for cross-thread sharing (same pattern as LocMemCache).
-# Keyed by stream_key so multiple SyncCache instances on the same stream share
-# one local store and different streams are isolated.
-_caches: dict[str, OrderedDict] = {}
-_expire_info: dict[str, dict[str, float | None]] = {}
-_locks: dict[str, Lock] = {}
 
 
 def _field(fields: dict, name: str) -> str:
@@ -78,13 +73,14 @@ def _field_bytes(fields: dict, name: str) -> bytes:
     return val if isinstance(val, bytes) else val.encode() if val else b""
 
 
-class SyncCache(BaseCache):
+class SyncCache(LocMemCache):
     """Stream-synchronized in-memory cache.
 
-    All reads are local dict lookups. Writes update the local dict, publish
-    to a Redis Stream, and write-through to the transport cache
-    (best-effort). A daemon thread consumes the stream and applies remote
-    changes. Eventual consistency across pods.
+    Extends Django's ``LocMemCache`` with cross-pod synchronization.
+    All reads are local dict lookups (inherited from ``LocMemCache``).
+    Writes update the local dict, publish to a Redis Stream, and
+    write-through to the transport cache (best-effort). A daemon thread
+    consumes the stream and applies remote changes.
 
     **Atomic operations**: ``add``, ``incr``, and ``decr`` are routed through
     the transport cache (Redis/Valkey) for cross-pod atomicity. ``add`` uses
@@ -101,10 +97,25 @@ class SyncCache(BaseCache):
     stream position.
     """
 
-    _cachex_support: str = "wrapped"
+    _cachex_support: str = "cachex"
+
+    # Type declarations for attributes and methods inherited from LocMemCache.
+    # LocMemCache sets these dynamically from module-level globals and defines
+    # private helpers without type stubs, so type checkers can't infer them.
+    if TYPE_CHECKING:
+        from collections import OrderedDict
+        from threading import Lock
+
+        _cache: OrderedDict
+        _expire_info: dict[str, float | None]
+        _lock: Lock
+
+        def _set(self, key: str, value: bytes, timeout: float | None = ...) -> None: ...
+        def _delete(self, key: str) -> bool: ...
+        def _has_expired(self, key: str) -> bool: ...
+        def _cull(self) -> None: ...
 
     def __init__(self, server: str, params: dict[str, Any]) -> None:
-        super().__init__(params)
         options = params.get("OPTIONS", {})
 
         # Transport cache alias (required)
@@ -118,18 +129,13 @@ class SyncCache(BaseCache):
         self._maxlen: int = options.get("MAXLEN", 10000)
         self._block_timeout: int = options.get("BLOCK_TIMEOUT", 1000)
 
-        # Local storage (module-level globals, keyed by storage_key).
-        # storage_key defaults to stream_key so all threads in a process share
-        # one local dict. Tests can override via _STORAGE_KEY to simulate
-        # separate pods in the same process.
+        # LocMemCache uses ``name`` (the LOCATION value) to key its module-level
+        # globals. We use _STORAGE_KEY or stream_key so each stream has isolated
+        # storage.  Tests can override _STORAGE_KEY to simulate separate pods
+        # within the same process.
         storage_key = options.get("_STORAGE_KEY", self._stream_key)
         self._storage_key: str = storage_key
-        self._cache: OrderedDict = _caches.setdefault(storage_key, OrderedDict())
-        self._expire_info: dict[str, float | None] = _expire_info.setdefault(
-            storage_key,
-            {},
-        )
-        self._lock: Lock = _locks.setdefault(storage_key, Lock())
+        super().__init__(storage_key, params)
 
         # Pod identity for self-message dedup
         self._pod_id: str = f"{os.getpid()}-{id(self)}-{uuid.uuid4().hex[:8]}"
@@ -145,6 +151,9 @@ class SyncCache(BaseCache):
         # Non-blocking publish: single-worker executor serializes XADD calls
         # and write-through operations without blocking the calling thread.
         self._publish_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sync-pub")
+
+        # Admin display: show stream key and transport alias as location
+        self._cachex_location = f"stream:{self._stream_key} [transport: {self._transport_alias}]"
 
     def __del__(self) -> None:
         with contextlib.suppress(Exception):
@@ -162,44 +171,20 @@ class SyncCache(BaseCache):
         """Get raw Redis/Valkey client for stream operations."""
         return self._transport.get_client(write=True)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
 
-    # -- Local storage helpers --
-
-    def _has_expired(self, key: str) -> bool:
-        exp = self._expire_info.get(key, -1)
-        return exp is not None and exp <= time.time()
-
-    def _cull(self) -> None:
-        if self._cull_frequency == 0:
-            self._cache.clear()
-            self._expire_info.clear()
-        else:
-            count = len(self._cache) // self._cull_frequency
-            for _ in range(count):
-                try:
-                    key, _ = self._cache.popitem(last=True)
-                except KeyError:
-                    break
-                self._expire_info.pop(key, None)
+    # -- Consumer-side local storage helper --
 
     def _local_set(self, key: str, pickled: bytes, exp_time: float | None) -> None:
-        """Set in local dict. Caller holds self._lock."""
+        """Set in local dict with absolute expiry. For consumer messages only.
+
+        Unlike ``LocMemCache._set`` (which takes a relative timeout),
+        this stores an absolute expiry timestamp received from the stream.
+        Caller holds ``self._lock``.
+        """
         if len(self._cache) >= self._max_entries:
             self._cull()
         self._cache[key] = pickled
         self._cache.move_to_end(key, last=False)
         self._expire_info[key] = exp_time
-
-    def _local_delete(self, key: str) -> bool:
-        """Delete from local dict. Caller holds self._lock."""
-        existed = key in self._cache
-        self._cache.pop(key, None)
-        self._expire_info.pop(key, None)
-        return existed
-
-    def _local_clear(self) -> None:
-        """Clear local dict. Caller holds self._lock."""
-        self._cache.clear()
-        self._expire_info.clear()
 
     # -- Stream publishing & write-through --
 
@@ -356,15 +341,16 @@ class SyncCache(BaseCache):
         self._local_set(key, val_bytes, exp_time)
 
     def _handle_delete(self, fields: dict) -> None:
-        self._local_delete(_field(fields, "key"))
+        self._delete(_field(fields, "key"))
 
     def _handle_delete_many(self, fields: dict) -> None:
         for key in _field(fields, "keys").split("\x00"):
             if key:
-                self._local_delete(key)
+                self._delete(key)
 
     def _handle_clear(self, fields: dict) -> None:
-        self._local_clear()
+        self._cache.clear()
+        self._expire_info.clear()
 
     def _handle_touch(self, fields: dict) -> None:
         key = _field(fields, "key")
@@ -431,20 +417,11 @@ class SyncCache(BaseCache):
             self._stop_event.clear()
         self._publish_executor.shutdown(wait=True, cancel_futures=False)
 
-    # -- Standard Django cache interface --
+    # -- Standard Django cache interface (LocMemCache + stream sync) --
 
     def get(self, key: KeyT, default: Any = None, version: int | None = None) -> Any:
         self._ensure_consumer()
-        made_key = self.make_and_validate_key(key, version=version)
-        with self._lock:
-            if self._has_expired(made_key):
-                self._local_delete(made_key)
-                return default
-            pickled = self._cache.get(made_key)
-            if pickled is None:
-                return default
-            self._cache.move_to_end(made_key, last=False)
-        return pickle.loads(pickled)  # noqa: S301
+        return super().get(key, default=default, version=version)
 
     def set(  # type: ignore[override]
         self,
@@ -456,10 +433,10 @@ class SyncCache(BaseCache):
     ) -> bool:
         self._ensure_consumer()
         made_key = self.make_and_validate_key(key, version=version)
-        exp_time = self.get_backend_timeout(timeout)
-        pickled = pickle.dumps(value, pickle.HIGHEST_PROTOCOL)
+        pickled = pickle.dumps(value, self.pickle_protocol)
         with self._lock:
-            self._local_set(made_key, pickled, exp_time)
+            self._set(made_key, pickled, timeout)
+        exp_time = self._expire_info.get(made_key)
         self._publish("set", key=made_key, val=pickled, exp=exp_time)
         self._write_through("set", key, value, timeout, version=version)
         return True
@@ -478,20 +455,20 @@ class SyncCache(BaseCache):
         """
         self._ensure_consumer()
         made_key = self.make_and_validate_key(key, version=version)
-        # Fast path: if key exists locally, no need to hit the transport
+        # Fast path: if key exists locally and hasn't expired, skip transport
         with self._lock:
-            if not self._has_expired(made_key) and made_key in self._cache:
+            if not self._has_expired(made_key):
                 return False
         # Fence: flush pending write-throughs so transport state is current
         self._flush_publishes()
         # Atomic SET NX via transport
         if not self._transport.add(key, value, timeout, version=version):
             return False
-        # Transport accepted — update local + publish to stream
-        exp_time = self.get_backend_timeout(timeout)
-        pickled = pickle.dumps(value, pickle.HIGHEST_PROTOCOL)
+        # Transport accepted — store locally + publish to stream
+        pickled = pickle.dumps(value, self.pickle_protocol)
         with self._lock:
-            self._local_set(made_key, pickled, exp_time)
+            self._set(made_key, pickled, timeout)
+        exp_time = self._expire_info.get(made_key)
         self._publish("set", key=made_key, val=pickled, exp=exp_time)
         return True
 
@@ -499,7 +476,7 @@ class SyncCache(BaseCache):
         self._ensure_consumer()
         made_key = self.make_and_validate_key(key, version=version)
         with self._lock:
-            existed = self._local_delete(made_key)
+            existed = self._delete(made_key)
         self._publish("delete", key=made_key)
         self._write_through("delete", key, version=version)
         return existed
@@ -531,19 +508,14 @@ class SyncCache(BaseCache):
             for k in keys_list:
                 mk = self.make_and_validate_key(k, version=version)
                 made_keys.append(mk)
-                self._local_delete(mk)
+                self._delete(mk)
         if made_keys:
             self._publish("delete_many", keys="\x00".join(made_keys))
         self._write_through("delete_many", keys_list, version=version)
 
     def has_key(self, key: KeyT, version: int | None = None) -> bool:
         self._ensure_consumer()
-        made_key = self.make_and_validate_key(key, version=version)
-        with self._lock:
-            if self._has_expired(made_key):
-                self._local_delete(made_key)
-                return False
-            return made_key in self._cache
+        return super().has_key(key, version=version)
 
     def incr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
         """Atomically increment a value via the transport (Redis INCR).
@@ -558,16 +530,14 @@ class SyncCache(BaseCache):
         # Check local existence first (Django convention: incr on missing key raises)
         with self._lock:
             if self._has_expired(made_key):
-                self._local_delete(made_key)
-                raise ValueError(f"Key '{made_key}' not found")
-            if made_key not in self._cache:
+                self._delete(made_key)
                 raise ValueError(f"Key '{made_key}' not found")
         # Fence: flush pending write-throughs so transport has the value
         self._flush_publishes()
         # Atomic increment via transport (Redis INCR)
         new_value = self._transport.incr(key, delta, version=version)
         # Update local with authoritative result + publish to stream
-        new_pickled = pickle.dumps(new_value, pickle.HIGHEST_PROTOCOL)
+        new_pickled = pickle.dumps(new_value, self.pickle_protocol)
         with self._lock:
             exp_time = self._expire_info.get(made_key)
             self._cache[made_key] = new_pickled
@@ -587,7 +557,7 @@ class SyncCache(BaseCache):
         self._ensure_consumer()
         made_key = self.make_and_validate_key(key, version=version)
         with self._lock:
-            if self._has_expired(made_key) or made_key not in self._cache:
+            if self._has_expired(made_key):
                 return False
             exp_time = self.get_backend_timeout(timeout)
             self._expire_info[made_key] = exp_time
@@ -597,8 +567,7 @@ class SyncCache(BaseCache):
 
     def clear(self) -> None:
         self._ensure_consumer()
-        with self._lock:
-            self._local_clear()
+        super().clear()
         self._publish("clear")
         self._write_through("clear")
 
@@ -607,18 +576,10 @@ class SyncCache(BaseCache):
 
     # -- Admin methods (local implementations for fast reads) --
 
-    def make_key(self, key: str, version: int | None = None) -> str:
-        """Construct the cache key with prefix and version."""
-        v = version if version is not None else self.version
-        prefix = self.key_prefix
-        if not prefix:
-            return f":{v}:{key}"
-        return f"{prefix}:{v}:{key}"
-
     def reverse_key(self, key: str) -> str:
         """Strip prefix:version: to get the user-visible key."""
         prefix = self.key_prefix
-        # Key format: ":version:user_key" or "prefix:version:user_key"
+        # Key format: "prefix:version:user_key" or ":version:user_key"
         expected_prefix = f":{self.version}:" if not prefix else f"{prefix}:{self.version}:"
         if key.startswith(expected_prefix):
             return key[len(expected_prefix) :]
