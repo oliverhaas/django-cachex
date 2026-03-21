@@ -646,6 +646,119 @@ class TestSyncAtomicOps:
         assert pod2.get("prop_counter") == 8
 
 
+class TestSyncReplay:
+    def test_replay_warms_cache_on_startup(self, redis_container: RedisContainerInfo):
+        """A new SyncCache with REPLAY > 0 picks up entries from the stream."""
+        stream_key = f"test:replay:{uuid.uuid4().hex[:8]}"
+        storage_key_1 = f"{stream_key}:producer"
+        storage_key_2 = f"{stream_key}:consumer"
+
+        options = _get_client_library_options(redis_container.client_library)
+        location = f"redis://{redis_container.host}:{redis_container.port}?db=13"
+        backend_class = BACKENDS[("default", redis_container.client_library)]
+
+        config = {
+            "transport": {
+                "BACKEND": backend_class,
+                "LOCATION": location,
+                "OPTIONS": options,
+            },
+            "producer": {
+                "BACKEND": "django_cachex.cache.SyncCache",
+                "OPTIONS": {
+                    "TRANSPORT": "transport",
+                    "STREAM_KEY": stream_key,
+                    "_STORAGE_KEY": storage_key_1,
+                    "MAXLEN": 10000,
+                    "BLOCK_TIMEOUT": 100,
+                },
+            },
+            "consumer": {
+                "BACKEND": "django_cachex.cache.SyncCache",
+                "OPTIONS": {
+                    "TRANSPORT": "transport",
+                    "STREAM_KEY": stream_key,
+                    "_STORAGE_KEY": storage_key_2,
+                    "MAXLEN": 10000,
+                    "BLOCK_TIMEOUT": 100,
+                    "REPLAY": 100,
+                },
+            },
+        }
+
+        with override_settings(CACHES=config):
+            # Producer writes data to the stream
+            producer = caches["producer"]
+            producer.set("replay_a", "alpha")
+            producer.set("replay_b", "beta")
+            producer.set("replay_c", "gamma")
+            producer._flush_publishes()
+            producer.shutdown()
+
+            # Consumer starts fresh with REPLAY=100 — should warm from stream
+            consumer = caches["consumer"]
+            assert consumer.get("replay_a") == "alpha"
+            assert consumer.get("replay_b") == "beta"
+            assert consumer.get("replay_c") == "gamma"
+            consumer.shutdown()
+
+        _cleanup_globals(storage_key_1)
+        _cleanup_globals(storage_key_2)
+
+    def test_replay_zero_starts_empty(self, redis_container: RedisContainerInfo):
+        """With REPLAY=0 (default), a new pod starts with an empty cache."""
+        stream_key = f"test:noreplay:{uuid.uuid4().hex[:8]}"
+        storage_key_1 = f"{stream_key}:producer"
+        storage_key_2 = f"{stream_key}:consumer"
+
+        options = _get_client_library_options(redis_container.client_library)
+        location = f"redis://{redis_container.host}:{redis_container.port}?db=13"
+        backend_class = BACKENDS[("default", redis_container.client_library)]
+
+        config = {
+            "transport": {
+                "BACKEND": backend_class,
+                "LOCATION": location,
+                "OPTIONS": options,
+            },
+            "producer": {
+                "BACKEND": "django_cachex.cache.SyncCache",
+                "OPTIONS": {
+                    "TRANSPORT": "transport",
+                    "STREAM_KEY": stream_key,
+                    "_STORAGE_KEY": storage_key_1,
+                    "MAXLEN": 10000,
+                    "BLOCK_TIMEOUT": 100,
+                },
+            },
+            "consumer": {
+                "BACKEND": "django_cachex.cache.SyncCache",
+                "OPTIONS": {
+                    "TRANSPORT": "transport",
+                    "STREAM_KEY": stream_key,
+                    "_STORAGE_KEY": storage_key_2,
+                    "MAXLEN": 10000,
+                    "BLOCK_TIMEOUT": 100,
+                    # REPLAY defaults to 0
+                },
+            },
+        }
+
+        with override_settings(CACHES=config):
+            producer = caches["producer"]
+            producer.set("no_replay_key", "value")
+            producer._flush_publishes()
+            producer.shutdown()
+
+            consumer = caches["consumer"]
+            # No replay — consumer starts empty
+            assert consumer.get("no_replay_key") is None
+            consumer.shutdown()
+
+        _cleanup_globals(storage_key_1)
+        _cleanup_globals(storage_key_2)
+
+
 class TestSyncShutdown:
     def test_shutdown_stops_consumer(self, redis_container: RedisContainerInfo):
         config = _build_sync_config(

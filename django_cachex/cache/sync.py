@@ -33,6 +33,10 @@ in the transport.
 ``STREAM_KEY`` is the Redis Stream key shared by all pods (default ``cache:sync``).
 ``MAXLEN`` caps stream length via approximate trimming (default 10000).
 ``BLOCK_TIMEOUT`` is the XREAD BLOCK timeout in milliseconds (default 1000).
+``REPLAY`` is the number of recent stream entries to replay on startup to
+warm the local cache (default 0 = no replay). Values up to ``MAXLEN`` are
+useful — e.g. ``1000`` replays the last 1000 mutations so a restarting pod
+doesn't start with an empty cache.
 """
 
 from __future__ import annotations
@@ -128,6 +132,7 @@ class SyncCache(LocMemCache):
         self._stream_key: str = options.get("STREAM_KEY", "cache:sync")
         self._maxlen: int = options.get("MAXLEN", 10000)
         self._block_timeout: int = options.get("BLOCK_TIMEOUT", 1000)
+        self._replay_count: int = options.get("REPLAY", 0)
 
         # LocMemCache uses ``name`` (the LOCATION value) to key its module-level
         # globals. We use _STORAGE_KEY or stream_key so each stream has isolated
@@ -277,6 +282,8 @@ class SyncCache(LocMemCache):
             self._initialized = True
 
     def _start_consumer(self) -> None:
+        if self._replay_count > 0:
+            self._replay_stream(self._replay_count)
         self._stop_event.clear()
         self._consumer_thread = Thread(
             target=self._consumer_loop,
@@ -284,6 +291,32 @@ class SyncCache(LocMemCache):
             daemon=True,
         )
         self._consumer_thread.start()
+
+    def _replay_stream(self, count: int) -> None:
+        """Replay the last ``count`` stream entries to warm the local cache.
+
+        Called once at startup before the consumer thread begins. Reads
+        recent entries via ``XREVRANGE``, applies them oldest-first, and
+        sets ``_last_id`` so the consumer continues from where replay
+        left off (no duplicates).
+        """
+        try:
+            client = self._get_raw_client()
+            entries = client.xrevrange(self._stream_key, count=count)
+            if not entries:
+                return
+            # Apply in forward order (oldest first)
+            with self._lock:
+                for entry_id, fields in reversed(entries):
+                    self._apply_message(fields)
+                    self._last_id = entry_id.decode() if isinstance(entry_id, bytes) else str(entry_id)
+            logger.info(
+                "SyncCache: Replayed %d entries from stream %s",
+                len(entries),
+                self._stream_key,
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("SyncCache: stream replay failed", exc_info=True)
 
     def _consumer_loop(self) -> None:
         while not self._stop_event.is_set():
