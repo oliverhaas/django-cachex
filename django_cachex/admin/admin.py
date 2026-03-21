@@ -307,6 +307,23 @@ class DashboardAdmin(DashboardAdminMixin, _DashboardBase):
     change_list_template = "admin/django_cachex/dashboard/change_list.html"
     show_facets = admin.ShowFacets.NEVER
 
+    _cachex_help_messages: ClassVar[dict[str, str]] = {
+        "dashboard": mark_safe(
+            "<strong>Metrics Dashboard</strong><br>"
+            "View cache operation metrics for this process.<br><br>"
+            "<strong>Stat Tiles</strong><br>"
+            "Total operations, cache hits/misses, and hit rate across all backends.<br><br>"
+            "<strong>Throughput Chart</strong><br>"
+            "Shows ops/sec (hits, misses, sets) over time. Use the chart period "
+            "filter in the sidebar to zoom in. Builds up as the dashboard is refreshed.<br><br>"
+            "<strong>Per-Cache Table</strong><br>"
+            "Breakdown by cache alias. Use the search bar to filter by name.<br><br>"
+            "<strong>Scope</strong><br>"
+            "Metrics are scoped to the current server process. For cross-pod "
+            "monitoring, expose the <code>/metrics</code> endpoint and scrape with Prometheus.",
+        ),
+    }
+
     def has_add_permission(self, request: HttpRequest) -> bool:
         return False
 

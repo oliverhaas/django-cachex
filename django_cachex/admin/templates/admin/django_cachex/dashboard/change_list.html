@@ -125,7 +125,17 @@ document.addEventListener('DOMContentLoaded', window._cachexRenderChart);
 {% endif %}
 {% endblock %}
 
-{% block result_list %}
+{% block object-tools %}
+<ul class="object-tools">
+    {% block object-tools-items %}
+    <li>
+        <a href="?{% if not help_active %}help=1{% endif %}">{% translate 'Help' %}</a>
+    </li>
+    {% endblock %}
+</ul>
+{% endblock %}
+
+{% block search %}
 {% if has_prometheus %}
     {# Stat tiles #}
     <div class="cachex-stats">
@@ -154,6 +164,6 @@ document.addEventListener('DOMContentLoaded', window._cachexRenderChart);
     {% endif %}
 {% endif %}
 
-{# Standard admin result table #}
+{# Standard search bar #}
 {{ block.super }}
 {% endblock %}
