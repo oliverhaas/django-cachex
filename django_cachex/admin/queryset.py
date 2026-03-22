@@ -427,16 +427,7 @@ class DashboardAdminMixin:
         request: HttpRequest,
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
-        import os
-        import socket
-
-        from django_cachex.metrics import (
-            HAS_PROMETHEUS,
-            get_stats,
-            get_stored_throughput_json,
-            get_throughput_json,
-            snapshot,
-        )
+        from django_cachex.metrics import HAS_PROMETHEUS, get_stats, get_stored_throughput_json
 
         extra_context = extra_context or {}
         # Help button
@@ -450,7 +441,6 @@ class DashboardAdminMixin:
             extra_context["help_active"] = True
         extra_context["has_prometheus"] = HAS_PROMETHEUS
         if HAS_PROMETHEUS:
-            snapshot()  # record current counters for time-series history
             stats = get_stats()
             total_ops = sum(s["total"] for s in stats.values())
             total_hits = sum(s["hits"] for s in stats.values())
@@ -461,28 +451,7 @@ class DashboardAdminMixin:
             extra_context["total_misses"] = total_misses
             extra_context["global_hit_rate"] = round(total_hits / total_gets * 100, 1) if total_gets > 0 else 0.0
             period = request.GET.get("period", "")
-            # Prefer stored (Redis-backed, cross-process) throughput; fall back to in-memory
-            stored = get_stored_throughput_json(period)
-            if stored:
-                extra_context["throughput_json"] = stored
-                extra_context["throughput_source"] = "stored"
-            else:
-                extra_context["throughput_json"] = get_throughput_json(period)
-                extra_context["throughput_source"] = "local"
-            host = socket.gethostname()
-            pid = os.getpid()
-            if extra_context.get("throughput_source") == "local":
-                messages.warning(
-                    request,
-                    f"Metrics scoped to this process only (host: {host}, PID: {pid})."
-                    " Configure CACHEX['METRICS_CACHE'] for cross-process stats,"
-                    " or use the /metrics endpoint with Prometheus.",
-                )
-            else:
-                messages.info(
-                    request,
-                    f"Showing aggregated metrics from Redis. This process: {host}, PID: {pid}.",
-                )
+            extra_context["throughput_json"] = get_stored_throughput_json(period)
         else:
             messages.warning(
                 request,

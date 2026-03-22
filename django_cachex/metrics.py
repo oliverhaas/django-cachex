@@ -13,6 +13,10 @@ Exposed metrics:
   labeled by ``cache`` (alias), ``operation``, and ``status``.
 - ``django_cache_op_duration_seconds`` (Histogram): Operation latency,
   labeled by ``cache`` and ``operation``.
+
+Persistent dashboard stats are stored in Redis when
+``CACHEX["METRICS_CACHE"]`` is configured. A background thread flushes
+per-minute counter deltas via pipeline HINCRBY with 59-minute TTL.
 """
 
 from __future__ import annotations
@@ -20,7 +24,6 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections import deque
 from contextlib import contextmanager
 from threading import Event, Lock, Thread
 from typing import TYPE_CHECKING, Any
@@ -78,19 +81,9 @@ def record_latency(cache_alias: str, operation: str) -> Generator[None]:
 
 
 def get_stats() -> dict[str, dict[str, Any]]:
-    """Read current metric values for the admin dashboard.
+    """Read current in-process metric values for the admin table.
 
-    Returns a dict keyed by cache alias with counters and computed rates::
-
-        {
-            "default": {
-                "gets": 150, "hits": 120, "misses": 30,
-                "sets": 40, "deletes": 5,
-                "hit_rate": 80.0,
-                "avg_latency_ms": 0.12,
-            },
-            ...
-        }
+    Returns a dict keyed by cache alias with counters and computed rates.
     """
     if not HAS_PROMETHEUS:
         return {}
@@ -98,9 +91,8 @@ def get_stats() -> dict[str, dict[str, Any]]:
     from django.conf import settings
 
     stats: dict[str, dict[str, Any]] = {}
-    aliases = list(settings.CACHES.keys())
 
-    for alias in aliases:
+    for alias in settings.CACHES:
         gets = _counter_value(alias, "get", "hit") + _counter_value(alias, "get", "miss")
         hits = _counter_value(alias, "get", "hit")
         misses = _counter_value(alias, "get", "miss")
@@ -111,8 +103,6 @@ def get_stats() -> dict[str, dict[str, Any]]:
         total = gets + sets + deletes + get_many + set_many
 
         hit_rate = round(hits / gets * 100, 1) if gets > 0 else 0.0
-
-        # Average latency from histogram
         avg_latency_ms = _avg_latency_ms(alias)
 
         stats[alias] = {
@@ -151,7 +141,6 @@ def _avg_latency_ms(cache: str) -> float:
         try:
             h = CACHE_LATENCY.labels(cache=cache, operation=op)
             total_sum += h._sum.get()
-            # Sum bucket values to get total count (buckets are non-cumulative internally)
             total_count += sum(b.get() for b in h._buckets)
         except Exception:  # noqa: BLE001, S110
             pass
@@ -160,118 +149,16 @@ def _avg_latency_ms(cache: str) -> float:
     return 0.0
 
 
-# ======================================================================
-# Time-series history (in-memory ring buffer)
-# ======================================================================
+# --- Persistent stats storage (Redis-backed, cross-process) ---
 
-# Each snapshot: (timestamp, {alias: {hits, misses, total}})
-_history: deque[tuple[float, dict[str, dict[str, float]]]] = deque(maxlen=360)
-_history_lock = Lock()
-_MIN_SNAPSHOT_INTERVAL = 2.0  # seconds between snapshots
-
-
-def snapshot() -> None:
-    """Take a snapshot of current counters and append to the ring buffer.
-
-    Called on each dashboard page load. Snapshots are throttled to at
-    most one every ``_MIN_SNAPSHOT_INTERVAL`` seconds.
-    """
-    if not HAS_PROMETHEUS:
-        return
-    now = time.time()
-    with _history_lock:
-        if _history and (now - _history[-1][0]) < _MIN_SNAPSHOT_INTERVAL:
-            return
-    from django.conf import settings
-
-    point: dict[str, dict[str, float]] = {}
-    for alias in settings.CACHES:
-        hits = _counter_value(alias, "get", "hit")
-        misses = _counter_value(alias, "get", "miss")
-        sets = _counter_value(alias, "set", "ok")
-        deletes = _counter_value(alias, "delete", "ok")
-        point[alias] = {
-            "hits": hits,
-            "misses": misses,
-            "sets": sets,
-            "deletes": deletes,
-            "total": hits + misses + sets + deletes,
-        }
-    with _history_lock:
-        _history.append((now, point))
-
+_METRICS_KEY_PREFIX = "cachex:m:"
+_METRICS_TTL = 3540  # 59 minutes
 
 _PERIOD_SECONDS = {
     "5m": 300,
     "15m": 900,
     "30m": 1800,
 }
-
-
-def get_throughput_json(period: str = "") -> str:
-    """Compute ops/sec rates from the snapshot history for Chart.js.
-
-    Args:
-        period: Filter to last "5m", "15m", or "30m". Empty = all history.
-
-    Returns a JSON string with labels (timestamps) and datasets
-    (hits/sec, misses/sec, sets/sec) aggregated across all caches.
-    """
-    with _history_lock:
-        points = list(_history)
-
-    if len(points) < 2:
-        return ""
-
-    # Filter by period
-    cutoff_seconds = _PERIOD_SECONDS.get(period, 0)
-    if cutoff_seconds:
-        cutoff = time.time() - cutoff_seconds
-        points = [(t, p) for t, p in points if t >= cutoff]
-        if len(points) < 2:
-            return ""
-
-    labels: list[str] = []
-    hits_rate: list[float] = []
-    misses_rate: list[float] = []
-    sets_rate: list[float] = []
-
-    for i in range(1, len(points)):
-        t_prev, prev = points[i - 1]
-        t_curr, curr = points[i]
-        dt = t_curr - t_prev
-        if dt <= 0:
-            continue
-
-        # Aggregate deltas across all caches
-        d_hits = sum(curr.get(a, {}).get("hits", 0) - prev.get(a, {}).get("hits", 0) for a in curr)
-        d_misses = sum(curr.get(a, {}).get("misses", 0) - prev.get(a, {}).get("misses", 0) for a in curr)
-        d_sets = sum(curr.get(a, {}).get("sets", 0) - prev.get(a, {}).get("sets", 0) for a in curr)
-
-        # Format timestamp as HH:MM:SS
-        t = time.localtime(t_curr)
-        labels.append(f"{t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}")
-        hits_rate.append(round(d_hits / dt, 1))
-        misses_rate.append(round(d_misses / dt, 1))
-        sets_rate.append(round(d_sets / dt, 1))
-
-    if not labels:
-        return ""
-
-    return json.dumps(
-        {
-            "labels": labels,
-            "hits": hits_rate,
-            "misses": misses_rate,
-            "sets": sets_rate,
-        },
-    )
-
-
-# --- Persistent stats storage (Redis-backed, cross-process) ---
-
-_METRICS_KEY_PREFIX = "cachex:m:"
-_METRICS_TTL = 3540  # 59 minutes
 
 _flush_thread: Thread | None = None
 _flush_stop = Event()
@@ -360,7 +247,6 @@ def _flush_to_redis() -> None:
     now = time.time()
     minute_key = _METRICS_KEY_PREFIX + time.strftime("%Y%m%d%H%M", time.localtime(now))
 
-    # Snapshot current counters
     current: dict[str, dict[str, float]] = {}
     for alias in settings.CACHES:
         current[alias] = {
@@ -370,7 +256,6 @@ def _flush_to_redis() -> None:
             "d": _counter_value(alias, "delete", "ok"),
         }
 
-    # Compute deltas from last flush
     try:
         pipe = client.pipeline(transaction=False)
         has_deltas = False
@@ -409,7 +294,7 @@ def _parse_minute_hash(data: dict) -> tuple[int, int, int]:
 def get_stored_throughput_json(period: str = "") -> str:
     """Fetch per-minute stats from Redis and format for Chart.js.
 
-    Returns a JSON string with per-minute hits/misses/sets rates, or
+    Returns a JSON string with per-minute hits/misses/sets counts, or
     empty string if no stored data is available.
     """
     client = _get_metrics_client()
@@ -420,7 +305,6 @@ def get_stored_throughput_json(period: str = "") -> str:
     cutoff_seconds = _PERIOD_SECONDS.get(period, 3600)  # default 1 hour
     cutoff = now - cutoff_seconds
 
-    # Walk minute-by-minute from cutoff to now
     t = cutoff
     minute_keys: list[str] = []
     while t <= now:
@@ -430,7 +314,6 @@ def get_stored_throughput_json(period: str = "") -> str:
     if not minute_keys:
         return ""
 
-    # Batch fetch all minute hashes via pipeline
     try:
         pipe = client.pipeline(transaction=False)
         for key in minute_keys:
