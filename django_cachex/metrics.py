@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 try:
-    from prometheus_client import Counter, Histogram  # type: ignore[import-not-found]  # ty: ignore[unresolved-import]
+    from prometheus_client import Counter, Histogram  # ty: ignore[unresolved-import]
 
     CACHE_OPS: Counter | None = Counter(
         "django_cache_ops_total",
