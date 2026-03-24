@@ -455,9 +455,10 @@ class DashboardAdminMixin:
         extra_context["live_url"] = request.get_full_path()
         # Strip 'live' so ChangeList doesn't treat it as a filter
         if "live" in request.GET:
-            request.GET = request.GET.copy()  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-            request.GET.pop("live")  # type: ignore[union-attr]
-            request.META["QUERY_STRING"] = request.GET.urlencode()  # type: ignore[union-attr]
+            mutable_get = request.GET.copy()
+            mutable_get.pop("live", None)
+            request.GET = mutable_get  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+            request.META["QUERY_STRING"] = mutable_get.urlencode()
 
         extra_context["has_prometheus"] = HAS_PROMETHEUS
         if HAS_PROMETHEUS:
