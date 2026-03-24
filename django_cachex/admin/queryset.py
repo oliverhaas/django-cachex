@@ -430,6 +430,7 @@ class DashboardAdminMixin:
         from django_cachex.metrics import HAS_PROMETHEUS, get_stats, get_stored_throughput_json
 
         extra_context = extra_context or {}
+
         # Help button
         if request.GET.get("help"):
             help_messages = getattr(self, "_cachex_help_messages", {})
@@ -439,6 +440,25 @@ class DashboardAdminMixin:
             request.GET = request.GET.copy()  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
             del request.GET["help"]  # type: ignore[misc]
             extra_context["help_active"] = True
+
+        # Live toggle
+        live = request.GET.get("live") == "on"
+        extra_context["live"] = live
+        extra_context["refresh_interval"] = 5
+        params = request.GET.copy()
+        if live:
+            params.pop("live", None)
+        else:
+            params["live"] = "on"
+        toggle_qs = params.urlencode()
+        extra_context["live_toggle_url"] = f"?{toggle_qs}" if toggle_qs else "?"
+        extra_context["live_url"] = request.get_full_path()
+        # Strip 'live' so ChangeList doesn't treat it as a filter
+        if "live" in request.GET:
+            request.GET = request.GET.copy()  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+            request.GET.pop("live")  # type: ignore[union-attr]
+            request.META["QUERY_STRING"] = request.GET.urlencode()  # type: ignore[union-attr]
+
         extra_context["has_prometheus"] = HAS_PROMETHEUS
         if HAS_PROMETHEUS:
             stats = get_stats()

@@ -3,6 +3,10 @@
 
 {% block extrahead %}
 {{ block.super }}
+<script src="https://unpkg.com/htmx.org@2.0.4"
+        integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+        crossorigin="anonymous"></script>
+<script src="https://unpkg.com/idiomorph@0.7.3/dist/idiomorph-ext.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <style>
     .cachex-stats {
@@ -55,8 +59,24 @@
         margin-bottom: 20px;
     }
     .cachex-chart canvas { width: 100% !important; }
+    .cachex-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 4px;
+        vertical-align: middle;
+    }
+    .cachex-dot.on {
+        background: #22c55e;
+        animation: cachex-pulse 2s infinite;
+    }
+    .cachex-dot.off { background: #9ca3af; }
+    @keyframes cachex-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+    }
 </style>
-{% if throughput_json %}
 <script>
 window._cachexRenderChart = function() {
     const dataEl = document.getElementById('cachex-throughput-data');
@@ -89,9 +109,9 @@ window._cachexRenderChart = function() {
         data: {
             labels: D.labels,
             datasets: [
-                { label: 'Hits/s', data: D.hits, borderColor: C.hits, backgroundColor: C.hitsFill, fill: true, tension: 0.35, pointRadius: 0, pointHitRadius: 10, borderWidth: 2 },
-                { label: 'Misses/s', data: D.misses, borderColor: C.misses, backgroundColor: C.missFill, fill: true, tension: 0.35, pointRadius: 0, pointHitRadius: 10, borderWidth: 2 },
-                { label: 'Sets/s', data: D.sets, borderColor: C.sets, backgroundColor: C.setsFill, fill: true, tension: 0.35, pointRadius: 0, pointHitRadius: 10, borderWidth: 2 },
+                { label: 'Hits', data: D.hits, borderColor: C.hits, backgroundColor: C.hitsFill, fill: true, tension: 0.35, pointRadius: 0, pointHitRadius: 10, borderWidth: 2 },
+                { label: 'Misses', data: D.misses, borderColor: C.misses, backgroundColor: C.missFill, fill: true, tension: 0.35, pointRadius: 0, pointHitRadius: 10, borderWidth: 2 },
+                { label: 'Sets', data: D.sets, borderColor: C.sets, backgroundColor: C.setsFill, fill: true, tension: 0.35, pointRadius: 0, pointHitRadius: 10, borderWidth: 2 },
             ]
         },
         options: {
@@ -99,7 +119,7 @@ window._cachexRenderChart = function() {
             animation: { duration: 600 },
             interaction: { mode: 'index', intersect: false },
             plugins: {
-                title: { display: true, text: 'Throughput (ops/sec)', color: C.title, font: { size: 14, weight: '500' }, padding: { bottom: 12 } },
+                title: { display: true, text: 'Throughput (ops/min)', color: C.title, font: { size: 14, weight: '500' }, padding: { bottom: 12 } },
                 legend: { position: 'bottom', labels: { usePointStyle: true, pointStyle: 'circle', padding: 20, color: C.text, font: { size: 12 } } },
             },
             scales: {
@@ -109,7 +129,7 @@ window._cachexRenderChart = function() {
         }
     };
 
-    if (window._cachexCharts.throughput) {
+    if (window._cachexCharts.throughput && window._cachexCharts.throughput.ctx.canvas.isConnected) {
         const ch = window._cachexCharts.throughput;
         ch.data.labels = config.data.labels;
         config.data.datasets.forEach((ds, i) => {
@@ -117,17 +137,29 @@ window._cachexRenderChart = function() {
         });
         ch.update('none');
     } else {
+        if (window._cachexCharts.throughput) window._cachexCharts.throughput.destroy();
         window._cachexCharts.throughput = new Chart(canvas, config);
     }
 };
 document.addEventListener('DOMContentLoaded', window._cachexRenderChart);
+document.addEventListener('htmx:afterSettle', window._cachexRenderChart);
 </script>
-{% endif %}
 {% endblock %}
 
 {% block object-tools %}
 <ul class="object-tools">
     {% block object-tools-items %}
+    <li>
+        {% if live %}
+        <a href="{{ live_toggle_url }}" title="{% translate 'Disable auto-refresh' %}">
+            <span class="cachex-dot on"></span> {% translate "Live" %}
+        </a>
+        {% else %}
+        <a href="{{ live_toggle_url }}" title="{% translate 'Enable auto-refresh' %}">
+            <span class="cachex-dot off"></span> {% translate "Live" %}
+        </a>
+        {% endif %}
+    </li>
     <li>
         <a href="?{% if not help_active %}help=1{% endif %}">{% translate 'Help' %}</a>
     </li>
@@ -137,6 +169,16 @@ document.addEventListener('DOMContentLoaded', window._cachexRenderChart);
 
 {% block search %}
 {% if has_prometheus %}
+    {% if live %}
+    <div hx-get="{{ live_url }}"
+         hx-trigger="every {{ refresh_interval }}s"
+         hx-select="#cachex-live-content"
+         hx-target="#cachex-live-content"
+         hx-swap="morph"
+         hx-ext="morph">
+    {% endif %}
+    <div id="cachex-live-content">
+
     {# Stat tiles #}
     <div class="cachex-stats">
         <div class="cachex-stat">
@@ -161,6 +203,11 @@ document.addEventListener('DOMContentLoaded', window._cachexRenderChart);
     {% if throughput_json %}
     <script type="application/json" id="cachex-throughput-data">{{ throughput_json|safe }}</script>
     <div class="cachex-chart"><canvas id="cachex-throughput"></canvas></div>
+    {% endif %}
+
+    </div>
+    {% if live %}
+    </div>
     {% endif %}
 {% endif %}
 

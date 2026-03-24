@@ -192,6 +192,15 @@ CELERY_RESULT_BACKEND = "redis://127.0.0.1:6380/1"
 CELERY_RESULT_EXPIRES = 3600  # keep results for 1 hour
 CELERY_TASK_TRACK_STARTED = True  # track STARTED state for visibility
 
+# =============================================================================
+# CACHEX CONFIGURATION
+# =============================================================================
+CACHEX = {
+    "METRICS_CACHE": "redis",  # store dashboard metrics in the redis cache
+    "METRICS_FLUSH_INTERVAL": 10,  # flush every 10s for demo (default 60)
+    "METRICS_FLUSH_THRESHOLD": 100,  # flush every 100 ops for demo (default 1000)
+}
+
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_I18N = True
