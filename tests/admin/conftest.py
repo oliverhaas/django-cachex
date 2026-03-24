@@ -107,7 +107,7 @@ def get_cache_config(host: str, port: int) -> dict:
             "LOCATION": f"redis://{host}:{port}?db=15",
         },
         "local": {
-            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "BACKEND": "django_cachex.cache.LocMemCache",
             "LOCATION": "admin-test-local",
         },
     }

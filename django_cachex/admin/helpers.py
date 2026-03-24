@@ -12,28 +12,19 @@ from django.core.cache import caches
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
-from .wrappers import _deep_getsizeof, wrap_cache
+from .wrappers import _deep_getsizeof
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
 
 def get_cache(cache_name: str) -> Any:
-    """Get a cache backend, wrapping if needed for admin compatibility."""
+    """Get a cache backend for admin use."""
     cache_config = settings.CACHES.get(cache_name)
     if not cache_config:
         msg = f"Cache '{cache_name}' is not configured in CACHES setting."
         raise ValueError(msg)
-
-    backend = str(cache_config.get("BACKEND", ""))
-    cache = caches[cache_name]
-
-    # Native django-cachex - use directly
-    if backend.startswith("django_cachex."):
-        return cache
-
-    # Django builtin or unknown - wrap first
-    return wrap_cache(cache)
+    return caches[cache_name]
 
 
 def get_metadata(cache: Any, cache_config: Mapping[str, Any]) -> dict[str, Any]:

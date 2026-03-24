@@ -1,16 +1,11 @@
-"""Tests for admin cache wrappers (LocMemCache, DatabaseCache, DummyCache, etc.)."""
+"""Tests for cachex LocMemCache, DatabaseCache, and CachexMixin."""
 
 import pytest
 from django.core.cache import caches
 from django.test import override_settings
 
-from django_cachex.admin.wrappers import (
-    BaseCacheExtensions,
-    WrappedDatabaseCache,
-    WrappedDummyCache,
-    WrappedLocMemCache,
-    wrap_cache,
-)
+from django_cachex.admin.wrappers import BaseCacheExtensions
+from django_cachex.cache.locmem import LocMemCache
 from django_cachex.exceptions import NotSupportedError
 
 # =============================================================================
@@ -19,64 +14,40 @@ from django_cachex.exceptions import NotSupportedError
 
 LOCMEM_CACHES = {
     "locmem": {
-        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "BACKEND": "django_cachex.cache.LocMemCache",
         "LOCATION": "test-wrapper-locmem",
     },
 }
 
 DATABASE_CACHES = {
     "dbcache": {
-        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "BACKEND": "django_cachex.cache.DatabaseCache",
         "LOCATION": "test_cache_table",
     },
 }
 
-DUMMY_CACHES = {
-    "dummy": {
-        "BACKEND": "django.core.cache.backends.dummy.DummyCache",
-    },
-}
-
 
 # =============================================================================
-# wrap_cache factory tests
+# Backend instantiation tests
 # =============================================================================
 
 
-class TestWrapCache:
-    """Test that wrap_cache returns properly extended cache backends."""
+class TestExplicitBackends:
+    """Test that explicit backends are properly constructed."""
 
     @override_settings(CACHES=LOCMEM_CACHES)
-    def test_locmem_returns_extended_locmem(self):
+    def test_locmem_is_cachex(self):
         cache = caches["locmem"]
-        wrapped = wrap_cache(cache)
-        assert isinstance(wrapped, WrappedLocMemCache)
-        assert wrapped is cache  # Same instance, class patched
-
-    @override_settings(CACHES=DATABASE_CACHES)
-    def test_database_returns_extended_database(self, db):
-        from django.core.management import call_command
-
-        call_command("createcachetable", verbosity=0)
-        cache = caches["dbcache"]
-        wrapped = wrap_cache(cache)
-        assert isinstance(wrapped, WrappedDatabaseCache)
-        assert wrapped is cache
-
-    @override_settings(CACHES=DUMMY_CACHES)
-    def test_dummy_returns_extended_dummy(self):
-        cache = caches["dummy"]
-        wrapped = wrap_cache(cache)
-        assert isinstance(wrapped, WrappedDummyCache)
-        assert wrapped is cache
+        assert isinstance(cache, LocMemCache)
+        assert cache._cachex_support == "cachex"
 
     @override_settings(CACHES=LOCMEM_CACHES)
-    def test_wrap_cache_is_idempotent(self):
+    def test_locmem_has_mixin_methods(self):
         cache = caches["locmem"]
-        wrapped1 = wrap_cache(cache)
-        wrapped2 = wrap_cache(wrapped1)
-        assert wrapped1 is wrapped2
-        assert getattr(wrapped2, "_cachex_support", None) == "wrapped"
+        assert hasattr(cache, "lpush")
+        assert hasattr(cache, "sadd")
+        assert hasattr(cache, "hset")
+        assert hasattr(cache, "zadd")
 
 
 # =============================================================================
@@ -92,7 +63,7 @@ class TestLocMemCacheExtensions:
         with override_settings(CACHES=LOCMEM_CACHES):
             cache = caches["locmem"]
             cache.clear()
-            self.cache = wrap_cache(cache)
+            self.cache = cache
             yield
 
     def test_set_and_get(self):
@@ -184,7 +155,7 @@ class TestLocMemCacheListOperations:
         with override_settings(CACHES=LOCMEM_CACHES):
             cache = caches["locmem"]
             cache.clear()
-            self.cache = wrap_cache(cache)
+            self.cache = cache
             yield
 
     # -- type() ---------------------------------------------------------------
@@ -390,7 +361,7 @@ class TestLocMemCacheSetOperations:
         with override_settings(CACHES=LOCMEM_CACHES):
             cache = caches["locmem"]
             cache.clear()
-            self.cache = wrap_cache(cache)
+            self.cache = cache
             yield
 
     # -- type() for sets ------------------------------------------------------
@@ -563,7 +534,7 @@ class TestLocMemCacheHashOperations:
         with override_settings(CACHES=LOCMEM_CACHES):
             cache = caches["locmem"]
             cache.clear()
-            self.cache = wrap_cache(cache)
+            self.cache = cache
             yield
 
     # -- type() for hashes ----------------------------------------------------
@@ -787,7 +758,7 @@ class TestDatabaseCacheExtensions:
             call_command("createcachetable", verbosity=0)
             cache = caches["dbcache"]
             cache.clear()
-            self.cache = wrap_cache(cache)
+            self.cache = cache
             yield
 
     def test_set_and_get(self):
@@ -832,56 +803,15 @@ class TestDatabaseCacheExtensions:
         assert info["backend"] == "DatabaseCache"
         assert "keyspace" in info
 
-    def test_expire_not_supported(self):
-        self.cache.set("key1", "value1")
-        with pytest.raises(NotSupportedError):
-            self.cache.expire("key1", 100)
+    def test_expire(self):
+        self.cache.set("key1", "value1", timeout=3600)
+        result = self.cache.expire("key1", 100)
+        assert result is True
 
-    def test_persist_not_supported(self):
-        with pytest.raises(NotSupportedError):
-            self.cache.persist("key1")
-
-
-# =============================================================================
-# DummyCache extension tests
-# =============================================================================
-
-
-class TestDummyCacheExtensions:
-    """Tests for DummyCache extensions."""
-
-    @pytest.fixture(autouse=True)
-    def _setup_cache(self):
-        with override_settings(CACHES=DUMMY_CACHES):
-            cache = caches["dummy"]
-            self.cache = wrap_cache(cache)
-            yield
-
-    def test_get_returns_default(self):
-        assert self.cache.get("key1") is None
-        assert self.cache.get("key1", "default") == "default"
-
-    def test_set_is_noop(self):
-        # DummyCache.set() returns None per Django's implementation
-        self.cache.set("key1", "value1")
-        assert self.cache.get("key1") is None
-
-    def test_delete_is_noop(self):
-        # DummyCache.delete() returns False per Django's implementation
-        assert self.cache.delete("key1") is False
-
-    def test_clear_is_noop(self):
-        # DummyCache.clear() returns None per Django's implementation
-        self.cache.clear()
-        # Just verify it doesn't raise
-
-    def test_keys_returns_empty(self):
-        assert self.cache.keys() == []
-
-    def test_info_returns_dict(self):
-        info = self.cache.info()
-        assert info["backend"] == "DummyCache"
-        assert info["keyspace"]["db0"]["keys"] == 0
+    def test_persist(self):
+        self.cache.set("key1", "value1", timeout=3600)
+        result = self.cache.persist("key1")
+        assert result is True
 
 
 # =============================================================================

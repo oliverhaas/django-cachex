@@ -119,7 +119,7 @@ class CacheQuerySet:
 
 
 class SupportLevelFilter(admin.SimpleListFilter):
-    """Filter caches by support level (cachex / wrapped / limited)."""
+    """Filter caches by support level (cachex / limited)."""
 
     title = _("support level")
     parameter_name = "support"
@@ -131,7 +131,6 @@ class SupportLevelFilter(admin.SimpleListFilter):
     ) -> list[tuple[str, str]]:
         return [
             ("cachex", "cachex"),
-            ("wrapped", "wrapped"),
             ("limited", "limited"),
         ]
 
@@ -263,21 +262,16 @@ class CacheAdminMixin:
     @admin.display(description=_("Support"))
     def support_display(self, obj: Cache) -> str:
         level = obj.support_level
-        styles: dict[str, tuple[str, str]] = {
-            "cachex": (
-                "background:#dcfce7;color:#15803d;",
-                "Full support \u2014 django-cachex backend",
-            ),
-            "wrapped": (
-                "background:#dbeafe;color:#1d4ed8;",
-                "Wrapped support \u2014 Django builtin backend",
-            ),
-            "limited": (
-                "background:#f3f4f6;color:#374151;",
-                "Limited support \u2014 custom backend",
-            ),
-        }
-        style, title = styles.get(level, styles["limited"])
+        if level == "cachex":
+            style = "background:#dcfce7;color:#15803d;"
+            title = "Full support \u2014 django-cachex backend"
+        else:
+            style = "background:#f3f4f6;color:#374151;"
+            hint = obj.cachex_upgrade_hint
+            if hint:
+                title = f"Limited support \u2014 switch to {hint} for full features"
+            else:
+                title = "Limited support \u2014 custom backend"
         return format_html(
             '<span style="{}padding:2px 8px;border-radius:4px;'
             'font-size:11px;font-weight:600;text-transform:uppercase" '
