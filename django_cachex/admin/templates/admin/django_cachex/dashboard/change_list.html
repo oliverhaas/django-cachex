@@ -80,9 +80,12 @@
 <script>
 window._cachexRenderChart = function() {
     const dataEl = document.getElementById('cachex-throughput-data');
-    if (!dataEl) return;
-    const D = JSON.parse(dataEl.textContent);
-    if (!D.labels || !D.labels.length) return;
+    const wrap = document.getElementById('cachex-chart-wrap');
+    if (!dataEl || !wrap) return;
+    let D;
+    try { D = JSON.parse(dataEl.textContent); } catch(e) { return; }
+    if (!D.labels || !D.labels.length) { wrap.style.display = 'none'; return; }
+    wrap.style.display = '';
 
     const isDark = document.documentElement.dataset.theme === 'dark' ||
         (document.documentElement.dataset.theme === 'auto' &&
@@ -104,7 +107,20 @@ window._cachexRenderChart = function() {
     if (!canvas) return;
 
     window._cachexCharts = window._cachexCharts || {};
-    const config = {
+    const ch = window._cachexCharts.throughput;
+
+    // Update existing chart in place (no animation) when possible
+    if (ch && ch.canvas === canvas && canvas.isConnected) {
+        ch.data.labels = D.labels;
+        ch.data.datasets[0].data = D.hits;
+        ch.data.datasets[1].data = D.misses;
+        ch.data.datasets[2].data = D.sets;
+        ch.update('none');
+        return;
+    }
+
+    if (ch) ch.destroy();
+    window._cachexCharts.throughput = new Chart(canvas, {
         type: 'line',
         data: {
             labels: D.labels,
@@ -127,19 +143,7 @@ window._cachexRenderChart = function() {
                 y: { beginAtZero: true, ticks: { color: C.text, font: { size: 11 } }, grid: { color: C.grid }, border: { display: false } }
             }
         }
-    };
-
-    if (window._cachexCharts.throughput && window._cachexCharts.throughput.ctx.canvas.isConnected) {
-        const ch = window._cachexCharts.throughput;
-        ch.data.labels = config.data.labels;
-        config.data.datasets.forEach((ds, i) => {
-            if (ch.data.datasets[i]) ch.data.datasets[i].data = ds.data;
-        });
-        ch.update('none');
-    } else {
-        if (window._cachexCharts.throughput) window._cachexCharts.throughput.destroy();
-        window._cachexCharts.throughput = new Chart(canvas, config);
-    }
+    });
 };
 document.addEventListener('DOMContentLoaded', window._cachexRenderChart);
 document.addEventListener('htmx:afterSettle', window._cachexRenderChart);
@@ -199,11 +203,11 @@ document.addEventListener('htmx:afterSettle', window._cachexRenderChart);
         </div>
     </div>
 
-    {# Throughput chart #}
-    {% if throughput_json %}
-    <script type="application/json" id="cachex-throughput-data">{{ throughput_json|safe }}</script>
-    <div class="cachex-chart"><canvas id="cachex-throughput"></canvas></div>
-    {% endif %}
+    {# Throughput chart — always render canvas to keep DOM stable for htmx morph #}
+    <script type="application/json" id="cachex-throughput-data">{{ throughput_json|default:"{}"|safe }}</script>
+    <div class="cachex-chart" id="cachex-chart-wrap"{% if not throughput_json %} style="display:none"{% endif %}>
+        <canvas id="cachex-throughput"></canvas>
+    </div>
 
     </div>
     {% if live %}
