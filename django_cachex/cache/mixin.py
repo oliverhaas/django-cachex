@@ -117,7 +117,7 @@ class CachexMixin:
         matching = self.keys(pattern, version=version)
         deleted = 0
         for key in matching:
-            if self.delete(key, version=version):  # type: ignore[attr-defined]
+            if self.delete(key, version=version):  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
                 deleted += 1
         return deleted
 
@@ -237,7 +237,7 @@ class CachexMixin:
 
     def type(self, key: KeyT, version: int | None = None) -> KeyType | None:
         """Get the data type of a key by inspecting the stored Python value."""
-        value = self.get(key, default=_MISSING, version=version)  # type: ignore[attr-defined]
+        value = self.get(key, default=_MISSING, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         if value is _MISSING:
             return None
         if isinstance(value, list):
@@ -265,7 +265,7 @@ class CachexMixin:
 
     def _get_list(self, key: KeyT, version: int | None = None) -> list[Any] | None:
         """Get the stored list value, or None if key doesn't exist."""
-        value = self.get(key, default=_MISSING, version=version)  # type: ignore[attr-defined]
+        value = self.get(key, default=_MISSING, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         if value is _MISSING:
             return None
         if not isinstance(value, list):
@@ -284,7 +284,7 @@ class CachexMixin:
         if current is None:
             current = []
         new_list = list(reversed(values)) + current
-        self.set(key, new_list, timeout=timeout, version=version)  # type: ignore[attr-defined]
+        self.set(key, new_list, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return len(new_list)
 
     def rpush(self, key: KeyT, *values: Any, version: int | None = None) -> int:
@@ -294,7 +294,7 @@ class CachexMixin:
         if current is None:
             current = []
         new_list = current + list(values)
-        self.set(key, new_list, timeout=timeout, version=version)  # type: ignore[attr-defined]
+        self.set(key, new_list, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return len(new_list)
 
     def lpop(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[Any]:
@@ -307,9 +307,9 @@ class CachexMixin:
         popped = current[:pop_count]
         remaining = current[pop_count:]
         if remaining:
-            self.set(key, remaining, timeout=timeout, version=version)  # type: ignore[attr-defined]
+            self.set(key, remaining, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         else:
-            self.delete(key, version=version)  # type: ignore[attr-defined]
+            self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return popped
 
     def rpop(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[Any]:
@@ -322,9 +322,9 @@ class CachexMixin:
         popped = list(reversed(current[-pop_count:]))
         remaining = current[:-pop_count] if pop_count < len(current) else []
         if remaining:
-            self.set(key, remaining, timeout=timeout, version=version)  # type: ignore[attr-defined]
+            self.set(key, remaining, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         else:
-            self.delete(key, version=version)  # type: ignore[attr-defined]
+            self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return popped
 
     def lrange(self, key: KeyT, start: int, end: int, version: int | None = None) -> list[Any]:
@@ -382,9 +382,9 @@ class CachexMixin:
             new_list.reverse()
         if removed > 0:
             if new_list:
-                self.set(key, new_list, timeout=timeout, version=version)  # type: ignore[attr-defined]
+                self.set(key, new_list, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
             else:
-                self.delete(key, version=version)  # type: ignore[attr-defined]
+                self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return removed
 
     def ltrim(self, key: KeyT, start: int, end: int, version: int | None = None) -> bool:
@@ -399,13 +399,13 @@ class CachexMixin:
         if end < 0:
             end = length + end
         if start >= length or end < start:
-            self.delete(key, version=version)  # type: ignore[attr-defined]
+            self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
             return True
         trimmed = current[start : end + 1]
         if trimmed:
-            self.set(key, trimmed, timeout=timeout, version=version)  # type: ignore[attr-defined]
+            self.set(key, trimmed, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         else:
-            self.delete(key, version=version)  # type: ignore[attr-defined]
+            self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return True
 
     def lindex(self, key: KeyT, index: int, version: int | None = None) -> Any:
@@ -430,7 +430,7 @@ class CachexMixin:
             msg = "index out of range"
             raise ValueError(msg) from None
         timeout = self._get_ttl_timeout(key, version=version)
-        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]
+        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return True
 
     def linsert(self, key: KeyT, where: str, pivot: Any, value: Any, version: int | None = None) -> int:
@@ -446,7 +446,7 @@ class CachexMixin:
             idx += 1
         current.insert(idx, value)
         timeout = self._get_ttl_timeout(key, version=version)
-        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]
+        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return len(current)
 
     def lpos(
@@ -479,7 +479,7 @@ class CachexMixin:
 
     def _get_set(self, key: KeyT, version: int | None = None) -> _set[Any] | None:
         """Get the stored set value, or None if key doesn't exist."""
-        value = self.get(key, default=_MISSING, version=version)  # type: ignore[attr-defined]
+        value = self.get(key, default=_MISSING, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         if value is _MISSING:
             return None
         if not isinstance(value, _set):
@@ -499,7 +499,7 @@ class CachexMixin:
             current = _set()
         before = len(current)
         current.update(members)
-        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]
+        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return len(current) - before
 
     def srem(self, key: KeyT, *members: Any, version: int | None = None) -> int:
@@ -511,9 +511,9 @@ class CachexMixin:
         removed = len(current.intersection(members))
         current.difference_update(members)
         if current:
-            self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]
+            self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         else:
-            self.delete(key, version=version)  # type: ignore[attr-defined]
+            self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return removed
 
     def scard(self, key: KeyT, version: int | None = None) -> int:
@@ -541,17 +541,17 @@ class CachexMixin:
             member = random.choice(list(current))  # noqa: S311
             current.discard(member)
             if current:
-                self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]
+                self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
             else:
-                self.delete(key, version=version)  # type: ignore[attr-defined]
+                self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
             return member
         pop_count = min(count, len(current))
         popped = _set(random.sample(list(current), pop_count))
         current.difference_update(popped)
         if current:
-            self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]
+            self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         else:
-            self.delete(key, version=version)  # type: ignore[attr-defined]
+            self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return popped
 
     def srandmember(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | list[Any]:
@@ -572,7 +572,7 @@ class CachexMixin:
 
     def sdiff(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _set[Any]:
         """Return the difference between sets."""
-        if isinstance(keys, (str, bytes)):
+        if isinstance(keys, (str, bytes, memoryview)):
             keys = [keys]
         result: _set[Any] | None = None
         for k in keys:
@@ -582,7 +582,7 @@ class CachexMixin:
 
     def sinter(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _set[Any]:
         """Return the intersection of sets."""
-        if isinstance(keys, (str, bytes)):
+        if isinstance(keys, (str, bytes, memoryview)):
             keys = [keys]
         result: _set[Any] | None = None
         for k in keys:
@@ -592,7 +592,7 @@ class CachexMixin:
 
     def sunion(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _set[Any]:
         """Return the union of sets."""
-        if isinstance(keys, (str, bytes)):
+        if isinstance(keys, (str, bytes, memoryview)):
             keys = [keys]
         result: _set[Any] = _set()
         for k in keys:
@@ -606,7 +606,7 @@ class CachexMixin:
 
     def _get_hash(self, key: KeyT, version: int | None = None) -> dict[str, Any] | None:
         """Get the stored hash value, or None if key doesn't exist."""
-        value = self.get(key, default=_MISSING, version=version)  # type: ignore[attr-defined]
+        value = self.get(key, default=_MISSING, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         if value is _MISSING:
             return None
         if not isinstance(value, dict) or not all(isinstance(k, str) for k in value):
@@ -648,7 +648,7 @@ class CachexMixin:
                 if f not in current:
                     added += 1
                 current[f] = v
-        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]
+        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return added
 
     def hdel(self, key: KeyT, *fields: str, version: int | None = None) -> int:
@@ -662,9 +662,9 @@ class CachexMixin:
             current.pop(f, None)
         if removed > 0:
             if current:
-                self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]
+                self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
             else:
-                self.delete(key, version=version)  # type: ignore[attr-defined]
+                self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return removed
 
     def hget(self, key: KeyT, field: str, version: int | None = None) -> Any:
@@ -713,7 +713,7 @@ class CachexMixin:
         if field in current:
             return False
         current[field] = value
-        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]
+        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return True
 
     def hincrby(self, key: KeyT, field: str, amount: int = 1, version: int | None = None) -> int:
@@ -723,7 +723,7 @@ class CachexMixin:
         if current is None:
             current = {}
         current[field] = int(current.get(field, 0)) + amount
-        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]
+        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return current[field]
 
     def hincrbyfloat(self, key: KeyT, field: str, amount: float = 1.0, version: int | None = None) -> float:
@@ -733,7 +733,7 @@ class CachexMixin:
         if current is None:
             current = {}
         current[field] = float(current.get(field, 0)) + amount
-        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]
+        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return current[field]
 
     # =========================================================================
@@ -742,7 +742,7 @@ class CachexMixin:
 
     def _get_zset(self, key: KeyT, version: int | None = None) -> dict[Any, float] | None:
         """Get the stored sorted set as a {member: score} dict, or None."""
-        value = self.get(key, default=_MISSING, version=version)  # type: ignore[attr-defined]
+        value = self.get(key, default=_MISSING, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         if value is _MISSING:
             return None
         if not isinstance(value, dict):
@@ -791,7 +791,7 @@ class CachexMixin:
             elif not exists:
                 changed += 1
             current[member] = score
-        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]
+        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return changed
 
     def zcard(self, key: KeyT, version: int | None = None) -> int:
@@ -913,9 +913,9 @@ class CachexMixin:
             current.pop(m, None)
         if removed > 0:
             if current:
-                self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]
+                self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
             else:
-                self.delete(key, version=version)  # type: ignore[attr-defined]
+                self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return removed
 
     def zincrby(self, key: KeyT, amount: float, member: Any, version: int | None = None) -> float:
@@ -923,7 +923,7 @@ class CachexMixin:
         current = self._get_zset(key, version=version) or {}
         timeout = self._get_ttl_timeout(key, version=version)
         current[member] = current.get(member, 0.0) + amount
-        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]
+        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return current[member]
 
     def zcount(
@@ -952,9 +952,9 @@ class CachexMixin:
         for m, _ in popped:
             del current[m]
         if current:
-            self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]
+            self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         else:
-            self.delete(key, version=version)  # type: ignore[attr-defined]
+            self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return popped
 
     def zpopmax(self, key: KeyT, count: int = 1, version: int | None = None) -> list[tuple[Any, float]]:
@@ -968,9 +968,9 @@ class CachexMixin:
         for m, _ in popped:
             del current[m]
         if current:
-            self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]
+            self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         else:
-            self.delete(key, version=version)  # type: ignore[attr-defined]
+            self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return popped
 
     def zmscore(self, key: KeyT, *members: Any, version: int | None = None) -> list[float | None]:
@@ -999,9 +999,9 @@ class CachexMixin:
             del current[m]
         if to_remove:
             if current:
-                self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]
+                self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
             else:
-                self.delete(key, version=version)  # type: ignore[attr-defined]
+                self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return len(to_remove)
 
     def zremrangebyrank(self, key: KeyT, start: int, end: int, version: int | None = None) -> int:
@@ -1022,7 +1022,7 @@ class CachexMixin:
         for m, _ in to_remove:
             del current[m]
         if current:
-            self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]
+            self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         else:
-            self.delete(key, version=version)  # type: ignore[attr-defined]
+            self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return len(to_remove)
