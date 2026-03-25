@@ -53,7 +53,7 @@ class CacheProtocol(Protocol):
     (TTL, data structures, pipelines, locks, Lua scripts).
     """
 
-    # Support level: "cachex" (native), "wrapped" (Django builtin), "limited" (unknown)
+    # Support level: "cachex" (native), "wrapped" (CachexMixin), "limited" (bare Django/unknown)
     _cachex_support: ClassVar[str]
 
     # =========================================================================

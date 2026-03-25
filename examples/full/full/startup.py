@@ -147,10 +147,10 @@ def populate_cache_if_needed(cache_alias: str) -> None:
         except Exception as e:
             print(f"    [{cache_alias}] Warning: Failed to set {key}: {e}")
 
-    # Add Redis-specific data types if supported
-    is_redis_like = any(x in backend for x in ["Redis", "Valkey", "KeyValue"]) and "Cluster" not in backend
+    # Add data structures if supported (Redis/Valkey backends + CachexMixin backends)
+    has_data_structures = hasattr(cache, "rpush") and "Cluster" not in backend
 
-    if is_redis_like:
+    if has_data_structures:
         extra = populate_redis_data_types(cache, cache_alias)
         populated += extra
 

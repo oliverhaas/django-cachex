@@ -119,7 +119,7 @@ class CacheQuerySet:
 
 
 class SupportLevelFilter(admin.SimpleListFilter):
-    """Filter caches by support level (cachex / limited)."""
+    """Filter caches by support level (cachex / wrapped / limited)."""
 
     title = _("support level")
     parameter_name = "support"
@@ -131,6 +131,7 @@ class SupportLevelFilter(admin.SimpleListFilter):
     ) -> list[tuple[str, str]]:
         return [
             ("cachex", "cachex"),
+            ("wrapped", "wrapped"),
             ("limited", "limited"),
         ]
 
@@ -265,6 +266,9 @@ class CacheAdminMixin:
         if level == "cachex":
             style = "background:#dcfce7;color:#15803d;"
             title = "Full support \u2014 django-cachex backend"
+        elif level == "wrapped":
+            style = "background:#dbeafe;color:#1d4ed8;"
+            title = "Wrapped \u2014 CachexMixin (data structures, scan, TTL). No streams, pipelines, or Lua."
         else:
             style = "background:#f3f4f6;color:#374151;"
             hint = obj.cachex_upgrade_hint

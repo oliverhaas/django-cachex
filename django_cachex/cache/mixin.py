@@ -42,7 +42,7 @@ class CachexMixin:
     ``info()``, and ``keys()`` for full admin support.
     """
 
-    _cachex_support: str = "cachex"
+    _cachex_support: str = "wrapped"
 
     # =========================================================================
     # TTL Operations (subclasses should override)

@@ -533,8 +533,14 @@ class TestTieredCacheConfig:
             assert cache._l1_cap == 42
 
     def test_cachex_support_level(self, tiered_cache: BaseCache):
-        """TieredCache has 'wrapped' support level for admin."""
-        assert tiered_cache._cachex_support == "wrapped"
+        """TieredCache has 'cachex' support level for admin."""
+        assert tiered_cache._cachex_support == "cachex"
+
+    def test_locmem_support_level(self):
+        """CachexMixin backends have 'wrapped' support level."""
+        from django_cachex.cache.locmem import LocMemCache
+
+        assert LocMemCache._cachex_support == "wrapped"
 
 
 class TestTieredSetManyOrdering:
