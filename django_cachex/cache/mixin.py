@@ -16,7 +16,7 @@ from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping, Sequence
+    from collections.abc import Callable, Iterator, Mapping, Sequence
 
     from django_cachex.client.pipeline import Pipeline
     from django_cachex.script import ScriptHelpers
@@ -40,6 +40,15 @@ class CachexMixin:
 
     Subclasses should implement ``ttl()``, ``expire()``, ``persist()``,
     ``info()``, and ``keys()`` for full admin support.
+
+    **Limitations:**
+
+    - **Thread safety:** Compound read-modify-write operations (e.g. ``lpush``:
+      get list, append, set) are NOT atomic. Two concurrent calls may lose a
+      write. Use locking externally if needed.
+    - **Type detection:** ``type()`` inspects the stored Python value. Sorted
+      sets (stored as ``dict[Any, float]``) are indistinguishable from hashes
+      (``dict[str, Any]``) when the sorted set has string keys.
     """
 
     _cachex_support: str = "wrapped"
@@ -203,8 +212,8 @@ class CachexMixin:
         *,
         keys: Sequence[Any] = (),
         args: Sequence[Any] = (),
-        pre_hook: ScriptHelpers | None = None,
-        post_hook: ScriptHelpers | None = None,
+        pre_hook: Callable[[ScriptHelpers, Sequence[Any], Sequence[Any]], tuple[list[Any], list[Any]]] | None = None,
+        post_hook: Callable[[ScriptHelpers, Any], Any] | None = None,
         version: int | None = None,
     ) -> Any:
         """Execute a Lua script."""
@@ -216,8 +225,8 @@ class CachexMixin:
         *,
         keys: Sequence[Any] = (),
         args: Sequence[Any] = (),
-        pre_hook: ScriptHelpers | None = None,
-        post_hook: ScriptHelpers | None = None,
+        pre_hook: Callable[[ScriptHelpers, Sequence[Any], Sequence[Any]], tuple[list[Any], list[Any]]] | None = None,
+        post_hook: Callable[[ScriptHelpers, Any], Any] | None = None,
         version: int | None = None,
     ) -> Any:
         """Execute a Lua script asynchronously."""
@@ -253,11 +262,25 @@ class CachexMixin:
     # =========================================================================
 
     def _get_ttl_timeout(self, key: KeyT, version: int | None = None) -> int | None:
-        """Convert ttl() result to a timeout value suitable for self.set()."""
-        current_ttl = self.ttl(key, version=version)
-        if current_ttl is None or current_ttl <= 0:
+        """Convert ttl() result to a timeout value suitable for self.set().
+
+        Returns:
+            None: key has no expiry (persist) — passed to ``set(timeout=None)``
+                which in Django means "no expiry".
+            int > 0: seconds remaining — passed as the new timeout.
+
+        If ``ttl()`` is not implemented (raises ``NotSupportedError``), returns
+        ``None`` so that ``set()`` falls back to its default timeout.
+        """
+        try:
+            current_ttl = self.ttl(key, version=version)
+        except NotSupportedError:
             return None
-        return current_ttl
+        # -2 = key doesn't exist, -1 = no expiry, None = unknown
+        if current_ttl is None or current_ttl < 0:
+            return None
+        # TTL=0 means about to expire — keep it short rather than making it immortal
+        return max(current_ttl, 1)
 
     # =========================================================================
     # List Helpers

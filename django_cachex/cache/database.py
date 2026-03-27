@@ -21,9 +21,10 @@ Then run ``manage.py createcachetable``.
 
 from __future__ import annotations
 
-import time
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
+from django.conf import settings
 from django.core.cache.backends.db import DatabaseCache as DjangoDatabaseCache
 from django.db import connection
 
@@ -31,6 +32,22 @@ from django_cachex.cache.mixin import CachexMixin
 
 if TYPE_CHECKING:
     from django_cachex.types import ExpiryT, KeyT
+
+
+def _adapt_now() -> Any:
+    """Return the current time adapted for the database vendor.
+
+    Uses ``connection.ops.adapt_datetimefield_value`` to produce a value
+    comparable to what Django stores in the ``expires`` column.
+    """
+    tz = UTC if settings.USE_TZ else None
+    now = datetime.now(tz=tz).replace(microsecond=0)
+    return connection.ops.adapt_datetimefield_value(now)
+
+
+def _adapt_datetime(dt: datetime) -> Any:
+    """Adapt a datetime for the database vendor."""
+    return connection.ops.adapt_datetimefield_value(dt.replace(microsecond=0))
 
 
 class DatabaseCache(CachexMixin, DjangoDatabaseCache):
@@ -50,14 +67,6 @@ class DatabaseCache(CachexMixin, DjangoDatabaseCache):
         """Get the database table name for this cache."""
         return cast("Any", self)._table
 
-    def _expires_condition(self) -> str:
-        """Return the SQL condition for non-expired entries."""
-        if connection.vendor in ("postgresql", "oracle"):
-            return "expires > to_timestamp(%s)"
-        if connection.vendor == "mysql":
-            return "expires > FROM_UNIXTIME(%s)"
-        return "expires > %s"
-
     # =========================================================================
     # TTL Operations
     # =========================================================================
@@ -71,29 +80,40 @@ class DatabaseCache(CachexMixin, DjangoDatabaseCache):
         table = self._get_table_name()
         quoted = connection.ops.quote_name(table)
         cache_key = self.make_key(str(key), version=version)
-        now = time.time()
+        now_adapted = _adapt_now()
 
         with connection.cursor() as cursor:
-            if connection.vendor in ("postgresql", "oracle"):
-                sql = f"SELECT EXTRACT(EPOCH FROM expires) - %s FROM {quoted} WHERE cache_key = %s"  # noqa: S608
-            elif connection.vendor == "mysql":
-                sql = f"SELECT UNIX_TIMESTAMP(expires) - %s FROM {quoted} WHERE cache_key = %s"  # noqa: S608
-            else:
-                sql = f"SELECT expires - %s FROM {quoted} WHERE cache_key = %s"  # noqa: S608
-
-            cursor.execute(sql, [now, cache_key])
+            # Select the expires column directly — Django stores it as a
+            # datetime adapted via adapt_datetimefield_value.
+            sql = f"SELECT expires FROM {quoted} WHERE cache_key = %s AND expires > %s"  # noqa: S608
+            cursor.execute(sql, [cache_key, now_adapted])
             row = cursor.fetchone()
             if row is None:
                 return -2
-            ttl_val = row[0]
-            if ttl_val <= 0:
+
+            # Convert the stored expires value back to a datetime for TTL calc
+            raw_expires = row[0]
+            tz = UTC if settings.USE_TZ else None
+            now = datetime.now(tz=tz)
+
+            if isinstance(raw_expires, str):
+                # SQLite stores as string — parse it back
+                fmt = "%Y-%m-%d %H:%M:%S"
+                expires_dt = datetime.strptime(raw_expires, fmt)  # noqa: DTZ007
+                if tz:
+                    expires_dt = expires_dt.replace(tzinfo=UTC)
+            elif isinstance(raw_expires, datetime):
+                expires_dt = raw_expires
+            else:
                 return -2
-            return int(ttl_val)
+
+            remaining = (expires_dt - now).total_seconds()
+            if remaining <= 0:
+                return -2
+            return int(remaining)
 
     def expire(self, key: KeyT, timeout: ExpiryT, version: int | None = None) -> bool:
         """Set the TTL of a key by updating the expires column."""
-        from datetime import timedelta
-
         table = self._get_table_name()
         quoted = connection.ops.quote_name(table)
         cache_key = self.make_key(str(key), version=version)
@@ -103,23 +123,17 @@ class DatabaseCache(CachexMixin, DjangoDatabaseCache):
         else:
             timeout_secs = float(timeout)
 
-        new_expires = time.time() + timeout_secs
+        tz = UTC if settings.USE_TZ else None
+        new_expires = datetime.now(tz=tz) + timedelta(seconds=timeout_secs)
+        adapted_expires = _adapt_datetime(new_expires)
 
         with connection.cursor() as cursor:
-            if connection.vendor in ("postgresql", "oracle"):
-                sql = f"UPDATE {quoted} SET expires = to_timestamp(%s) WHERE cache_key = %s"  # noqa: S608
-            elif connection.vendor == "mysql":
-                sql = f"UPDATE {quoted} SET expires = FROM_UNIXTIME(%s) WHERE cache_key = %s"  # noqa: S608
-            else:
-                sql = f"UPDATE {quoted} SET expires = %s WHERE cache_key = %s"  # noqa: S608
-
-            cursor.execute(sql, [new_expires, cache_key])
+            sql = f"UPDATE {quoted} SET expires = %s WHERE cache_key = %s"  # noqa: S608
+            cursor.execute(sql, [adapted_expires, cache_key])
             return cursor.rowcount > 0
 
     def persist(self, key: KeyT, version: int | None = None) -> bool:
         """Remove the TTL from a key (set to far-future expiry)."""
-        from datetime import timedelta
-
         # Django's DatabaseCache doesn't support "no expiry" — use ~10 years
         return self.expire(key, timedelta(days=3650), version=version)
 
@@ -138,16 +152,15 @@ class DatabaseCache(CachexMixin, DjangoDatabaseCache):
         else:
             sql_pattern = "%"
 
-        now = time.time()
-        expires_cond = self._expires_condition()
+        now_adapted = _adapt_now()
 
         with connection.cursor() as cursor:
             sql = f"""
                 SELECT cache_key FROM {quoted}
-                WHERE cache_key LIKE %s AND {expires_cond}
+                WHERE cache_key LIKE %s AND expires > %s
                 ORDER BY cache_key
             """  # noqa: S608
-            cursor.execute(sql, [sql_pattern, now])
+            cursor.execute(sql, [sql_pattern, now_adapted])
             raw_keys = [row[0] for row in cursor.fetchall()]
 
         result = []
@@ -179,11 +192,10 @@ class DatabaseCache(CachexMixin, DjangoDatabaseCache):
                 cursor.execute(f"SELECT COUNT(*) FROM {quoted}")  # noqa: S608
                 total_count = cursor.fetchone()[0]
 
-                now = time.time()
-                expires_cond = self._expires_condition()
+                now_adapted = _adapt_now()
                 cursor.execute(
-                    f"SELECT COUNT(*) FROM {quoted} WHERE {expires_cond}",  # noqa: S608
-                    [now],
+                    f"SELECT COUNT(*) FROM {quoted} WHERE expires > %s",  # noqa: S608
+                    [now_adapted],
                 )
                 active_count = cursor.fetchone()[0]
                 expired_count = (
