@@ -44,6 +44,8 @@ class DatabaseCache(CachexMixin, DjangoDatabaseCache):
     Python objects via the standard get/set interface — no schema changes needed.
     """
 
+    _cachex_support: str = "cachex"
+
     def _get_table_name(self) -> str:
         """Get the database table name for this cache."""
         return cast("Any", self)._table

@@ -537,10 +537,16 @@ class TestTieredCacheConfig:
         assert tiered_cache._cachex_support == "cachex"
 
     def test_locmem_support_level(self):
-        """CachexMixin backends have 'wrapped' support level."""
+        """Our LocMemCache overrides CachexMixin to 'cachex'."""
         from django_cachex.cache.locmem import LocMemCache
 
-        assert LocMemCache._cachex_support == "wrapped"
+        assert LocMemCache._cachex_support == "cachex"
+
+    def test_mixin_support_level(self):
+        """CachexMixin itself defaults to 'wrapped'."""
+        from django_cachex.cache.mixin import CachexMixin
+
+        assert CachexMixin._cachex_support == "wrapped"
 
 
 class TestTieredSetManyOrdering:

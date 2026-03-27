@@ -39,7 +39,7 @@ class TestExplicitBackends:
     def test_locmem_is_cachex(self):
         cache = caches["locmem"]
         assert isinstance(cache, LocMemCache)
-        assert cache._cachex_support == "wrapped"
+        assert cache._cachex_support == "cachex"
 
     @override_settings(CACHES=LOCMEM_CACHES)
     def test_locmem_has_mixin_methods(self):

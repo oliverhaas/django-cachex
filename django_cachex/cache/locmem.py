@@ -68,6 +68,8 @@ class LocMemCache(CachexMixin, DjangoLocMemCache):
     data structure operations, TTL management, and admin support.
     """
 
+    _cachex_support: str = "cachex"
+
     # =========================================================================
     # Internal accessors
     # =========================================================================
