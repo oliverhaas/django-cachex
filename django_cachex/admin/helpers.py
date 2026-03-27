@@ -11,8 +11,7 @@ from django.core.cache import caches
 
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
-
-from .wrappers import _deep_getsizeof
+from django_cachex.utils import _deep_getsizeof
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

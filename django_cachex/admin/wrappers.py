@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any
 
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
-from django_cachex.utils import _deep_getsizeof, _format_bytes  # noqa: F401 — re-exported
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence

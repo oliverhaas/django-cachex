@@ -26,28 +26,25 @@ from typing import TYPE_CHECKING, Any, cast
 
 from django.conf import settings
 from django.core.cache.backends.db import DatabaseCache as DjangoDatabaseCache
-from django.db import connection
+from django.db import connections, router
 
 from django_cachex.cache.mixin import CachexMixin
 
 if TYPE_CHECKING:
+    from django.db.backends.base.base import BaseDatabaseWrapper
+
     from django_cachex.types import ExpiryT, KeyT
 
 
-def _adapt_now() -> Any:
-    """Return the current time adapted for the database vendor.
-
-    Uses ``connection.ops.adapt_datetimefield_value`` to produce a value
-    comparable to what Django stores in the ``expires`` column.
-    """
+def _now() -> datetime:
+    """Return current time with microseconds truncated, matching Django's storage."""
     tz = UTC if settings.USE_TZ else None
-    now = datetime.now(tz=tz).replace(microsecond=0)
-    return connection.ops.adapt_datetimefield_value(now)
+    return datetime.now(tz=tz).replace(microsecond=0)
 
 
-def _adapt_datetime(dt: datetime) -> Any:
-    """Adapt a datetime for the database vendor."""
-    return connection.ops.adapt_datetimefield_value(dt.replace(microsecond=0))
+def _adapt_dt(conn: BaseDatabaseWrapper, dt: datetime) -> Any:
+    """Adapt a datetime for the given database connection."""
+    return conn.ops.adapt_datetimefield_value(dt.replace(microsecond=0))
 
 
 class DatabaseCache(CachexMixin, DjangoDatabaseCache):
@@ -67,6 +64,14 @@ class DatabaseCache(CachexMixin, DjangoDatabaseCache):
         """Get the database table name for this cache."""
         return cast("Any", self)._table
 
+    def _get_connection(self, *, write: bool = False) -> BaseDatabaseWrapper:
+        """Get the router-aware database connection for this cache."""
+        if write:
+            db = router.db_for_write(self.cache_model_class)
+        else:
+            db = router.db_for_read(self.cache_model_class)
+        return connections[db]
+
     # =========================================================================
     # TTL Operations
     # =========================================================================
@@ -77,14 +82,14 @@ class DatabaseCache(CachexMixin, DjangoDatabaseCache):
         Returns:
             -2 if key does not exist or is expired, else seconds remaining.
         """
+        conn = self._get_connection()
         table = self._get_table_name()
-        quoted = connection.ops.quote_name(table)
+        quoted = conn.ops.quote_name(table)
         cache_key = self.make_key(str(key), version=version)
-        now_adapted = _adapt_now()
+        now = _now()
+        now_adapted = _adapt_dt(conn, now)
 
-        with connection.cursor() as cursor:
-            # Select the expires column directly — Django stores it as a
-            # datetime adapted via adapt_datetimefield_value.
+        with conn.cursor() as cursor:
             sql = f"SELECT expires FROM {quoted} WHERE cache_key = %s AND expires > %s"  # noqa: S608
             cursor.execute(sql, [cache_key, now_adapted])
             row = cursor.fetchone()
@@ -93,14 +98,12 @@ class DatabaseCache(CachexMixin, DjangoDatabaseCache):
 
             # Convert the stored expires value back to a datetime for TTL calc
             raw_expires = row[0]
-            tz = UTC if settings.USE_TZ else None
-            now = datetime.now(tz=tz)
 
             if isinstance(raw_expires, str):
                 # SQLite stores as string — parse it back
                 fmt = "%Y-%m-%d %H:%M:%S"
                 expires_dt = datetime.strptime(raw_expires, fmt)  # noqa: DTZ007
-                if tz:
+                if settings.USE_TZ:
                     expires_dt = expires_dt.replace(tzinfo=UTC)
             elif isinstance(raw_expires, datetime):
                 expires_dt = raw_expires
@@ -114,8 +117,9 @@ class DatabaseCache(CachexMixin, DjangoDatabaseCache):
 
     def expire(self, key: KeyT, timeout: ExpiryT, version: int | None = None) -> bool:
         """Set the TTL of a key by updating the expires column."""
+        conn = self._get_connection(write=True)
         table = self._get_table_name()
-        quoted = connection.ops.quote_name(table)
+        quoted = conn.ops.quote_name(table)
         cache_key = self.make_key(str(key), version=version)
 
         if isinstance(timeout, timedelta):
@@ -123,11 +127,10 @@ class DatabaseCache(CachexMixin, DjangoDatabaseCache):
         else:
             timeout_secs = float(timeout)
 
-        tz = UTC if settings.USE_TZ else None
-        new_expires = datetime.now(tz=tz) + timedelta(seconds=timeout_secs)
-        adapted_expires = _adapt_datetime(new_expires)
+        new_expires = _now() + timedelta(seconds=timeout_secs)
+        adapted_expires = _adapt_dt(conn, new_expires)
 
-        with connection.cursor() as cursor:
+        with conn.cursor() as cursor:
             sql = f"UPDATE {quoted} SET expires = %s WHERE cache_key = %s"  # noqa: S608
             cursor.execute(sql, [adapted_expires, cache_key])
             return cursor.rowcount > 0
@@ -143,8 +146,9 @@ class DatabaseCache(CachexMixin, DjangoDatabaseCache):
 
     def keys(self, pattern: str = "*", version: int | None = None) -> list[str]:
         """List keys matching the pattern by querying the database."""
+        conn = self._get_connection()
         table = self._get_table_name()
-        quoted = connection.ops.quote_name(table)
+        quoted = conn.ops.quote_name(table)
 
         if pattern and pattern != "*":
             transformed_pattern = self.make_key(pattern)
@@ -152,9 +156,9 @@ class DatabaseCache(CachexMixin, DjangoDatabaseCache):
         else:
             sql_pattern = "%"
 
-        now_adapted = _adapt_now()
+        now_adapted = _adapt_dt(conn, _now())
 
-        with connection.cursor() as cursor:
+        with conn.cursor() as cursor:
             sql = f"""
                 SELECT cache_key FROM {quoted}
                 WHERE cache_key LIKE %s AND expires > %s
@@ -180,19 +184,20 @@ class DatabaseCache(CachexMixin, DjangoDatabaseCache):
 
     def info(self, section: str | None = None) -> dict[str, Any]:
         """Get DatabaseCache info in structured format."""
+        conn = self._get_connection()
         table = self._get_table_name()
-        quoted = connection.ops.quote_name(table)
+        quoted = conn.ops.quote_name(table)
 
         total_count: int | str = 0
         active_count: int | str = 0
         expired_count: int | str = 0
 
         try:
-            with connection.cursor() as cursor:
+            with conn.cursor() as cursor:
                 cursor.execute(f"SELECT COUNT(*) FROM {quoted}")  # noqa: S608
                 total_count = cursor.fetchone()[0]
 
-                now_adapted = _adapt_now()
+                now_adapted = _adapt_dt(conn, _now())
                 cursor.execute(
                     f"SELECT COUNT(*) FROM {quoted} WHERE expires > %s",  # noqa: S608
                     [now_adapted],
@@ -208,7 +213,7 @@ class DatabaseCache(CachexMixin, DjangoDatabaseCache):
         return {
             "backend": "DatabaseCache",
             "server": {
-                "redis_version": f"DatabaseCache ({connection.vendor})",
+                "redis_version": f"DatabaseCache ({conn.vendor})",
                 "os": f"table: {table}",
             },
             "keyspace": {

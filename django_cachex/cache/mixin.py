@@ -493,7 +493,8 @@ class CachexMixin:
             elif rank < 0:
                 positions = list(reversed(positions))[: abs(rank)]
         if count is not None:
-            return positions[:count]
+            # Redis: count=0 means "return all matches"
+            return positions if count == 0 else positions[:count]
         return positions[0] if positions else None
 
     # =========================================================================
@@ -641,7 +642,7 @@ class CachexMixin:
     # Hash Operations
     # =========================================================================
 
-    def hset(
+    def hset(  # noqa: C901
         self,
         key: KeyT,
         field: str | None = None,
@@ -666,6 +667,9 @@ class CachexMixin:
                     added += 1
                 current[f] = v
         if items:
+            if len(items) % 2 != 0:
+                msg = "items must contain an even number of elements (field/value pairs)"
+                raise ValueError(msg)
             for i in range(0, len(items), 2):
                 f, v = items[i], items[i + 1]
                 if f not in current:
