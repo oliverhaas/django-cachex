@@ -31,3 +31,4 @@ cobertura.xml
 CLAUDE.md
 site/
 *.sqlite3
+docs/superpowers/
