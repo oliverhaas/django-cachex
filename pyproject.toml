@@ -66,11 +66,11 @@ dev = [
   "pytest-flakefinder==1.1.0",
   "pytest-mock==3.15.1",
   "pytest-xdist==3.8.0",
-  "pytest==9.0.2",
-  "ruff==0.15.9",
+  "pytest==9.0.3",
+  "ruff==0.15.10",
   "testcontainers==4.14.2",
   "ty==0.0.29",
-  "types-docker==7.1.0.20260403",
+  "types-docker==7.1.0.20260409",
 ]
 docs = ["mkdocs==1.6.1", "mkdocs-material==9.7.6", "mike==2.1.4"]
 
