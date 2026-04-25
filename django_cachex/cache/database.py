@@ -103,12 +103,17 @@ class DatabaseCache(CachexMixin, DjangoDatabaseCache):
                 # SQLite stores as string — parse it back
                 fmt = "%Y-%m-%d %H:%M:%S"
                 expires_dt = datetime.strptime(raw_expires, fmt)  # noqa: DTZ007
-                if settings.USE_TZ:
-                    expires_dt = expires_dt.replace(tzinfo=UTC)
             elif isinstance(raw_expires, datetime):
                 expires_dt = raw_expires
             else:
                 return -2
+
+            # Normalize tz-awareness to match `now` — SQLite returns naive
+            # datetimes regardless of USE_TZ, and Django stores them as UTC.
+            if settings.USE_TZ and expires_dt.tzinfo is None:
+                expires_dt = expires_dt.replace(tzinfo=UTC)
+            elif not settings.USE_TZ and expires_dt.tzinfo is not None:
+                expires_dt = expires_dt.replace(tzinfo=None)
 
             remaining = (expires_dt - now).total_seconds()
             if remaining <= 0:

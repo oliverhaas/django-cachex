@@ -787,15 +787,7 @@ class TestDatabaseCacheExtensions:
     def test_ttl_expiring_key(self):
         self.cache.set("temp", "value", timeout=3600)
         ttl = self.cache.ttl("temp")
-        # SQLite stores expires as datetime strings; the TTL arithmetic
-        # may not work correctly on SQLite (returns -2). This is a known
-        # limitation since DatabaseCache is primarily used with PostgreSQL/MySQL.
-        from django.db import connection
-
-        if connection.vendor == "sqlite":
-            assert ttl == -2 or 3500 <= ttl <= 3600
-        else:
-            assert 3500 <= ttl <= 3600
+        assert 3500 <= ttl <= 3600
 
     def test_info_returns_dict(self):
         self.cache.set("key1", "value1")
@@ -812,6 +804,22 @@ class TestDatabaseCacheExtensions:
         self.cache.set("key1", "value1", timeout=3600)
         result = self.cache.persist("key1")
         assert result is True
+
+    def test_hset_then_hset_same_key(self):
+        # Regression: second hset reads back the existing key, which calls ttl(),
+        # which subtracts now from the stored expires datetime. SQLite returns a
+        # naive datetime; with USE_TZ=True, `now` is tz-aware, so the subtraction
+        # used to fail with "can't subtract offset-naive and offset-aware".
+        self.cache.hset("h", "field1", "value1")
+        self.cache.hset("h", "field2", "value2")
+        assert self.cache.hgetall("h") == {"field1": "value1", "field2": "value2"}
+
+    def test_hash_ops_preserve_ttl(self):
+        self.cache.hset("h", "f1", "v1")
+        self.cache.expire("h", 3600)
+        self.cache.hset("h", "f2", "v2")
+        ttl = self.cache.ttl("h")
+        assert 3500 <= ttl <= 3600
 
 
 # =============================================================================
