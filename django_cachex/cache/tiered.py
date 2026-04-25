@@ -162,10 +162,12 @@ class TieredCache(BaseCache):
         version: int | None = None,
         **kwargs: Any,
     ) -> bool:
+        # Django stubs annotate BaseCache.set as returning None; cachex backends
+        # actually return bool. bool(None) is False, matching "didn't happen".
         result = self._l2.set(key, value, timeout, version=version, **kwargs)  # type: ignore[func-returns-value]
         if result or not (kwargs.get("nx") or kwargs.get("xx")):
             self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
-        return result  # ty: ignore[invalid-return-type]
+        return bool(result)
 
     async def aset(  # type: ignore[override]
         self,
@@ -178,7 +180,7 @@ class TieredCache(BaseCache):
         result = await self._l2.aset(key, value, timeout, version=version, **kwargs)  # type: ignore[func-returns-value]
         if result or not (kwargs.get("nx") or kwargs.get("xx")):
             self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
-        return result  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
+        return bool(result)
 
     def add(
         self,
