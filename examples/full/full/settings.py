@@ -160,14 +160,14 @@ CACHES = {
         "KEY_PREFIX": "sync",
     },
     # -------------------------------------------------------------------------
-    # DJANGO BUILTIN BACKENDS (for comparison/wrapped support)
+    # DJANGO BUILTIN BACKENDS (cachex drop-in replacements)
     # -------------------------------------------------------------------------
     "locmem": {
-        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "BACKEND": "django_cachex.cache.LocMemCache",
         "LOCATION": "full-example-locmem",
     },
     "database": {
-        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "BACKEND": "django_cachex.cache.DatabaseCache",
         "LOCATION": "django_cache_table",
     },
     "file": {

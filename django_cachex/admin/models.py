@@ -86,34 +86,26 @@ class Cache(models.Model):
     @property
     def support_level(self) -> str:
         """Determine the support level for this cache backend."""
-        # Check for _cachex_support attribute on the cache backend (set by wrap_cache
-        # or native django-cachex backends)
+        # Check for _cachex_support attribute on the cache backend
         cache = self._get_cache()
         if cache is not None and hasattr(cache, "_cachex_support"):
             return cache._cachex_support
 
         # Fall back to backend string check
-        backend = self.backend
-
-        # django-cachex backends - full support
-        if backend.startswith("django_cachex."):
+        if self.backend.startswith("django_cachex."):
             return "cachex"
 
-        # Django core builtin backends - wrapped support
-        django_builtins = {
-            "django.core.cache.backends.locmem.LocMemCache",
-            "django.core.cache.backends.db.DatabaseCache",
-            "django.core.cache.backends.filebased.FileBasedCache",
-            "django.core.cache.backends.dummy.DummyCache",
-            "django.core.cache.backends.memcached.PyMemcacheCache",
-            "django.core.cache.backends.memcached.PyLibMCCache",
-            "django.core.cache.backends.memcached.MemcachedCache",
-        }
-        if backend in django_builtins:
-            return "wrapped"
-
-        # Unknown/custom backends
+        # Everything else is limited
         return "limited"
+
+    @property
+    def cachex_upgrade_hint(self) -> str | None:
+        """Suggest a cachex backend replacement for known Django builtins."""
+        hints = {
+            "django.core.cache.backends.locmem.LocMemCache": "django_cachex.cache.LocMemCache",
+            "django.core.cache.backends.db.DatabaseCache": "django_cachex.cache.DatabaseCache",
+        }
+        return hints.get(self.backend)
 
     @property
     def pk(self) -> str:

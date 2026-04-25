@@ -18,11 +18,14 @@ case "${1:-}" in
             uv pip install "celery[redis]" 2>/dev/null || pip install "celery[redis]"
         }
 
-        echo "Running migrations..."
-        source "$VENV" && python manage.py migrate --verbosity=0
-
+        # createcachetable must run before migrate, otherwise the startup
+        # populate (triggered by AppConfig.ready() during migrate) fails for
+        # the database backend with "no such table: django_cache_table".
         echo "Creating cache table for database backend..."
         source "$VENV" && python manage.py createcachetable 2>/dev/null || true
+
+        echo "Running migrations..."
+        source "$VENV" && python manage.py migrate --verbosity=0
 
         echo "Creating admin user (admin/password)..."
         source "$VENV" && DJANGO_SUPERUSER_PASSWORD=password python manage.py createsuperuser \

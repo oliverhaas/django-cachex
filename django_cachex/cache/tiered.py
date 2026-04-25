@@ -58,7 +58,7 @@ class TieredCache(BaseCache):
     L1 TTL is capped by min(L1_TIMEOUT, L2's remaining TTL).
     """
 
-    _cachex_support: str = "wrapped"
+    _cachex_support: str = "cachex"
 
     def __init__(self, server: str, params: dict[str, Any]) -> None:
         super().__init__(params)
