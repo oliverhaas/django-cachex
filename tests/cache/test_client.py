@@ -1,9 +1,12 @@
+from typing import TYPE_CHECKING
 from unittest.mock import Mock, patch
 
 import pytest
 
-from django_cachex.cache import KeyValueCache
 from django_cachex.client import KeyValueCacheClient, RedisCacheClient
+
+if TYPE_CHECKING:
+    from django_cachex.cache import KeyValueCache
 
 
 @pytest.fixture

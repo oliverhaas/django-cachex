@@ -1,8 +1,11 @@
 """Tests for async key operations: akeys, aiter_keys, adelete_pattern, arename, arenamenx."""
 
+from typing import TYPE_CHECKING
+
 import pytest
 
-from django_cachex.cache import KeyValueCache
+if TYPE_CHECKING:
+    from django_cachex.cache import KeyValueCache
 
 
 class TestAsyncKeys:

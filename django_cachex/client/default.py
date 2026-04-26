@@ -209,7 +209,7 @@ class KeyValueCacheClient:
         """Decode a value from storage. Returns int directly if parseable, otherwise decompress + deserialize."""
         try:
             return int(value)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             value = self._decompress(value)
             return self._deserialize(value)
 
@@ -891,7 +891,7 @@ class KeyValueCacheClient:
             itersize = self._default_scan_itersize
 
         count = 0
-        for batch in batched(client.scan_iter(match=pattern, count=itersize), itersize):
+        for batch in batched(client.scan_iter(match=pattern, count=itersize), itersize, strict=False):
             count += cast("int", client.delete(*batch))
         return count
 

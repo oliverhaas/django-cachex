@@ -39,11 +39,8 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - "3.12"
-          - "3.13"
           - "3.14"
         django-version:
-          - "5.2"
           - "6.0"
         client-library-version:
           - "latest"
@@ -89,7 +86,7 @@ jobs:
         run: uv run pytest tests/cache/ -n auto
 
       - name: Upload coverage to Codecov
-        if: matrix.python-version == '3.13' && matrix.django-version == '5.2' && matrix.client-library-version == 'latest'
+        if: matrix.python-version == '3.14' && matrix.django-version == '6.0' && matrix.client-library-version == 'latest'
         uses: codecov/codecov-action@v6
         with:
           files: ./coverage.xml

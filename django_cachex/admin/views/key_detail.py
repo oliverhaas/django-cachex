@@ -40,7 +40,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     # Read pagination state (query string is preserved on POST to current URL)
     try:
         page = max(1, int(request.GET.get("page", 1)))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         page = 1
 
     def _redirect_to_key() -> HttpResponse:

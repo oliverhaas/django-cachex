@@ -16,10 +16,10 @@ import pytest
 from django.core.cache import caches
 from django.test import override_settings
 
-from django_cachex.cache import KeyValueCache
 from django_cachex.client import RedisCacheClient
 
 if TYPE_CHECKING:
+    from django_cachex.cache import KeyValueCache
     from tests.fixtures.containers import RedisContainerInfo
 
 
@@ -111,7 +111,7 @@ class TestRedisCacheInternals:
         # Strings are serialized to bytes
         assert isinstance(cache._cache.encode("abc"), bytes)
 
-    def test_redis_pool_options(self, redis_container: "RedisContainerInfo"):
+    def test_redis_pool_options(self, redis_container: RedisContainerInfo):
         """Test that pool OPTIONS are passed to connection pool."""
         from contextlib import suppress
 
@@ -168,7 +168,7 @@ class TestRedisCacheClientMethods:
         # Same pool should be returned
         assert pool1 is pool2
 
-    def test_multiple_servers_pool_selection(self, redis_container: "RedisContainerInfo"):
+    def test_multiple_servers_pool_selection(self, redis_container: RedisContainerInfo):
         """Test pool selection with multiple servers configured."""
         from contextlib import suppress
 
@@ -234,7 +234,7 @@ class TestConnectionCleanup:
         assert loop in cache._cache._async_pools
         assert cache._cache._async_pools[loop][0] is pool1
 
-    def test_async_pool_different_per_loop(self, redis_container: "RedisContainerInfo"):
+    def test_async_pool_different_per_loop(self, redis_container: RedisContainerInfo):
         """Test that different event loops get different async pools.
 
         This is a synchronous test that creates its own event loops to avoid
@@ -316,7 +316,7 @@ class TestConnectionCleanup:
         assert loop in cache._cache._async_pools
         assert cache._cache._async_pools[loop][0] is pool
 
-    def test_weak_key_dictionary_cleanup_on_loop_gc(self, redis_container: "RedisContainerInfo"):
+    def test_weak_key_dictionary_cleanup_on_loop_gc(self, redis_container: RedisContainerInfo):
         """Test that async pools are cleaned up when event loop is garbage collected.
 
         This tests the WeakKeyDictionary behavior - when an event loop is GC'd,
@@ -420,7 +420,7 @@ class TestConnectionCleanup:
         cache.delete("sync_key")
         await cache.adelete("async_key")
 
-    def test_sync_then_nested_async_run(self, redis_container: "RedisContainerInfo"):
+    def test_sync_then_nested_async_run(self, redis_container: RedisContainerInfo):
         """Test WSGI-like pattern: sync ops then asyncio.run() for async ops.
 
         Simulates a WSGI thread that does sync cache work, then spins up an
@@ -466,7 +466,7 @@ class TestConnectionCleanup:
         with suppress(KeyError, AttributeError):
             del caches["default"]
 
-    def test_multiple_sequential_event_loops(self, redis_container: "RedisContainerInfo"):
+    def test_multiple_sequential_event_loops(self, redis_container: RedisContainerInfo):
         """Test multiple asyncio.run() calls from the same sync context.
 
         Simulates a WSGI thread that calls asyncio.run() multiple times across

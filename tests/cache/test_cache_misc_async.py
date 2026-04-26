@@ -1,9 +1,13 @@
 """Tests for async miscellaneous cache operations: ascan, alock, adecr_version, etc."""
 
+from typing import TYPE_CHECKING
+
 import pytest
 
-from django_cachex.cache import KeyValueCache
 from django_cachex.exceptions import NotSupportedError
+
+if TYPE_CHECKING:
+    from django_cachex.cache import KeyValueCache
 
 
 class TestAsyncScan:

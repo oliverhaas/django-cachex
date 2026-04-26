@@ -24,8 +24,8 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def django_core_cache(
-    redis_container: "RedisContainerInfo",
-) -> "DjangoCoreRedisCache":
+    redis_container: RedisContainerInfo,
+) -> DjangoCoreRedisCache:
     """Create Django's core RedisCache pointing to the test Redis."""
     from django.core.cache.backends.redis import RedisCache
 
@@ -38,7 +38,7 @@ def django_core_cache(
 
 
 @pytest.fixture
-def cachex_cache(redis_container: "RedisContainerInfo") -> "CachexRedisCache":
+def cachex_cache(redis_container: RedisContainerInfo) -> CachexRedisCache:
     """Create django-cachex cache pointing to the same Redis."""
     from django_cachex.cache import RedisCache
 
@@ -58,8 +58,8 @@ class TestDjangoCoreRedisCompatibility:
 
     def test_set_get_cross_read(
         self,
-        django_core_cache: "DjangoCoreRedisCache",
-        cachex_cache: "CachexRedisCache",
+        django_core_cache: DjangoCoreRedisCache,
+        cachex_cache: CachexRedisCache,
     ) -> None:
         """Values set by Django core can be read by django-cachex and vice versa."""
         # Django sets, cachex reads
@@ -76,8 +76,8 @@ class TestDjangoCoreRedisCompatibility:
 
     def test_set_get_same_result(
         self,
-        django_core_cache: "DjangoCoreRedisCache",
-        cachex_cache: "CachexRedisCache",
+        django_core_cache: DjangoCoreRedisCache,
+        cachex_cache: CachexRedisCache,
     ) -> None:
         """Both caches return the same result for get operations."""
         test_values = [
@@ -111,8 +111,8 @@ class TestDjangoCoreRedisCompatibility:
 
     def test_add_behavior(
         self,
-        django_core_cache: "DjangoCoreRedisCache",
-        cachex_cache: "CachexRedisCache",
+        django_core_cache: DjangoCoreRedisCache,
+        cachex_cache: CachexRedisCache,
     ) -> None:
         """add() behaves identically - only sets if key doesn't exist."""
         # Both should succeed on new key
@@ -137,8 +137,8 @@ class TestDjangoCoreRedisCompatibility:
 
     def test_delete_behavior(
         self,
-        django_core_cache: "DjangoCoreRedisCache",
-        cachex_cache: "CachexRedisCache",
+        django_core_cache: DjangoCoreRedisCache,
+        cachex_cache: CachexRedisCache,
     ) -> None:
         """delete() behaves identically."""
         # Set values
@@ -163,8 +163,8 @@ class TestDjangoCoreRedisCompatibility:
 
     def test_has_key_behavior(
         self,
-        django_core_cache: "DjangoCoreRedisCache",
-        cachex_cache: "CachexRedisCache",
+        django_core_cache: DjangoCoreRedisCache,
+        cachex_cache: CachexRedisCache,
     ) -> None:
         """has_key() behaves identically."""
         django_core_cache.set("has_key_dj", "value")
@@ -188,8 +188,8 @@ class TestDjangoCoreRedisCompatibility:
 
     def test_get_many_behavior(
         self,
-        django_core_cache: "DjangoCoreRedisCache",
-        cachex_cache: "CachexRedisCache",
+        django_core_cache: DjangoCoreRedisCache,
+        cachex_cache: CachexRedisCache,
     ) -> None:
         """get_many() behaves identically."""
         # Set some values with both caches
@@ -213,8 +213,8 @@ class TestDjangoCoreRedisCompatibility:
 
     def test_set_many_behavior(
         self,
-        django_core_cache: "DjangoCoreRedisCache",
-        cachex_cache: "CachexRedisCache",
+        django_core_cache: DjangoCoreRedisCache,
+        cachex_cache: CachexRedisCache,
     ) -> None:
         """set_many() behaves identically."""
         data = {"sm_a": "val_a", "sm_b": "val_b", "sm_c": 123}
@@ -244,8 +244,8 @@ class TestDjangoCoreRedisCompatibility:
 
     def test_delete_many_behavior(
         self,
-        django_core_cache: "DjangoCoreRedisCache",
-        cachex_cache: "CachexRedisCache",
+        django_core_cache: DjangoCoreRedisCache,
+        cachex_cache: CachexRedisCache,
     ) -> None:
         """delete_many() behaves identically."""
         # Set values
@@ -269,8 +269,8 @@ class TestDjangoCoreRedisCompatibility:
 
     def test_incr_decr_behavior(
         self,
-        django_core_cache: "DjangoCoreRedisCache",
-        cachex_cache: "CachexRedisCache",
+        django_core_cache: DjangoCoreRedisCache,
+        cachex_cache: CachexRedisCache,
     ) -> None:
         """incr() and decr() behave identically."""
         # Set initial values
@@ -311,8 +311,8 @@ class TestDjangoCoreRedisCompatibility:
 
     def test_touch_behavior(
         self,
-        django_core_cache: "DjangoCoreRedisCache",
-        cachex_cache: "CachexRedisCache",
+        django_core_cache: DjangoCoreRedisCache,
+        cachex_cache: CachexRedisCache,
     ) -> None:
         """touch() behaves identically."""
         django_core_cache.set("touch_dj", "value", timeout=100)
@@ -336,8 +336,8 @@ class TestDjangoCoreRedisCompatibility:
 
     def test_clear_behavior(
         self,
-        django_core_cache: "DjangoCoreRedisCache",
-        cachex_cache: "CachexRedisCache",
+        django_core_cache: DjangoCoreRedisCache,
+        cachex_cache: CachexRedisCache,
     ) -> None:
         """clear() removes all keys in the cache's namespace.
 
@@ -355,8 +355,8 @@ class TestDjangoCoreRedisCompatibility:
 
     def test_get_or_set_behavior(
         self,
-        django_core_cache: "DjangoCoreRedisCache",
-        cachex_cache: "CachexRedisCache",
+        django_core_cache: DjangoCoreRedisCache,
+        cachex_cache: CachexRedisCache,
     ) -> None:
         """get_or_set() behaves identically."""
         # Non-existent key - should set and return default
@@ -381,8 +381,8 @@ class TestDjangoCoreRedisCompatibility:
 
     def test_get_or_set_with_callable(
         self,
-        django_core_cache: "DjangoCoreRedisCache",
-        cachex_cache: "CachexRedisCache",
+        django_core_cache: DjangoCoreRedisCache,
+        cachex_cache: CachexRedisCache,
     ) -> None:
         """get_or_set() with callable default behaves identically."""
         call_count = {"dj": 0, "cx": 0}
@@ -417,8 +417,8 @@ class TestDjangoCoreRedisCompatibility:
 
     def test_default_on_missing_key(
         self,
-        django_core_cache: "DjangoCoreRedisCache",
-        cachex_cache: "CachexRedisCache",
+        django_core_cache: DjangoCoreRedisCache,
+        cachex_cache: CachexRedisCache,
     ) -> None:
         """get() with default parameter behaves identically."""
         dj_result = django_core_cache.get("missing_key", default="fallback")
@@ -434,8 +434,8 @@ class TestDjangoCoreRedisCompatibility:
 
     def test_set_with_timeout(
         self,
-        django_core_cache: "DjangoCoreRedisCache",
-        cachex_cache: "CachexRedisCache",
+        django_core_cache: DjangoCoreRedisCache,
+        cachex_cache: CachexRedisCache,
     ) -> None:
         """set() with timeout behaves identically."""
         import time
@@ -457,8 +457,8 @@ class TestDjangoCoreRedisCompatibility:
 
     def test_set_with_none_timeout(
         self,
-        django_core_cache: "DjangoCoreRedisCache",
-        cachex_cache: "CachexRedisCache",
+        django_core_cache: DjangoCoreRedisCache,
+        cachex_cache: CachexRedisCache,
     ) -> None:
         """set() with timeout=None uses default timeout."""
         # This tests that None timeout behaves consistently
@@ -475,8 +475,8 @@ class TestDjangoCoreRedisCompatibility:
 
     def test_close_behavior(
         self,
-        django_core_cache: "DjangoCoreRedisCache",
-        cachex_cache: "CachexRedisCache",
+        django_core_cache: DjangoCoreRedisCache,
+        cachex_cache: CachexRedisCache,
     ) -> None:
         """close() should work without error on both."""
         # Set a value first

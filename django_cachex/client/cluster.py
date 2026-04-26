@@ -271,6 +271,7 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
                 target_nodes=self._cluster.PRIMARIES,
             ),
             itersize,
+            strict=False,
         ):
             for slot_keys in self._group_keys_by_slot(batch).values():
                 total_deleted += cast("int", client.delete(*slot_keys))

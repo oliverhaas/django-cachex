@@ -173,7 +173,7 @@ def _format_value(value: Any) -> str:
         serialized = json.dumps(value, indent=2, ensure_ascii=False)
         if json.loads(serialized) == value:
             return serialized
-    except (TypeError, ValueError, OverflowError):
+    except TypeError, ValueError, OverflowError:
         pass
     return repr(value)
 
@@ -280,7 +280,7 @@ def get_size(cache: Any, key: str, key_type: str | None = None) -> int | None:
             client = cache.get_client(write=False)
             full_key = cache.make_key(key)
             return client.strlen(full_key)
-        except (NotSupportedError, AttributeError):
+        except NotSupportedError, AttributeError:
             pass
         # Fallback: compute Python object size (e.g. LocMemCache)
         value = cache.get(key)

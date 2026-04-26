@@ -1,11 +1,14 @@
 """Tests for cache stampede prevention via XFetch algorithm (TTL-based)."""
 
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
 
-from django_cachex.cache import KeyValueCache
 from django_cachex.stampede import StampedeConfig, should_recompute
+
+if TYPE_CHECKING:
+    from django_cachex.cache import KeyValueCache
 
 # =============================================================================
 # Unit tests for stampede module (no Redis needed)

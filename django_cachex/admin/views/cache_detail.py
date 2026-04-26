@@ -92,7 +92,7 @@ def _cache_detail_view(
     # Get slowlog count from query param (default 10)
     try:
         slowlog_count = max(1, int(request.GET.get("count", 10)))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         slowlog_count = 10
 
     # Get slowlog entries

@@ -1,8 +1,11 @@
 """Tests for async sorted set operations."""
 
+from typing import TYPE_CHECKING
+
 import pytest
 
-from django_cachex.cache import KeyValueCache
+if TYPE_CHECKING:
+    from django_cachex.cache import KeyValueCache
 
 
 class TestAsyncSortedSetAdd:

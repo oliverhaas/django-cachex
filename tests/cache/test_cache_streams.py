@@ -2,10 +2,12 @@
 
 import asyncio
 import time
+from typing import TYPE_CHECKING
 
 import pytest
 
-from django_cachex.cache import KeyValueCache
+if TYPE_CHECKING:
+    from django_cachex.cache import KeyValueCache
 
 # =============================================================================
 # Sync stream tests

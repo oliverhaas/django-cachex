@@ -100,7 +100,7 @@ def is_json_serializable(value: Any) -> bool:
         serialized = json.dumps(value)
         deserialized = json.loads(serialized)
         return deserialized == value
-    except (TypeError, ValueError, OverflowError):
+    except TypeError, ValueError, OverflowError:
         return False
 
 

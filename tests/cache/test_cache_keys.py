@@ -1,14 +1,17 @@
 """Tests for key operations: version, delete_pattern, iter_keys, etc."""
 
-from collections.abc import Iterable
 from contextlib import suppress
+from typing import TYPE_CHECKING
 
 import pytest
 from django.core.cache import caches
 from django.test import override_settings
 
-from django_cachex.cache import KeyValueCache
-from tests.settings_wrapper import SettingsWrapper
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from django_cachex.cache import KeyValueCache
+    from tests.settings_wrapper import SettingsWrapper
 
 
 @pytest.fixture

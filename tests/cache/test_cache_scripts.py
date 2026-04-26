@@ -1,8 +1,9 @@
 """Tests for Lua script operations."""
 
+from typing import TYPE_CHECKING
+
 import pytest
 
-from django_cachex.cache import KeyValueCache
 from django_cachex.script import (
     ScriptHelpers,
     decode_list_post,
@@ -10,6 +11,9 @@ from django_cachex.script import (
     full_encode_pre,
     keys_only_pre,
 )
+
+if TYPE_CHECKING:
+    from django_cachex.cache import KeyValueCache
 
 
 class TestEvalScript:

@@ -1,8 +1,11 @@
 """Tests for async Lua scripting operations (raw client methods)."""
 
+from typing import TYPE_CHECKING
+
 import pytest
 
-from django_cachex.cache import KeyValueCache
+if TYPE_CHECKING:
+    from django_cachex.cache import KeyValueCache
 
 
 @pytest.fixture

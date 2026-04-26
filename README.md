@@ -78,13 +78,16 @@ Full documentation at [oliverhaas.github.io/django-cachex](https://oliverhaas.gi
 
 ## Requirements
 
-- Python 3.12+
-- Django 5.2+
+- Python 3.14+ (free-threaded supported)
+- Django 6.0+
+- Linux x86_64 (only target with prebuilt wheels for now)
 - valkey-py 6.0+ or redis-py 6.0+
 
 ## Acknowledgments
 
 This project was started from [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause. The admin functionality was inspired by [django-redisboard](https://github.com/ionelmc/django-redisboard). All of the above I used in production, noticed some flaws over the years, and for one reason or another a new package ended up the best way for progress for me here.
+
+The Rust I/O driver and async bridge are heavily inspired by — and in places directly adapted from — [django-vcache](https://gitlab.com/glitchtip/django-vcache) (MIT, by David Burke / GlitchTip). The fork-safe tokio runtime, the `RustAwaitable` deferred-loop-binding pattern, and the multiplexed-connection design all originate there.
 
 The Unfold theme integration optionally uses [django-unfold](https://unfoldadmin.com/). 
 

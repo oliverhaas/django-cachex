@@ -1,14 +1,14 @@
 """Cache fixture and configuration builders."""
 
-from collections.abc import Iterator
 from typing import TYPE_CHECKING, cast
 
 import pytest
 from django.test import override_settings
 
-from django_cachex.cache import KeyValueCache
-
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from django_cachex.cache import KeyValueCache
     from tests.fixtures.containers import RedisContainerInfo, SentinelContainerInfo
 
 # Available compressors (None means no compression)
@@ -288,7 +288,7 @@ def get_db_number(
 
 
 def _make_cache(
-    redis_container: "RedisContainerInfo",
+    redis_container: RedisContainerInfo,
     request: pytest.FixtureRequest,
     backend_val: str,
     sentinel_mode_val: str | bool,
@@ -365,7 +365,7 @@ def _make_cache(
 def cache(
     client_class: str,
     sentinel_mode: str | bool,
-    redis_container: "RedisContainerInfo",
+    redis_container: RedisContainerInfo,
     request: pytest.FixtureRequest,
 ) -> Iterator[KeyValueCache]:
     """Django cache fixture parametrized by client_class × sentinel_mode.
@@ -402,7 +402,7 @@ def cache(
 
 
 def _make_stampede_cache(
-    redis_container: "RedisContainerInfo",
+    redis_container: RedisContainerInfo,
     request: pytest.FixtureRequest,
     backend_val: str,
 ) -> Iterator[KeyValueCache]:
@@ -442,7 +442,7 @@ def _make_stampede_cache(
 @pytest.fixture
 def stampede_cache(
     client_class: str,
-    redis_container: "RedisContainerInfo",
+    redis_container: RedisContainerInfo,
     request: pytest.FixtureRequest,
 ) -> Iterator[KeyValueCache]:
     """Django cache fixture with stampede prevention enabled.

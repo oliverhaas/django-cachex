@@ -80,7 +80,7 @@ class Cache(models.Model):
 
         try:
             return caches[self.name]
-        except (InvalidCacheBackendError, KeyError):
+        except InvalidCacheBackendError, KeyError:
             return None
 
     @property

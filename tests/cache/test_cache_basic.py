@@ -1,13 +1,16 @@
 """Tests for basic cache operations: set, get, add, delete, get_many, set_many."""
 
 import datetime
+from typing import TYPE_CHECKING
 
-from pytest_mock import MockerFixture
-
-from django_cachex.cache import KeyValueCache
 from django_cachex.serializers.json import JSONSerializer
 from django_cachex.serializers.msgpack import MessagePackSerializer
-from tests.settings_wrapper import SettingsWrapper
+
+if TYPE_CHECKING:
+    from pytest_mock import MockerFixture
+
+    from django_cachex.cache import KeyValueCache
+    from tests.settings_wrapper import SettingsWrapper
 
 
 class TestSetIfNotExists:

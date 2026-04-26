@@ -1,9 +1,13 @@
 """Tests for miscellaneous cache operations: scan, decr_version, clear_all_versions, flush_db."""
 
+from typing import TYPE_CHECKING
+
 import pytest
 
-from django_cachex.cache import KeyValueCache
 from django_cachex.exceptions import NotSupportedError
+
+if TYPE_CHECKING:
+    from django_cachex.cache import KeyValueCache
 
 
 class TestScanOperations:

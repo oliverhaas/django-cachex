@@ -11,16 +11,15 @@ import pytest
 from django.core.cache import caches
 from django.test import override_settings
 
-from django_cachex.cache import KeyValueCache
-
 if TYPE_CHECKING:
+    from django_cachex.cache import KeyValueCache
     from tests.fixtures.containers import RedisContainerInfo
 
 
 class TestDjangoStyleOptions:
     """Test that Django-style configuration OPTIONS work."""
 
-    def test_db_option(self, redis_container: "RedisContainerInfo"):
+    def test_db_option(self, redis_container: RedisContainerInfo):
         """Test that db option is handled correctly."""
         host = redis_container.host
         port = redis_container.port
@@ -43,7 +42,7 @@ class TestDjangoStyleOptions:
             assert cache.get("test_db_option") == "value"
             cache.delete("test_db_option")
 
-    def test_pool_class_option(self, redis_container: "RedisContainerInfo"):
+    def test_pool_class_option(self, redis_container: RedisContainerInfo):
         """Test that pool_class option works (Django-style lowercase)."""
         host = redis_container.host
         port = redis_container.port
@@ -64,7 +63,7 @@ class TestDjangoStyleOptions:
             assert cache.get("test_pool_class") == "value"
             cache.delete("test_pool_class")
 
-    def test_parser_class_option(self, redis_container: "RedisContainerInfo"):
+    def test_parser_class_option(self, redis_container: RedisContainerInfo):
         """Test that parser_class option works (Django-style lowercase)."""
         host = redis_container.host
         port = redis_container.port
@@ -89,7 +88,7 @@ class TestDjangoStyleOptions:
 class TestSerializerConfiguration:
     """Test various serializer configuration styles."""
 
-    def test_serializer_class(self, redis_container: "RedisContainerInfo"):
+    def test_serializer_class(self, redis_container: RedisContainerInfo):
         """Test serializer as a class (Django builtin style)."""
         host = redis_container.host
         port = redis_container.port
@@ -123,7 +122,7 @@ class TestSerializerConfiguration:
             assert result == {"key": "value"}
             cache.delete("test_class_serializer")
 
-    def test_serializer_instance(self, redis_container: "RedisContainerInfo"):
+    def test_serializer_instance(self, redis_container: RedisContainerInfo):
         """Test serializer as an instance (Django builtin style)."""
         host = redis_container.host
         port = redis_container.port
@@ -154,7 +153,7 @@ class TestSerializerConfiguration:
             assert result == [1, 2, 3]
             cache.delete("test_instance_serializer")
 
-    def test_serializer_class_no_options(self, redis_container: "RedisContainerInfo"):
+    def test_serializer_class_no_options(self, redis_container: RedisContainerInfo):
         """Test serializer class that doesn't accept options kwarg."""
         host = redis_container.host
         port = redis_container.port
@@ -223,7 +222,7 @@ class TestIntegerOptimization:
 class TestLocationFormats:
     """Test various LOCATION format variations."""
 
-    def test_list_location(self, redis_container: "RedisContainerInfo"):
+    def test_list_location(self, redis_container: RedisContainerInfo):
         """Test LOCATION as a list of URLs."""
         host = redis_container.host
         port = redis_container.port
@@ -242,7 +241,7 @@ class TestLocationFormats:
             assert cache.get("test_list_location") == "value"
             cache.delete("test_list_location")
 
-    def test_comma_separated_location(self, redis_container: "RedisContainerInfo"):
+    def test_comma_separated_location(self, redis_container: RedisContainerInfo):
         """Test LOCATION as comma-separated string."""
         host = redis_container.host
         port = redis_container.port

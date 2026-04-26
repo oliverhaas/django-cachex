@@ -600,11 +600,11 @@ class KeyAdminMixin:
         # Extract cursor/count before ChangeList sees them, store on request
         try:
             cursor = max(0, int(request.GET.get("cursor", 0)))
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             cursor = 0
         try:
             count = max(1, int(request.GET.get("count", 100)))
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             count = 100
         request._cachex_cursor = cursor  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         request._cachex_count = count  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]

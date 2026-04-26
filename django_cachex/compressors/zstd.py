@@ -1,7 +1,4 @@
-try:
-    from compression import zstd
-except ImportError:
-    from backports import zstd
+from compression import zstd
 
 from django_cachex.compressors.base import BaseCompressor
 from django_cachex.exceptions import CompressorError

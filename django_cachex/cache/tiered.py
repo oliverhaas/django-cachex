@@ -117,7 +117,7 @@ class TieredCache(BaseCache):
         try:
             ttl = self._l2.ttl(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
             return ttl if isinstance(ttl, int) and ttl > 0 else None
-        except (AttributeError, NotSupportedError, TypeError):
+        except AttributeError, NotSupportedError, TypeError:
             return None
 
     async def _aget_l2_ttl(self, key: KeyT, version: int | None = None) -> int | None:
@@ -125,7 +125,7 @@ class TieredCache(BaseCache):
         try:
             ttl = await self._l2.attl(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
             return ttl if isinstance(ttl, int) and ttl > 0 else None
-        except (AttributeError, NotSupportedError, TypeError):
+        except AttributeError, NotSupportedError, TypeError:
             return None
 
     # =========================================================================
@@ -351,7 +351,7 @@ class TieredCache(BaseCache):
             raise NotSupportedError(method, "TieredCache")
         try:
             return fn(*args, **kwargs)
-        except (AttributeError, NotSupportedError):
+        except AttributeError, NotSupportedError:
             raise NotSupportedError(method, "TieredCache") from None
 
     def make_key(self, key: str, version: int | None = None) -> str:

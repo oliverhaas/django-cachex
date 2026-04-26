@@ -1,11 +1,13 @@
 import copy
-from collections.abc import Iterable
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from django.core.cache import caches
 
-from django_cachex.cache import KeyValueCache
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from django_cachex.cache import KeyValueCache
 
 
 def make_key(key: str, prefix: str, version: str) -> str:

@@ -1,8 +1,10 @@
 """Tests for lock operations."""
 
 import threading
+from typing import TYPE_CHECKING
 
-from django_cachex.cache import KeyValueCache
+if TYPE_CHECKING:
+    from django_cachex.cache import KeyValueCache
 
 
 class TestBasicLockOperations:

@@ -1,4 +1,7 @@
-from django_cachex.cache import KeyValueCache
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from django_cachex.cache import KeyValueCache
 
 
 class TestSortedSetOperations:
