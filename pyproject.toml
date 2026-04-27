@@ -71,14 +71,15 @@ dev = [
 docs = ["mkdocs==1.6.1", "mkdocs-material==9.7.6", "mike==2.2.0"]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["maturin>=1.13,<2.0"]
+build-backend = "maturin"
 
-[tool.hatch.build.targets.wheel]
-packages = ["django_cachex"]
-
-[tool.hatch.build.targets.sdist]
-include = ["django_cachex", "LICENSE", "README.md"]
+[tool.maturin]
+module-name = "django_cachex._driver"
+features = ["pyo3/extension-module"]
+python-source = "."
+manifest-path = "Cargo.toml"
+include = ["LICENSE", "README.md"]
 
 [tool.ruff]
 target-version = "py314"
