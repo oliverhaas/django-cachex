@@ -1,8 +1,14 @@
 // Connection layer for the Rust I/O driver.
 //
-// Verbatim port from django-vcache (MIT, by David Burke / GlitchTip):
+// Original (lines through `connect_sentinel`): verbatim port from django-vcache
+// (MIT, by David Burke / GlitchTip):
 // https://gitlab.com/glitchtip/django-vcache/-/blob/main/src/connection.rs
-// Keep in lockstep with upstream — do not diverge without discussion.
+// Keep that section in lockstep with upstream.
+//
+// Below the "django-cachex extensions" marker at the bottom of the file are
+// extra command methods (hashes, sets, sorted sets, streams, admin/introspection)
+// that django-cachex needs but vcache does not expose. They live in the same
+// file so they can use the file-local dispatch macros.
 
 use redis::aio::{ConnectionManager, ConnectionManagerConfig};
 use redis::caching::{CacheConfig, CacheStatistics};
@@ -1140,4 +1146,750 @@ pub async fn connect_sentinel(
             tls_opts,
         },
     })
+}
+
+// =========================================================================
+// django-cachex extensions
+//
+// Methods below extend the vcache-ported surface with command families
+// (hashes, sets, sorted sets, streams, admin/introspection) that
+// django-cachex needs to expose. They use the file-local dispatch macros
+// `dispatch_cmd!`, `conn_method!`, and `sentinel_retry!` defined above.
+// =========================================================================
+
+impl ValkeyConnInner {
+    // ----- Strings / TTL / type / admin gap commands -----
+
+    pub async fn ttl(&mut self, key: &str) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("TTL");
+        cmd.arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn pttl(&mut self, key: &str) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("PTTL");
+        cmd.arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn keys(&mut self, pattern: &str) -> RedisResult<Vec<String>> {
+        let mut cmd = redis::cmd("KEYS");
+        cmd.arg(pattern);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn key_type(&mut self, key: &str) -> RedisResult<String> {
+        let mut cmd = redis::cmd("TYPE");
+        cmd.arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn script_exists(&mut self, sha: &str) -> RedisResult<bool> {
+        let mut cmd = redis::cmd("SCRIPT");
+        cmd.arg("EXISTS").arg(sha);
+        let result: Vec<bool> = dispatch_cmd!(self, cmd)?;
+        Ok(result.into_iter().next().unwrap_or(false))
+    }
+
+    pub async fn lpop(&mut self, key: &str) -> RedisResult<Option<Vec<u8>>> {
+        let mut cmd = redis::cmd("LPOP");
+        cmd.arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn lindex(&mut self, key: &str, index: i64) -> RedisResult<Option<Vec<u8>>> {
+        let mut cmd = redis::cmd("LINDEX");
+        cmd.arg(key).arg(index);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn lset(&mut self, key: &str, index: i64, value: &[u8]) -> RedisResult<()> {
+        let mut cmd = redis::cmd("LSET");
+        cmd.arg(key).arg(index).arg(value);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn linsert(
+        &mut self,
+        key: &str,
+        before: bool,
+        pivot: &[u8],
+        value: &[u8],
+    ) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("LINSERT");
+        cmd.arg(key)
+            .arg(if before { "BEFORE" } else { "AFTER" })
+            .arg(pivot)
+            .arg(value);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn dbsize(&mut self) -> RedisResult<i64> {
+        dispatch_cmd!(self, redis::cmd("DBSIZE"))
+    }
+
+    pub async fn info(&mut self) -> RedisResult<redis::Value> {
+        dispatch_cmd!(self, redis::cmd("INFO"))
+    }
+
+    pub async fn client_list(&mut self) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("CLIENT");
+        cmd.arg("LIST");
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn config_get(&mut self, parameter: &str) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("CONFIG");
+        cmd.arg("GET").arg(parameter);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn object_encoding(&mut self, key: &str) -> RedisResult<Option<String>> {
+        let mut cmd = redis::cmd("OBJECT");
+        cmd.arg("ENCODING").arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn object_idletime(&mut self, key: &str) -> RedisResult<Option<i64>> {
+        let mut cmd = redis::cmd("OBJECT");
+        cmd.arg("IDLETIME").arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn memory_usage(&mut self, key: &str) -> RedisResult<Option<i64>> {
+        let mut cmd = redis::cmd("MEMORY");
+        cmd.arg("USAGE").arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    // ----- Hashes -----
+
+    pub async fn hget(&mut self, key: &str, field: &str) -> RedisResult<Option<Vec<u8>>> {
+        let mut cmd = redis::cmd("HGET");
+        cmd.arg(key).arg(field);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn hset(&mut self, key: &str, field: &str, value: &[u8]) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("HSET");
+        cmd.arg(key).arg(field).arg(value);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn hgetall(&mut self, key: &str) -> RedisResult<Vec<(Vec<u8>, Vec<u8>)>> {
+        let mut cmd = redis::cmd("HGETALL");
+        cmd.arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn hdel(&mut self, key: &str, fields: &[String]) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("HDEL");
+        cmd.arg(key);
+        for f in fields {
+            cmd.arg(f.as_str());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn hincrby(&mut self, key: &str, field: &str, delta: i64) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("HINCRBY");
+        cmd.arg(key).arg(field).arg(delta);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn hkeys(&mut self, key: &str) -> RedisResult<Vec<String>> {
+        let mut cmd = redis::cmd("HKEYS");
+        cmd.arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn hvals(&mut self, key: &str) -> RedisResult<Vec<Vec<u8>>> {
+        let mut cmd = redis::cmd("HVALS");
+        cmd.arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn hexists(&mut self, key: &str, field: &str) -> RedisResult<bool> {
+        let mut cmd = redis::cmd("HEXISTS");
+        cmd.arg(key).arg(field);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn hlen(&mut self, key: &str) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("HLEN");
+        cmd.arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn hmget(
+        &mut self,
+        key: &str,
+        fields: &[String],
+    ) -> RedisResult<Vec<Option<Vec<u8>>>> {
+        let mut cmd = redis::cmd("HMGET");
+        cmd.arg(key);
+        for f in fields {
+            cmd.arg(f.as_str());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn hmset(
+        &mut self,
+        key: &str,
+        fields: &[(String, Vec<u8>)],
+    ) -> RedisResult<()> {
+        // HMSET is technically deprecated; HSET with multiple field/value pairs is the modern equivalent.
+        let mut cmd = redis::cmd("HSET");
+        cmd.arg(key);
+        for (f, v) in fields {
+            cmd.arg(f.as_str()).arg(v.as_slice());
+        }
+        let _: i64 = dispatch_cmd!(self, cmd)?;
+        Ok(())
+    }
+
+    // ----- Sets -----
+
+    pub async fn sadd(&mut self, key: &str, members: Vec<Vec<u8>>) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("SADD");
+        cmd.arg(key);
+        for m in &members {
+            cmd.arg(m.as_slice());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn srem(&mut self, key: &str, members: Vec<Vec<u8>>) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("SREM");
+        cmd.arg(key);
+        for m in &members {
+            cmd.arg(m.as_slice());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn smembers(&mut self, key: &str) -> RedisResult<Vec<Vec<u8>>> {
+        let mut cmd = redis::cmd("SMEMBERS");
+        cmd.arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn sismember(&mut self, key: &str, member: &[u8]) -> RedisResult<bool> {
+        let mut cmd = redis::cmd("SISMEMBER");
+        cmd.arg(key).arg(member);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn scard(&mut self, key: &str) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("SCARD");
+        cmd.arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn sinter(&mut self, keys: &[String]) -> RedisResult<Vec<Vec<u8>>> {
+        let mut cmd = redis::cmd("SINTER");
+        for k in keys {
+            cmd.arg(k.as_str());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn sunion(&mut self, keys: &[String]) -> RedisResult<Vec<Vec<u8>>> {
+        let mut cmd = redis::cmd("SUNION");
+        for k in keys {
+            cmd.arg(k.as_str());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn sdiff(&mut self, keys: &[String]) -> RedisResult<Vec<Vec<u8>>> {
+        let mut cmd = redis::cmd("SDIFF");
+        for k in keys {
+            cmd.arg(k.as_str());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    // ----- Sorted sets -----
+
+    pub async fn zadd(&mut self, key: &str, members: Vec<(Vec<u8>, f64)>) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("ZADD");
+        cmd.arg(key);
+        for (member, score) in &members {
+            cmd.arg(*score).arg(member.as_slice());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn zrem(&mut self, key: &str, members: Vec<Vec<u8>>) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("ZREM");
+        cmd.arg(key);
+        for m in &members {
+            cmd.arg(m.as_slice());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn zrange(
+        &mut self,
+        key: &str,
+        start: i64,
+        stop: i64,
+        with_scores: bool,
+    ) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("ZRANGE");
+        cmd.arg(key).arg(start).arg(stop);
+        if with_scores {
+            cmd.arg("WITHSCORES");
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn zrangebyscore(
+        &mut self,
+        key: &str,
+        min: &str,
+        max: &str,
+        with_scores: bool,
+    ) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("ZRANGEBYSCORE");
+        cmd.arg(key).arg(min).arg(max);
+        if with_scores {
+            cmd.arg("WITHSCORES");
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn zrevrange(
+        &mut self,
+        key: &str,
+        start: i64,
+        stop: i64,
+        with_scores: bool,
+    ) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("ZREVRANGE");
+        cmd.arg(key).arg(start).arg(stop);
+        if with_scores {
+            cmd.arg("WITHSCORES");
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn zincrby(&mut self, key: &str, member: &[u8], delta: f64) -> RedisResult<f64> {
+        let mut cmd = redis::cmd("ZINCRBY");
+        cmd.arg(key).arg(delta).arg(member);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn zcard(&mut self, key: &str) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("ZCARD");
+        cmd.arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn zscore(&mut self, key: &str, member: &[u8]) -> RedisResult<Option<f64>> {
+        let mut cmd = redis::cmd("ZSCORE");
+        cmd.arg(key).arg(member);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn zrank(&mut self, key: &str, member: &[u8]) -> RedisResult<Option<i64>> {
+        let mut cmd = redis::cmd("ZRANK");
+        cmd.arg(key).arg(member);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn zcount(&mut self, key: &str, min: &str, max: &str) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("ZCOUNT");
+        cmd.arg(key).arg(min).arg(max);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn zpopmin(
+        &mut self,
+        key: &str,
+        count: i64,
+    ) -> RedisResult<Vec<(Vec<u8>, f64)>> {
+        let mut cmd = redis::cmd("ZPOPMIN");
+        cmd.arg(key).arg(count);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn zpopmax(
+        &mut self,
+        key: &str,
+        count: i64,
+    ) -> RedisResult<Vec<(Vec<u8>, f64)>> {
+        let mut cmd = redis::cmd("ZPOPMAX");
+        cmd.arg(key).arg(count);
+        dispatch_cmd!(self, cmd)
+    }
+
+    // ----- Streams -----
+
+    pub async fn xadd(
+        &mut self,
+        key: &str,
+        id: &str,
+        fields: &[(String, Vec<u8>)],
+    ) -> RedisResult<String> {
+        let mut cmd = redis::cmd("XADD");
+        cmd.arg(key).arg(id);
+        for (f, v) in fields {
+            cmd.arg(f.as_str()).arg(v.as_slice());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn xlen(&mut self, key: &str) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("XLEN");
+        cmd.arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn xrange(
+        &mut self,
+        key: &str,
+        start: &str,
+        end: &str,
+        count: Option<i64>,
+    ) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("XRANGE");
+        cmd.arg(key).arg(start).arg(end);
+        if let Some(c) = count {
+            cmd.arg("COUNT").arg(c);
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn xread(
+        &mut self,
+        keys: &[String],
+        ids: &[String],
+        count: Option<i64>,
+    ) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("XREAD");
+        if let Some(c) = count {
+            cmd.arg("COUNT").arg(c);
+        }
+        cmd.arg("STREAMS");
+        for k in keys {
+            cmd.arg(k.as_str());
+        }
+        for i in ids {
+            cmd.arg(i.as_str());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn xreadgroup(
+        &mut self,
+        group: &str,
+        consumer: &str,
+        keys: &[String],
+        ids: &[String],
+        count: Option<i64>,
+    ) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("XREADGROUP");
+        cmd.arg("GROUP").arg(group).arg(consumer);
+        if let Some(c) = count {
+            cmd.arg("COUNT").arg(c);
+        }
+        cmd.arg("STREAMS");
+        for k in keys {
+            cmd.arg(k.as_str());
+        }
+        for i in ids {
+            cmd.arg(i.as_str());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn xack(&mut self, key: &str, group: &str, ids: &[String]) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("XACK");
+        cmd.arg(key).arg(group);
+        for i in ids {
+            cmd.arg(i.as_str());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn xtrim(&mut self, key: &str, max_len: i64, approximate: bool) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("XTRIM");
+        cmd.arg(key).arg("MAXLEN");
+        if approximate {
+            cmd.arg("~");
+        }
+        cmd.arg(max_len);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn xgroup_create(
+        &mut self,
+        key: &str,
+        group: &str,
+        id: &str,
+        mkstream: bool,
+    ) -> RedisResult<()> {
+        let mut cmd = redis::cmd("XGROUP");
+        cmd.arg("CREATE").arg(key).arg(group).arg(id);
+        if mkstream {
+            cmd.arg("MKSTREAM");
+        }
+        let _: redis::Value = dispatch_cmd!(self, cmd)?;
+        Ok(())
+    }
+
+    pub async fn xpending(&mut self, key: &str, group: &str) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("XPENDING");
+        cmd.arg(key).arg(group);
+        dispatch_cmd!(self, cmd)
+    }
+}
+
+// Delegate methods on the public `ValkeyConn` wrapper for the extension surface.
+impl ValkeyConn {
+    pub async fn ttl(&mut self, key: &str) -> RedisResult<i64> {
+        self.regular.ttl(key).await
+    }
+    pub async fn pttl(&mut self, key: &str) -> RedisResult<i64> {
+        self.regular.pttl(key).await
+    }
+    pub async fn keys(&mut self, pattern: &str) -> RedisResult<Vec<String>> {
+        self.regular.keys(pattern).await
+    }
+    pub async fn key_type(&mut self, key: &str) -> RedisResult<String> {
+        self.regular.key_type(key).await
+    }
+    pub async fn script_exists(&mut self, sha: &str) -> RedisResult<bool> {
+        self.regular.script_exists(sha).await
+    }
+    pub async fn lpop(&mut self, key: &str) -> RedisResult<Option<Vec<u8>>> {
+        self.regular.lpop(key).await
+    }
+    pub async fn lindex(&mut self, key: &str, index: i64) -> RedisResult<Option<Vec<u8>>> {
+        self.regular.lindex(key, index).await
+    }
+    pub async fn lset(&mut self, key: &str, index: i64, value: &[u8]) -> RedisResult<()> {
+        self.regular.lset(key, index, value).await
+    }
+    pub async fn linsert(
+        &mut self,
+        key: &str,
+        before: bool,
+        pivot: &[u8],
+        value: &[u8],
+    ) -> RedisResult<i64> {
+        self.regular.linsert(key, before, pivot, value).await
+    }
+    pub async fn dbsize(&mut self) -> RedisResult<i64> {
+        self.regular.dbsize().await
+    }
+    pub async fn info(&mut self) -> RedisResult<redis::Value> {
+        self.regular.info().await
+    }
+    pub async fn client_list(&mut self) -> RedisResult<redis::Value> {
+        self.regular.client_list().await
+    }
+    pub async fn config_get(&mut self, parameter: &str) -> RedisResult<redis::Value> {
+        self.regular.config_get(parameter).await
+    }
+    pub async fn object_encoding(&mut self, key: &str) -> RedisResult<Option<String>> {
+        self.regular.object_encoding(key).await
+    }
+    pub async fn object_idletime(&mut self, key: &str) -> RedisResult<Option<i64>> {
+        self.regular.object_idletime(key).await
+    }
+    pub async fn memory_usage(&mut self, key: &str) -> RedisResult<Option<i64>> {
+        self.regular.memory_usage(key).await
+    }
+
+    pub async fn hget(&mut self, key: &str, field: &str) -> RedisResult<Option<Vec<u8>>> {
+        self.regular.hget(key, field).await
+    }
+    pub async fn hset(&mut self, key: &str, field: &str, value: &[u8]) -> RedisResult<i64> {
+        self.regular.hset(key, field, value).await
+    }
+    pub async fn hgetall(&mut self, key: &str) -> RedisResult<Vec<(Vec<u8>, Vec<u8>)>> {
+        self.regular.hgetall(key).await
+    }
+    pub async fn hdel(&mut self, key: &str, fields: &[String]) -> RedisResult<i64> {
+        self.regular.hdel(key, fields).await
+    }
+    pub async fn hincrby(&mut self, key: &str, field: &str, delta: i64) -> RedisResult<i64> {
+        self.regular.hincrby(key, field, delta).await
+    }
+    pub async fn hkeys(&mut self, key: &str) -> RedisResult<Vec<String>> {
+        self.regular.hkeys(key).await
+    }
+    pub async fn hvals(&mut self, key: &str) -> RedisResult<Vec<Vec<u8>>> {
+        self.regular.hvals(key).await
+    }
+    pub async fn hexists(&mut self, key: &str, field: &str) -> RedisResult<bool> {
+        self.regular.hexists(key, field).await
+    }
+    pub async fn hlen(&mut self, key: &str) -> RedisResult<i64> {
+        self.regular.hlen(key).await
+    }
+    pub async fn hmget(
+        &mut self,
+        key: &str,
+        fields: &[String],
+    ) -> RedisResult<Vec<Option<Vec<u8>>>> {
+        self.regular.hmget(key, fields).await
+    }
+    pub async fn hmset(
+        &mut self,
+        key: &str,
+        fields: &[(String, Vec<u8>)],
+    ) -> RedisResult<()> {
+        self.regular.hmset(key, fields).await
+    }
+
+    pub async fn sadd(&mut self, key: &str, members: Vec<Vec<u8>>) -> RedisResult<i64> {
+        self.regular.sadd(key, members).await
+    }
+    pub async fn srem(&mut self, key: &str, members: Vec<Vec<u8>>) -> RedisResult<i64> {
+        self.regular.srem(key, members).await
+    }
+    pub async fn smembers(&mut self, key: &str) -> RedisResult<Vec<Vec<u8>>> {
+        self.regular.smembers(key).await
+    }
+    pub async fn sismember(&mut self, key: &str, member: &[u8]) -> RedisResult<bool> {
+        self.regular.sismember(key, member).await
+    }
+    pub async fn scard(&mut self, key: &str) -> RedisResult<i64> {
+        self.regular.scard(key).await
+    }
+    pub async fn sinter(&mut self, keys: &[String]) -> RedisResult<Vec<Vec<u8>>> {
+        self.regular.sinter(keys).await
+    }
+    pub async fn sunion(&mut self, keys: &[String]) -> RedisResult<Vec<Vec<u8>>> {
+        self.regular.sunion(keys).await
+    }
+    pub async fn sdiff(&mut self, keys: &[String]) -> RedisResult<Vec<Vec<u8>>> {
+        self.regular.sdiff(keys).await
+    }
+
+    pub async fn zadd(&mut self, key: &str, members: Vec<(Vec<u8>, f64)>) -> RedisResult<i64> {
+        self.regular.zadd(key, members).await
+    }
+    pub async fn zrem(&mut self, key: &str, members: Vec<Vec<u8>>) -> RedisResult<i64> {
+        self.regular.zrem(key, members).await
+    }
+    pub async fn zrange(
+        &mut self,
+        key: &str,
+        start: i64,
+        stop: i64,
+        with_scores: bool,
+    ) -> RedisResult<redis::Value> {
+        self.regular.zrange(key, start, stop, with_scores).await
+    }
+    pub async fn zrangebyscore(
+        &mut self,
+        key: &str,
+        min: &str,
+        max: &str,
+        with_scores: bool,
+    ) -> RedisResult<redis::Value> {
+        self.regular.zrangebyscore(key, min, max, with_scores).await
+    }
+    pub async fn zrevrange(
+        &mut self,
+        key: &str,
+        start: i64,
+        stop: i64,
+        with_scores: bool,
+    ) -> RedisResult<redis::Value> {
+        self.regular.zrevrange(key, start, stop, with_scores).await
+    }
+    pub async fn zincrby(&mut self, key: &str, member: &[u8], delta: f64) -> RedisResult<f64> {
+        self.regular.zincrby(key, member, delta).await
+    }
+    pub async fn zcard(&mut self, key: &str) -> RedisResult<i64> {
+        self.regular.zcard(key).await
+    }
+    pub async fn zscore(&mut self, key: &str, member: &[u8]) -> RedisResult<Option<f64>> {
+        self.regular.zscore(key, member).await
+    }
+    pub async fn zrank(&mut self, key: &str, member: &[u8]) -> RedisResult<Option<i64>> {
+        self.regular.zrank(key, member).await
+    }
+    pub async fn zcount(&mut self, key: &str, min: &str, max: &str) -> RedisResult<i64> {
+        self.regular.zcount(key, min, max).await
+    }
+    pub async fn zpopmin(
+        &mut self,
+        key: &str,
+        count: i64,
+    ) -> RedisResult<Vec<(Vec<u8>, f64)>> {
+        self.regular.zpopmin(key, count).await
+    }
+    pub async fn zpopmax(
+        &mut self,
+        key: &str,
+        count: i64,
+    ) -> RedisResult<Vec<(Vec<u8>, f64)>> {
+        self.regular.zpopmax(key, count).await
+    }
+
+    pub async fn xadd(
+        &mut self,
+        key: &str,
+        id: &str,
+        fields: &[(String, Vec<u8>)],
+    ) -> RedisResult<String> {
+        self.regular.xadd(key, id, fields).await
+    }
+    pub async fn xlen(&mut self, key: &str) -> RedisResult<i64> {
+        self.regular.xlen(key).await
+    }
+    pub async fn xrange(
+        &mut self,
+        key: &str,
+        start: &str,
+        end: &str,
+        count: Option<i64>,
+    ) -> RedisResult<redis::Value> {
+        self.regular.xrange(key, start, end, count).await
+    }
+    pub async fn xread(
+        &mut self,
+        keys: &[String],
+        ids: &[String],
+        count: Option<i64>,
+    ) -> RedisResult<redis::Value> {
+        // XREAD without BLOCK is non-blocking; re-uses the regular conn.
+        self.regular.xread(keys, ids, count).await
+    }
+    pub async fn xreadgroup(
+        &mut self,
+        group: &str,
+        consumer: &str,
+        keys: &[String],
+        ids: &[String],
+        count: Option<i64>,
+    ) -> RedisResult<redis::Value> {
+        self.regular.xreadgroup(group, consumer, keys, ids, count).await
+    }
+    pub async fn xack(&mut self, key: &str, group: &str, ids: &[String]) -> RedisResult<i64> {
+        self.regular.xack(key, group, ids).await
+    }
+    pub async fn xtrim(&mut self, key: &str, max_len: i64, approximate: bool) -> RedisResult<i64> {
+        self.regular.xtrim(key, max_len, approximate).await
+    }
+    pub async fn xgroup_create(
+        &mut self,
+        key: &str,
+        group: &str,
+        id: &str,
+        mkstream: bool,
+    ) -> RedisResult<()> {
+        self.regular.xgroup_create(key, group, id, mkstream).await
+    }
+    pub async fn xpending(&mut self, key: &str, group: &str) -> RedisResult<redis::Value> {
+        self.regular.xpending(key, group).await
+    }
 }

@@ -1,16 +1,19 @@
 // PyO3 driver wrapper for the Rust I/O driver.
 //
-// Adapted from django-vcache (MIT, by David Burke / GlitchTip):
-// https://gitlab.com/glitchtip/django-vcache/-/blob/main/src/client.rs
+// Constructors + connection helpers are adapted from django-vcache (MIT,
+// David Burke / GlitchTip): https://gitlab.com/glitchtip/django-vcache/-/blob/main/src/client.rs
 //
-// Issue #65 lands only the connection layer + a slim sync surface
-// (`set_sync`, `get_sync`, `flushdb_sync`) needed to verify connectivity.
-// The full sync + async command surface is added in issue #66.
+// The full sync + async command surface (~85 commands × 2 variants) is
+// django-cachex's extension. Each command pair follows the same shape:
+//   * `<cmd>` — async; returns a `RustAwaitable`. Spawns the operation on the
+//     tokio runtime and routes through `RawResult` for type conversion.
+//   * `<cmd>_sync` — sync; releases the GIL and blocks on the runtime,
+//     returning the typed Python value directly.
 
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
+use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
 
-use crate::async_bridge::get_runtime;
+use crate::async_bridge::{RawResult, RustAwaitable, get_runtime};
 use crate::connection::{
     ClientCacheOpts, TlsOpts, ValkeyConn, connect_cluster, connect_sentinel, connect_standard,
 };
@@ -18,6 +21,26 @@ use crate::connection::{
 #[pyclass]
 pub struct RustValkeyDriver {
     connection: ValkeyConn,
+}
+
+// =========================================================================
+// Async / sync invocation macros (mirrors vcache pattern)
+// =========================================================================
+
+// Async: spawn a tokio task that sends RawResult through a oneshot. The tokio
+// task never touches the GIL — zero Python interaction. RustAwaitable handles
+// the asyncio future-blocking protocol.
+macro_rules! async_op {
+    ($self:expr, $py:expr, $conn:ident, $body:expr) => {{
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let awaitable = RustAwaitable::new(rx);
+        let mut $conn = $self.connection.clone();
+        get_runtime().spawn(async move {
+            let result: RawResult = async { $body }.await;
+            let _ = tx.send(result);
+        });
+        Ok(awaitable.into_pyobject($py)?.into_any().unbind())
+    }};
 }
 
 // Sync: release GIL, block on tokio runtime.
@@ -28,8 +51,18 @@ macro_rules! sync_op {
     }};
 }
 
-/// Classify a Redis error: connection/transient → PyConnectionError
-/// (swallowable by IGNORE_EXCEPTIONS), everything else → PyRuntimeError.
+// =========================================================================
+// Error classification
+// =========================================================================
+
+fn classify(e: redis::RedisError) -> RawResult {
+    if is_connection_error(&e) {
+        RawResult::Error(e.to_string())
+    } else {
+        RawResult::ServerError(e.to_string())
+    }
+}
+
 fn to_py_err(e: redis::RedisError) -> PyErr {
     if is_connection_error(&e) {
         pyo3::exceptions::PyConnectionError::new_err(e.to_string())
@@ -49,6 +82,209 @@ fn is_connection_error(e: &redis::RedisError) -> bool {
         || e.is_connection_refusal()
         || e.is_timeout()
 }
+
+// =========================================================================
+// Result-to-RawResult conversion helpers (used by `async_op!` bodies)
+// =========================================================================
+
+fn r_opt_bytes(r: Result<Option<Vec<u8>>, redis::RedisError>) -> RawResult {
+    match r {
+        Ok(v) => RawResult::OptBytes(v),
+        Err(e) => classify(e),
+    }
+}
+
+fn r_bool(r: Result<bool, redis::RedisError>) -> RawResult {
+    match r {
+        Ok(v) => RawResult::Bool(v),
+        Err(e) => classify(e),
+    }
+}
+
+fn r_int(r: Result<i64, redis::RedisError>) -> RawResult {
+    match r {
+        Ok(v) => RawResult::Int(v),
+        Err(e) => classify(e),
+    }
+}
+
+fn r_opt_int(r: Result<Option<i64>, redis::RedisError>) -> RawResult {
+    match r {
+        Ok(v) => RawResult::OptInt(v),
+        Err(e) => classify(e),
+    }
+}
+
+fn r_f64(r: Result<f64, redis::RedisError>) -> RawResult {
+    match r {
+        Ok(v) => RawResult::F64(v),
+        Err(e) => classify(e),
+    }
+}
+
+fn r_opt_f64(r: Result<Option<f64>, redis::RedisError>) -> RawResult {
+    match r {
+        Ok(v) => RawResult::OptF64(v),
+        Err(e) => classify(e),
+    }
+}
+
+fn r_unit(r: Result<(), redis::RedisError>) -> RawResult {
+    match r {
+        Ok(()) => RawResult::Bool(true),
+        Err(e) => classify(e),
+    }
+}
+
+fn r_opt_bytes_list(r: Result<Vec<Option<Vec<u8>>>, redis::RedisError>) -> RawResult {
+    match r {
+        Ok(v) => RawResult::OptBytesList(v),
+        Err(e) => classify(e),
+    }
+}
+
+fn r_bytes_list(r: Result<Vec<Vec<u8>>, redis::RedisError>) -> RawResult {
+    match r {
+        Ok(v) => RawResult::BytesList(v),
+        Err(e) => classify(e),
+    }
+}
+
+fn r_string_list(r: Result<Vec<String>, redis::RedisError>) -> RawResult {
+    match r {
+        Ok(v) => RawResult::StringList(v),
+        Err(e) => classify(e),
+    }
+}
+
+fn r_bytes_pairs(r: Result<Vec<(Vec<u8>, Vec<u8>)>, redis::RedisError>) -> RawResult {
+    match r {
+        Ok(v) => RawResult::BytesPairs(v),
+        Err(e) => classify(e),
+    }
+}
+
+fn r_scored_members(r: Result<Vec<(Vec<u8>, f64)>, redis::RedisError>) -> RawResult {
+    match r {
+        Ok(v) => RawResult::ScoredMembers(v),
+        Err(e) => classify(e),
+    }
+}
+
+fn r_value(r: Result<redis::Value, redis::RedisError>) -> RawResult {
+    match r {
+        Ok(v) => RawResult::Value(v),
+        Err(e) => classify(e),
+    }
+}
+
+fn r_string(r: Result<String, redis::RedisError>) -> RawResult {
+    match r {
+        Ok(v) => RawResult::OptBytes(Some(v.into_bytes())),
+        Err(e) => classify(e),
+    }
+}
+
+fn r_opt_string(r: Result<Option<String>, redis::RedisError>) -> RawResult {
+    match r {
+        Ok(v) => RawResult::OptBytes(v.map(String::into_bytes)),
+        Err(e) => classify(e),
+    }
+}
+
+fn r_opt_key_and_bytes_list(
+    r: Result<Option<(String, Vec<Vec<u8>>)>, redis::RedisError>,
+) -> RawResult {
+    match r {
+        Ok(v) => RawResult::OptKeyAndBytesList(v),
+        Err(e) => classify(e),
+    }
+}
+
+// =========================================================================
+// Sync-side conversion helpers (translate Rust types to Python)
+// =========================================================================
+
+fn py_opt_bytes(py: Python<'_>, v: Option<Vec<u8>>) -> Py<PyAny> {
+    match v {
+        Some(b) => PyBytes::new(py, &b).into_any().unbind(),
+        None => py.None(),
+    }
+}
+
+fn py_bytes_list(py: Python<'_>, items: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
+    let py_items: Vec<Py<PyAny>> = items
+        .into_iter()
+        .map(|b| PyBytes::new(py, &b).into_any().unbind())
+        .collect();
+    Ok(PyList::new(py, py_items)?.into_any().unbind())
+}
+
+fn py_opt_bytes_list(py: Python<'_>, items: Vec<Option<Vec<u8>>>) -> PyResult<Py<PyAny>> {
+    let py_items: Vec<Py<PyAny>> = items
+        .into_iter()
+        .map(|r| py_opt_bytes(py, r))
+        .collect();
+    Ok(PyList::new(py, py_items)?.into_any().unbind())
+}
+
+fn py_string_list(py: Python<'_>, items: Vec<String>) -> PyResult<Py<PyAny>> {
+    let py_items: Vec<Py<PyAny>> = items
+        .into_iter()
+        .map(|s| pyo3::types::PyString::new(py, &s).into_any().unbind())
+        .collect();
+    Ok(PyList::new(py, py_items)?.into_any().unbind())
+}
+
+fn py_bytes_pairs(py: Python<'_>, pairs: Vec<(Vec<u8>, Vec<u8>)>) -> PyResult<Py<PyAny>> {
+    let dict = PyDict::new(py);
+    for (k, v) in pairs {
+        let k_py = PyBytes::new(py, &k).into_any().unbind();
+        let v_py = PyBytes::new(py, &v).into_any().unbind();
+        dict.set_item(k_py, v_py)?;
+    }
+    Ok(dict.into_any().unbind())
+}
+
+fn py_scored_members(py: Python<'_>, items: Vec<(Vec<u8>, f64)>) -> PyResult<Py<PyAny>> {
+    let py_items: Vec<Py<PyAny>> = items
+        .into_iter()
+        .map(|(member, score)| {
+            let m_py = PyBytes::new(py, &member).into_any().unbind();
+            let s_py = score.into_pyobject(py)?.into_any().unbind();
+            Ok(PyTuple::new(py, [m_py, s_py])?.into_any().unbind())
+        })
+        .collect::<PyResult<_>>()?;
+    Ok(PyList::new(py, py_items)?.into_any().unbind())
+}
+
+fn py_redis_value(py: Python<'_>, v: redis::Value) -> PyResult<Py<PyAny>> {
+    // Reuse the conversion path that RawResult::Value goes through.
+    let raw = RawResult::Value(v);
+    raw.into_py(py)
+}
+
+fn py_opt_key_and_bytes_list(
+    py: Python<'_>,
+    v: Option<(String, Vec<Vec<u8>>)>,
+) -> PyResult<Py<PyAny>> {
+    match v {
+        Some((key, values)) => {
+            let py_values: Vec<Py<PyAny>> = values
+                .into_iter()
+                .map(|b| PyBytes::new(py, &b).into_any().unbind())
+                .collect();
+            let py_key = pyo3::types::PyString::new(py, &key).into_any().unbind();
+            let py_list = PyList::new(py, py_values)?.into_any().unbind();
+            Ok(PyTuple::new(py, [py_key, py_list])?.into_any().unbind())
+        }
+        None => Ok(py.None()),
+    }
+}
+
+// =========================================================================
+// Connection-config helpers
+// =========================================================================
 
 fn make_cache_opts(max_size: Option<usize>, ttl_secs: Option<u64>) -> Option<ClientCacheOpts> {
     if max_size.is_some() || ttl_secs.is_some() {
@@ -102,6 +338,10 @@ fn make_tls_opts(
 
 #[pymethods]
 impl RustValkeyDriver {
+    // =====================================================================
+    // Connection constructors
+    // =====================================================================
+
     #[staticmethod]
     #[pyo3(signature = (url, cache_max_size=None, cache_ttl_secs=None, ssl_ca_certs=None, ssl_certfile=None, ssl_keyfile=None))]
     fn connect_standard(
@@ -175,17 +415,27 @@ impl RustValkeyDriver {
             .map(|s| (s.hit, s.miss, s.invalidate))
     }
 
-    // =========================================================================
-    // Slim test surface — full command surface comes in issue #66.
-    // =========================================================================
+    // =====================================================================
+    // Strings / counters / TTL
+    // =====================================================================
 
     #[pyo3(signature = (key))]
-    fn get_sync(&self, py: Python<'_>, key: &str) -> PyResult<Option<Py<PyAny>>> {
-        let result: Result<Option<Vec<u8>>, _> = sync_op!(py, self, conn, conn.get_bytes(key).await);
-        match result.map_err(to_py_err)? {
-            Some(bytes) => Ok(Some(PyBytes::new(py, &bytes).into_any().unbind())),
-            None => Ok(None),
-        }
+    fn get(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_opt_bytes(conn.get_bytes(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn get_sync(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let r: Result<Option<Vec<u8>>, _> = sync_op!(py, self, conn, conn.get_bytes(key).await);
+        Ok(py_opt_bytes(py, r.map_err(to_py_err)?))
+    }
+
+    #[pyo3(signature = (key, value, ttl=None))]
+    fn set(&self, py: Python<'_>, key: &str, value: &[u8], ttl: Option<u64>) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let value = value.to_vec();
+        async_op!(self, py, conn, r_unit(conn.set_bytes(&key, value, ttl).await))
     }
 
     #[pyo3(signature = (key, value, ttl=None))]
@@ -200,7 +450,1334 @@ impl RustValkeyDriver {
         sync_op!(py, self, conn, conn.set_bytes(key, value, ttl).await).map_err(to_py_err)
     }
 
+    #[pyo3(signature = (key, value, ttl=None))]
+    fn set_nx(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        value: &[u8],
+        ttl: Option<u64>,
+    ) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let value = value.to_vec();
+        async_op!(self, py, conn, r_bool(conn.set_nx(&key, value, ttl).await))
+    }
+
+    #[pyo3(signature = (key, value, ttl=None))]
+    fn set_nx_sync(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        value: &[u8],
+        ttl: Option<u64>,
+    ) -> PyResult<bool> {
+        let value = value.to_vec();
+        sync_op!(py, self, conn, conn.set_nx(key, value, ttl).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key))]
+    fn delete(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_int(conn.del(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn delete_sync(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.del(key).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (keys))]
+    fn delete_many(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
+        async_op!(self, py, conn, r_int(conn.del_many(&keys).await))
+    }
+
+    #[pyo3(signature = (keys))]
+    fn delete_many_sync(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.del_many(&keys).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (keys))]
+    fn mget(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
+        async_op!(self, py, conn, r_opt_bytes_list(conn.mget_bytes(&keys).await))
+    }
+
+    #[pyo3(signature = (keys))]
+    fn mget_sync(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
+        let r: Result<Vec<Option<Vec<u8>>>, _> =
+            sync_op!(py, self, conn, conn.mget_bytes(&keys).await);
+        py_opt_bytes_list(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (entries, ttl=None))]
+    fn pipeline_set(
+        &self,
+        py: Python<'_>,
+        entries: Vec<(String, Vec<u8>)>,
+        ttl: Option<u64>,
+    ) -> PyResult<Py<PyAny>> {
+        async_op!(self, py, conn, r_unit(conn.pipeline_set(&entries, ttl).await))
+    }
+
+    #[pyo3(signature = (entries, ttl=None))]
+    fn pipeline_set_sync(
+        &self,
+        py: Python<'_>,
+        entries: Vec<(String, Vec<u8>)>,
+        ttl: Option<u64>,
+    ) -> PyResult<()> {
+        sync_op!(py, self, conn, conn.pipeline_set(&entries, ttl).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, delta))]
+    fn incr_by(&self, py: Python<'_>, key: &str, delta: i64) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_int(conn.incr_by(&key, delta).await))
+    }
+
+    #[pyo3(signature = (key, delta))]
+    fn incr_by_sync(&self, py: Python<'_>, key: &str, delta: i64) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.incr_by(key, delta).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key))]
+    fn exists(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_bool(conn.exists(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn exists_sync(&self, py: Python<'_>, key: &str) -> PyResult<bool> {
+        sync_op!(py, self, conn, conn.exists(key).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, seconds))]
+    fn expire(&self, py: Python<'_>, key: &str, seconds: u64) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_bool(conn.expire(&key, seconds).await))
+    }
+
+    #[pyo3(signature = (key, seconds))]
+    fn expire_sync(&self, py: Python<'_>, key: &str, seconds: u64) -> PyResult<bool> {
+        sync_op!(py, self, conn, conn.expire(key, seconds).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key))]
+    fn persist(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_bool(conn.persist(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn persist_sync(&self, py: Python<'_>, key: &str) -> PyResult<bool> {
+        sync_op!(py, self, conn, conn.persist(key).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key))]
+    fn ttl(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_int(conn.ttl(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn ttl_sync(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.ttl(key).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key))]
+    fn pttl(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_int(conn.pttl(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn pttl_sync(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.pttl(key).await).map_err(to_py_err)
+    }
+
+    fn flushdb(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        async_op!(self, py, conn, r_unit(conn.flushdb().await))
+    }
+
     fn flushdb_sync(&self, py: Python<'_>) -> PyResult<()> {
         sync_op!(py, self, conn, conn.flushdb().await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (pattern))]
+    fn keys(&self, py: Python<'_>, pattern: &str) -> PyResult<Py<PyAny>> {
+        let pattern = pattern.to_string();
+        async_op!(self, py, conn, r_string_list(conn.keys(&pattern).await))
+    }
+
+    #[pyo3(signature = (pattern))]
+    fn keys_sync(&self, py: Python<'_>, pattern: &str) -> PyResult<Py<PyAny>> {
+        let r: Result<Vec<String>, _> = sync_op!(py, self, conn, conn.keys(pattern).await);
+        py_string_list(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (key))]
+    #[pyo3(name = "type")]
+    fn key_type(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_string(conn.key_type(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn type_sync(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let r: Result<String, _> = sync_op!(py, self, conn, conn.key_type(key).await);
+        Ok(PyBytes::new(py, r.map_err(to_py_err)?.as_bytes()).into_any().unbind())
+    }
+
+    #[pyo3(signature = (pattern, count))]
+    fn scan(&self, py: Python<'_>, pattern: &str, count: i64) -> PyResult<Py<PyAny>> {
+        let pattern = pattern.to_string();
+        async_op!(self, py, conn, r_string_list(conn.scan_all(&pattern, count).await))
+    }
+
+    #[pyo3(signature = (pattern, count))]
+    fn scan_sync(&self, py: Python<'_>, pattern: &str, count: i64) -> PyResult<Py<PyAny>> {
+        let r: Result<Vec<String>, _> =
+            sync_op!(py, self, conn, conn.scan_all(pattern, count).await);
+        py_string_list(py, r.map_err(to_py_err)?)
+    }
+
+    fn dbsize(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        async_op!(self, py, conn, r_int(conn.dbsize().await))
+    }
+
+    fn dbsize_sync(&self, py: Python<'_>) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.dbsize().await).map_err(to_py_err)
+    }
+
+    fn info(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        async_op!(self, py, conn, r_value(conn.info().await))
+    }
+
+    fn info_sync(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let r: Result<redis::Value, _> = sync_op!(py, self, conn, conn.info().await);
+        py_redis_value(py, r.map_err(to_py_err)?)
+    }
+
+    fn client_list(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        async_op!(self, py, conn, r_value(conn.client_list().await))
+    }
+
+    fn client_list_sync(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let r: Result<redis::Value, _> = sync_op!(py, self, conn, conn.client_list().await);
+        py_redis_value(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (parameter))]
+    fn config_get(&self, py: Python<'_>, parameter: &str) -> PyResult<Py<PyAny>> {
+        let parameter = parameter.to_string();
+        async_op!(self, py, conn, r_value(conn.config_get(&parameter).await))
+    }
+
+    #[pyo3(signature = (parameter))]
+    fn config_get_sync(&self, py: Python<'_>, parameter: &str) -> PyResult<Py<PyAny>> {
+        let r: Result<redis::Value, _> =
+            sync_op!(py, self, conn, conn.config_get(parameter).await);
+        py_redis_value(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (key))]
+    fn object_encoding(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_opt_string(conn.object_encoding(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn object_encoding_sync(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let r: Result<Option<String>, _> =
+            sync_op!(py, self, conn, conn.object_encoding(key).await);
+        Ok(py_opt_bytes(py, r.map_err(to_py_err)?.map(String::into_bytes)))
+    }
+
+    #[pyo3(signature = (key))]
+    fn object_idletime(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_opt_int(conn.object_idletime(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn object_idletime_sync(&self, py: Python<'_>, key: &str) -> PyResult<Option<i64>> {
+        sync_op!(py, self, conn, conn.object_idletime(key).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key))]
+    fn memory_usage(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_opt_int(conn.memory_usage(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn memory_usage_sync(&self, py: Python<'_>, key: &str) -> PyResult<Option<i64>> {
+        sync_op!(py, self, conn, conn.memory_usage(key).await).map_err(to_py_err)
+    }
+
+    // =====================================================================
+    // Locks
+    // =====================================================================
+
+    #[pyo3(signature = (key, token, timeout_ms=None))]
+    fn lock_acquire(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        token: &str,
+        timeout_ms: Option<u64>,
+    ) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let token = token.to_string();
+        async_op!(self, py, conn, {
+            r_bool(conn.lock_acquire(&key, &token, timeout_ms).await)
+        })
+    }
+
+    #[pyo3(signature = (key, token, timeout_ms=None))]
+    fn lock_acquire_sync(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        token: &str,
+        timeout_ms: Option<u64>,
+    ) -> PyResult<bool> {
+        sync_op!(py, self, conn, conn.lock_acquire(key, token, timeout_ms).await)
+            .map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, token))]
+    fn lock_release(&self, py: Python<'_>, key: &str, token: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let token = token.to_string();
+        async_op!(self, py, conn, r_int(conn.lock_release(&key, &token).await))
+    }
+
+    #[pyo3(signature = (key, token))]
+    fn lock_release_sync(&self, py: Python<'_>, key: &str, token: &str) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.lock_release(key, token).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, token, additional_ms))]
+    fn lock_extend(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        token: &str,
+        additional_ms: u64,
+    ) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let token = token.to_string();
+        async_op!(self, py, conn, {
+            r_int(conn.lock_extend(&key, &token, additional_ms).await)
+        })
+    }
+
+    #[pyo3(signature = (key, token, additional_ms))]
+    fn lock_extend_sync(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        token: &str,
+        additional_ms: u64,
+    ) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.lock_extend(key, token, additional_ms).await)
+            .map_err(to_py_err)
+    }
+
+    // =====================================================================
+    // Scripts
+    // =====================================================================
+
+    #[pyo3(signature = (script, keys, args))]
+    fn eval(
+        &self,
+        py: Python<'_>,
+        script: &str,
+        keys: Vec<String>,
+        args: Vec<Vec<u8>>,
+    ) -> PyResult<Py<PyAny>> {
+        let script = script.to_string();
+        async_op!(self, py, conn, r_value(conn.eval(&script, &keys, &args).await))
+    }
+
+    #[pyo3(signature = (script, keys, args))]
+    fn eval_sync(
+        &self,
+        py: Python<'_>,
+        script: &str,
+        keys: Vec<String>,
+        args: Vec<Vec<u8>>,
+    ) -> PyResult<Py<PyAny>> {
+        let r: Result<redis::Value, _> =
+            sync_op!(py, self, conn, conn.eval(script, &keys, &args).await);
+        py_redis_value(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (sha, keys, args))]
+    fn evalsha(
+        &self,
+        py: Python<'_>,
+        sha: &str,
+        keys: Vec<String>,
+        args: Vec<Vec<u8>>,
+    ) -> PyResult<Py<PyAny>> {
+        let sha = sha.to_string();
+        async_op!(self, py, conn, r_value(conn.evalsha(&sha, &keys, &args).await))
+    }
+
+    #[pyo3(signature = (sha, keys, args))]
+    fn evalsha_sync(
+        &self,
+        py: Python<'_>,
+        sha: &str,
+        keys: Vec<String>,
+        args: Vec<Vec<u8>>,
+    ) -> PyResult<Py<PyAny>> {
+        let r: Result<redis::Value, _> =
+            sync_op!(py, self, conn, conn.evalsha(sha, &keys, &args).await);
+        py_redis_value(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (script))]
+    fn script_load(&self, py: Python<'_>, script: &str) -> PyResult<Py<PyAny>> {
+        let script = script.to_string();
+        async_op!(self, py, conn, r_string(conn.script_load(&script).await))
+    }
+
+    #[pyo3(signature = (script))]
+    fn script_load_sync(&self, py: Python<'_>, script: &str) -> PyResult<String> {
+        sync_op!(py, self, conn, conn.script_load(script).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (sha))]
+    fn script_exists(&self, py: Python<'_>, sha: &str) -> PyResult<Py<PyAny>> {
+        let sha = sha.to_string();
+        async_op!(self, py, conn, r_bool(conn.script_exists(&sha).await))
+    }
+
+    #[pyo3(signature = (sha))]
+    fn script_exists_sync(&self, py: Python<'_>, sha: &str) -> PyResult<bool> {
+        sync_op!(py, self, conn, conn.script_exists(sha).await).map_err(to_py_err)
+    }
+
+    // =====================================================================
+    // Pipeline (arbitrary commands)
+    // =====================================================================
+
+    #[pyo3(signature = (commands))]
+    fn pipeline_exec(
+        &self,
+        py: Python<'_>,
+        commands: Vec<(String, Vec<Vec<u8>>)>,
+    ) -> PyResult<Py<PyAny>> {
+        async_op!(self, py, conn, {
+            match conn.pipeline_exec(commands).await {
+                Ok(items) => RawResult::Value(redis::Value::Array(items)),
+                Err(e) => classify(e),
+            }
+        })
+    }
+
+    #[pyo3(signature = (commands))]
+    fn pipeline_exec_sync(
+        &self,
+        py: Python<'_>,
+        commands: Vec<(String, Vec<Vec<u8>>)>,
+    ) -> PyResult<Py<PyAny>> {
+        let r: Result<Vec<redis::Value>, _> =
+            sync_op!(py, self, conn, conn.pipeline_exec(commands).await);
+        py_redis_value(py, redis::Value::Array(r.map_err(to_py_err)?))
+    }
+
+    // =====================================================================
+    // Lists
+    // =====================================================================
+
+    #[pyo3(signature = (key, values))]
+    fn lpush(&self, py: Python<'_>, key: &str, values: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_int(conn.lpush(&key, values).await))
+    }
+
+    #[pyo3(signature = (key, values))]
+    fn lpush_sync(&self, py: Python<'_>, key: &str, values: Vec<Vec<u8>>) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.lpush(key, values).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, values))]
+    fn rpush(&self, py: Python<'_>, key: &str, values: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_int(conn.rpush(&key, values).await))
+    }
+
+    #[pyo3(signature = (key, values))]
+    fn rpush_sync(&self, py: Python<'_>, key: &str, values: Vec<Vec<u8>>) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.rpush(key, values).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key))]
+    fn lpop(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_opt_bytes(conn.lpop(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn lpop_sync(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let r: Result<Option<Vec<u8>>, _> = sync_op!(py, self, conn, conn.lpop(key).await);
+        Ok(py_opt_bytes(py, r.map_err(to_py_err)?))
+    }
+
+    #[pyo3(signature = (key))]
+    fn rpop(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_opt_bytes(conn.rpop(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn rpop_sync(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let r: Result<Option<Vec<u8>>, _> = sync_op!(py, self, conn, conn.rpop(key).await);
+        Ok(py_opt_bytes(py, r.map_err(to_py_err)?))
+    }
+
+    #[pyo3(signature = (key, start, stop))]
+    fn lrange(&self, py: Python<'_>, key: &str, start: i64, stop: i64) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_bytes_list(conn.lrange(&key, start, stop).await))
+    }
+
+    #[pyo3(signature = (key, start, stop))]
+    fn lrange_sync(&self, py: Python<'_>, key: &str, start: i64, stop: i64) -> PyResult<Py<PyAny>> {
+        let r: Result<Vec<Vec<u8>>, _> =
+            sync_op!(py, self, conn, conn.lrange(key, start, stop).await);
+        py_bytes_list(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (key))]
+    fn llen(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_int(conn.llen(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn llen_sync(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.llen(key).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, count, value))]
+    fn lrem(&self, py: Python<'_>, key: &str, count: i64, value: &[u8]) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let value = value.to_vec();
+        async_op!(self, py, conn, r_int(conn.lrem(&key, count, &value).await))
+    }
+
+    #[pyo3(signature = (key, count, value))]
+    fn lrem_sync(&self, py: Python<'_>, key: &str, count: i64, value: &[u8]) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.lrem(key, count, value).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, index))]
+    fn lindex(&self, py: Python<'_>, key: &str, index: i64) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_opt_bytes(conn.lindex(&key, index).await))
+    }
+
+    #[pyo3(signature = (key, index))]
+    fn lindex_sync(&self, py: Python<'_>, key: &str, index: i64) -> PyResult<Py<PyAny>> {
+        let r: Result<Option<Vec<u8>>, _> = sync_op!(py, self, conn, conn.lindex(key, index).await);
+        Ok(py_opt_bytes(py, r.map_err(to_py_err)?))
+    }
+
+    #[pyo3(signature = (key, index, value))]
+    fn lset(&self, py: Python<'_>, key: &str, index: i64, value: &[u8]) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let value = value.to_vec();
+        async_op!(self, py, conn, r_unit(conn.lset(&key, index, &value).await))
+    }
+
+    #[pyo3(signature = (key, index, value))]
+    fn lset_sync(&self, py: Python<'_>, key: &str, index: i64, value: &[u8]) -> PyResult<()> {
+        sync_op!(py, self, conn, conn.lset(key, index, value).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, before, pivot, value))]
+    fn linsert(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        before: bool,
+        pivot: &[u8],
+        value: &[u8],
+    ) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let pivot = pivot.to_vec();
+        let value = value.to_vec();
+        async_op!(self, py, conn, r_int(conn.linsert(&key, before, &pivot, &value).await))
+    }
+
+    #[pyo3(signature = (key, before, pivot, value))]
+    fn linsert_sync(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        before: bool,
+        pivot: &[u8],
+        value: &[u8],
+    ) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.linsert(key, before, pivot, value).await)
+            .map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, start, stop))]
+    fn ltrim(&self, py: Python<'_>, key: &str, start: i64, stop: i64) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_unit(conn.ltrim(&key, start, stop).await))
+    }
+
+    #[pyo3(signature = (key, start, stop))]
+    fn ltrim_sync(&self, py: Python<'_>, key: &str, start: i64, stop: i64) -> PyResult<()> {
+        sync_op!(py, self, conn, conn.ltrim(key, start, stop).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (source, destination, wherefrom, whereto, timeout))]
+    fn blmove(
+        &self,
+        py: Python<'_>,
+        source: &str,
+        destination: &str,
+        wherefrom: &str,
+        whereto: &str,
+        timeout: f64,
+    ) -> PyResult<Py<PyAny>> {
+        let source = source.to_string();
+        let destination = destination.to_string();
+        let wherefrom = wherefrom.to_string();
+        let whereto = whereto.to_string();
+        async_op!(self, py, conn, {
+            r_opt_bytes(conn.blmove(&source, &destination, &wherefrom, &whereto, timeout).await)
+        })
+    }
+
+    #[pyo3(signature = (source, destination, wherefrom, whereto, timeout))]
+    fn blmove_sync(
+        &self,
+        py: Python<'_>,
+        source: &str,
+        destination: &str,
+        wherefrom: &str,
+        whereto: &str,
+        timeout: f64,
+    ) -> PyResult<Py<PyAny>> {
+        let r: Result<Option<Vec<u8>>, _> = sync_op!(
+            py,
+            self,
+            conn,
+            conn.blmove(source, destination, wherefrom, whereto, timeout).await
+        );
+        Ok(py_opt_bytes(py, r.map_err(to_py_err)?))
+    }
+
+    #[pyo3(signature = (timeout, keys, direction, count))]
+    fn blmpop(
+        &self,
+        py: Python<'_>,
+        timeout: f64,
+        keys: Vec<String>,
+        direction: &str,
+        count: i64,
+    ) -> PyResult<Py<PyAny>> {
+        let direction = direction.to_string();
+        async_op!(self, py, conn, {
+            r_opt_key_and_bytes_list(conn.blmpop(timeout, &keys, &direction, count).await)
+        })
+    }
+
+    #[pyo3(signature = (timeout, keys, direction, count))]
+    fn blmpop_sync(
+        &self,
+        py: Python<'_>,
+        timeout: f64,
+        keys: Vec<String>,
+        direction: &str,
+        count: i64,
+    ) -> PyResult<Py<PyAny>> {
+        let r: Result<Option<(String, Vec<Vec<u8>>)>, _> = sync_op!(
+            py,
+            self,
+            conn,
+            conn.blmpop(timeout, &keys, direction, count).await
+        );
+        py_opt_key_and_bytes_list(py, r.map_err(to_py_err)?)
+    }
+
+    // =====================================================================
+    // Hashes
+    // =====================================================================
+
+    #[pyo3(signature = (key, field))]
+    fn hget(&self, py: Python<'_>, key: &str, field: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let field = field.to_string();
+        async_op!(self, py, conn, r_opt_bytes(conn.hget(&key, &field).await))
+    }
+
+    #[pyo3(signature = (key, field))]
+    fn hget_sync(&self, py: Python<'_>, key: &str, field: &str) -> PyResult<Py<PyAny>> {
+        let r: Result<Option<Vec<u8>>, _> = sync_op!(py, self, conn, conn.hget(key, field).await);
+        Ok(py_opt_bytes(py, r.map_err(to_py_err)?))
+    }
+
+    #[pyo3(signature = (key, field, value))]
+    fn hset(&self, py: Python<'_>, key: &str, field: &str, value: &[u8]) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let field = field.to_string();
+        let value = value.to_vec();
+        async_op!(self, py, conn, r_int(conn.hset(&key, &field, &value).await))
+    }
+
+    #[pyo3(signature = (key, field, value))]
+    fn hset_sync(&self, py: Python<'_>, key: &str, field: &str, value: &[u8]) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.hset(key, field, value).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key))]
+    fn hgetall(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_bytes_pairs(conn.hgetall(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn hgetall_sync(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let r: Result<Vec<(Vec<u8>, Vec<u8>)>, _> =
+            sync_op!(py, self, conn, conn.hgetall(key).await);
+        py_bytes_pairs(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (key, fields))]
+    fn hdel(&self, py: Python<'_>, key: &str, fields: Vec<String>) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_int(conn.hdel(&key, &fields).await))
+    }
+
+    #[pyo3(signature = (key, fields))]
+    fn hdel_sync(&self, py: Python<'_>, key: &str, fields: Vec<String>) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.hdel(key, &fields).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, field, delta))]
+    fn hincrby(&self, py: Python<'_>, key: &str, field: &str, delta: i64) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let field = field.to_string();
+        async_op!(self, py, conn, r_int(conn.hincrby(&key, &field, delta).await))
+    }
+
+    #[pyo3(signature = (key, field, delta))]
+    fn hincrby_sync(&self, py: Python<'_>, key: &str, field: &str, delta: i64) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.hincrby(key, field, delta).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key))]
+    fn hkeys(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_string_list(conn.hkeys(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn hkeys_sync(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let r: Result<Vec<String>, _> = sync_op!(py, self, conn, conn.hkeys(key).await);
+        py_string_list(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (key))]
+    fn hvals(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_bytes_list(conn.hvals(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn hvals_sync(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let r: Result<Vec<Vec<u8>>, _> = sync_op!(py, self, conn, conn.hvals(key).await);
+        py_bytes_list(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (key, field))]
+    fn hexists(&self, py: Python<'_>, key: &str, field: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let field = field.to_string();
+        async_op!(self, py, conn, r_bool(conn.hexists(&key, &field).await))
+    }
+
+    #[pyo3(signature = (key, field))]
+    fn hexists_sync(&self, py: Python<'_>, key: &str, field: &str) -> PyResult<bool> {
+        sync_op!(py, self, conn, conn.hexists(key, field).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key))]
+    fn hlen(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_int(conn.hlen(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn hlen_sync(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.hlen(key).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, fields))]
+    fn hmget(&self, py: Python<'_>, key: &str, fields: Vec<String>) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_opt_bytes_list(conn.hmget(&key, &fields).await))
+    }
+
+    #[pyo3(signature = (key, fields))]
+    fn hmget_sync(&self, py: Python<'_>, key: &str, fields: Vec<String>) -> PyResult<Py<PyAny>> {
+        let r: Result<Vec<Option<Vec<u8>>>, _> =
+            sync_op!(py, self, conn, conn.hmget(key, &fields).await);
+        py_opt_bytes_list(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (key, fields))]
+    fn hmset(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        fields: Vec<(String, Vec<u8>)>,
+    ) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_unit(conn.hmset(&key, &fields).await))
+    }
+
+    #[pyo3(signature = (key, fields))]
+    fn hmset_sync(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        fields: Vec<(String, Vec<u8>)>,
+    ) -> PyResult<()> {
+        sync_op!(py, self, conn, conn.hmset(key, &fields).await).map_err(to_py_err)
+    }
+
+    // =====================================================================
+    // Sets
+    // =====================================================================
+
+    #[pyo3(signature = (key, members))]
+    fn sadd(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_int(conn.sadd(&key, members).await))
+    }
+
+    #[pyo3(signature = (key, members))]
+    fn sadd_sync(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.sadd(key, members).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, members))]
+    fn srem(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_int(conn.srem(&key, members).await))
+    }
+
+    #[pyo3(signature = (key, members))]
+    fn srem_sync(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.srem(key, members).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key))]
+    fn smembers(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_bytes_list(conn.smembers(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn smembers_sync(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let r: Result<Vec<Vec<u8>>, _> = sync_op!(py, self, conn, conn.smembers(key).await);
+        py_bytes_list(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (key, member))]
+    fn sismember(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let member = member.to_vec();
+        async_op!(self, py, conn, r_bool(conn.sismember(&key, &member).await))
+    }
+
+    #[pyo3(signature = (key, member))]
+    fn sismember_sync(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<bool> {
+        sync_op!(py, self, conn, conn.sismember(key, member).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key))]
+    fn scard(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_int(conn.scard(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn scard_sync(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.scard(key).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (keys))]
+    fn sinter(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
+        async_op!(self, py, conn, r_bytes_list(conn.sinter(&keys).await))
+    }
+
+    #[pyo3(signature = (keys))]
+    fn sinter_sync(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
+        let r: Result<Vec<Vec<u8>>, _> = sync_op!(py, self, conn, conn.sinter(&keys).await);
+        py_bytes_list(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (keys))]
+    fn sunion(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
+        async_op!(self, py, conn, r_bytes_list(conn.sunion(&keys).await))
+    }
+
+    #[pyo3(signature = (keys))]
+    fn sunion_sync(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
+        let r: Result<Vec<Vec<u8>>, _> = sync_op!(py, self, conn, conn.sunion(&keys).await);
+        py_bytes_list(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (keys))]
+    fn sdiff(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
+        async_op!(self, py, conn, r_bytes_list(conn.sdiff(&keys).await))
+    }
+
+    #[pyo3(signature = (keys))]
+    fn sdiff_sync(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
+        let r: Result<Vec<Vec<u8>>, _> = sync_op!(py, self, conn, conn.sdiff(&keys).await);
+        py_bytes_list(py, r.map_err(to_py_err)?)
+    }
+
+    // =====================================================================
+    // Sorted sets
+    // =====================================================================
+
+    #[pyo3(signature = (key, members))]
+    fn zadd(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        members: Vec<(Vec<u8>, f64)>,
+    ) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_int(conn.zadd(&key, members).await))
+    }
+
+    #[pyo3(signature = (key, members))]
+    fn zadd_sync(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        members: Vec<(Vec<u8>, f64)>,
+    ) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.zadd(key, members).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, members))]
+    fn zrem(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_int(conn.zrem(&key, members).await))
+    }
+
+    #[pyo3(signature = (key, members))]
+    fn zrem_sync(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.zrem(key, members).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, start, stop, with_scores=false))]
+    fn zrange(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        start: i64,
+        stop: i64,
+        with_scores: bool,
+    ) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, {
+            r_value(conn.zrange(&key, start, stop, with_scores).await)
+        })
+    }
+
+    #[pyo3(signature = (key, start, stop, with_scores=false))]
+    fn zrange_sync(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        start: i64,
+        stop: i64,
+        with_scores: bool,
+    ) -> PyResult<Py<PyAny>> {
+        let r: Result<redis::Value, _> =
+            sync_op!(py, self, conn, conn.zrange(key, start, stop, with_scores).await);
+        py_redis_value(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (key, min, max, with_scores=false))]
+    fn zrangebyscore(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        min: &str,
+        max: &str,
+        with_scores: bool,
+    ) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let min = min.to_string();
+        let max = max.to_string();
+        async_op!(self, py, conn, {
+            r_value(conn.zrangebyscore(&key, &min, &max, with_scores).await)
+        })
+    }
+
+    #[pyo3(signature = (key, min, max, with_scores=false))]
+    fn zrangebyscore_sync(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        min: &str,
+        max: &str,
+        with_scores: bool,
+    ) -> PyResult<Py<PyAny>> {
+        let r: Result<redis::Value, _> = sync_op!(
+            py,
+            self,
+            conn,
+            conn.zrangebyscore(key, min, max, with_scores).await
+        );
+        py_redis_value(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (key, start, stop, with_scores=false))]
+    fn zrevrange(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        start: i64,
+        stop: i64,
+        with_scores: bool,
+    ) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, {
+            r_value(conn.zrevrange(&key, start, stop, with_scores).await)
+        })
+    }
+
+    #[pyo3(signature = (key, start, stop, with_scores=false))]
+    fn zrevrange_sync(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        start: i64,
+        stop: i64,
+        with_scores: bool,
+    ) -> PyResult<Py<PyAny>> {
+        let r: Result<redis::Value, _> = sync_op!(
+            py,
+            self,
+            conn,
+            conn.zrevrange(key, start, stop, with_scores).await
+        );
+        py_redis_value(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (key, member, delta))]
+    fn zincrby(&self, py: Python<'_>, key: &str, member: &[u8], delta: f64) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let member = member.to_vec();
+        async_op!(self, py, conn, r_f64(conn.zincrby(&key, &member, delta).await))
+    }
+
+    #[pyo3(signature = (key, member, delta))]
+    fn zincrby_sync(&self, py: Python<'_>, key: &str, member: &[u8], delta: f64) -> PyResult<f64> {
+        sync_op!(py, self, conn, conn.zincrby(key, member, delta).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key))]
+    fn zcard(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_int(conn.zcard(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn zcard_sync(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.zcard(key).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, member))]
+    fn zscore(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let member = member.to_vec();
+        async_op!(self, py, conn, r_opt_f64(conn.zscore(&key, &member).await))
+    }
+
+    #[pyo3(signature = (key, member))]
+    fn zscore_sync(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<Option<f64>> {
+        sync_op!(py, self, conn, conn.zscore(key, member).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, member))]
+    fn zrank(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let member = member.to_vec();
+        async_op!(self, py, conn, r_opt_int(conn.zrank(&key, &member).await))
+    }
+
+    #[pyo3(signature = (key, member))]
+    fn zrank_sync(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<Option<i64>> {
+        sync_op!(py, self, conn, conn.zrank(key, member).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, min, max))]
+    fn zcount(&self, py: Python<'_>, key: &str, min: &str, max: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let min = min.to_string();
+        let max = max.to_string();
+        async_op!(self, py, conn, r_int(conn.zcount(&key, &min, &max).await))
+    }
+
+    #[pyo3(signature = (key, min, max))]
+    fn zcount_sync(&self, py: Python<'_>, key: &str, min: &str, max: &str) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.zcount(key, min, max).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, count=1))]
+    fn zpopmin(&self, py: Python<'_>, key: &str, count: i64) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_scored_members(conn.zpopmin(&key, count).await))
+    }
+
+    #[pyo3(signature = (key, count=1))]
+    fn zpopmin_sync(&self, py: Python<'_>, key: &str, count: i64) -> PyResult<Py<PyAny>> {
+        let r: Result<Vec<(Vec<u8>, f64)>, _> =
+            sync_op!(py, self, conn, conn.zpopmin(key, count).await);
+        py_scored_members(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (key, count=1))]
+    fn zpopmax(&self, py: Python<'_>, key: &str, count: i64) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_scored_members(conn.zpopmax(&key, count).await))
+    }
+
+    #[pyo3(signature = (key, count=1))]
+    fn zpopmax_sync(&self, py: Python<'_>, key: &str, count: i64) -> PyResult<Py<PyAny>> {
+        let r: Result<Vec<(Vec<u8>, f64)>, _> =
+            sync_op!(py, self, conn, conn.zpopmax(key, count).await);
+        py_scored_members(py, r.map_err(to_py_err)?)
+    }
+
+    // =====================================================================
+    // Streams
+    // =====================================================================
+
+    #[pyo3(signature = (key, id, fields))]
+    fn xadd(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        id: &str,
+        fields: Vec<(String, Vec<u8>)>,
+    ) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let id = id.to_string();
+        async_op!(self, py, conn, r_string(conn.xadd(&key, &id, &fields).await))
+    }
+
+    #[pyo3(signature = (key, id, fields))]
+    fn xadd_sync(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        id: &str,
+        fields: Vec<(String, Vec<u8>)>,
+    ) -> PyResult<String> {
+        sync_op!(py, self, conn, conn.xadd(key, id, &fields).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key))]
+    fn xlen(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_int(conn.xlen(&key).await))
+    }
+
+    #[pyo3(signature = (key))]
+    fn xlen_sync(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.xlen(key).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, start, end, count=None))]
+    fn xrange(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        start: &str,
+        end: &str,
+        count: Option<i64>,
+    ) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let start = start.to_string();
+        let end = end.to_string();
+        async_op!(self, py, conn, r_value(conn.xrange(&key, &start, &end, count).await))
+    }
+
+    #[pyo3(signature = (key, start, end, count=None))]
+    fn xrange_sync(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        start: &str,
+        end: &str,
+        count: Option<i64>,
+    ) -> PyResult<Py<PyAny>> {
+        let r: Result<redis::Value, _> =
+            sync_op!(py, self, conn, conn.xrange(key, start, end, count).await);
+        py_redis_value(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (keys, ids, count=None))]
+    fn xread(
+        &self,
+        py: Python<'_>,
+        keys: Vec<String>,
+        ids: Vec<String>,
+        count: Option<i64>,
+    ) -> PyResult<Py<PyAny>> {
+        async_op!(self, py, conn, r_value(conn.xread(&keys, &ids, count).await))
+    }
+
+    #[pyo3(signature = (keys, ids, count=None))]
+    fn xread_sync(
+        &self,
+        py: Python<'_>,
+        keys: Vec<String>,
+        ids: Vec<String>,
+        count: Option<i64>,
+    ) -> PyResult<Py<PyAny>> {
+        let r: Result<redis::Value, _> =
+            sync_op!(py, self, conn, conn.xread(&keys, &ids, count).await);
+        py_redis_value(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (group, consumer, keys, ids, count=None))]
+    fn xreadgroup(
+        &self,
+        py: Python<'_>,
+        group: &str,
+        consumer: &str,
+        keys: Vec<String>,
+        ids: Vec<String>,
+        count: Option<i64>,
+    ) -> PyResult<Py<PyAny>> {
+        let group = group.to_string();
+        let consumer = consumer.to_string();
+        async_op!(self, py, conn, {
+            r_value(conn.xreadgroup(&group, &consumer, &keys, &ids, count).await)
+        })
+    }
+
+    #[pyo3(signature = (group, consumer, keys, ids, count=None))]
+    fn xreadgroup_sync(
+        &self,
+        py: Python<'_>,
+        group: &str,
+        consumer: &str,
+        keys: Vec<String>,
+        ids: Vec<String>,
+        count: Option<i64>,
+    ) -> PyResult<Py<PyAny>> {
+        let r: Result<redis::Value, _> = sync_op!(
+            py,
+            self,
+            conn,
+            conn.xreadgroup(group, consumer, &keys, &ids, count).await
+        );
+        py_redis_value(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (key, group, ids))]
+    fn xack(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        group: &str,
+        ids: Vec<String>,
+    ) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let group = group.to_string();
+        async_op!(self, py, conn, r_int(conn.xack(&key, &group, &ids).await))
+    }
+
+    #[pyo3(signature = (key, group, ids))]
+    fn xack_sync(&self, py: Python<'_>, key: &str, group: &str, ids: Vec<String>) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.xack(key, group, &ids).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, max_len, approximate=false))]
+    fn xtrim(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        max_len: i64,
+        approximate: bool,
+    ) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        async_op!(self, py, conn, r_int(conn.xtrim(&key, max_len, approximate).await))
+    }
+
+    #[pyo3(signature = (key, max_len, approximate=false))]
+    fn xtrim_sync(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        max_len: i64,
+        approximate: bool,
+    ) -> PyResult<i64> {
+        sync_op!(py, self, conn, conn.xtrim(key, max_len, approximate).await).map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, group, id, mkstream=false))]
+    fn xgroup_create(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        group: &str,
+        id: &str,
+        mkstream: bool,
+    ) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let group = group.to_string();
+        let id = id.to_string();
+        async_op!(self, py, conn, {
+            r_unit(conn.xgroup_create(&key, &group, &id, mkstream).await)
+        })
+    }
+
+    #[pyo3(signature = (key, group, id, mkstream=false))]
+    fn xgroup_create_sync(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        group: &str,
+        id: &str,
+        mkstream: bool,
+    ) -> PyResult<()> {
+        sync_op!(py, self, conn, conn.xgroup_create(key, group, id, mkstream).await)
+            .map_err(to_py_err)
+    }
+
+    #[pyo3(signature = (key, group))]
+    fn xpending(&self, py: Python<'_>, key: &str, group: &str) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let group = group.to_string();
+        async_op!(self, py, conn, r_value(conn.xpending(&key, &group).await))
+    }
+
+    #[pyo3(signature = (key, group))]
+    fn xpending_sync(&self, py: Python<'_>, key: &str, group: &str) -> PyResult<Py<PyAny>> {
+        let r: Result<redis::Value, _> = sync_op!(py, self, conn, conn.xpending(key, group).await);
+        py_redis_value(py, r.map_err(to_py_err)?)
     }
 }
