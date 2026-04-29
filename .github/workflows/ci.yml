@@ -92,6 +92,29 @@ jobs:
           files: ./coverage.xml
           fail_ci_if_error: false
 
+  test-rust:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.14"
+          - "3.14t"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Run rust async-bridge tests
+        run: uv run pytest tests/rust/ -v
+
   test-admin:
     runs-on: ubuntu-latest
     steps:
