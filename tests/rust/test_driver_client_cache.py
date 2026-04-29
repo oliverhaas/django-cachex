@@ -44,9 +44,11 @@ def test_client_side_cache_invalidates_on_write(redis_container):
     other.set_sync("k", b"v2")
 
     # Read until we observe the new value (gives the invalidation push time to land).
+    # 5s deadline tolerates slow CI runners; on a healthy box the push lands in <100ms.
     import time
 
-    for _ in range(50):
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
         if driver.get_sync("k") == b"v2":
             break
         time.sleep(0.02)

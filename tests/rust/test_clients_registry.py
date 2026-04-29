@@ -47,6 +47,15 @@ def test_sentinel_key_includes_service_name_and_db(sentinel_container):
     assert a is b
 
 
+def test_sentinel_url_order_does_not_create_duplicate(sentinel_container):
+    # Sentinel nodes are equivalent — reordered URL lists must reuse the same driver.
+    base = f"redis://{sentinel_container.host}:{sentinel_container.port}"
+    urls = [base, "redis://unreachable.example:26379", "redis://other.example:26379"]
+    a = get_driver_sentinel(urls, "mymaster", 0)
+    b = get_driver_sentinel(list(reversed(urls)), "mymaster", 0)
+    assert a is b
+
+
 def test_pid_change_clears_registry(redis_container):
     url = f"redis://{redis_container.host}:{redis_container.port}/0"
     first = get_driver_standard(url)

@@ -14,24 +14,24 @@ from typing import TYPE_CHECKING
 from django_cachex._driver import RustValkeyDriver  # ty: ignore[unresolved-import]
 
 if TYPE_CHECKING:
-    from collections.abc import Hashable
+    from collections.abc import Callable, Hashable
 
 _CLIENTS: dict[Hashable, RustValkeyDriver] = {}
 _PID = os.getpid()
 _LOCK = threading.Lock()
 
 
-def _check_pid() -> None:
+def _get_or_create(key: Hashable, factory: Callable[[], RustValkeyDriver]) -> RustValkeyDriver:
+    # Lock wraps both the PID check and the dict ops so a concurrent fork-detect
+    # under free-threaded 3.14t can't race two clears or skip an in-flight insert.
+    # `factory()` is a blocking connect() — we serialize it here intentionally;
+    # a double-checked pattern would let two callers race the same connect.
     global _PID  # noqa: PLW0603
-    pid = os.getpid()
-    if pid != _PID:
-        _CLIENTS.clear()
-        _PID = pid
-
-
-def _get_or_create(key: Hashable, factory) -> RustValkeyDriver:  # noqa: ANN001
-    _check_pid()
     with _LOCK:
+        pid = os.getpid()
+        if pid != _PID:
+            _CLIENTS.clear()
+            _PID = pid
         driver = _CLIENTS.get(key)
         if driver is None:
             driver = factory()
@@ -92,9 +92,11 @@ def get_driver_sentinel(
     ssl_certfile: str | None = None,
     ssl_keyfile: str | None = None,
 ) -> RustValkeyDriver:
+    # Sentinel nodes are equivalent — sort so reordered lists hit the same driver.
+    # (Cluster URLs are NOT sorted: node order can affect initial topology probe.)
     key = (
         "sentinel",
-        tuple(sentinel_urls),
+        tuple(sorted(sentinel_urls)),
         service_name,
         db,
         cache_max_size,
