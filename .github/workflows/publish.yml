@@ -11,52 +11,59 @@ on:
         required: true
 
 jobs:
-  test:
+  build-wheels:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref }}
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v3.4
+        env:
+          CIBW_BUILD: cp314-manylinux_x86_64 cp314t-manylinux_x86_64
+          CIBW_ENABLE: cpython-freethreading
+          CIBW_ARCHS_LINUX: x86_64
+          CIBW_BEFORE_ALL_LINUX: |
+            curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+          CIBW_ENVIRONMENT_LINUX: PATH="$HOME/.cargo/bin:$PATH"
 
-      - name: Set up Python
-        run: uv python install 3.12
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-x86_64
+          path: wheelhouse/*.whl
 
-      - name: Install dependencies
-        run: uv sync --group dev
+  build-sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref }}
 
-      - name: Run ruff check
-        run: uv run ruff check
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
 
-      - name: Run ruff format check
-        run: uv run ruff format --check
-
-      - name: Run tests
-        run: uv run pytest -n auto
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
 
   publish:
-    needs: [test]
+    needs: [build-wheels, build-sdist]
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/project/django-cachex-ng/
+      url: https://pypi.org/project/django-cachex/
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
         with:
-          ref: ${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Build package
-        run: uv build
+          path: dist
+          merge-multiple: true
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
