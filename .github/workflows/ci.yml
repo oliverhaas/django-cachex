@@ -146,7 +146,7 @@ jobs:
           CIBW_BUILD: cp314-manylinux_x86_64 cp314t-manylinux_x86_64
           CIBW_ENABLE: cpython-freethreading
           CIBW_ARCHS_LINUX: x86_64
-          CIBW_BEFORE_BUILD_LINUX: |
+          CIBW_BEFORE_ALL_LINUX: |
             curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
           CIBW_ENVIRONMENT_LINUX: PATH="$HOME/.cargo/bin:$PATH"
 
@@ -156,7 +156,7 @@ jobs:
           path: wheelhouse/*.whl
 
   test-wheel:
-    name: Test against built wheel
+    name: Test cp314 wheel
     needs: build-wheels
     runs-on: ubuntu-latest
     steps:
@@ -173,11 +173,35 @@ jobs:
       - name: Set up Python
         run: uv python install 3.14
 
-      - name: Install dev environment
-        run: uv sync --group dev
+      - name: Install dev dependencies (without project)
+        run: uv sync --group dev --no-install-project
 
-      - name: Replace source build with cibuildwheel artifact
-        run: uv pip install --force-reinstall --no-deps wheelhouse/django_cachex-*-cp314-cp314-*.whl
+      - name: Install cibuildwheel artifact
+        run: uv pip install --no-deps wheelhouse/django_cachex-*-cp314-cp314-*.whl
 
       - name: Run cache tests against built wheel
         run: uv run --no-sync pytest tests/cache/ -n auto
+
+  smoke-test-wheel-freethreaded:
+    name: Smoke-test cp314t wheel
+    needs: build-wheels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels-linux-x86_64
+          path: wheelhouse
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up free-threaded Python
+        run: uv python install 3.14t
+
+      - name: Create venv and install FT wheel
+        run: |
+          uv venv --python 3.14t
+          uv pip install --no-deps wheelhouse/django_cachex-*-cp314t-cp314t-*.whl
+
+      - name: Verify FT wheel imports
+        run: uv run --no-sync python -c "import sys; from django_cachex import _driver; assert not sys._is_gil_enabled(), 'GIL is enabled — not running on free-threaded build'; print('OK', _driver, sys.version)"

@@ -24,7 +24,7 @@ jobs:
           CIBW_BUILD: cp314-manylinux_x86_64 cp314t-manylinux_x86_64
           CIBW_ENABLE: cpython-freethreading
           CIBW_ARCHS_LINUX: x86_64
-          CIBW_BEFORE_BUILD_LINUX: |
+          CIBW_BEFORE_ALL_LINUX: |
             curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
           CIBW_ENVIRONMENT_LINUX: PATH="$HOME/.cargo/bin:$PATH"
 
