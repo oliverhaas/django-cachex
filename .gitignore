@@ -29,6 +29,7 @@ dump.rdb
 coverage.xml
 cobertura.xml
 CLAUDE.md
+.worktrees/
 site/
 *.sqlite3
 docs/superpowers/
