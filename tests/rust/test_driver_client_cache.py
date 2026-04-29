@@ -1,0 +1,58 @@
+from django_cachex._driver import RustValkeyDriver
+
+
+def test_cache_statistics_disabled_by_default(redis_container):
+    driver = RustValkeyDriver.connect_standard(f"redis://{redis_container.host}:{redis_container.port}/0")
+    assert driver.cache_statistics() is None
+
+
+def test_client_side_cache_records_hits(redis_container):
+    driver = RustValkeyDriver.connect_standard(
+        f"redis://{redis_container.host}:{redis_container.port}/0",
+        cache_max_size=128,
+        cache_ttl_secs=60,
+    )
+    driver.flushdb_sync()
+    driver.set_sync("k", b"v")
+
+    # First read populates the client cache (miss).
+    assert driver.get_sync("k") == b"v"
+    # Subsequent reads hit the local cache.
+    for _ in range(5):
+        assert driver.get_sync("k") == b"v"
+
+    stats = driver.cache_statistics()
+    assert stats is not None
+    hits, _misses, _invalidates = stats
+    assert hits >= 1
+
+
+def test_client_side_cache_invalidates_on_write(redis_container):
+    driver = RustValkeyDriver.connect_standard(
+        f"redis://{redis_container.host}:{redis_container.port}/0",
+        cache_max_size=128,
+        cache_ttl_secs=60,
+    )
+    driver.flushdb_sync()
+
+    driver.set_sync("k", b"v1")
+    assert driver.get_sync("k") == b"v1"  # populates cache
+    assert driver.get_sync("k") == b"v1"  # hit
+
+    # Write the same key from a separate connection (server pushes invalidation).
+    other = RustValkeyDriver.connect_standard(f"redis://{redis_container.host}:{redis_container.port}/0")
+    other.set_sync("k", b"v2")
+
+    # Read until we observe the new value (gives the invalidation push time to land).
+    import time
+
+    for _ in range(50):
+        if driver.get_sync("k") == b"v2":
+            break
+        time.sleep(0.02)
+    assert driver.get_sync("k") == b"v2"
+
+    stats = driver.cache_statistics()
+    assert stats is not None
+    _hits, _misses, invalidates = stats
+    assert invalidates >= 1

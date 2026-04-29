@@ -146,6 +146,11 @@ warn_unreachable = false
 django_settings_module = "tests.settings.base"
 
 [[tool.mypy.overrides]]
+# _driver is the maturin-built Rust extension; no stub file yet (planned with #66).
+module = "django_cachex._driver"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = "lz4.*"
 ignore_missing_imports = true
 
