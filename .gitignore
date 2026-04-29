@@ -32,3 +32,7 @@ CLAUDE.md
 site/
 *.sqlite3
 docs/superpowers/
+
+# Rust build artifacts
+/target/
+django_cachex/_driver*.so

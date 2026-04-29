@@ -1,0 +1,15 @@
+[package]
+name = "django-cachex"
+version = "0.3.0"
+edition = "2024"
+
+[lib]
+name = "_driver"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.28", features = ["extension-module"] }
+
+[profile.release]
+lto = true
+strip = true
