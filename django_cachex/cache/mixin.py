@@ -12,15 +12,14 @@ from __future__ import annotations
 import random
 from typing import TYPE_CHECKING, Any
 
+from django_cachex.admin.wrappers import BaseCacheExtensions
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Mapping, Sequence
+    from collections.abc import Iterator, Mapping, Sequence
 
-    from django_cachex.client.pipeline import Pipeline
-    from django_cachex.script import ScriptHelpers
-    from django_cachex.types import AbsExpiryT, ExpiryT, KeyT
+    from django_cachex.types import KeyT
 
 # Alias to avoid shadowing by method names
 _set = set
@@ -29,7 +28,7 @@ _set = set
 _MISSING = object()
 
 
-class CachexMixin:
+class CachexMixin(BaseCacheExtensions):
     """Mixin providing cachex extension methods for any BaseCache subclass.
 
     Add this as a parent class alongside a Django cache backend to get:
@@ -37,6 +36,10 @@ class CachexMixin:
     - Type detection
     - Admin support markers (``_cachex_support``)
     - Default ``scan()`` built on ``keys()``
+
+    Inherits from ``BaseCacheExtensions``, which provides the full method
+    surface as ``raise NotSupportedError`` defaults — this class overrides
+    only the operations it implements via get/set on Python objects.
 
     Subclasses should implement ``ttl()``, ``expire()``, ``persist()``,
     ``info()``, and ``keys()`` for full admin support.
@@ -51,47 +54,11 @@ class CachexMixin:
       (``dict[str, Any]``) when the sorted set has string keys.
     """
 
-    _cachex_support: str = "wrapped"
-
-    # =========================================================================
-    # TTL Operations (subclasses should override)
-    # =========================================================================
-
-    def ttl(self, key: KeyT, version: int | None = None) -> int | None:
-        """Get the TTL of a key in seconds."""
-        raise NotSupportedError("ttl", self.__class__.__name__)
-
-    def pttl(self, key: KeyT, version: int | None = None) -> int | None:
-        """Get the TTL of a key in milliseconds."""
-        raise NotSupportedError("pttl", self.__class__.__name__)
-
-    def persist(self, key: KeyT, version: int | None = None) -> bool:
-        """Remove the TTL from a key."""
-        raise NotSupportedError("persist", self.__class__.__name__)
-
-    def expire(self, key: KeyT, timeout: ExpiryT, version: int | None = None) -> bool:
-        """Set expiry time on a key."""
-        raise NotSupportedError("expire", self.__class__.__name__)
-
-    def expire_at(self, key: KeyT, when: AbsExpiryT, version: int | None = None) -> bool:
-        """Set expiry to an absolute time."""
-        raise NotSupportedError("expire_at", self.__class__.__name__)
-
-    def pexpire(self, key: KeyT, timeout: ExpiryT, version: int | None = None) -> bool:
-        """Set expiry time in milliseconds."""
-        raise NotSupportedError("pexpire", self.__class__.__name__)
-
-    def pexpire_at(self, key: KeyT, when: AbsExpiryT, version: int | None = None) -> bool:
-        """Set expiry to an absolute time in milliseconds."""
-        raise NotSupportedError("pexpire_at", self.__class__.__name__)
+    _cachex_support = "wrapped"
 
     # =========================================================================
     # Key Operations
     # =========================================================================
-
-    def keys(self, pattern: str = "*", version: int | None = None) -> list[str]:
-        """List keys matching the pattern."""
-        raise NotSupportedError("keys", self.__class__.__name__)
 
     def iter_keys(
         self,
@@ -101,20 +68,6 @@ class CachexMixin:
     ) -> Iterator[str]:
         """Iterate over keys matching pattern."""
         yield from self.keys(pattern, version=version)
-
-    def scan(
-        self,
-        cursor: int = 0,
-        pattern: str = "*",
-        count: int | None = None,
-        version: int | None = None,
-        key_type: str | None = None,
-    ) -> tuple[int, list[str]]:
-        """Cursor-based key pagination built on keys()."""
-        all_keys = sorted(self.keys(pattern, version=version))
-        count = count or 100
-        end_idx = cursor + count
-        return (end_idx if end_idx < len(all_keys) else 0, all_keys[cursor:end_idx])
 
     def delete_pattern(
         self,
@@ -129,116 +82,6 @@ class CachexMixin:
             if self.delete(key, version=version):  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
                 deleted += 1
         return deleted
-
-    def rename(
-        self,
-        src: KeyT,
-        dst: KeyT,
-        version: int | None = None,
-        version_src: int | None = None,
-        version_dst: int | None = None,
-    ) -> bool:
-        """Rename a key."""
-        raise NotSupportedError("rename", self.__class__.__name__)
-
-    def renamenx(
-        self,
-        src: KeyT,
-        dst: KeyT,
-        version: int | None = None,
-        version_src: int | None = None,
-        version_dst: int | None = None,
-    ) -> bool:
-        """Rename a key only if the destination does not exist."""
-        raise NotSupportedError("renamenx", self.__class__.__name__)
-
-    def make_pattern(self, pattern: str, version: int | None = None) -> str:
-        """Build a pattern for key matching."""
-        raise NotSupportedError("make_pattern", self.__class__.__name__)
-
-    def reverse_key(self, key: str) -> str:
-        """Reverse a made key back to original."""
-        raise NotSupportedError("reverse_key", self.__class__.__name__)
-
-    # =========================================================================
-    # Lock & Pipeline (not available for non-Redis backends)
-    # =========================================================================
-
-    def lock(
-        self,
-        key: str,
-        version: int | None = None,
-        timeout: float | None = None,
-        sleep: float = 0.1,
-        *,
-        blocking: bool = True,
-        blocking_timeout: float | None = None,
-        thread_local: bool = True,
-    ) -> Any:
-        """Return a Lock object for distributed locking."""
-        raise NotSupportedError("lock", self.__class__.__name__)
-
-    def pipeline(self, *, transaction: bool = True, version: int | None = None) -> Pipeline:
-        """Create a pipeline for batched operations."""
-        raise NotSupportedError("pipeline", self.__class__.__name__)
-
-    # =========================================================================
-    # Client Access & Info
-    # =========================================================================
-
-    def get_client(self, key: KeyT | None = None, *, write: bool = False) -> Any:
-        """Get the underlying client."""
-        raise NotSupportedError("get_client", self.__class__.__name__)
-
-    def info(self, section: str | None = None) -> dict[str, Any]:
-        """Get cache server information."""
-        return {}
-
-    def slowlog_get(self, count: int = 10) -> list[Any]:
-        """Get slow query log entries."""
-        return []
-
-    def slowlog_len(self) -> int:
-        """Get the number of entries in the slow query log."""
-        return 0
-
-    # =========================================================================
-    # Lua Script Operations (not available for non-Redis backends)
-    # =========================================================================
-
-    def eval_script(
-        self,
-        script: str,
-        *,
-        keys: Sequence[Any] = (),
-        args: Sequence[Any] = (),
-        pre_hook: Callable[[ScriptHelpers, Sequence[Any], Sequence[Any]], tuple[list[Any], list[Any]]] | None = None,
-        post_hook: Callable[[ScriptHelpers, Any], Any] | None = None,
-        version: int | None = None,
-    ) -> Any:
-        """Execute a Lua script."""
-        raise NotSupportedError("eval_script", self.__class__.__name__)
-
-    async def aeval_script(
-        self,
-        script: str,
-        *,
-        keys: Sequence[Any] = (),
-        args: Sequence[Any] = (),
-        pre_hook: Callable[[ScriptHelpers, Sequence[Any], Sequence[Any]], tuple[list[Any], list[Any]]] | None = None,
-        post_hook: Callable[[ScriptHelpers, Any], Any] | None = None,
-        version: int | None = None,
-    ) -> Any:
-        """Execute a Lua script asynchronously."""
-        raise NotSupportedError("aeval_script", self.__class__.__name__)
-
-    # =========================================================================
-    # Stream Operations (not available for non-Redis backends)
-    # =========================================================================
-
-    def xlen(self, key: KeyT, version: int | None = None) -> int:
-        """Get the number of entries in a stream."""
-        raise NotSupportedError("xlen", self.__class__.__name__)
 
     # =========================================================================
     # Type Detection
