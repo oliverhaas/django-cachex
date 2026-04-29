@@ -32,3 +32,22 @@ async def test_cancel_in_callback_mode_wakes_task():
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+@pytest.mark.asyncio
+async def test_cancel_fires_done_callbacks_via_call_soon():
+    awaitable = _test_pending()
+    it = iter(awaitable)
+    for _ in range(6):
+        next(it)
+    assert awaitable._asyncio_future_blocking is True
+
+    fired = []
+    awaitable.add_done_callback(fired.append)
+
+    assert awaitable.cancel() is True
+
+    await asyncio.sleep(0)
+
+    assert len(fired) == 1
+    assert fired[0] is awaitable
