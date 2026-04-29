@@ -1,16 +1,23 @@
 // Rust I/O driver for django-cachex.
 //
-// This file is intentionally a stub. The async bridge, connection layer,
-// and command bindings land in follow-up PRs (issues #64, #65, #66).
-// What ships here is just the build pipeline and an importable extension
-// module so subsequent PRs have something to attach code to.
-//
 // Heavily inspired by django-vcache (MIT, by David Burke / GlitchTip):
 // https://gitlab.com/glitchtip/django-vcache
+
+mod async_bridge;
+mod test_helpers;
 
 use pyo3::prelude::*;
 
 #[pymodule]
-fn _driver(_m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _driver(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<async_bridge::RustAwaitable>()?;
+    m.add_function(wrap_pyfunction!(test_helpers::_test_resolved_bytes, m)?)?;
+    m.add_function(wrap_pyfunction!(test_helpers::_test_resolved_none, m)?)?;
+    m.add_function(wrap_pyfunction!(test_helpers::_test_resolved_int, m)?)?;
+    m.add_function(wrap_pyfunction!(test_helpers::_test_delayed_bytes, m)?)?;
+    m.add_function(wrap_pyfunction!(test_helpers::_test_pending, m)?)?;
+    m.add_function(wrap_pyfunction!(test_helpers::_test_dropped, m)?)?;
+    m.add_function(wrap_pyfunction!(test_helpers::_test_error, m)?)?;
+    m.add_function(wrap_pyfunction!(test_helpers::_test_server_error, m)?)?;
     Ok(())
 }
