@@ -201,7 +201,7 @@ jobs:
       - name: Create venv and install FT wheel
         run: |
           uv venv --python 3.14t
-          uv pip install --no-deps wheelhouse/django_cachex-*-cp314t-cp314t-*.whl
+          uv pip install --no-deps wheelhouse/django_cachex-*-cp314-cp314t-*.whl
 
       - name: Verify FT wheel imports
         run: uv run --no-sync python -c "import sys; from django_cachex import _driver; assert not sys._is_gil_enabled(), 'GIL is enabled — not running on free-threaded build'; print('OK', _driver, sys.version)"
