@@ -133,3 +133,51 @@ jobs:
         run: uv run pytest tests/admin/ -n auto
         env:
           DJANGO_SETTINGS_MODULE: settings.unfold
+
+  build-wheels:
+    name: Build wheels (cibuildwheel)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v3.4
+        env:
+          CIBW_BUILD: cp314-manylinux_x86_64 cp314t-manylinux_x86_64
+          CIBW_ENABLE: cpython-freethreading
+          CIBW_ARCHS_LINUX: x86_64
+          CIBW_BEFORE_BUILD_LINUX: |
+            curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+          CIBW_ENVIRONMENT_LINUX: PATH="$HOME/.cargo/bin:$PATH"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-x86_64
+          path: wheelhouse/*.whl
+
+  test-wheel:
+    name: Test against built wheel
+    needs: build-wheels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels-linux-x86_64
+          path: wheelhouse
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dev environment
+        run: uv sync --group dev
+
+      - name: Replace source build with cibuildwheel artifact
+        run: uv pip install --force-reinstall --no-deps wheelhouse/django_cachex-*-cp314-cp314-*.whl
+
+      - name: Run cache tests against built wheel
+        run: uv run --no-sync pytest tests/cache/ -n auto
