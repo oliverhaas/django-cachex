@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
-    from django_cachex._driver import RustValkeyDriver  # ty: ignore[unresolved-import]
+    from django_cachex._driver import RustValkeyDriver
 
 
 def _to_bytes(value: Any) -> bytes:  # noqa: PLR0911

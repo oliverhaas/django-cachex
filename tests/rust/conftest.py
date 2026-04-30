@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from django_cachex._driver import RustValkeyDriver  # ty: ignore[unresolved-import]
 
 

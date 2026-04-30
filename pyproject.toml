@@ -146,6 +146,11 @@ suppress-none-returning = true # Don't require -> None on functions
   "TC001",   # Don't bother with TYPE_CHECKING gymnastics
   "TC003",
 ]
+"scripts/**" = [
+  "ANN",    # Annotations not required in one-shot generator scripts
+  "INP001", # Standalone scripts, not a package
+  "T201",   # print() is the output mechanism
+]
 
 [tool.mypy]
 python_version = "3.14"
@@ -159,11 +164,6 @@ warn_unreachable = false
 
 [tool.django-stubs]
 django_settings_module = "tests.settings.base"
-
-[[tool.mypy.overrides]]
-# _driver is the maturin-built Rust extension; no stub file yet (planned with #66).
-module = "django_cachex._driver"
-ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "lz4.*"

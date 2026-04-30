@@ -1,5 +1,4 @@
 from django_cachex._driver import RustValkeyDriver
-
 from tests.fixtures.containers import CLUSTER_NODE_COUNT
 
 
