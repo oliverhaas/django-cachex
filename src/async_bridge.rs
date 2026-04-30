@@ -10,7 +10,7 @@
 // the load-bearing part and must not drift accidentally.
 
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyList, PyString, PyTuple};
+use pyo3::types::{PyBytes, PyDict, PyList, PyString, PyTuple};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use tokio::runtime::Runtime;
@@ -75,28 +75,104 @@ fn init_or_fork_runtime(pid: u32) -> &'static Runtime {
 // =========================================================================
 
 pub enum RawResult {
+    /// Successful operation with no return value — renders as Python None.
+    Nil,
     OptBytes(Option<Vec<u8>>),
     Bool(bool),
     Int(i64),
+    OptInt(Option<i64>),
+    F64(f64),
+    OptF64(Option<f64>),
+    /// String result rendered as Python str (e.g. XADD id, SCRIPT LOAD sha, TYPE).
+    Str(String),
+    OptStr(Option<String>),
     OptBytesList(Vec<Option<Vec<u8>>>),
     BytesList(Vec<Vec<u8>>),
     StringList(Vec<String>),
+    /// Field/value pairs for HGETALL/HMSET-style results (bytes value).
+    BytesPairs(Vec<(Vec<u8>, Vec<u8>)>),
+    /// Member/score pairs for ZRANGE WITHSCORES, ZPOPMIN/MAX.
+    ScoredMembers(Vec<(Vec<u8>, f64)>),
     OptKeyAndBytesList(Option<(String, Vec<Vec<u8>>)>),
+    /// Generic redis::Value, recursively converted to Python.
+    /// Used for EVAL/EVALSHA, INFO, CLIENT LIST, XREAD, XRANGE, and other
+    /// commands whose return shape varies enough that a typed variant doesn't help.
+    Value(redis::Value),
     /// Connection/IO error → PyConnectionError (swallowed by IGNORE_EXCEPTIONS)
     Error(String),
     /// Data/server error → PyRuntimeError (NOT swallowed, indicates real problems)
     ServerError(String),
 }
 
+/// Recursively convert a `redis::Value` to a Python object.
+/// Bulk strings and simple strings → bytes. Integers → int. Booleans → bool.
+/// Arrays → list. Maps → dict (with bytes/str keys). Nil → None. Doubles → float.
+fn redis_value_to_py(py: Python<'_>, v: redis::Value) -> PyResult<Py<PyAny>> {
+    match v {
+        redis::Value::Nil => Ok(py.None()),
+        redis::Value::Int(i) => Ok(i.into_pyobject(py)?.into_any().unbind()),
+        redis::Value::BulkString(b) => Ok(PyBytes::new(py, &b).into_any().unbind()),
+        redis::Value::SimpleString(s) => Ok(PyBytes::new(py, s.as_bytes()).into_any().unbind()),
+        redis::Value::Boolean(b) => Ok(b.into_pyobject(py)?.to_owned().into_any().unbind()),
+        redis::Value::Double(f) => Ok(f.into_pyobject(py)?.into_any().unbind()),
+        redis::Value::Okay => Ok(true.into_pyobject(py)?.to_owned().into_any().unbind()),
+        redis::Value::Array(items) => {
+            let py_items: Vec<Py<PyAny>> = items
+                .into_iter()
+                .map(|item| redis_value_to_py(py, item))
+                .collect::<PyResult<_>>()?;
+            Ok(PyList::new(py, py_items)?.into_any().unbind())
+        }
+        redis::Value::Map(pairs) => {
+            let dict = PyDict::new(py);
+            for (k, val) in pairs {
+                let k_py = redis_value_to_py(py, k)?;
+                let v_py = redis_value_to_py(py, val)?;
+                dict.set_item(k_py, v_py)?;
+            }
+            Ok(dict.into_any().unbind())
+        }
+        redis::Value::Set(items) => {
+            // Redis sets via RESP3 — return as list to preserve order; Python can `set(...)` if needed.
+            let py_items: Vec<Py<PyAny>> = items
+                .into_iter()
+                .map(|item| redis_value_to_py(py, item))
+                .collect::<PyResult<_>>()?;
+            Ok(PyList::new(py, py_items)?.into_any().unbind())
+        }
+        redis::Value::Attribute { data, .. } => redis_value_to_py(py, *data),
+        redis::Value::Push { kind: _, data } => {
+            let py_items: Vec<Py<PyAny>> = data
+                .into_iter()
+                .map(|item| redis_value_to_py(py, item))
+                .collect::<PyResult<_>>()?;
+            Ok(PyList::new(py, py_items)?.into_any().unbind())
+        }
+        redis::Value::BigNumber(n) => Ok(PyString::new(py, &n.to_string()).into_any().unbind()),
+        redis::Value::VerbatimString { text, .. } => {
+            Ok(PyBytes::new(py, text.as_bytes()).into_any().unbind())
+        }
+        redis::Value::ServerError(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+            "{e:?}"
+        ))),
+        // redis::Value is marked non_exhaustive — fall back to the Debug repr.
+        other => Ok(PyString::new(py, &format!("{other:?}")).into_any().unbind()),
+    }
+}
+
 impl RawResult {
     pub fn into_py(self, py: Python<'_>) -> Result<Py<PyAny>, PyErr> {
         match self {
+            RawResult::Nil => Ok(py.None()),
             RawResult::OptBytes(Some(b)) => Ok(PyBytes::new(py, &b).into_any().unbind()),
             RawResult::OptBytes(None) => Ok(py.None()),
             RawResult::Bool(b) => {
                 Ok(b.into_pyobject(py).unwrap().to_owned().into_any().unbind())
             }
             RawResult::Int(n) => Ok(n.into_pyobject(py).unwrap().into_any().unbind()),
+            RawResult::Str(s) => Ok(PyString::new(py, &s).into_any().unbind()),
+            RawResult::OptStr(Some(s)) => Ok(PyString::new(py, &s).into_any().unbind()),
+            RawResult::OptStr(None) => Ok(py.None()),
             RawResult::OptBytesList(items) => {
                 let py_items: Vec<Py<PyAny>> = items
                     .into_iter()
@@ -131,6 +207,33 @@ impl RawResult {
                 Ok(PyTuple::new(py, [py_key, py_list])?.into_any().unbind())
             }
             RawResult::OptKeyAndBytesList(None) => Ok(py.None()),
+            RawResult::OptInt(Some(n)) => Ok(n.into_pyobject(py)?.into_any().unbind()),
+            RawResult::OptInt(None) => Ok(py.None()),
+            RawResult::F64(f) => Ok(f.into_pyobject(py)?.into_any().unbind()),
+            RawResult::OptF64(Some(f)) => Ok(f.into_pyobject(py)?.into_any().unbind()),
+            RawResult::OptF64(None) => Ok(py.None()),
+            RawResult::BytesPairs(pairs) => {
+                // Returned as a dict {bytes: bytes} so async HGETALL matches sync.
+                let dict = PyDict::new(py);
+                for (k, v) in pairs {
+                    let k_py = PyBytes::new(py, &k).into_any().unbind();
+                    let v_py = PyBytes::new(py, &v).into_any().unbind();
+                    dict.set_item(k_py, v_py)?;
+                }
+                Ok(dict.into_any().unbind())
+            }
+            RawResult::ScoredMembers(items) => {
+                let py_items: Vec<Py<PyAny>> = items
+                    .into_iter()
+                    .map(|(member, score)| {
+                        let m_py = PyBytes::new(py, &member).into_any().unbind();
+                        let s_py = score.into_pyobject(py)?.into_any().unbind();
+                        Ok(PyTuple::new(py, [m_py, s_py])?.into_any().unbind())
+                    })
+                    .collect::<PyResult<_>>()?;
+                Ok(PyList::new(py, py_items)?.into_any().unbind())
+            }
+            RawResult::Value(v) => redis_value_to_py(py, v),
             RawResult::Error(e) => Err(pyo3::exceptions::PyConnectionError::new_err(e)),
             RawResult::ServerError(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e)),
         }
