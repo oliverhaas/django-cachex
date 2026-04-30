@@ -59,6 +59,8 @@ INSTALLED_APPS = [
 
 This project was inspired by [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause. The admin functionality was inspired by [django-redisboard](https://github.com/ionelmc/django-redisboard).
 
+The Rust I/O driver and async bridge are heavily inspired by — and in places directly adapted from — [django-vcache](https://gitlab.com/glitchtip/django-vcache) (MIT, by David Burke / GlitchTip). The fork-safe tokio runtime, the `RustAwaitable` deferred-loop-binding pattern, and the multiplexed-connection design all originate there.
+
 The Unfold theme integration optionally uses [django-unfold](https://unfoldadmin.com/).
 
 See also [django-valkey](https://github.com/django-commons/django-valkey) and [dj-cache-panel](https://github.com/yassi/dj-cache-panel) for related projects with similar goals.
