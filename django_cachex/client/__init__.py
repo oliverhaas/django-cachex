@@ -16,6 +16,7 @@ from django_cachex.client.rust import (
     RustRedisCacheClient,
     RustRedisClusterCacheClient,
     RustRedisSentinelCacheClient,
+    RustValkeyCacheClient,
     RustValkeyClusterCacheClient,
     RustValkeySentinelCacheClient,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "RustRedisCacheClient",
     "RustRedisClusterCacheClient",
     "RustRedisSentinelCacheClient",
+    "RustValkeyCacheClient",
     "RustValkeyClusterCacheClient",
     "RustValkeySentinelCacheClient",
     "ValkeyCacheClient",

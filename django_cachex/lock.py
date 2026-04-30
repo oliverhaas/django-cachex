@@ -154,6 +154,12 @@ class ValkeyLock:
             raise LockNotOwnedError(msg)
 
     def extend(self, additional_time: float, *, replace_ttl: bool = False) -> bool:
+        if replace_ttl:
+            # The driver's lock_extend script always adds to the existing TTL
+            # rather than replacing it; flag the divergence loudly instead of
+            # silently doing the wrong thing.
+            msg = "ValkeyLock.extend(replace_ttl=True) is not supported by the Rust driver"
+            raise NotImplementedError(msg)
         token = self.token
         if token is None:
             msg = "Cannot extend an unlocked lock"
@@ -206,6 +212,9 @@ class ValkeyLock:
             raise LockNotOwnedError(msg)
 
     async def aextend(self, additional_time: float, *, replace_ttl: bool = False) -> bool:
+        if replace_ttl:
+            msg = "ValkeyLock.aextend(replace_ttl=True) is not supported by the Rust driver"
+            raise NotImplementedError(msg)
         token = self.token
         if token is None:
             msg = "Cannot extend an unlocked lock"

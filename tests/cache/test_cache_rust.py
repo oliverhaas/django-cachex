@@ -312,16 +312,29 @@ def test_lock_acquire_release(rust_cache):
 
 
 def test_lock_context_manager(rust_cache):
-    with rust_cache.lock("mylock", timeout=5):
-        # holds the lock
-        pass
+    raw = rust_cache._cache.get_raw_client()
+    server_key = rust_cache.make_key("mylock")
+    lock = rust_cache.lock("mylock", timeout=5)
+    with lock:
+        # The token is set + the lock key exists in Redis only while held.
+        assert lock.token is not None
+        assert raw.exists_sync(server_key) is True
+    assert raw.exists_sync(server_key) is False
 
 
-def test_lock_extends(rust_cache):
+def test_lock_extends_actually_extends_ttl(rust_cache):
+    raw = rust_cache._cache.get_raw_client()
+    server_key = rust_cache.make_key("mylock")
     lock = rust_cache.lock("mylock", timeout=2)
-    lock.acquire()
+    assert lock.acquire() is True
     try:
-        assert lock.extend(5) is True
+        before = raw.pttl_sync(server_key)
+        assert lock.extend(20) is True
+        after = raw.pttl_sync(server_key)
+        # extend(20s) + the remaining ~2s TTL ≈ 22s; assert it grew well past
+        # the original timeout to rule out a no-op.
+        assert after > before
+        assert after > 5_000
     finally:
         lock.release()
 
@@ -334,6 +347,27 @@ def test_lock_blocks_other_holders(rust_cache):
         assert lock2.acquire(blocking=False) is False
     finally:
         lock1.release()
+
+
+def test_lock_extend_replace_ttl_raises(rust_cache):
+    """``replace_ttl=True`` is not implementable on the current driver — must raise loudly."""
+    lock = rust_cache.lock("mylock", timeout=5)
+    lock.acquire()
+    try:
+        with pytest.raises(NotImplementedError):
+            lock.extend(10, replace_ttl=True)
+    finally:
+        lock.release()
+
+
+def test_lock_double_release_raises(rust_cache):
+    from django_cachex.lock import LockError
+
+    lock = rust_cache.lock("mylock", timeout=5)
+    lock.acquire()
+    lock.release()
+    with pytest.raises(LockError):
+        lock.release()
 
 
 # --------------------------------------------------------------- raw client
@@ -430,7 +464,17 @@ async def test_async_zset(rust_cache):
 async def test_alock(rust_cache):
     lock = rust_cache.alock("mylock", timeout=5)
     assert await lock.aacquire() is True
-    await lock.arelease()
+    try:
+        # A different ValkeyLock instance must see the held lock and refuse
+        # to acquire non-blocking.
+        other = rust_cache.alock("mylock", timeout=5)
+        assert await other.aacquire(blocking=False) is False
+    finally:
+        await lock.arelease()
+    # After release, a fresh acquire should succeed immediately.
+    again = rust_cache.alock("mylock", timeout=5)
+    assert await again.aacquire(blocking=False) is True
+    await again.arelease()
 
 
 # ------------------------------------------------------- lazy connection
@@ -452,5 +496,52 @@ def test_unreachable_server_does_not_raise_at_construction(redis_container):
         # up; only an actual I/O call should attempt to connect.
         client = cache._cache
         assert client is not None
-        with pytest.raises((ConnectionError, Exception)):
+        # I/O surfaces as a Rust-driver ConnectionError.
+        with pytest.raises(ConnectionError):
             cache.get("k")
+
+
+# ----------------------------------------------------------- review-driven fixes
+
+
+def test_info_section_filter(rust_cache):
+    """``cache.info(section=...)`` must restrict the response to that section."""
+    full = rust_cache._cache.info()
+    section = rust_cache._cache.info(section="server")
+    # ``redis_version`` lives in the ``server`` section; ``role`` lives in
+    # ``replication``. The filtered view must contain the former and not the latter.
+    assert "redis_version" in section
+    assert "role" not in section
+    # Sanity: the full response carries both.
+    assert "redis_version" in full
+    assert "role" in full
+
+
+def test_rename_missing_source_raises_valueerror(rust_cache):
+    """RENAME on a missing key must surface as ValueError, not RuntimeError."""
+    with pytest.raises(ValueError, match="not found"):
+        rust_cache._cache.rename("missing-src", "dst")
+
+
+def test_renamenx_missing_source_raises_valueerror(rust_cache):
+    with pytest.raises(ValueError, match="not found"):
+        rust_cache._cache.renamenx("missing-src", "dst")
+
+
+def test_eval_bool_arg_encoded_as_int(rust_cache):
+    """Bools must marshal to 0/1, matching redis-py's ARGV semantics."""
+    assert rust_cache._cache.eval("return ARGV[1]", 0, True) == b"1"
+    assert rust_cache._cache.eval("return ARGV[1]", 0, False) == b"0"
+
+
+def test_complex_objects_roundtrip_through_default_pickle(rust_cache):
+    """The default pickle serializer must round-trip through the rust driver."""
+    payload = {"nested": [1, 2, {"x": (1.5, "two", None)}], "set": frozenset([1, 2, 3])}
+    rust_cache.set("complex", payload, timeout=None)
+    assert rust_cache.get("complex") == payload
+
+
+def test_hincrbyfloat_returns_running_total(rust_cache):
+    """HINCRBYFLOAT goes via Lua eval — the running total must accumulate."""
+    assert rust_cache.hincrbyfloat("h", "f", 1.5) == 1.5
+    assert rust_cache.hincrbyfloat("h", "f", 2.25) == 3.75

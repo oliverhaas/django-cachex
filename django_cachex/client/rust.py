@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from itertools import batched
 from typing import TYPE_CHECKING, Any, cast, override
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from django_cachex._rust_clients import (
     get_driver_cluster,
@@ -89,21 +89,14 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         # Honor the base init for serializers/compressors/stampede config,
         # but skip its pool plumbing — we don't construct redis-py pools.
         super().__init__(servers, **options)
-        self._driver_cache: RustValkeyDriver | None = None
 
     # ------------------------------------------------------------------ hooks
 
     @property
     def _driver(self) -> RustValkeyDriver:
-        """Lazy driver lookup — connect on first use, not on construction.
-
-        Matches redis-py's lazy-pool behavior so cache instantiation in
-        ``settings``/``override_settings`` doesn't fail when the server is
-        unreachable, and so ``IGNORE_EXCEPTIONS`` can swallow runtime errors.
-        """
-        if self._driver_cache is None:
-            self._driver_cache = self._connect()
-        return self._driver_cache
+        # Always go through the registry so its PID-check rebuilds drivers
+        # in post-fork children — caching on the instance would defeat that.
+        return self._connect()
 
     def _connect(self) -> RustValkeyDriver:
         """Resolve a process-shared driver. Subclasses override."""
@@ -613,18 +606,19 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
 
     @override
     def rename(self, src: KeyT, dst: KeyT) -> bool:
-        result = self._driver.eval_sync(
-            "return redis.call('RENAME', KEYS[1], KEYS[2])",
-            [_str_key(src), _str_key(dst)],
-            [],
-        )
+        try:
+            result = self._driver.eval_sync(
+                "return redis.call('RENAME', KEYS[1], KEYS[2])",
+                [_str_key(src), _str_key(dst)],
+                [],
+            )
+        except RuntimeError as e:
+            if "no such key" in str(e).lower():
+                raise ValueError(f"Key {src!r} not found") from None
+            raise
         if isinstance(result, bytes):
             result = result.decode()
-        if result == "OK":
-            return True
-        if isinstance(result, str) and "no such key" in result.lower():
-            raise ValueError(f"Key {src!r} not found")
-        return bool(result)
+        return result == "OK"
 
     @override
     def renamenx(self, src: KeyT, dst: KeyT) -> bool:
@@ -642,18 +636,19 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
 
     @override
     async def arename(self, src: KeyT, dst: KeyT) -> bool:
-        result = await self._driver.eval(
-            "return redis.call('RENAME', KEYS[1], KEYS[2])",
-            [_str_key(src), _str_key(dst)],
-            [],
-        )
+        try:
+            result = await self._driver.eval(
+                "return redis.call('RENAME', KEYS[1], KEYS[2])",
+                [_str_key(src), _str_key(dst)],
+                [],
+            )
+        except RuntimeError as e:
+            if "no such key" in str(e).lower():
+                raise ValueError(f"Key {src!r} not found") from None
+            raise
         if isinstance(result, bytes):
             result = result.decode()
-        if result == "OK":
-            return True
-        if isinstance(result, str) and "no such key" in result.lower():
-            raise ValueError(f"Key {src!r} not found")
-        return bool(result)
+        return result == "OK"
 
     @override
     async def arenamenx(self, src: KeyT, dst: KeyT) -> bool:
@@ -717,11 +712,13 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
 
     @override
     def info(self, section: str | None = None) -> dict[str, Any]:
-        # The driver returns INFO as a single bulk string; parse into a dict
-        # so the shape matches redis-py.
+        # The driver fetches the full INFO bulk string; if a section was
+        # requested, slice client-side using the "# <Section>" headers.
         raw = self._driver.info_sync()
         if isinstance(raw, bytes):
             raw = raw.decode("utf-8", errors="replace")
+        if section is not None:
+            raw = _select_info_section(raw, section)
         return _parse_info(raw)
 
     # =========================================================================
@@ -1409,9 +1406,12 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     def _eval_arg(value: Any) -> bytes:
         if isinstance(value, bytes):
             return value
-        if isinstance(value, bool) or not isinstance(value, int):
-            return str(value).encode("utf-8")
-        return str(value).encode("ascii")
+        # Match redis-py: bool serializes as the integer 0/1, not "True"/"False".
+        if isinstance(value, bool):
+            return b"1" if value else b"0"
+        if isinstance(value, int):
+            return str(value).encode("ascii")
+        return str(value).encode("utf-8")
 
     @override
     def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any:
@@ -1447,6 +1447,20 @@ def _parse_info(raw: str) -> dict[str, Any]:
             except ValueError:
                 info[name] = value
     return info
+
+
+def _select_info_section(raw: str, section: str) -> str:
+    """Return only the ``# <section>`` block from a full INFO response."""
+    target = section.strip().lower()
+    out: list[str] = []
+    in_section = False
+    for line in raw.splitlines():
+        if line.startswith("#"):
+            in_section = line[1:].strip().lower() == target
+            continue
+        if in_section:
+            out.append(line)
+    return "\n".join(out)
 
 
 # =============================================================================
@@ -1509,15 +1523,16 @@ class RustValkeySentinelCacheClient(RustKeyValueCacheClient):
         first_url = self._servers[0]
         parsed = urlparse(first_url)
         service_name = cast("str", parsed.hostname)
-        db_str = (parsed.query or "").split("db=")[-1].split("&")[0] if "db=" in (parsed.query or "") else "0"
+        db_values = parse_qs(parsed.query).get("db", ["0"])
         try:
-            db = int(db_str)
+            db = int(db_values[0])
         except ValueError:
             db = 0
         return get_driver_sentinel(sentinel_urls, service_name, db, **self._driver_kwargs())
 
 
 # Aliases — vendor names are interchangeable from the driver's perspective.
+RustValkeyCacheClient = RustKeyValueCacheClient
 RustRedisCacheClient = RustKeyValueCacheClient
 RustRedisClusterCacheClient = RustValkeyClusterCacheClient
 RustRedisSentinelCacheClient = RustValkeySentinelCacheClient
@@ -1528,6 +1543,7 @@ __all__ = [
     "RustRedisCacheClient",
     "RustRedisClusterCacheClient",
     "RustRedisSentinelCacheClient",
+    "RustValkeyCacheClient",
     "RustValkeyClusterCacheClient",
     "RustValkeySentinelCacheClient",
 ]
