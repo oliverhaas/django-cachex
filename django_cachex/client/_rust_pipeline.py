@@ -660,7 +660,7 @@ class _RustRawPipeline:
         *,
         desc: bool = False,
         withscores: bool = False,
-        score_cast_func: type = float,
+        score_cast_func: Any = float,
     ) -> _RustRawPipeline:
         args: list[Any] = [key, start, end]
         if desc:
@@ -677,7 +677,7 @@ class _RustRawPipeline:
         end: int,
         *,
         withscores: bool = False,
-        score_cast_func: type = float,
+        score_cast_func: Any = float,
     ) -> _RustRawPipeline:
         args: list[Any] = [key, start, end]
         if withscores:
@@ -694,7 +694,7 @@ class _RustRawPipeline:
         num: int | None = None,
         *,
         withscores: bool = False,
-        score_cast_func: type = float,
+        score_cast_func: Any = float,
     ) -> _RustRawPipeline:
         args: list[Any] = [key, min, max]
         if withscores:
@@ -713,7 +713,7 @@ class _RustRawPipeline:
         num: int | None = None,
         *,
         withscores: bool = False,
-        score_cast_func: type = float,
+        score_cast_func: Any = float,
     ) -> _RustRawPipeline:
         args: list[Any] = [key, max, min]
         if withscores:
