@@ -58,3 +58,33 @@ async def test_async_eval(driver):
 async def test_async_lock(driver):
     assert await driver.lock_acquire("lock", "tok", 5000) is True
     assert await driver.lock_release("lock", "tok") == 1
+
+
+@pytest.mark.asyncio
+async def test_async_set_returns_none_like_sync(driver):
+    """Sync side: set_sync returns None. Async must match."""
+    result = await driver.set("k", b"v")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_async_xadd_returns_str_like_sync(driver):
+    """Sync side: xadd_sync returns str. Async must match (was bytes before fix)."""
+    msg_id = await driver.xadd("s", "*", [("f", b"v")])
+    assert isinstance(msg_id, str)
+
+
+@pytest.mark.asyncio
+async def test_async_script_load_returns_str_like_sync(driver):
+    """Sync side: script_load_sync returns str. Async must match."""
+    sha = await driver.script_load("return 1")
+    assert isinstance(sha, str)
+    assert len(sha) == 40  # sha1 hex
+
+
+@pytest.mark.asyncio
+async def test_async_type_returns_str_like_sync(driver):
+    """Sync side: type_sync returns str. Async must match."""
+    await driver.set("k", b"v")
+    t = await driver.type("k")
+    assert t == "string"

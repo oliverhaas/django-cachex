@@ -75,12 +75,17 @@ fn init_or_fork_runtime(pid: u32) -> &'static Runtime {
 // =========================================================================
 
 pub enum RawResult {
+    /// Successful operation with no return value — renders as Python None.
+    Nil,
     OptBytes(Option<Vec<u8>>),
     Bool(bool),
     Int(i64),
     OptInt(Option<i64>),
     F64(f64),
     OptF64(Option<f64>),
+    /// String result rendered as Python str (e.g. XADD id, SCRIPT LOAD sha, TYPE).
+    Str(String),
+    OptStr(Option<String>),
     OptBytesList(Vec<Option<Vec<u8>>>),
     BytesList(Vec<Vec<u8>>),
     StringList(Vec<String>),
@@ -158,12 +163,16 @@ fn redis_value_to_py(py: Python<'_>, v: redis::Value) -> PyResult<Py<PyAny>> {
 impl RawResult {
     pub fn into_py(self, py: Python<'_>) -> Result<Py<PyAny>, PyErr> {
         match self {
+            RawResult::Nil => Ok(py.None()),
             RawResult::OptBytes(Some(b)) => Ok(PyBytes::new(py, &b).into_any().unbind()),
             RawResult::OptBytes(None) => Ok(py.None()),
             RawResult::Bool(b) => {
                 Ok(b.into_pyobject(py).unwrap().to_owned().into_any().unbind())
             }
             RawResult::Int(n) => Ok(n.into_pyobject(py).unwrap().into_any().unbind()),
+            RawResult::Str(s) => Ok(PyString::new(py, &s).into_any().unbind()),
+            RawResult::OptStr(Some(s)) => Ok(PyString::new(py, &s).into_any().unbind()),
+            RawResult::OptStr(None) => Ok(py.None()),
             RawResult::OptBytesList(items) => {
                 let py_items: Vec<Py<PyAny>> = items
                     .into_iter()

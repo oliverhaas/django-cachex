@@ -92,6 +92,6 @@ def test_scan(driver):
 def test_type(driver):
     driver.set_sync("s", b"v")
     driver.lpush_sync("l", [b"x"])
-    assert driver.type_sync("s") == b"string"
-    assert driver.type_sync("l") == b"list"
-    assert driver.type_sync("missing") == b"none"
+    assert driver.type_sync("s") == "string"
+    assert driver.type_sync("l") == "list"
+    assert driver.type_sync("missing") == "none"

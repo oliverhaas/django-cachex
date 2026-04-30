@@ -49,3 +49,25 @@ def test_ltrim(driver):
     driver.rpush_sync("l", [b"a", b"b", b"c", b"d", b"e"])
     driver.ltrim_sync("l", 1, 3)
     assert driver.lrange_sync("l", 0, -1) == [b"b", b"c", b"d"]
+
+
+def test_blmove_returns_value_when_source_has_data(driver):
+    driver.rpush_sync("src", [b"hello"])
+    # Short timeout — value is already there so no blocking happens.
+    assert driver.blmove_sync("src", "dst", "LEFT", "RIGHT", 0.1) == b"hello"
+    assert driver.lrange_sync("dst", 0, -1) == [b"hello"]
+
+
+def test_blmove_returns_none_on_empty(driver):
+    # Source is empty, brief timeout so we don't hang.
+    assert driver.blmove_sync("src", "dst", "LEFT", "RIGHT", 0.1) is None
+
+
+def test_blmpop_returns_key_and_values(driver):
+    driver.rpush_sync("a", [b"1", b"2", b"3"])
+    result = driver.blmpop_sync(0.1, ["a", "b"], "LEFT", 2)
+    assert result == ("a", [b"1", b"2"])
+
+
+def test_blmpop_returns_none_on_empty(driver):
+    assert driver.blmpop_sync(0.1, ["a", "b"], "LEFT", 1) is None

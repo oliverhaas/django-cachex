@@ -10,6 +10,9 @@ def test_xrange(driver):
     driver.xadd_sync("s", "*", [("field", b"v2")])
     entries = driver.xrange_sync("s", "-", "+")
     assert len(entries) == 2
+    # XRANGE returns each entry as [id_bytes, [field_bytes, value_bytes, ...]].
+    assert entries[0][1] == [b"field", b"v1"]
+    assert entries[1][1] == [b"field", b"v2"]
 
 
 def test_xrange_with_count(driver):

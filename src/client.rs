@@ -130,8 +130,10 @@ fn r_opt_f64(r: Result<Option<f64>, redis::RedisError>) -> RawResult {
 }
 
 fn r_unit(r: Result<(), redis::RedisError>) -> RawResult {
+    // Sync siblings of these calls return PyResult<()> → Python None;
+    // emit Nil here so async resolves to None too (parity).
     match r {
-        Ok(()) => RawResult::Bool(true),
+        Ok(()) => RawResult::Nil,
         Err(e) => classify(e),
     }
 }
@@ -179,15 +181,16 @@ fn r_value(r: Result<redis::Value, redis::RedisError>) -> RawResult {
 }
 
 fn r_string(r: Result<String, redis::RedisError>) -> RawResult {
+    // Renders as Python str (matches sync siblings that return PyResult<String>).
     match r {
-        Ok(v) => RawResult::OptBytes(Some(v.into_bytes())),
+        Ok(v) => RawResult::Str(v),
         Err(e) => classify(e),
     }
 }
 
 fn r_opt_string(r: Result<Option<String>, redis::RedisError>) -> RawResult {
     match r {
-        Ok(v) => RawResult::OptBytes(v.map(String::into_bytes)),
+        Ok(v) => RawResult::OptStr(v),
         Err(e) => classify(e),
     }
 }
@@ -622,9 +625,8 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key))]
-    fn type_sync(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
-        let r: Result<String, _> = sync_op!(py, self, conn, conn.key_type(key).await);
-        Ok(PyBytes::new(py, r.map_err(to_py_err)?.as_bytes()).into_any().unbind())
+    fn type_sync(&self, py: Python<'_>, key: &str) -> PyResult<String> {
+        sync_op!(py, self, conn, conn.key_type(key).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (pattern, count))]
@@ -686,10 +688,8 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key))]
-    fn object_encoding_sync(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
-        let r: Result<Option<String>, _> =
-            sync_op!(py, self, conn, conn.object_encoding(key).await);
-        Ok(py_opt_bytes(py, r.map_err(to_py_err)?.map(String::into_bytes)))
+    fn object_encoding_sync(&self, py: Python<'_>, key: &str) -> PyResult<Option<String>> {
+        sync_op!(py, self, conn, conn.object_encoding(key).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key))]

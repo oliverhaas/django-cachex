@@ -29,3 +29,21 @@ def test_script_exists(driver):
     sha = driver.script_load_sync(SCRIPT)
     assert driver.script_exists_sync(sha) is True
     assert driver.script_exists_sync("0" * 40) is False
+
+
+def test_evalsha_unknown_raises_runtime_error(driver):
+    """Server-side errors (NOSCRIPT) classify as PyRuntimeError, NOT PyConnectionError.
+
+    This locks in the boundary between IGNORE_EXCEPTIONS-swallowable connection
+    errors and propagated server errors per #66's locked decisions.
+    """
+    import pytest
+
+    with pytest.raises(RuntimeError):
+        driver.evalsha_sync("0" * 40, [], [])
+
+
+def test_eval_returning_string_renders_as_bytes(driver):
+    # Lua return type 'string' arrives as RESP bulk-string → Python bytes.
+    result = driver.eval_sync("return 'hello'", [], [])
+    assert result == b"hello"

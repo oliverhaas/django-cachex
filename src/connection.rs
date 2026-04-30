@@ -1172,6 +1172,10 @@ impl ValkeyConnInner {
         dispatch_cmd!(self, cmd)
     }
 
+    /// On Cluster, KEYS only hits one master and returns that node's keys —
+    /// callers needing a full-cluster scan should fan out themselves or use
+    /// `scan_all` (which has the same single-node limitation here, mirroring
+    /// vcache's behavior; documented for both).
     pub async fn keys(&mut self, pattern: &str) -> RedisResult<Vec<String>> {
         let mut cmd = redis::cmd("KEYS");
         cmd.arg(pattern);
@@ -1387,6 +1391,8 @@ impl ValkeyConnInner {
         dispatch_cmd!(self, cmd)
     }
 
+    /// Multi-key. On Cluster all keys must hash to the same slot; redis-rs
+    /// surfaces a CROSSSLOT error otherwise. Same applies to `sunion` / `sdiff`.
     pub async fn sinter(&mut self, keys: &[String]) -> RedisResult<Vec<Vec<u8>>> {
         let mut cmd = redis::cmd("SINTER");
         for k in keys {
@@ -1563,6 +1569,8 @@ impl ValkeyConnInner {
         dispatch_cmd!(self, cmd)
     }
 
+    /// Multi-stream. On Cluster all stream keys must hash to the same slot
+    /// (CROSSSLOT otherwise). Same applies to `xreadgroup`.
     pub async fn xread(
         &mut self,
         keys: &[String],

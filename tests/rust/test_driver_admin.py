@@ -7,26 +7,27 @@ def test_dbsize(driver):
 
 def test_info(driver):
     result = driver.info_sync()
-    # Info returns a bulk string keyed by section; here we get the full text.
-    assert result is not None
+    # INFO returns a bulk string with sections; redis_version is universal.
+    assert b"redis_version" in result
 
 
 def test_client_list(driver):
     result = driver.client_list_sync()
-    assert result is not None
+    assert b"id=" in result  # each client entry has an id= field
 
 
 def test_config_get(driver):
+    # RESP3 returns a Map (Python dict); we force RESP3 on every connection.
     result = driver.config_get_sync("maxmemory-policy")
-    # Older versions return a 2-element array, newer ones a map. Just verify shape isn't empty.
-    assert result is not None
+    assert isinstance(result, dict)
+    assert b"maxmemory-policy" in result
 
 
 def test_object_encoding(driver):
-    driver.set_sync("k", b"v")
+    driver.set_sync("k", b"some longer value")
     encoding = driver.object_encoding_sync("k")
-    # Encoding depends on Redis version (embstr/raw); just verify it's not None.
-    assert encoding is not None
+    # Encoding is one of the known string encodings.
+    assert encoding in {"embstr", "raw", "int"}
 
 
 def test_object_idletime(driver):
