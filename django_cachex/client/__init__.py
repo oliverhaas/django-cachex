@@ -11,6 +11,15 @@ from django_cachex.client.default import (
     ValkeyCacheClient,
 )
 from django_cachex.client.pipeline import Pipeline
+from django_cachex.client.rust import (
+    RustKeyValueCacheClient,
+    RustRedisCacheClient,
+    RustRedisClusterCacheClient,
+    RustRedisSentinelCacheClient,
+    RustValkeyCacheClient,
+    RustValkeyClusterCacheClient,
+    RustValkeySentinelCacheClient,
+)
 
 # Sentinel cache clients
 from django_cachex.client.sentinel import (
@@ -27,6 +36,13 @@ __all__ = [
     "RedisCacheClient",
     "RedisClusterCacheClient",
     "RedisSentinelCacheClient",
+    "RustKeyValueCacheClient",
+    "RustRedisCacheClient",
+    "RustRedisClusterCacheClient",
+    "RustRedisSentinelCacheClient",
+    "RustValkeyCacheClient",
+    "RustValkeyClusterCacheClient",
+    "RustValkeySentinelCacheClient",
     "ValkeyCacheClient",
     "ValkeyClusterCacheClient",
     "ValkeySentinelCacheClient",
