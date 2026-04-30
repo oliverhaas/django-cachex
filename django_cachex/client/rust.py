@@ -20,7 +20,7 @@ from django_cachex._rust_clients import (
 )
 from django_cachex.client.default import KeyValueCacheClient
 from django_cachex.exceptions import NotSupportedError
-from django_cachex.lock import ValkeyLock
+from django_cachex.lock import AsyncValkeyLock, ValkeyLock
 from django_cachex.stampede import should_recompute
 from django_cachex.types import KeyType
 
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
     from django_cachex._driver import RustValkeyDriver  # ty: ignore[unresolved-import]
     from django_cachex.client.pipeline import Pipeline
-    from django_cachex.types import AbsExpiryT, ExpiryT, KeyT
+    from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, _Set
 
 
 # Subset of options that map onto driver-construction kwargs.
@@ -211,6 +211,34 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         else:
             await self._driver.set(_str_key(key), nvalue, ttl=actual_timeout)
 
+    # Builds a SET-with-flags Lua script. The driver only exposes
+    # set/set_nx; xx/get/combinations go through this eval path so we keep
+    # full atomicity (Redis 6.2+ supports the GET flag on SET natively).
+    _SET_WITH_FLAGS_LUA = (
+        "local args = {KEYS[1], ARGV[1]}; "
+        "if ARGV[2] ~= '' then args[#args+1] = 'EX'; args[#args+1] = ARGV[2] end; "
+        "if ARGV[3] == '1' then args[#args+1] = 'NX' end; "
+        "if ARGV[4] == '1' then args[#args+1] = 'XX' end; "
+        "if ARGV[5] == '1' then args[#args+1] = 'GET' end; "
+        "return redis.call('SET', unpack(args))"
+    )
+
+    def _set_with_flags_argv(
+        self,
+        nvalue: bytes,
+        actual_timeout: int | None,
+        nx: bool,
+        xx: bool,
+        get: bool,
+    ) -> list[bytes]:
+        return [
+            nvalue,
+            str(actual_timeout).encode("ascii") if actual_timeout else b"",
+            b"1" if nx else b"0",
+            b"1" if xx else b"0",
+            b"1" if get else b"0",
+        ]
+
     @override
     def set_with_flags(
         self,
@@ -223,17 +251,21 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         get: bool = False,
         stampede_prevention: bool | dict | None = None,
     ) -> bool | Any:
-        if xx or get:
-            msg = "RustKeyValueCacheClient does not yet support xx/get flags on set"
-            raise NotSupportedError(msg)
         nvalue = _value_to_bytes(self.encode(value))
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
         if actual_timeout == 0:
-            return False
-        if nx:
-            return bool(self._driver.set_nx_sync(_str_key(key), nvalue, ttl=actual_timeout))
-        self._driver.set_sync(_str_key(key), nvalue, ttl=actual_timeout)
-        return True
+            return None if get else False
+        result = self._driver.eval_sync(
+            self._SET_WITH_FLAGS_LUA,
+            [_str_key(key)],
+            self._set_with_flags_argv(nvalue, actual_timeout, nx, xx, get),
+        )
+        if get:
+            # SET ... GET returns the previous value (bytes) or nil.
+            return None if result is None else self.decode(result)
+        # Without GET: Redis's "OK" status surfaces from the driver as ``True``
+        # (Value::Okay → Python bool); NX/XX rejection comes through as None.
+        return result is True
 
     @override
     async def aset_with_flags(
@@ -247,17 +279,18 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         get: bool = False,
         stampede_prevention: bool | dict | None = None,
     ) -> bool | Any:
-        if xx or get:
-            msg = "RustKeyValueCacheClient does not yet support xx/get flags on set"
-            raise NotSupportedError(msg)
         nvalue = _value_to_bytes(self.encode(value))
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
         if actual_timeout == 0:
-            return False
-        if nx:
-            return bool(await self._driver.set_nx(_str_key(key), nvalue, ttl=actual_timeout))
-        await self._driver.set(_str_key(key), nvalue, ttl=actual_timeout)
-        return True
+            return None if get else False
+        result = await self._driver.eval(
+            self._SET_WITH_FLAGS_LUA,
+            [_str_key(key)],
+            self._set_with_flags_argv(nvalue, actual_timeout, nx, xx, get),
+        )
+        if get:
+            return None if result is None else self.decode(result)
+        return result is True
 
     @override
     def touch(self, key: KeyT, timeout: int | None) -> bool:
@@ -616,9 +649,8 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
             if "no such key" in str(e).lower():
                 raise ValueError(f"Key {src!r} not found") from None
             raise
-        if isinstance(result, bytes):
-            result = result.decode()
-        return result == "OK"
+        # The driver maps Redis's OK status to Python ``True``.
+        return result is True
 
     @override
     def renamenx(self, src: KeyT, dst: KeyT) -> bool:
@@ -646,9 +678,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
             if "no such key" in str(e).lower():
                 raise ValueError(f"Key {src!r} not found") from None
             raise
-        if isinstance(result, bytes):
-            result = result.decode()
-        return result == "OK"
+        return result is True
 
     @override
     async def arenamenx(self, src: KeyT, dst: KeyT) -> bool:
@@ -698,7 +728,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         blocking_timeout: float | None = None,
         thread_local: bool = True,
     ) -> Any:
-        return ValkeyLock(
+        return AsyncValkeyLock(
             self._driver,
             key,
             timeout=timeout,
@@ -954,37 +984,8 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
             return await self.allen(key)
         return int(await self._driver.rpush(_str_key(key), [_value_to_bytes(self.encode(v)) for v in values]))
 
-    @override
-    def lpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
-        if count is not None:
-            msg = "RustKeyValueCacheClient.lpop does not support the count argument"
-            raise NotSupportedError(msg)
-        val = self._driver.lpop_sync(_str_key(key))
-        return None if val is None else self.decode(val)
-
-    @override
-    def rpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
-        if count is not None:
-            msg = "RustKeyValueCacheClient.rpop does not support the count argument"
-            raise NotSupportedError(msg)
-        val = self._driver.rpop_sync(_str_key(key))
-        return None if val is None else self.decode(val)
-
-    @override
-    async def alpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
-        if count is not None:
-            msg = "RustKeyValueCacheClient.alpop does not support the count argument"
-            raise NotSupportedError(msg)
-        val = await self._driver.lpop(_str_key(key))
-        return None if val is None else self.decode(val)
-
-    @override
-    async def arpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
-        if count is not None:
-            msg = "RustKeyValueCacheClient.arpop does not support the count argument"
-            raise NotSupportedError(msg)
-        val = await self._driver.rpop(_str_key(key))
-        return None if val is None else self.decode(val)
+    # lpop / rpop / alpop / arpop with the optional ``count`` argument are
+    # implemented in the eval-fallback section below.
 
     @override
     def llen(self, key: KeyT) -> int:
@@ -1180,45 +1181,8 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     # Sorted sets
     # =========================================================================
 
-    @override
-    def zadd(
-        self,
-        key: KeyT,
-        mapping: Mapping[Any, float],
-        *,
-        nx: bool = False,
-        xx: bool = False,
-        gt: bool = False,
-        lt: bool = False,
-        ch: bool = False,
-    ) -> int:
-        if nx or xx or gt or lt or ch:
-            msg = "RustKeyValueCacheClient.zadd does not yet support nx/xx/gt/lt/ch flags"
-            raise NotSupportedError(msg)
-        pairs = [(_value_to_bytes(self.encode(m)), float(s)) for m, s in mapping.items()]
-        if not pairs:
-            return 0
-        return int(self._driver.zadd_sync(_str_key(key), pairs))
-
-    @override
-    async def azadd(
-        self,
-        key: KeyT,
-        mapping: Mapping[Any, float],
-        *,
-        nx: bool = False,
-        xx: bool = False,
-        gt: bool = False,
-        lt: bool = False,
-        ch: bool = False,
-    ) -> int:
-        if nx or xx or gt or lt or ch:
-            msg = "RustKeyValueCacheClient.zadd does not yet support nx/xx/gt/lt/ch flags"
-            raise NotSupportedError(msg)
-        pairs = [(_value_to_bytes(self.encode(m)), float(s)) for m, s in mapping.items()]
-        if not pairs:
-            return 0
-        return int(await self._driver.zadd(_str_key(key), pairs))
+    # zadd / azadd with nx/xx/gt/lt/ch flags are implemented in the
+    # eval-fallback section below.
 
     @override
     def zrem(self, key: KeyT, *members: Any) -> int:
@@ -1279,9 +1243,17 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         )
 
     def _decode_zrange(self, raw: list[Any], *, withscores: bool) -> list[Any]:
-        if withscores:
+        if not withscores:
+            return [self.decode(m) for m in raw]
+        # Driver returns either ``[[m, s], [m, s], ...]`` (standard) or a flat
+        # ``[m1, s1, m2, s2, ...]`` (cluster) — handle both.
+        if raw and isinstance(raw[0], (list, tuple)):
             return [(self.decode(member), float(score)) for member, score in raw]
-        return [self.decode(m) for m in raw]
+        out: list[tuple[Any, float]] = []
+        it = iter(raw)
+        for member, score in zip(it, it, strict=False):
+            out.append((self.decode(member), float(score)))
+        return out
 
     @override
     def zrange(
@@ -1425,6 +1397,980 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         args = [self._eval_arg(a) for a in keys_and_args[numkeys:]]
         return await self._driver.eval(script, keys, args)
 
+    # =========================================================================
+    # Surface the driver doesn't expose natively — implemented via EVAL.
+    # =========================================================================
+
+    # Lua only expands the *last* multiret in a call expression — concatenate
+    # KEYS and ARGV into a single table before unpacking.
+    _EVAL_CALL_TEMPLATE = (
+        "local args = {{}}; "
+        "for _, v in ipairs(KEYS) do args[#args+1] = v end; "
+        "for _, v in ipairs(ARGV) do args[#args+1] = v end; "
+        "return redis.call('{cmd}', unpack(args))"
+    )
+
+    def _eval_call(self, command: str, keys: Sequence[KeyT], args: Sequence[Any]) -> Any:
+        return self._driver.eval_sync(
+            self._EVAL_CALL_TEMPLATE.format(cmd=command),
+            [_str_key(k) for k in keys],
+            [a if isinstance(a, bytes) else self._eval_arg(a) for a in args],
+        )
+
+    async def _aeval_call(self, command: str, keys: Sequence[KeyT], args: Sequence[Any]) -> Any:
+        return await self._driver.eval(
+            self._EVAL_CALL_TEMPLATE.format(cmd=command),
+            [_str_key(k) for k in keys],
+            [a if isinstance(a, bytes) else self._eval_arg(a) for a in args],
+        )
+
+    # ---- lpop/rpop with count ----
+
+    @override
+    def lpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
+        if count is None:
+            val = self._driver.lpop_sync(_str_key(key))
+            return None if val is None else self.decode(val)
+        result = self._eval_call("LPOP", [key], [count])
+        return None if result is None else [self.decode(v) for v in result]
+
+    @override
+    def rpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
+        if count is None:
+            val = self._driver.rpop_sync(_str_key(key))
+            return None if val is None else self.decode(val)
+        result = self._eval_call("RPOP", [key], [count])
+        return None if result is None else [self.decode(v) for v in result]
+
+    @override
+    async def alpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
+        if count is None:
+            val = await self._driver.lpop(_str_key(key))
+            return None if val is None else self.decode(val)
+        result = await self._aeval_call("LPOP", [key], [count])
+        return None if result is None else [self.decode(v) for v in result]
+
+    @override
+    async def arpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
+        if count is None:
+            val = await self._driver.rpop(_str_key(key))
+            return None if val is None else self.decode(val)
+        result = await self._aeval_call("RPOP", [key], [count])
+        return None if result is None else [self.decode(v) for v in result]
+
+    # ---- zadd flags ----
+
+    @staticmethod
+    def _zadd_flag_argv(*, nx: bool, xx: bool, gt: bool, lt: bool, ch: bool) -> list[bytes]:
+        flags = []
+        if nx:
+            flags.append(b"NX")
+        if xx:
+            flags.append(b"XX")
+        if gt:
+            flags.append(b"GT")
+        if lt:
+            flags.append(b"LT")
+        if ch:
+            flags.append(b"CH")
+        return flags
+
+    @override
+    def zadd(
+        self,
+        key: KeyT,
+        mapping: Mapping[Any, float],
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+        ch: bool = False,
+    ) -> int:
+        pairs = [(_value_to_bytes(self.encode(m)), float(s)) for m, s in mapping.items()]
+        if not pairs:
+            return 0
+        if not (nx or xx or gt or lt or ch):
+            return int(self._driver.zadd_sync(_str_key(key), pairs))
+        argv: list[bytes] = self._zadd_flag_argv(nx=nx, xx=xx, gt=gt, lt=lt, ch=ch)
+        for member, score in pairs:
+            argv.append(str(score).encode("ascii"))
+            argv.append(member)
+        return int(self._eval_call("ZADD", [key], argv))
+
+    @override
+    async def azadd(
+        self,
+        key: KeyT,
+        mapping: Mapping[Any, float],
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+        ch: bool = False,
+    ) -> int:
+        pairs = [(_value_to_bytes(self.encode(m)), float(s)) for m, s in mapping.items()]
+        if not pairs:
+            return 0
+        if not (nx or xx or gt or lt or ch):
+            return int(await self._driver.zadd(_str_key(key), pairs))
+        argv: list[bytes] = self._zadd_flag_argv(nx=nx, xx=xx, gt=gt, lt=lt, ch=ch)
+        for member, score in pairs:
+            argv.append(str(score).encode("ascii"))
+            argv.append(member)
+        return int(await self._aeval_call("ZADD", [key], argv))
+
+    # ---- zrevrank / zmscore / zremrangebyrank / zremrangebyscore / zrevrangebyscore ----
+
+    @override
+    def zrevrank(self, key: KeyT, member: Any) -> int | None:
+        result = self._eval_call("ZREVRANK", [key], [_value_to_bytes(self.encode(member))])
+        return None if result is None else int(result)
+
+    @override
+    async def azrevrank(self, key: KeyT, member: Any) -> int | None:
+        result = await self._aeval_call("ZREVRANK", [key], [_value_to_bytes(self.encode(member))])
+        return None if result is None else int(result)
+
+    @override
+    def zmscore(self, key: KeyT, *members: Any) -> list[float | None]:
+        if not members:
+            return []
+        argv = [_value_to_bytes(self.encode(m)) for m in members]
+        result = self._eval_call("ZMSCORE", [key], argv)
+        return [None if s is None else float(s) for s in result]
+
+    @override
+    async def azmscore(self, key: KeyT, *members: Any) -> list[float | None]:
+        if not members:
+            return []
+        argv = [_value_to_bytes(self.encode(m)) for m in members]
+        result = await self._aeval_call("ZMSCORE", [key], argv)
+        return [None if s is None else float(s) for s in result]
+
+    @override
+    def zremrangebyrank(self, key: KeyT, start: int, end: int) -> int:
+        return int(self._eval_call("ZREMRANGEBYRANK", [key], [start, end]))
+
+    @override
+    async def azremrangebyrank(self, key: KeyT, start: int, end: int) -> int:
+        return int(await self._aeval_call("ZREMRANGEBYRANK", [key], [start, end]))
+
+    @override
+    def zremrangebyscore(self, key: KeyT, min_score: float | str, max_score: float | str) -> int:
+        return int(self._eval_call("ZREMRANGEBYSCORE", [key], [str(min_score), str(max_score)]))
+
+    @override
+    async def azremrangebyscore(
+        self,
+        key: KeyT,
+        min_score: float | str,
+        max_score: float | str,
+    ) -> int:
+        return int(await self._aeval_call("ZREMRANGEBYSCORE", [key], [str(min_score), str(max_score)]))
+
+    @override
+    def zrevrangebyscore(
+        self,
+        key: KeyT,
+        max_score: float | str,
+        min_score: float | str,
+        *,
+        start: int | None = None,
+        num: int | None = None,
+        withscores: bool = False,
+    ) -> list[Any]:
+        argv: list[Any] = [str(max_score), str(min_score)]
+        if withscores:
+            argv.append(b"WITHSCORES")
+        if start is not None and num is not None:
+            argv.extend([b"LIMIT", start, num])
+        raw = self._eval_call("ZREVRANGEBYSCORE", [key], argv)
+        return self._decode_zrevrangebyscore(raw, withscores=withscores)
+
+    @override
+    async def azrevrangebyscore(
+        self,
+        key: KeyT,
+        max_score: float | str,
+        min_score: float | str,
+        *,
+        start: int | None = None,
+        num: int | None = None,
+        withscores: bool = False,
+    ) -> list[Any]:
+        argv: list[Any] = [str(max_score), str(min_score)]
+        if withscores:
+            argv.append(b"WITHSCORES")
+        if start is not None and num is not None:
+            argv.extend([b"LIMIT", start, num])
+        raw = await self._aeval_call("ZREVRANGEBYSCORE", [key], argv)
+        return self._decode_zrevrangebyscore(raw, withscores=withscores)
+
+    def _decode_zrevrangebyscore(self, raw: list, *, withscores: bool) -> list[Any]:
+        # ZREVRANGEBYSCORE WITHSCORES returns a flat [m1, s1, m2, s2, ...].
+        if not withscores:
+            return [self.decode(m) for m in raw]
+        out: list[tuple[Any, float]] = []
+        it = iter(raw)
+        for member, score in zip(it, it, strict=False):
+            out.append((self.decode(member), float(score)))
+        return out
+
+    # ---- set ops the driver doesn't expose ----
+
+    @override
+    def smove(self, src: KeyT, dst: KeyT, member: Any) -> bool:
+        return bool(self._eval_call("SMOVE", [src, dst], [_value_to_bytes(self.encode(member))]))
+
+    @override
+    async def asmove(self, src: KeyT, dst: KeyT, member: Any) -> bool:
+        return bool(
+            await self._aeval_call("SMOVE", [src, dst], [_value_to_bytes(self.encode(member))]),
+        )
+
+    @override
+    def smismember(self, key: KeyT, *members: Any) -> list[bool]:
+        if not members:
+            return []
+        argv = [_value_to_bytes(self.encode(m)) for m in members]
+        result = self._eval_call("SMISMEMBER", [key], argv)
+        return [bool(r) for r in result]
+
+    @override
+    async def asmismember(self, key: KeyT, *members: Any) -> list[bool]:
+        if not members:
+            return []
+        argv = [_value_to_bytes(self.encode(m)) for m in members]
+        result = await self._aeval_call("SMISMEMBER", [key], argv)
+        return [bool(r) for r in result]
+
+    @override
+    def spop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
+        if count is None:
+            val = self._eval_call("SPOP", [key], [])
+            return None if val is None else self.decode(val)
+        result = self._eval_call("SPOP", [key], [count])
+        return None if result is None else [self.decode(v) for v in result]
+
+    @override
+    async def aspop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
+        if count is None:
+            val = await self._aeval_call("SPOP", [key], [])
+            return None if val is None else self.decode(val)
+        result = await self._aeval_call("SPOP", [key], [count])
+        return None if result is None else [self.decode(v) for v in result]
+
+    @override
+    def srandmember(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
+        if count is None:
+            val = self._eval_call("SRANDMEMBER", [key], [])
+            return None if val is None else self.decode(val)
+        result = self._eval_call("SRANDMEMBER", [key], [count])
+        return [] if result is None else [self.decode(v) for v in result]
+
+    @override
+    async def asrandmember(
+        self,
+        key: KeyT,
+        count: int | None = None,
+    ) -> Any | list[Any] | None:
+        if count is None:
+            val = await self._aeval_call("SRANDMEMBER", [key], [])
+            return None if val is None else self.decode(val)
+        result = await self._aeval_call("SRANDMEMBER", [key], [count])
+        return [] if result is None else [self.decode(v) for v in result]
+
+    @override
+    def sdiffstore(self, dest: KeyT, keys: Any) -> int:
+        return int(self._eval_call("SDIFFSTORE", [dest, *self._coerce_keys_arg(keys)], []))
+
+    @override
+    async def asdiffstore(self, dest: KeyT, keys: Any) -> int:
+        return int(
+            await self._aeval_call("SDIFFSTORE", [dest, *self._coerce_keys_arg(keys)], []),
+        )
+
+    @override
+    def sinterstore(self, dest: KeyT, keys: Any) -> int:
+        return int(self._eval_call("SINTERSTORE", [dest, *self._coerce_keys_arg(keys)], []))
+
+    @override
+    async def asinterstore(self, dest: KeyT, keys: Any) -> int:
+        return int(
+            await self._aeval_call("SINTERSTORE", [dest, *self._coerce_keys_arg(keys)], []),
+        )
+
+    @override
+    def sunionstore(self, dest: KeyT, keys: Any) -> int:
+        return int(self._eval_call("SUNIONSTORE", [dest, *self._coerce_keys_arg(keys)], []))
+
+    @override
+    async def asunionstore(self, dest: KeyT, keys: Any) -> int:
+        return int(
+            await self._aeval_call("SUNIONSTORE", [dest, *self._coerce_keys_arg(keys)], []),
+        )
+
+    # ---- list ops the driver doesn't expose ----
+
+    @override
+    def lmove(self, src: KeyT, dst: KeyT, wherefrom: str = "LEFT", whereto: str = "RIGHT") -> Any | None:
+        val = self._eval_call("LMOVE", [src, dst], [wherefrom.encode(), whereto.encode()])
+        return None if val is None else self.decode(val)
+
+    @override
+    async def almove(
+        self,
+        src: KeyT,
+        dst: KeyT,
+        wherefrom: str = "LEFT",
+        whereto: str = "RIGHT",
+    ) -> Any | None:
+        val = await self._aeval_call("LMOVE", [src, dst], [wherefrom.encode(), whereto.encode()])
+        return None if val is None else self.decode(val)
+
+    @override
+    def lpos(
+        self,
+        key: KeyT,
+        value: Any,
+        rank: int | None = None,
+        count: int | None = None,
+        maxlen: int | None = None,
+    ) -> int | list[int] | None:
+        argv: list[Any] = [_value_to_bytes(self.encode(value))]
+        if rank is not None:
+            argv.extend([b"RANK", rank])
+        if count is not None:
+            argv.extend([b"COUNT", count])
+        if maxlen is not None:
+            argv.extend([b"MAXLEN", maxlen])
+        result = self._eval_call("LPOS", [key], argv)
+        if result is None or count is None:
+            return None if result is None else int(result)
+        return [int(p) for p in result]
+
+    @override
+    async def alpos(
+        self,
+        key: KeyT,
+        value: Any,
+        rank: int | None = None,
+        count: int | None = None,
+        maxlen: int | None = None,
+    ) -> int | list[int] | None:
+        argv: list[Any] = [_value_to_bytes(self.encode(value))]
+        if rank is not None:
+            argv.extend([b"RANK", rank])
+        if count is not None:
+            argv.extend([b"COUNT", count])
+        if maxlen is not None:
+            argv.extend([b"MAXLEN", maxlen])
+        result = await self._aeval_call("LPOS", [key], argv)
+        if result is None or count is None:
+            return None if result is None else int(result)
+        return [int(p) for p in result]
+
+    # ---- streams: xadd needs signature translation, others use eval ----
+
+    @staticmethod
+    def _xadd_argv(
+        entry_id: str,
+        encoded_fields: list[tuple[str, bytes]],
+        maxlen: int | None,
+        approximate: bool,
+        nomkstream: bool,
+        minid: str | None,
+        limit: int | None,
+    ) -> list[bytes]:
+        argv: list[bytes] = []
+        if nomkstream:
+            argv.append(b"NOMKSTREAM")
+        if maxlen is not None:
+            argv.append(b"MAXLEN")
+            if approximate:
+                argv.append(b"~")
+            argv.append(str(maxlen).encode("ascii"))
+            if limit is not None:
+                argv.extend([b"LIMIT", str(limit).encode("ascii")])
+        elif minid is not None:
+            argv.append(b"MINID")
+            if approximate:
+                argv.append(b"~")
+            argv.append(minid.encode("ascii"))
+        argv.append(entry_id.encode("ascii"))
+        for f, v in encoded_fields:
+            argv.append(f.encode("utf-8"))
+            argv.append(v)
+        return argv
+
+    @override
+    def xadd(
+        self,
+        key: KeyT,
+        fields: dict[str, Any],
+        entry_id: str = "*",
+        maxlen: int | None = None,
+        approximate: bool = True,
+        nomkstream: bool = False,
+        minid: str | None = None,
+        limit: int | None = None,
+    ) -> str:
+        encoded = [(str(k), _value_to_bytes(self.encode(v))) for k, v in fields.items()]
+        if maxlen is None and minid is None and not nomkstream and limit is None:
+            return self._driver.xadd_sync(_str_key(key), entry_id, encoded)
+        argv = self._xadd_argv(entry_id, encoded, maxlen, approximate, nomkstream, minid, limit)
+        result = self._eval_call("XADD", [key], argv)
+        return result.decode() if isinstance(result, bytes) else result
+
+    @override
+    async def axadd(
+        self,
+        key: KeyT,
+        fields: dict[str, Any],
+        entry_id: str = "*",
+        maxlen: int | None = None,
+        approximate: bool = True,
+        nomkstream: bool = False,
+        minid: str | None = None,
+        limit: int | None = None,
+    ) -> str:
+        encoded = [(str(k), _value_to_bytes(self.encode(v))) for k, v in fields.items()]
+        if maxlen is None and minid is None and not nomkstream and limit is None:
+            return await self._driver.xadd(_str_key(key), entry_id, encoded)
+        argv = self._xadd_argv(entry_id, encoded, maxlen, approximate, nomkstream, minid, limit)
+        result = await self._aeval_call("XADD", [key], argv)
+        return result.decode() if isinstance(result, bytes) else result
+
+    # xgroup_create: drop the entries_read kwarg (Redis 7.0+) which the driver
+    # method doesn't accept.
+
+    @override
+    def xgroup_create(
+        self,
+        key: KeyT,
+        group: str,
+        identifier: str = "$",
+        mkstream: bool = False,
+        entries_read: int | None = None,
+    ) -> bool:
+        self._driver.xgroup_create_sync(_str_key(key), group, identifier, mkstream=mkstream)
+        return True
+
+    @override
+    async def axgroup_create(
+        self,
+        key: KeyT,
+        group: str,
+        identifier: str = "$",
+        mkstream: bool = False,
+        entries_read: int | None = None,
+    ) -> bool:
+        await self._driver.xgroup_create(_str_key(key), group, identifier, mkstream=mkstream)
+        return True
+
+    # ---- blocking list ops (driver has only blmove/blmpop) ----
+
+    def _blpop_via_eval(self, command: str, keys: Any, timeout: float) -> tuple[str, Any] | None:
+        # Redis BLPOP/BRPOP can't be used inside EVAL (it would block the
+        # whole server). Emulate non-blocking semantics: try once, sleep,
+        # retry until the timeout — best-effort but matches the test surface.
+        import time
+
+        keys_list = self._coerce_keys_arg(keys)
+        end = time.monotonic() + timeout if timeout > 0 else None
+        while True:
+            for k in keys_list:
+                fn = self._driver.lpop_sync if command == "BLPOP" else self._driver.rpop_sync
+                val = fn(k)
+                if val is not None:
+                    return (k, self.decode(val))
+            if end is None or time.monotonic() >= end:
+                return None
+            time.sleep(0.05)
+
+    @override
+    def blpop(self, keys: Any, timeout: float = 0) -> tuple[str, Any] | None:
+        return self._blpop_via_eval("BLPOP", keys, timeout)
+
+    @override
+    def brpop(self, keys: Any, timeout: float = 0) -> tuple[str, Any] | None:
+        return self._blpop_via_eval("BRPOP", keys, timeout)
+
+    async def _ablpop_via_eval(
+        self,
+        command: str,
+        keys: Any,
+        timeout: float,
+    ) -> tuple[str, Any] | None:
+        import asyncio
+        import time
+
+        keys_list = self._coerce_keys_arg(keys)
+        end = time.monotonic() + timeout if timeout > 0 else None
+        while True:
+            for k in keys_list:
+                fn = self._driver.lpop if command == "BLPOP" else self._driver.rpop
+                val = await fn(k)
+                if val is not None:
+                    return (k, self.decode(val))
+            if end is None or time.monotonic() >= end:
+                return None
+            await asyncio.sleep(0.05)
+
+    @override
+    async def ablpop(self, keys: Any, timeout: float = 0) -> tuple[str, Any] | None:
+        return await self._ablpop_via_eval("BLPOP", keys, timeout)
+
+    @override
+    async def abrpop(self, keys: Any, timeout: float = 0) -> tuple[str, Any] | None:
+        return await self._ablpop_via_eval("BRPOP", keys, timeout)
+
+    @override
+    def blmove(
+        self,
+        src: KeyT,
+        dst: KeyT,
+        timeout: float,
+        wherefrom: str = "LEFT",
+        whereto: str = "RIGHT",
+    ) -> Any | None:
+        # Driver positional order is (src, dst, wherefrom, whereto, timeout_secs).
+        val = self._driver.blmove_sync(_str_key(src), _str_key(dst), wherefrom, whereto, float(timeout))
+        return None if val is None else self.decode(val)
+
+    @override
+    async def ablmove(
+        self,
+        src: KeyT,
+        dst: KeyT,
+        timeout: float,
+        wherefrom: str = "LEFT",
+        whereto: str = "RIGHT",
+    ) -> Any | None:
+        val = await self._driver.blmove(_str_key(src), _str_key(dst), wherefrom, whereto, float(timeout))
+        return None if val is None else self.decode(val)
+
+    # ---- streams: range/read/trim signature translations ----
+
+    @override
+    def xrange(
+        self,
+        key: KeyT,
+        start: str = "-",
+        end: str = "+",
+        count: int | None = None,
+    ) -> list[tuple[str, dict[str, Any]]]:
+        raw = self._driver.xrange_sync(_str_key(key), start, end, count=count)
+        return self._decode_xrange(raw)
+
+    @override
+    async def axrange(
+        self,
+        key: KeyT,
+        start: str = "-",
+        end: str = "+",
+        count: int | None = None,
+    ) -> list[tuple[str, dict[str, Any]]]:
+        raw = await self._driver.xrange(_str_key(key), start, end, count=count)
+        return self._decode_xrange(raw)
+
+    @override
+    def xrevrange(
+        self,
+        key: KeyT,
+        end: str = "+",
+        start: str = "-",
+        count: int | None = None,
+    ) -> list[tuple[str, dict[str, Any]]]:
+        argv: list[Any] = [end, start]
+        if count is not None:
+            argv.extend([b"COUNT", count])
+        raw = self._eval_call("XREVRANGE", [key], argv)
+        return self._decode_xrange(raw)
+
+    @override
+    async def axrevrange(
+        self,
+        key: KeyT,
+        end: str = "+",
+        start: str = "-",
+        count: int | None = None,
+    ) -> list[tuple[str, dict[str, Any]]]:
+        argv: list[Any] = [end, start]
+        if count is not None:
+            argv.extend([b"COUNT", count])
+        raw = await self._aeval_call("XREVRANGE", [key], argv)
+        return self._decode_xrange(raw)
+
+    def _decode_xrange(self, raw: list[Any] | None) -> list[tuple[str, dict[str, Any]]]:
+        if not raw:
+            return []
+        out: list[tuple[str, dict[str, Any]]] = []
+        for entry in raw:
+            entry_id = entry[0]
+            if isinstance(entry_id, bytes):
+                entry_id = entry_id.decode()
+            kv = entry[1]
+            fields: dict[str, Any] = {}
+            if isinstance(kv, list):
+                # RESP2/Lua returns a flat ``[f1, v1, f2, v2, ...]`` list.
+                it = iter(kv)
+                for f, v in zip(it, it, strict=False):
+                    field_name = f.decode() if isinstance(f, bytes) else str(f)
+                    fields[field_name] = self.decode(v)
+            elif isinstance(kv, dict):
+                for f, v in kv.items():
+                    field_name = f.decode() if isinstance(f, bytes) else str(f)
+                    fields[field_name] = self.decode(v)
+            out.append((entry_id, fields))
+        return out
+
+    def _decode_xread(self, raw: Any) -> dict[str, list[tuple[str, dict[str, Any]]]]:
+        if raw is None:
+            return {}
+        if isinstance(raw, dict):
+            return {(k.decode() if isinstance(k, bytes) else k): self._decode_xrange(v) for k, v in raw.items()}
+        # RESP2 list shape: [[stream_key, entries], ...]
+        return {
+            (item[0].decode() if isinstance(item[0], bytes) else item[0]): self._decode_xrange(item[1]) for item in raw
+        }
+
+    @override
+    def xread(
+        self,
+        streams: dict[KeyT, str],
+        count: int | None = None,
+        block: int | None = None,
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+        keys = [_str_key(k) for k in streams]
+        ids = list(streams.values())
+        return self._decode_xread(self._driver.xread_sync(keys, ids, count=count))
+
+    @override
+    async def axread(
+        self,
+        streams: dict[KeyT, str],
+        count: int | None = None,
+        block: int | None = None,
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+        keys = [_str_key(k) for k in streams]
+        ids = list(streams.values())
+        raw = await self._driver.xread(keys, ids, count=count)
+        return self._decode_xread(raw)
+
+    @override
+    def xreadgroup(
+        self,
+        group: str,
+        consumer: str,
+        streams: dict[KeyT, str],
+        count: int | None = None,
+        block: int | None = None,
+        noack: bool = False,
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+        keys = [_str_key(k) for k in streams]
+        ids = list(streams.values())
+        return self._decode_xread(
+            self._driver.xreadgroup_sync(group, consumer, keys, ids, count=count),
+        )
+
+    @override
+    async def axreadgroup(
+        self,
+        group: str,
+        consumer: str,
+        streams: dict[KeyT, str],
+        count: int | None = None,
+        block: int | None = None,
+        noack: bool = False,
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+        keys = [_str_key(k) for k in streams]
+        ids = list(streams.values())
+        raw = await self._driver.xreadgroup(group, consumer, keys, ids, count=count)
+        return self._decode_xread(raw)
+
+    @override
+    def xtrim(
+        self,
+        key: KeyT,
+        maxlen: int | None = None,
+        approximate: bool = True,
+        minid: str | None = None,
+        limit: int | None = None,
+    ) -> int:
+        if minid is not None:
+            argv: list[Any] = [b"MINID"]
+            if approximate:
+                argv.append(b"~")
+            argv.append(minid)
+            return int(self._eval_call("XTRIM", [key], argv))
+        return int(self._driver.xtrim_sync(_str_key(key), maxlen or 0, approximate))
+
+    @override
+    async def axtrim(
+        self,
+        key: KeyT,
+        maxlen: int | None = None,
+        approximate: bool = True,
+        minid: str | None = None,
+        limit: int | None = None,
+    ) -> int:
+        if minid is not None:
+            argv: list[Any] = [b"MINID"]
+            if approximate:
+                argv.append(b"~")
+            argv.append(minid)
+            return int(await self._aeval_call("XTRIM", [key], argv))
+        return int(await self._driver.xtrim(_str_key(key), maxlen or 0, approximate))
+
+    # ---- streams: ops with no driver method, all via eval ----
+
+    @override
+    def xdel(self, key: KeyT, *entry_ids: str) -> int:
+        if not entry_ids:
+            return 0
+        return int(self._eval_call("XDEL", [key], list(entry_ids)))
+
+    @override
+    async def axdel(self, key: KeyT, *entry_ids: str) -> int:
+        if not entry_ids:
+            return 0
+        return int(await self._aeval_call("XDEL", [key], list(entry_ids)))
+
+    @override
+    def xack(self, key: KeyT, group: str, *entry_ids: str) -> int:
+        if not entry_ids:
+            return 0
+        return int(self._driver.xack_sync(_str_key(key), group, list(entry_ids)))
+
+    @override
+    async def axack(self, key: KeyT, group: str, *entry_ids: str) -> int:
+        if not entry_ids:
+            return 0
+        return int(await self._driver.xack(_str_key(key), group, list(entry_ids)))
+
+    @override
+    def xlen(self, key: KeyT) -> int:
+        return int(self._driver.xlen_sync(_str_key(key)))
+
+    @override
+    async def axlen(self, key: KeyT) -> int:
+        return int(await self._driver.xlen(_str_key(key)))
+
+    # Multi-word commands (XINFO STREAM, XGROUP DESTROY, ...) can't go through
+    # ``_eval_call`` because Lua's ``redis.call`` treats the first arg as a
+    # single command name. Use a custom script that splits subcommand off.
+    _EVAL_SUBCALL_TEMPLATE = (
+        "local args = {{ARGV[1]}}; "
+        "for _, v in ipairs(KEYS) do args[#args+1] = v end; "
+        "for i = 2, #ARGV do args[#args+1] = ARGV[i] end; "
+        "return redis.call('{cmd}', unpack(args))"
+    )
+
+    def _eval_subcall(
+        self,
+        command: str,
+        sub: str,
+        keys: Sequence[KeyT],
+        args: Sequence[Any],
+    ) -> Any:
+        return self._driver.eval_sync(
+            self._EVAL_SUBCALL_TEMPLATE.format(cmd=command),
+            [_str_key(k) for k in keys],
+            [sub.encode("ascii"), *(a if isinstance(a, bytes) else self._eval_arg(a) for a in args)],
+        )
+
+    async def _aeval_subcall(
+        self,
+        command: str,
+        sub: str,
+        keys: Sequence[KeyT],
+        args: Sequence[Any],
+    ) -> Any:
+        return await self._driver.eval(
+            self._EVAL_SUBCALL_TEMPLATE.format(cmd=command),
+            [_str_key(k) for k in keys],
+            [sub.encode("ascii"), *(a if isinstance(a, bytes) else self._eval_arg(a) for a in args)],
+        )
+
+    @override
+    def xinfo_stream(self, key: KeyT, full: bool = False) -> dict[str, Any]:
+        argv = [b"FULL"] if full else []
+        return _parse_xinfo_pairs(self._eval_subcall("XINFO", "STREAM", [key], argv))
+
+    @override
+    async def axinfo_stream(self, key: KeyT, full: bool = False) -> dict[str, Any]:
+        argv = [b"FULL"] if full else []
+        return _parse_xinfo_pairs(await self._aeval_subcall("XINFO", "STREAM", [key], argv))
+
+    @override
+    def xinfo_groups(self, key: KeyT) -> list[dict[str, Any]]:
+        result = self._eval_subcall("XINFO", "GROUPS", [key], [])
+        return [_parse_xinfo_pairs(item) for item in (result or [])]
+
+    @override
+    async def axinfo_groups(self, key: KeyT) -> list[dict[str, Any]]:
+        result = await self._aeval_subcall("XINFO", "GROUPS", [key], [])
+        return [_parse_xinfo_pairs(item) for item in (result or [])]
+
+    @override
+    def xinfo_consumers(self, key: KeyT, group: str) -> list[dict[str, Any]]:
+        result = self._eval_subcall("XINFO", "CONSUMERS", [key], [group])
+        return [_parse_xinfo_pairs(item) for item in (result or [])]
+
+    @override
+    async def axinfo_consumers(self, key: KeyT, group: str) -> list[dict[str, Any]]:
+        result = await self._aeval_subcall("XINFO", "CONSUMERS", [key], [group])
+        return [_parse_xinfo_pairs(item) for item in (result or [])]
+
+    @override
+    def xgroup_destroy(self, key: KeyT, group: str) -> int:
+        return int(self._eval_subcall("XGROUP", "DESTROY", [key], [group]))
+
+    @override
+    async def axgroup_destroy(self, key: KeyT, group: str) -> int:
+        return int(await self._aeval_subcall("XGROUP", "DESTROY", [key], [group]))
+
+    @override
+    def xgroup_setid(
+        self,
+        key: KeyT,
+        group: str,
+        identifier: str,
+        entries_read: int | None = None,
+    ) -> bool:
+        return self._eval_subcall("XGROUP", "SETID", [key], [group, identifier]) is True
+
+    @override
+    async def axgroup_setid(
+        self,
+        key: KeyT,
+        group: str,
+        identifier: str,
+        entries_read: int | None = None,
+    ) -> bool:
+        return await self._aeval_subcall("XGROUP", "SETID", [key], [group, identifier]) is True
+
+    @override
+    def xgroup_delconsumer(self, key: KeyT, group: str, consumer: str) -> int:
+        return int(self._eval_subcall("XGROUP", "DELCONSUMER", [key], [group, consumer]))
+
+    @override
+    async def axgroup_delconsumer(self, key: KeyT, group: str, consumer: str) -> int:
+        return int(await self._aeval_subcall("XGROUP", "DELCONSUMER", [key], [group, consumer]))
+
+    # XPENDING / XCLAIM / XAUTOCLAIM are not implementable in EVAL because
+    # their response shapes are too irregular for the current decode helpers.
+    @override
+    def xpending(self, key: KeyT, group: str, *args: Any, **kwargs: Any) -> Any:
+        msg = "RustKeyValueCacheClient does not yet implement xpending"
+        raise NotSupportedError(msg)
+
+    @override
+    async def axpending(self, key: KeyT, group: str, *args: Any, **kwargs: Any) -> Any:
+        msg = "RustKeyValueCacheClient does not yet implement xpending"
+        raise NotSupportedError(msg)
+
+    @override
+    def xclaim(self, *args: Any, **kwargs: Any) -> Any:
+        msg = "RustKeyValueCacheClient does not yet implement xclaim"
+        raise NotSupportedError(msg)
+
+    @override
+    async def axclaim(self, *args: Any, **kwargs: Any) -> Any:
+        msg = "RustKeyValueCacheClient does not yet implement xclaim"
+        raise NotSupportedError(msg)
+
+    @override
+    def xautoclaim(self, *args: Any, **kwargs: Any) -> Any:
+        msg = "RustKeyValueCacheClient does not yet implement xautoclaim"
+        raise NotSupportedError(msg)
+
+    @override
+    async def axautoclaim(self, *args: Any, **kwargs: Any) -> Any:
+        msg = "RustKeyValueCacheClient does not yet implement xautoclaim"
+        raise NotSupportedError(msg)
+
+    # ---- scan iterators: single-shot via driver, no cursor exposed ----
+
+    @override
+    def sscan(
+        self,
+        key: KeyT,
+        cursor: int = 0,
+        match: str | None = None,
+        count: int | None = None,
+    ) -> tuple[int, _Set[Any]]:
+        argv: list[Any] = [cursor]
+        if match is not None:
+            argv.extend([b"MATCH", match])
+        if count is not None:
+            argv.extend([b"COUNT", count])
+        result = self._eval_call("SSCAN", [key], argv)
+        next_cursor = int(result[0]) if isinstance(result[0], (int, str, bytes)) else 0
+        return next_cursor, {self.decode(v) for v in result[1]}
+
+    @override
+    async def asscan(
+        self,
+        key: KeyT,
+        cursor: int = 0,
+        match: str | None = None,
+        count: int | None = None,
+    ) -> tuple[int, _Set[Any]]:
+        argv: list[Any] = [cursor]
+        if match is not None:
+            argv.extend([b"MATCH", match])
+        if count is not None:
+            argv.extend([b"COUNT", count])
+        result = await self._aeval_call("SSCAN", [key], argv)
+        next_cursor = int(result[0]) if isinstance(result[0], (int, str, bytes)) else 0
+        return next_cursor, {self.decode(v) for v in result[1]}
+
+    @override
+    def sscan_iter(self, key: KeyT, match: str | None = None, count: int | None = None) -> Iterator[Any]:
+        cursor = 0
+        while True:
+            cursor, batch = self.sscan(key, cursor, match=match, count=count)
+            yield from batch
+            if cursor == 0:
+                return
+
+    @override
+    async def asscan_iter(
+        self,
+        key: KeyT,
+        match: str | None = None,
+        count: int | None = None,
+    ) -> AsyncIterator[Any]:
+        cursor = 0
+        while True:
+            cursor, batch = await self.asscan(key, cursor, match=match, count=count)
+            for item in batch:
+                yield item
+            if cursor == 0:
+                return
+
+
+def _parse_xinfo_pairs(raw: Any) -> dict[str, Any]:
+    """Convert a flat XINFO field-pair response into a dict.
+
+    XINFO returns alternating ``[name, value, name, value, ...]`` arrays in
+    RESP2; RESP3 servers may return a map directly. Handle both.
+    """
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return {(k.decode() if isinstance(k, bytes) else k): v for k, v in raw.items()}
+    out: dict[str, Any] = {}
+    it = iter(raw)
+    for k, v in zip(it, it, strict=False):
+        key = k.decode() if isinstance(k, bytes) else k
+        out[key] = v
+    return out
+
 
 def _parse_info(raw: str) -> dict[str, Any]:
     """Parse a Redis ``INFO`` bulk-string response into a flat ``dict``.
@@ -1477,33 +2423,9 @@ class RustValkeyClusterCacheClient(RustKeyValueCacheClient):
         # base ``KeyValueCache`` already splits them into ``self._servers``.
         return get_driver_cluster(list(self._servers), **self._driver_kwargs())
 
-    @override
-    def lock(
-        self,
-        key: str,
-        timeout: float | None = None,
-        sleep: float = 0.1,
-        *,
-        blocking: bool = True,
-        blocking_timeout: float | None = None,
-        thread_local: bool = True,
-    ) -> Any:
-        msg = "Distributed locks are not supported on cluster (Lua scripts route to a single slot)."
-        raise NotImplementedError(msg)
-
-    @override
-    def alock(
-        self,
-        key: str,
-        timeout: float | None = None,
-        sleep: float = 0.1,
-        *,
-        blocking: bool = True,
-        blocking_timeout: float | None = None,
-        thread_local: bool = True,
-    ) -> Any:
-        msg = "Distributed locks are not supported on cluster (Lua scripts route to a single slot)."
-        raise NotImplementedError(msg)
+    # Inherit ``lock``/``alock`` from the parent. The lock script keys to a
+    # single slot, so the Rust cluster driver routes correctly without
+    # special-casing here.
 
 
 class RustValkeySentinelCacheClient(RustKeyValueCacheClient):

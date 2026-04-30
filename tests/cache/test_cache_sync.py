@@ -34,7 +34,7 @@ def _build_sync_config(
     """Build CACHES config with redis transport + SyncCache."""
     options = _get_client_library_options(client_library)
     location = f"redis://{host}:{port}?db=13"
-    backend_class = BACKENDS[("default", client_library)]
+    backend_class = BACKENDS[("default", client_library, "py")]
     sk = stream_key or f"test:sync:{uuid.uuid4().hex[:8]}"
 
     return {
@@ -91,7 +91,7 @@ def sync_pair(redis_container: RedisContainerInfo) -> Iterator[tuple[SyncCache, 
     """
     options = _get_client_library_options(redis_container.client_library)
     location = f"redis://{redis_container.host}:{redis_container.port}?db=13"
-    backend_class = BACKENDS[("default", redis_container.client_library)]
+    backend_class = BACKENDS[("default", redis_container.client_library, "py")]
     stream_key = f"test:sync-pair:{uuid.uuid4().hex[:8]}"
     storage_key_1 = f"{stream_key}:pod1"
     storage_key_2 = f"{stream_key}:pod2"
@@ -529,7 +529,7 @@ class TestSyncReplay:
 
         options = _get_client_library_options(redis_container.client_library)
         location = f"redis://{redis_container.host}:{redis_container.port}?db=13"
-        backend_class = BACKENDS[("default", redis_container.client_library)]
+        backend_class = BACKENDS[("default", redis_container.client_library, "py")]
 
         config = {
             "transport": {
@@ -587,7 +587,7 @@ class TestSyncReplay:
 
         options = _get_client_library_options(redis_container.client_library)
         location = f"redis://{redis_container.host}:{redis_container.port}?db=13"
-        backend_class = BACKENDS[("default", redis_container.client_library)]
+        backend_class = BACKENDS[("default", redis_container.client_library, "py")]
 
         config = {
             "transport": {

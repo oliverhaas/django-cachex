@@ -268,4 +268,50 @@ class ValkeyLock:
         raise TypeError(msg)
 
 
-__all__ = ["LockError", "LockNotOwnedError", "ValkeyLock"]
+class AsyncValkeyLock(ValkeyLock):
+    """Async-flavored ValkeyLock. ``acquire``/``release``/``extend`` are
+    coroutines (matching redis-py's async ``Lock``)."""
+
+    async def acquire(  # type: ignore[override]
+        self,
+        *,
+        blocking: bool | None = None,
+        blocking_timeout: float | None = None,
+        token: bytes | str | None = None,
+    ) -> bool:
+        return await self.aacquire(
+            blocking=blocking,
+            blocking_timeout=blocking_timeout,
+            token=token,
+        )
+
+    async def release(self) -> None:  # type: ignore[override]
+        await self.arelease()
+
+    async def extend(self, additional_time: float, *, replace_ttl: bool = False) -> bool:  # type: ignore[override]
+        return await self.aextend(additional_time, replace_ttl=replace_ttl)
+
+    async def locked(self) -> bool:  # type: ignore[override]
+        return await self.alocked()
+
+    async def owned(self) -> bool:  # type: ignore[override]
+        return await self.aowned()
+
+    async def __aenter__(self) -> Self:
+        if await self.aacquire():
+            return self
+        msg = f"Could not acquire lock {self.name!r}"
+        raise LockError(msg)
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        await self.arelease()
+
+    # Sync ctx manager intentionally absent on the async variant.
+
+
+__all__ = ["AsyncValkeyLock", "LockError", "LockNotOwnedError", "ValkeyLock"]

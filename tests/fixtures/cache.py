@@ -28,17 +28,26 @@ SERIALIZERS = {
     "msgpack": "django_cachex.serializers.msgpack.MessagePackSerializer",
 }
 
-# Available cache backends - keyed by (backend_type, client_library)
-# These are Cache classes (extend BaseCache) - used as BACKEND in Django settings
+# Available cache backends - keyed by (backend_type, client_library, driver)
+# - driver="py": pure-Python clients (redis-py / valkey-py)
+# - driver="rust": Rust extension driver shared via _rust_clients registry
 BACKENDS = {
-    # Valkey backends
-    ("default", "valkey"): "django_cachex.cache.ValkeyCache",
-    ("sentinel", "valkey"): "django_cachex.cache.ValkeySentinelCache",
-    ("cluster", "valkey"): "django_cachex.cache.ValkeyClusterCache",
-    # Redis backends
-    ("default", "redis"): "django_cachex.cache.RedisCache",
-    ("sentinel", "redis"): "django_cachex.cache.RedisSentinelCache",
-    ("cluster", "redis"): "django_cachex.cache.RedisClusterCache",
+    # Pure-Python — Valkey
+    ("default", "valkey", "py"): "django_cachex.cache.ValkeyCache",
+    ("sentinel", "valkey", "py"): "django_cachex.cache.ValkeySentinelCache",
+    ("cluster", "valkey", "py"): "django_cachex.cache.ValkeyClusterCache",
+    # Pure-Python — Redis
+    ("default", "redis", "py"): "django_cachex.cache.RedisCache",
+    ("sentinel", "redis", "py"): "django_cachex.cache.RedisSentinelCache",
+    ("cluster", "redis", "py"): "django_cachex.cache.RedisClusterCache",
+    # Rust driver — Valkey
+    ("default", "valkey", "rust"): "django_cachex.cache.RustValkeyCache",
+    ("sentinel", "valkey", "rust"): "django_cachex.cache.RustValkeySentinelCache",
+    ("cluster", "valkey", "rust"): "django_cachex.cache.RustValkeyClusterCache",
+    # Rust driver — Redis
+    ("default", "redis", "rust"): "django_cachex.cache.RustRedisCache",
+    ("sentinel", "redis", "rust"): "django_cachex.cache.RustRedisSentinelCache",
+    ("cluster", "redis", "rust"): "django_cachex.cache.RustRedisClusterCache",
 }
 
 # Client library configurations: maps client_library -> (pool_class, parser_class)
@@ -92,6 +101,12 @@ def native_parser(request) -> bool:
     return request.param
 
 
+@pytest.fixture(params=["py", "rust"])
+def driver(request) -> str:
+    """Parametrized driver fixture: pure-Python redis-py vs Rust extension."""
+    return request.param
+
+
 def _get_client_library_options(
     client_library: str = "redis",
     native_parser: bool = False,
@@ -128,6 +143,7 @@ def build_cache_config(
     client_library: str = "redis",
     native_parser: bool = False,
     db: int = 1,
+    driver: str = "py",
 ) -> dict:
     """Build a CACHES configuration dict.
 
@@ -140,9 +156,15 @@ def build_cache_config(
         client_library: Python client library ("redis" or "valkey")
         native_parser: If True, use native parser (hiredis/libvalkey)
         db: Redis database number
+        driver: "py" for pure-Python clients, "rust" for the Rust extension
 
     """
-    options = _get_client_library_options(client_library, native_parser)
+    if driver == "rust":
+        # Rust driver doesn't take pool/parser_class; only honors a small
+        # whitelist of OPTIONS (cache_max_size, ssl_*).
+        options: dict = {}
+    else:
+        options = _get_client_library_options(client_library, native_parser)
 
     if compressor and compressor in COMPRESSORS:
         options["compressor"] = COMPRESSORS[compressor]
@@ -150,7 +172,7 @@ def build_cache_config(
         options["serializer"] = SERIALIZERS[serializer]
 
     location = f"redis://{redis_host}:{redis_port}?db={db}"
-    backend_class = BACKENDS[(backend, client_library)]
+    backend_class = BACKENDS[(backend, client_library, driver)]
 
     return {
         "default": {
@@ -184,19 +206,22 @@ def build_sentinel_cache_config(
     client_library: str = "redis",
     native_parser: bool = False,
     db: int = 7,
+    driver: str = "py",
 ) -> dict:
     """Build a CACHES configuration for Sentinel."""
     sentinels = [(sentinel_host, sentinel_port)]
 
-    base_options = {
+    base_options: dict = {
         "sentinels": sentinels,
     }
-    # Get client library options but exclude pool_class - sentinel uses SentinelConnectionPool by default
-    lib_options = _get_client_library_options(client_library, native_parser)
-    lib_options.pop("pool_class", None)
-    base_options.update(lib_options)
+    if driver == "py":
+        # Pure-Python clients consume parser_class etc.; sentinel uses
+        # SentinelConnectionPool by default so we drop pool_class.
+        lib_options = _get_client_library_options(client_library, native_parser)
+        lib_options.pop("pool_class", None)
+        base_options.update(lib_options)
 
-    backend_class = BACKENDS[("sentinel", client_library)]
+    backend_class = BACKENDS[("sentinel", client_library, driver)]
 
     # Use appropriate URL scheme based on client library
     scheme = "valkey" if client_library == "valkey" else "redis"
@@ -234,15 +259,15 @@ def build_cluster_cache_config(
     serializer: str | None = None,
     client_library: str = "redis",
     native_parser: bool = False,
+    driver: str = "py",
 ) -> dict:
     """Build a CACHES configuration for Redis Cluster."""
-    options = {}
-    # For cluster, we only use client library options for non-cluster connections
-    # The ClusterCacheClient creates RedisCluster/ValkeyCluster directly
-    lib_options = _get_client_library_options(client_library, native_parser)
-    # Remove pool class - cluster manages its own connections
-    lib_options.pop("pool_class", None)
-    options.update(lib_options)
+    options: dict = {}
+    if driver == "py":
+        # Cluster manages its own connections; pass parser_class only.
+        lib_options = _get_client_library_options(client_library, native_parser)
+        lib_options.pop("pool_class", None)
+        options.update(lib_options)
 
     if compressor and compressor in COMPRESSORS:
         options["compressor"] = COMPRESSORS[compressor]
@@ -251,7 +276,7 @@ def build_cluster_cache_config(
 
     # Cluster doesn't use db numbers - data is sharded across slots
     location = f"redis://{cluster_host}:{cluster_port}"
-    backend_class = BACKENDS[("cluster", client_library)]
+    backend_class = BACKENDS[("cluster", client_library, driver)]
 
     return {
         "default": {
@@ -295,6 +320,7 @@ def _make_cache(
     compressor_val: str | None,
     serializer_val: str | None,
     native_parser_val: bool = False,
+    driver_val: str = "py",
 ) -> Iterator[KeyValueCache]:
     """Core cache creation logic shared by all cache fixtures."""
     redis_host = redis_container.host
@@ -311,6 +337,7 @@ def _make_cache(
             client_library=sentinel_info.client_library,
             native_parser=native_parser_val,
             db=db,
+            driver=driver_val,
         )
 
         with override_settings(CACHES=caches):
@@ -331,6 +358,7 @@ def _make_cache(
             serializer=serializer_val,
             client_library=client_library,
             native_parser=native_parser_val,
+            driver=driver_val,
         )
         with override_settings(CACHES=caches):
             from django.core.cache import cache as default_cache
@@ -351,6 +379,7 @@ def _make_cache(
         client_library=client_library,
         native_parser=native_parser_val,
         db=db,
+        driver=driver_val,
     )
 
     with override_settings(CACHES=caches):
@@ -365,10 +394,11 @@ def _make_cache(
 def cache(
     client_class: str,
     sentinel_mode: str | bool,
+    driver: str,
     redis_container: RedisContainerInfo,
     request: pytest.FixtureRequest,
 ) -> Iterator[KeyValueCache]:
-    """Django cache fixture parametrized by client_class × sentinel_mode.
+    """Django cache fixture parametrized by client_class × sentinel_mode × driver.
 
     If the test also requests `compressor`, `serializer`, or `native_parser` fixtures,
     those will be used (creating additional Cartesian product).
@@ -398,6 +428,7 @@ def cache(
         compressor_val,
         serializer_val,
         native_parser_val,
+        driver,
     )
 
 
@@ -405,6 +436,7 @@ def _make_stampede_cache(
     redis_container: RedisContainerInfo,
     request: pytest.FixtureRequest,
     backend_val: str,
+    driver_val: str = "py",
 ) -> Iterator[KeyValueCache]:
     """Create a cache with stampede prevention enabled."""
     redis_host = redis_container.host
@@ -417,6 +449,7 @@ def _make_stampede_cache(
             cluster_host,
             cluster_port,
             client_library=client_library,
+            driver=driver_val,
         )
     else:
         db = 15  # Use a dedicated db to avoid conflicts
@@ -426,6 +459,7 @@ def _make_stampede_cache(
             backend=backend_val,
             client_library=client_library,
             db=db,
+            driver=driver_val,
         )
 
     # Enable stampede prevention on the default cache
@@ -442,15 +476,17 @@ def _make_stampede_cache(
 @pytest.fixture
 def stampede_cache(
     client_class: str,
+    driver: str,
     redis_container: RedisContainerInfo,
     request: pytest.FixtureRequest,
 ) -> Iterator[KeyValueCache]:
     """Django cache fixture with stampede prevention enabled.
 
-    Parametrized by client_class (default, cluster).
+    Parametrized by client_class × driver.
     """
     yield from _make_stampede_cache(
         redis_container,
         request,
         client_class,
+        driver,
     )
