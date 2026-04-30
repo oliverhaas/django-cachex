@@ -24,7 +24,7 @@ def _build_tiered_config(host: str, port: int, client_library: str = "redis") ->
     """Build CACHES config with l1 (LocMemCache), l2 (Redis/Valkey), and tiered."""
     options = _get_client_library_options(client_library)
     location = f"redis://{host}:{port}?db=1"
-    backend_class = BACKENDS[("default", client_library)]
+    backend_class = BACKENDS[("default", client_library, "py")]
 
     return {
         "l1": {
@@ -508,7 +508,7 @@ class TestTieredCacheConfig:
         """When L1_TIMEOUT is omitted, _l1_cap falls back to L1's default_timeout."""
         options = _get_client_library_options(redis_container.client_library)
         location = f"redis://{redis_container.host}:{redis_container.port}?db=1"
-        backend_class = BACKENDS[("default", redis_container.client_library)]
+        backend_class = BACKENDS[("default", redis_container.client_library, "py")]
 
         config = {
             "l1": {
