@@ -864,28 +864,30 @@ impl RustValkeyDriver {
     // Pipeline (arbitrary commands)
     // =====================================================================
 
-    #[pyo3(signature = (commands))]
+    #[pyo3(signature = (commands, transaction = false))]
     fn pipeline_exec(
         &self,
         py: Python<'_>,
         commands: Vec<(String, Vec<Vec<u8>>)>,
+        transaction: bool,
     ) -> PyResult<Py<PyAny>> {
         async_op!(self, py, conn, {
-            match conn.pipeline_exec(commands).await {
+            match conn.pipeline_exec(commands, transaction).await {
                 Ok(items) => RawResult::Value(redis::Value::Array(items)),
                 Err(e) => classify(e),
             }
         })
     }
 
-    #[pyo3(signature = (commands))]
+    #[pyo3(signature = (commands, transaction = false))]
     fn pipeline_exec_sync(
         &self,
         py: Python<'_>,
         commands: Vec<(String, Vec<Vec<u8>>)>,
+        transaction: bool,
     ) -> PyResult<Py<PyAny>> {
         let r: Result<Vec<redis::Value>, _> =
-            sync_op!(py, self, conn, conn.pipeline_exec(commands).await);
+            sync_op!(py, self, conn, conn.pipeline_exec(commands, transaction).await);
         py_redis_value(py, redis::Value::Array(r.map_err(to_py_err)?))
     }
 
@@ -1778,6 +1780,177 @@ impl RustValkeyDriver {
     #[pyo3(signature = (key, group))]
     fn xpending_sync(&self, py: Python<'_>, key: &str, group: &str) -> PyResult<Py<PyAny>> {
         let r: Result<redis::Value, _> = sync_op!(py, self, conn, conn.xpending(key, group).await);
+        py_redis_value(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (key, group, start, end, count, consumer=None, idle=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn xpending_range(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        group: &str,
+        start: &str,
+        end: &str,
+        count: i64,
+        consumer: Option<String>,
+        idle: Option<u64>,
+    ) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let group = group.to_string();
+        let start = start.to_string();
+        let end = end.to_string();
+        async_op!(self, py, conn, {
+            r_value(
+                conn.xpending_range(&key, &group, &start, &end, count, consumer.as_deref(), idle)
+                    .await,
+            )
+        })
+    }
+
+    #[pyo3(signature = (key, group, start, end, count, consumer=None, idle=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn xpending_range_sync(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        group: &str,
+        start: &str,
+        end: &str,
+        count: i64,
+        consumer: Option<String>,
+        idle: Option<u64>,
+    ) -> PyResult<Py<PyAny>> {
+        let r: Result<redis::Value, _> = sync_op!(
+            py,
+            self,
+            conn,
+            conn.xpending_range(key, group, start, end, count, consumer.as_deref(), idle)
+                .await
+        );
+        py_redis_value(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (key, group, consumer, min_idle_time, ids, idle=None, time_ms=None, retrycount=None, force=false, justid=false))]
+    #[allow(clippy::too_many_arguments)]
+    fn xclaim(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        group: &str,
+        consumer: &str,
+        min_idle_time: i64,
+        ids: Vec<String>,
+        idle: Option<i64>,
+        time_ms: Option<i64>,
+        retrycount: Option<i64>,
+        force: bool,
+        justid: bool,
+    ) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let group = group.to_string();
+        let consumer = consumer.to_string();
+        async_op!(self, py, conn, {
+            r_value(
+                conn.xclaim(
+                    &key,
+                    &group,
+                    &consumer,
+                    min_idle_time,
+                    &ids,
+                    idle,
+                    time_ms,
+                    retrycount,
+                    force,
+                    justid,
+                )
+                .await,
+            )
+        })
+    }
+
+    #[pyo3(signature = (key, group, consumer, min_idle_time, ids, idle=None, time_ms=None, retrycount=None, force=false, justid=false))]
+    #[allow(clippy::too_many_arguments)]
+    fn xclaim_sync(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        group: &str,
+        consumer: &str,
+        min_idle_time: i64,
+        ids: Vec<String>,
+        idle: Option<i64>,
+        time_ms: Option<i64>,
+        retrycount: Option<i64>,
+        force: bool,
+        justid: bool,
+    ) -> PyResult<Py<PyAny>> {
+        let r: Result<redis::Value, _> = sync_op!(
+            py,
+            self,
+            conn,
+            conn.xclaim(
+                key,
+                group,
+                consumer,
+                min_idle_time,
+                &ids,
+                idle,
+                time_ms,
+                retrycount,
+                force,
+                justid,
+            )
+            .await
+        );
+        py_redis_value(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (key, group, consumer, min_idle_time, start, count=None, justid=false))]
+    #[allow(clippy::too_many_arguments)]
+    fn xautoclaim(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        group: &str,
+        consumer: &str,
+        min_idle_time: i64,
+        start: &str,
+        count: Option<i64>,
+        justid: bool,
+    ) -> PyResult<Py<PyAny>> {
+        let key = key.to_string();
+        let group = group.to_string();
+        let consumer = consumer.to_string();
+        let start = start.to_string();
+        async_op!(self, py, conn, {
+            r_value(
+                conn.xautoclaim(&key, &group, &consumer, min_idle_time, &start, count, justid)
+                    .await,
+            )
+        })
+    }
+
+    #[pyo3(signature = (key, group, consumer, min_idle_time, start, count=None, justid=false))]
+    #[allow(clippy::too_many_arguments)]
+    fn xautoclaim_sync(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        group: &str,
+        consumer: &str,
+        min_idle_time: i64,
+        start: &str,
+        count: Option<i64>,
+        justid: bool,
+    ) -> PyResult<Py<PyAny>> {
+        let r: Result<redis::Value, _> = sync_op!(
+            py,
+            self,
+            conn,
+            conn.xautoclaim(key, group, consumer, min_idle_time, start, count, justid)
+                .await
+        );
         py_redis_value(py, r.map_err(to_py_err)?)
     }
 }

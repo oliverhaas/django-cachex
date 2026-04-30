@@ -25,33 +25,6 @@ from tests.fixtures import (
     stampede_cache,
 )
 
-# Tests that exercise the redis-py-only `Pipeline` wrapper (which the Rust
-# driver doesn't yet implement). Auto-skipped when the parametrized driver
-# is "rust"; remove once `RustKeyValueCacheClient.pipeline()` lands.
-_PIPELINE_TEST_FILES: frozenset[str] = frozenset(
-    {
-        "test_cache_pipeline.py",
-    },
-)
-_PIPELINE_TEST_NODES: frozenset[str] = frozenset(
-    {
-        "tests/cache/test_cache_basic.py::TestPipelineSetOperation",
-        "tests/cache/test_cache_scripts.py::TestPipelineScripts",
-        "tests/cache/test_stampede.py::TestStampedePipeline",
-    },
-)
-# xpending / xclaim / xautoclaim aren't surfaced by the Rust driver yet —
-# the wrapper raises ``NotSupportedError``. Skip the test classes wholesale
-# under the rust driver until the driver grows those commands.
-_RUST_DEFERRED_STREAM_NODES: tuple[str, ...] = (
-    "tests/cache/test_cache_streams.py::TestStreamConsumerGroups::test_xpending",
-    "tests/cache/test_cache_streams.py::TestStreamConsumerGroups::test_xclaim",
-    "tests/cache/test_cache_streams.py::TestStreamConsumerGroups::test_xautoclaim",
-    "tests/cache/test_cache_streams.py::TestAsyncStreamConsumerGroups::test_axpending",
-    "tests/cache/test_cache_streams.py::TestAsyncStreamConsumerGroups::test_axclaim",
-    "tests/cache/test_cache_streams.py::TestAsyncStreamConsumerGroups::test_axautoclaim",
-)
-
 # Tests that probe the underlying client object directly (asserting redis-py
 # internal types, calling redis-py-only methods, or expecting cluster
 # fan-out limitations the Rust driver doesn't share).
@@ -77,14 +50,8 @@ _PY_INTERNALS_TEST_FILES: frozenset[str] = frozenset(
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    skip_rust_pipeline = pytest.mark.skip(
-        reason="RustKeyValueCacheClient.pipeline() is not yet implemented",
-    )
     skip_rust_internals = pytest.mark.skip(
         reason="redis-py internals (pools, parsers) don't apply to the Rust driver",
-    )
-    skip_rust_streams_advanced = pytest.mark.skip(
-        reason="xpending / xclaim / xautoclaim aren't surfaced on the Rust driver yet",
     )
     skip_rust_raw_client = pytest.mark.skip(
         reason="probes redis-py-specific raw-client behavior; not portable to the Rust driver",
@@ -94,12 +61,8 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         if callspec is None or callspec.params.get("driver") != "rust":
             continue
         path_name = item.path.name
-        if path_name in _PIPELINE_TEST_FILES or any(item.nodeid.startswith(prefix) for prefix in _PIPELINE_TEST_NODES):
-            item.add_marker(skip_rust_pipeline)
-        elif path_name in _PY_INTERNALS_TEST_FILES:
+        if path_name in _PY_INTERNALS_TEST_FILES:
             item.add_marker(skip_rust_internals)
-        elif any(item.nodeid.startswith(prefix) for prefix in _RUST_DEFERRED_STREAM_NODES):
-            item.add_marker(skip_rust_streams_advanced)
         elif any(item.nodeid.startswith(prefix) for prefix in _RUST_RAW_CLIENT_PROBE_NODES):
             item.add_marker(skip_rust_raw_client)
 

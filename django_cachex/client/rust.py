@@ -19,7 +19,6 @@ from django_cachex._rust_clients import (
     get_driver_standard,
 )
 from django_cachex.client.default import KeyValueCacheClient
-from django_cachex.exceptions import NotSupportedError
 from django_cachex.lock import AsyncValkeyLock, ValkeyLock
 from django_cachex.stampede import should_recompute
 from django_cachex.types import KeyType
@@ -752,7 +751,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         return _parse_info(raw)
 
     # =========================================================================
-    # Pipeline (deferred — driver-level batching needs a Python wrapper)
+    # Pipeline
     # =========================================================================
 
     @override
@@ -762,8 +761,11 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         transaction: bool = True,
         version: int | None = None,
     ) -> Pipeline:
-        msg = "RustKeyValueCacheClient does not yet support pipelines; use the redis-py-backed client."
-        raise NotSupportedError(msg)
+        from django_cachex.client._rust_pipeline import _RustRawPipeline
+        from django_cachex.client.pipeline import Pipeline
+
+        raw = _RustRawPipeline(self._driver, transaction=transaction)
+        return Pipeline(cache_client=self, pipeline=raw, version=version)
 
     # =========================================================================
     # Hashes
@@ -2261,37 +2263,205 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     async def axgroup_delconsumer(self, key: KeyT, group: str, consumer: str) -> int:
         return int(await self._aeval_subcall("XGROUP", "DELCONSUMER", [key], [group, consumer]))
 
-    # XPENDING / XCLAIM / XAUTOCLAIM are not implementable in EVAL because
-    # their response shapes are too irregular for the current decode helpers.
-    @override
-    def xpending(self, key: KeyT, group: str, *args: Any, **kwargs: Any) -> Any:
-        msg = "RustKeyValueCacheClient does not yet implement xpending"
-        raise NotSupportedError(msg)
+    # ---- xpending / xclaim / xautoclaim: driver-backed, decoded here ----
+
+    @staticmethod
+    def _decode_id(v: Any) -> str:
+        return v.decode() if isinstance(v, bytes) else str(v)
+
+    @staticmethod
+    def _decode_consumer(v: Any) -> str:
+        return v.decode() if isinstance(v, bytes) else str(v)
+
+    def _decode_xpending_summary(self, raw: Any) -> dict[str, Any]:
+        # Summary form: ``[count, min_id, max_id, [[consumer, count], ...] | None]``.
+        if not raw:
+            return {"pending": 0, "min": None, "max": None, "consumers": []}
+        count = int(raw[0]) if raw[0] is not None else 0
+        min_id = self._decode_id(raw[1]) if raw[1] is not None else None
+        max_id = self._decode_id(raw[2]) if raw[2] is not None else None
+        consumers: list[dict[str, Any]] = []
+        if len(raw) > 3 and raw[3]:
+            consumers.extend(
+                {
+                    "name": self._decode_consumer(entry[0]),
+                    "pending": int(entry[1]),
+                }
+                for entry in raw[3]
+            )
+        return {"pending": count, "min": min_id, "max": max_id, "consumers": consumers}
+
+    def _decode_xpending_range(self, raw: Any) -> list[dict[str, Any]]:
+        # Range form: ``[[id, consumer, idle_ms, delivery_count], ...]``.
+        if not raw:
+            return []
+        return [
+            {
+                "message_id": self._decode_id(entry[0]),
+                "consumer": self._decode_consumer(entry[1]),
+                "time_since_delivered": int(entry[2]),
+                "times_delivered": int(entry[3]),
+            }
+            for entry in raw
+        ]
 
     @override
-    async def axpending(self, key: KeyT, group: str, *args: Any, **kwargs: Any) -> Any:
-        msg = "RustKeyValueCacheClient does not yet implement xpending"
-        raise NotSupportedError(msg)
+    def xpending(
+        self,
+        key: KeyT,
+        group: str,
+        start: str | None = None,
+        end: str | None = None,
+        count: int | None = None,
+        consumer: str | None = None,
+        idle: int | None = None,
+    ) -> dict[str, Any] | list[dict[str, Any]]:
+        if start is not None and end is not None and count is not None:
+            raw = self._driver.xpending_range_sync(
+                _str_key(key), group, start, end, count, consumer=consumer, idle=idle,
+            )
+            return self._decode_xpending_range(raw)
+        raw = self._driver.xpending_sync(_str_key(key), group)
+        return self._decode_xpending_summary(raw)
 
     @override
-    def xclaim(self, *args: Any, **kwargs: Any) -> Any:
-        msg = "RustKeyValueCacheClient does not yet implement xclaim"
-        raise NotSupportedError(msg)
+    async def axpending(
+        self,
+        key: KeyT,
+        group: str,
+        start: str | None = None,
+        end: str | None = None,
+        count: int | None = None,
+        consumer: str | None = None,
+        idle: int | None = None,
+    ) -> dict[str, Any] | list[dict[str, Any]]:
+        if start is not None and end is not None and count is not None:
+            raw = await self._driver.xpending_range(
+                _str_key(key), group, start, end, count, consumer=consumer, idle=idle,
+            )
+            return self._decode_xpending_range(raw)
+        raw = await self._driver.xpending(_str_key(key), group)
+        return self._decode_xpending_summary(raw)
 
     @override
-    async def axclaim(self, *args: Any, **kwargs: Any) -> Any:
-        msg = "RustKeyValueCacheClient does not yet implement xclaim"
-        raise NotSupportedError(msg)
+    def xclaim(
+        self,
+        key: KeyT,
+        group: str,
+        consumer: str,
+        min_idle_time: int,
+        entry_ids: list[str],
+        idle: int | None = None,
+        time: int | None = None,
+        retrycount: int | None = None,
+        force: bool = False,
+        justid: bool = False,
+    ) -> list[tuple[str, dict[str, Any]]] | list[str]:
+        raw = self._driver.xclaim_sync(
+            _str_key(key),
+            group,
+            consumer,
+            min_idle_time,
+            list(entry_ids),
+            idle=idle,
+            time_ms=time,
+            retrycount=retrycount,
+            force=force,
+            justid=justid,
+        )
+        if justid:
+            return [self._decode_id(eid) for eid in (raw or [])]
+        return self._decode_xrange(raw)
 
     @override
-    def xautoclaim(self, *args: Any, **kwargs: Any) -> Any:
-        msg = "RustKeyValueCacheClient does not yet implement xautoclaim"
-        raise NotSupportedError(msg)
+    async def axclaim(
+        self,
+        key: KeyT,
+        group: str,
+        consumer: str,
+        min_idle_time: int,
+        entry_ids: list[str],
+        idle: int | None = None,
+        time: int | None = None,
+        retrycount: int | None = None,
+        force: bool = False,
+        justid: bool = False,
+    ) -> list[tuple[str, dict[str, Any]]] | list[str]:
+        raw = await self._driver.xclaim(
+            _str_key(key),
+            group,
+            consumer,
+            min_idle_time,
+            list(entry_ids),
+            idle=idle,
+            time_ms=time,
+            retrycount=retrycount,
+            force=force,
+            justid=justid,
+        )
+        if justid:
+            return [self._decode_id(eid) for eid in (raw or [])]
+        return self._decode_xrange(raw)
+
+    def _decode_xautoclaim(
+        self,
+        raw: Any,
+        *,
+        justid: bool,
+    ) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
+        # XAUTOCLAIM returns ``[next_id, entries, deleted_ids]`` (Redis 7+).
+        next_id = self._decode_id(raw[0]) if raw and raw[0] is not None else "0-0"
+        entries = raw[1] if len(raw) > 1 else []
+        deleted_raw = raw[2] if len(raw) > 2 else []
+        deleted = [self._decode_id(d) for d in (deleted_raw or [])]
+        if justid:
+            claimed_ids = [self._decode_id(eid) for eid in (entries or [])]
+            return (next_id, claimed_ids, deleted)
+        return (next_id, self._decode_xrange(entries), deleted)
 
     @override
-    async def axautoclaim(self, *args: Any, **kwargs: Any) -> Any:
-        msg = "RustKeyValueCacheClient does not yet implement xautoclaim"
-        raise NotSupportedError(msg)
+    def xautoclaim(
+        self,
+        key: KeyT,
+        group: str,
+        consumer: str,
+        min_idle_time: int,
+        start_id: str = "0-0",
+        count: int | None = None,
+        justid: bool = False,
+    ) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
+        raw = self._driver.xautoclaim_sync(
+            _str_key(key),
+            group,
+            consumer,
+            min_idle_time,
+            start_id,
+            count=count,
+            justid=justid,
+        )
+        return self._decode_xautoclaim(raw, justid=justid)
+
+    @override
+    async def axautoclaim(
+        self,
+        key: KeyT,
+        group: str,
+        consumer: str,
+        min_idle_time: int,
+        start_id: str = "0-0",
+        count: int | None = None,
+        justid: bool = False,
+    ) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
+        raw = await self._driver.xautoclaim(
+            _str_key(key),
+            group,
+            consumer,
+            min_idle_time,
+            start_id,
+            count=count,
+            justid=justid,
+        )
+        return self._decode_xautoclaim(raw, justid=justid)
 
     # ---- scan iterators: single-shot via driver, no cursor exposed ----
 

@@ -488,13 +488,21 @@ impl ValkeyConnInner {
     }
 
     /// Execute a pipeline of arbitrary commands.
+    ///
+    /// When `transaction` is true, wraps the batch in MULTI/EXEC for atomicity.
+    /// Cluster mode ignores `transaction` because cross-slot transactions aren't
+    /// supported; the per-command fan-out matches what redis-py does.
     pub async fn pipeline_exec(
         &mut self,
         commands: Vec<(String, Vec<Vec<u8>>)>,
+        transaction: bool,
     ) -> RedisResult<Vec<redis::Value>> {
         match self {
             Self::Standard(c) => {
                 let mut pipe = redis::pipe();
+                if transaction {
+                    pipe.atomic();
+                }
                 for (cmd_name, args) in &commands {
                     let mut cmd = redis::cmd(cmd_name);
                     for a in args {
@@ -519,6 +527,9 @@ impl ValkeyConnInner {
             Self::Sentinel(s) => {
                 let build_pipe = || {
                     let mut pipe = redis::pipe();
+                    if transaction {
+                        pipe.atomic();
+                    }
                     for (cmd_name, args) in &commands {
                         let mut cmd = redis::cmd(cmd_name);
                         for a in args {
@@ -916,8 +927,9 @@ impl ValkeyConn {
     pub async fn pipeline_exec(
         &mut self,
         commands: Vec<(String, Vec<Vec<u8>>)>,
+        transaction: bool,
     ) -> RedisResult<Vec<redis::Value>> {
-        self.regular.pipeline_exec(commands).await
+        self.regular.pipeline_exec(commands, transaction).await
     }
 
     pub async fn lpush(&mut self, key: &str, values: Vec<Vec<u8>>) -> RedisResult<i64> {
@@ -1654,6 +1666,92 @@ impl ValkeyConnInner {
         cmd.arg(key).arg(group);
         dispatch_cmd!(self, cmd)
     }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn xpending_range(
+        &mut self,
+        key: &str,
+        group: &str,
+        start: &str,
+        end: &str,
+        count: i64,
+        consumer: Option<&str>,
+        idle: Option<u64>,
+    ) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("XPENDING");
+        cmd.arg(key).arg(group);
+        if let Some(ms) = idle {
+            cmd.arg("IDLE").arg(ms);
+        }
+        cmd.arg(start).arg(end).arg(count);
+        if let Some(c) = consumer {
+            cmd.arg(c);
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn xclaim(
+        &mut self,
+        key: &str,
+        group: &str,
+        consumer: &str,
+        min_idle_time: i64,
+        ids: &[String],
+        idle: Option<i64>,
+        time_ms: Option<i64>,
+        retrycount: Option<i64>,
+        force: bool,
+        justid: bool,
+    ) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("XCLAIM");
+        cmd.arg(key).arg(group).arg(consumer).arg(min_idle_time);
+        for id in ids {
+            cmd.arg(id.as_str());
+        }
+        if let Some(v) = idle {
+            cmd.arg("IDLE").arg(v);
+        }
+        if let Some(v) = time_ms {
+            cmd.arg("TIME").arg(v);
+        }
+        if let Some(v) = retrycount {
+            cmd.arg("RETRYCOUNT").arg(v);
+        }
+        if force {
+            cmd.arg("FORCE");
+        }
+        if justid {
+            cmd.arg("JUSTID");
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn xautoclaim(
+        &mut self,
+        key: &str,
+        group: &str,
+        consumer: &str,
+        min_idle_time: i64,
+        start: &str,
+        count: Option<i64>,
+        justid: bool,
+    ) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("XAUTOCLAIM");
+        cmd.arg(key)
+            .arg(group)
+            .arg(consumer)
+            .arg(min_idle_time)
+            .arg(start);
+        if let Some(c) = count {
+            cmd.arg("COUNT").arg(c);
+        }
+        if justid {
+            cmd.arg("JUSTID");
+        }
+        dispatch_cmd!(self, cmd)
+    }
 }
 
 // Delegate methods on the public `ValkeyConn` wrapper for the extension surface.
@@ -1899,5 +1997,64 @@ impl ValkeyConn {
     }
     pub async fn xpending(&mut self, key: &str, group: &str) -> RedisResult<redis::Value> {
         self.regular.xpending(key, group).await
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub async fn xpending_range(
+        &mut self,
+        key: &str,
+        group: &str,
+        start: &str,
+        end: &str,
+        count: i64,
+        consumer: Option<&str>,
+        idle: Option<u64>,
+    ) -> RedisResult<redis::Value> {
+        self.regular
+            .xpending_range(key, group, start, end, count, consumer, idle)
+            .await
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub async fn xclaim(
+        &mut self,
+        key: &str,
+        group: &str,
+        consumer: &str,
+        min_idle_time: i64,
+        ids: &[String],
+        idle: Option<i64>,
+        time_ms: Option<i64>,
+        retrycount: Option<i64>,
+        force: bool,
+        justid: bool,
+    ) -> RedisResult<redis::Value> {
+        self.regular
+            .xclaim(
+                key,
+                group,
+                consumer,
+                min_idle_time,
+                ids,
+                idle,
+                time_ms,
+                retrycount,
+                force,
+                justid,
+            )
+            .await
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub async fn xautoclaim(
+        &mut self,
+        key: &str,
+        group: &str,
+        consumer: &str,
+        min_idle_time: i64,
+        start: &str,
+        count: Option<i64>,
+        justid: bool,
+    ) -> RedisResult<redis::Value> {
+        self.regular
+            .xautoclaim(key, group, consumer, min_idle_time, start, count, justid)
+            .await
     }
 }
