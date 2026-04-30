@@ -6,6 +6,8 @@ from django.core.exceptions import ImproperlyConfigured
 from django_cachex.exceptions import SerializerError
 from django_cachex.serializers.json import JSONSerializer
 from django_cachex.serializers.msgpack import MessagePackSerializer
+from django_cachex.serializers.orjson import OrjsonSerializer
+from django_cachex.serializers.ormsgpack import OrMessagePackSerializer
 from django_cachex.serializers.pickle import PickleSerializer
 
 
@@ -82,6 +84,55 @@ class TestMessagePackSerializer:
         encoded = serializer.dumps(data)
         decoded = serializer.loads(encoded)
         assert decoded == data
+
+
+class TestOrMessagePackSerializer:
+    def test_basic_roundtrip(self):
+        serializer = OrMessagePackSerializer()
+        data = {"key": "value", "number": 42, "nested": {"list": [1, 2, 3]}}
+        encoded = serializer.dumps(data)
+        assert isinstance(encoded, bytes)
+        decoded = serializer.loads(encoded)
+        assert decoded == data
+
+    def test_loads_int_passthrough(self):
+        serializer = OrMessagePackSerializer()
+        assert serializer.loads(42) == 42
+
+    def test_loads_invalid_data_raises_serializer_error(self):
+        serializer = OrMessagePackSerializer()
+        with pytest.raises(SerializerError):
+            serializer.loads(b"\xc1")  # reserved byte in msgpack spec
+
+    def test_none_roundtrip(self):
+        serializer = OrMessagePackSerializer()
+        encoded = serializer.dumps(None)
+        decoded = serializer.loads(encoded)
+        assert decoded is None
+
+
+class TestOrjsonSerializer:
+    def test_basic_roundtrip(self):
+        serializer = OrjsonSerializer()
+        data = {"key": "value", "number": 42, "nested": {"list": [1, 2, 3]}}
+        encoded = serializer.dumps(data)
+        assert isinstance(encoded, bytes)
+        decoded = serializer.loads(encoded)
+        assert decoded == data
+
+    def test_loads_int_passthrough(self):
+        serializer = OrjsonSerializer()
+        assert serializer.loads(42) == 42
+
+    def test_loads_invalid_data_raises_serializer_error(self):
+        serializer = OrjsonSerializer()
+        with pytest.raises(SerializerError):
+            serializer.loads(b"\xff\xfe not json")
+
+    def test_dumps_unsupported_type_raises_serializer_error(self):
+        serializer = OrjsonSerializer()
+        with pytest.raises(SerializerError):
+            serializer.dumps({"x": object()})
 
 
 def _reverse_key(key: str) -> str:

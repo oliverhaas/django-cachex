@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from django_cachex._driver import RustValkeyDriver  # ty: ignore[unresolved-import]
 
 
-def _to_bytes(value: Any) -> bytes:
+def _to_bytes(value: Any) -> bytes:  # noqa: PLR0911
     """Coerce a Redis argument to bytes for the wire."""
     if isinstance(value, bytes):
         return value
@@ -158,10 +158,7 @@ def _stream_entry(entry: Any) -> tuple[str, dict[str, bytes]]:
         d = {}
     else:
         flat = list(fields)
-        d = {
-            (flat[i].decode() if isinstance(flat[i], bytes) else flat[i]): flat[i + 1]
-            for i in range(0, len(flat), 2)
-        }
+        d = {(flat[i].decode() if isinstance(flat[i], bytes) else flat[i]): flat[i + 1] for i in range(0, len(flat), 2)}
     return (eid, d)
 
 
@@ -173,7 +170,7 @@ def _stream_entries(v: Any) -> list[tuple[str, dict[str, bytes]]]:
 
 def _stream_read(v: Any) -> list[tuple[Any, list[tuple[str, dict[str, bytes]]]]] | None:
     """XREAD/XREADGROUP — list of (stream_key, entries). RESP3 may yield a Map."""
-    if v is None or v == [] or v == {}:
+    if v is None or v in ([], {}):
         return None
     if isinstance(v, dict):
         return [(k, _stream_entries(entries)) for k, entries in v.items()]
@@ -199,10 +196,7 @@ def _xinfo_dict(v: Any) -> dict[str, Any]:
     if v is None:
         return {}
     flat = list(v)
-    return {
-        (flat[i].decode() if isinstance(flat[i], bytes) else flat[i]): flat[i + 1]
-        for i in range(0, len(flat), 2)
-    }
+    return {(flat[i].decode() if isinstance(flat[i], bytes) else flat[i]): flat[i + 1] for i in range(0, len(flat), 2)}
 
 
 def _xinfo_dict_list(v: Any) -> list[dict[str, Any]]:
@@ -646,7 +640,7 @@ class _RustRawPipeline:
     def zcard(self, key: Any) -> _RustRawPipeline:
         return self._queue("ZCARD", key)
 
-    def zcount(self, key: Any, min: Any, max: Any) -> _RustRawPipeline:  # noqa: A002
+    def zcount(self, key: Any, min: Any, max: Any) -> _RustRawPipeline:
         return self._queue("ZCOUNT", key, min, max)
 
     def zincrby(self, key: Any, amount: float, value: Any) -> _RustRawPipeline:
@@ -666,7 +660,7 @@ class _RustRawPipeline:
         *,
         desc: bool = False,
         withscores: bool = False,
-        score_cast_func: type = float,  # noqa: ARG002
+        score_cast_func: type = float,
     ) -> _RustRawPipeline:
         args: list[Any] = [key, start, end]
         if desc:
@@ -683,7 +677,7 @@ class _RustRawPipeline:
         end: int,
         *,
         withscores: bool = False,
-        score_cast_func: type = float,  # noqa: ARG002
+        score_cast_func: type = float,
     ) -> _RustRawPipeline:
         args: list[Any] = [key, start, end]
         if withscores:
@@ -694,13 +688,13 @@ class _RustRawPipeline:
     def zrangebyscore(
         self,
         key: Any,
-        min: Any,  # noqa: A002
-        max: Any,  # noqa: A002
+        min: Any,
+        max: Any,
         start: int | None = None,
         num: int | None = None,
         *,
         withscores: bool = False,
-        score_cast_func: type = float,  # noqa: ARG002
+        score_cast_func: type = float,
     ) -> _RustRawPipeline:
         args: list[Any] = [key, min, max]
         if withscores:
@@ -713,13 +707,13 @@ class _RustRawPipeline:
     def zrevrangebyscore(
         self,
         key: Any,
-        max: Any,  # noqa: A002
-        min: Any,  # noqa: A002
+        max: Any,
+        min: Any,
         start: int | None = None,
         num: int | None = None,
         *,
         withscores: bool = False,
-        score_cast_func: type = float,  # noqa: ARG002
+        score_cast_func: type = float,
     ) -> _RustRawPipeline:
         args: list[Any] = [key, max, min]
         if withscores:
@@ -747,8 +741,8 @@ class _RustRawPipeline:
     def zremrangebyscore(
         self,
         key: Any,
-        min: Any,  # noqa: A002
-        max: Any,  # noqa: A002
+        min: Any,
+        max: Any,
     ) -> _RustRawPipeline:
         return self._queue("ZREMRANGEBYSCORE", key, min, max)
 
@@ -762,7 +756,7 @@ class _RustRawPipeline:
         key: Any,
         fields: Mapping[str, Any],
         *,
-        id: str = "*",  # noqa: A002
+        id: str = "*",
         maxlen: int | None = None,
         approximate: bool = True,
         nomkstream: bool = False,
@@ -793,8 +787,8 @@ class _RustRawPipeline:
     def xrange(
         self,
         key: Any,
-        min: str = "-",  # noqa: A002
-        max: str = "+",  # noqa: A002
+        min: str = "-",
+        max: str = "+",
         count: int | None = None,
     ) -> _RustRawPipeline:
         args: list[Any] = [key, min, max]
@@ -805,8 +799,8 @@ class _RustRawPipeline:
     def xrevrange(
         self,
         key: Any,
-        max: str = "+",  # noqa: A002
-        min: str = "-",  # noqa: A002
+        max: str = "+",
+        min: str = "-",
         count: int | None = None,
     ) -> _RustRawPipeline:
         args: list[Any] = [key, max, min]
@@ -894,7 +888,7 @@ class _RustRawPipeline:
         self,
         key: Any,
         group: str,
-        id: str = "$",  # noqa: A002
+        id: str = "$",
         *,
         mkstream: bool = False,
         entries_read: int | None = None,
@@ -913,7 +907,7 @@ class _RustRawPipeline:
         self,
         key: Any,
         group: str,
-        id: str,  # noqa: A002
+        id: str,
         *,
         entries_read: int | None = None,
     ) -> _RustRawPipeline:
@@ -937,8 +931,8 @@ class _RustRawPipeline:
         key: Any,
         group: str,
         *,
-        min: str,  # noqa: A002
-        max: str,  # noqa: A002
+        min: str,
+        max: str,
         count: int,
         consumername: str | None = None,
         idle: int | None = None,

@@ -135,6 +135,17 @@ suppress-none-returning = true # Don't require -> None on functions
   "S301",   # pickle in tests is fine
   "S311",   # random is fine for tests
 ]
+"benchmarks/**" = [
+  "ANN",     # Type annotations not required in benchmarks
+  "ARG",     # Unused fixture args common
+  "BLE001",  # Broad except in measurement code is fine
+  "PERF401", # Loop append patterns are clearer here
+  "RUF046",  # int(round()) is intentional for indexing
+  "S101",    # assert
+  "T201",    # print() is the output mechanism
+  "TC001",   # Don't bother with TYPE_CHECKING gymnastics
+  "TC003",
+]
 
 [tool.mypy]
 python_version = "3.14"

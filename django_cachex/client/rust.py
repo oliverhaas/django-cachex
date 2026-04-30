@@ -2318,7 +2318,13 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     ) -> dict[str, Any] | list[dict[str, Any]]:
         if start is not None and end is not None and count is not None:
             raw = self._driver.xpending_range_sync(
-                _str_key(key), group, start, end, count, consumer=consumer, idle=idle,
+                _str_key(key),
+                group,
+                start,
+                end,
+                count,
+                consumer=consumer,
+                idle=idle,
             )
             return self._decode_xpending_range(raw)
         raw = self._driver.xpending_sync(_str_key(key), group)
@@ -2337,7 +2343,13 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     ) -> dict[str, Any] | list[dict[str, Any]]:
         if start is not None and end is not None and count is not None:
             raw = await self._driver.xpending_range(
-                _str_key(key), group, start, end, count, consumer=consumer, idle=idle,
+                _str_key(key),
+                group,
+                start,
+                end,
+                count,
+                consumer=consumer,
+                idle=idle,
             )
             return self._decode_xpending_range(raw)
         raw = await self._driver.xpending(_str_key(key), group)
