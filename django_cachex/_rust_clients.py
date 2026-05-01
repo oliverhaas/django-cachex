@@ -3,20 +3,41 @@
 One driver per (URL, options) tuple, shared across cache instances. PID-checked
 so post-fork children rebuild their own connection pools instead of inheriting
 the parent's tokio runtime / sockets.
+
+The ``_driver`` extension lives in the optional ``django-cachex-rust``
+companion package. Importing this module is supported without it — the
+first attempt to construct a driver raises ``ImportError`` with an
+install hint.
 """
 
 from __future__ import annotations
 
 import os
 import threading
-from typing import TYPE_CHECKING
-
-from django_cachex._driver import RustValkeyDriver
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Hashable
 
-_CLIENTS: dict[Hashable, RustValkeyDriver] = {}
+    from django_cachex._driver import RustValkeyDriver
+
+
+def _get_driver_class() -> type[RustValkeyDriver]:
+    try:
+        from django_cachex._driver import RustValkeyDriver
+    except ImportError as e:
+        raise ImportError(
+            "django-cachex Rust driver is not available. Install with the "
+            "`redis-rs` extra to pull in the django-cachex-rust binary "
+            "package: pip install django-cachex[redis-rs]. Prebuilt wheels "
+            "are published for Linux x86_64 (cp314, cp314t); on other "
+            "platforms pip will try to build from source via the Rust "
+            "toolchain.",
+        ) from e
+    return RustValkeyDriver
+
+
+_CLIENTS: dict[Hashable, Any] = {}
 _PID = os.getpid()
 _LOCK = threading.Lock()
 
@@ -48,10 +69,11 @@ def get_driver_standard(
     ssl_certfile: str | None = None,
     ssl_keyfile: str | None = None,
 ) -> RustValkeyDriver:
+    driver_cls = _get_driver_class()
     key = ("standard", url, cache_max_size, cache_ttl_secs, ssl_ca_certs, ssl_certfile, ssl_keyfile)
     return _get_or_create(
         key,
-        lambda: RustValkeyDriver.connect_standard(
+        lambda: driver_cls.connect_standard(
             url,
             cache_max_size=cache_max_size,
             cache_ttl_secs=cache_ttl_secs,
@@ -69,10 +91,11 @@ def get_driver_cluster(
     ssl_certfile: str | None = None,
     ssl_keyfile: str | None = None,
 ) -> RustValkeyDriver:
+    driver_cls = _get_driver_class()
     key = ("cluster", tuple(urls), ssl_ca_certs, ssl_certfile, ssl_keyfile)
     return _get_or_create(
         key,
-        lambda: RustValkeyDriver.connect_cluster(
+        lambda: driver_cls.connect_cluster(
             list(urls),
             ssl_ca_certs=ssl_ca_certs,
             ssl_certfile=ssl_certfile,
@@ -94,6 +117,7 @@ def get_driver_sentinel(
 ) -> RustValkeyDriver:
     # Sentinel nodes are equivalent — sort so reordered lists hit the same driver.
     # (Cluster URLs are NOT sorted: node order can affect initial topology probe.)
+    driver_cls = _get_driver_class()
     key = (
         "sentinel",
         tuple(sorted(sentinel_urls)),
@@ -107,7 +131,7 @@ def get_driver_sentinel(
     )
     return _get_or_create(
         key,
-        lambda: RustValkeyDriver.connect_sentinel(
+        lambda: driver_cls.connect_sentinel(
             list(sentinel_urls),
             service_name,
             db,

@@ -26,3 +26,28 @@ uv add django-cachex[hiredis]
 ```
 
 These provide C-based parsers that significantly improve performance.
+
+## Rust I/O driver (optional)
+
+The `RustValkeyCache` / `RustRedisCache` backends are powered by an
+opt-in native extension built on PyO3 + tokio + [redis-rs]. It ships as
+a separate package, `django-cachex-rust`, so users who only want the
+pure-Python backends never carry the binary.
+
+```console
+# Pure Python (default — no Rust binary)
+uv add django-cachex[valkey]
+
+# With the Rust I/O driver
+uv add django-cachex[valkey,redis-rs]
+```
+
+Prebuilt `django-cachex-rust` wheels are published for Linux x86_64
+(cp314, cp314t). On other platforms pip will try to build from source,
+which needs the Rust toolchain — drop the `redis-rs` extra to avoid that.
+
+When the binary isn't installed, `RustValkeyCache` / `RustRedisCache`
+classes are still importable but raise a clean `ImportError` on first
+use, naming the extra you need.
+
+[redis-rs]: https://github.com/redis-rs/redis-rs

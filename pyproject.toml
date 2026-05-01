@@ -32,6 +32,8 @@ valkey = ["valkey>=6.1.0,<7"]
 libvalkey = ["valkey[libvalkey]>=6.1.0,<7"]
 redis = ["redis>=6,<8"]
 hiredis = ["redis[hiredis]<8,>=6"]
+# Rust I/O driver — separate binary package, prebuilt wheels for Linux x86_64 only
+redis-rs = ["django-cachex-rust==0.3.0"]
 # Compressors
 lz4 = ["lz4>=4.4.0"]
 # Serializers
@@ -72,19 +74,31 @@ dev = [
   # ASGI benchmark only — granian (real ASGI server) + httpx (load gen)
   "granian>=2.6,<3",
   "httpx>=0.28,<0.29",
+  # Rust I/O driver: workspace member so `uv sync` builds it for tests/benchmarks
+  "django-cachex-rust",
 ]
 docs = ["mkdocs==1.6.1", "mkdocs-material==9.7.6", "mike==2.2.0"]
 
 [build-system]
-requires = ["maturin>=1.13,<2.0"]
-build-backend = "maturin"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.maturin]
-module-name = "django_cachex._driver"
-features = ["pyo3/extension-module"]
-python-source = "."
-manifest-path = "Cargo.toml"
-include = ["LICENSE", "README.md"]
+[tool.hatch.build.targets.wheel]
+packages = ["django_cachex"]
+# _driver.pyi is the type stub for the optional Rust extension. It lives
+# alongside django_cachex source so type checkers find it during dev, but
+# it ships with the django-cachex-rust binary package, not this one.
+exclude = ["**/_driver.pyi"]
+
+[tool.hatch.build.targets.sdist]
+include = ["django_cachex/**", "README.md", "LICENSE", "pyproject.toml"]
+exclude = ["**/_driver.pyi"]
+
+[tool.uv.workspace]
+members = ["crates/*"]
+
+[tool.uv.sources]
+django-cachex-rust = { workspace = true }
 
 [tool.ruff]
 target-version = "py314"

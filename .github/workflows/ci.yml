@@ -135,14 +135,36 @@ jobs:
       - name: Run admin tests
         run: uv run pytest tests/admin/ -n auto
 
-  build-wheels:
-    name: Build wheels (cibuildwheel)
+  build-pure-wheel:
+    name: Build pure-Python wheel (django-cachex)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Build wheel + sdist
+        run: uv build --out-dir wheelhouse/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-pure
+          path: wheelhouse/*
+
+  build-rust-wheels:
+    name: Build Rust wheels (cibuildwheel, django-cachex-rust)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.4
+        with:
+          package-dir: crates/django-cachex-rust
         env:
           CIBW_BUILD: cp314-manylinux_x86_64 cp314t-manylinux_x86_64
           CIBW_ENABLE: cpython-freethreading
@@ -153,19 +175,24 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-linux-x86_64
+          name: wheels-rust-linux-x86_64
           path: wheelhouse/*.whl
 
   test-wheel:
-    name: Test cp314 wheel
-    needs: build-wheels
+    name: Test wheels (pure + rust on cp314)
+    needs: [build-pure-wheel, build-rust-wheels]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
       - uses: actions/download-artifact@v4
         with:
-          name: wheels-linux-x86_64
+          name: wheels-pure
+          path: wheelhouse
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels-rust-linux-x86_64
           path: wheelhouse
 
       - name: Install uv
@@ -177,20 +204,27 @@ jobs:
       - name: Install dev dependencies (without project)
         run: uv sync --group dev --no-install-project
 
-      - name: Install cibuildwheel artifact
-        run: uv pip install --no-deps wheelhouse/django_cachex-*-cp314-cp314-*.whl
+      - name: Install both wheels (opt-in path)
+        run: |
+          uv pip install --no-deps wheelhouse/django_cachex-*-py3-none-any.whl
+          uv pip install --no-deps wheelhouse/django_cachex_rust-*-cp314-cp314-*.whl
 
-      - name: Run cache tests against built wheel
+      - name: Run cache tests against built wheels
         run: uv run --no-sync pytest tests/cache/ -n auto
 
   smoke-test-wheel-freethreaded:
-    name: Smoke-test cp314t wheel
-    needs: build-wheels
+    name: Smoke-test cp314t rust wheel
+    needs: [build-pure-wheel, build-rust-wheels]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: wheels-linux-x86_64
+          name: wheels-pure
+          path: wheelhouse
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels-rust-linux-x86_64
           path: wheelhouse
 
       - name: Install uv
@@ -199,10 +233,52 @@ jobs:
       - name: Set up free-threaded Python
         run: uv python install 3.14t
 
-      - name: Create venv and install FT wheel
+      - name: Create venv and install both wheels
         run: |
           uv venv --python 3.14t
-          uv pip install --no-deps wheelhouse/django_cachex-*-cp314-cp314t-*.whl
+          uv pip install --no-deps wheelhouse/django_cachex-*-py3-none-any.whl django asgiref sqlparse
+          uv pip install --no-deps wheelhouse/django_cachex_rust-*-cp314-cp314t-*.whl
 
       - name: Verify FT wheel imports
         run: uv run --no-sync python -c "import sys; from django_cachex import _driver; assert not sys._is_gil_enabled(), 'GIL is enabled — not running on free-threaded build'; print('OK', _driver, sys.version)"
+
+  smoke-test-pure-only:
+    name: Smoke-test opt-out (pure wheel only, no rust package)
+    needs: build-pure-wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels-pure
+          path: wheelhouse
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Create venv and install pure wheel ONLY
+        run: |
+          uv venv --python 3.14
+          uv pip install --no-deps wheelhouse/django_cachex-*-py3-none-any.whl django asgiref sqlparse
+
+      - name: Verify imports succeed and Rust backends raise on use
+        run: |
+          uv run --no-sync python -c "
+          import django_cachex
+          import django_cachex.cache, django_cachex.client
+          from django_cachex.cache import RustValkeyCache, ValkeyCache
+          try:
+              from django_cachex import _driver
+              raise SystemExit('FAIL: _driver present in pure-only install')
+          except ImportError:
+              pass
+          rust = RustValkeyCache(server='valkey://localhost:6379/0', params={'OPTIONS': {}})
+          try:
+              rust.get('foo')
+              raise SystemExit('FAIL: rust backend should have raised')
+          except ImportError as e:
+              assert 'Rust driver is not available' in str(e), e
+          print('OK: opt-out path works')
+          "

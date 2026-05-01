@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import pytest
 
+# Skip the whole directory when the optional django-cachex-rust package
+# isn't installed (e.g. running against the pure wheel only).
+pytest.importorskip("django_cachex._driver")
+
 from django_cachex._driver import RustValkeyDriver  # ty: ignore[unresolved-import]
 
 

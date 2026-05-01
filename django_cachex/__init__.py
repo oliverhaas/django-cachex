@@ -1,4 +1,10 @@
 from importlib.metadata import PackageNotFoundError, version
+from pkgutil import extend_path
+
+# Extend the package path so the optional django-cachex-rust binary package
+# (which ships only `_driver*` files into this namespace) is discovered when
+# both packages are installed side by side.
+__path__ = extend_path(__path__, __name__)
 
 try:
     __version__ = version("django-cachex")

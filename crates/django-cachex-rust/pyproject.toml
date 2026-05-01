@@ -1,0 +1,43 @@
+[project]
+name = "django-cachex-rust"
+version = "0.3.0"
+description = "Rust I/O driver (PyO3 + tokio + redis-rs) for django-cachex"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.14"
+authors = [{ name = "Oliver Haas", email = "ohaas@e1plus.de" }]
+keywords = ["django", "valkey", "redis", "cache", "rust"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Web Environment",
+  "Framework :: Django",
+  "Framework :: Django :: 6.0",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: Free Threading :: 1 - Unstable",
+  "Programming Language :: Rust",
+  "Topic :: Internet :: WWW/HTTP",
+  "Topic :: Software Development :: Libraries",
+  "Topic :: Utilities",
+  "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/oliverhaas/django-cachex"
+Repository = "https://github.com/oliverhaas/django-cachex.git"
+
+[build-system]
+requires = ["maturin>=1.13,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+module-name = "django_cachex._driver"
+features = ["pyo3/extension-module"]
+python-source = "python"
+manifest-path = "Cargo.toml"
+include = ["LICENSE"]

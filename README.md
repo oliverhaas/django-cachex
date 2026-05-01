@@ -74,8 +74,13 @@ Full documentation at [oliverhaas.github.io/django-cachex](https://oliverhaas.gi
 
 - Python 3.14+ (free-threaded supported)
 - Django 6.0+
-- Linux x86_64 (only target with prebuilt wheels for now)
 - valkey-py 6.1+ or redis-py 6.0+
+
+The Rust I/O driver is optional. To opt in, install with the `redis-rs`
+extra (`pip install django-cachex[redis-rs]`); this pulls in the
+`django-cachex-rust` companion package, which has prebuilt wheels for
+Linux x86_64 (cp314 / cp314t). Without it, the `RustValkeyCache` /
+`RustRedisCache` backends are unavailable but everything else works.
 
 ## Acknowledgments
 

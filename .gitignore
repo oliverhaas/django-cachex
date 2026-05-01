@@ -35,5 +35,6 @@ site/
 docs/superpowers/
 
 # Rust build artifacts
-/target/
+target/
 django_cachex/_driver*.so
+crates/django-cachex-rust/python/django_cachex/_driver*.so

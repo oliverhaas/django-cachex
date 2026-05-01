@@ -1,5 +1,5 @@
 [package]
-name = "django-cachex"
+name = "django-cachex-rust"
 version = "0.3.0"
 edition = "2024"
 description = "Rust I/O driver for django-cachex"
