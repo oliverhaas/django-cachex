@@ -1,30 +1,32 @@
 # django-cachex
 
-Full featured Valkey and Redis cache backend for Django with a built-in admin interface.
+Valkey and Redis cache backend for Django, with a Django admin UI for cache inspection.
 
 [![PyPI version](https://img.shields.io/pypi/v/django-cachex.svg?style=flat)](https://pypi.org/project/django-cachex/)
 [![Python versions](https://img.shields.io/pypi/pyversions/django-cachex.svg)](https://pypi.org/project/django-cachex/)
 [![Django versions](https://img.shields.io/pypi/frameworkversions/django/django-cachex.svg)](https://pypi.org/project/django-cachex/)
 
-## Why django-cachex?
+## What's in the box
 
-**Drop-in replacement** for Django's built-in Redis cache backend with extended features:
+A drop-in replacement for Django's built-in Redis cache, plus:
 
-- **Built-in admin interface** - Browse, search, edit, and delete cache keys from Django admin
-- **Unified Valkey and Redis support** - Single package for both backends
-- **Extended data structures** - Hashes, lists, sets, sorted sets
-- **Sync and async support** - All extended methods available in both sync and async
-- **TTL and pattern operations** - `ttl()`, `expire()`, `keys()`, `delete_pattern()`
-- **Lua script support** - Register and execute Lua scripts with automatic key prefixing
-- **Distributed locking** - `cache.lock()` for cross-process synchronization
-- **Sentinel and Cluster** - High availability and horizontal scaling
-- **Pluggable serializers** - Pickle, JSON, MsgPack with fallback support
-- **Pluggable compressors** - Zlib, Gzip, LZ4, LZMA, Zstandard with fallback support
+- One package for both Valkey and Redis, default and Sentinel and Cluster.
+- Sync and async are first-class. The async cache also works from sync code.
+- Hash, list, set, sorted set, and stream operations on the cache object.
+- TTL and pattern helpers (`ttl()`, `expire()`, `keys()`, `delete_pattern()`).
+- Distributed locks: `cache.lock()`.
+- Lua scripting with automatic key prefixing and value encoding/decoding.
+- Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with fallback chains for safe migrations.
+- Cache stampede prevention (TTL-based XFetch).
+- Two composite backends: `SyncCache` (cross-pod stream-synchronized in-memory cache) and `TieredCache` (L1/L2 with TTL propagation).
+- Django `LocMemCache` and `DatabaseCache` extensions with the same data-structure ops and admin support.
+- Optional Rust I/O driver (PyO3 + tokio + redis-rs) under the same `KeyValueCache` API. Free-threaded CPython (3.14t) supported.
+- Django admin UI for browsing keys, inspecting values, editing, and flushing.
 
 ## Requirements
 
-- Python 3.12+
-- Django 5.2+
+- Python 3.14+ (free-threaded supported)
+- Django 6.0+
 - valkey-py 6.1+ or redis-py 6.0+
 
 ## Quick Start

@@ -61,9 +61,9 @@ Different cache backends have different levels of support:
 
 | Badge | Level | Description |
 |-------|-------|-------------|
-| **cachex** | Full Support | django-cachex backends (`ValkeyCache`, `RedisCache`, etc.) -- all features including key listing, pattern search, TTL inspection, and data type operations. |
-| **wrapped** | Wrapped Support | Django builtin backends (`LocMemCache`, `DatabaseCache`, etc.) -- most features available through wrapper compatibility. |
-| **limited** | Limited Support | Custom or unknown backends -- basic operations may work but key listing and advanced features may not be available. |
+| **cachex** | Full Support | django-cachex backends (`ValkeyCache`, `RedisCache`, etc.). All features: key listing, pattern search, TTL inspection, and data type operations. |
+| **wrapped** | Wrapped Support | Django builtin backends (`LocMemCache`, `DatabaseCache`, etc.). Most features work through wrapper compatibility. |
+| **limited** | Limited Support | Custom or unknown backends. Basic operations may work; key listing and advanced features may not be available. |
 
 ### Using Redis/Valkey?
 

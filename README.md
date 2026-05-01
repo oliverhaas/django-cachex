@@ -4,7 +4,7 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/django-cachex.svg)](https://pypi.org/project/django-cachex/)
 [![CI](https://github.com/oliverhaas/django-cachex/actions/workflows/ci.yml/badge.svg)](https://github.com/oliverhaas/django-cachex/actions/workflows/ci.yml)
 
-Cache extensions for django, including full featured Valkey and Redis cache backend for Django and a built-in admin interface.
+Valkey and Redis cache backend for Django, with a Django admin UI for cache inspection.
 
 ## Installation
 
@@ -25,24 +25,20 @@ CACHES = {
 }
 ```
 
-## Features
+## What's in the box
 
-- **Full-featured cache backends** for Valkey and Redis with async support, extended data structures, distributed locking, Lua scripting, and more
-- **Built-in admin interface** for browsing, searching, and managing cache keys directly from Django admin
-- **Drop-in replacement** for Django's built-in Redis backend
-
-## Cache Backends
-
-- **Unified Valkey and Redis support** - Single package for both backends
-- **Async support** - Async versions of all extended methods
-- **Mixing sync & async support** - Async cache still works in sync code
-- **Extended data structures** - Hashes, lists, sets, sorted sets
-- **TTL and pattern operations** - `ttl()`, `expire()`, `keys()`, `delete_pattern()`
-- **Lua script support** - Register and execute Lua scripts with automatic key prefixing
-- **Distributed locking** - `cache.lock()` for cross-process synchronization
-- **Sentinel and Cluster** - High availability and horizontal scaling
-- **Pluggable serializers** - Pickle, JSON, MsgPack with fallback support
-- **Pluggable compressors** - Zlib, Gzip, LZ4, LZMA, Zstandard with fallback support
+- One package for both Valkey and Redis, default and Sentinel and Cluster.
+- Sync and async are first-class. The async cache also works from sync code.
+- Hash, list, set, sorted set, and stream operations on the cache object.
+- TTL and pattern helpers (`ttl()`, `expire()`, `keys()`, `delete_pattern()`).
+- Distributed locks: `cache.lock()`.
+- Lua scripting with automatic key prefixing and value encoding/decoding.
+- Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with fallback chains for safe migrations.
+- Cache stampede prevention (TTL-based XFetch).
+- Two composite backends: `SyncCache` (cross-pod stream-synchronized in-memory cache) and `TieredCache` (L1/L2 with TTL propagation).
+- Django `LocMemCache` and `DatabaseCache` extensions with the same data-structure ops and admin support.
+- Optional Rust I/O driver (PyO3 + tokio + redis-rs) under the same `KeyValueCache` API. Free-threaded CPython (3.14t) supported.
+- Django admin UI for browsing keys, inspecting values, editing, and flushing — see below.
 
 ## Cache Admin
 
@@ -85,7 +81,7 @@ Full documentation at [oliverhaas.github.io/django-cachex](https://oliverhaas.gi
 
 ## Acknowledgments
 
-This project was started from [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause. The admin functionality was inspired by [django-redisboard](https://github.com/ionelmc/django-redisboard). All of the above I used in production, noticed some flaws over the years, and for one reason or another a new package ended up the best way for progress for me here.
+This project started from [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some serializer and compressor utility code is derived from django-redis, licensed under BSD-3-Clause. The admin UI was inspired by [django-redisboard](https://github.com/ionelmc/django-redisboard).
 
 The Rust I/O driver and async bridge are heavily inspired by — and in places directly adapted from — [django-vcache](https://gitlab.com/glitchtip/django-vcache) (MIT, by David Burke / GlitchTip). The fork-safe tokio runtime, the `RustAwaitable` deferred-loop-binding pattern, and the multiplexed-connection design all originate there.
 

@@ -301,8 +301,8 @@ class TestSyncExpiry:
         sync_cache.set("persist_key", "val", timeout=None)
         assert sync_cache.ttl("persist_key") is None
 
-    def test_ttl_returns_zero_for_missing(self, sync_cache: BaseCache):
-        assert sync_cache.ttl("no_key") == 0
+    def test_ttl_returns_minus_two_for_missing(self, sync_cache: BaseCache):
+        assert sync_cache.ttl("no_key") == -2
 
     def test_has_key_false_for_expired(self, sync_cache: BaseCache):
         sync_cache.set("exp_hk", "val", timeout=1)

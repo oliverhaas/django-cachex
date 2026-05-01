@@ -37,7 +37,7 @@ try:
     class RedisClusterCache(KeyValueClusterCache):
         """Django cache backend for Redis Cluster mode.
 
-        Provides automatic sharding across multiple Redis nodes using hash slots.
+        Keys are sharded across nodes by hash slot.
         """
 
         _class = RedisClusterCacheClient
@@ -60,7 +60,7 @@ try:
     class ValkeyClusterCache(KeyValueClusterCache):
         """Django cache backend for Valkey Cluster mode.
 
-        Provides automatic sharding across multiple Valkey nodes using hash slots.
+        Keys are sharded across nodes by hash slot.
         """
 
         _class = ValkeyClusterCacheClient

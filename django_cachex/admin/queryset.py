@@ -529,7 +529,7 @@ class KeyAdminMixin:
                 with contextlib.suppress(Exception):
                     ttl = cache.ttl(user_key)
                     key_obj.ttl = ttl  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-                    if ttl >= 0:
+                    if ttl is not None and ttl >= 0:
                         key_obj.ttl_expires_at = timezone.now() + timedelta(seconds=ttl)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
                 with contextlib.suppress(Exception):
                     key_type = cache.type(user_key)

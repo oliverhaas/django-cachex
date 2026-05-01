@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+### Breaking changes
+
+- **Python 3.14+ required.** Dropped support for 3.12 and 3.13. The package now ships on cp314 and cp314t (free-threaded) wheels.
+- **Django 6.0+ required.** Dropped support for Django 5.2.
+- **`SyncCache` wire format changed.** Stream entries now flow through the transport's serializer + compressor pipeline instead of raw pickle. Pods running the new code cannot read entries written by older pods on the same stream — coordinate the rollout (drain or rotate `STREAM_KEY`).
+- **`hmset` removed.** Use `hset(key, mapping=...)` or `hset(key, items=...)` (flat key-value list, matching redis-py/valkey-py).
+
+### New features
+
+- **Rust I/O driver.** Optional native driver built on PyO3 + tokio + redis-rs. Set `"client_class"` to one of `RustRedisCache`, `RustValkeyCache`, `RustRedisClusterCache`, `RustValkeyClusterCache`, `RustRedisSentinelCache`, `RustValkeySentinelCache`. Sync and async share one tokio runtime; async dodges the threadpool round-trip.
+- **`SyncCache` backend.** Stream-synchronized in-memory cache: reads are local, writes broadcast over a Redis Stream, a daemon thread on each pod consumes the stream and applies remote changes. Read-heavy, write-light, eventually consistent.
+- **`TieredCache` backend.** Composes two existing `CACHES` entries as L1 (fast, e.g. LocMem) and L2 (durable, e.g. Redis), with TTL propagation and pull-through reads.
+- **Cache-stampede prevention.** TTL-based XFetch via `OPTIONS["stampede_prevention"]` (or `stampede_prevention=` per call). Configurable buffer/beta/delta.
+- **`LocMemCache` and `DatabaseCache` extensions.** Drop-in replacements for the Django builtins, adding data-structure ops, TTL helpers, and admin support. Compound read-modify-write ops on `LocMemCache` are serialized via a per-backend `RLock` (#62).
+- **`orjson` and `ormsgpack` serializer extras.**
+- **Free-threaded CPython (3.14t) support.** A cp314t wheel is built; `_driver` works with the GIL disabled. The Rust driver also runs on the free-threaded build.
+- **PyPI wheels via cibuildwheel.** Manylinux x86_64 wheels for cp314 and cp314t.
+- **Async pool sharing.** A single async connection pool is shared across per-task `Cache` instances (#83), avoiding the thundering-herd reconnect on cold start.
+- **Pipeline parity.** Stream ops, CAS ops, missing key ops (`persist`/`pttl`/`expire_at`/etc.), context manager, `zpopmin`/`zpopmax` default `count=1` aligned with the cache API.
+
+### Fixes
+
+- `LocMemCache.lpush`/`sadd`/`hset`/`hincrby`/`zadd`/etc. no longer lose updates under concurrent threads (#62).
+- `delete_pattern` batches deletes to bound peak memory on broad patterns.
+- `clear()` is now prefix/version-scoped instead of `FLUSHDB`. The old behavior is available as `flush_db()`.
+- Compressor `decompress` methods catch all exceptions and re-raise as `CompressorError`.
+- Several cluster correctness fixes (script loading on replicas, set_many `timeout=0`).
+
+---
+
 ## 0.3.0 (February 2026)
 
 - **`expiretime()` and `set(get=True)` support**: New cache methods for retrieving absolute expiry timestamps and atomic get-and-set operations.

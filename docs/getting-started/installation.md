@@ -2,8 +2,8 @@
 
 ## Requirements
 
-- Python 3.12+
-- Django 5.2+
+- Python 3.14+ (free-threaded supported)
+- Django 6.0+
 - valkey-py 6.1+ or redis-py 6+
 - Valkey server 7+ or Redis server 6+
 
