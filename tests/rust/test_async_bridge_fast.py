@@ -1,4 +1,5 @@
 import pytest
+
 from django_cachex._driver import (
     _test_resolved_bytes,
     _test_resolved_int,

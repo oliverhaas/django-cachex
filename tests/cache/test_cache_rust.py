@@ -13,7 +13,6 @@ import pytest
 from django.test import override_settings
 
 from django_cachex._rust_clients import _reset_for_tests
-from django_cachex.exceptions import NotSupportedError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -393,14 +392,6 @@ def test_eval(rust_cache):
         5,
     )
     assert result == 12
-
-
-# ----------------------------------------------------------------- pipeline
-
-
-def test_pipeline_raises(rust_cache):
-    with pytest.raises(NotSupportedError):
-        rust_cache.pipeline()
 
 
 # --------------------------------------------------------- async smoke tests

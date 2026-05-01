@@ -26,7 +26,7 @@ from django_cachex.types import KeyType
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
 
-    from django_cachex._driver import RustValkeyDriver  # ty: ignore[unresolved-import]
+    from django_cachex._driver import RustValkeyDriver
     from django_cachex.client.pipeline import Pipeline
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, _Set
 

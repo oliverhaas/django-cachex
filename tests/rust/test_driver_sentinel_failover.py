@@ -3,10 +3,10 @@ from contextlib import suppress
 from typing import TYPE_CHECKING, NamedTuple
 
 import pytest
-from django_cachex._driver import RustValkeyDriver
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
 
+from django_cachex._driver import RustValkeyDriver
 from tests.fixtures.containers import (
     BITNAMI_REDIS_IMAGE,
     _get_container_internal_ip,

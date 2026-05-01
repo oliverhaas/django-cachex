@@ -5,9 +5,6 @@
 
 mod async_bridge;
 mod client;
-// Full ValkeyConn surface comes online in issue #66; suppress dead-code warnings
-// for methods/fields wired up there (lock_*, eval, list/stream ops, blocking conn).
-#[allow(dead_code)]
 mod connection;
 mod test_helpers;
 

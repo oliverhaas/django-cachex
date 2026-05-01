@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Self
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from django_cachex._driver import RustValkeyDriver  # ty: ignore[unresolved-import]
+    from django_cachex._driver import RustValkeyDriver
 
 
 class LockError(Exception):
