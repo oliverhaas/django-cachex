@@ -465,8 +465,7 @@ class TestKeyListView:
         response = admin_client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        assert "by cache" in content.lower()
-        # Both cache names should appear as filter options
+        # Both cache names appear as filter options — that's enough to prove the filter rendered.
         assert "?cache=default" in content
         assert "?cache=local" in content
 
@@ -604,8 +603,8 @@ class TestKeyDetailView:
         response = admin_client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        # Should show stream type
-        assert "stream" in content.lower()
+        # change_form.html renders <span class="type-badge type-stream">stream</span>
+        assert 'type-stream">stream</span>' in content
 
     def test_key_detail_requires_staff(self, db, test_cache):
         """Key detail view should redirect anonymous users."""
@@ -653,8 +652,8 @@ class TestKeyDetailView:
         response = admin_client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        # Should show "Raw Key" label or the key with prefix
-        assert "Raw" in content or "rawkey:test" in content
+        # Detail view shows the raw (prefixed) key in the page body.
+        assert "rawkey:test" in content
 
     def test_key_detail_shows_cache_name(
         self,
@@ -683,8 +682,8 @@ class TestKeyDetailView:
         response = admin_client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        # Should show list type
-        assert "list" in content.lower()
+        # change_form.html renders <span class="type-badge type-list">list</span>
+        assert 'type-list">list</span>' in content
         # Should show item count
         assert "3" in content
 
@@ -700,8 +699,8 @@ class TestKeyDetailView:
         response = admin_client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        # Should show TTL field
-        assert "TTL" in content or "ttl" in content.lower()
+        # change_form.html renders the TTL update form with id="id_ttl"
+        assert 'id="id_ttl"' in content
 
     def test_key_detail_shows_no_expiry(
         self,
@@ -715,8 +714,9 @@ class TestKeyDetailView:
         response = admin_client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        # Should indicate no expiry
-        assert "No expiry" in content or "expiry" in content.lower() or "-1" in content
+        # When the key has no expiry, the TTL input renders an empty value with the
+        # "no expiry" placeholder.
+        assert 'placeholder="no expiry"' in content
 
     def test_string_value_save_form_structure(
         self,
@@ -1919,8 +1919,8 @@ class TestKeyDetailCreateMode:
 
         assert response.status_code == 200
         content = response.content.decode()
-        # Should show value textarea
-        assert "id_value" in content or "textarea" in content.lower()
+        # The string-value form has a textarea with id="id_value".
+        assert 'id="id_value"' in content
 
     def test_create_mode_operation_creates_key(
         self,
@@ -2029,8 +2029,9 @@ class TestCacheDetailView:
         response = admin_client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        # Should have link to keys list
-        assert "Keys" in content or "List" in content
+        # change_form.html renders <a href="...?cache=default">List Keys</a>
+        assert "?cache=default" in content
+        assert "List Keys" in content
 
     def test_cache_detail_shows_slowlog_section(self, admin_client: Client, test_cache):
         """Cache detail view should show slow log section."""
@@ -2038,8 +2039,9 @@ class TestCacheDetailView:
         response = admin_client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        # Should have slow log section
-        assert "Slow Log" in content or "slow" in content.lower()
+        # change_form.html renders <h2>Slow Log</h2> when slowlog_data is truthy
+        # (always — get_slowlog returns a dict even when empty).
+        assert "<h2>Slow Log</h2>" in content
 
     def test_cache_detail_count_parameter(self, admin_client: Client, test_cache):
         """Cache detail view should accept count parameter for slowlog."""
