@@ -28,13 +28,14 @@ def _build_sync_config(
     host: str,
     port: int,
     client_library: str = "redis",
+    driver: str = "py",
     stream_key: str | None = None,
     max_entries: int = 1000,
 ) -> dict:
     """Build CACHES config with redis transport + SyncCache."""
     options = _get_client_library_options(client_library)
     location = f"redis://{host}:{port}?db=13"
-    backend_class = BACKENDS[("default", client_library, "py")]
+    backend_class = BACKENDS[("default", client_library, driver)]
     sk = stream_key or f"test:sync:{uuid.uuid4().hex[:8]}"
 
     return {
@@ -64,12 +65,17 @@ def _cleanup_globals(stream_key: str) -> None:
 
 
 @pytest.fixture
-def sync_cache(redis_container: RedisContainerInfo) -> Iterator[BaseCache]:
-    """Single SyncCache instance for basic operations."""
+def sync_cache(redis_container: RedisContainerInfo, driver: str) -> Iterator[BaseCache]:
+    """Single SyncCache instance for basic operations.
+
+    Parametrized over the transport driver (``py`` and ``rust``) via the
+    shared ``driver`` fixture.
+    """
     config = _build_sync_config(
         redis_container.host,
         redis_container.port,
         client_library=redis_container.client_library,
+        driver=driver,
     )
     stream_key = config["default"]["OPTIONS"]["STREAM_KEY"]
 
@@ -82,16 +88,17 @@ def sync_cache(redis_container: RedisContainerInfo) -> Iterator[BaseCache]:
 
 
 @pytest.fixture
-def sync_pair(redis_container: RedisContainerInfo) -> Iterator[tuple[SyncCache, SyncCache]]:
+def sync_pair(redis_container: RedisContainerInfo, driver: str) -> Iterator[tuple[SyncCache, SyncCache]]:
     """Two SyncCache instances sharing one stream (simulates two pods).
 
     Uses separate cache aliases with the same STREAM_KEY but different
     _STORAGE_KEY values so each pod has its own local dict (simulating
-    separate processes sharing one Redis Stream).
+    separate processes sharing one Redis Stream). Parametrized over the
+    transport driver.
     """
     options = _get_client_library_options(redis_container.client_library)
     location = f"redis://{redis_container.host}:{redis_container.port}?db=13"
-    backend_class = BACKENDS[("default", redis_container.client_library, "py")]
+    backend_class = BACKENDS[("default", redis_container.client_library, driver)]
     stream_key = f"test:sync-pair:{uuid.uuid4().hex[:8]}"
     storage_key_1 = f"{stream_key}:pod1"
     storage_key_2 = f"{stream_key}:pod2"
@@ -149,11 +156,12 @@ class TestSyncConfig:
         with pytest.raises(ImproperlyConfigured, match="TRANSPORT"):
             SyncCache("", {"OPTIONS": {}})
 
-    def test_default_stream_key(self, redis_container: RedisContainerInfo):
+    def test_default_stream_key(self, redis_container: RedisContainerInfo, driver: str):
         config = _build_sync_config(
             redis_container.host,
             redis_container.port,
             client_library=redis_container.client_library,
+            driver=driver,
         )
         # Remove STREAM_KEY to test default
         del config["default"]["OPTIONS"]["STREAM_KEY"]
@@ -428,11 +436,12 @@ class TestSyncCrossInstance:
 
 
 class TestSyncCull:
-    def test_cull_evicts_when_full(self, redis_container: RedisContainerInfo):
+    def test_cull_evicts_when_full(self, redis_container: RedisContainerInfo, driver: str):
         config = _build_sync_config(
             redis_container.host,
             redis_container.port,
             client_library=redis_container.client_library,
+            driver=driver,
             max_entries=10,
         )
         stream_key = config["default"]["OPTIONS"]["STREAM_KEY"]
@@ -521,7 +530,7 @@ class TestSyncAdmin:
 
 
 class TestSyncReplay:
-    def test_replay_warms_cache_on_startup(self, redis_container: RedisContainerInfo):
+    def test_replay_warms_cache_on_startup(self, redis_container: RedisContainerInfo, driver: str):
         """A new SyncCache with REPLAY > 0 picks up entries from the stream."""
         stream_key = f"test:replay:{uuid.uuid4().hex[:8]}"
         storage_key_1 = f"{stream_key}:producer"
@@ -529,7 +538,7 @@ class TestSyncReplay:
 
         options = _get_client_library_options(redis_container.client_library)
         location = f"redis://{redis_container.host}:{redis_container.port}?db=13"
-        backend_class = BACKENDS[("default", redis_container.client_library, "py")]
+        backend_class = BACKENDS[("default", redis_container.client_library, driver)]
 
         config = {
             "transport": {
@@ -579,7 +588,7 @@ class TestSyncReplay:
         _cleanup_globals(storage_key_1)
         _cleanup_globals(storage_key_2)
 
-    def test_replay_zero_starts_empty(self, redis_container: RedisContainerInfo):
+    def test_replay_zero_starts_empty(self, redis_container: RedisContainerInfo, driver: str):
         """With REPLAY=0 (default), a new pod starts with an empty cache."""
         stream_key = f"test:noreplay:{uuid.uuid4().hex[:8]}"
         storage_key_1 = f"{stream_key}:producer"
@@ -587,7 +596,7 @@ class TestSyncReplay:
 
         options = _get_client_library_options(redis_container.client_library)
         location = f"redis://{redis_container.host}:{redis_container.port}?db=13"
-        backend_class = BACKENDS[("default", redis_container.client_library, "py")]
+        backend_class = BACKENDS[("default", redis_container.client_library, driver)]
 
         config = {
             "transport": {
@@ -634,11 +643,12 @@ class TestSyncReplay:
 
 
 class TestSyncShutdown:
-    def test_shutdown_stops_consumer(self, redis_container: RedisContainerInfo):
+    def test_shutdown_stops_consumer(self, redis_container: RedisContainerInfo, driver: str):
         config = _build_sync_config(
             redis_container.host,
             redis_container.port,
             client_library=redis_container.client_library,
+            driver=driver,
         )
         stream_key = config["default"]["OPTIONS"]["STREAM_KEY"]
 
