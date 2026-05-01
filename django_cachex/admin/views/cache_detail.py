@@ -11,7 +11,7 @@ from django.conf import settings
 from django.contrib import admin, messages
 from django.shortcuts import redirect, render
 
-from django_cachex.admin.helpers import get_cache, get_metadata, get_slowlog
+from django_cachex.admin.helpers import get_cache, get_slowlog, parse_metadata
 from django_cachex.admin.models import Cache
 from django_cachex.admin.views.base import (
     ViewConfig,
@@ -80,14 +80,15 @@ def _cache_detail_view(
     cache = get_cache(cache_name)
     cache_config = settings.CACHES.get(cache_name, {})
 
-    # Get cache metadata and info
+    # Get cache metadata and info (single round-trip)
     info_data = None
     raw_info = None
     try:
-        info_data = get_metadata(cache, cache_config)
         raw_info = cache.info()
     except Exception as e:  # noqa: BLE001
         messages.error(request, f"Error retrieving cache info: {e!s}")
+    else:
+        info_data = parse_metadata(cache, cache_config, raw_info)
 
     # Get slowlog count from query param (default 10)
     try:

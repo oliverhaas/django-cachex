@@ -26,8 +26,16 @@ def get_cache(cache_name: str) -> Any:
     return caches[cache_name]
 
 
-def get_metadata(cache: Any, cache_config: Mapping[str, Any]) -> dict[str, Any]:
-    """Get cache metadata with parsed server information."""
+def parse_metadata(
+    cache: Any,
+    cache_config: Mapping[str, Any],
+    raw_info: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Build structured cache metadata from a pre-fetched ``cache.info()`` result.
+
+    Pure parsing — does not call ``cache.info()`` itself, so the caller can fetch
+    once and reuse the same payload for both metadata display and raw JSON dump.
+    """
     # Get location from config
     location = cache_config.get("LOCATION", "")
     if isinstance(location, list):
@@ -46,13 +54,6 @@ def get_metadata(cache: Any, cache_config: Mapping[str, Any]) -> dict[str, Any]:
         "clients": None,
         "stats": None,
     }
-
-    try:
-        raw_info = cache.info()
-    except NotSupportedError:
-        raise
-    except Exception:  # noqa: BLE001
-        raise NotSupportedError("info", cache.__class__.__name__) from None
 
     if not raw_info:
         return base_info
