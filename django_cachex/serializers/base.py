@@ -2,23 +2,35 @@
 # Copyright (c) 2011-2016 Andrey Antukh <niwi@niwi.nz>
 # Copyright (c) 2011 Sean Bleier
 # Licensed under BSD-3-Clause
-#
-# django-redis was used as inspiration for this project.
 
 from typing import Any
+
+from django_cachex.exceptions import SerializerError
 
 
 class BaseSerializer:
     """Base class for cache value serializers.
 
-    Duck-type compatible with Django's RedisSerializer (dumps/loads interface).
+    Subclasses implement ``_dumps`` and ``_loads``. Plain ints pass through
+    ``loads`` unchanged so Redis ``INCR`` results don't need re-decoding.
     """
 
-    def __init__(self, **kwargs: Any) -> None:
-        pass
-
-    def dumps(self, obj: Any) -> bytes | int:
-        raise NotImplementedError
+    def dumps(self, obj: Any) -> bytes:
+        try:
+            return self._dumps(obj)
+        except Exception as e:
+            raise SerializerError from e
 
     def loads(self, data: bytes | int) -> Any:
+        if isinstance(data, int):
+            return data
+        try:
+            return self._loads(data)
+        except Exception as e:
+            raise SerializerError from e
+
+    def _dumps(self, obj: Any) -> bytes:
+        raise NotImplementedError
+
+    def _loads(self, data: bytes) -> Any:
         raise NotImplementedError

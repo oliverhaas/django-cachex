@@ -9,6 +9,9 @@
 - **`SyncCache` wire format changed.** Stream entries now flow through the transport's serializer + compressor pipeline instead of raw pickle. Pods running the new code cannot read entries written by older pods on the same stream — coordinate the rollout (drain or rotate `STREAM_KEY`).
 - **`hmset` removed.** Use `hset(key, mapping=...)` or `hset(key, items=...)` (flat key-value list, matching redis-py/valkey-py).
 - **`django_cachex.unfold` removed.** The django-unfold theme variant of the admin is gone, along with the `[unfold]` extra and `examples/unfold/`. Plain `django_cachex.admin` remains. Unfold support may return as a thin theme override once the core admin app stabilises.
+- **`ZStdCompressor` renamed to `ZstdCompressor`** (`django_cachex.compressors.zstd.ZstdCompressor`). Update `OPTIONS["compressor"]` strings.
+- **`LzmaCompressor` constructor `preset=` renamed to `level=`** for consistency with the other compressors. All compressors now accept `level=` (mapped to the underlying library's native parameter).
+- **`PickleSerializer` no longer raises `ImproperlyConfigured` for `protocol > pickle.HIGHEST_PROTOCOL`**; pickle's own `ValueError` propagates at first dumps call (wrapped as `SerializerError`).
 
 ### New features
 
@@ -22,6 +25,8 @@
 - **PyPI wheels via cibuildwheel.** Manylinux x86_64 wheels for cp314 and cp314t.
 - **Async pool sharing.** A single async connection pool is shared across per-task `Cache` instances (#83), avoiding the thundering-herd reconnect on cold start.
 - **Pipeline parity.** Stream ops, CAS ops, missing key ops (`persist`/`pttl`/`expire_at`/etc.), context manager, `zpopmin`/`zpopmax` default `count=1` aligned with the cache API.
+- **Compressors gain a uniform `level=` parameter** (gzip, lz4, zstd join zlib/lzma in exposing it). Defaults match each library's own default.
+- **Serializer/compressor wrappers consolidated.** Subclasses now implement `_dumps`/`_loads` (serializers) or `_compress`/`_decompress` (compressors); the base classes wrap the boilerplate (`SerializerError` / `CompressorError` translation, int-passthrough on loads).
 
 ### Fixes
 

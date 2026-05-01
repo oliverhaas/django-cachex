@@ -10,7 +10,7 @@ CACHES = {
         "BACKEND": "django_cachex.cache.ValkeyCache",
         "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
-            "compressor": "django_cachex.compressors.zstd.ZStdCompressor",
+            "compressor": "django_cachex.compressors.zstd.ZstdCompressor",
         }
     }
 }
@@ -24,7 +24,7 @@ CACHES = {
 | `django_cachex.compressors.gzip.GzipCompressor` | — (stdlib) |
 | `django_cachex.compressors.lzma.LzmaCompressor` | — (stdlib) |
 | `django_cachex.compressors.lz4.Lz4Compressor` | `lz4` |
-| `django_cachex.compressors.zstd.ZStdCompressor` | `zstd` (Python < 3.14) |
+| `django_cachex.compressors.zstd.ZstdCompressor` | `zstd` (Python < 3.14) |
 
 Install optional dependencies:
 
@@ -86,7 +86,7 @@ Specify a list of compressors to safely migrate between formats. The first is us
 ```python
 "OPTIONS": {
     "compressor": [
-        "django_cachex.compressors.zstd.ZStdCompressor",  # Write with new format
+        "django_cachex.compressors.zstd.ZstdCompressor",  # Write with new format
         "django_cachex.compressors.gzip.GzipCompressor",  # Read old format
     ],
 }

@@ -2,21 +2,20 @@
 # Copyright (c) 2011-2016 Andrey Antukh <niwi@niwi.nz>
 # Copyright (c) 2011 Sean Bleier
 # Licensed under BSD-3-Clause
-#
-# django-redis was used as inspiration for this project.
 
-from typing import Any
+from django_cachex.exceptions import CompressorError
 
 
 class BaseCompressor:
     """Base class for cache value compressors.
 
-    Compression is skipped for values of ``min_length`` bytes or fewer.
+    Subclasses implement ``_compress`` and ``_decompress``. Compression is
+    skipped for values up to ``min_length`` bytes (boundary inclusive).
     """
 
     min_length: int = 256
 
-    def __init__(self, *, min_length: int | None = None, **kwargs: Any) -> None:
+    def __init__(self, *, min_length: int | None = None) -> None:
         if min_length is not None:
             self.min_length = min_length
 
@@ -25,8 +24,14 @@ class BaseCompressor:
             return self._compress(data)
         return data
 
+    def decompress(self, data: bytes) -> bytes:
+        try:
+            return self._decompress(data)
+        except Exception as e:
+            raise CompressorError from e
+
     def _compress(self, data: bytes) -> bytes:
         raise NotImplementedError
 
-    def decompress(self, data: bytes) -> bytes:
+    def _decompress(self, data: bytes) -> bytes:
         raise NotImplementedError

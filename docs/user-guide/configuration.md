@@ -124,11 +124,11 @@ Available serializers:
 ```python
 "OPTIONS": {
     # Single compressor
-    "compressor": "django_cachex.compressors.zstd.ZStdCompressor",
+    "compressor": "django_cachex.compressors.zstd.ZstdCompressor",
 
     # Or with fallback for migration
     "compressor": [
-        "django_cachex.compressors.zstd.ZStdCompressor",  # Write
+        "django_cachex.compressors.zstd.ZstdCompressor",  # Write
         "django_cachex.compressors.zlib.ZlibCompressor",  # Fallback read
     ],
 }
@@ -142,7 +142,7 @@ Available compressors:
 | `django_cachex.compressors.gzip.GzipCompressor` | gzip compression |
 | `django_cachex.compressors.lz4.Lz4Compressor` | LZ4 (requires lz4) |
 | `django_cachex.compressors.lzma.LzmaCompressor` | LZMA |
-| `django_cachex.compressors.zstd.ZStdCompressor` | Zstandard (requires zstd) |
+| `django_cachex.compressors.zstd.ZstdCompressor` | Zstandard (requires zstd) |
 
 Compression is only applied to values larger than `min_length` bytes (default: 256).
 
@@ -351,7 +351,7 @@ CACHES = {
             "serializer": "django_cachex.serializers.pickle.PickleSerializer",
 
             # Compression
-            "compressor": "django_cachex.compressors.zstd.ZStdCompressor",
+            "compressor": "django_cachex.compressors.zstd.ZstdCompressor",
 
             # Connection pool
             "max_connections": 50,

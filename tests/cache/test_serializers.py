@@ -1,7 +1,6 @@
 import pickle
 
 import pytest
-from django.core.exceptions import ImproperlyConfigured
 
 from django_cachex.exceptions import SerializerError
 from django_cachex.serializers.json import JSONSerializer
@@ -37,16 +36,15 @@ class TestPickleSerializer:
         serializer = PickleSerializer()
         assert serializer.protocol == pickle.DEFAULT_PROTOCOL
 
-    def test_protocol_too_high(self):
-        with pytest.raises(
-            ImproperlyConfigured,
-            match=f"protocol can't be higher than pickle.HIGHEST_PROTOCOL: {pickle.HIGHEST_PROTOCOL}",
-        ):
-            PickleSerializer(protocol=pickle.HIGHEST_PROTOCOL + 1)
-
     def test_protocol_explicit(self):
         serializer = PickleSerializer(protocol=4)
         assert serializer.protocol == 4
+
+    def test_protocol_too_high_raises_on_dumps(self):
+        # We no longer pre-validate; pickle itself raises at dumps time.
+        serializer = PickleSerializer(protocol=pickle.HIGHEST_PROTOCOL + 1)
+        with pytest.raises(SerializerError):
+            serializer.dumps({"x": 1})
 
 
 class TestMessagePackSerializer:
