@@ -170,7 +170,6 @@ class TestAsyncVersionSrcDst:
 
     @pytest.mark.asyncio
     async def test_asmove_version_src_dst(self, cache: KeyValueCache):
-        """asmove with different source and destination versions."""
         cache.sadd("{vs}:assrc", "a", "b", version=1)
         cache.sadd("{vs}:asdst", "x", version=2)
 

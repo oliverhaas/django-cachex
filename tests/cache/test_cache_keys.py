@@ -105,7 +105,6 @@ class TestRenameOperations:
         assert cache.get("{slot6}:dest") == "existing_value"
 
     def test_rename_version_src_dst(self, cache: KeyValueCache):
-        """rename with different source and destination versions."""
         cache.set("{vs}:rsrc", "value", version=1)
 
         cache.rename("{vs}:rsrc", "{vs}:rdst", version_src=1, version_dst=2)
@@ -113,7 +112,6 @@ class TestRenameOperations:
         assert cache.get("{vs}:rdst", version=2) == "value"
 
     def test_renamenx_version_src_dst(self, cache: KeyValueCache):
-        """renamenx with different source and destination versions."""
         cache.set("{vs}:rnxsrc", "value", version=1)
 
         result = cache.renamenx("{vs}:rnxsrc", "{vs}:rnxdst", version_src=1, version_dst=2)
@@ -137,7 +135,6 @@ class TestDeletePatternOperations:
         assert bool(res) is False
 
     def test_delete_pattern_with_custom_count(self, cache: KeyValueCache):
-        """Test delete_pattern with custom itersize."""
         for key in ["foo-aa", "foo-ab", "foo-bb", "foo-bc"]:
             cache.set(key, "foo")
 
@@ -155,7 +152,6 @@ class TestDeletePatternOperations:
         cache: KeyValueCache,
         settings: SettingsWrapper,
     ):
-        """Test delete_pattern uses settings for default itersize."""
         for key in ["foo-aa", "foo-ab", "foo-bb", "foo-bc"]:
             cache.set(key, "foo")
 

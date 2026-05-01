@@ -32,7 +32,6 @@ class TestRedisCacheInternals:
     """
 
     def test_incr_write_connection(self, cache: KeyValueCache):
-        """Verify incr uses write connection."""
         cache.set("number", 42)
         with mock.patch.object(cache._cache, "get_client", wraps=cache._cache.get_client) as mocked_get_client:
             cache.incr("number")
@@ -40,14 +39,12 @@ class TestRedisCacheInternals:
             assert mocked_get_client.call_args.kwargs.get("write") is True
 
     def test_cache_client_class(self, cache: KeyValueCache):
-        """Verify RedisCacheClient class is used."""
         # Check _class attribute points to correct client class
         assert cache._class == RedisCacheClient or issubclass(cache._class, RedisCacheClient.__class__.__bases__)  # type: ignore[attr-defined]
         # Check _cache is an instance of the client
         assert isinstance(cache._cache, cache._class)
 
     def test_get_backend_timeout_method(self, cache: KeyValueCache):
-        """Test get_backend_timeout handles positive, negative, and None values."""
         # Positive timeout returns as-is
         positive_timeout = 10
         positive_backend_timeout = cache.get_backend_timeout(positive_timeout)
@@ -64,7 +61,6 @@ class TestRedisCacheInternals:
         assert none_backend_timeout is None
 
     def test_get_connection_pool_index(self, cache: KeyValueCache):
-        """Test connection pool index selection logic."""
         # Write always returns index 0 (primary)
         pool_index = cache._cache._get_connection_pool_index(write=True)
         assert pool_index == 0
@@ -78,7 +74,6 @@ class TestRedisCacheInternals:
             assert pool_index < len(cache._cache._servers)
 
     def test_get_connection_pool(self, cache: KeyValueCache):
-        """Test ConnectionPool instantiation."""
         import redis
 
         # Write pool
@@ -113,7 +108,6 @@ class TestRedisCacheInternals:
         assert isinstance(cache._cache.encode("abc"), bytes)
 
     def test_redis_pool_options(self, redis_container: RedisContainerInfo):
-        """Test that pool OPTIONS are passed to connection pool."""
         from contextlib import suppress
 
         host = redis_container.host
@@ -153,7 +147,6 @@ class TestRedisCacheClientMethods:
     """Additional tests for CacheClient method behavior."""
 
     def test_get_client_write_vs_read(self, cache: KeyValueCache):
-        """Test get_client respects write parameter."""
         # Both should return valid Redis clients
         write_client = cache._cache.get_client(write=True)
         read_client = cache._cache.get_client(write=False)
@@ -162,7 +155,6 @@ class TestRedisCacheClientMethods:
         assert read_client is not None
 
     def test_connection_pool_caching(self, cache: KeyValueCache):
-        """Test that connection pools are cached and reused."""
         pool1 = cache._cache._get_connection_pool(write=True)
         pool2 = cache._cache._get_connection_pool(write=True)
 
@@ -170,7 +162,6 @@ class TestRedisCacheClientMethods:
         assert pool1 is pool2
 
     def test_multiple_servers_pool_selection(self, redis_container: RedisContainerInfo):
-        """Test pool selection with multiple servers configured."""
         from contextlib import suppress
 
         host = redis_container.host
@@ -208,7 +199,6 @@ class TestConnectionCleanup:
     """Tests for connection pool cleanup behavior."""
 
     def test_sync_pool_is_cached_per_instance(self, cache: KeyValueCache):
-        """Test that sync pools are cached per instance."""
         # Get pool twice - should be same object
         pool1 = cache._cache._get_connection_pool(write=True)
         pool2 = cache._cache._get_connection_pool(write=True)
@@ -410,7 +400,6 @@ class TestConnectionCleanup:
 
     @pytest.mark.asyncio
     async def test_async_pool_reuse_after_operations(self, cache: KeyValueCache):
-        """Test that async pool is reused across multiple async operations."""
         # Skip if async not supported (cluster/sentinel don't have async yet)
         if cache._cache._async_pool_class is None:
             pytest.skip("Async not supported for this client type")
@@ -430,7 +419,6 @@ class TestConnectionCleanup:
 
     @pytest.mark.asyncio
     async def test_mixed_sync_async_operations(self, cache: KeyValueCache):
-        """Test that sync and async operations use separate pools."""
         # Skip if async not supported (cluster/sentinel don't have async yet)
         if cache._cache._async_pool_class is None:
             pytest.skip("Async not supported for this client type")

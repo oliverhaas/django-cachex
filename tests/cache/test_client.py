@@ -55,7 +55,6 @@ class TestRedisCacheClient:
         init_mock,
         get_client_mock,
     ):
-        """Test that delete_pattern passes the pattern directly to scan_iter."""
         mock_client = Mock()
         mock_client.scan_iter.return_value = []
         get_client_mock.return_value = mock_client
@@ -98,7 +97,6 @@ class TestRedisCacheClient:
         init_mock,
         get_client_mock,
     ):
-        """Test that delete_pattern deletes all keys found by scan_iter."""
         mock_client = Mock()
         mock_client.scan_iter.return_value = [":1:foo", ":1:foo-a"]
         mock_client.delete.return_value = 2

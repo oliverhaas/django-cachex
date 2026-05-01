@@ -232,7 +232,6 @@ class TestReplicaSetup:
         self,
         replica_containers: ReplicaSetContainerInfo,
     ):
-        """Test that _servers list is correctly configured."""
         master_url = f"redis://{replica_containers.master_host}:{replica_containers.master_port}/0"
         replica_urls = [
             f"redis://{host}:{port}/0"

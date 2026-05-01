@@ -63,7 +63,6 @@ class TestIndexView:
         assert response.status_code == 200
 
     def test_index_shows_configured_caches(self, admin_client: Client, test_cache):
-        """Index view should list all configured caches."""
         url = _cache_list_url()
         response = admin_client.get(url)
         assert response.status_code == 200
@@ -79,13 +78,11 @@ class TestIndexView:
         assert response.status_code == 302
 
     def test_index_help_button(self, admin_client: Client, test_cache):
-        """Help button should show help message."""
         url = _cache_list_url()
         response = admin_client.get(url + "?help=1")
         assert response.status_code == 200
 
     def test_index_page_title(self, admin_client: Client, test_cache):
-        """Index view should have correct page title."""
         url = _cache_list_url()
         response = admin_client.get(url)
         assert response.status_code == 200
@@ -140,7 +137,6 @@ class TestIndexView:
         )
 
     def test_index_shows_location_column(self, admin_client: Client, test_cache):
-        """Index view should show cache location in the cache table."""
         from bs4 import BeautifulSoup
 
         url = _cache_list_url()
@@ -167,7 +163,6 @@ class TestIndexView:
         ), f"Cache location not found in cache table: {table_text[:200]}"
 
     def test_index_cache_links_to_keys(self, admin_client: Client, test_cache):
-        """Cache list should have links to key browser."""
         url = _cache_list_url()
         response = admin_client.get(url)
         assert response.status_code == 200
@@ -177,7 +172,6 @@ class TestIndexView:
         assert "List Keys" in content
 
     def test_index_search_filters_caches(self, admin_client: Client, test_cache):
-        """Search should filter cache list by name."""
         url = _cache_list_url()
         # Search for "default" - should show default, hide others
         response = admin_client.get(url + "?q=default")
@@ -206,7 +200,6 @@ class TestKeyListView:
         assert response.status_code == 302
 
     def test_key_list_page_title(self, admin_client: Client, test_cache):
-        """Key search view should have correct page title."""
         url = _key_list_url("default")
         response = admin_client.get(url)
         assert response.status_code == 200
@@ -215,7 +208,6 @@ class TestKeyListView:
         assert b"default" in response.content
 
     def test_key_list_has_help_and_add_links(self, admin_client: Client, test_cache):
-        """Key search view should have help and add key links."""
         url = _key_list_url("default")
         response = admin_client.get(url)
         assert response.status_code == 200
@@ -230,7 +222,6 @@ class TestKeyListView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Bulk delete action should delete selected keys."""
         test_cache.set("bulk:delete:1", "value1")
         test_cache.set("bulk:delete:2", "value2")
         test_cache.set("bulk:keep", "value3")
@@ -259,7 +250,6 @@ class TestKeyListView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Key search should show string keys."""
         test_cache.set("test:key1", "value1")
         test_cache.set("test:key2", "value2")
 
@@ -274,7 +264,6 @@ class TestKeyListView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Key search with empty pattern should list all keys."""
         test_cache.set("mykey", "myvalue")
 
         url = _key_list_url("default")
@@ -319,7 +308,6 @@ class TestKeyListView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Key search should show TTL column."""
         test_cache.set("ttl:column:test", "value", timeout=300)
 
         url = _key_list_url("default")
@@ -365,7 +353,6 @@ class TestKeyListView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Key search should support wildcard patterns."""
         test_cache.set("wild:card:one", "value1")
         test_cache.set("wild:card:two", "value2")
         test_cache.set("other:key", "value3")
@@ -408,7 +395,6 @@ class TestKeyListView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Key search should paginate results."""
         # Create enough keys to trigger pagination (default is usually 100)
         for i in range(150):
             test_cache.set(f"paginate:key:{i:03d}", f"value{i}")
@@ -425,7 +411,6 @@ class TestKeyListView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Key search should show results count."""
         test_cache.set("count:key:1", "value1")
         test_cache.set("count:key:2", "value2")
         test_cache.set("count:key:3", "value3")
@@ -460,7 +445,6 @@ class TestKeyListView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Cache filter should render when multiple caches are configured."""
         url = _key_list_url("default")
         response = admin_client.get(url)
         assert response.status_code == 200
@@ -474,7 +458,6 @@ class TestKeyListView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Selecting a different cache in the filter should switch the view."""
         from django.core.cache import caches
 
         caches["local"].set("localonly:key", "localvalue")
@@ -507,7 +490,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Detail view should work for string keys."""
         test_cache.set("string:test", "hello world")
 
         url = _key_detail_url("default", "string:test")
@@ -533,7 +515,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Detail view should work for Redis list keys."""
         test_cache.lpush("list:test", "item1", "item2", "item3")
 
         url = _key_detail_url("default", "list:test")
@@ -547,7 +528,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Detail view should work for Redis set keys."""
         test_cache.sadd("set:test", "member1", "member2", "member3")
 
         url = _key_detail_url("default", "set:test")
@@ -560,7 +540,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Detail view should work for Redis hash keys."""
         test_cache.hset("hash:test", "field1", "value1")
         test_cache.hset("hash:test", "field2", "value2")
 
@@ -574,7 +553,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Detail view should work for Redis sorted set keys."""
         test_cache.zadd("zset:test", {"member1": 1.0, "member2": 2.0})
 
         url = _key_detail_url("default", "zset:test")
@@ -595,7 +573,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Detail view should work for Redis stream keys."""
         test_cache.xadd("stream:detail:test", {"field1": "value1"})
         test_cache.xadd("stream:detail:test", {"field2": "value2"})
 
@@ -618,7 +595,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Key detail view should have correct page title."""
         test_cache.set("title:test", "value")
 
         url = _key_detail_url("default", "title:test")
@@ -645,7 +621,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Key detail should show the raw Redis key."""
         test_cache.set("rawkey:test", "value")
 
         url = _key_detail_url("default", "rawkey:test")
@@ -660,7 +635,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Key detail should show the cache name."""
         test_cache.set("cache:name:test", "value")
 
         url = _key_detail_url("default", "cache:name:test")
@@ -675,7 +649,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Key detail should show type badge for the key."""
         test_cache.rpush("type:badge:test", "item1", "item2", "item3")
 
         url = _key_detail_url("default", "type:badge:test")
@@ -692,7 +665,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Key detail should show TTL for expiring keys."""
         test_cache.set("ttl:detail:test", "value", timeout=300)
 
         url = _key_detail_url("default", "ttl:detail:test")
@@ -707,7 +679,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Key detail should show 'No expiry' for persistent keys."""
         test_cache.set("noexpiry:test", "value", timeout=None)
 
         url = _key_detail_url("default", "noexpiry:test")
@@ -723,7 +694,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """String key detail view should have properly structured save form."""
         test_cache.set("form:structure:test", "original value")
 
         url = _key_detail_url("default", "form:structure:test")
@@ -742,7 +712,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Save button on string key detail should update the value."""
         test_cache.set("save:button:test", "original value")
 
         url = _key_detail_url("default", "save:button:test")
@@ -763,7 +732,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """TTL input for keys should have its own form with set_ttl action."""
         test_cache.set("ttl:form:test", "value", timeout=300)
 
         url = _key_detail_url("default", "ttl:form:test")
@@ -824,7 +792,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Updating TTL on list key should set the expiry."""
         test_cache.rpush("list:ttl:test", "item1", "item2")
 
         url = _key_detail_url("default", "list:ttl:test")
@@ -846,7 +813,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Submitting empty TTL on list key should persist (no expiry)."""
         test_cache.rpush("list:persist:test", "item1")
         # Set an initial TTL
         test_cache.expire("list:persist:test", 300)
@@ -869,7 +835,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """JSON-serializable string should show JSON indicator and be editable."""
         test_cache.set("json:string:test", "hello world")
 
         url = _key_detail_url("default", "json:string:test")
@@ -887,7 +852,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """JSON-serializable dict should show JSON indicator and be editable."""
         test_cache.set("json:dict:test", {"name": "Alice", "age": 30})
 
         url = _key_detail_url("default", "json:dict:test")
@@ -907,7 +871,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """JSON-serializable list value should be editable."""
         test_cache.set("json:list:value:test", [1, 2, 3, "four"])
 
         url = _key_detail_url("default", "json:list:value:test")
@@ -925,7 +888,6 @@ class TestKeyDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """JSON indicator should be shown for dict values."""
         test_cache.set("json:indicator:test", {"type": "example"})
 
         url = _key_detail_url("default", "json:indicator:test")
@@ -941,7 +903,6 @@ class TestKeyAddView:
     """Tests for the add key view."""
 
     def test_add_key_get(self, admin_client: Client, test_cache):
-        """Add key view GET should return form."""
         url = _key_add_url("default")
         response = admin_client.get(url)
         assert response.status_code == 200
@@ -954,7 +915,6 @@ class TestKeyAddView:
         assert response.status_code == 302
 
     def test_add_key_page_title(self, admin_client: Client, test_cache):
-        """Add key view should have correct page title."""
         url = _key_add_url("default")
         response = admin_client.get(url)
         assert response.status_code == 200
@@ -973,7 +933,6 @@ class TestKeyAddView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Add key with timeout should create expiring key."""
         # Create string key via key_detail update action
         url = _key_detail_create_url("default", "timeout:test:key", "string")
         response = admin_client.post(
@@ -1029,7 +988,6 @@ class TestKeyAddView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Add key view should parse JSON values."""
         # Create string key via key_detail update action
         url = _key_detail_create_url("default", "new:json:key", "string")
         response = admin_client.post(
@@ -1169,7 +1127,6 @@ class TestKeyOperations:
     """Tests for key operations (delete, edit, TTL)."""
 
     def test_delete_key(self, admin_client: Client, test_cache: KeyValueCache):
-        """Delete action should remove key."""
         test_cache.set("delete:me", "goodbye")
 
         url = _key_detail_url("default", "delete:me")
@@ -1184,7 +1141,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Edit action should update key value."""
         test_cache.set("edit:me", "old value")
 
         url = _key_detail_url("default", "edit:me")
@@ -1202,7 +1158,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """LREM action should remove item from list."""
         test_cache.rpush("lrem:test", "item1", "item2", "item3", "item2")
 
         url = _key_detail_url("default", "lrem:test")
@@ -1221,7 +1176,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """LTRIM action should trim list to specified range."""
         test_cache.rpush("ltrim:test", "a", "b", "c", "d", "e")
 
         url = _key_detail_url("default", "ltrim:test")
@@ -1240,7 +1194,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """HSET action should update hash field value inline."""
         test_cache.hset("hash:edit", "name", "old_value")
 
         url = _key_detail_url("default", "hash:edit")
@@ -1281,7 +1234,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """LPOP action should pop from left of list."""
         test_cache.rpush("lpop:test", "a", "b", "c")
 
         url = _key_detail_url("default", "lpop:test")
@@ -1297,7 +1249,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """LPOP action with count should pop multiple elements from left."""
         test_cache.rpush("lpop:count:test", "a", "b", "c", "d", "e")
 
         url = _key_detail_url("default", "lpop:count:test")
@@ -1316,7 +1267,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """RPOP action should pop from right of list."""
         test_cache.rpush("rpop:test", "a", "b", "c")
 
         url = _key_detail_url("default", "rpop:test")
@@ -1332,7 +1282,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """RPOP action with count should pop multiple elements from right."""
         test_cache.rpush("rpop:count:test", "a", "b", "c", "d", "e")
 
         url = _key_detail_url("default", "rpop:count:test")
@@ -1351,7 +1300,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """LPUSH action should push to left of list."""
         test_cache.rpush("lpush:test", "b", "c")
 
         url = _key_detail_url("default", "lpush:test")
@@ -1370,7 +1318,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """RPUSH action should push to right of list."""
         test_cache.rpush("rpush:test", "a", "b")
 
         url = _key_detail_url("default", "rpush:test")
@@ -1389,7 +1336,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """SADD action should add member to set."""
         test_cache.sadd("sadd:test", "a", "b")
 
         url = _key_detail_url("default", "sadd:test")
@@ -1408,7 +1354,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """SREM action should remove member from set."""
         test_cache.sadd("srem:test", "a", "b", "c")
 
         url = _key_detail_url("default", "srem:test")
@@ -1427,7 +1372,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """SPOP action should pop random member from set."""
         test_cache.sadd("spop:test", "only_member")
 
         url = _key_detail_url("default", "spop:test")
@@ -1443,7 +1387,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """SPOP action with count should pop multiple random members."""
         test_cache.sadd("spop:count:test", "a", "b", "c", "d", "e")
 
         url = _key_detail_url("default", "spop:count:test")
@@ -1605,7 +1548,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """ZREM action should remove member from sorted set."""
         test_cache.zadd("zrem:test", {"a": 1.0, "b": 2.0, "c": 3.0})
 
         url = _key_detail_url("default", "zrem:test")
@@ -1624,7 +1566,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """ZPOPMIN action should pop member with lowest score."""
         test_cache.zadd("zpopmin:test", {"a": 1.0, "b": 2.0, "c": 3.0})
 
         url = _key_detail_url("default", "zpopmin:test")
@@ -1640,7 +1581,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """ZPOPMAX action should pop member with highest score."""
         test_cache.zadd("zpopmax:test", {"a": 1.0, "b": 2.0, "c": 3.0})
 
         url = _key_detail_url("default", "zpopmax:test")
@@ -1656,7 +1596,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """ZADD action should update score for existing member."""
         test_cache.zadd("zscore:test", {"a": 1.0, "b": 2.0})
 
         url = _key_detail_url("default", "zscore:test")
@@ -1675,7 +1614,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Set TTL action should set expiration time."""
         test_cache.set("ttl:test", "value")
 
         url = _key_detail_url("default", "ttl:test")
@@ -1694,7 +1632,6 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Persist action should remove TTL."""
         test_cache.set("persist:test", "value", timeout=300)
 
         url = _key_detail_url("default", "persist:test")
@@ -1791,7 +1728,6 @@ class TestFlushCache:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Flush action should clear all keys."""
         test_cache.set("flush:key1", "value1")
         test_cache.set("flush:key2", "value2")
 
@@ -1829,7 +1765,6 @@ class TestKeyDetailCreateMode:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Create mode should show informational message about key not existing."""
         url = _key_detail_create_url("default", "newkey:message", "list")
         response = admin_client.get(url)
 
@@ -1843,7 +1778,6 @@ class TestKeyDetailCreateMode:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Create mode should show Operations section for adding data."""
         url = _key_detail_create_url("default", "newkey:ops", "list")
         response = admin_client.get(url)
 
@@ -1857,7 +1791,6 @@ class TestKeyDetailCreateMode:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Create mode for list should show push operations."""
         url = _key_detail_create_url("default", "newkey:list:push", "list")
         response = admin_client.get(url)
 
@@ -1871,7 +1804,6 @@ class TestKeyDetailCreateMode:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Create mode for set should show add member operation."""
         url = _key_detail_create_url("default", "newkey:set:add", "set")
         response = admin_client.get(url)
 
@@ -1885,7 +1817,6 @@ class TestKeyDetailCreateMode:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Create mode for hash should show set field operation."""
         url = _key_detail_create_url("default", "newkey:hash:set", "hash")
         response = admin_client.get(url)
 
@@ -1899,7 +1830,6 @@ class TestKeyDetailCreateMode:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Create mode for zset should show add member operation."""
         url = _key_detail_create_url("default", "newkey:zset:add", "zset")
         response = admin_client.get(url)
 
@@ -1913,7 +1843,6 @@ class TestKeyDetailCreateMode:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Create mode for string should show value editor."""
         url = _key_detail_create_url("default", "newkey:string:edit", "string")
         response = admin_client.get(url)
 
@@ -1927,7 +1856,6 @@ class TestKeyDetailCreateMode:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Performing operation in create mode should create the key."""
         # Make sure key doesn't exist
         assert test_cache.get("createkey:list") is None
 
@@ -2001,7 +1929,6 @@ class TestCacheDetailView:
         assert response.status_code == 302
 
     def test_cache_detail_shows_cache_name(self, admin_client: Client, test_cache):
-        """Cache detail view should show cache name."""
         url = _cache_detail_url("default")
         response = admin_client.get(url)
         assert response.status_code == 200
@@ -2012,7 +1939,6 @@ class TestCacheDetailView:
         admin_client: Client,
         test_cache: KeyValueCache,
     ):
-        """Cache detail view should display cache configuration."""
         url = _cache_detail_url("default")
         response = admin_client.get(url)
         assert response.status_code == 200
@@ -2024,7 +1950,6 @@ class TestCacheDetailView:
         assert b"Configuration" in response.content
 
     def test_cache_detail_has_keys_link(self, admin_client: Client, test_cache):
-        """Cache detail view should have link to keys list."""
         url = _cache_detail_url("default")
         response = admin_client.get(url)
         assert response.status_code == 200
@@ -2034,7 +1959,6 @@ class TestCacheDetailView:
         assert "List Keys" in content
 
     def test_cache_detail_shows_slowlog_section(self, admin_client: Client, test_cache):
-        """Cache detail view should show slow log section."""
         url = _cache_detail_url("default")
         response = admin_client.get(url)
         assert response.status_code == 200
@@ -2044,7 +1968,6 @@ class TestCacheDetailView:
         assert "<h2>Slow Log</h2>" in content
 
     def test_cache_detail_count_parameter(self, admin_client: Client, test_cache):
-        """Cache detail view should accept count parameter for slowlog."""
         url = _cache_detail_url("default")
         # Test with different count values
         for count in [10, 25, 50]:
@@ -2093,7 +2016,6 @@ class TestCacheAdmin:
         assert cache_admin.has_delete_permission(request) is False
 
     def test_non_staff_has_no_permissions(self, db, test_cache):
-        """Non-staff users should not have view/change/module permissions."""
         from django.contrib.admin import site
         from django.contrib.auth.models import User
         from django.test import RequestFactory
@@ -2117,7 +2039,6 @@ class TestCacheAdmin:
         assert cache_admin.has_module_permission(request) is False
 
     def test_superuser_has_all_permissions(self, admin_user, test_cache):
-        """Superusers should have view/change/module permissions."""
         from django.contrib.admin import site
         from django.test import RequestFactory
 
@@ -2157,7 +2078,6 @@ class TestCacheAdmin:
         assert cache_admin.has_change_permission(request) is False
 
     def test_staff_with_view_perm_can_view(self, db, test_cache):
-        """Staff user with view_cache permission can view caches."""
         from django.contrib.admin import site
         from django.contrib.auth.models import Permission, User
         from django.test import RequestFactory
@@ -2187,7 +2107,6 @@ class TestCacheAdmin:
         assert cache_admin.has_change_permission(request) is False
 
     def test_staff_with_change_perm_can_change(self, db, test_cache):
-        """Staff user with change_cache permission can flush caches."""
         from django.contrib.admin import site
         from django.contrib.auth.models import Permission, User
         from django.test import RequestFactory
@@ -2221,7 +2140,6 @@ class TestKeyAdminPermissions:
     """Test KeyAdmin permission methods with Django's permission system."""
 
     def test_module_permission_true(self, admin_user, test_cache):
-        """KeyAdmin should be visible in sidebar."""
         from django.contrib.admin import site
         from django.test import RequestFactory
 
@@ -2236,7 +2154,6 @@ class TestKeyAdminPermissions:
         assert key_admin.has_module_permission(request) is True
 
     def test_superuser_has_all_key_permissions(self, admin_user, test_cache):
-        """Superusers should have all key permissions."""
         from django.contrib.admin import site
         from django.test import RequestFactory
 
@@ -2279,7 +2196,6 @@ class TestKeyAdminPermissions:
         assert key_admin.has_delete_permission(request) is False
 
     def test_staff_with_view_key_perm(self, db, test_cache):
-        """Staff user with view_key permission can view keys."""
         from django.contrib.admin import site
         from django.contrib.auth.models import Permission, User
         from django.test import RequestFactory
@@ -2374,7 +2290,6 @@ class TestPermissionViewAccess:
         assert response.status_code == 403
 
     def test_staff_with_view_perm_can_access_cache_list(self, db, test_cache):
-        """Staff user with view_cache can access cache list."""
         from django.contrib.auth.models import Permission, User
 
         staff_user = User.objects.create_user(
@@ -2458,7 +2373,6 @@ class TestPermissionViewAccess:
         assert test_cache.get("test_key") == "value"
 
     def test_superuser_can_access_all_views(self, admin_client, test_cache):
-        """Superuser can access all views (unchanged behavior)."""
         assert admin_client.get(_cache_list_url()).status_code == 200
         assert admin_client.get(_cache_detail_url("default")).status_code == 200
         assert admin_client.get(_key_list_url("default")).status_code == 200
@@ -2502,7 +2416,6 @@ class TestUndecodableValueResilience:
         assert "cannot be decoded" in content
 
     def test_key_detail_shows_warning_message_for_broken_value(self, admin_client, test_cache):
-        """User sees a warning explaining why the value isn't shown."""
         self._inject_broken_value(test_cache)
 
         response = admin_client.get(_key_detail_url("default", self.BROKEN_KEY))
@@ -2512,7 +2425,6 @@ class TestUndecodableValueResilience:
         assert "different compressor or serializer" in content
 
     def test_delete_works_for_broken_value(self, admin_client, test_cache):
-        """Operators can still delete a broken key from the admin."""
         self._inject_broken_value(test_cache)
 
         # Sanity: key exists in Redis (raw client doesn't decode).

@@ -27,7 +27,6 @@ class TestSentinelSetup:
         sentinel_container: SentinelContainerInfo,
         redis_images: tuple[str, str],
     ):
-        """Test that sentinel containers start successfully."""
         _image, client_library = redis_images
         assert sentinel_container.host
         assert sentinel_container.port > 0
@@ -38,7 +37,6 @@ class TestSentinelSetup:
         sentinel_container: SentinelContainerInfo,
         redis_images: tuple[str, str],
     ):
-        """Test basic cache operations through Sentinel."""
         image, client_library = redis_images
 
         # Use appropriate backend based on client library
@@ -91,7 +89,6 @@ class TestSentinelSetup:
         sentinel_container: SentinelContainerInfo,
         redis_images: tuple[str, str],
     ):
-        """Test increment/decrement operations through Sentinel."""
         _image, client_library = redis_images
 
         if client_library == "valkey":
@@ -144,7 +141,6 @@ class TestSentinelAsync:
         sentinel_container: SentinelContainerInfo,
         redis_images: tuple[str, str],
     ):
-        """Test async operations work with Sentinel setup."""
         image, client_library = redis_images
 
         if client_library == "valkey":

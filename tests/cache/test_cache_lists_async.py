@@ -264,7 +264,6 @@ class TestAsyncVersionSrcDst:
 
     @pytest.mark.asyncio
     async def test_almove_version_src_dst(self, cache: KeyValueCache):
-        """almove with different source and destination versions."""
         cache.rpush("{vs}:alsrc", "a", "b", version=1)
         cache.rpush("{vs}:aldst", "x", version=2)
 
@@ -275,7 +274,6 @@ class TestAsyncVersionSrcDst:
 
     @pytest.mark.asyncio
     async def test_ablmove_version_src_dst(self, cache: KeyValueCache):
-        """ablmove with different source and destination versions."""
         cache.rpush("{vs}:ablsrc", "a", "b", version=1)
         cache.rpush("{vs}:abldst", "x", version=2)
 

@@ -119,7 +119,6 @@ class TestAsyncVersionSrcDst:
 
     @pytest.mark.asyncio
     async def test_arename_version_src_dst(self, cache: KeyValueCache):
-        """arename with different source and destination versions."""
         cache.set("{vs}:arsrc", "value", version=1)
 
         await cache.arename("{vs}:arsrc", "{vs}:ardst", version_src=1, version_dst=2)
@@ -128,7 +127,6 @@ class TestAsyncVersionSrcDst:
 
     @pytest.mark.asyncio
     async def test_arenamenx_version_src_dst(self, cache: KeyValueCache):
-        """arenamenx with different source and destination versions."""
         cache.set("{vs}:arnxsrc", "value", version=1)
 
         result = await cache.arenamenx("{vs}:arnxsrc", "{vs}:arnxdst", version_src=1, version_dst=2)

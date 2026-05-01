@@ -65,7 +65,6 @@ class TestSetWithGet:
         assert ttl is not None and ttl > 0
 
     def test_set_get_preserves_none_vs_missing(self, cache: KeyValueCache):
-        """Successive set-get calls chain correctly."""
         cache.delete("get_chain")
         old1 = cache.set("get_chain", "a", get=True)
         assert old1 is None

@@ -20,12 +20,10 @@ class TestEvalScript:
     """Test eval_script execution."""
 
     def test_eval_script_simple(self, cache: KeyValueCache):
-        """Test simple script execution."""
         result = cache.eval_script("return 42")
         assert result == 42
 
     def test_eval_script_with_keys_and_args(self, cache: KeyValueCache):
-        """Test script execution with keys and args."""
         script = """
         local current = redis.call('GET', KEYS[1]) or 0
         local new = tonumber(current) + tonumber(ARGV[1])
@@ -50,7 +48,6 @@ class TestEvalScript:
         assert result == b"myvalue"
 
     def test_eval_script_with_encoding(self, cache: KeyValueCache):
-        """Test script with full encoding of values."""
         script = """
         redis.call('SET', KEYS[1], ARGV[1])
         return redis.call('GET', KEYS[1])
@@ -67,7 +64,6 @@ class TestEvalScript:
         assert result == test_obj
 
     def test_eval_script_with_version(self, cache: KeyValueCache):
-        """Test script execution with explicit version."""
         script = """
         redis.call('SET', KEYS[1], ARGV[1])
         return redis.call('GET', KEYS[1])
@@ -103,12 +99,10 @@ class TestEvalScript:
         assert v2_val == "v2"
 
     def test_eval_script_string_return(self, cache: KeyValueCache):
-        """Test script returning a string."""
         result = cache.eval_script("return 'hello'")
         assert result == b"hello"
 
     def test_eval_script_no_keys(self, cache: KeyValueCache):
-        """Test script with no keys or args."""
         result = cache.eval_script("return 1 + 2")
         assert result == 3
 
@@ -117,7 +111,6 @@ class TestScriptHelpers:
     """Test ScriptHelpers functionality."""
 
     def test_script_helpers_make_keys(self, cache: KeyValueCache):
-        """Test ScriptHelpers.make_keys method."""
         helpers = ScriptHelpers(
             make_key=cache.make_and_validate_key,
             encode=cache._cache.encode,
@@ -132,7 +125,6 @@ class TestScriptHelpers:
         assert keys[1] != "key2"
 
     def test_script_helpers_encode_decode(self, cache: KeyValueCache):
-        """Test ScriptHelpers encode/decode methods."""
         helpers = ScriptHelpers(
             make_key=cache.make_and_validate_key,
             encode=cache._cache.encode,
@@ -170,7 +162,6 @@ class TestPreBuiltHooks:
         assert proc_args == [1, 2, "three"]
 
     def test_full_encode_pre(self, cache: KeyValueCache):
-        """Test full_encode_pre helper."""
         helpers = ScriptHelpers(
             make_key=cache.make_and_validate_key,
             encode=cache._cache.encode,
@@ -190,7 +181,6 @@ class TestPreBuiltHooks:
         assert isinstance(proc_args[0], bytes)
 
     def test_decode_single_post(self, cache: KeyValueCache):
-        """Test decode_single_post helper."""
         helpers = ScriptHelpers(
             make_key=cache.make_and_validate_key,
             encode=cache._cache.encode,
@@ -208,7 +198,6 @@ class TestPreBuiltHooks:
         assert decode_single_post(helpers, None) is None
 
     def test_decode_list_post(self, cache: KeyValueCache):
-        """Test decode_list_post helper."""
         helpers = ScriptHelpers(
             make_key=cache.make_and_validate_key,
             encode=cache._cache.encode,
@@ -230,7 +219,6 @@ class TestPipelineScripts:
     """Test script execution in pipelines."""
 
     def test_pipeline_eval_script(self, cache: KeyValueCache):
-        """Test eval_script in pipeline."""
         script = "return redis.call('INCR', KEYS[1])"
 
         pipe = cache.pipeline()
@@ -242,7 +230,6 @@ class TestPipelineScripts:
         assert results == [1, 2, 3]
 
     def test_pipeline_eval_script_mixed(self, cache: KeyValueCache):
-        """Test mixing eval_script with other operations."""
         script = "redis.call('SET', KEYS[1], ARGV[1]); return 'ok'"
 
         pipe = cache.pipeline()
@@ -256,7 +243,6 @@ class TestPipelineScripts:
         assert results[2] == "regular_value"  # get
 
     def test_pipeline_eval_script_with_post_hook(self, cache: KeyValueCache):
-        """Test pipeline eval_script with post_hook decoder."""
         script = """
         redis.call('SET', KEYS[1], ARGV[1])
         return redis.call('GET', KEYS[1])
@@ -277,7 +263,6 @@ class TestPipelineScripts:
         assert results[0] == test_obj
 
     def test_pipeline_eval_script_chaining(self, cache: KeyValueCache):
-        """Test that eval_script returns self for chaining."""
         pipe = cache.pipeline()
         result = pipe.eval_script("return 1").eval_script("return 2")
         assert result is pipe
@@ -288,12 +273,10 @@ class TestAsyncScriptExecution:
     """Test async script execution functionality."""
 
     async def test_aeval_script_simple(self, cache: KeyValueCache):
-        """Test simple async script execution."""
         result = await cache.aeval_script("return 'async'")
         assert result == b"async"
 
     async def test_aeval_script_with_encoding(self, cache: KeyValueCache):
-        """Test async script with encoding."""
         script = """
         redis.call('SET', KEYS[1], ARGV[1])
         return redis.call('GET', KEYS[1])

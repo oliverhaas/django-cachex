@@ -147,7 +147,6 @@ class TestVersionSrcDst:
     """Tests for version_src/version_dst on smove."""
 
     def test_smove_version_src_dst(self, cache: KeyValueCache):
-        """smove with different source and destination versions."""
         cache.sadd("{vs}:ssrc", "a", "b", version=1)
         cache.sadd("{vs}:sdst", "x", version=2)
 

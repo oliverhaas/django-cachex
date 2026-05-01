@@ -146,7 +146,6 @@ class TestListOperations:
         assert length == -1
 
     def test_list_with_complex_values(self, cache: KeyValueCache):
-        """Test that lists work with complex serialized values."""
         cache.rpush("mylist15", {"name": "Alice"}, {"name": "Bob"})
 
         result = cache.lrange("mylist15", 0, -1)
@@ -156,7 +155,6 @@ class TestListOperations:
         assert popped == {"name": "Alice"}
 
     def test_list_version_support(self, cache: KeyValueCache):
-        """Test that version parameter works correctly."""
         cache.rpush("mylist", "v1_a", "v1_b", version=1)
         cache.rpush("mylist", "v2_a", version=2)
 
@@ -167,7 +165,6 @@ class TestListOperations:
         assert cache.lrange("mylist", 0, -1, version=2) == ["v2_a"]
 
     def test_lpos_basic(self, cache: KeyValueCache):
-        """Test finding element position in list."""
         cache.rpush("mylist_lpos", "a", "b", "c", "b", "d")
 
         # Find first occurrence
@@ -177,7 +174,6 @@ class TestListOperations:
         assert cache.lpos("mylist_lpos", "z") is None
 
     def test_lpos_with_rank(self, cache: KeyValueCache):
-        """Test lpos with rank parameter."""
         cache.rpush("mylist_lpos2", "a", "b", "c", "b", "d", "b")
 
         # Find second occurrence (rank=2)
@@ -187,7 +183,6 @@ class TestListOperations:
         assert cache.lpos("mylist_lpos2", "b", rank=-1) == 5
 
     def test_lpos_with_count(self, cache: KeyValueCache):
-        """Test lpos with count parameter returns multiple indices."""
         cache.rpush("mylist_lpos3", "a", "b", "c", "b", "d", "b")
 
         # Find all occurrences
@@ -199,7 +194,6 @@ class TestListOperations:
         assert result == [1, 3]
 
     def test_lmove_basic(self, cache: KeyValueCache):
-        """Test moving element between lists."""
         # Use hash tags {list} to ensure keys are on same cluster slot
         cache.rpush("{list}src", "a", "b", "c")
         cache.rpush("{list}dst", "x", "y")
@@ -212,7 +206,6 @@ class TestListOperations:
         assert cache.lrange("{list}dst", 0, -1) == ["x", "y", "a"]
 
     def test_lmove_directions(self, cache: KeyValueCache):
-        """Test different lmove directions."""
         # Use hash tags {list} to ensure keys are on same cluster slot
         cache.rpush("{list}src2", "1", "2", "3")
         cache.rpush("{list}dst2", "a")
@@ -224,7 +217,6 @@ class TestListOperations:
         assert cache.lrange("{list}dst2", 0, -1) == ["3", "a"]
 
     def test_lmove_empty_source(self, cache: KeyValueCache):
-        """Test lmove on empty source list."""
         # Use hash tags {list} to ensure keys are on same cluster slot
         cache.rpush("{list}dst3", "x")
 
@@ -233,7 +225,6 @@ class TestListOperations:
         assert cache.lrange("{list}dst3", 0, -1) == ["x"]
 
     def test_blpop_immediate(self, cache: KeyValueCache):
-        """Test blpop returns immediately when data exists."""
         cache.rpush("blpop_list", "a", "b", "c")
 
         result = cache.blpop("blpop_list", timeout=1)
@@ -249,7 +240,6 @@ class TestListOperations:
         assert result is None
 
     def test_blpop_multiple_keys(self, cache: KeyValueCache):
-        """Test blpop with multiple keys returns first available."""
         # Use hash tags to ensure keys are on same cluster slot
         cache.rpush("{blpop}list2", "x", "y")
 
@@ -260,7 +250,6 @@ class TestListOperations:
         assert value == "x"
 
     def test_brpop_immediate(self, cache: KeyValueCache):
-        """Test brpop returns immediately when data exists."""
         cache.rpush("brpop_list", "a", "b", "c")
 
         result = cache.brpop("brpop_list", timeout=1)
@@ -276,7 +265,6 @@ class TestListOperations:
         assert result is None
 
     def test_blmove_immediate(self, cache: KeyValueCache):
-        """Test blmove returns immediately when data exists."""
         # Use hash tags to ensure keys are on same cluster slot
         cache.rpush("{blmove}src", "a", "b", "c")
         cache.rpush("{blmove}dst", "x")
@@ -295,7 +283,6 @@ class TestListOperations:
         assert result is None
 
     def test_blpop_with_complex_values(self, cache: KeyValueCache):
-        """Test blpop works with serialized complex values."""
         cache.rpush("blpop_complex", {"name": "Alice"}, {"name": "Bob"})
 
         result = cache.blpop("blpop_complex", timeout=1)
@@ -308,7 +295,6 @@ class TestVersionSrcDst:
     """Tests for version_src/version_dst on lmove and blmove."""
 
     def test_lmove_version_src_dst(self, cache: KeyValueCache):
-        """lmove with different source and destination versions."""
         cache.rpush("{vs}:lsrc", "a", "b", version=1)
         cache.rpush("{vs}:ldst", "x", version=2)
 
@@ -318,7 +304,6 @@ class TestVersionSrcDst:
         assert cache.lrange("{vs}:ldst", 0, -1, version=2) == ["x", "a"]
 
     def test_blmove_version_src_dst(self, cache: KeyValueCache):
-        """blmove with different source and destination versions."""
         cache.rpush("{vs}:blsrc", "a", "b", version=1)
         cache.rpush("{vs}:bldst", "x", version=2)
 

@@ -129,7 +129,6 @@ class TestCASStringUpdate:
         assert result == -1
 
     def test_complex_value(self, test_cache: KeyValueCache):
-        """Test CAS with a complex JSON-serializable value."""
         original = {"key": "value", "nested": [1, 2, 3]}
         test_cache.set("cas_complex", original)
         sha1 = get_string_sha1(test_cache, "cas_complex")

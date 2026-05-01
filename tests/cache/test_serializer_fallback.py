@@ -25,7 +25,6 @@ class TestDefaultClientSerializerConfig:
         assert client._serializers[0].__class__.__name__ == "PickleSerializer"
 
     def test_list_config_with_fallback(self, redis_container):
-        """Test that a list config creates multiple serializers."""
         client = RedisCacheClient(
             servers=["redis://localhost:6379/0"],
             serializer=[
@@ -92,7 +91,6 @@ class TestDeserializeFallback:
     """Tests for the _deserialize fallback logic."""
 
     def test_deserialize_json_with_multiple_serializers(self, redis_container):
-        """Test that _deserialize correctly deserializes JSON data."""
         client = RedisCacheClient(
             servers=["redis://localhost:6379/0"],
             serializer=[
@@ -107,7 +105,6 @@ class TestDeserializeFallback:
         assert client._deserialize(json_data) == data
 
     def test_deserialize_pickle_with_json_first(self, redis_container):
-        """Test that _deserialize falls back to pickle for pickle-serialized data."""
         client = RedisCacheClient(
             servers=["redis://localhost:6379/0"],
             serializer=[
@@ -138,7 +135,6 @@ class TestDeserializeFallback:
             client._deserialize(invalid_data)
 
     def test_deserialize_continues_on_failure(self, redis_container):
-        """Test that _deserialize continues to next serializer on failure."""
         client = RedisCacheClient(
             servers=["redis://localhost:6379/0"],
             serializer=[
