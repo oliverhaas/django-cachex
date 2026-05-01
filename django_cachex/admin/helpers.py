@@ -283,8 +283,15 @@ def get_size(cache: Any, key: str, key_type: str | None = None) -> int | None:
             return client.strlen(full_key)
         except NotSupportedError, AttributeError:
             pass
-        # Fallback: compute Python object size (e.g. LocMemCache)
-        value = cache.get(key)
+        # Fallback: compute Python object size (e.g. LocMemCache). Decode
+        # failures for stale data must not break the size column — return None
+        # so the row still renders and the user can delete the broken key.
+        from django_cachex.exceptions import CompressorError, SerializerError
+
+        try:
+            value = cache.get(key)
+        except CompressorError, SerializerError:
+            return None
         return _deep_getsizeof(value) if value is not None else None
 
     try:
