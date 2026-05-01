@@ -18,17 +18,60 @@ CACHES = {
 
 ## Available Serializers
 
-| Serializer | Description |
-|------------|-------------|
-| `django_cachex.serializers.pickle.PickleSerializer` | Python pickle (default) - supports all Python types |
-| `django_cachex.serializers.json.JSONSerializer` | JSON - interoperable but limited to JSON types |
-| `django_cachex.serializers.msgpack.MessagePackSerializer` | MessagePack - fast and compact binary format |
+| Serializer | Description | Extra |
+|------------|-------------|-------|
+| `django_cachex.serializers.pickle.PickleSerializer` | Python pickle (default) — supports nearly all Python types | — |
+| `django_cachex.serializers.json.JSONSerializer` | JSON via Django's `DjangoJSONEncoder` — best Django type coverage of the JSON family | — |
+| `django_cachex.serializers.msgpack.MessagePackSerializer` | Pure-Python MessagePack — compact binary format | `msgpack` |
+| `django_cachex.serializers.orjson.OrjsonSerializer` | Rust-backed JSON — fastest JSON, fewer types than `DjangoJSONEncoder` | `orjson` |
+| `django_cachex.serializers.ormsgpack.OrMessagePackSerializer` | Rust-backed MessagePack — fastest overall in our benchmarks | `ormsgpack` |
 
-MessagePack requires the optional dependency:
+Install optional serializers via the matching extra:
 
 ```console
 uv add django-cachex[msgpack]
+uv add django-cachex[orjson]
+uv add django-cachex[ormsgpack]
 ```
+
+## Type compatibility
+
+Round-trip behaviour for common Python types. Legend: **✓** preserved (same
+type back), **~** encoded but returns as a different type (caller must convert
+on read), **✗** raises `SerializerError` on `dumps`.
+
+| Type | pickle | json (Django) | msgpack | orjson | ormsgpack |
+|------|:------:|:-------------:|:-------:|:------:|:---------:|
+| **Throughput vs pickle**¹ | **1.00×** | **0.72×** | **1.06×** | **1.10×** | **1.13×** |
+| JSON primitives (`str`, `int`, `float`, `bool`, `None`, `list`, `dict`) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `bytes` | ✓ | ✗ | ✓ | ✗ | ✓ |
+| `tuple` | ✓ | ~ list | ~ list | ~ list | ~ list |
+| `set` / `frozenset` | ✓ | ✗ | ✗ | ✗ | ✗ |
+| `datetime` / `date` / `time` | ✓ | ~ str | ✗ | ~ str | ~ str |
+| `timedelta` | ✓ | ~ str | ✗ | ✗ | ✗ |
+| `Decimal` | ✓ | ~ str | ✗ | ✗ | ✗ |
+| `UUID` | ✓ | ~ str | ✗ | ~ str | ~ str |
+| `complex` | ✓ | ✗ | ✗ | ✗ | ✗ |
+| `dataclass` instance | ✓ | ✗ | ✗ | ~ dict | ~ dict |
+| `Enum` | ✓ | ✗ | ✗ | ~ value | ~ value |
+
+¹ End-to-end Django cache → `rust-valkey` driver → localhost Valkey,
+~150 B payload, geometric mean of `get`/`set`/`mget`/`mset` ops/sec.
+Real network or larger payloads dampen the spread. Reproduce with the
+[benchmarks](https://github.com/e1plus/django-cachex/tree/main/benchmarks) harness.
+
+Notes:
+
+- The "~" cells are not bugs — they reflect what the underlying format can
+  represent. `Decimal("1.99")` round-trips through `DjangoJSONEncoder` as the
+  string `"1.99"`; if you need a `Decimal` back, convert on read.
+- `orjson` natively encodes `dataclass` and `Enum` values, but loses the
+  original type on the way back (becomes a `dict` or the underlying value).
+- For arbitrary Django model instances or types not listed above, prefer
+  `pickle` or write a custom serializer.
+- If you need maximum speed and your values are JSON-compatible (or you
+  pre-convert `Decimal`/`datetime` to strings), `orjson` and `ormsgpack` are
+  significantly faster than the pure-Python equivalents.
 
 ## Fallback for Migration
 
