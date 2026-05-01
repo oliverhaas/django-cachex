@@ -887,6 +887,56 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#unreleased" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unreleased
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Unreleased">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#030-february-2026" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -983,7 +1033,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-features" class="md-nav__link">
+  <a href="#new-features_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         New Features
@@ -1033,7 +1083,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-features_1" class="md-nav__link">
+  <a href="#new-features_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         New Features
@@ -1083,7 +1133,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-features_2" class="md-nav__link">
+  <a href="#new-features_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         New Features
@@ -1111,7 +1161,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-features_3" class="md-nav__link">
+  <a href="#new-features_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         New Features
@@ -1174,6 +1224,56 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#unreleased" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unreleased
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Unreleased">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#030-february-2026" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1270,7 +1370,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-features" class="md-nav__link">
+  <a href="#new-features_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         New Features
@@ -1320,7 +1420,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-features_1" class="md-nav__link">
+  <a href="#new-features_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         New Features
@@ -1370,7 +1470,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-features_2" class="md-nav__link">
+  <a href="#new-features_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         New Features
@@ -1398,7 +1498,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-features_3" class="md-nav__link">
+  <a href="#new-features_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         New Features
@@ -1439,6 +1539,36 @@
 
 
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
+<h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="breaking-changes">Breaking changes<a class="headerlink" href="#breaking-changes" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Python 3.14+ required.</strong> Dropped support for 3.12 and 3.13. The package now ships on cp314 and cp314t (free-threaded) wheels.</li>
+<li><strong>Django 6.0+ required.</strong> Dropped support for Django 5.2.</li>
+<li><strong><code>SyncCache</code> wire format changed.</strong> Stream entries now flow through the transport's serializer + compressor pipeline instead of raw pickle. Pods running the new code cannot read entries written by older pods on the same stream — coordinate the rollout (drain or rotate <code>STREAM_KEY</code>).</li>
+<li><strong><code>hmset</code> removed.</strong> Use <code>hset(key, mapping=...)</code> or <code>hset(key, items=...)</code> (flat key-value list, matching redis-py/valkey-py).</li>
+</ul>
+<h3 id="new-features">New features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Rust I/O driver.</strong> Optional native driver built on PyO3 + tokio + redis-rs. Set <code>"client_class"</code> to one of <code>RustRedisCache</code>, <code>RustValkeyCache</code>, <code>RustRedisClusterCache</code>, <code>RustValkeyClusterCache</code>, <code>RustRedisSentinelCache</code>, <code>RustValkeySentinelCache</code>. Sync and async share one tokio runtime; async dodges the threadpool round-trip.</li>
+<li><strong><code>SyncCache</code> backend.</strong> Stream-synchronized in-memory cache: reads are local, writes broadcast over a Redis Stream, a daemon thread on each pod consumes the stream and applies remote changes. Read-heavy, write-light, eventually consistent.</li>
+<li><strong><code>TieredCache</code> backend.</strong> Composes two existing <code>CACHES</code> entries as L1 (fast, e.g. LocMem) and L2 (durable, e.g. Redis), with TTL propagation and pull-through reads.</li>
+<li><strong>Cache-stampede prevention.</strong> TTL-based XFetch via <code>OPTIONS["stampede_prevention"]</code> (or <code>stampede_prevention=</code> per call). Configurable buffer/beta/delta.</li>
+<li><strong><code>LocMemCache</code> and <code>DatabaseCache</code> extensions.</strong> Drop-in replacements for the Django builtins, adding data-structure ops, TTL helpers, and admin support. Compound read-modify-write ops on <code>LocMemCache</code> are serialized via a per-backend <code>RLock</code> (#62).</li>
+<li><strong><code>orjson</code> and <code>ormsgpack</code> serializer extras.</strong></li>
+<li><strong>Free-threaded CPython (3.14t) support.</strong> A cp314t wheel is built; <code>_driver</code> works with the GIL disabled. The Rust driver also runs on the free-threaded build.</li>
+<li><strong>PyPI wheels via cibuildwheel.</strong> Manylinux x86_64 wheels for cp314 and cp314t.</li>
+<li><strong>Async pool sharing.</strong> A single async connection pool is shared across per-task <code>Cache</code> instances (#83), avoiding the thundering-herd reconnect on cold start.</li>
+<li><strong>Pipeline parity.</strong> Stream ops, CAS ops, missing key ops (<code>persist</code>/<code>pttl</code>/<code>expire_at</code>/etc.), context manager, <code>zpopmin</code>/<code>zpopmax</code> default <code>count=1</code> aligned with the cache API.</li>
+</ul>
+<h3 id="fixes">Fixes<a class="headerlink" href="#fixes" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>LocMemCache.lpush</code>/<code>sadd</code>/<code>hset</code>/<code>hincrby</code>/<code>zadd</code>/etc. no longer lose updates under concurrent threads (#62).</li>
+<li><code>delete_pattern</code> batches deletes to bound peak memory on broad patterns.</li>
+<li><code>clear()</code> is now prefix/version-scoped instead of <code>FLUSHDB</code>. The old behavior is available as <code>flush_db()</code>.</li>
+<li>Compressor <code>decompress</code> methods catch all exceptions and re-raise as <code>CompressorError</code>.</li>
+<li>Several cluster correctness fixes (script loading on replicas, set_many <code>timeout=0</code>).</li>
+</ul>
+<hr />
 <h2 id="030-february-2026">0.3.0 (February 2026)<a class="headerlink" href="#030-february-2026" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong><code>expiretime()</code> and <code>set(get=True)</code> support</strong>: New cache methods for retrieving absolute expiry timestamps and atomic get-and-set operations.</li>
@@ -1504,7 +1634,7 @@
 <hr />
 <h2 id="pre-release-history">Pre-release History<a class="headerlink" href="#pre-release-history" title="Permanent link">&para;</a></h2>
 <h3 id="010b6-february-2026">0.1.0b6 (February 2026)<a class="headerlink" href="#010b6-february-2026" title="Permanent link">&para;</a></h3>
-<h4 id="new-features">New Features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h4>
+<h4 id="new-features_1">New Features<a class="headerlink" href="#new-features_1" title="Permanent link">&para;</a></h4>
 <ul>
 <li><strong>Key type filter</strong>: Filter keys by type (string, list, set, hash, zset, stream) in the admin key list sidebar</li>
 <li><strong>LocMemCache data structure operations</strong>: List, set, and hash operations now work with LocMemCache wrappers</li>
@@ -1527,7 +1657,7 @@
 <li>Fixed <code>!r</code> format spec for <code>KeyT</code> in error messages</li>
 </ul>
 <h3 id="010b5-february-2026">0.1.0b5 (February 2026)<a class="headerlink" href="#010b5-february-2026" title="Permanent link">&para;</a></h3>
-<h4 id="new-features_1">New Features<a class="headerlink" href="#new-features_1" title="Permanent link">&para;</a></h4>
+<h4 id="new-features_2">New Features<a class="headerlink" href="#new-features_2" title="Permanent link">&para;</a></h4>
 <ul>
 <li><strong>Expanded cache backend support</strong>: The admin interface now supports Django's builtin cache backends through wrapper classes</li>
 <li><code>LocMemCache</code>: Full support including key listing, TTL inspection, and memory statistics</li>
@@ -1549,7 +1679,7 @@
 <li>Fixed editing for wrapped cache backends</li>
 </ul>
 <h3 id="010b4-january-2026">0.1.0b4 (January 2026)<a class="headerlink" href="#010b4-january-2026" title="Permanent link">&para;</a></h3>
-<h4 id="new-features_2">New Features<a class="headerlink" href="#new-features_2" title="Permanent link">&para;</a></h4>
+<h4 id="new-features_3">New Features<a class="headerlink" href="#new-features_3" title="Permanent link">&para;</a></h4>
 <ul>
 <li><strong>Django Cache Admin</strong>: Built-in admin interface for cache management</li>
 <li>Browse all configured caches</li>
@@ -1576,7 +1706,7 @@
 <li><code>examples/unfold/</code> - Django Unfold theme integration</li>
 </ul>
 <h3 id="010b3-january-2026">0.1.0b3 (January 2026)<a class="headerlink" href="#010b3-january-2026" title="Permanent link">&para;</a></h3>
-<h4 id="new-features_3">New Features<a class="headerlink" href="#new-features_3" title="Permanent link">&para;</a></h4>
+<h4 id="new-features_4">New Features<a class="headerlink" href="#new-features_4" title="Permanent link">&para;</a></h4>
 <ul>
 <li><strong>Lua Script Interface</strong>: High-level API for registering and executing Lua scripts with automatic key prefixing and value encoding/decoding</li>
 <li><code>cache.register_script()</code> to register scripts with pre/post processing hooks</li>

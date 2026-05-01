@@ -322,10 +322,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#why-django-cachex" class="md-nav__link">
+  <a href="#whats-in-the-box" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Why django-cachex?
+        What's in the box
       
     </span>
   </a>
@@ -984,10 +984,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#why-django-cachex" class="md-nav__link">
+  <a href="#whats-in-the-box" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Why django-cachex?
+        What's in the box
       
     </span>
   </a>
@@ -1059,28 +1059,30 @@
 
 
 <h1 id="django-cachex">django-cachex<a class="headerlink" href="#django-cachex" title="Permanent link">&para;</a></h1>
-<p>Full featured Valkey and Redis cache backend for Django with a built-in admin interface.</p>
+<p>Valkey and Redis cache backend for Django, with a Django admin UI for cache inspection.</p>
 <p><a href="https://pypi.org/project/django-cachex/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/django-cachex.svg?style=flat" /></a>
 <a href="https://pypi.org/project/django-cachex/"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/django-cachex.svg" /></a>
 <a href="https://pypi.org/project/django-cachex/"><img alt="Django versions" src="https://img.shields.io/pypi/frameworkversions/django/django-cachex.svg" /></a></p>
-<h2 id="why-django-cachex">Why django-cachex?<a class="headerlink" href="#why-django-cachex" title="Permanent link">&para;</a></h2>
-<p><strong>Drop-in replacement</strong> for Django's built-in Redis cache backend with extended features:</p>
+<h2 id="whats-in-the-box">What's in the box<a class="headerlink" href="#whats-in-the-box" title="Permanent link">&para;</a></h2>
+<p>A drop-in replacement for Django's built-in Redis cache, plus:</p>
 <ul>
-<li><strong>Built-in admin interface</strong> - Browse, search, edit, and delete cache keys from Django admin</li>
-<li><strong>Unified Valkey and Redis support</strong> - Single package for both backends</li>
-<li><strong>Extended data structures</strong> - Hashes, lists, sets, sorted sets</li>
-<li><strong>Sync and async support</strong> - All extended methods available in both sync and async</li>
-<li><strong>TTL and pattern operations</strong> - <code>ttl()</code>, <code>expire()</code>, <code>keys()</code>, <code>delete_pattern()</code></li>
-<li><strong>Lua script support</strong> - Register and execute Lua scripts with automatic key prefixing</li>
-<li><strong>Distributed locking</strong> - <code>cache.lock()</code> for cross-process synchronization</li>
-<li><strong>Sentinel and Cluster</strong> - High availability and horizontal scaling</li>
-<li><strong>Pluggable serializers</strong> - Pickle, JSON, MsgPack with fallback support</li>
-<li><strong>Pluggable compressors</strong> - Zlib, Gzip, LZ4, LZMA, Zstandard with fallback support</li>
+<li>One package for both Valkey and Redis, default and Sentinel and Cluster.</li>
+<li>Sync and async are first-class. The async cache also works from sync code.</li>
+<li>Hash, list, set, sorted set, and stream operations on the cache object.</li>
+<li>TTL and pattern helpers (<code>ttl()</code>, <code>expire()</code>, <code>keys()</code>, <code>delete_pattern()</code>).</li>
+<li>Distributed locks: <code>cache.lock()</code>.</li>
+<li>Lua scripting with automatic key prefixing and value encoding/decoding.</li>
+<li>Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with fallback chains for safe migrations.</li>
+<li>Cache stampede prevention (TTL-based XFetch).</li>
+<li>Two composite backends: <code>SyncCache</code> (cross-pod stream-synchronized in-memory cache) and <code>TieredCache</code> (L1/L2 with TTL propagation).</li>
+<li>Django <code>LocMemCache</code> and <code>DatabaseCache</code> extensions with the same data-structure ops and admin support.</li>
+<li>Optional Rust I/O driver (PyO3 + tokio + redis-rs) under the same <code>KeyValueCache</code> API. Free-threaded CPython (3.14t) supported.</li>
+<li>Django admin UI for browsing keys, inspecting values, editing, and flushing.</li>
 </ul>
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Python 3.12+</li>
-<li>Django 5.2+</li>
+<li>Python 3.14+ (free-threaded supported)</li>
+<li>Django 6.0+</li>
 <li>valkey-py 6.1+ or redis-py 6.0+</li>
 </ul>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>

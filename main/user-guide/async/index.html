@@ -1417,9 +1417,9 @@
 
 
 <h1 id="async-support">Async Support<a class="headerlink" href="#async-support" title="Permanent link">&para;</a></h1>
-<p>django-cachex implements Django's async cache methods (<code>aget</code>, <code>aset</code>, <code>adelete</code>, etc.) using native async clients from <code>redis.asyncio</code> and <code>valkey.asyncio</code>, providing true async operations without thread pool overhead.</p>
+<p>django-cachex implements Django's async cache methods (<code>aget</code>, <code>aset</code>, <code>adelete</code>, etc.) using native async clients from <code>redis.asyncio</code> and <code>valkey.asyncio</code>. There is no threadpool round-trip.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>A single cache backend supports both sync and async operations simultaneously -- <code>cache.get()</code> and <code>await cache.aget()</code> work on the same backend with no separate configuration needed.</p>
+<p>A single cache backend serves both sync and async callers. <code>cache.get()</code> and <code>await cache.aget()</code> operate on the same backend with no separate configuration.</p>
 <h2 id="basic-usage">Basic Usage<a class="headerlink" href="#basic-usage" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>

@@ -1543,8 +1543,8 @@
 </thead>
 <tbody>
 <tr>
-<td><code>hset(key, field, value)</code></td>
-<td>Set a hash field value</td>
+<td><code>hset(key, field=None, value=None, mapping=None, items=None)</code></td>
+<td>Set hash field(s); pass <code>field</code>/<code>value</code>, a <code>mapping</code> dict, or a flat <code>items</code> list</td>
 </tr>
 <tr>
 <td><code>hdel(key, *fields)</code></td>
@@ -1581,10 +1581,6 @@
 <tr>
 <td><code>hmget(key, *fields)</code></td>
 <td>Get multiple hash field values</td>
-</tr>
-<tr>
-<td><code>hmset(key, mapping)</code></td>
-<td>Set multiple hash fields</td>
 </tr>
 <tr>
 <td><code>hsetnx(key, field, value)</code></td>
@@ -1980,14 +1976,14 @@
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Sync (on cache object directly)</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">cache</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">&quot;hash&quot;</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Async (on cache client -- note: client methods use raw/prefixed keys)</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Async (on cache client; note that client methods take raw/prefixed keys)</span>
 </span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">key</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">make_and_validate_key</span><span class="p">(</span><span class="s2">&quot;hash&quot;</span><span class="p">)</span>
 </span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">_cache</span><span class="o">.</span><span class="n">ahset</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
 </span></code></pre></div>
 <ul>
 <li><code>attl</code>, <code>apttl</code>, <code>aexpire</code>, <code>apexpire</code>, <code>aexpireat</code>, <code>apexpireat</code>, <code>apersist</code></li>
 <li><code>akeys</code>, <code>aiter_keys</code>, <code>adelete_pattern</code></li>
-<li><code>ahset</code>, <code>ahdel</code>, <code>ahexists</code>, <code>ahget</code>, <code>ahgetall</code>, <code>ahincrby</code>, <code>ahincrbyfloat</code>, <code>ahkeys</code>, <code>ahlen</code>, <code>ahmget</code>, <code>ahmset</code>, <code>ahsetnx</code>, <code>ahvals</code></li>
+<li><code>ahset</code>, <code>ahdel</code>, <code>ahexists</code>, <code>ahget</code>, <code>ahgetall</code>, <code>ahincrby</code>, <code>ahincrbyfloat</code>, <code>ahkeys</code>, <code>ahlen</code>, <code>ahmget</code>, <code>ahsetnx</code>, <code>ahvals</code></li>
 <li><code>asadd</code>, <code>asrem</code>, <code>asmembers</code>, <code>asismember</code>, <code>asmismember</code>, <code>ascard</code>, <code>aspop</code>, <code>asrandmember</code>, <code>asmove</code>, <code>asdiff</code>, <code>asdiffstore</code>, <code>asinter</code>, <code>asinterstore</code>, <code>asunion</code>, <code>asunionstore</code></li>
 <li><code>azadd</code>, <code>azcard</code>, <code>azcount</code>, <code>azincrby</code>, <code>azrange</code>, <code>azrevrange</code>, <code>azrangebyscore</code>, <code>azrevrangebyscore</code>, <code>azrank</code>, <code>azrevrank</code>, <code>azrem</code>, <code>azremrangebyrank</code>, <code>azremrangebyscore</code>, <code>azscore</code>, <code>azmscore</code>, <code>azpopmin</code>, <code>azpopmax</code></li>
 <li><code>allen</code>, <code>alpush</code>, <code>arpush</code>, <code>alpop</code>, <code>arpop</code>, <code>alindex</code>, <code>alrange</code>, <code>alset</code>, <code>altrim</code>, <code>alrem</code>, <code>alpos</code>, <code>almove</code>, <code>alinsert</code>, <code>ablpop</code>, <code>abrpop</code>, <code>ablmove</code></li>
