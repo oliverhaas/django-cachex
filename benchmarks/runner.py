@@ -11,6 +11,7 @@ import asyncio
 import gc
 import time
 import tracemalloc
+import warnings
 from dataclasses import dataclass, field
 from statistics import mean, median
 from typing import TYPE_CHECKING, Any
@@ -171,7 +172,7 @@ def _build_payload() -> dict[str, Any]:
 
 
 def _build_payload_large() -> list[dict[str, Any]]:
-    # ~15 KiB pickled — queryset-shaped, well above the 256 B compression
+    # ~14 KiB pickled — queryset-shaped, well above the 256 B compression
     # threshold. Used for compressor benchmarks where a small payload would
     # bypass compression entirely.
     return [
@@ -326,9 +327,12 @@ def _open_info_client(location: str):
 
 
 def _server_used_memory(info_client) -> int | None:
+    import redis
+
     try:
         info = info_client.info("memory")
-    except Exception:
+    except (redis.RedisError, OSError) as exc:
+        warnings.warn(f"server INFO memory sample failed: {exc!r}", stacklevel=2)
         return None
     if not isinstance(info, dict):
         return None
@@ -337,9 +341,12 @@ def _server_used_memory(info_client) -> int | None:
 
 
 def _server_connections(info_client) -> int | None:
+    import redis
+
     try:
         info = info_client.info("clients")
-    except Exception:
+    except (redis.RedisError, OSError) as exc:
+        warnings.warn(f"server INFO clients sample failed: {exc!r}", stacklevel=2)
         return None
     if not isinstance(info, dict):
         return None
@@ -641,7 +648,8 @@ def _total_rss_kb(parent_pid: int) -> float:
             check=False,
             timeout=2,
         )
-    except Exception:
+    except (subprocess.SubprocessError, OSError) as exc:
+        warnings.warn(f"ps RSS sample failed: {exc!r}", stacklevel=2)
         return total
     for raw in result.stdout.strip().splitlines():
         stripped = raw.strip()
@@ -774,7 +782,10 @@ def run_asgi_benchmark(  # noqa: C901, PLR0915 — orchestrates many phases in o
                         local_lat.append((time.perf_counter() - start) * 1000)
                         if resp.status_code >= 400:
                             e += 1
-                    except Exception:
+                    except httpx.HTTPError:
+                        # Transport / protocol / status errors are part of what we measure.
+                        # Programming bugs (NameError, TypeError, etc.) intentionally propagate
+                        # so they crash the run instead of being counted as request errors.
                         e += 1
                     t += 1
                 return t, e, local_lat
