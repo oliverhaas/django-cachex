@@ -8,7 +8,7 @@ import pytest
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
 
-from benchmarks.runner import BenchmarkResult, format_table
+from benchmarks.runner import BenchmarkResult, MicroResult, format_micro_table, format_table
 
 
 def _start(image: str) -> tuple[str, str]:
@@ -69,4 +69,25 @@ def results() -> Iterator[_Results]:
         print("BENCHMARK SUMMARY")
         print("=" * 80)
         print(format_table(sink.items))
+        print("=" * 80)
+
+
+class _MicroResults:
+    def __init__(self) -> None:
+        self.items: list[MicroResult] = []
+
+    def add(self, r: MicroResult) -> None:
+        self.items.append(r)
+
+
+@pytest.fixture(scope="session")
+def micro_results() -> Iterator[_MicroResults]:
+    sink = _MicroResults()
+    yield sink
+    if sink.items:
+        print()
+        print("=" * 80)
+        print("COMPRESSOR MICRO SUMMARY")
+        print("=" * 80)
+        print(format_micro_table(sink.items))
         print("=" * 80)
