@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 from django.utils.module_loading import import_string
 
-from django_cachex.compat import create_compressor, create_serializer
 from django_cachex.exceptions import CompressorError, SerializerError, _main_exceptions
 from django_cachex.stampede import StampedeConfig, should_recompute
 from django_cachex.types import KeyType
@@ -70,6 +69,15 @@ except ImportError:
 _ASYNC_POOLS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], Any]] = (
     weakref.WeakKeyDictionary()
 )
+
+
+def _load_codec(config: str | type | Any) -> Any:
+    """Resolve a serializer/compressor config: dotted-path / class / instance → instance."""
+    if isinstance(config, str):
+        config = import_string(config)
+    if callable(config):
+        return config()
+    return config
 
 
 def _options_key(options: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
@@ -191,18 +199,16 @@ class KeyValueCacheClient:
     # =========================================================================
 
     def _create_serializers(self, config: str | list | builtins.type[Any] | Any) -> list:
-        """Create serializer instance(s) from config."""
-        if isinstance(config, list):
-            return [create_serializer(item) for item in config]
-        return [create_serializer(config)]
+        if config is None:
+            config = "django_cachex.serializers.pickle.PickleSerializer"
+        items: list = config if isinstance(config, list) else [config]
+        return [_load_codec(item) for item in items]
 
     def _create_compressors(self, config: str | list | builtins.type[Any] | Any | None) -> list:
-        """Create compressor instance(s) from config."""
         if config is None:
             return []
-        if isinstance(config, list):
-            return [create_compressor(item) for item in config]
-        return [create_compressor(config)]
+        items: list = config if isinstance(config, list) else [config]
+        return [_load_codec(item) for item in items]
 
     def _decompress(self, value: bytes) -> bytes:
         """Decompress with fallback support for multiple compressors.

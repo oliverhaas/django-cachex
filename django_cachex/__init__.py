@@ -11,7 +11,6 @@ try:
 except PackageNotFoundError:
     __version__ = "0.0.0+unknown"
 
-# Re-export commonly used items for convenience
 from django_cachex.exceptions import (
     CompressorError,
     NotSupportedError,

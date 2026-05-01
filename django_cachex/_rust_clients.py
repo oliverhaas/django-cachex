@@ -45,8 +45,8 @@ _LOCK = threading.Lock()
 def _get_or_create(key: Hashable, factory: Callable[[], RustValkeyDriver]) -> RustValkeyDriver:
     # Lock wraps both the PID check and the dict ops so a concurrent fork-detect
     # under free-threaded 3.14t can't race two clears or skip an in-flight insert.
-    # `factory()` is a blocking connect() — we serialize it here intentionally;
-    # a double-checked pattern would let two callers race the same connect.
+    # `factory()` is a blocking connect(); double-checked locking would let two
+    # callers race the same connect.
     global _PID  # noqa: PLW0603
     with _LOCK:
         pid = os.getpid()

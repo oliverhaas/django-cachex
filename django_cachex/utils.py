@@ -1,5 +1,3 @@
-"""Shared utility functions for django-cachex."""
-
 from __future__ import annotations
 
 import sys
@@ -7,7 +5,6 @@ from typing import Any
 
 
 def _format_bytes(size_bytes: int) -> str:
-    """Format bytes as human-readable string."""
     size: float = float(size_bytes)
     for unit in ("B", "K", "M", "G", "T"):
         if abs(size) < 1024:
@@ -17,7 +14,6 @@ def _format_bytes(size_bytes: int) -> str:
 
 
 def _deep_getsizeof(obj: Any, seen: set[int] | None = None) -> int:
-    """Recursively calculate the deep size of an object in bytes."""
     if seen is None:
         seen = set()
     obj_id = id(obj)
