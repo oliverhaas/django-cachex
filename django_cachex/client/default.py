@@ -343,7 +343,7 @@ class KeyValueCacheClient:
             raise RuntimeError(msg)
 
         # Filter out parser_class — it's sync-specific.
-        async_pool_options = {k: v for k, v in self._pool_options.items() if k != "parser_class"}
+        async_pool_options: dict[str, Any] = {k: v for k, v in self._pool_options.items() if k != "parser_class"}
         # Default cap so concurrent async load can't grow the pool unbounded.
         # Users who need more can set ``max_connections`` in OPTIONS.
         async_pool_options.setdefault("max_connections", 50)
