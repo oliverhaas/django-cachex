@@ -7,11 +7,34 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to publish (e.g., 6.0.0)"
+        description: "Version to publish (e.g., 0.4.0)"
         required: true
 
 jobs:
-  build-wheels:
+  build-pure-wheel:
+    name: Build pure-Python wheel + sdist (django-cachex)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Build wheel + sdist
+        run: uv build --out-dir dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-pure
+          path: dist/*
+
+  build-rust-wheels:
+    name: Build Rust wheels (cibuildwheel, django-cachex-rust)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -20,6 +43,8 @@ jobs:
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.4
+        with:
+          package-dir: crates/django-cachex-rust
         env:
           CIBW_BUILD: cp314-manylinux_x86_64 cp314t-manylinux_x86_64
           CIBW_ENABLE: cpython-freethreading
@@ -28,31 +53,19 @@ jobs:
             curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
           CIBW_ENVIRONMENT_LINUX: PATH="$HOME/.cargo/bin:$PATH"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wheels-linux-x86_64
-          path: wheelhouse/*.whl
-
-  build-sdist:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref }}
-
-      - name: Build sdist
+      - name: Build Rust sdist
         uses: PyO3/maturin-action@v1
         with:
           command: sdist
-          args: --out dist
+          args: --manifest-path crates/django-cachex-rust/Cargo.toml --out wheelhouse/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: sdist
-          path: dist/*.tar.gz
+          name: dist-rust
+          path: wheelhouse/*
 
-  publish:
-    needs: [build-wheels, build-sdist]
+  publish-pure:
+    needs: [build-pure-wheel, build-rust-wheels]
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -62,8 +75,25 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
+          name: dist-pure
           path: dist
-          merge-multiple: true
 
-      - name: Publish to PyPI
+      - name: Publish django-cachex to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-rust:
+    needs: [build-pure-wheel, build-rust-wheels]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/django-cachex-rust/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-rust
+          path: dist
+
+      - name: Publish django-cachex-rust to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

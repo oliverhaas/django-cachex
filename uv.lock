@@ -6,6 +6,12 @@ resolution-markers = [
     "python_full_version < '3.15'",
 ]
 
+[manifest]
+members = [
+    "django-cachex",
+    "django-cachex-rust",
+]
+
 [[package]]
 name = "anyio"
 version = "4.13.0"
@@ -319,6 +325,9 @@ ormsgpack = [
 redis = [
     { name = "redis" },
 ]
+redis-rs = [
+    { name = "django-cachex-rust" },
+]
 unfold = [
     { name = "django-unfold" },
 ]
@@ -329,6 +338,7 @@ valkey = [
 [package.dev-dependencies]
 dev = [
     { name = "beautifulsoup4" },
+    { name = "django-cachex-rust" },
     { name = "django-stubs" },
     { name = "djlint" },
     { name = "granian" },
@@ -362,6 +372,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=6,<7" },
+    { name = "django-cachex-rust", marker = "extra == 'redis-rs'", editable = "crates/django-cachex-rust" },
     { name = "django-unfold", marker = "extra == 'unfold'", specifier = ">=0.70.0" },
     { name = "lz4", marker = "extra == 'lz4'", specifier = ">=4.4.0" },
     { name = "msgpack", marker = "extra == 'msgpack'", specifier = ">=1.1.0" },
@@ -372,11 +383,12 @@ requires-dist = [
     { name = "valkey", marker = "extra == 'valkey'", specifier = ">=6.1.0,<7" },
     { name = "valkey", extras = ["libvalkey"], marker = "extra == 'libvalkey'", specifier = ">=6.1.0,<7" },
 ]
-provides-extras = ["valkey", "libvalkey", "redis", "hiredis", "lz4", "msgpack", "ormsgpack", "orjson", "unfold"]
+provides-extras = ["valkey", "libvalkey", "redis", "hiredis", "redis-rs", "lz4", "msgpack", "ormsgpack", "orjson", "unfold"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "beautifulsoup4", specifier = "==4.14.3" },
+    { name = "django-cachex-rust", editable = "crates/django-cachex-rust" },
     { name = "django-stubs", specifier = "==6.0.3" },
     { name = "djlint", specifier = "==1.36.4" },
     { name = "granian", specifier = ">=2.6,<3" },
@@ -406,6 +418,11 @@ docs = [
     { name = "mkdocs", specifier = "==1.6.1" },
     { name = "mkdocs-material", specifier = "==9.7.6" },
 ]
+
+[[package]]
+name = "django-cachex-rust"
+version = "0.3.0"
+source = { editable = "crates/django-cachex-rust" }
 
 [[package]]
 name = "django-stubs"
