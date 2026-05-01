@@ -9,8 +9,9 @@
 
 import socket
 
-# Build exception tuples from available libraries (redis-py / valkey-py).
-# These are used by the client layer.
+# Network/server-side errors the client layer treats as transient or
+# backend-specific failures. Each block is best-effort: redis-py and
+# valkey-py are both optional installs.
 _exception_list: list[type[Exception]] = [socket.timeout]
 
 try:
@@ -37,17 +38,11 @@ _main_exceptions = tuple(_exception_list)
 
 
 class CompressorError(Exception):
-    """Raised when compression or decompression fails.
-
-    Caught by the client's fallback logic to try the next compressor in the chain.
-    """
+    """Raised when compression or decompression fails. Triggers the client's compressor fallback."""
 
 
 class SerializerError(Exception):
-    """Raised when serialization or deserialization fails.
-
-    Caught by the client's fallback logic to try the next serializer in the chain.
-    """
+    """Raised when serialization or deserialization fails. Triggers the client's serializer fallback."""
 
 
 class NotSupportedError(Exception):

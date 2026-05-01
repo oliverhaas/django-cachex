@@ -1,10 +1,8 @@
-"""Cache stampede prevention via XFetch probabilistic early expiration.
+"""Cache stampede prevention via XFetch (Vattani et al., VLDB 2015).
 
-Implements the XFetch algorithm (Vattani et al., VLDB 2015) for optimal
-cache stampede prevention. Instead of wrapping values, this uses Redis's
-native TTL: keys are stored with an extended TTL (timeout + buffer), and
-on read the remaining TTL is checked to decide whether to trigger early
-recomputation.
+Keys are stored with TTL = ``timeout + buffer``. On read, the remaining
+TTL drives a probabilistic early-recompute decision so a single client
+refreshes the value before all clients see a miss simultaneously.
 """
 
 from __future__ import annotations
@@ -15,23 +13,17 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class StampedeConfig:
-    """Configuration for stampede prevention."""
-
-    buffer: int = 60  # extra TTL seconds added to Redis expiry
-    beta: float = 1.0  # XFetch beta parameter (higher = earlier recompute)
-    delta: float = 1.0  # estimated recomputation time in seconds
+    # buffer: extra TTL seconds added to the stored expiry so reads can
+    #   distinguish "logically expired" from "physically expired".
+    # beta:   XFetch beta — higher values trigger recomputation earlier.
+    # delta:  estimated recomputation time in seconds.
+    buffer: int = 60
+    beta: float = 1.0
+    delta: float = 1.0
 
 
 def should_recompute(ttl: int, config: StampedeConfig) -> bool:
-    """Decide whether to trigger early recomputation using the XFetch algorithm.
-
-    Args:
-        ttl: Remaining TTL in seconds from Redis (TTL command result).
-        config: Stampede prevention configuration.
-
-    Returns:
-        True if the caller should recompute the value.
-    """
+    """Return True when the caller should recompute the value early."""
     remaining = ttl - config.buffer
 
     if remaining <= 0:

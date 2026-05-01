@@ -28,12 +28,10 @@ class LockNotOwnedError(LockError):
 
 
 class ValkeyLock:
-    """Token-scoped distributed lock on top of the Rust driver.
+    """Token-scoped distributed lock backed by the Rust driver's lock primitives.
 
-    Each instance is single-use per ``acquire``: the token is rotated on each
-    call. ``thread_local=True`` (the default) keeps the active token per
-    thread so the same ``ValkeyLock`` instance can be shared between threads
-    without one releasing another's lock.
+    With ``thread_local=True`` (default) the active token is kept per thread
+    so one instance can be shared across threads without cross-release.
     """
 
     def __init__(
@@ -269,8 +267,13 @@ class ValkeyLock:
 
 
 class AsyncValkeyLock(ValkeyLock):
-    """Async-flavored ValkeyLock. ``acquire``/``release``/``extend`` are
-    coroutines (matching redis-py's async ``Lock``)."""
+    """Async-flavored ``ValkeyLock``: ``acquire``/``release``/``extend``/``locked``/``owned`` are coroutines.
+
+    Mirrors redis-py's async ``Lock`` API. The ``# type: ignore[override]``
+    comments below all stem from the same fact: the sync→async signature
+    change is intentional and not expressible to the type checker.
+    Sync context-manager (``__enter__``) intentionally absent.
+    """
 
     async def acquire(  # type: ignore[override]
         self,
@@ -296,22 +299,6 @@ class AsyncValkeyLock(ValkeyLock):
 
     async def owned(self) -> bool:  # type: ignore[override]
         return await self.aowned()
-
-    async def __aenter__(self) -> Self:
-        if await self.aacquire():
-            return self
-        msg = f"Could not acquire lock {self.name!r}"
-        raise LockError(msg)
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        await self.arelease()
-
-    # Sync ctx manager intentionally absent on the async variant.
 
 
 __all__ = ["AsyncValkeyLock", "LockError", "LockNotOwnedError", "ValkeyLock"]
