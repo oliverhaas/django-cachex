@@ -3,6 +3,8 @@
 import threading
 from typing import TYPE_CHECKING
 
+import pytest
+
 if TYPE_CHECKING:
     from django_cachex.cache import KeyValueCache
 
@@ -27,6 +29,49 @@ class TestBasicLockOperations:
         assert cache.has_key("resource_b") is True
         first_lock.release()
         assert cache.has_key("resource_b") is False
+
+    def test_lock_context_manager(self, cache: KeyValueCache):
+        lock = cache.lock("ctx_resource", timeout=5)
+        with lock:
+            assert cache.has_key("ctx_resource") is True
+        assert cache.has_key("ctx_resource") is False
+
+
+class TestLockExtend:
+    """Tests for extending the TTL of a held lock."""
+
+    def test_extend_increases_ttl(self, cache: KeyValueCache):
+        lock = cache.lock("extend_resource", timeout=2)
+        assert lock.acquire() is True
+        try:
+            before = cache.pttl("extend_resource")
+            assert lock.extend(20) is True
+            after = cache.pttl("extend_resource")
+            # extend(20s) on top of the remaining ~2s ≈ 22s; assert it grew
+            # well past the original timeout to rule out a no-op.
+            assert after is not None and before is not None
+            assert after > before
+            assert after > 5_000
+        finally:
+            lock.release()
+
+
+class TestLockRelease:
+    """Tests for the release contract."""
+
+    def test_double_release_raises(self, cache: KeyValueCache):
+        from redis.exceptions import LockError as RedisLockError
+
+        from django_cachex.lock import LockError
+
+        lock = cache.lock("dbl_release_resource", timeout=5)
+        lock.acquire()
+        lock.release()
+        # The py driver raises ``redis.exceptions.LockError`` while the Rust
+        # driver raises ``django_cachex.lock.LockError`` — both fulfill the
+        # "double release is loud" contract.
+        with pytest.raises((LockError, RedisLockError)):
+            lock.release()
 
 
 class TestCrossThreadLockRelease:
