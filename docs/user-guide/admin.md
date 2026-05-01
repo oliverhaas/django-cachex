@@ -20,11 +20,11 @@ The cache admin will appear in the Django admin sidebar under "Caches".
 
 The admin uses Django's built-in permission system. Superusers have full access. Staff users need explicit permissions:
 
-- `django_cachex.view_cache` / `view_key` — view caches and keys
-- `django_cachex.change_cache` — flush caches, update TTL
-- `django_cachex.add_key` — create keys
-- `django_cachex.change_key` — edit values
-- `django_cachex.delete_key` — delete keys
+- `django_cachex.view_cache` / `view_key`: view caches and keys
+- `django_cachex.change_cache`: flush caches, update TTL
+- `django_cachex.add_key`: create keys
+- `django_cachex.change_key`: edit values
+- `django_cachex.delete_key`: delete keys
 
 ## Support Levels
 
@@ -38,7 +38,7 @@ Different cache backends have different levels of support:
 
 ### Using Redis/Valkey?
 
-If you are using Django's builtin Redis backend (`django.core.cache.backends.redis.RedisCache`), consider switching to django-cachex's `ValkeyCache` or `RedisCache` backends for full admin functionality: key browsing, pattern search, TTL inspection, native data type support, and server statistics. See the [quickstart guide](../getting-started/quickstart.md) for migration instructions.
+The admin works against Django's builtin Redis backend (`django.core.cache.backends.redis.RedisCache`) at the **limited** support level only. Switch to `ValkeyCache` / `RedisCache` for full functionality. See the [quickstart guide](../getting-started/quickstart.md) for migration instructions.
 
 ## Views
 

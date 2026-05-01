@@ -20,11 +20,11 @@ CACHES = {
 
 | Serializer | Description | Extra |
 |------------|-------------|-------|
-| `django_cachex.serializers.pickle.PickleSerializer` | Python pickle (default) — supports nearly all Python types | — |
-| `django_cachex.serializers.json.JSONSerializer` | JSON via Django's `DjangoJSONEncoder` — best Django type coverage of the JSON family | — |
-| `django_cachex.serializers.msgpack.MessagePackSerializer` | Pure-Python MessagePack — compact binary format | `msgpack` |
-| `django_cachex.serializers.orjson.OrjsonSerializer` | Rust-backed JSON — fastest JSON, fewer types than `DjangoJSONEncoder` | `orjson` |
-| `django_cachex.serializers.ormsgpack.OrMessagePackSerializer` | Rust-backed MessagePack — fastest overall in our benchmarks | `ormsgpack` |
+| `django_cachex.serializers.pickle.PickleSerializer` | Python pickle (default); supports nearly all Python types | — |
+| `django_cachex.serializers.json.JSONSerializer` | JSON via Django's `DjangoJSONEncoder` (broadest Django type coverage of the JSON family) | — |
+| `django_cachex.serializers.msgpack.MessagePackSerializer` | Pure-Python MessagePack; compact binary format | `msgpack` |
+| `django_cachex.serializers.orjson.OrjsonSerializer` | Rust-backed JSON; fewer types than `DjangoJSONEncoder` | `orjson` |
+| `django_cachex.serializers.ormsgpack.OrMessagePackSerializer` | Rust-backed MessagePack | `ormsgpack` |
 
 Install optional serializers via the matching extra:
 
@@ -62,7 +62,7 @@ Real network or larger payloads dampen the spread. Reproduce with the
 
 Notes:
 
-- The "~" cells are not bugs — they reflect what the underlying format can
+- The "~" cells are not bugs; they reflect what the underlying format can
   represent. `Decimal("1.99")` round-trips through `DjangoJSONEncoder` as the
   string `"1.99"`; if you need a `Decimal` back, convert on read.
 - `orjson` natively encodes `dataclass` and `Enum` values, but loses the

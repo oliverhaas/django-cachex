@@ -69,10 +69,10 @@ For Sentinel: Use `django_cachex.cache.RedisSentinelCache` instead of `CLIENT_CL
 
 After migrating, you gain:
 
-- **Unified Valkey + Redis support** in one package
-- **Multi-serializer/compressor fallback** for safe migrations
-- **Extended data structures** (hashes, lists, sets, sorted sets) directly on cache
-- **TTL operations** (`ttl()`, `pttl()`, `expire()`, `persist()`)
-- **Pattern operations** (`keys()`, `iter_keys()`, `delete_pattern()`)
-- **Distributed locking** (`cache.lock()`)
-- **Pipelines** (`cache.pipeline()`)
+- Valkey and Redis in one package.
+- Multi-serializer/compressor fallback for safe migrations.
+- Extended data structures (hashes, lists, sets, sorted sets) directly on the cache object.
+- TTL operations: `ttl()`, `pttl()`, `expire()`, `persist()`.
+- Pattern operations: `keys()`, `iter_keys()`, `delete_pattern()`.
+- Distributed locking via `cache.lock()`.
+- Pipelines via `cache.pipeline()`.
