@@ -130,11 +130,11 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         nvalue = _value_to_bytes(self.encode(value))
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
         if actual_timeout == 0:
-            if self._driver.set_nx_sync(_str_key(key), nvalue, ttl=None):
-                self._driver.delete_sync(_str_key(key))
+            if self._driver.set_nx(_str_key(key), nvalue, ttl=None):
+                self._driver.delete(_str_key(key))
                 return True
             return False
-        return bool(self._driver.set_nx_sync(_str_key(key), nvalue, ttl=actual_timeout))
+        return bool(self._driver.set_nx(_str_key(key), nvalue, ttl=actual_timeout))
 
     @override
     async def aadd(
@@ -148,32 +148,32 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         nvalue = _value_to_bytes(self.encode(value))
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
         if actual_timeout == 0:
-            if await self._driver.set_nx(_str_key(key), nvalue, ttl=None):
-                await self._driver.delete(_str_key(key))
+            if await self._driver.aset_nx(_str_key(key), nvalue, ttl=None):
+                await self._driver.adelete(_str_key(key))
                 return True
             return False
-        return bool(await self._driver.set_nx(_str_key(key), nvalue, ttl=actual_timeout))
+        return bool(await self._driver.aset_nx(_str_key(key), nvalue, ttl=actual_timeout))
 
     @override
     def get(self, key: KeyT, *, stampede_prevention: bool | dict | None = None) -> Any:
-        val = self._driver.get_sync(_str_key(key))
+        val = self._driver.get(_str_key(key))
         if val is None:
             return None
         config = self._resolve_stampede(stampede_prevention)
         if config and isinstance(val, bytes):
-            ttl = self._driver.ttl_sync(_str_key(key))
+            ttl = self._driver.ttl(_str_key(key))
             if ttl > 0 and should_recompute(ttl, config):
                 return None
         return self.decode(val)
 
     @override
     async def aget(self, key: KeyT, *, stampede_prevention: bool | dict | None = None) -> Any:
-        val = await self._driver.get(_str_key(key))
+        val = await self._driver.aget(_str_key(key))
         if val is None:
             return None
         config = self._resolve_stampede(stampede_prevention)
         if config and isinstance(val, bytes):
-            ttl = await self._driver.ttl(_str_key(key))
+            ttl = await self._driver.attl(_str_key(key))
             if ttl > 0 and should_recompute(ttl, config):
                 return None
         return self.decode(val)
@@ -190,9 +190,9 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         nvalue = _value_to_bytes(self.encode(value))
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
         if actual_timeout == 0:
-            self._driver.delete_sync(_str_key(key))
+            self._driver.delete(_str_key(key))
         else:
-            self._driver.set_sync(_str_key(key), nvalue, ttl=actual_timeout)
+            self._driver.set(_str_key(key), nvalue, ttl=actual_timeout)
 
     @override
     async def aset(
@@ -206,9 +206,9 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         nvalue = _value_to_bytes(self.encode(value))
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
         if actual_timeout == 0:
-            await self._driver.delete(_str_key(key))
+            await self._driver.adelete(_str_key(key))
         else:
-            await self._driver.set(_str_key(key), nvalue, ttl=actual_timeout)
+            await self._driver.aset(_str_key(key), nvalue, ttl=actual_timeout)
 
     # Builds a SET-with-flags Lua script. The driver only exposes
     # set/set_nx; xx/get/combinations go through this eval path so we keep
@@ -254,7 +254,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
         if actual_timeout == 0:
             return None if get else False
-        result = self._driver.eval_sync(
+        result = self._driver.eval(
             self._SET_WITH_FLAGS_LUA,
             [_str_key(key)],
             self._set_with_flags_argv(nvalue, actual_timeout, nx, xx, get),
@@ -282,7 +282,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
         if actual_timeout == 0:
             return None if get else False
-        result = await self._driver.eval(
+        result = await self._driver.aeval(
             self._SET_WITH_FLAGS_LUA,
             [_str_key(key)],
             self._set_with_flags_argv(nvalue, actual_timeout, nx, xx, get),
@@ -294,35 +294,35 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     @override
     def touch(self, key: KeyT, timeout: int | None) -> bool:
         if timeout is None:
-            return bool(self._driver.persist_sync(_str_key(key)))
-        return bool(self._driver.expire_sync(_str_key(key), timeout))
+            return bool(self._driver.persist(_str_key(key)))
+        return bool(self._driver.expire(_str_key(key), timeout))
 
     @override
     async def atouch(self, key: KeyT, timeout: int | None) -> bool:
         if timeout is None:
-            return bool(await self._driver.persist(_str_key(key)))
-        return bool(await self._driver.expire(_str_key(key), timeout))
+            return bool(await self._driver.apersist(_str_key(key)))
+        return bool(await self._driver.aexpire(_str_key(key), timeout))
 
     @override
     def delete(self, key: KeyT) -> bool:
-        return bool(self._driver.delete_sync(_str_key(key)))
+        return bool(self._driver.delete(_str_key(key)))
 
     @override
     async def adelete(self, key: KeyT) -> bool:
-        return bool(await self._driver.delete(_str_key(key)))
+        return bool(await self._driver.adelete(_str_key(key)))
 
     @override
     def get_many(self, keys: Iterable[KeyT], *, stampede_prevention: bool | dict | None = None) -> dict[KeyT, Any]:
         keys_list = [_str_key(k) for k in keys]
         if not keys_list:
             return {}
-        results = self._driver.mget_sync(keys_list)
+        results = self._driver.mget(keys_list)
         found = {k: v for k, v in zip(keys_list, results, strict=False) if v is not None}
         config = self._resolve_stampede(stampede_prevention)
         if config and found:
             stampede_keys = [k for k, v in found.items() if isinstance(v, bytes)]
             for k in stampede_keys:
-                ttl = self._driver.ttl_sync(k)
+                ttl = self._driver.ttl(k)
                 if ttl > 0 and should_recompute(ttl, config):
                     del found[k]
         return {k: self.decode(v) for k, v in found.items()}
@@ -337,42 +337,42 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         keys_list = [_str_key(k) for k in keys]
         if not keys_list:
             return {}
-        results = await self._driver.mget(keys_list)
+        results = await self._driver.amget(keys_list)
         found = {k: v for k, v in zip(keys_list, results, strict=False) if v is not None}
         config = self._resolve_stampede(stampede_prevention)
         if config and found:
             stampede_keys = [k for k, v in found.items() if isinstance(v, bytes)]
             for k in stampede_keys:
-                ttl = await self._driver.ttl(k)
+                ttl = await self._driver.attl(k)
                 if ttl > 0 and should_recompute(ttl, config):
                     del found[k]
         return {k: self.decode(v) for k, v in found.items()}
 
     @override
     def has_key(self, key: KeyT) -> bool:
-        return bool(self._driver.exists_sync(_str_key(key)))
+        return bool(self._driver.exists(_str_key(key)))
 
     @override
     async def ahas_key(self, key: KeyT) -> bool:
-        return bool(await self._driver.exists(_str_key(key)))
+        return bool(await self._driver.aexists(_str_key(key)))
 
     @override
     def type(self, key: KeyT) -> KeyType | None:
-        result = self._driver.type_sync(_str_key(key))
+        result = self._driver.type(_str_key(key))
         return None if result == "none" else KeyType(result)
 
     @override
     async def atype(self, key: KeyT) -> KeyType | None:
-        result = await self._driver.type(_str_key(key))
+        result = await self._driver.atype(_str_key(key))
         return None if result == "none" else KeyType(result)
 
     @override
     def incr(self, key: KeyT, delta: int = 1) -> int:
-        return int(self._driver.incr_by_sync(_str_key(key), delta))
+        return int(self._driver.incr_by(_str_key(key), delta))
 
     @override
     async def aincr(self, key: KeyT, delta: int = 1) -> int:
-        return int(await self._driver.incr_by(_str_key(key), delta))
+        return int(await self._driver.aincr_by(_str_key(key), delta))
 
     @override
     def set_many(
@@ -387,9 +387,9 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         prepared = [(_str_key(k), _value_to_bytes(self.encode(v))) for k, v in data.items()]
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
         if actual_timeout == 0:
-            self._driver.delete_many_sync([k for k, _ in prepared])
+            self._driver.delete_many([k for k, _ in prepared])
         else:
-            self._driver.pipeline_set_sync(prepared, ttl=actual_timeout)
+            self._driver.pipeline_set(prepared, ttl=actual_timeout)
         return []
 
     @override
@@ -405,42 +405,42 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         prepared = [(_str_key(k), _value_to_bytes(self.encode(v))) for k, v in data.items()]
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
         if actual_timeout == 0:
-            await self._driver.delete_many([k for k, _ in prepared])
+            await self._driver.adelete_many([k for k, _ in prepared])
         else:
-            await self._driver.pipeline_set(prepared, ttl=actual_timeout)
+            await self._driver.apipeline_set(prepared, ttl=actual_timeout)
         return []
 
     @override
     def delete_many(self, keys: Sequence[KeyT]) -> int:
         if not keys:
             return 0
-        return int(self._driver.delete_many_sync([_str_key(k) for k in keys]))
+        return int(self._driver.delete_many([_str_key(k) for k in keys]))
 
     @override
     async def adelete_many(self, keys: Sequence[KeyT]) -> int:
         if not keys:
             return 0
-        return int(await self._driver.delete_many([_str_key(k) for k in keys]))
+        return int(await self._driver.adelete_many([_str_key(k) for k in keys]))
 
     @override
     def clear(self) -> bool:
-        self._driver.flushdb_sync()
+        self._driver.flushdb()
         return True
 
     @override
     async def aclear(self) -> bool:
-        await self._driver.flushdb()
+        await self._driver.aflushdb()
         return True
 
     # ------------------------------------------------------------------- TTL
 
     @override
     def ttl(self, key: KeyT) -> int | None:
-        return self._normalize_ttl(self._driver.ttl_sync(_str_key(key)))
+        return self._normalize_ttl(self._driver.ttl(_str_key(key)))
 
     @override
     def pttl(self, key: KeyT) -> int | None:
-        return self._normalize_ttl(self._driver.pttl_sync(_str_key(key)))
+        return self._normalize_ttl(self._driver.pttl(_str_key(key)))
 
     @staticmethod
     def _to_seconds(timeout: ExpiryT) -> int:
@@ -456,34 +456,34 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
 
     @override
     def expire(self, key: KeyT, timeout: ExpiryT) -> bool:
-        return bool(self._driver.expire_sync(_str_key(key), self._to_seconds(timeout)))
+        return bool(self._driver.expire(_str_key(key), self._to_seconds(timeout)))
 
     @override
     def persist(self, key: KeyT) -> bool:
-        return bool(self._driver.persist_sync(_str_key(key)))
+        return bool(self._driver.persist(_str_key(key)))
 
     @override
     async def attl(self, key: KeyT) -> int | None:
-        return self._normalize_ttl(await self._driver.ttl(_str_key(key)))
+        return self._normalize_ttl(await self._driver.attl(_str_key(key)))
 
     @override
     async def apttl(self, key: KeyT) -> int | None:
-        return self._normalize_ttl(await self._driver.pttl(_str_key(key)))
+        return self._normalize_ttl(await self._driver.apttl(_str_key(key)))
 
     @override
     async def aexpire(self, key: KeyT, timeout: ExpiryT) -> bool:
-        return bool(await self._driver.expire(_str_key(key), self._to_seconds(timeout)))
+        return bool(await self._driver.aexpire(_str_key(key), self._to_seconds(timeout)))
 
     @override
     async def apersist(self, key: KeyT) -> bool:
-        return bool(await self._driver.persist(_str_key(key)))
+        return bool(await self._driver.apersist(_str_key(key)))
 
     # The driver currently exposes EXPIRE/PERSIST/TTL/PTTL only. The remaining
     # TTL ops (PEXPIRE / EXPIREAT / PEXPIREAT / EXPIRETIME) are implemented via
     # raw command via ``eval`` to keep parity with the redis-py surface.
 
     def _expire_via_eval(self, command: str, key: KeyT, value: int) -> bool:
-        result = self._driver.eval_sync(
+        result = self._driver.eval(
             f"return redis.call('{command}', KEYS[1], ARGV[1])",
             [_str_key(key)],
             [str(int(value)).encode("ascii")],
@@ -491,7 +491,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         return bool(result)
 
     async def _aexpire_via_eval(self, command: str, key: KeyT, value: int) -> bool:
-        result = await self._driver.eval(
+        result = await self._driver.aeval(
             f"return redis.call('{command}', KEYS[1], ARGV[1])",
             [_str_key(key)],
             [str(int(value)).encode("ascii")],
@@ -520,7 +520,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
 
     @override
     def expiretime(self, key: KeyT) -> int | None:
-        result = self._driver.eval_sync(
+        result = self._driver.eval(
             "return redis.call('EXPIRETIME', KEYS[1])",
             [_str_key(key)],
             [],
@@ -549,7 +549,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
 
     @override
     async def aexpiretime(self, key: KeyT) -> int | None:
-        result = await self._driver.eval(
+        result = await self._driver.aeval(
             "return redis.call('EXPIRETIME', KEYS[1])",
             [_str_key(key)],
             [],
@@ -560,19 +560,19 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
 
     @override
     def keys(self, pattern: str) -> list[str]:
-        result = self._driver.keys_sync(pattern)
+        result = self._driver.keys(pattern)
         return [k.decode() if isinstance(k, bytes) else k for k in result]
 
     @override
     async def akeys(self, pattern: str) -> list[str]:
-        result = await self._driver.keys(pattern)
+        result = await self._driver.akeys(pattern)
         return [k.decode() if isinstance(k, bytes) else k for k in result]
 
     @override
     def iter_keys(self, pattern: str, itersize: int | None = None) -> Iterator[str]:
         if itersize is None:
             itersize = self._default_scan_itersize
-        keys = self._driver.scan_sync(pattern, itersize)
+        keys = self._driver.scan(pattern, itersize)
         for k in keys:
             yield k.decode() if isinstance(k, bytes) else k
 
@@ -580,7 +580,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     async def aiter_keys(self, pattern: str, itersize: int | None = None) -> AsyncIterator[str]:
         if itersize is None:
             itersize = self._default_scan_itersize
-        keys = await self._driver.scan(pattern, itersize)
+        keys = await self._driver.ascan(pattern, itersize)
         for k in keys:
             yield k.decode() if isinstance(k, bytes) else k
 
@@ -596,7 +596,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         # exposed). Returning cursor=0 signals "no more pages".
         if count is None:
             count = self._default_scan_itersize
-        keys = self._driver.scan_sync(match or "*", count)
+        keys = self._driver.scan(match or "*", count)
         return 0, [k.decode() if isinstance(k, bytes) else k for k in keys]
 
     @override
@@ -609,7 +609,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     ) -> tuple[int, list[str]]:
         if count is None:
             count = self._default_scan_itersize
-        keys = await self._driver.scan(match or "*", count)
+        keys = await self._driver.ascan(match or "*", count)
         return 0, [k.decode() if isinstance(k, bytes) else k for k in keys]
 
     @override
@@ -618,7 +618,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
             itersize = self._default_scan_itersize
         count = 0
         for batch in batched(self.iter_keys(pattern, itersize=itersize), itersize, strict=False):
-            count += int(self._driver.delete_many_sync(list(batch)))
+            count += int(self._driver.delete_many(list(batch)))
         return count
 
     @override
@@ -630,16 +630,16 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         async for key in self.aiter_keys(pattern, itersize=itersize):
             batch.append(key)
             if len(batch) >= itersize:
-                count += int(await self._driver.delete_many(batch))
+                count += int(await self._driver.adelete_many(batch))
                 batch = []
         if batch:
-            count += int(await self._driver.delete_many(batch))
+            count += int(await self._driver.adelete_many(batch))
         return count
 
     @override
     def rename(self, src: KeyT, dst: KeyT) -> bool:
         try:
-            result = self._driver.eval_sync(
+            result = self._driver.eval(
                 "return redis.call('RENAME', KEYS[1], KEYS[2])",
                 [_str_key(src), _str_key(dst)],
                 [],
@@ -654,7 +654,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     @override
     def renamenx(self, src: KeyT, dst: KeyT) -> bool:
         try:
-            result = self._driver.eval_sync(
+            result = self._driver.eval(
                 "return redis.call('RENAMENX', KEYS[1], KEYS[2])",
                 [_str_key(src), _str_key(dst)],
                 [],
@@ -668,7 +668,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     @override
     async def arename(self, src: KeyT, dst: KeyT) -> bool:
         try:
-            result = await self._driver.eval(
+            result = await self._driver.aeval(
                 "return redis.call('RENAME', KEYS[1], KEYS[2])",
                 [_str_key(src), _str_key(dst)],
                 [],
@@ -682,7 +682,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     @override
     async def arenamenx(self, src: KeyT, dst: KeyT) -> bool:
         try:
-            result = await self._driver.eval(
+            result = await self._driver.aeval(
                 "return redis.call('RENAMENX', KEYS[1], KEYS[2])",
                 [_str_key(src), _str_key(dst)],
                 [],
@@ -743,7 +743,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     def info(self, section: str | None = None) -> dict[str, Any]:
         # The driver fetches the full INFO bulk string; if a section was
         # requested, slice client-side using the "# <Section>" headers.
-        raw = self._driver.info_sync()
+        raw = self._driver.info()
         if isinstance(raw, bytes):
             raw = raw.decode("utf-8", errors="replace")
         if section is not None:
@@ -792,11 +792,11 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         if not pairs:
             return 0
         if len(pairs) == 1:
-            return int(self._driver.hset_sync(_str_key(key), pairs[0][0], pairs[0][1]))
+            return int(self._driver.hset(_str_key(key), pairs[0][0], pairs[0][1]))
         # HMSET returns OK, not a count. Match HSET semantics: number of new fields.
-        before = self._driver.hlen_sync(_str_key(key))
-        self._driver.hmset_sync(_str_key(key), pairs)
-        after = self._driver.hlen_sync(_str_key(key))
+        before = self._driver.hlen(_str_key(key))
+        self._driver.hmset(_str_key(key), pairs)
+        after = self._driver.hlen(_str_key(key))
         return after - before
 
     @override
@@ -820,17 +820,17 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         if not pairs:
             return 0
         if len(pairs) == 1:
-            ret = await self._driver.hset(_str_key(key), pairs[0][0], pairs[0][1])
+            ret = await self._driver.ahset(_str_key(key), pairs[0][0], pairs[0][1])
             return int(ret)
-        before = await self._driver.hlen(_str_key(key))
-        await self._driver.hmset(_str_key(key), pairs)
-        after = await self._driver.hlen(_str_key(key))
+        before = await self._driver.ahlen(_str_key(key))
+        await self._driver.ahmset(_str_key(key), pairs)
+        after = await self._driver.ahlen(_str_key(key))
         return int(after) - int(before)
 
     @override
     def hsetnx(self, key: KeyT, field: str, value: Any) -> bool:
         # No native driver method — go via eval.
-        result = self._driver.eval_sync(
+        result = self._driver.eval(
             "return redis.call('HSETNX', KEYS[1], ARGV[1], ARGV[2])",
             [_str_key(key)],
             [str(field).encode("utf-8"), _value_to_bytes(self.encode(value))],
@@ -839,7 +839,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
 
     @override
     async def ahsetnx(self, key: KeyT, field: str, value: Any) -> bool:
-        result = await self._driver.eval(
+        result = await self._driver.aeval(
             "return redis.call('HSETNX', KEYS[1], ARGV[1], ARGV[2])",
             [_str_key(key)],
             [str(field).encode("utf-8"), _value_to_bytes(self.encode(value))],
@@ -848,97 +848,97 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
 
     @override
     def hget(self, key: KeyT, field: str) -> Any | None:
-        val = self._driver.hget_sync(_str_key(key), str(field))
+        val = self._driver.hget(_str_key(key), str(field))
         return None if val is None else self.decode(val)
 
     @override
     async def ahget(self, key: KeyT, field: str) -> Any | None:
-        val = await self._driver.hget(_str_key(key), str(field))
+        val = await self._driver.ahget(_str_key(key), str(field))
         return None if val is None else self.decode(val)
 
     @override
     def hmget(self, key: KeyT, *fields: str) -> list[Any | None]:
         if not fields:
             return []
-        result = self._driver.hmget_sync(_str_key(key), [str(f) for f in fields])
+        result = self._driver.hmget(_str_key(key), [str(f) for f in fields])
         return [None if v is None else self.decode(v) for v in result]
 
     @override
     async def ahmget(self, key: KeyT, *fields: str) -> list[Any | None]:
         if not fields:
             return []
-        result = await self._driver.hmget(_str_key(key), [str(f) for f in fields])
+        result = await self._driver.ahmget(_str_key(key), [str(f) for f in fields])
         return [None if v is None else self.decode(v) for v in result]
 
     @override
     def hgetall(self, key: KeyT) -> dict[str, Any]:
-        result = self._driver.hgetall_sync(_str_key(key))
+        result = self._driver.hgetall(_str_key(key))
         return {(k.decode() if isinstance(k, bytes) else k): self.decode(v) for k, v in result.items()}
 
     @override
     async def ahgetall(self, key: KeyT) -> dict[str, Any]:
-        result = await self._driver.hgetall(_str_key(key))
+        result = await self._driver.ahgetall(_str_key(key))
         return {(k.decode() if isinstance(k, bytes) else k): self.decode(v) for k, v in result.items()}
 
     @override
     def hdel(self, key: KeyT, *fields: str) -> int:
         if not fields:
             return 0
-        return int(self._driver.hdel_sync(_str_key(key), [str(f) for f in fields]))
+        return int(self._driver.hdel(_str_key(key), [str(f) for f in fields]))
 
     @override
     async def ahdel(self, key: KeyT, *fields: str) -> int:
         if not fields:
             return 0
-        return int(await self._driver.hdel(_str_key(key), [str(f) for f in fields]))
+        return int(await self._driver.ahdel(_str_key(key), [str(f) for f in fields]))
 
     @override
     def hexists(self, key: KeyT, field: str) -> bool:
-        return bool(self._driver.hexists_sync(_str_key(key), str(field)))
+        return bool(self._driver.hexists(_str_key(key), str(field)))
 
     @override
     async def ahexists(self, key: KeyT, field: str) -> bool:
-        return bool(await self._driver.hexists(_str_key(key), str(field)))
+        return bool(await self._driver.ahexists(_str_key(key), str(field)))
 
     @override
     def hlen(self, key: KeyT) -> int:
-        return int(self._driver.hlen_sync(_str_key(key)))
+        return int(self._driver.hlen(_str_key(key)))
 
     @override
     async def ahlen(self, key: KeyT) -> int:
-        return int(await self._driver.hlen(_str_key(key)))
+        return int(await self._driver.ahlen(_str_key(key)))
 
     @override
     def hkeys(self, key: KeyT) -> list[str]:
-        result = self._driver.hkeys_sync(_str_key(key))
+        result = self._driver.hkeys(_str_key(key))
         return [k.decode() if isinstance(k, bytes) else k for k in result]
 
     @override
     async def ahkeys(self, key: KeyT) -> list[str]:
-        result = await self._driver.hkeys(_str_key(key))
+        result = await self._driver.ahkeys(_str_key(key))
         return [k.decode() if isinstance(k, bytes) else k for k in result]
 
     @override
     def hvals(self, key: KeyT) -> list[Any]:
-        result = self._driver.hvals_sync(_str_key(key))
+        result = self._driver.hvals(_str_key(key))
         return [self.decode(v) for v in result]
 
     @override
     async def ahvals(self, key: KeyT) -> list[Any]:
-        result = await self._driver.hvals(_str_key(key))
+        result = await self._driver.ahvals(_str_key(key))
         return [self.decode(v) for v in result]
 
     @override
     def hincrby(self, key: KeyT, field: str, amount: int = 1) -> int:
-        return int(self._driver.hincrby_sync(_str_key(key), str(field), amount))
+        return int(self._driver.hincrby(_str_key(key), str(field), amount))
 
     @override
     async def ahincrby(self, key: KeyT, field: str, amount: int = 1) -> int:
-        return int(await self._driver.hincrby(_str_key(key), str(field), amount))
+        return int(await self._driver.ahincrby(_str_key(key), str(field), amount))
 
     @override
     def hincrbyfloat(self, key: KeyT, field: str, amount: float = 1.0) -> float:
-        result = self._driver.eval_sync(
+        result = self._driver.eval(
             "return redis.call('HINCRBYFLOAT', KEYS[1], ARGV[1], ARGV[2])",
             [_str_key(key)],
             [str(field).encode("utf-8"), str(amount).encode("utf-8")],
@@ -949,7 +949,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
 
     @override
     async def ahincrbyfloat(self, key: KeyT, field: str, amount: float = 1.0) -> float:
-        result = await self._driver.eval(
+        result = await self._driver.aeval(
             "return redis.call('HINCRBYFLOAT', KEYS[1], ARGV[1], ARGV[2])",
             [_str_key(key)],
             [str(field).encode("utf-8"), str(amount).encode("utf-8")],
@@ -966,87 +966,87 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     def lpush(self, key: KeyT, *values: Any) -> int:
         if not values:
             return self.llen(key)
-        return int(self._driver.lpush_sync(_str_key(key), [_value_to_bytes(self.encode(v)) for v in values]))
+        return int(self._driver.lpush(_str_key(key), [_value_to_bytes(self.encode(v)) for v in values]))
 
     @override
     def rpush(self, key: KeyT, *values: Any) -> int:
         if not values:
             return self.llen(key)
-        return int(self._driver.rpush_sync(_str_key(key), [_value_to_bytes(self.encode(v)) for v in values]))
+        return int(self._driver.rpush(_str_key(key), [_value_to_bytes(self.encode(v)) for v in values]))
 
     @override
     async def alpush(self, key: KeyT, *values: Any) -> int:
         if not values:
             return await self.allen(key)
-        return int(await self._driver.lpush(_str_key(key), [_value_to_bytes(self.encode(v)) for v in values]))
+        return int(await self._driver.alpush(_str_key(key), [_value_to_bytes(self.encode(v)) for v in values]))
 
     @override
     async def arpush(self, key: KeyT, *values: Any) -> int:
         if not values:
             return await self.allen(key)
-        return int(await self._driver.rpush(_str_key(key), [_value_to_bytes(self.encode(v)) for v in values]))
+        return int(await self._driver.arpush(_str_key(key), [_value_to_bytes(self.encode(v)) for v in values]))
 
     # lpop / rpop / alpop / arpop with the optional ``count`` argument are
     # implemented in the eval-fallback section below.
 
     @override
     def llen(self, key: KeyT) -> int:
-        return int(self._driver.llen_sync(_str_key(key)))
+        return int(self._driver.llen(_str_key(key)))
 
     @override
     async def allen(self, key: KeyT) -> int:
-        return int(await self._driver.llen(_str_key(key)))
+        return int(await self._driver.allen(_str_key(key)))
 
     @override
     def lrange(self, key: KeyT, start: int, end: int) -> list[Any]:
-        result = self._driver.lrange_sync(_str_key(key), start, end)
+        result = self._driver.lrange(_str_key(key), start, end)
         return [self.decode(v) for v in result]
 
     @override
     async def alrange(self, key: KeyT, start: int, end: int) -> list[Any]:
-        result = await self._driver.lrange(_str_key(key), start, end)
+        result = await self._driver.alrange(_str_key(key), start, end)
         return [self.decode(v) for v in result]
 
     @override
     def lindex(self, key: KeyT, index: int) -> Any | None:
-        val = self._driver.lindex_sync(_str_key(key), index)
+        val = self._driver.lindex(_str_key(key), index)
         return None if val is None else self.decode(val)
 
     @override
     async def alindex(self, key: KeyT, index: int) -> Any | None:
-        val = await self._driver.lindex(_str_key(key), index)
+        val = await self._driver.alindex(_str_key(key), index)
         return None if val is None else self.decode(val)
 
     @override
     def lset(self, key: KeyT, index: int, value: Any) -> bool:
-        self._driver.lset_sync(_str_key(key), index, _value_to_bytes(self.encode(value)))
+        self._driver.lset(_str_key(key), index, _value_to_bytes(self.encode(value)))
         return True
 
     @override
     async def alset(self, key: KeyT, index: int, value: Any) -> bool:
-        await self._driver.lset(_str_key(key), index, _value_to_bytes(self.encode(value)))
+        await self._driver.alset(_str_key(key), index, _value_to_bytes(self.encode(value)))
         return True
 
     @override
     def lrem(self, key: KeyT, count: int, value: Any) -> int:
         return int(
-            self._driver.lrem_sync(_str_key(key), count, _value_to_bytes(self.encode(value))),
+            self._driver.lrem(_str_key(key), count, _value_to_bytes(self.encode(value))),
         )
 
     @override
     async def alrem(self, key: KeyT, count: int, value: Any) -> int:
         return int(
-            await self._driver.lrem(_str_key(key), count, _value_to_bytes(self.encode(value))),
+            await self._driver.alrem(_str_key(key), count, _value_to_bytes(self.encode(value))),
         )
 
     @override
     def ltrim(self, key: KeyT, start: int, end: int) -> bool:
-        self._driver.ltrim_sync(_str_key(key), start, end)
+        self._driver.ltrim(_str_key(key), start, end)
         return True
 
     @override
     async def altrim(self, key: KeyT, start: int, end: int) -> bool:
-        await self._driver.ltrim(_str_key(key), start, end)
+        await self._driver.altrim(_str_key(key), start, end)
         return True
 
     @override
@@ -1059,7 +1059,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     ) -> int:
         before = where.upper() == "BEFORE"
         return int(
-            self._driver.linsert_sync(
+            self._driver.linsert(
                 _str_key(key),
                 before=before,
                 pivot=_value_to_bytes(self.encode(pivot)),
@@ -1077,7 +1077,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     ) -> int:
         before = where.upper() == "BEFORE"
         return int(
-            await self._driver.linsert(
+            await self._driver.alinsert(
                 _str_key(key),
                 before=before,
                 pivot=_value_to_bytes(self.encode(pivot)),
@@ -1093,55 +1093,55 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     def sadd(self, key: KeyT, *members: Any) -> int:
         if not members:
             return 0
-        return int(self._driver.sadd_sync(_str_key(key), [_value_to_bytes(self.encode(m)) for m in members]))
+        return int(self._driver.sadd(_str_key(key), [_value_to_bytes(self.encode(m)) for m in members]))
 
     @override
     async def asadd(self, key: KeyT, *members: Any) -> int:
         if not members:
             return 0
-        return int(await self._driver.sadd(_str_key(key), [_value_to_bytes(self.encode(m)) for m in members]))
+        return int(await self._driver.asadd(_str_key(key), [_value_to_bytes(self.encode(m)) for m in members]))
 
     @override
     def srem(self, key: KeyT, *members: Any) -> int:
         if not members:
             return 0
-        return int(self._driver.srem_sync(_str_key(key), [_value_to_bytes(self.encode(m)) for m in members]))
+        return int(self._driver.srem(_str_key(key), [_value_to_bytes(self.encode(m)) for m in members]))
 
     @override
     async def asrem(self, key: KeyT, *members: Any) -> int:
         if not members:
             return 0
-        return int(await self._driver.srem(_str_key(key), [_value_to_bytes(self.encode(m)) for m in members]))
+        return int(await self._driver.asrem(_str_key(key), [_value_to_bytes(self.encode(m)) for m in members]))
 
     @override
     def smembers(self, key: KeyT) -> Any:
-        result = self._driver.smembers_sync(_str_key(key))
+        result = self._driver.smembers(_str_key(key))
         return {self.decode(m) for m in result}
 
     @override
     async def asmembers(self, key: KeyT) -> Any:
-        result = await self._driver.smembers(_str_key(key))
+        result = await self._driver.asmembers(_str_key(key))
         return {self.decode(m) for m in result}
 
     @override
     def sismember(self, key: KeyT, member: Any) -> bool:
         return bool(
-            self._driver.sismember_sync(_str_key(key), _value_to_bytes(self.encode(member))),
+            self._driver.sismember(_str_key(key), _value_to_bytes(self.encode(member))),
         )
 
     @override
     async def asismember(self, key: KeyT, member: Any) -> bool:
         return bool(
-            await self._driver.sismember(_str_key(key), _value_to_bytes(self.encode(member))),
+            await self._driver.asismember(_str_key(key), _value_to_bytes(self.encode(member))),
         )
 
     @override
     def scard(self, key: KeyT) -> int:
-        return int(self._driver.scard_sync(_str_key(key)))
+        return int(self._driver.scard(_str_key(key)))
 
     @override
     async def ascard(self, key: KeyT) -> int:
-        return int(await self._driver.scard(_str_key(key)))
+        return int(await self._driver.ascard(_str_key(key)))
 
     @staticmethod
     def _coerce_keys_arg(keys: Any) -> list[str]:
@@ -1151,32 +1151,32 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
 
     @override
     def sinter(self, keys: Any) -> Any:
-        result = self._driver.sinter_sync(self._coerce_keys_arg(keys))
+        result = self._driver.sinter(self._coerce_keys_arg(keys))
         return {self.decode(m) for m in result}
 
     @override
     async def asinter(self, keys: Any) -> Any:
-        result = await self._driver.sinter(self._coerce_keys_arg(keys))
+        result = await self._driver.asinter(self._coerce_keys_arg(keys))
         return {self.decode(m) for m in result}
 
     @override
     def sunion(self, keys: Any) -> Any:
-        result = self._driver.sunion_sync(self._coerce_keys_arg(keys))
+        result = self._driver.sunion(self._coerce_keys_arg(keys))
         return {self.decode(m) for m in result}
 
     @override
     async def asunion(self, keys: Any) -> Any:
-        result = await self._driver.sunion(self._coerce_keys_arg(keys))
+        result = await self._driver.asunion(self._coerce_keys_arg(keys))
         return {self.decode(m) for m in result}
 
     @override
     def sdiff(self, keys: Any) -> Any:
-        result = self._driver.sdiff_sync(self._coerce_keys_arg(keys))
+        result = self._driver.sdiff(self._coerce_keys_arg(keys))
         return {self.decode(m) for m in result}
 
     @override
     async def asdiff(self, keys: Any) -> Any:
-        result = await self._driver.sdiff(self._coerce_keys_arg(keys))
+        result = await self._driver.asdiff(self._coerce_keys_arg(keys))
         return {self.decode(m) for m in result}
 
     # =========================================================================
@@ -1190,58 +1190,58 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     def zrem(self, key: KeyT, *members: Any) -> int:
         if not members:
             return 0
-        return int(self._driver.zrem_sync(_str_key(key), [_value_to_bytes(self.encode(m)) for m in members]))
+        return int(self._driver.zrem(_str_key(key), [_value_to_bytes(self.encode(m)) for m in members]))
 
     @override
     async def azrem(self, key: KeyT, *members: Any) -> int:
         if not members:
             return 0
-        return int(await self._driver.zrem(_str_key(key), [_value_to_bytes(self.encode(m)) for m in members]))
+        return int(await self._driver.azrem(_str_key(key), [_value_to_bytes(self.encode(m)) for m in members]))
 
     @override
     def zscore(self, key: KeyT, member: Any) -> float | None:
-        return self._driver.zscore_sync(_str_key(key), _value_to_bytes(self.encode(member)))
+        return self._driver.zscore(_str_key(key), _value_to_bytes(self.encode(member)))
 
     @override
     async def azscore(self, key: KeyT, member: Any) -> float | None:
-        return await self._driver.zscore(_str_key(key), _value_to_bytes(self.encode(member)))
+        return await self._driver.azscore(_str_key(key), _value_to_bytes(self.encode(member)))
 
     @override
     def zrank(self, key: KeyT, member: Any) -> int | None:
-        result = self._driver.zrank_sync(_str_key(key), _value_to_bytes(self.encode(member)))
+        result = self._driver.zrank(_str_key(key), _value_to_bytes(self.encode(member)))
         return None if result is None else int(result)
 
     @override
     async def azrank(self, key: KeyT, member: Any) -> int | None:
-        result = await self._driver.zrank(_str_key(key), _value_to_bytes(self.encode(member)))
+        result = await self._driver.azrank(_str_key(key), _value_to_bytes(self.encode(member)))
         return None if result is None else int(result)
 
     @override
     def zcard(self, key: KeyT) -> int:
-        return int(self._driver.zcard_sync(_str_key(key)))
+        return int(self._driver.zcard(_str_key(key)))
 
     @override
     async def azcard(self, key: KeyT) -> int:
-        return int(await self._driver.zcard(_str_key(key)))
+        return int(await self._driver.azcard(_str_key(key)))
 
     @override
     def zcount(self, key: KeyT, min_score: float | str, max_score: float | str) -> int:
-        return int(self._driver.zcount_sync(_str_key(key), str(min_score), str(max_score)))
+        return int(self._driver.zcount(_str_key(key), str(min_score), str(max_score)))
 
     @override
     async def azcount(self, key: KeyT, min_score: float | str, max_score: float | str) -> int:
-        return int(await self._driver.zcount(_str_key(key), str(min_score), str(max_score)))
+        return int(await self._driver.azcount(_str_key(key), str(min_score), str(max_score)))
 
     @override
     def zincrby(self, key: KeyT, amount: float, member: Any) -> float:
         return float(
-            self._driver.zincrby_sync(_str_key(key), _value_to_bytes(self.encode(member)), float(amount)),
+            self._driver.zincrby(_str_key(key), _value_to_bytes(self.encode(member)), float(amount)),
         )
 
     @override
     async def azincrby(self, key: KeyT, amount: float, member: Any) -> float:
         return float(
-            await self._driver.zincrby(_str_key(key), _value_to_bytes(self.encode(member)), float(amount)),
+            await self._driver.azincrby(_str_key(key), _value_to_bytes(self.encode(member)), float(amount)),
         )
 
     def _decode_zrange(self, raw: list[Any], *, withscores: bool) -> list[Any]:
@@ -1266,7 +1266,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         *,
         withscores: bool = False,
     ) -> list[Any]:
-        raw = self._driver.zrange_sync(_str_key(key), start, end, withscores)
+        raw = self._driver.zrange(_str_key(key), start, end, withscores)
         return self._decode_zrange(raw, withscores=withscores)
 
     @override
@@ -1278,7 +1278,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         *,
         withscores: bool = False,
     ) -> list[Any]:
-        raw = await self._driver.zrange(_str_key(key), start, end, withscores)
+        raw = await self._driver.azrange(_str_key(key), start, end, withscores)
         return self._decode_zrange(raw, withscores=withscores)
 
     @override
@@ -1290,7 +1290,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         *,
         withscores: bool = False,
     ) -> list[Any]:
-        raw = self._driver.zrevrange_sync(_str_key(key), start, end, withscores)
+        raw = self._driver.zrevrange(_str_key(key), start, end, withscores)
         return self._decode_zrange(raw, withscores=withscores)
 
     @override
@@ -1302,7 +1302,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         *,
         withscores: bool = False,
     ) -> list[Any]:
-        raw = await self._driver.zrevrange(_str_key(key), start, end, withscores)
+        raw = await self._driver.azrevrange(_str_key(key), start, end, withscores)
         return self._decode_zrange(raw, withscores=withscores)
 
     @override
@@ -1316,7 +1316,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         num: int | None = None,
         withscores: bool = False,
     ) -> list[Any]:
-        raw = self._driver.zrangebyscore_sync(
+        raw = self._driver.zrangebyscore(
             _str_key(key),
             str(min_score),
             str(max_score),
@@ -1340,7 +1340,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         num: int | None = None,
         withscores: bool = False,
     ) -> list[Any]:
-        raw = await self._driver.zrangebyscore(
+        raw = await self._driver.azrangebyscore(
             _str_key(key),
             str(min_score),
             str(max_score),
@@ -1354,22 +1354,22 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
 
     @override
     def zpopmin(self, key: KeyT, count: int = 1) -> list[tuple[Any, float]]:
-        raw = self._driver.zpopmin_sync(_str_key(key), count)
+        raw = self._driver.zpopmin(_str_key(key), count)
         return [(self.decode(m), float(s)) for m, s in raw]
 
     @override
     async def azpopmin(self, key: KeyT, count: int = 1) -> list[tuple[Any, float]]:
-        raw = await self._driver.zpopmin(_str_key(key), count)
+        raw = await self._driver.azpopmin(_str_key(key), count)
         return [(self.decode(m), float(s)) for m, s in raw]
 
     @override
     def zpopmax(self, key: KeyT, count: int = 1) -> list[tuple[Any, float]]:
-        raw = self._driver.zpopmax_sync(_str_key(key), count)
+        raw = self._driver.zpopmax(_str_key(key), count)
         return [(self.decode(m), float(s)) for m, s in raw]
 
     @override
     async def azpopmax(self, key: KeyT, count: int = 1) -> list[tuple[Any, float]]:
-        raw = await self._driver.zpopmax(_str_key(key), count)
+        raw = await self._driver.azpopmax(_str_key(key), count)
         return [(self.decode(m), float(s)) for m, s in raw]
 
     # =========================================================================
@@ -1391,13 +1391,13 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any:
         keys = [_str_key(k) for k in keys_and_args[:numkeys]]
         args = [self._eval_arg(a) for a in keys_and_args[numkeys:]]
-        return self._driver.eval_sync(script, keys, args)
+        return self._driver.eval(script, keys, args)
 
     @override
     async def aeval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any:
         keys = [_str_key(k) for k in keys_and_args[:numkeys]]
         args = [self._eval_arg(a) for a in keys_and_args[numkeys:]]
-        return await self._driver.eval(script, keys, args)
+        return await self._driver.aeval(script, keys, args)
 
     # =========================================================================
     # Surface the driver doesn't expose natively — implemented via EVAL.
@@ -1413,14 +1413,14 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     )
 
     def _eval_call(self, command: str, keys: Sequence[KeyT], args: Sequence[Any]) -> Any:
-        return self._driver.eval_sync(
+        return self._driver.eval(
             self._EVAL_CALL_TEMPLATE.format(cmd=command),
             [_str_key(k) for k in keys],
             [a if isinstance(a, bytes) else self._eval_arg(a) for a in args],
         )
 
     async def _aeval_call(self, command: str, keys: Sequence[KeyT], args: Sequence[Any]) -> Any:
-        return await self._driver.eval(
+        return await self._driver.aeval(
             self._EVAL_CALL_TEMPLATE.format(cmd=command),
             [_str_key(k) for k in keys],
             [a if isinstance(a, bytes) else self._eval_arg(a) for a in args],
@@ -1431,7 +1431,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     @override
     def lpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
         if count is None:
-            val = self._driver.lpop_sync(_str_key(key))
+            val = self._driver.lpop(_str_key(key))
             return None if val is None else self.decode(val)
         result = self._eval_call("LPOP", [key], [count])
         return None if result is None else [self.decode(v) for v in result]
@@ -1439,7 +1439,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     @override
     def rpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
         if count is None:
-            val = self._driver.rpop_sync(_str_key(key))
+            val = self._driver.rpop(_str_key(key))
             return None if val is None else self.decode(val)
         result = self._eval_call("RPOP", [key], [count])
         return None if result is None else [self.decode(v) for v in result]
@@ -1447,7 +1447,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     @override
     async def alpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
         if count is None:
-            val = await self._driver.lpop(_str_key(key))
+            val = await self._driver.alpop(_str_key(key))
             return None if val is None else self.decode(val)
         result = await self._aeval_call("LPOP", [key], [count])
         return None if result is None else [self.decode(v) for v in result]
@@ -1455,7 +1455,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     @override
     async def arpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
         if count is None:
-            val = await self._driver.rpop(_str_key(key))
+            val = await self._driver.arpop(_str_key(key))
             return None if val is None else self.decode(val)
         result = await self._aeval_call("RPOP", [key], [count])
         return None if result is None else [self.decode(v) for v in result]
@@ -1493,7 +1493,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         if not pairs:
             return 0
         if not (nx or xx or gt or lt or ch):
-            return int(self._driver.zadd_sync(_str_key(key), pairs))
+            return int(self._driver.zadd(_str_key(key), pairs))
         argv: list[bytes] = self._zadd_flag_argv(nx=nx, xx=xx, gt=gt, lt=lt, ch=ch)
         for member, score in pairs:
             argv.append(str(score).encode("ascii"))
@@ -1516,7 +1516,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         if not pairs:
             return 0
         if not (nx or xx or gt or lt or ch):
-            return int(await self._driver.zadd(_str_key(key), pairs))
+            return int(await self._driver.azadd(_str_key(key), pairs))
         argv: list[bytes] = self._zadd_flag_argv(nx=nx, xx=xx, gt=gt, lt=lt, ch=ch)
         for member, score in pairs:
             argv.append(str(score).encode("ascii"))
@@ -1821,7 +1821,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     ) -> str:
         encoded = [(str(k), _value_to_bytes(self.encode(v))) for k, v in fields.items()]
         if maxlen is None and minid is None and not nomkstream and limit is None:
-            return self._driver.xadd_sync(_str_key(key), entry_id, encoded)
+            return self._driver.xadd(_str_key(key), entry_id, encoded)
         argv = self._xadd_argv(entry_id, encoded, maxlen, approximate, nomkstream, minid, limit)
         result = self._eval_call("XADD", [key], argv)
         return result.decode() if isinstance(result, bytes) else result
@@ -1840,7 +1840,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     ) -> str:
         encoded = [(str(k), _value_to_bytes(self.encode(v))) for k, v in fields.items()]
         if maxlen is None and minid is None and not nomkstream and limit is None:
-            return await self._driver.xadd(_str_key(key), entry_id, encoded)
+            return await self._driver.axadd(_str_key(key), entry_id, encoded)
         argv = self._xadd_argv(entry_id, encoded, maxlen, approximate, nomkstream, minid, limit)
         result = await self._aeval_call("XADD", [key], argv)
         return result.decode() if isinstance(result, bytes) else result
@@ -1857,7 +1857,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         mkstream: bool = False,
         entries_read: int | None = None,
     ) -> bool:
-        self._driver.xgroup_create_sync(_str_key(key), group, identifier, mkstream=mkstream)
+        self._driver.xgroup_create(_str_key(key), group, identifier, mkstream=mkstream)
         return True
 
     @override
@@ -1869,7 +1869,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         mkstream: bool = False,
         entries_read: int | None = None,
     ) -> bool:
-        await self._driver.xgroup_create(_str_key(key), group, identifier, mkstream=mkstream)
+        await self._driver.axgroup_create(_str_key(key), group, identifier, mkstream=mkstream)
         return True
 
     # ---- blocking list ops (driver has only blmove/blmpop) ----
@@ -1884,7 +1884,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         end = time.monotonic() + timeout if timeout > 0 else None
         while True:
             for k in keys_list:
-                fn = self._driver.lpop_sync if command == "BLPOP" else self._driver.rpop_sync
+                fn = self._driver.lpop if command == "BLPOP" else self._driver.rpop
                 val = fn(k)
                 if val is not None:
                     return (k, self.decode(val))
@@ -1913,7 +1913,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         end = time.monotonic() + timeout if timeout > 0 else None
         while True:
             for k in keys_list:
-                fn = self._driver.lpop if command == "BLPOP" else self._driver.rpop
+                fn = self._driver.alpop if command == "BLPOP" else self._driver.arpop
                 val = await fn(k)
                 if val is not None:
                     return (k, self.decode(val))
@@ -1939,7 +1939,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         whereto: str = "RIGHT",
     ) -> Any | None:
         # Driver positional order is (src, dst, wherefrom, whereto, timeout_secs).
-        val = self._driver.blmove_sync(_str_key(src), _str_key(dst), wherefrom, whereto, float(timeout))
+        val = self._driver.blmove(_str_key(src), _str_key(dst), wherefrom, whereto, float(timeout))
         return None if val is None else self.decode(val)
 
     @override
@@ -1951,7 +1951,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         wherefrom: str = "LEFT",
         whereto: str = "RIGHT",
     ) -> Any | None:
-        val = await self._driver.blmove(_str_key(src), _str_key(dst), wherefrom, whereto, float(timeout))
+        val = await self._driver.ablmove(_str_key(src), _str_key(dst), wherefrom, whereto, float(timeout))
         return None if val is None else self.decode(val)
 
     # ---- streams: range/read/trim signature translations ----
@@ -1964,7 +1964,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         end: str = "+",
         count: int | None = None,
     ) -> list[tuple[str, dict[str, Any]]]:
-        raw = self._driver.xrange_sync(_str_key(key), start, end, count=count)
+        raw = self._driver.xrange(_str_key(key), start, end, count=count)
         return self._decode_xrange(raw)
 
     @override
@@ -1975,7 +1975,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         end: str = "+",
         count: int | None = None,
     ) -> list[tuple[str, dict[str, Any]]]:
-        raw = await self._driver.xrange(_str_key(key), start, end, count=count)
+        raw = await self._driver.axrange(_str_key(key), start, end, count=count)
         return self._decode_xrange(raw)
 
     @override
@@ -2048,7 +2048,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
         keys = [_str_key(k) for k in streams]
         ids = list(streams.values())
-        return self._decode_xread(self._driver.xread_sync(keys, ids, count=count))
+        return self._decode_xread(self._driver.xread(keys, ids, count=count))
 
     @override
     async def axread(
@@ -2059,7 +2059,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
         keys = [_str_key(k) for k in streams]
         ids = list(streams.values())
-        raw = await self._driver.xread(keys, ids, count=count)
+        raw = await self._driver.axread(keys, ids, count=count)
         return self._decode_xread(raw)
 
     @override
@@ -2075,7 +2075,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         keys = [_str_key(k) for k in streams]
         ids = list(streams.values())
         return self._decode_xread(
-            self._driver.xreadgroup_sync(group, consumer, keys, ids, count=count),
+            self._driver.xreadgroup(group, consumer, keys, ids, count=count),
         )
 
     @override
@@ -2090,7 +2090,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
         keys = [_str_key(k) for k in streams]
         ids = list(streams.values())
-        raw = await self._driver.xreadgroup(group, consumer, keys, ids, count=count)
+        raw = await self._driver.axreadgroup(group, consumer, keys, ids, count=count)
         return self._decode_xread(raw)
 
     @override
@@ -2108,7 +2108,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
                 argv.append(b"~")
             argv.append(minid)
             return int(self._eval_call("XTRIM", [key], argv))
-        return int(self._driver.xtrim_sync(_str_key(key), maxlen or 0, approximate))
+        return int(self._driver.xtrim(_str_key(key), maxlen or 0, approximate))
 
     @override
     async def axtrim(
@@ -2125,7 +2125,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
                 argv.append(b"~")
             argv.append(minid)
             return int(await self._aeval_call("XTRIM", [key], argv))
-        return int(await self._driver.xtrim(_str_key(key), maxlen or 0, approximate))
+        return int(await self._driver.axtrim(_str_key(key), maxlen or 0, approximate))
 
     # ---- streams: ops with no driver method, all via eval ----
 
@@ -2145,21 +2145,21 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     def xack(self, key: KeyT, group: str, *entry_ids: str) -> int:
         if not entry_ids:
             return 0
-        return int(self._driver.xack_sync(_str_key(key), group, list(entry_ids)))
+        return int(self._driver.xack(_str_key(key), group, list(entry_ids)))
 
     @override
     async def axack(self, key: KeyT, group: str, *entry_ids: str) -> int:
         if not entry_ids:
             return 0
-        return int(await self._driver.xack(_str_key(key), group, list(entry_ids)))
+        return int(await self._driver.axack(_str_key(key), group, list(entry_ids)))
 
     @override
     def xlen(self, key: KeyT) -> int:
-        return int(self._driver.xlen_sync(_str_key(key)))
+        return int(self._driver.xlen(_str_key(key)))
 
     @override
     async def axlen(self, key: KeyT) -> int:
-        return int(await self._driver.xlen(_str_key(key)))
+        return int(await self._driver.axlen(_str_key(key)))
 
     # Multi-word commands (XINFO STREAM, XGROUP DESTROY, ...) can't go through
     # ``_eval_call`` because Lua's ``redis.call`` treats the first arg as a
@@ -2178,7 +2178,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         keys: Sequence[KeyT],
         args: Sequence[Any],
     ) -> Any:
-        return self._driver.eval_sync(
+        return self._driver.eval(
             self._EVAL_SUBCALL_TEMPLATE.format(cmd=command),
             [_str_key(k) for k in keys],
             [sub.encode("ascii"), *(a if isinstance(a, bytes) else self._eval_arg(a) for a in args)],
@@ -2191,7 +2191,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         keys: Sequence[KeyT],
         args: Sequence[Any],
     ) -> Any:
-        return await self._driver.eval(
+        return await self._driver.aeval(
             self._EVAL_SUBCALL_TEMPLATE.format(cmd=command),
             [_str_key(k) for k in keys],
             [sub.encode("ascii"), *(a if isinstance(a, bytes) else self._eval_arg(a) for a in args)],
@@ -2317,7 +2317,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         idle: int | None = None,
     ) -> dict[str, Any] | list[dict[str, Any]]:
         if start is not None and end is not None and count is not None:
-            raw = self._driver.xpending_range_sync(
+            raw = self._driver.xpending_range(
                 _str_key(key),
                 group,
                 start,
@@ -2327,7 +2327,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
                 idle=idle,
             )
             return self._decode_xpending_range(raw)
-        raw = self._driver.xpending_sync(_str_key(key), group)
+        raw = self._driver.xpending(_str_key(key), group)
         return self._decode_xpending_summary(raw)
 
     @override
@@ -2342,7 +2342,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         idle: int | None = None,
     ) -> dict[str, Any] | list[dict[str, Any]]:
         if start is not None and end is not None and count is not None:
-            raw = await self._driver.xpending_range(
+            raw = await self._driver.axpending_range(
                 _str_key(key),
                 group,
                 start,
@@ -2352,7 +2352,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
                 idle=idle,
             )
             return self._decode_xpending_range(raw)
-        raw = await self._driver.xpending(_str_key(key), group)
+        raw = await self._driver.axpending(_str_key(key), group)
         return self._decode_xpending_summary(raw)
 
     @override
@@ -2369,7 +2369,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         force: bool = False,
         justid: bool = False,
     ) -> list[tuple[str, dict[str, Any]]] | list[str]:
-        raw = self._driver.xclaim_sync(
+        raw = self._driver.xclaim(
             _str_key(key),
             group,
             consumer,
@@ -2399,7 +2399,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         force: bool = False,
         justid: bool = False,
     ) -> list[tuple[str, dict[str, Any]]] | list[str]:
-        raw = await self._driver.xclaim(
+        raw = await self._driver.axclaim(
             _str_key(key),
             group,
             consumer,
@@ -2442,7 +2442,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         count: int | None = None,
         justid: bool = False,
     ) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
-        raw = self._driver.xautoclaim_sync(
+        raw = self._driver.xautoclaim(
             _str_key(key),
             group,
             consumer,
@@ -2464,7 +2464,7 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         count: int | None = None,
         justid: bool = False,
     ) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
-        raw = await self._driver.xautoclaim(
+        raw = await self._driver.axautoclaim(
             _str_key(key),
             group,
             consumer,

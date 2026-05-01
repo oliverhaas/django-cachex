@@ -9,20 +9,20 @@ def _cluster_urls(host: str, port: int) -> list[str]:
 def test_connect_cluster_and_round_trip(cluster_container):
     host, port = cluster_container
     driver = RustValkeyDriver.connect_cluster(_cluster_urls(host, port))
-    driver.flushdb_sync()
+    driver.flushdb()
 
-    driver.set_sync("a", b"1")
-    driver.set_sync("b", b"2")
-    driver.set_sync("c", b"3")
+    driver.set("a", b"1")
+    driver.set("b", b"2")
+    driver.set("c", b"3")
 
-    assert driver.get_sync("a") == b"1"
-    assert driver.get_sync("b") == b"2"
-    assert driver.get_sync("c") == b"3"
+    assert driver.get("a") == b"1"
+    assert driver.get("b") == b"2"
+    assert driver.get("c") == b"3"
 
 
 def test_cluster_get_missing_returns_none(cluster_container):
     host, port = cluster_container
     driver = RustValkeyDriver.connect_cluster(_cluster_urls(host, port))
-    driver.flushdb_sync()
+    driver.flushdb()
 
-    assert driver.get_sync("nope") is None
+    assert driver.get("nope") is None

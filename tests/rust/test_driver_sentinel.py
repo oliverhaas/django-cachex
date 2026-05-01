@@ -7,10 +7,10 @@ def test_connect_sentinel_and_round_trip(sentinel_container):
         "mymaster",
         0,
     )
-    driver.flushdb_sync()
+    driver.flushdb()
 
-    driver.set_sync("k", b"v")
-    assert driver.get_sync("k") == b"v"
+    driver.set("k", b"v")
+    assert driver.get("k") == b"v"
 
 
 def test_sentinel_with_no_quorum_fails(sentinel_container):

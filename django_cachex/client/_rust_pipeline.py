@@ -5,7 +5,7 @@ underlying ``self._pipeline`` object whose method surface mirrors redis-py's
 ``Pipeline`` (``set``, ``get``, ``hset``, ``zadd``, ...). This module provides
 that surface for the Rust driver: each method buffers a Redis wire command
 plus an optional response parser, and ``execute()`` dispatches the whole batch
-in one round trip via ``RustValkeyDriver.pipeline_exec_sync``.
+in one round trip via ``RustValkeyDriver.pipeline_exec``.
 
 We deliver results in the same Python shapes redis-py returns so the wrapper's
 decoders (which were written against redis-py) work unchanged. The driver runs
@@ -262,7 +262,7 @@ class _RustRawPipeline:
         parsers = self._parsers
         self._commands = []
         self._parsers = []
-        raw = self._driver.pipeline_exec_sync(commands, self._transaction)
+        raw = self._driver.pipeline_exec(commands, self._transaction)
         out: list[Any] = []
         for value, parser in zip(raw, parsers, strict=True):
             out.append(parser(value) if parser is not None else value)

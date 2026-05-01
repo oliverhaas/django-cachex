@@ -12,14 +12,14 @@ def test_client_side_cache_records_hits(redis_container):
         cache_max_size=128,
         cache_ttl_secs=60,
     )
-    driver.flushdb_sync()
-    driver.set_sync("k", b"v")
+    driver.flushdb()
+    driver.set("k", b"v")
 
     # First read populates the client cache (miss).
-    assert driver.get_sync("k") == b"v"
+    assert driver.get("k") == b"v"
     # Subsequent reads hit the local cache.
     for _ in range(5):
-        assert driver.get_sync("k") == b"v"
+        assert driver.get("k") == b"v"
 
     stats = driver.cache_statistics()
     assert stats is not None
@@ -33,15 +33,15 @@ def test_client_side_cache_invalidates_on_write(redis_container):
         cache_max_size=128,
         cache_ttl_secs=60,
     )
-    driver.flushdb_sync()
+    driver.flushdb()
 
-    driver.set_sync("k", b"v1")
-    assert driver.get_sync("k") == b"v1"  # populates cache
-    assert driver.get_sync("k") == b"v1"  # hit
+    driver.set("k", b"v1")
+    assert driver.get("k") == b"v1"  # populates cache
+    assert driver.get("k") == b"v1"  # hit
 
     # Write the same key from a separate connection (server pushes invalidation).
     other = RustValkeyDriver.connect_standard(f"redis://{redis_container.host}:{redis_container.port}/0")
-    other.set_sync("k", b"v2")
+    other.set("k", b"v2")
 
     # Read until we observe the new value (gives the invalidation push time to land).
     # 5s deadline tolerates slow CI runners; on a healthy box the push lands in <100ms.
@@ -49,10 +49,10 @@ def test_client_side_cache_invalidates_on_write(redis_container):
 
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
-        if driver.get_sync("k") == b"v2":
+        if driver.get("k") == b"v2":
             break
         time.sleep(0.02)
-    assert driver.get_sync("k") == b"v2"
+    assert driver.get("k") == b"v2"
 
     stats = driver.cache_statistics()
     assert stats is not None

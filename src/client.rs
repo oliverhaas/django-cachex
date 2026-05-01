@@ -5,9 +5,9 @@
 //
 // The full sync + async command surface (~85 commands × 2 variants) is
 // django-cachex's extension. Each command pair follows the same shape:
-//   * `<cmd>` — async; returns a `RustAwaitable`. Spawns the operation on the
+//   * `a<cmd>` — async; returns a `RustAwaitable`. Spawns the operation on the
 //     tokio runtime and routes through `RawResult` for type conversion.
-//   * `<cmd>_sync` — sync; releases the GIL and blocks on the runtime,
+//   * `<cmd>` — sync; releases the GIL and blocks on the runtime,
 //     returning the typed Python value directly.
 
 use pyo3::prelude::*;
@@ -423,26 +423,26 @@ impl RustValkeyDriver {
     // =====================================================================
 
     #[pyo3(signature = (key))]
-    fn get(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn aget(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_opt_bytes(conn.get_bytes(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn get_sync(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn get(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let r: Result<Option<Vec<u8>>, _> = sync_op!(py, self, conn, conn.get_bytes(key).await);
         Ok(py_opt_bytes(py, r.map_err(to_py_err)?))
     }
 
     #[pyo3(signature = (key, value, ttl=None))]
-    fn set(&self, py: Python<'_>, key: &str, value: &[u8], ttl: Option<u64>) -> PyResult<Py<PyAny>> {
+    fn aset(&self, py: Python<'_>, key: &str, value: &[u8], ttl: Option<u64>) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let value = value.to_vec();
         async_op!(self, py, conn, r_unit(conn.set_bytes(&key, value, ttl).await))
     }
 
     #[pyo3(signature = (key, value, ttl=None))]
-    fn set_sync(
+    fn set(
         &self,
         py: Python<'_>,
         key: &str,
@@ -454,7 +454,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, value, ttl=None))]
-    fn set_nx(
+    fn aset_nx(
         &self,
         py: Python<'_>,
         key: &str,
@@ -467,7 +467,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, value, ttl=None))]
-    fn set_nx_sync(
+    fn set_nx(
         &self,
         py: Python<'_>,
         key: &str,
@@ -479,40 +479,40 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key))]
-    fn delete(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn adelete(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_int(conn.del(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn delete_sync(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
+    fn delete(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.del(key).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (keys))]
-    fn delete_many(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
+    fn adelete_many(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
         async_op!(self, py, conn, r_int(conn.del_many(&keys).await))
     }
 
     #[pyo3(signature = (keys))]
-    fn delete_many_sync(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<i64> {
+    fn delete_many(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.del_many(&keys).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (keys))]
-    fn mget(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
+    fn amget(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
         async_op!(self, py, conn, r_opt_bytes_list(conn.mget_bytes(&keys).await))
     }
 
     #[pyo3(signature = (keys))]
-    fn mget_sync(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
+    fn mget(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
         let r: Result<Vec<Option<Vec<u8>>>, _> =
             sync_op!(py, self, conn, conn.mget_bytes(&keys).await);
         py_opt_bytes_list(py, r.map_err(to_py_err)?)
     }
 
     #[pyo3(signature = (entries, ttl=None))]
-    fn pipeline_set(
+    fn apipeline_set(
         &self,
         py: Python<'_>,
         entries: Vec<(String, Vec<u8>)>,
@@ -522,7 +522,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (entries, ttl=None))]
-    fn pipeline_set_sync(
+    fn pipeline_set(
         &self,
         py: Python<'_>,
         entries: Vec<(String, Vec<u8>)>,
@@ -532,185 +532,185 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, delta))]
-    fn incr_by(&self, py: Python<'_>, key: &str, delta: i64) -> PyResult<Py<PyAny>> {
+    fn aincr_by(&self, py: Python<'_>, key: &str, delta: i64) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_int(conn.incr_by(&key, delta).await))
     }
 
     #[pyo3(signature = (key, delta))]
-    fn incr_by_sync(&self, py: Python<'_>, key: &str, delta: i64) -> PyResult<i64> {
+    fn incr_by(&self, py: Python<'_>, key: &str, delta: i64) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.incr_by(key, delta).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key))]
-    fn exists(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn aexists(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_bool(conn.exists(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn exists_sync(&self, py: Python<'_>, key: &str) -> PyResult<bool> {
+    fn exists(&self, py: Python<'_>, key: &str) -> PyResult<bool> {
         sync_op!(py, self, conn, conn.exists(key).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key, seconds))]
-    fn expire(&self, py: Python<'_>, key: &str, seconds: u64) -> PyResult<Py<PyAny>> {
+    fn aexpire(&self, py: Python<'_>, key: &str, seconds: u64) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_bool(conn.expire(&key, seconds).await))
     }
 
     #[pyo3(signature = (key, seconds))]
-    fn expire_sync(&self, py: Python<'_>, key: &str, seconds: u64) -> PyResult<bool> {
+    fn expire(&self, py: Python<'_>, key: &str, seconds: u64) -> PyResult<bool> {
         sync_op!(py, self, conn, conn.expire(key, seconds).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key))]
-    fn persist(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn apersist(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_bool(conn.persist(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn persist_sync(&self, py: Python<'_>, key: &str) -> PyResult<bool> {
+    fn persist(&self, py: Python<'_>, key: &str) -> PyResult<bool> {
         sync_op!(py, self, conn, conn.persist(key).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key))]
-    fn ttl(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn attl(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_int(conn.ttl(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn ttl_sync(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
+    fn ttl(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.ttl(key).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key))]
-    fn pttl(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn apttl(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_int(conn.pttl(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn pttl_sync(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
+    fn pttl(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.pttl(key).await).map_err(to_py_err)
     }
 
-    fn flushdb(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    fn aflushdb(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         async_op!(self, py, conn, r_unit(conn.flushdb().await))
     }
 
-    fn flushdb_sync(&self, py: Python<'_>) -> PyResult<()> {
+    fn flushdb(&self, py: Python<'_>) -> PyResult<()> {
         sync_op!(py, self, conn, conn.flushdb().await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (pattern))]
-    fn keys(&self, py: Python<'_>, pattern: &str) -> PyResult<Py<PyAny>> {
+    fn akeys(&self, py: Python<'_>, pattern: &str) -> PyResult<Py<PyAny>> {
         let pattern = pattern.to_string();
         async_op!(self, py, conn, r_string_list(conn.keys(&pattern).await))
     }
 
     #[pyo3(signature = (pattern))]
-    fn keys_sync(&self, py: Python<'_>, pattern: &str) -> PyResult<Py<PyAny>> {
+    fn keys(&self, py: Python<'_>, pattern: &str) -> PyResult<Py<PyAny>> {
         let r: Result<Vec<String>, _> = sync_op!(py, self, conn, conn.keys(pattern).await);
         py_string_list(py, r.map_err(to_py_err)?)
     }
 
     #[pyo3(signature = (key))]
-    #[pyo3(name = "type")]
-    fn key_type(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn atype(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_string(conn.key_type(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn type_sync(&self, py: Python<'_>, key: &str) -> PyResult<String> {
+    #[pyo3(name = "type")]
+    fn key_type(&self, py: Python<'_>, key: &str) -> PyResult<String> {
         sync_op!(py, self, conn, conn.key_type(key).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (pattern, count))]
-    fn scan(&self, py: Python<'_>, pattern: &str, count: i64) -> PyResult<Py<PyAny>> {
+    fn ascan(&self, py: Python<'_>, pattern: &str, count: i64) -> PyResult<Py<PyAny>> {
         let pattern = pattern.to_string();
         async_op!(self, py, conn, r_string_list(conn.scan_all(&pattern, count).await))
     }
 
     #[pyo3(signature = (pattern, count))]
-    fn scan_sync(&self, py: Python<'_>, pattern: &str, count: i64) -> PyResult<Py<PyAny>> {
+    fn scan(&self, py: Python<'_>, pattern: &str, count: i64) -> PyResult<Py<PyAny>> {
         let r: Result<Vec<String>, _> =
             sync_op!(py, self, conn, conn.scan_all(pattern, count).await);
         py_string_list(py, r.map_err(to_py_err)?)
     }
 
-    fn dbsize(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    fn adbsize(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         async_op!(self, py, conn, r_int(conn.dbsize().await))
     }
 
-    fn dbsize_sync(&self, py: Python<'_>) -> PyResult<i64> {
+    fn dbsize(&self, py: Python<'_>) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.dbsize().await).map_err(to_py_err)
     }
 
-    fn info(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    fn ainfo(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         async_op!(self, py, conn, r_value(conn.info().await))
     }
 
-    fn info_sync(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    fn info(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let r: Result<redis::Value, _> = sync_op!(py, self, conn, conn.info().await);
         py_redis_value(py, r.map_err(to_py_err)?)
     }
 
-    fn client_list(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    fn aclient_list(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         async_op!(self, py, conn, r_value(conn.client_list().await))
     }
 
-    fn client_list_sync(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    fn client_list(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let r: Result<redis::Value, _> = sync_op!(py, self, conn, conn.client_list().await);
         py_redis_value(py, r.map_err(to_py_err)?)
     }
 
     #[pyo3(signature = (parameter))]
-    fn config_get(&self, py: Python<'_>, parameter: &str) -> PyResult<Py<PyAny>> {
+    fn aconfig_get(&self, py: Python<'_>, parameter: &str) -> PyResult<Py<PyAny>> {
         let parameter = parameter.to_string();
         async_op!(self, py, conn, r_value(conn.config_get(&parameter).await))
     }
 
     #[pyo3(signature = (parameter))]
-    fn config_get_sync(&self, py: Python<'_>, parameter: &str) -> PyResult<Py<PyAny>> {
+    fn config_get(&self, py: Python<'_>, parameter: &str) -> PyResult<Py<PyAny>> {
         let r: Result<redis::Value, _> =
             sync_op!(py, self, conn, conn.config_get(parameter).await);
         py_redis_value(py, r.map_err(to_py_err)?)
     }
 
     #[pyo3(signature = (key))]
-    fn object_encoding(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn aobject_encoding(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_opt_string(conn.object_encoding(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn object_encoding_sync(&self, py: Python<'_>, key: &str) -> PyResult<Option<String>> {
+    fn object_encoding(&self, py: Python<'_>, key: &str) -> PyResult<Option<String>> {
         sync_op!(py, self, conn, conn.object_encoding(key).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key))]
-    fn object_idletime(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn aobject_idletime(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_opt_int(conn.object_idletime(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn object_idletime_sync(&self, py: Python<'_>, key: &str) -> PyResult<Option<i64>> {
+    fn object_idletime(&self, py: Python<'_>, key: &str) -> PyResult<Option<i64>> {
         sync_op!(py, self, conn, conn.object_idletime(key).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key))]
-    fn memory_usage(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn amemory_usage(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_opt_int(conn.memory_usage(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn memory_usage_sync(&self, py: Python<'_>, key: &str) -> PyResult<Option<i64>> {
+    fn memory_usage(&self, py: Python<'_>, key: &str) -> PyResult<Option<i64>> {
         sync_op!(py, self, conn, conn.memory_usage(key).await).map_err(to_py_err)
     }
 
@@ -719,7 +719,7 @@ impl RustValkeyDriver {
     // =====================================================================
 
     #[pyo3(signature = (key, token, timeout_ms=None))]
-    fn lock_acquire(
+    fn alock_acquire(
         &self,
         py: Python<'_>,
         key: &str,
@@ -734,7 +734,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, token, timeout_ms=None))]
-    fn lock_acquire_sync(
+    fn lock_acquire(
         &self,
         py: Python<'_>,
         key: &str,
@@ -746,19 +746,19 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, token))]
-    fn lock_release(&self, py: Python<'_>, key: &str, token: &str) -> PyResult<Py<PyAny>> {
+    fn alock_release(&self, py: Python<'_>, key: &str, token: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let token = token.to_string();
         async_op!(self, py, conn, r_int(conn.lock_release(&key, &token).await))
     }
 
     #[pyo3(signature = (key, token))]
-    fn lock_release_sync(&self, py: Python<'_>, key: &str, token: &str) -> PyResult<i64> {
+    fn lock_release(&self, py: Python<'_>, key: &str, token: &str) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.lock_release(key, token).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key, token, additional_ms))]
-    fn lock_extend(
+    fn alock_extend(
         &self,
         py: Python<'_>,
         key: &str,
@@ -773,7 +773,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, token, additional_ms))]
-    fn lock_extend_sync(
+    fn lock_extend(
         &self,
         py: Python<'_>,
         key: &str,
@@ -789,7 +789,7 @@ impl RustValkeyDriver {
     // =====================================================================
 
     #[pyo3(signature = (script, keys, args))]
-    fn eval(
+    fn aeval(
         &self,
         py: Python<'_>,
         script: &str,
@@ -801,7 +801,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (script, keys, args))]
-    fn eval_sync(
+    fn eval(
         &self,
         py: Python<'_>,
         script: &str,
@@ -814,7 +814,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (sha, keys, args))]
-    fn evalsha(
+    fn aevalsha(
         &self,
         py: Python<'_>,
         sha: &str,
@@ -826,7 +826,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (sha, keys, args))]
-    fn evalsha_sync(
+    fn evalsha(
         &self,
         py: Python<'_>,
         sha: &str,
@@ -839,24 +839,24 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (script))]
-    fn script_load(&self, py: Python<'_>, script: &str) -> PyResult<Py<PyAny>> {
+    fn ascript_load(&self, py: Python<'_>, script: &str) -> PyResult<Py<PyAny>> {
         let script = script.to_string();
         async_op!(self, py, conn, r_string(conn.script_load(&script).await))
     }
 
     #[pyo3(signature = (script))]
-    fn script_load_sync(&self, py: Python<'_>, script: &str) -> PyResult<String> {
+    fn script_load(&self, py: Python<'_>, script: &str) -> PyResult<String> {
         sync_op!(py, self, conn, conn.script_load(script).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (sha))]
-    fn script_exists(&self, py: Python<'_>, sha: &str) -> PyResult<Py<PyAny>> {
+    fn ascript_exists(&self, py: Python<'_>, sha: &str) -> PyResult<Py<PyAny>> {
         let sha = sha.to_string();
         async_op!(self, py, conn, r_bool(conn.script_exists(&sha).await))
     }
 
     #[pyo3(signature = (sha))]
-    fn script_exists_sync(&self, py: Python<'_>, sha: &str) -> PyResult<bool> {
+    fn script_exists(&self, py: Python<'_>, sha: &str) -> PyResult<bool> {
         sync_op!(py, self, conn, conn.script_exists(sha).await).map_err(to_py_err)
     }
 
@@ -865,7 +865,7 @@ impl RustValkeyDriver {
     // =====================================================================
 
     #[pyo3(signature = (commands, transaction = false))]
-    fn pipeline_exec(
+    fn apipeline_exec(
         &self,
         py: Python<'_>,
         commands: Vec<(String, Vec<Vec<u8>>)>,
@@ -880,7 +880,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (commands, transaction = false))]
-    fn pipeline_exec_sync(
+    fn pipeline_exec(
         &self,
         py: Python<'_>,
         commands: Vec<(String, Vec<Vec<u8>>)>,
@@ -896,113 +896,113 @@ impl RustValkeyDriver {
     // =====================================================================
 
     #[pyo3(signature = (key, values))]
-    fn lpush(&self, py: Python<'_>, key: &str, values: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
+    fn alpush(&self, py: Python<'_>, key: &str, values: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_int(conn.lpush(&key, values).await))
     }
 
     #[pyo3(signature = (key, values))]
-    fn lpush_sync(&self, py: Python<'_>, key: &str, values: Vec<Vec<u8>>) -> PyResult<i64> {
+    fn lpush(&self, py: Python<'_>, key: &str, values: Vec<Vec<u8>>) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.lpush(key, values).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key, values))]
-    fn rpush(&self, py: Python<'_>, key: &str, values: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
+    fn arpush(&self, py: Python<'_>, key: &str, values: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_int(conn.rpush(&key, values).await))
     }
 
     #[pyo3(signature = (key, values))]
-    fn rpush_sync(&self, py: Python<'_>, key: &str, values: Vec<Vec<u8>>) -> PyResult<i64> {
+    fn rpush(&self, py: Python<'_>, key: &str, values: Vec<Vec<u8>>) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.rpush(key, values).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key))]
-    fn lpop(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn alpop(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_opt_bytes(conn.lpop(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn lpop_sync(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn lpop(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let r: Result<Option<Vec<u8>>, _> = sync_op!(py, self, conn, conn.lpop(key).await);
         Ok(py_opt_bytes(py, r.map_err(to_py_err)?))
     }
 
     #[pyo3(signature = (key))]
-    fn rpop(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn arpop(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_opt_bytes(conn.rpop(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn rpop_sync(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn rpop(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let r: Result<Option<Vec<u8>>, _> = sync_op!(py, self, conn, conn.rpop(key).await);
         Ok(py_opt_bytes(py, r.map_err(to_py_err)?))
     }
 
     #[pyo3(signature = (key, start, stop))]
-    fn lrange(&self, py: Python<'_>, key: &str, start: i64, stop: i64) -> PyResult<Py<PyAny>> {
+    fn alrange(&self, py: Python<'_>, key: &str, start: i64, stop: i64) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_bytes_list(conn.lrange(&key, start, stop).await))
     }
 
     #[pyo3(signature = (key, start, stop))]
-    fn lrange_sync(&self, py: Python<'_>, key: &str, start: i64, stop: i64) -> PyResult<Py<PyAny>> {
+    fn lrange(&self, py: Python<'_>, key: &str, start: i64, stop: i64) -> PyResult<Py<PyAny>> {
         let r: Result<Vec<Vec<u8>>, _> =
             sync_op!(py, self, conn, conn.lrange(key, start, stop).await);
         py_bytes_list(py, r.map_err(to_py_err)?)
     }
 
     #[pyo3(signature = (key))]
-    fn llen(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn allen(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_int(conn.llen(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn llen_sync(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
+    fn llen(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.llen(key).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key, count, value))]
-    fn lrem(&self, py: Python<'_>, key: &str, count: i64, value: &[u8]) -> PyResult<Py<PyAny>> {
+    fn alrem(&self, py: Python<'_>, key: &str, count: i64, value: &[u8]) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let value = value.to_vec();
         async_op!(self, py, conn, r_int(conn.lrem(&key, count, &value).await))
     }
 
     #[pyo3(signature = (key, count, value))]
-    fn lrem_sync(&self, py: Python<'_>, key: &str, count: i64, value: &[u8]) -> PyResult<i64> {
+    fn lrem(&self, py: Python<'_>, key: &str, count: i64, value: &[u8]) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.lrem(key, count, value).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key, index))]
-    fn lindex(&self, py: Python<'_>, key: &str, index: i64) -> PyResult<Py<PyAny>> {
+    fn alindex(&self, py: Python<'_>, key: &str, index: i64) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_opt_bytes(conn.lindex(&key, index).await))
     }
 
     #[pyo3(signature = (key, index))]
-    fn lindex_sync(&self, py: Python<'_>, key: &str, index: i64) -> PyResult<Py<PyAny>> {
+    fn lindex(&self, py: Python<'_>, key: &str, index: i64) -> PyResult<Py<PyAny>> {
         let r: Result<Option<Vec<u8>>, _> = sync_op!(py, self, conn, conn.lindex(key, index).await);
         Ok(py_opt_bytes(py, r.map_err(to_py_err)?))
     }
 
     #[pyo3(signature = (key, index, value))]
-    fn lset(&self, py: Python<'_>, key: &str, index: i64, value: &[u8]) -> PyResult<Py<PyAny>> {
+    fn alset(&self, py: Python<'_>, key: &str, index: i64, value: &[u8]) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let value = value.to_vec();
         async_op!(self, py, conn, r_unit(conn.lset(&key, index, &value).await))
     }
 
     #[pyo3(signature = (key, index, value))]
-    fn lset_sync(&self, py: Python<'_>, key: &str, index: i64, value: &[u8]) -> PyResult<()> {
+    fn lset(&self, py: Python<'_>, key: &str, index: i64, value: &[u8]) -> PyResult<()> {
         sync_op!(py, self, conn, conn.lset(key, index, value).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key, before, pivot, value))]
-    fn linsert(
+    fn alinsert(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1017,7 +1017,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, before, pivot, value))]
-    fn linsert_sync(
+    fn linsert(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1030,18 +1030,18 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, start, stop))]
-    fn ltrim(&self, py: Python<'_>, key: &str, start: i64, stop: i64) -> PyResult<Py<PyAny>> {
+    fn altrim(&self, py: Python<'_>, key: &str, start: i64, stop: i64) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_unit(conn.ltrim(&key, start, stop).await))
     }
 
     #[pyo3(signature = (key, start, stop))]
-    fn ltrim_sync(&self, py: Python<'_>, key: &str, start: i64, stop: i64) -> PyResult<()> {
+    fn ltrim(&self, py: Python<'_>, key: &str, start: i64, stop: i64) -> PyResult<()> {
         sync_op!(py, self, conn, conn.ltrim(key, start, stop).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (source, destination, wherefrom, whereto, timeout))]
-    fn blmove(
+    fn ablmove(
         &self,
         py: Python<'_>,
         source: &str,
@@ -1060,7 +1060,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (source, destination, wherefrom, whereto, timeout))]
-    fn blmove_sync(
+    fn blmove(
         &self,
         py: Python<'_>,
         source: &str,
@@ -1079,7 +1079,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (timeout, keys, direction, count))]
-    fn blmpop(
+    fn ablmpop(
         &self,
         py: Python<'_>,
         timeout: f64,
@@ -1094,7 +1094,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (timeout, keys, direction, count))]
-    fn blmpop_sync(
+    fn blmpop(
         &self,
         py: Python<'_>,
         timeout: f64,
@@ -1116,20 +1116,20 @@ impl RustValkeyDriver {
     // =====================================================================
 
     #[pyo3(signature = (key, field))]
-    fn hget(&self, py: Python<'_>, key: &str, field: &str) -> PyResult<Py<PyAny>> {
+    fn ahget(&self, py: Python<'_>, key: &str, field: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let field = field.to_string();
         async_op!(self, py, conn, r_opt_bytes(conn.hget(&key, &field).await))
     }
 
     #[pyo3(signature = (key, field))]
-    fn hget_sync(&self, py: Python<'_>, key: &str, field: &str) -> PyResult<Py<PyAny>> {
+    fn hget(&self, py: Python<'_>, key: &str, field: &str) -> PyResult<Py<PyAny>> {
         let r: Result<Option<Vec<u8>>, _> = sync_op!(py, self, conn, conn.hget(key, field).await);
         Ok(py_opt_bytes(py, r.map_err(to_py_err)?))
     }
 
     #[pyo3(signature = (key, field, value))]
-    fn hset(&self, py: Python<'_>, key: &str, field: &str, value: &[u8]) -> PyResult<Py<PyAny>> {
+    fn ahset(&self, py: Python<'_>, key: &str, field: &str, value: &[u8]) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let field = field.to_string();
         let value = value.to_vec();
@@ -1137,108 +1137,108 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, field, value))]
-    fn hset_sync(&self, py: Python<'_>, key: &str, field: &str, value: &[u8]) -> PyResult<i64> {
+    fn hset(&self, py: Python<'_>, key: &str, field: &str, value: &[u8]) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.hset(key, field, value).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key))]
-    fn hgetall(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn ahgetall(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_bytes_pairs(conn.hgetall(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn hgetall_sync(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn hgetall(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let r: Result<Vec<(Vec<u8>, Vec<u8>)>, _> =
             sync_op!(py, self, conn, conn.hgetall(key).await);
         py_bytes_pairs(py, r.map_err(to_py_err)?)
     }
 
     #[pyo3(signature = (key, fields))]
-    fn hdel(&self, py: Python<'_>, key: &str, fields: Vec<String>) -> PyResult<Py<PyAny>> {
+    fn ahdel(&self, py: Python<'_>, key: &str, fields: Vec<String>) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_int(conn.hdel(&key, &fields).await))
     }
 
     #[pyo3(signature = (key, fields))]
-    fn hdel_sync(&self, py: Python<'_>, key: &str, fields: Vec<String>) -> PyResult<i64> {
+    fn hdel(&self, py: Python<'_>, key: &str, fields: Vec<String>) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.hdel(key, &fields).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key, field, delta))]
-    fn hincrby(&self, py: Python<'_>, key: &str, field: &str, delta: i64) -> PyResult<Py<PyAny>> {
+    fn ahincrby(&self, py: Python<'_>, key: &str, field: &str, delta: i64) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let field = field.to_string();
         async_op!(self, py, conn, r_int(conn.hincrby(&key, &field, delta).await))
     }
 
     #[pyo3(signature = (key, field, delta))]
-    fn hincrby_sync(&self, py: Python<'_>, key: &str, field: &str, delta: i64) -> PyResult<i64> {
+    fn hincrby(&self, py: Python<'_>, key: &str, field: &str, delta: i64) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.hincrby(key, field, delta).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key))]
-    fn hkeys(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn ahkeys(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_string_list(conn.hkeys(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn hkeys_sync(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn hkeys(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let r: Result<Vec<String>, _> = sync_op!(py, self, conn, conn.hkeys(key).await);
         py_string_list(py, r.map_err(to_py_err)?)
     }
 
     #[pyo3(signature = (key))]
-    fn hvals(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn ahvals(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_bytes_list(conn.hvals(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn hvals_sync(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn hvals(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let r: Result<Vec<Vec<u8>>, _> = sync_op!(py, self, conn, conn.hvals(key).await);
         py_bytes_list(py, r.map_err(to_py_err)?)
     }
 
     #[pyo3(signature = (key, field))]
-    fn hexists(&self, py: Python<'_>, key: &str, field: &str) -> PyResult<Py<PyAny>> {
+    fn ahexists(&self, py: Python<'_>, key: &str, field: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let field = field.to_string();
         async_op!(self, py, conn, r_bool(conn.hexists(&key, &field).await))
     }
 
     #[pyo3(signature = (key, field))]
-    fn hexists_sync(&self, py: Python<'_>, key: &str, field: &str) -> PyResult<bool> {
+    fn hexists(&self, py: Python<'_>, key: &str, field: &str) -> PyResult<bool> {
         sync_op!(py, self, conn, conn.hexists(key, field).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key))]
-    fn hlen(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn ahlen(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_int(conn.hlen(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn hlen_sync(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
+    fn hlen(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.hlen(key).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key, fields))]
-    fn hmget(&self, py: Python<'_>, key: &str, fields: Vec<String>) -> PyResult<Py<PyAny>> {
+    fn ahmget(&self, py: Python<'_>, key: &str, fields: Vec<String>) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_opt_bytes_list(conn.hmget(&key, &fields).await))
     }
 
     #[pyo3(signature = (key, fields))]
-    fn hmget_sync(&self, py: Python<'_>, key: &str, fields: Vec<String>) -> PyResult<Py<PyAny>> {
+    fn hmget(&self, py: Python<'_>, key: &str, fields: Vec<String>) -> PyResult<Py<PyAny>> {
         let r: Result<Vec<Option<Vec<u8>>>, _> =
             sync_op!(py, self, conn, conn.hmget(key, &fields).await);
         py_opt_bytes_list(py, r.map_err(to_py_err)?)
     }
 
     #[pyo3(signature = (key, fields))]
-    fn hmset(
+    fn ahmset(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1249,7 +1249,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, fields))]
-    fn hmset_sync(
+    fn hmset(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1263,91 +1263,91 @@ impl RustValkeyDriver {
     // =====================================================================
 
     #[pyo3(signature = (key, members))]
-    fn sadd(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
+    fn asadd(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_int(conn.sadd(&key, members).await))
     }
 
     #[pyo3(signature = (key, members))]
-    fn sadd_sync(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<i64> {
+    fn sadd(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.sadd(key, members).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key, members))]
-    fn srem(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
+    fn asrem(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_int(conn.srem(&key, members).await))
     }
 
     #[pyo3(signature = (key, members))]
-    fn srem_sync(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<i64> {
+    fn srem(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.srem(key, members).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key))]
-    fn smembers(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn asmembers(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_bytes_list(conn.smembers(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn smembers_sync(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn smembers(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let r: Result<Vec<Vec<u8>>, _> = sync_op!(py, self, conn, conn.smembers(key).await);
         py_bytes_list(py, r.map_err(to_py_err)?)
     }
 
     #[pyo3(signature = (key, member))]
-    fn sismember(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<Py<PyAny>> {
+    fn asismember(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let member = member.to_vec();
         async_op!(self, py, conn, r_bool(conn.sismember(&key, &member).await))
     }
 
     #[pyo3(signature = (key, member))]
-    fn sismember_sync(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<bool> {
+    fn sismember(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<bool> {
         sync_op!(py, self, conn, conn.sismember(key, member).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key))]
-    fn scard(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn ascard(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_int(conn.scard(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn scard_sync(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
+    fn scard(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.scard(key).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (keys))]
-    fn sinter(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
+    fn asinter(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
         async_op!(self, py, conn, r_bytes_list(conn.sinter(&keys).await))
     }
 
     #[pyo3(signature = (keys))]
-    fn sinter_sync(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
+    fn sinter(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
         let r: Result<Vec<Vec<u8>>, _> = sync_op!(py, self, conn, conn.sinter(&keys).await);
         py_bytes_list(py, r.map_err(to_py_err)?)
     }
 
     #[pyo3(signature = (keys))]
-    fn sunion(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
+    fn asunion(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
         async_op!(self, py, conn, r_bytes_list(conn.sunion(&keys).await))
     }
 
     #[pyo3(signature = (keys))]
-    fn sunion_sync(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
+    fn sunion(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
         let r: Result<Vec<Vec<u8>>, _> = sync_op!(py, self, conn, conn.sunion(&keys).await);
         py_bytes_list(py, r.map_err(to_py_err)?)
     }
 
     #[pyo3(signature = (keys))]
-    fn sdiff(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
+    fn asdiff(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
         async_op!(self, py, conn, r_bytes_list(conn.sdiff(&keys).await))
     }
 
     #[pyo3(signature = (keys))]
-    fn sdiff_sync(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
+    fn sdiff(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
         let r: Result<Vec<Vec<u8>>, _> = sync_op!(py, self, conn, conn.sdiff(&keys).await);
         py_bytes_list(py, r.map_err(to_py_err)?)
     }
@@ -1357,7 +1357,7 @@ impl RustValkeyDriver {
     // =====================================================================
 
     #[pyo3(signature = (key, members))]
-    fn zadd(
+    fn azadd(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1368,7 +1368,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, members))]
-    fn zadd_sync(
+    fn zadd(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1378,18 +1378,18 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, members))]
-    fn zrem(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
+    fn azrem(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_int(conn.zrem(&key, members).await))
     }
 
     #[pyo3(signature = (key, members))]
-    fn zrem_sync(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<i64> {
+    fn zrem(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.zrem(key, members).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key, start, stop, with_scores=false))]
-    fn zrange(
+    fn azrange(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1404,7 +1404,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, start, stop, with_scores=false))]
-    fn zrange_sync(
+    fn zrange(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1418,7 +1418,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, min, max, with_scores=false))]
-    fn zrangebyscore(
+    fn azrangebyscore(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1435,7 +1435,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, min, max, with_scores=false))]
-    fn zrangebyscore_sync(
+    fn zrangebyscore(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1453,7 +1453,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, start, stop, with_scores=false))]
-    fn zrevrange(
+    fn azrevrange(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1468,7 +1468,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, start, stop, with_scores=false))]
-    fn zrevrange_sync(
+    fn zrevrange(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1486,54 +1486,54 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, member, delta))]
-    fn zincrby(&self, py: Python<'_>, key: &str, member: &[u8], delta: f64) -> PyResult<Py<PyAny>> {
+    fn azincrby(&self, py: Python<'_>, key: &str, member: &[u8], delta: f64) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let member = member.to_vec();
         async_op!(self, py, conn, r_f64(conn.zincrby(&key, &member, delta).await))
     }
 
     #[pyo3(signature = (key, member, delta))]
-    fn zincrby_sync(&self, py: Python<'_>, key: &str, member: &[u8], delta: f64) -> PyResult<f64> {
+    fn zincrby(&self, py: Python<'_>, key: &str, member: &[u8], delta: f64) -> PyResult<f64> {
         sync_op!(py, self, conn, conn.zincrby(key, member, delta).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key))]
-    fn zcard(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn azcard(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_int(conn.zcard(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn zcard_sync(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
+    fn zcard(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.zcard(key).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key, member))]
-    fn zscore(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<Py<PyAny>> {
+    fn azscore(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let member = member.to_vec();
         async_op!(self, py, conn, r_opt_f64(conn.zscore(&key, &member).await))
     }
 
     #[pyo3(signature = (key, member))]
-    fn zscore_sync(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<Option<f64>> {
+    fn zscore(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<Option<f64>> {
         sync_op!(py, self, conn, conn.zscore(key, member).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key, member))]
-    fn zrank(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<Py<PyAny>> {
+    fn azrank(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let member = member.to_vec();
         async_op!(self, py, conn, r_opt_int(conn.zrank(&key, &member).await))
     }
 
     #[pyo3(signature = (key, member))]
-    fn zrank_sync(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<Option<i64>> {
+    fn zrank(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<Option<i64>> {
         sync_op!(py, self, conn, conn.zrank(key, member).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key, min, max))]
-    fn zcount(&self, py: Python<'_>, key: &str, min: &str, max: &str) -> PyResult<Py<PyAny>> {
+    fn azcount(&self, py: Python<'_>, key: &str, min: &str, max: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let min = min.to_string();
         let max = max.to_string();
@@ -1541,31 +1541,31 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, min, max))]
-    fn zcount_sync(&self, py: Python<'_>, key: &str, min: &str, max: &str) -> PyResult<i64> {
+    fn zcount(&self, py: Python<'_>, key: &str, min: &str, max: &str) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.zcount(key, min, max).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key, count=1))]
-    fn zpopmin(&self, py: Python<'_>, key: &str, count: i64) -> PyResult<Py<PyAny>> {
+    fn azpopmin(&self, py: Python<'_>, key: &str, count: i64) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_scored_members(conn.zpopmin(&key, count).await))
     }
 
     #[pyo3(signature = (key, count=1))]
-    fn zpopmin_sync(&self, py: Python<'_>, key: &str, count: i64) -> PyResult<Py<PyAny>> {
+    fn zpopmin(&self, py: Python<'_>, key: &str, count: i64) -> PyResult<Py<PyAny>> {
         let r: Result<Vec<(Vec<u8>, f64)>, _> =
             sync_op!(py, self, conn, conn.zpopmin(key, count).await);
         py_scored_members(py, r.map_err(to_py_err)?)
     }
 
     #[pyo3(signature = (key, count=1))]
-    fn zpopmax(&self, py: Python<'_>, key: &str, count: i64) -> PyResult<Py<PyAny>> {
+    fn azpopmax(&self, py: Python<'_>, key: &str, count: i64) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_scored_members(conn.zpopmax(&key, count).await))
     }
 
     #[pyo3(signature = (key, count=1))]
-    fn zpopmax_sync(&self, py: Python<'_>, key: &str, count: i64) -> PyResult<Py<PyAny>> {
+    fn zpopmax(&self, py: Python<'_>, key: &str, count: i64) -> PyResult<Py<PyAny>> {
         let r: Result<Vec<(Vec<u8>, f64)>, _> =
             sync_op!(py, self, conn, conn.zpopmax(key, count).await);
         py_scored_members(py, r.map_err(to_py_err)?)
@@ -1576,7 +1576,7 @@ impl RustValkeyDriver {
     // =====================================================================
 
     #[pyo3(signature = (key, id, fields))]
-    fn xadd(
+    fn axadd(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1589,7 +1589,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, id, fields))]
-    fn xadd_sync(
+    fn xadd(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1600,18 +1600,18 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key))]
-    fn xlen(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
+    fn axlen(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, r_int(conn.xlen(&key).await))
     }
 
     #[pyo3(signature = (key))]
-    fn xlen_sync(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
+    fn xlen(&self, py: Python<'_>, key: &str) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.xlen(key).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key, start, end, count=None))]
-    fn xrange(
+    fn axrange(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1626,7 +1626,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, start, end, count=None))]
-    fn xrange_sync(
+    fn xrange(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1640,7 +1640,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (keys, ids, count=None))]
-    fn xread(
+    fn axread(
         &self,
         py: Python<'_>,
         keys: Vec<String>,
@@ -1651,7 +1651,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (keys, ids, count=None))]
-    fn xread_sync(
+    fn xread(
         &self,
         py: Python<'_>,
         keys: Vec<String>,
@@ -1664,7 +1664,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (group, consumer, keys, ids, count=None))]
-    fn xreadgroup(
+    fn axreadgroup(
         &self,
         py: Python<'_>,
         group: &str,
@@ -1681,7 +1681,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (group, consumer, keys, ids, count=None))]
-    fn xreadgroup_sync(
+    fn xreadgroup(
         &self,
         py: Python<'_>,
         group: &str,
@@ -1700,7 +1700,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, group, ids))]
-    fn xack(
+    fn axack(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1713,12 +1713,12 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, group, ids))]
-    fn xack_sync(&self, py: Python<'_>, key: &str, group: &str, ids: Vec<String>) -> PyResult<i64> {
+    fn xack(&self, py: Python<'_>, key: &str, group: &str, ids: Vec<String>) -> PyResult<i64> {
         sync_op!(py, self, conn, conn.xack(key, group, &ids).await).map_err(to_py_err)
     }
 
     #[pyo3(signature = (key, max_len, approximate=false))]
-    fn xtrim(
+    fn axtrim(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1730,7 +1730,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, max_len, approximate=false))]
-    fn xtrim_sync(
+    fn xtrim(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1741,7 +1741,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, group, id, mkstream=false))]
-    fn xgroup_create(
+    fn axgroup_create(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1758,7 +1758,7 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, group, id, mkstream=false))]
-    fn xgroup_create_sync(
+    fn xgroup_create(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1771,21 +1771,21 @@ impl RustValkeyDriver {
     }
 
     #[pyo3(signature = (key, group))]
-    fn xpending(&self, py: Python<'_>, key: &str, group: &str) -> PyResult<Py<PyAny>> {
+    fn axpending(&self, py: Python<'_>, key: &str, group: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let group = group.to_string();
         async_op!(self, py, conn, r_value(conn.xpending(&key, &group).await))
     }
 
     #[pyo3(signature = (key, group))]
-    fn xpending_sync(&self, py: Python<'_>, key: &str, group: &str) -> PyResult<Py<PyAny>> {
+    fn xpending(&self, py: Python<'_>, key: &str, group: &str) -> PyResult<Py<PyAny>> {
         let r: Result<redis::Value, _> = sync_op!(py, self, conn, conn.xpending(key, group).await);
         py_redis_value(py, r.map_err(to_py_err)?)
     }
 
     #[pyo3(signature = (key, group, start, end, count, consumer=None, idle=None))]
     #[allow(clippy::too_many_arguments)]
-    fn xpending_range(
+    fn axpending_range(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1810,7 +1810,7 @@ impl RustValkeyDriver {
 
     #[pyo3(signature = (key, group, start, end, count, consumer=None, idle=None))]
     #[allow(clippy::too_many_arguments)]
-    fn xpending_range_sync(
+    fn xpending_range(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1833,7 +1833,7 @@ impl RustValkeyDriver {
 
     #[pyo3(signature = (key, group, consumer, min_idle_time, ids, idle=None, time_ms=None, retrycount=None, force=false, justid=false))]
     #[allow(clippy::too_many_arguments)]
-    fn xclaim(
+    fn axclaim(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1871,7 +1871,7 @@ impl RustValkeyDriver {
 
     #[pyo3(signature = (key, group, consumer, min_idle_time, ids, idle=None, time_ms=None, retrycount=None, force=false, justid=false))]
     #[allow(clippy::too_many_arguments)]
-    fn xclaim_sync(
+    fn xclaim(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1908,7 +1908,7 @@ impl RustValkeyDriver {
 
     #[pyo3(signature = (key, group, consumer, min_idle_time, start, count=None, justid=false))]
     #[allow(clippy::too_many_arguments)]
-    fn xautoclaim(
+    fn axautoclaim(
         &self,
         py: Python<'_>,
         key: &str,
@@ -1933,7 +1933,7 @@ impl RustValkeyDriver {
 
     #[pyo3(signature = (key, group, consumer, min_idle_time, start, count=None, justid=false))]
     #[allow(clippy::too_many_arguments)]
-    fn xautoclaim_sync(
+    fn xautoclaim(
         &self,
         py: Python<'_>,
         key: &str,

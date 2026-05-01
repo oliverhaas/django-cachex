@@ -317,8 +317,8 @@ def test_lock_context_manager(rust_cache):
     with lock:
         # The token is set + the lock key exists in Redis only while held.
         assert lock.token is not None
-        assert raw.exists_sync(server_key) is True
-    assert raw.exists_sync(server_key) is False
+        assert raw.exists(server_key) is True
+    assert raw.exists(server_key) is False
 
 
 def test_lock_extends_actually_extends_ttl(rust_cache):
@@ -327,9 +327,9 @@ def test_lock_extends_actually_extends_ttl(rust_cache):
     lock = rust_cache.lock("mylock", timeout=2)
     assert lock.acquire() is True
     try:
-        before = raw.pttl_sync(server_key)
+        before = raw.pttl(server_key)
         assert lock.extend(20) is True
-        after = raw.pttl_sync(server_key)
+        after = raw.pttl(server_key)
         # extend(20s) + the remaining ~2s TTL ≈ 22s; assert it grew well past
         # the original timeout to rule out a no-op.
         assert after > before
@@ -377,8 +377,8 @@ def test_get_raw_client_returns_driver(rust_cache):
 
     raw = rust_cache._cache.get_raw_client()
     assert isinstance(raw, RustValkeyDriver)
-    raw.set_sync("rawkey", b"rawval")
-    assert raw.get_sync("rawkey") == b"rawval"
+    raw.set("rawkey", b"rawval")
+    assert raw.get("rawkey") == b"rawval"
 
 
 # ------------------------------------------------------------------ scripts

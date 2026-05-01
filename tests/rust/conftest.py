@@ -12,5 +12,5 @@ def driver(redis_container) -> RustValkeyDriver:
     d = RustValkeyDriver.connect_standard(
         f"redis://{redis_container.host}:{redis_container.port}/0",
     )
-    d.flushdb_sync()
+    d.flushdb()
     return d

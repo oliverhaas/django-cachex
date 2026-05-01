@@ -94,24 +94,24 @@ class ValkeyLock:
 
     def locked(self) -> bool:
         """Return True if the lock key exists. Doesn't check ownership."""
-        return self._driver.exists_sync(self.name)
+        return self._driver.exists(self.name)
 
     async def alocked(self) -> bool:
-        return await self._driver.exists(self.name)
+        return await self._driver.aexists(self.name)
 
     def owned(self) -> bool:
         """Return True if this client holds the lock (token still matches)."""
         token = self.token
         if token is None:
             return False
-        stored = self._driver.get_sync(self.name)
+        stored = self._driver.get(self.name)
         return stored == token
 
     async def aowned(self) -> bool:
         token = self.token
         if token is None:
             return False
-        stored = await self._driver.get(self.name)
+        stored = await self._driver.aget(self.name)
         return stored == token
 
     # ----------------------------------------------------------------- sync
@@ -133,7 +133,7 @@ class ValkeyLock:
 
         deadline = time.monotonic() + blocking_timeout if blocking_timeout is not None else None
         while True:
-            if self._driver.lock_acquire_sync(self.name, new_token.decode("ascii"), ttl_ms):
+            if self._driver.lock_acquire(self.name, new_token.decode("ascii"), ttl_ms):
                 self.token = new_token
                 return True
             if not blocking:
@@ -147,7 +147,7 @@ class ValkeyLock:
         if token is None:
             msg = "Cannot release an unlocked lock"
             raise LockError(msg)
-        result = self._driver.lock_release_sync(self.name, token.decode("ascii"))
+        result = self._driver.lock_release(self.name, token.decode("ascii"))
         self.token = None
         if result == 0:
             msg = "Cannot release a lock that's no longer owned"
@@ -165,7 +165,7 @@ class ValkeyLock:
             msg = "Cannot extend an unlocked lock"
             raise LockError(msg)
         additional_ms = max(1, int(additional_time * 1000))
-        result = self._driver.lock_extend_sync(self.name, token.decode("ascii"), additional_ms)
+        result = self._driver.lock_extend(self.name, token.decode("ascii"), additional_ms)
         if result == 0:
             msg = "Cannot extend a lock that's no longer owned"
             raise LockNotOwnedError(msg)
@@ -190,7 +190,7 @@ class ValkeyLock:
 
         deadline = time.monotonic() + blocking_timeout if blocking_timeout is not None else None
         while True:
-            ok = await self._driver.lock_acquire(self.name, new_token.decode("ascii"), ttl_ms)
+            ok = await self._driver.alock_acquire(self.name, new_token.decode("ascii"), ttl_ms)
             if ok:
                 self.token = new_token
                 return True
@@ -205,7 +205,7 @@ class ValkeyLock:
         if token is None:
             msg = "Cannot release an unlocked lock"
             raise LockError(msg)
-        result = await self._driver.lock_release(self.name, token.decode("ascii"))
+        result = await self._driver.alock_release(self.name, token.decode("ascii"))
         self.token = None
         if result == 0:
             msg = "Cannot release a lock that's no longer owned"
@@ -220,7 +220,7 @@ class ValkeyLock:
             msg = "Cannot extend an unlocked lock"
             raise LockError(msg)
         additional_ms = max(1, int(additional_time * 1000))
-        result = await self._driver.lock_extend(self.name, token.decode("ascii"), additional_ms)
+        result = await self._driver.alock_extend(self.name, token.decode("ascii"), additional_ms)
         if result == 0:
             msg = "Cannot extend a lock that's no longer owned"
             raise LockNotOwnedError(msg)

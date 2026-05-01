@@ -70,8 +70,8 @@ def test_sentinel_rediscovers_master_after_failover(failover_setup):
         "mymaster",
         0,
     )
-    driver.set_sync("k", b"before")
-    assert driver.get_sync("k") == b"before"
+    driver.set("k", b"before")
+    assert driver.get("k") == b"before"
 
     failover_setup.master.stop()
 
@@ -82,12 +82,12 @@ def test_sentinel_rediscovers_master_after_failover(failover_setup):
     last_err: Exception | None = None
     while time.monotonic() < deadline:
         try:
-            driver.set_sync("k", b"after")
+            driver.set("k", b"after")
         except (ConnectionError, RuntimeError) as e:
             last_err = e
             time.sleep(0.5)
             continue
-        if driver.get_sync("k") == b"after":
+        if driver.get("k") == b"after":
             return
         time.sleep(0.5)
     pytest.fail(f"failover did not complete within 30s; last error: {last_err}")

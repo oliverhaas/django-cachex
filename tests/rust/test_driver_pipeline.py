@@ -1,5 +1,5 @@
 def test_pipeline_exec_executes_commands_in_order(driver):
-    result = driver.pipeline_exec_sync(
+    result = driver.pipeline_exec(
         [
             ("SET", [b"a", b"1"]),
             ("SET", [b"b", b"2"]),
@@ -15,7 +15,7 @@ def test_pipeline_exec_executes_commands_in_order(driver):
 
 
 def test_pipeline_exec_with_increment(driver):
-    result = driver.pipeline_exec_sync(
+    result = driver.pipeline_exec(
         [
             ("INCR", [b"counter"]),
             ("INCR", [b"counter"]),
@@ -30,4 +30,4 @@ def test_pipeline_exec_empty_raises(driver):
     import pytest
 
     with pytest.raises(RuntimeError):
-        driver.pipeline_exec_sync([])
+        driver.pipeline_exec([])
