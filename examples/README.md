@@ -7,7 +7,6 @@ Example Django projects demonstrating django-cachex cache admin.
 | Example | Description |
 |---------|-------------|
 | [simple](simple/) | Minimal setup with single Valkey instance + locmem |
-| [unfold](unfold/) | Same as simple with django-unfold admin theme |
 | [full](full/) | **All backends**: standalone, cluster, sentinel, Django builtins |
 
 ## Quick Start
@@ -15,7 +14,7 @@ Example Django projects demonstrating django-cachex cache admin.
 Each example has its own `run.sh` script:
 
 ```bash
-cd examples/simple  # or full, unfold
+cd examples/simple  # or full
 ./run.sh setup      # Start containers, run migrations, create admin
 ./run.sh server     # Start Django server
 ./run.sh test-data  # Add sample cache entries

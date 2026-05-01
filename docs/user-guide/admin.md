@@ -4,8 +4,6 @@ django-cachex provides a Django admin interface for browsing cache keys, viewing
 
 ## Installation
 
-### Standard Django Admin
-
 Add `django_cachex.admin` to your `INSTALLED_APPS`:
 
 ```python
@@ -17,33 +15,6 @@ INSTALLED_APPS = [
 ```
 
 The cache admin will appear in the Django admin sidebar under "Caches".
-
-### Django Unfold Theme
-
-For users of [django-unfold](https://github.com/unfoldadmin/django-unfold), use `django_cachex.unfold` instead:
-
-```python
-INSTALLED_APPS = [
-    # django-unfold must be before django.contrib.admin
-    "unfold",
-    "unfold.contrib.filters",
-    "unfold.contrib.forms",
-    # Django apps
-    "django.contrib.admin",
-    # ...
-    "django_cachex.unfold",  # Unfold-styled cache admin
-]
-```
-
-Install the unfold extra:
-
-```console
-pip install django-cachex[unfold]
-```
-
-!!! note "Choose One"
-    Use either `django_cachex.admin` OR `django_cachex.unfold`, not both.
-    They provide the same functionality with different styling.
 
 ## Permissions
 

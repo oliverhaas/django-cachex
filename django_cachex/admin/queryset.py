@@ -154,11 +154,8 @@ class SupportLevelFilter(admin.SimpleListFilter):
 
 
 class CacheAdminMixin:
-    """Shared cache list admin behaviour for default and unfold themes.
-
-    Provides list_display, filtering, search, the flush action, and help
-    button handling.  Designed to be used as a mixin before the concrete
-    ModelAdmin base class.
+    """Cache list admin behaviour: list_display, filtering, search, flush action,
+    and help-button handling. Used as a mixin before the concrete ModelAdmin base.
     """
 
     list_display: ClassVar[Any] = [
@@ -455,10 +452,8 @@ class TypeFilter(admin.SimpleListFilter):
 
 
 class KeyAdminMixin:
-    """Shared key list admin behaviour for default and unfold themes.
-
-    Provides list_display, filtering, search, the delete action, and cursor-based
-    pagination.  Designed to be used as a mixin before the concrete ModelAdmin base.
+    """Key list admin behaviour: list_display, filtering, search, delete action, and
+    cursor-based pagination. Used as a mixin before the concrete ModelAdmin base.
     """
 
     list_display: ClassVar[Any] = [
