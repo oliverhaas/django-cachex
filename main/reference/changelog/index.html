@@ -1546,6 +1546,7 @@
 <li><strong>Django 6.0+ required.</strong> Dropped support for Django 5.2.</li>
 <li><strong><code>SyncCache</code> wire format changed.</strong> Stream entries now flow through the transport's serializer + compressor pipeline instead of raw pickle. Pods running the new code cannot read entries written by older pods on the same stream — coordinate the rollout (drain or rotate <code>STREAM_KEY</code>).</li>
 <li><strong><code>hmset</code> removed.</strong> Use <code>hset(key, mapping=...)</code> or <code>hset(key, items=...)</code> (flat key-value list, matching redis-py/valkey-py).</li>
+<li><strong><code>django_cachex.unfold</code> removed.</strong> The django-unfold theme variant of the admin is gone, along with the <code>[unfold]</code> extra and <code>examples/unfold/</code>. Plain <code>django_cachex.admin</code> remains. Unfold support may return as a thin theme override once the core admin app stabilises.</li>
 </ul>
 <h3 id="new-features">New features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h3>
 <ul>
