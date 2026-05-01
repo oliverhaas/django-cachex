@@ -328,9 +328,6 @@ redis = [
 redis-rs = [
     { name = "django-cachex-rust" },
 ]
-unfold = [
-    { name = "django-unfold" },
-]
 valkey = [
     { name = "valkey" },
 ]
@@ -373,7 +370,6 @@ docs = [
 requires-dist = [
     { name = "django", specifier = ">=6,<7" },
     { name = "django-cachex-rust", marker = "extra == 'redis-rs'", editable = "crates/django-cachex-rust" },
-    { name = "django-unfold", marker = "extra == 'unfold'", specifier = ">=0.70.0" },
     { name = "lz4", marker = "extra == 'lz4'", specifier = ">=4.4.0" },
     { name = "msgpack", marker = "extra == 'msgpack'", specifier = ">=1.1.0" },
     { name = "orjson", marker = "extra == 'orjson'", specifier = ">=3.10.0" },
@@ -383,7 +379,7 @@ requires-dist = [
     { name = "valkey", marker = "extra == 'valkey'", specifier = ">=6.1.0,<7" },
     { name = "valkey", extras = ["libvalkey"], marker = "extra == 'libvalkey'", specifier = ">=6.1.0,<7" },
 ]
-provides-extras = ["valkey", "libvalkey", "redis", "hiredis", "redis-rs", "lz4", "msgpack", "ormsgpack", "orjson", "unfold"]
+provides-extras = ["valkey", "libvalkey", "redis", "hiredis", "redis-rs", "lz4", "msgpack", "ormsgpack", "orjson"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -450,18 +446,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/52/e0/f2e6caf627d176a51fba1ca9c34082c7ea10d3f521ff2c828532ca99fa91/django_stubs_ext-6.0.2.tar.gz", hash = "sha256:70b7b7ae837e7a6036e2facb64435550bf7cf8143c1a6e802864d4824ce6058c", size = 6751, upload-time = "2026-04-01T08:27:01.987Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2b/d2/9cb93cd1ef94ddc97c26c902ff75a859f5f154051fec98cf8242649b26ce/django_stubs_ext-6.0.2-py3-none-any.whl", hash = "sha256:b35bdec1995bf49765cc39fa89aa7c23f120a23d0cb0152ab7fb4e48ff7d667b", size = 10446, upload-time = "2026-04-01T08:27:00.847Z" },
-]
-
-[[package]]
-name = "django-unfold"
-version = "0.90.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "django" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/52/e3/86c7d882260549cb9c9310bc6f343988816aab66d56b22e031cd04d426d8/django_unfold-0.90.0.tar.gz", hash = "sha256:e1627e8a0c8d16311b6e43736eaed449204a2f6cb6c323b63e583a07517f4fcd", size = 1120050, upload-time = "2026-04-16T13:03:10.177Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/67/96/5291b8da29254409d9658044837b0a21a5424103534bb472027562c36a73/django_unfold-0.90.0-py3-none-any.whl", hash = "sha256:f921804427a705cfaadca941a8ab32da033735acfb4c43de27f39db5a7467001", size = 1242469, upload-time = "2026-04-16T13:03:08.312Z" },
 ]
 
 [[package]]

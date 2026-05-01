@@ -135,28 +135,6 @@ jobs:
       - name: Run admin tests
         run: uv run pytest tests/admin/ -n auto
 
-  test-unfold:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-
-      - name: Set up Python
-        run: uv python install 3.14
-
-      - name: Install dependencies with unfold
-        run: uv sync --group dev --extra unfold
-
-      - name: Install Django
-        run: uv pip install "Django~=6.0.0"
-
-      - name: Run unfold tests
-        run: uv run pytest tests/admin/ -n auto
-        env:
-          DJANGO_SETTINGS_MODULE: settings.unfold
-
   build-pure-wheel:
     name: Build pure-Python wheel (django-cachex)
     runs-on: ubuntu-latest

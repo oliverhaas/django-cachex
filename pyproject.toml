@@ -40,8 +40,6 @@ lz4 = ["lz4>=4.4.0"]
 msgpack = ["msgpack>=1.1.0"]
 ormsgpack = ["ormsgpack>=1.10.0"]
 orjson = ["orjson>=3.10.0"]
-# Admin
-unfold = ["django-unfold>=0.70.0"]
 
 [project.urls]
 Homepage = "https://github.com/oliverhaas/django-cachex"
@@ -246,13 +244,10 @@ testpaths = ["tests"]
 xfail_strict = true
 
 [tool.coverage.run]
-# Unfold module is an optional theme variant of the standard admin views.
-# It mirrors admin/ templates/views with unfold styling and is tested manually for now.
 # types.py contains only type aliases and Protocol definitions - no executable code.
 # serializers/base.py is an abstract base class with NotImplementedError stubs.
 omit = [
   "tests/*",
-  "django_cachex/unfold/*",
   "django_cachex/types.py",
   "django_cachex/serializers/base.py",
 ]

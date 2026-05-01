@@ -66,8 +66,6 @@ Features:
 - View server info and memory statistics
 - Flush caches
 
-For [django-unfold](https://github.com/unfoldadmin/django-unfold) users, use `django_cachex.unfold` instead for a themed interface.
-
 ## Documentation
 
 Full documentation at [oliverhaas.github.io/django-cachex](https://oliverhaas.github.io/django-cachex/)
@@ -89,8 +87,6 @@ Linux x86_64 (cp314 / cp314t). Without it, the `RustValkeyCache` /
 This project started from [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some serializer and compressor utility code is derived from django-redis, licensed under BSD-3-Clause. The admin UI was inspired by [django-redisboard](https://github.com/ionelmc/django-redisboard).
 
 The Rust I/O driver and async bridge are heavily inspired by — and in places directly adapted from — [django-vcache](https://gitlab.com/glitchtip/django-vcache) (MIT, by David Burke / GlitchTip). The fork-safe tokio runtime, the `RustAwaitable` deferred-loop-binding pattern, and the multiplexed-connection design all originate there.
-
-The Unfold theme integration optionally uses [django-unfold](https://unfoldadmin.com/). 
 
 I also want to mention [django-valkey](https://github.com/django-commons/django-valkey) and [dj-cache-panel](https://github.com/yassi/dj-cache-panel), which I never really used, but are newer and interesting efforts of similar goals as this package has.
 
