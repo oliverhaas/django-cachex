@@ -156,8 +156,28 @@ jobs:
           path: wheelhouse/*
 
   build-rust-wheels:
-    name: Build Rust wheels (cibuildwheel, django-cachex-rust)
-    runs-on: ubuntu-latest
+    name: Build Rust wheels (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux-x86_64
+            cibw_archs: x86_64
+            cibw_build: cp314-manylinux_x86_64 cp314t-manylinux_x86_64
+          - os: ubuntu-24.04-arm
+            label: linux-aarch64
+            cibw_archs: aarch64
+            cibw_build: cp314-manylinux_aarch64 cp314t-manylinux_aarch64
+          - os: macos-14
+            label: macos-arm64
+            cibw_archs: arm64
+            cibw_build: cp314-macosx_arm64 cp314t-macosx_arm64
+          - os: windows-latest
+            label: windows-amd64
+            cibw_archs: AMD64
+            cibw_build: cp314-win_amd64 cp314t-win_amd64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
 
@@ -166,16 +186,18 @@ jobs:
         with:
           package-dir: crates/django-cachex-rust
         env:
-          CIBW_BUILD: cp314-manylinux_x86_64 cp314t-manylinux_x86_64
+          CIBW_BUILD: ${{ matrix.cibw_build }}
           CIBW_ENABLE: cpython-freethreading
-          CIBW_ARCHS_LINUX: x86_64
+          CIBW_ARCHS: ${{ matrix.cibw_archs }}
+          # Linux builds run inside manylinux containers — install Rust there.
+          # macOS and Windows runners have rustup preinstalled.
           CIBW_BEFORE_ALL_LINUX: |
             curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
           CIBW_ENVIRONMENT_LINUX: PATH="$HOME/.cargo/bin:$PATH"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-rust-linux-x86_64
+          name: wheels-rust-${{ matrix.label }}
           path: wheelhouse/*.whl
 
   test-wheel:
