@@ -22,6 +22,12 @@ class SerializerConfig:
     dotted_path: str | None  # None means default pickle
 
 
+@dataclass(frozen=True)
+class CompressorConfig:
+    id: str
+    dotted_path: str | None  # None means no compression
+
+
 # Drivers we want to compare. The "server" field decides which container URL
 # the runner connects to — we keep redis-py paired with redis-server and
 # valkey-py paired with valkey-server because that's the natural pairing.
@@ -80,5 +86,16 @@ SERIALIZER_CONFIGS: tuple[SerializerConfig, ...] = (
 )
 
 
+COMPRESSOR_CONFIGS: tuple[CompressorConfig, ...] = (
+    CompressorConfig(id="none", dotted_path=None),
+    CompressorConfig(id="zlib", dotted_path="django_cachex.compressors.zlib.ZlibCompressor"),
+    CompressorConfig(id="gzip", dotted_path="django_cachex.compressors.gzip.GzipCompressor"),
+    CompressorConfig(id="lzma", dotted_path="django_cachex.compressors.lzma.LzmaCompressor"),
+    CompressorConfig(id="lz4", dotted_path="django_cachex.compressors.lz4.Lz4Compressor"),
+    CompressorConfig(id="zstd", dotted_path="django_cachex.compressors.zstd.ZStdCompressor"),
+)
+
+
 DRIVER_BY_ID = {c.id: c for c in DRIVER_CONFIGS}
 SERIALIZER_BY_ID = {c.id: c for c in SERIALIZER_CONFIGS}
+COMPRESSOR_BY_ID = {c.id: c for c in COMPRESSOR_CONFIGS}

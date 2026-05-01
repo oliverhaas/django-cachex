@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from django.test import override_settings
 
-from benchmarks.configs import DriverConfig, SerializerConfig
+from benchmarks.configs import CompressorConfig, DriverConfig, SerializerConfig
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -58,6 +58,7 @@ class BenchmarkResult:
     driver_id: str
     serializer_id: str
     server: str
+    compressor_id: str = ""
     phases: dict[str, PhaseTiming] = field(default_factory=dict)
     py_peak_kb_per_run: list[float] = field(default_factory=list)
     server_used_memory_delta_kb_per_run: list[float] = field(default_factory=list)
@@ -65,17 +66,36 @@ class BenchmarkResult:
 
     @property
     def label(self) -> str:
-        return f"{self.driver_id}+{self.serializer_id}@{self.server}"
+        compressor = f"+{self.compressor_id}" if self.compressor_id else ""
+        return f"{self.driver_id}+{self.serializer_id}{compressor}@{self.server}"
+
+
+@dataclass
+class MicroResult:
+    """Pure compress/decompress numbers — no driver, no network, no Django."""
+
+    compressor_id: str
+    input_bytes: int
+    output_bytes: int
+    compress_mb_s: float
+    decompress_mb_s: float
+
+    @property
+    def ratio(self) -> float:
+        return self.output_bytes / self.input_bytes if self.input_bytes else 0.0
 
 
 def build_caches(
     driver: DriverConfig,
     serializer: SerializerConfig,
     location: str,
+    compressor: CompressorConfig | None = None,
 ) -> dict[str, dict[str, Any]]:
     options = dict(driver.options)
     if serializer.dotted_path is not None:
         options["serializer"] = serializer.dotted_path
+    if compressor is not None and compressor.dotted_path is not None:
+        options["compressor"] = compressor.dotted_path
     return {
         "default": {
             "BACKEND": driver.backend,
@@ -101,6 +121,25 @@ def _build_payload() -> dict[str, Any]:
         "score": 3.14159,
         "nested": {"a": 1, "b": 2, "c": [1, 2, 3]},
     }
+
+
+def _build_payload_large() -> list[dict[str, Any]]:
+    # ~15 KiB pickled — queryset-shaped, well above the 256 B compression
+    # threshold. Used for compressor benchmarks where a small payload would
+    # bypass compression entirely.
+    return [
+        {
+            "id": i,
+            "name": f"user-{i:05d}",
+            "email": f"user{i}@example.com",
+            "is_active": i % 7 != 0,
+            "created_at": "2026-01-01T12:00:00",
+            "tags": ["alpha", "beta", "gamma", "delta"][: (i % 4) + 1],
+            "score": float(i * 0.137),
+            "bio": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. " * (i % 3 + 1),
+        }
+        for i in range(80)
+    ]
 
 
 def _bench_get(cache, n: int) -> None:
@@ -173,6 +212,9 @@ def run_benchmark(
     driver: DriverConfig,
     serializer: SerializerConfig,
     location: str,
+    *,
+    compressor: CompressorConfig | None = None,
+    payload_kind: str = "small",
 ) -> BenchmarkResult:
     """Run the workload K_RUNS times and return aggregated metrics."""
 
@@ -180,12 +222,13 @@ def run_benchmark(
         driver_id=driver.id,
         serializer_id=serializer.id,
         server=driver.server,
+        compressor_id=compressor.id if compressor is not None else "",
     )
     for name in ("get", "get-miss", "set", "mget", "mset", "incr", "delete"):
         result.phases[name] = PhaseTiming(name=name)
 
-    caches = build_caches(driver, serializer, location)
-    payload = _build_payload()
+    caches = build_caches(driver, serializer, location, compressor=compressor)
+    payload = _build_payload_large() if payload_kind == "large" else _build_payload()
 
     with override_settings(CACHES=caches):
         from django.core.cache import cache
@@ -254,9 +297,81 @@ def run_benchmark(
     return result
 
 
+def run_compressor_micro(
+    compressor: CompressorConfig,
+    *,
+    n_runs: int = 20,
+    n_ops: int = 200,
+) -> MicroResult | None:
+    """Pure compress/decompress throughput on the large benchmark payload.
+
+    No driver, no Django, no network — just the algorithm against a fixed
+    blob. Returns None for the no-compression baseline.
+    """
+    from django.utils.module_loading import import_string
+
+    if compressor.dotted_path is None:
+        return None
+
+    import pickle as _pickle
+
+    payload = _pickle.dumps(_build_payload_large())
+    cls = import_string(compressor.dotted_path)
+    instance = cls()
+    compressed = instance._compress(payload)
+
+    def _median_seconds(fn: Callable[[], None]) -> float:
+        samples = []
+        for _ in range(n_runs):
+            start = time.perf_counter()
+            for _ in range(n_ops):
+                fn()
+            samples.append(time.perf_counter() - start)
+        return median(samples)
+
+    t_comp = _median_seconds(lambda: instance._compress(payload))
+    t_decomp = _median_seconds(lambda: instance.decompress(compressed))
+
+    return MicroResult(
+        compressor_id=compressor.id,
+        input_bytes=len(payload),
+        output_bytes=len(compressed),
+        compress_mb_s=(len(payload) * n_ops) / t_comp / 1_000_000,
+        decompress_mb_s=(len(payload) * n_ops) / t_decomp / 1_000_000,
+    )
+
+
+def format_micro_table(results: list[MicroResult]) -> str:
+    """Table of compressor micro results — absolute MB/s plus output ratio."""
+    if not results:
+        return "(no micro results)"
+    header = ["compressor", "out %", "compress (MB/s)", "decompress (MB/s)"]
+    rows: list[list[str]] = []
+    for r in results:
+        rows.append(
+            [
+                r.compressor_id,
+                f"{r.ratio:.1%}",
+                f"{r.compress_mb_s:,.1f}",
+                f"{r.decompress_mb_s:,.1f}",
+            ],
+        )
+    widths = [len(h) for h in header]
+    for row in rows:
+        widths = [max(w, len(c)) for w, c in zip(widths, row, strict=True)]
+    sep = "  ".join("-" * w for w in widths)
+    lines = ["  ".join(h.ljust(w) for h, w in zip(header, widths, strict=True)), sep]
+    for row in rows:
+        lines.append(
+            "  ".join(c.rjust(w) if i else c.ljust(w) for i, (c, w) in enumerate(zip(row, widths, strict=True))),
+        )
+    return "\n".join(lines)
+
+
 def format_summary(result: BenchmarkResult) -> str:
+    compressor = f"  compressor={result.compressor_id}" if result.compressor_id else ""
     lines = [
-        f"  driver={result.driver_id}  serializer={result.serializer_id}  server={result.server}",
+        f"  driver={result.driver_id}  serializer={result.serializer_id}{compressor}  server={result.server}",
         f"  {'phase':<10} {'med (ms)':>10} {'p95 (ms)':>10} {'ops/sec':>12}",
     ]
     for phase in result.phases.values():

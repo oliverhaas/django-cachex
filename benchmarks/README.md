@@ -1,6 +1,7 @@
 # Benchmarks
 
-Throughput and memory comparison across cache driver/parser/serializer combos.
+Throughput and memory comparison across cache driver/parser/serializer/compressor
+combos.
 
 Not part of the regular test suite — runs separately because it spins up its
 own Redis and Valkey containers and is slow on purpose (timing accuracy
@@ -24,33 +25,51 @@ depends on letting workloads run).
 - `orjson` — Rust-backed JSON
 - `ormsgpack` — Rust-backed MessagePack
 
+**Compressors** — two views, both with `rust-valkey` + `pickle`:
+
+- *Macro* (`test_compressors_macro`) — end-to-end Django cache ops on a
+  ~14 KiB queryset-shaped payload. Captures the cost of compress/decompress
+  against the savings from sending fewer bytes over the wire.
+- *Micro* (`test_compressors_micro`) — pure compress/decompress in a tight
+  loop. Reports output ratio and MB/s. No driver, no container.
+
+Compressor candidates: `none`, `zlib`, `gzip`, `lzma`, `lz4`, `zstd`.
+
 ## What gets measured
 
-For each config, the runner executes a workload of seven phases — `get`,
-`get-miss`, `set`, `mget` (10-key batch), `mset` (10-key batch), `incr`,
-`delete` — `N_OPS=1000` operations per phase, repeated `K_RUNS=10` times.
+Driver / serializer / compressor-macro tests run a seven-phase workload —
+`get`, `get-miss`, `set`, `mget` (10-key batch), `mset` (10-key batch),
+`incr`, `delete` — `N_OPS=1000` operations per phase, repeated `K_RUNS=10`
+times.
 
 Per-phase timings are reported as median ms and ops/sec across runs. Per-run
 metrics include Python peak memory (`tracemalloc`) and server memory delta
 (`INFO memory.used_memory`). Connection count is sampled once at the end.
+
+Compressor-micro tests measure `compress(payload)` and
+`decompress(compressed)` in a tight loop on a fixed payload, reporting ratio
+and MB/s.
 
 Knobs in [runner.py](runner.py): `N_OPS`, `K_RUNS`, `WARMUP_KEYS`, `MGET_BATCH`.
 
 ## Running
 
 ```console
-# Full matrix (drivers + serializers)
+# Full matrix (drivers + serializers + compressors)
 uv run pytest benchmarks/ -c benchmarks/pytest.ini
 
-# Just drivers
-uv run pytest benchmarks/test_throughput.py::test_drivers -c benchmarks/pytest.ini
-
-# Just serializers
-uv run pytest benchmarks/test_throughput.py::test_serializers -c benchmarks/pytest.ini
+# Just one slice
+uv run pytest benchmarks/test_throughput.py::test_drivers           -c benchmarks/pytest.ini
+uv run pytest benchmarks/test_throughput.py::test_serializers       -c benchmarks/pytest.ini
+uv run pytest benchmarks/test_throughput.py::test_compressors_macro -c benchmarks/pytest.ini
+uv run pytest benchmarks/test_throughput.py::test_compressors_micro -c benchmarks/pytest.ini
 
 # A single config
 uv run pytest 'benchmarks/test_throughput.py::test_drivers[rust-valkey]' -c benchmarks/pytest.ini
 ```
+
+`test_compressors_micro` is the only test that doesn't need Docker — useful
+for quick algorithm comparisons on a laptop without containers running.
 
 A summary table prints at the end of the session.
 
