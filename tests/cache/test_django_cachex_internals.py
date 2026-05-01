@@ -17,6 +17,7 @@ from django.core.cache import caches
 from django.test import override_settings
 
 from django_cachex.client import RedisCacheClient
+from django_cachex.client.default import _ASYNC_POOLS
 
 if TYPE_CHECKING:
     from django_cachex.cache import KeyValueCache
@@ -229,10 +230,10 @@ class TestConnectionCleanup:
         pool2 = cache._cache._get_async_connection_pool(write=True)
         assert pool1 is pool2
 
-        # Should be in _async_pools for current loop
+        # Pool lives in the module-level registry under the current loop.
         loop = asyncio.get_running_loop()
-        assert loop in cache._cache._async_pools
-        assert cache._cache._async_pools[loop][0] is pool1
+        assert loop in _ASYNC_POOLS
+        assert pool1 in _ASYNC_POOLS[loop].values()
 
     def test_async_pool_different_per_loop(self, redis_container: RedisContainerInfo):
         """Test that different event loops get different async pools.
@@ -275,9 +276,9 @@ class TestConnectionCleanup:
             # Pools should be different objects
             assert pool1 is not pool2
 
-            # Each loop should have its own entry
-            assert loop1 in client._async_pools
-            assert loop2 in client._async_pools
+            # Each loop has its own entry in the module-level registry.
+            assert loop1 in _ASYNC_POOLS
+            assert loop2 in _ASYNC_POOLS
 
             # Clean up loops
             loop1.close()
@@ -308,19 +309,55 @@ class TestConnectionCleanup:
         pool = cache._cache._get_async_connection_pool(write=True)
         loop = asyncio.get_running_loop()
 
-        assert loop in cache._cache._async_pools
-        assert cache._cache._async_pools[loop][0] is pool
+        assert loop in _ASYNC_POOLS
+        assert pool in _ASYNC_POOLS[loop].values()
 
         # aclose() should NOT disconnect or remove pools
         await cache._cache.aclose()
-        assert loop in cache._cache._async_pools
-        assert cache._cache._async_pools[loop][0] is pool
+        assert loop in _ASYNC_POOLS
+        assert pool in _ASYNC_POOLS[loop].values()
+
+    @pytest.mark.asyncio
+    async def test_async_pool_shared_across_per_task_client_instances(
+        self,
+        cache: KeyValueCache,
+    ) -> None:
+        """Regression: a fresh ``KeyValueCacheClient`` reuses the existing pool.
+
+        Django's ``asgiref.local.Local``-backed cache handler returns a fresh
+        ``BaseCache`` instance per asyncio task, which means a fresh
+        ``KeyValueCacheClient`` is built on every async request. Before the
+        process-wide ``_ASYNC_POOLS`` registry, each fresh client created its
+        own pool, so ``max_connections`` had no effect across tasks and the
+        pool grew unbounded under concurrent load. This locks in the fix.
+        """
+        if cache._cache._async_pool_class is None:
+            pytest.skip("Async not supported for this client type")
+
+        # First client (the one Django gave us) opens a pool.
+        original_pool = cache._cache._get_async_connection_pool(write=True)
+
+        # Build a fresh client with the same servers + options — this is what
+        # Django's per-task Local does on every request.
+        cls = type(cache._cache)
+        fresh_client = cls(cache._cache._servers, **cache._cache._options)
+
+        # The fresh client must reuse the same pool from the module registry.
+        fresh_pool = fresh_client._get_async_connection_pool(write=True)
+        assert fresh_pool is original_pool, (
+            "Fresh per-task client created a new pool — process-wide registry not working."
+        )
+
+        # And one more independent instance, just to be sure.
+        another_client = cls(cache._cache._servers, **cache._cache._options)
+        assert another_client._get_async_connection_pool(write=True) is original_pool
 
     def test_weak_key_dictionary_cleanup_on_loop_gc(self, redis_container: RedisContainerInfo):
         """Test that async pools are cleaned up when event loop is garbage collected.
 
         This tests the WeakKeyDictionary behavior - when an event loop is GC'd,
-        its entry in _async_pools should be automatically removed.
+        its entry in the module-level _ASYNC_POOLS registry should be
+        automatically removed.
         """
         from contextlib import suppress
 
@@ -350,25 +387,23 @@ class TestConnectionCleanup:
             pool = loop.run_until_complete(create_pool())
             loop.close()
 
-            # Loop should be in _async_pools
-            assert loop in client._async_pools
+            # Loop should be in the module-level registry.
+            assert loop in _ASYNC_POOLS
 
             # Keep a weak reference to track when loop is GC'd
             loop_ref = weakref.ref(loop)
 
             # Delete the loop reference and force garbage collection
             del loop
+            del pool
             gc.collect()
 
             # The loop should have been garbage collected
             assert loop_ref() is None
 
-            # The WeakKeyDictionary should have automatically removed the entry
-            # Note: We can't check for a specific loop anymore since it's GC'd,
-            # but we can verify the pool is no longer accessible
-            # Check that no dead references remain
-            # (accessing the dict should work without errors)
-            _ = list(client._async_pools.keys())
+            # The WeakKeyDictionary should have automatically removed the entry.
+            # Iterating works without errors; the dead loop is gone.
+            _ = list(_ASYNC_POOLS.keys())
 
         with suppress(KeyError, AttributeError):
             del caches["default"]
@@ -386,9 +421,9 @@ class TestConnectionCleanup:
         await cache.aget("test_reuse_1")
         await cache.adelete("test_reuse_1")
 
-        # Should still have only one pool for the current loop
+        # Should still have at most one pool per server in the registry.
         loop = asyncio.get_running_loop()
-        assert len(cache._cache._async_pools.get(loop, {})) <= len(cache._cache._servers)
+        assert len(_ASYNC_POOLS.get(loop, {})) <= len(cache._cache._servers)
 
         # Clean up
         await cache.adelete("test_reuse_2")
@@ -414,7 +449,7 @@ class TestConnectionCleanup:
         # Both should exist
         assert 0 in cache._cache._pools
         loop = asyncio.get_running_loop()
-        assert loop in cache._cache._async_pools
+        assert loop in _ASYNC_POOLS
 
         # Clean up
         cache.delete("sync_key")

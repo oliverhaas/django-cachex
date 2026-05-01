@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from django.core.exceptions import ImproperlyConfigured
 
-from django_cachex.client.default import KeyValueCacheClient
+from django_cachex.client.default import _ASYNC_POOLS, KeyValueCacheClient, _options_key
 
 if TYPE_CHECKING:
     from redis.connection import ConnectionPool
@@ -202,13 +202,18 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
 
     @override
     def _get_async_connection_pool(self, *, write: bool) -> Any:
-        """Get an async sentinel-managed connection pool."""
+        """Get an async sentinel-managed connection pool, shared process-wide.
+
+        Uses the same ``_ASYNC_POOLS`` registry as the non-sentinel client so
+        per-task ``KeyValueCacheClient`` instances share a single pool. See
+        ``KeyValueCacheClient._get_async_connection_pool`` for the rationale.
+        """
         loop = asyncio.get_running_loop()
         index = self._get_connection_pool_index(write=write)
 
-        # Check if we already have an async pool for this loop
-        if loop in self._async_pools and index in self._async_pools[loop]:
-            return self._async_pools[loop][index]
+        if self._async_sentinel_pool_class is None:
+            msg = "Subclasses must set _async_sentinel_pool_class"
+            raise RuntimeError(msg)
 
         service_name, is_master, clean_url = self._parse_sentinel_url(index)
         async_sentinel = self._get_async_sentinel()
@@ -219,22 +224,36 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
             if hasattr(self, "_pool_options")
             else {}
         )
+        # Default cap so concurrent async load can't grow the pool unbounded.
+        pool_options.setdefault("max_connections", 50)
         pool_options.update(
             service_name=service_name,
             sentinel_manager=async_sentinel,
             is_master=is_master,
         )
 
-        if self._async_sentinel_pool_class is None:
-            msg = "Subclasses must set _async_sentinel_pool_class"
-            raise RuntimeError(msg)
-        pool = self._async_sentinel_pool_class.from_url(clean_url, **pool_options)
+        # Key on the sentinel-aware fields plus the URL + options. The
+        # sentinel manager is per-loop (cached above) so we include its id in
+        # the key to avoid sharing a pool across two managers in the same loop.
+        key = (
+            self._async_sentinel_pool_class,
+            clean_url,
+            service_name,
+            is_master,
+            id(async_sentinel),
+            _options_key({k: v for k, v in pool_options.items() if k != "sentinel_manager"}),
+            index,
+        )
 
-        # Cache the pool for this event loop
-        if loop not in self._async_pools:
-            self._async_pools[loop] = {}
-        self._async_pools[loop][index] = pool
+        sub = _ASYNC_POOLS.get(loop)
+        if sub is None:
+            sub = {}
+            _ASYNC_POOLS[loop] = sub
 
+        pool = sub.get(key)
+        if pool is None:
+            pool = self._async_sentinel_pool_class.from_url(clean_url, **pool_options)
+            sub[key] = pool
         return pool
 
 

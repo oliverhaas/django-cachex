@@ -46,6 +46,47 @@ except ImportError:
 
 
 # =============================================================================
+# Process-wide async connection pool registry
+# =============================================================================
+# Django's ``asgiref.local.Local``-backed cache handler returns a fresh
+# ``BaseCache`` instance per asyncio task, which means our cached
+# ``KeyValueCacheClient`` (and any instance-level pool dict) is fresh per
+# task. Without a process-wide registry every async cache call creates a
+# brand-new pool — ``max_connections`` is moot because each call gets its
+# own pool. Sharing pools at the module level by event loop + config makes
+# the cap effective and brings pool-based backends in line with the
+# multiplexed rust-valkey driver.
+#
+# Outer ``WeakKeyDictionary`` keyed by the asyncio loop:
+#  - When a loop is GC'd (process shutdown, ``asyncio.run`` finishing, fork
+#    re-creating the loop in a child), its entry vanishes automatically.
+#  - On fork the child's new loop becomes the live reference; the parent's
+#    stale entries become unreachable and are dropped on the next mutation,
+#    so we don't need explicit PID-tracking.
+#
+# Inner ``dict`` is keyed by ``(pool class, url, options key, index)`` so
+# different cache configurations in the same process don't share a pool.
+
+_ASYNC_POOLS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], Any]] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _options_key(options: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
+    """Make a hashable key from pool options."""
+    out: list[tuple[str, Any]] = []
+    for k in sorted(options):
+        v = options[k]
+        # Class objects, strings, ints, floats and tuples are all hashable.
+        if isinstance(v, (type, str, int, float, bool)) or v is None:
+            out.append((k, v))
+        else:
+            # Fall back to repr for unhashable / opaque values.
+            out.append((k, repr(v)))
+    return tuple(out)
+
+
+# =============================================================================
 # KeyValueCacheClient - base class (library-agnostic)
 # =============================================================================
 
@@ -93,15 +134,9 @@ class KeyValueCacheClient:
         self._servers = servers
         self._pools: dict[int, Any] = {}
 
-        # Async pools: WeakKeyDictionary keyed by event loop -> {server_index: pool}
-        # Keyed by event loop because async pools are bound to the loop they're created on.
-        # The same client instance can see multiple loops (e.g., WSGI thread that calls
-        # asyncio.run() multiple times — ContextVar copies mean the same cache instance
-        # is shared with the async context). WeakKeyDictionary ensures automatic cleanup
-        # when a loop is GC'd.
-        self._async_pools: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[int, Any]] = (
-            weakref.WeakKeyDictionary()
-        )
+        # Async pools live in the module-level ``_ASYNC_POOLS`` registry —
+        # see the comment near that constant for why instance-level caching
+        # doesn't work in Django ASGI contexts.
 
         # Set up pool class (can be overridden via argument)
         if isinstance(pool_class, str):
@@ -292,29 +327,39 @@ class KeyValueCacheClient:
     # =========================================================================
 
     def _get_async_connection_pool(self, *, write: bool) -> Any:
-        """Get an async connection pool, cached per event loop."""
+        """Get an async connection pool, cached process-wide per (loop, config).
+
+        The cache is module-level (``_ASYNC_POOLS``) rather than
+        instance-level: Django's ``asgiref.local.Local`` returns a fresh
+        ``BaseCache`` per asyncio task, so an instance-level dict would be
+        empty on every request and a brand-new pool would be created each
+        time, defeating ``max_connections`` entirely.
+        """
         loop = asyncio.get_running_loop()
         index = self._get_connection_pool_index(write=write)
-
-        # Check instance-level cache first
-        if loop in self._async_pools and index in self._async_pools[loop]:
-            return self._async_pools[loop][index]
 
         if self._async_pool_class is None:
             msg = "Async operations require _async_pool_class to be set. Use RedisCacheClient or ValkeyCacheClient."
             raise RuntimeError(msg)
 
-        # Filter out parser_class from pool options for async - it's sync-specific
-        async_pool_options = {k: v for k, v in self._pool_options.items() if k != "parser_class"}
-        pool = self._async_pool_class.from_url(
-            self._servers[index],
-            **async_pool_options,
-        )
+        # Filter out parser_class — it's sync-specific.
+        async_pool_options: dict[str, Any] = {k: v for k, v in self._pool_options.items() if k != "parser_class"}
+        # Default cap so concurrent async load can't grow the pool unbounded.
+        # Users who need more can set ``max_connections`` in OPTIONS.
+        async_pool_options.setdefault("max_connections", 50)
 
-        # Cache on instance for fast access
-        if loop not in self._async_pools:
-            self._async_pools[loop] = {}
-        self._async_pools[loop][index] = pool
+        url = self._servers[index]
+        key = (self._async_pool_class, url, _options_key(async_pool_options), index)
+
+        sub = _ASYNC_POOLS.get(loop)
+        if sub is None:
+            sub = {}
+            _ASYNC_POOLS[loop] = sub
+
+        pool = sub.get(key)
+        if pool is None:
+            pool = self._async_pool_class.from_url(url, **async_pool_options)
+            sub[key] = pool
         return pool
 
     def get_async_client(self, key: KeyT | None = None, *, write: bool = False) -> Any:

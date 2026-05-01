@@ -16,6 +16,10 @@ DATABASES = {
 
 USE_TZ = False
 
+ROOT_URLCONF = "benchmarks.urls"
+
+ALLOWED_HOSTS = ["*"]
+
 # Placeholder; benchmark tests override this per parametrization.
 CACHES = {
     "default": {
