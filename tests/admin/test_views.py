@@ -2461,3 +2461,78 @@ class TestPermissionViewAccess:
         assert admin_client.get(_cache_detail_url("default")).status_code == 200
         assert admin_client.get(_key_list_url("default")).status_code == 200
         assert admin_client.get(_key_add_url("default")).status_code == 200
+
+
+class TestUndecodableValueResilience:
+    """Admin must not crash on keys whose stored value can't be decoded.
+
+    A compressor or serializer change after data was already cached, or any
+    other source of stale-but-undecodable bytes, must still let an operator
+    open the key detail page and delete the broken key.
+    """
+
+    BROKEN_KEY = "broken:undecodable"
+
+    @staticmethod
+    def _inject_broken_value(test_cache: KeyValueCache) -> None:
+        """Write garbage bytes directly to Redis under the cache's key prefix.
+
+        Bypasses the cache's serializer/compressor pipeline so reading via
+        cache.get() will raise SerializerError (or CompressorError, depending
+        on what's configured).
+        """
+        client = test_cache.get_client(write=True)
+        full_key = test_cache.make_key(TestUndecodableValueResilience.BROKEN_KEY)
+        # Bytes that aren't valid pickle and aren't valid for any compressor
+        # in the default chain. The client's _decompress / _deserialize must
+        # raise on read.
+        client.set(full_key, b"\x00not-valid-pickle-or-compressed-data")
+
+    def test_key_detail_loads_for_broken_value(self, admin_client, test_cache):
+        """Key detail view returns 200 (not 500) for an undecodable value."""
+        self._inject_broken_value(test_cache)
+
+        response = admin_client.get(_key_detail_url("default", self.BROKEN_KEY))
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        # The view should communicate the decode failure rather than crashing.
+        assert "cannot be decoded" in content
+
+    def test_key_detail_shows_warning_message_for_broken_value(self, admin_client, test_cache):
+        """User sees a warning explaining why the value isn't shown."""
+        self._inject_broken_value(test_cache)
+
+        response = admin_client.get(_key_detail_url("default", self.BROKEN_KEY))
+
+        # Django messages framework renders into the page.
+        content = response.content.decode()
+        assert "different compressor or serializer" in content
+
+    def test_delete_works_for_broken_value(self, admin_client, test_cache):
+        """Operators can still delete a broken key from the admin."""
+        self._inject_broken_value(test_cache)
+
+        # Sanity: key exists in Redis (raw client doesn't decode).
+        client = test_cache.get_client(write=True)
+        full_key = test_cache.make_key(self.BROKEN_KEY)
+        assert client.exists(full_key) == 1
+
+        response = admin_client.post(
+            _key_detail_url("default", self.BROKEN_KEY),
+            {"action": "delete"},
+        )
+
+        # 302 redirect to key list = success (matches the success branch in key_detail.py).
+        assert response.status_code == 302
+        assert client.exists(full_key) == 0
+
+    def test_key_list_renders_with_broken_value(self, admin_client, test_cache):
+        """The key list shouldn't crash either; size column degrades gracefully."""
+        self._inject_broken_value(test_cache)
+
+        response = admin_client.get(_key_list_url("default"))
+
+        assert response.status_code == 200
+        # Broken key still appears in the list — operator needs to see it to delete it.
+        assert self.BROKEN_KEY in response.content.decode()

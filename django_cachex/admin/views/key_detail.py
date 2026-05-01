@@ -22,6 +22,7 @@ from django_cachex.admin.views.base import (
     key_list_url,
     show_help,
 )
+from django_cachex.exceptions import CompressorError, SerializerError
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
@@ -535,19 +536,35 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         # In create mode, use the type from query param
         key_type = create_type
 
-    # Get value for string keys (cache.get() only works for strings)
+    # Get value for string keys (cache.get() only works for strings).
+    # Decode failures (compressor / serializer mismatch on stale data) must NOT
+    # crash the page — the user still needs to be able to delete the broken key.
     raw_value = None
     value_is_editable = True
+    value_decode_error: str | None = None
     string_sha1 = None
     if key_exists and (not key_type or key_type == KeyType.STRING):
-        raw_value = cache.get(key)
-        if hasattr(cache, "eval_script"):
-            with contextlib.suppress(Exception):
-                from django_cachex.admin.cas import get_string_sha1
+        try:
+            raw_value = cache.get(key)
+        except (CompressorError, SerializerError) as exc:
+            value_decode_error = str(exc) or exc.__class__.__name__
+            value_is_editable = False
+            messages.warning(
+                request,
+                f"Value cannot be decoded ({exc.__class__.__name__}: {exc}). "
+                "The key was likely written with a different compressor or serializer. "
+                "You can still delete the key.",
+            )
+        else:
+            if hasattr(cache, "eval_script"):
+                with contextlib.suppress(Exception):
+                    from django_cachex.admin.cas import get_string_sha1
 
-                string_sha1 = get_string_sha1(cache, key)
+                    string_sha1 = get_string_sha1(cache, key)
 
-    if raw_value is not None:
+    if value_decode_error is not None:
+        value_display = f"<value cannot be decoded: {value_decode_error}>"
+    elif raw_value is not None:
         # Format value for display - JSON-serializable values are editable
         value_display, value_is_editable = format_value_for_display(raw_value)
     else:

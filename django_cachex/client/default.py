@@ -205,13 +205,24 @@ class KeyValueCacheClient:
         return [create_compressor(config)]
 
     def _decompress(self, value: bytes) -> bytes:
-        """Decompress with fallback support for multiple compressors."""
+        """Decompress with fallback support for multiple compressors.
+
+        Returns ``value`` unchanged when no compressors are configured. Raises
+        ``CompressorError`` if every configured compressor fails — symmetric
+        with ``_deserialize``. To accept uncompressed payloads alongside
+        compressed ones (e.g. mid-migration), keep the previously-used
+        compressor at the end of the fallback chain.
+        """
+        if not self._compressors:
+            return value
+        last_error: CompressorError | None = None
         for compressor in self._compressors:
             try:
                 return compressor.decompress(value)
-            except CompressorError:
-                continue
-        return value
+            except CompressorError as e:
+                last_error = e
+        # Every configured compressor failed.
+        raise last_error if last_error is not None else CompressorError("decompression failed")
 
     def _deserialize(self, value: bytes) -> Any:
         """Deserialize with fallback support for multiple serializers."""
