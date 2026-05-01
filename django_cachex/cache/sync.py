@@ -12,7 +12,7 @@ Configuration::
 
     CACHES = {
         "redis": {
-            "BACKEND": "django_cachex.cache.RedisCache",
+            "BACKEND": "django_cachex.cache.RedisCache",  # or RustValkeyCache, etc.
             "LOCATION": "redis://127.0.0.1:6379/0",
         },
         "default": {
@@ -26,7 +26,8 @@ Configuration::
         },
     }
 
-``TRANSPORT`` is the alias of a Redis/Valkey cache used for stream I/O.
+``TRANSPORT`` is the alias of any cachex ``KeyValueCache`` subclass — pure-Python
+or Rust-driver-backed — used for stream I/O.
 ``STREAM_KEY`` is the Redis Stream key shared by all pods (default ``cache:sync``).
 ``MAXLEN`` caps stream length via approximate trimming (default 10000).
 ``BLOCK_TIMEOUT`` is the XREAD BLOCK timeout in milliseconds (default 1000).
@@ -34,6 +35,13 @@ Configuration::
 warm the local cache (default 0 = no replay). Values up to ``MAXLEN`` are
 useful — e.g. ``1000`` replays the last 1000 mutations so a restarting pod
 doesn't start with an empty cache.
+
+**Wire format:** stream fields go through the *transport* cache's high-level
+``xadd``/``xread``/``xrevrange`` methods, which apply its configured serializer
+and compressor end-to-end. So if the transport is configured with
+``OPTIONS={"serializer": "msgpack", "compressor": "zstd"}``, stream entries
+are msgpack-then-zstd. All pods sharing one ``STREAM_KEY`` must use the same
+transport ``BACKEND`` + ``OPTIONS`` so their serializers agree.
 """
 
 from __future__ import annotations
@@ -64,31 +72,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _field(fields: dict, name: str) -> str:
-    """Extract a string field from raw Redis stream entry (may be bytes or str)."""
-    val = fields.get(name.encode(), fields.get(name, b""))
-    return val.decode() if isinstance(val, bytes) else str(val) if val else ""
-
-
-def _field_bytes(fields: dict, name: str) -> bytes:
-    """Extract a bytes field from raw Redis stream entry."""
-    val = fields.get(name.encode(), fields.get(name, b""))
-    return val if isinstance(val, bytes) else val.encode() if val else b""
-
-
 class SyncCache(LocMemCache):
     """Stream-synchronized in-memory cache.
 
-    Extends Django's ``LocMemCache`` with cross-pod synchronization.
-    All reads are local dict lookups (inherited from ``LocMemCache``).
-    Writes update the local dict and publish to a Redis Stream. A daemon
-    thread consumes the stream and applies remote changes. All supported
-    operations are **eventually consistent** (last-writer-wins).
+    Extends Django's ``LocMemCache`` with cross-pod synchronization. All reads
+    are local dict lookups (inherited from ``LocMemCache``). Writes update
+    the local dict and publish to a Redis Stream via the transport cache's
+    high-level ``xadd``. A daemon thread consumes the stream via ``xread``
+    and applies remote changes. All supported operations are
+    **eventually consistent** (last-writer-wins).
 
     **Unsupported operations**: ``add``, ``incr``, and ``decr`` raise
-    ``NotSupportedError``. These operations have semantics (atomic
-    check-and-set, atomic increment) that cannot be provided with
-    eventual consistency. Use the transport cache directly for these.
+    ``NotSupportedError``. These have semantics (atomic check-and-set,
+    atomic increment) that cannot be provided with eventual consistency.
+    Use the transport cache directly for these.
 
     **Fail-safe**: The consumer thread is automatically restarted if it dies.
     Use ``info()["sync"]`` to monitor consumer health, last read age, and
@@ -98,8 +95,6 @@ class SyncCache(LocMemCache):
     _cachex_support: str = "cachex"
 
     # Type declarations for attributes and methods inherited from LocMemCache.
-    # LocMemCache sets these dynamically from module-level globals and defines
-    # private helpers without type stubs, so type checkers can't infer them.
     if TYPE_CHECKING:
         from collections import OrderedDict
         from threading import Lock
@@ -116,13 +111,11 @@ class SyncCache(LocMemCache):
     def __init__(self, server: str, params: dict[str, Any]) -> None:
         options = params.get("OPTIONS", {})
 
-        # Transport cache alias (required)
         self._transport_alias: str = options.get("TRANSPORT", "")
         if not self._transport_alias:
-            msg = "SyncCache requires OPTIONS['TRANSPORT'] with a cache alias for Redis/Valkey stream transport."
+            msg = "SyncCache requires OPTIONS['TRANSPORT'] with a cache alias for stream transport."
             raise ImproperlyConfigured(msg)
 
-        # Stream configuration
         self._stream_key: str = options.get("STREAM_KEY", "cache:sync")
         self._maxlen: int = options.get("MAXLEN", 10000)
         self._block_timeout: int = options.get("BLOCK_TIMEOUT", 1000)
@@ -130,7 +123,7 @@ class SyncCache(LocMemCache):
 
         # LocMemCache uses ``name`` (the LOCATION value) to key its module-level
         # globals. We use _STORAGE_KEY or stream_key so each stream has isolated
-        # storage.  Tests can override _STORAGE_KEY to simulate separate pods
+        # storage. Tests can override _STORAGE_KEY to simulate separate pods
         # within the same process.
         storage_key = options.get("_STORAGE_KEY", self._stream_key)
         self._storage_key: str = storage_key
@@ -166,10 +159,6 @@ class SyncCache(LocMemCache):
 
         return caches[self._transport_alias]
 
-    def _get_raw_client(self) -> Any:
-        """Get raw Redis/Valkey client for stream operations."""
-        return self._transport.get_client(write=True)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-
     # -- Consumer-side local storage helper --
 
     def _local_set(self, key: str, pickled: bytes, exp_time: float | None) -> None:
@@ -191,18 +180,18 @@ class SyncCache(LocMemCache):
         self,
         op: str,
         key: str = "",
-        val: bytes = b"",
+        val: Any = None,
         exp: float | None = None,
         keys: str = "",
     ) -> None:
-        """Publish a cache mutation to the Redis Stream (non-blocking, best-effort).
+        """Publish a cache mutation to the stream (non-blocking, best-effort).
 
-        Submits the XADD call to a single-worker ThreadPoolExecutor so the
-        calling thread returns immediately without waiting for the network
-        round-trip. The single worker serializes publishes, preserving stream
-        order.
+        ``val`` is the original Python value — the transport cache's serializer
+        and compressor handle wire encoding. The single-worker executor
+        preserves stream order while keeping the calling thread off the
+        network round-trip.
         """
-        fields: dict[str, str | bytes] = {
+        fields: dict[str, Any] = {
             "op": op,
             "pod": self._pod_id,
             "key": key,
@@ -213,11 +202,10 @@ class SyncCache(LocMemCache):
             fields["keys"] = keys
         self._publish_executor.submit(self._do_xadd, fields)
 
-    def _do_xadd(self, fields: dict[str, str | bytes]) -> None:
-        """Execute a single XADD. Runs in the publish executor thread."""
+    def _do_xadd(self, fields: dict[str, Any]) -> None:
+        """Execute a single XADD via the transport's high-level API."""
         try:
-            client = self._get_raw_client()
-            client.xadd(
+            self._transport.xadd(  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
                 self._stream_key,
                 fields,
                 maxlen=self._maxlen,
@@ -279,15 +267,13 @@ class SyncCache(LocMemCache):
         left off (no duplicates).
         """
         try:
-            client = self._get_raw_client()
-            entries = client.xrevrange(self._stream_key, count=count)
+            entries = self._transport.xrevrange(self._stream_key, count=count)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
             if not entries:
                 return
-            # Apply in forward order (oldest first)
             with self._lock:
                 for entry_id, fields in reversed(entries):
                     self._apply_message(fields)
-                    self._last_id = entry_id.decode() if isinstance(entry_id, bytes) else str(entry_id)
+                    self._last_id = entry_id
             logger.info(
                 "SyncCache: Replayed %d entries from stream %s",
                 len(entries),
@@ -299,22 +285,20 @@ class SyncCache(LocMemCache):
     def _consumer_loop(self) -> None:
         while not self._stop_event.is_set():
             try:
-                client = self._get_raw_client()
-                result = client.xread(
+                result = self._transport.xread(  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
                     streams={self._stream_key: self._last_id},
                     count=100,
                     block=self._block_timeout,
                 )
-                if result is None:
+                if not result:
                     continue
                 self._last_read_time = time.time()
-                # result is list of [stream_key, [(entry_id, fields), ...]]
-                for _stream_key, entries in result:
+                for entries in result.values():
                     with self._lock:
                         for entry_id, fields in entries:
                             # Advance cursor BEFORE processing so a bad
                             # message is skipped, not retried forever.
-                            self._last_id = entry_id.decode() if isinstance(entry_id, bytes) else str(entry_id)
+                            self._last_id = entry_id
                             try:
                                 self._apply_message(fields)
                             except Exception:  # noqa: BLE001
@@ -331,10 +315,10 @@ class SyncCache(LocMemCache):
                     )
                     self._stop_event.wait(1.0)
 
-    def _apply_message(self, fields: dict) -> None:
-        """Apply a single stream message to local cache. Caller holds self._lock."""
-        op = _field(fields, "op")
-        pod = _field(fields, "pod")
+    def _apply_message(self, fields: dict[str, Any]) -> None:
+        """Apply a single stream message to local cache. Caller holds ``self._lock``."""
+        op = fields.get("op", "")
+        pod = fields.get("pod", "")
 
         # Skip self-messages (already applied locally by the writer)
         if pod == self._pod_id:
@@ -344,28 +328,29 @@ class SyncCache(LocMemCache):
         if handler:
             handler(self, fields)
 
-    def _handle_set(self, fields: dict) -> None:
-        key = _field(fields, "key")
-        val_bytes = _field_bytes(fields, "val")
-        exp_str = _field(fields, "exp")
+    def _handle_set(self, fields: dict[str, Any]) -> None:
+        key = fields["key"]
+        value = fields.get("val")
+        exp_str = fields.get("exp", "")
         exp_time = float(exp_str) if exp_str else None
-        self._local_set(key, val_bytes, exp_time)
+        pickled = pickle.dumps(value, self.pickle_protocol)
+        self._local_set(key, pickled, exp_time)
 
-    def _handle_delete(self, fields: dict) -> None:
-        self._delete(_field(fields, "key"))
+    def _handle_delete(self, fields: dict[str, Any]) -> None:
+        self._delete(fields["key"])
 
-    def _handle_delete_many(self, fields: dict) -> None:
-        for key in _field(fields, "keys").split("\x00"):
+    def _handle_delete_many(self, fields: dict[str, Any]) -> None:
+        for key in fields.get("keys", "").split("\x00"):
             if key:
                 self._delete(key)
 
-    def _handle_clear(self, fields: dict) -> None:
+    def _handle_clear(self, fields: dict[str, Any]) -> None:
         self._cache.clear()
         self._expire_info.clear()
 
-    def _handle_touch(self, fields: dict) -> None:
-        key = _field(fields, "key")
-        exp_str = _field(fields, "exp")
+    def _handle_touch(self, fields: dict[str, Any]) -> None:
+        key = fields["key"]
+        exp_str = fields.get("exp", "")
         exp_time = float(exp_str) if exp_str else None
         if key in self._cache:
             self._expire_info[key] = exp_time
@@ -397,21 +382,19 @@ class SyncCache(LocMemCache):
         deadline = time.time() + timeout
         while time.time() < deadline:
             try:
-                client = self._get_raw_client()
-                result = client.xread(
+                result = self._transport.xread(  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
                     streams={self._stream_key: read_from},
                     count=100,
                     block=50,
                 )
-                if result is None:
+                if not result:
                     return
-                for _stream_key, entries in result:
+                for entries in result.values():
                     with self._lock:
                         for entry_id, fields in entries:
                             self._apply_message(fields)
-                            eid = entry_id.decode() if isinstance(entry_id, bytes) else str(entry_id)
-                            read_from = eid
-                            self._last_id = eid
+                            read_from = entry_id
+                            self._last_id = entry_id
             except Exception:  # noqa: BLE001
                 return
 
@@ -446,7 +429,7 @@ class SyncCache(LocMemCache):
         with self._lock:
             self._set(made_key, pickled, timeout)
         exp_time = self._expire_info.get(made_key)
-        self._publish("set", key=made_key, val=pickled, exp=exp_time)
+        self._publish("set", key=made_key, val=value, exp=exp_time)
         return True
 
     def add(self, key: KeyT, value: Any, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
