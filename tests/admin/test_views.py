@@ -172,8 +172,9 @@ class TestIndexView:
         response = admin_client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        # Should have link to key browser (List Keys link)
-        assert "List Keys" in content or "key" in content.lower()
+        # The keys_link column emits an <a> pointing at the key changelist filtered by cache name.
+        assert "?cache=default" in content
+        assert "List Keys" in content
 
     def test_index_search_filters_caches(self, admin_client: Client, test_cache):
         """Search should filter cache list by name."""
@@ -325,8 +326,8 @@ class TestKeyListView:
         response = admin_client.get(url + "&q=ttl:*")
         assert response.status_code == 200
         content = response.content.decode()
-        # Should show TTL value or "No expiry" - looking for table header
-        assert "TTL" in content or "ttl" in content.lower()
+        # ttl_display emits <code title="{seconds}s">{timeuntil}</code> for keys with a TTL.
+        assert '<code title="' in content
 
     def test_key_list_shows_size_column(
         self,
@@ -416,8 +417,8 @@ class TestKeyListView:
         response = admin_client.get(url + "&q=paginate:*")
         assert response.status_code == 200
         content = response.content.decode()
-        # Should show pagination controls
-        assert "paginator" in content or "page" in content.lower()
+        # Django's standard paginator wraps the controls in <p class="paginator">.
+        assert 'class="paginator"' in content
 
     def test_key_list_results_count(
         self,
@@ -2061,25 +2062,22 @@ class TestCacheAdmin:
         # Should return 200 (changelist_view is the cache list now)
         assert response.status_code == 200
 
-    def test_has_add_permission_returns_false(self, admin_client: Client, test_cache):
-        """CacheAdmin should not allow adding new cache entries."""
+    def test_has_add_permission_returns_false(self, admin_user, test_cache):
+        """CacheAdmin should not allow adding new cache entries — even for a superuser."""
         from django.contrib.admin import site
         from django.test import RequestFactory
 
         from django_cachex.admin.models import Cache
 
-        # Get the registered admin instance
         cache_admin = site._registry[Cache]
 
-        factory = RequestFactory()
-        request = factory.get("/admin/")
-        request.user = admin_client.session.get("_auth_user_id")
+        request = RequestFactory().get("/admin/")
+        request.user = admin_user
 
-        # has_add_permission should return False
         assert cache_admin.has_add_permission(request) is False
 
-    def test_has_delete_permission_returns_false(self, admin_client: Client, test_cache):
-        """CacheAdmin should not allow deleting cache entries."""
+    def test_has_delete_permission_returns_false(self, admin_user, test_cache):
+        """CacheAdmin should not allow deleting cache entries — even for a superuser."""
         from django.contrib.admin import site
         from django.test import RequestFactory
 
@@ -2087,9 +2085,8 @@ class TestCacheAdmin:
 
         cache_admin = site._registry[Cache]
 
-        factory = RequestFactory()
-        request = factory.get("/admin/")
-        request.user = admin_client.session.get("_auth_user_id")
+        request = RequestFactory().get("/admin/")
+        request.user = admin_user
 
         assert cache_admin.has_delete_permission(request) is False
 

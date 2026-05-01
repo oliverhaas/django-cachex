@@ -65,11 +65,12 @@ class TestSetWithTimeout:
         cache.set("preserve_me", "changed", timeout=-1, nx=True)
         assert cache.get("preserve_me") == "original"
 
-    def test_very_small_timeout(self, cache: KeyValueCache):
+    def test_subsecond_float_timeout_is_accepted(self, cache: KeyValueCache):
+        # Sub-second float timeouts must be accepted by the backend (not raise or
+        # be rejected). Whether the key has already expired by the time we read
+        # is a race we don't assert on here — test_zero_timeout_immediate_expiration
+        # covers the rounded-to-zero case.
         cache.set("tiny_ttl", "value", timeout=0.00001)
-        # Either already expired or still present (race condition)
-        result = cache.get("tiny_ttl")
-        assert result in (None, "value")
 
 
 class TestTTLOperations:
