@@ -437,6 +437,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#rust-io-driver-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rust I/O driver (optional)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -996,6 +1007,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#rust-io-driver-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rust I/O driver (optional)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1036,6 +1058,23 @@
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="go">uv add django-cachex[hiredis]</span>
 </span></code></pre></div>
 <p>These provide C-based parsers that significantly improve performance.</p>
+<h2 id="rust-io-driver-optional">Rust I/O driver (optional)<a class="headerlink" href="#rust-io-driver-optional" title="Permanent link">&para;</a></h2>
+<p>The <code>RustValkeyCache</code> / <code>RustRedisCache</code> backends are powered by an
+opt-in native extension built on PyO3 + tokio + <a href="https://github.com/redis-rs/redis-rs">redis-rs</a>. It ships as
+a separate package, <code>django-cachex-rust</code>, so users who only want the
+pure-Python backends never carry the binary.</p>
+<div class="language-console highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="gp"># </span>Pure<span class="w"> </span>Python<span class="w"> </span><span class="o">(</span>default<span class="w"> </span>—<span class="w"> </span>no<span class="w"> </span>Rust<span class="w"> </span>binary<span class="o">)</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="go">uv add django-cachex[valkey]</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="gp"># </span>With<span class="w"> </span>the<span class="w"> </span>Rust<span class="w"> </span>I/O<span class="w"> </span>driver
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="go">uv add django-cachex[valkey,redis-rs]</span>
+</span></code></pre></div>
+<p>Prebuilt <code>django-cachex-rust</code> wheels are published for Linux x86_64
+(cp314, cp314t). On other platforms pip will try to build from source,
+which needs the Rust toolchain — drop the <code>redis-rs</code> extra to avoid that.</p>
+<p>When the binary isn't installed, <code>RustValkeyCache</code> / <code>RustRedisCache</code>
+classes are still importable but raise a clean <code>ImportError</code> on first
+use, naming the extra you need.</p>
 
 
 
