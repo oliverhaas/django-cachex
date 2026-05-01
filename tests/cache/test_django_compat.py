@@ -20,7 +20,6 @@ class TestDjangoStyleOptions:
     """Test that Django-style configuration OPTIONS work."""
 
     def test_db_option(self, redis_container: RedisContainerInfo):
-        """Test that db option is handled correctly."""
         host = redis_container.host
         port = redis_container.port
 
@@ -43,7 +42,6 @@ class TestDjangoStyleOptions:
             cache.delete("test_db_option")
 
     def test_pool_class_option(self, redis_container: RedisContainerInfo):
-        """Test that pool_class option works (Django-style lowercase)."""
         host = redis_container.host
         port = redis_container.port
 
@@ -64,7 +62,6 @@ class TestDjangoStyleOptions:
             cache.delete("test_pool_class")
 
     def test_parser_class_option(self, redis_container: RedisContainerInfo):
-        """Test that parser_class option works (Django-style lowercase)."""
         host = redis_container.host
         port = redis_container.port
 
@@ -89,7 +86,6 @@ class TestSerializerConfiguration:
     """Test various serializer configuration styles."""
 
     def test_serializer_class(self, redis_container: RedisContainerInfo):
-        """Test serializer as a class (Django builtin style)."""
         host = redis_container.host
         port = redis_container.port
 
@@ -123,7 +119,6 @@ class TestSerializerConfiguration:
             cache.delete("test_class_serializer")
 
     def test_serializer_instance(self, redis_container: RedisContainerInfo):
-        """Test serializer as an instance (Django builtin style)."""
         host = redis_container.host
         port = redis_container.port
 
@@ -154,7 +149,6 @@ class TestSerializerConfiguration:
             cache.delete("test_instance_serializer")
 
     def test_serializer_class_no_options(self, redis_container: RedisContainerInfo):
-        """Test serializer class that doesn't accept options kwarg."""
         host = redis_container.host
         port = redis_container.port
 
@@ -199,20 +193,17 @@ class TestIntegerOptimization:
         assert isinstance(result, int)
 
     def test_large_integer(self, cache: KeyValueCache):
-        """Large integers should work correctly."""
         large_int = 2**60
         cache.set("test_large_int", large_int)
         result = cache.get("test_large_int")
         assert result == large_int
 
     def test_negative_integer(self, cache: KeyValueCache):
-        """Negative integers should work correctly."""
         cache.set("test_neg_int", -999)
         result = cache.get("test_neg_int")
         assert result == -999
 
     def test_boolean_not_integer_optimized(self, cache: KeyValueCache):
-        """Booleans should be serialized (not treated as integers)."""
         cache.set("test_bool_true", True)
         cache.set("test_bool_false", False)
         assert cache.get("test_bool_true") is True
@@ -223,7 +214,6 @@ class TestLocationFormats:
     """Test various LOCATION format variations."""
 
     def test_list_location(self, redis_container: RedisContainerInfo):
-        """Test LOCATION as a list of URLs."""
         host = redis_container.host
         port = redis_container.port
         url = f"redis://{host}:{port}/6"
@@ -242,7 +232,6 @@ class TestLocationFormats:
             cache.delete("test_list_location")
 
     def test_comma_separated_location(self, redis_container: RedisContainerInfo):
-        """Test LOCATION as comma-separated string."""
         host = redis_container.host
         port = redis_container.port
         url = f"redis://{host}:{port}/6"
@@ -266,14 +255,12 @@ class TestAsyncMethods:
     """Test that async methods inherited from Django's BaseCache work."""
 
     async def test_async_get_set(self, cache: KeyValueCache):
-        """Test aget and aset methods."""
         await cache.aset("async_test_key", "async_value")
         result = await cache.aget("async_test_key")
         assert result == "async_value"
         await cache.adelete("async_test_key")
 
     async def test_async_add(self, cache: KeyValueCache):
-        """Test aadd method."""
         await cache.adelete("async_add_key")
         result = await cache.aadd("async_add_key", "first_value")
         assert result is True
@@ -283,21 +270,18 @@ class TestAsyncMethods:
         await cache.adelete("async_add_key")
 
     async def test_async_delete(self, cache: KeyValueCache):
-        """Test adelete method."""
         await cache.aset("async_delete_key", "value")
         result = await cache.adelete("async_delete_key")
         assert result is True
         assert await cache.aget("async_delete_key") is None
 
     async def test_async_has_key(self, cache: KeyValueCache):
-        """Test ahas_key method."""
         await cache.aset("async_has_key", "value")
         assert await cache.ahas_key("async_has_key") is True
         await cache.adelete("async_has_key")
         assert await cache.ahas_key("async_has_key") is False
 
     async def test_async_get_many(self, cache: KeyValueCache):
-        """Test aget_many method."""
         await cache.aset("async_many_1", "value1")
         await cache.aset("async_many_2", "value2")
         result = await cache.aget_many(["async_many_1", "async_many_2", "async_missing"])
@@ -306,7 +290,6 @@ class TestAsyncMethods:
         await cache.adelete("async_many_2")
 
     async def test_async_set_many(self, cache: KeyValueCache):
-        """Test aset_many method."""
         await cache.aset_many({"async_set_1": "v1", "async_set_2": "v2"})
         assert await cache.aget("async_set_1") == "v1"
         assert await cache.aget("async_set_2") == "v2"
@@ -314,7 +297,6 @@ class TestAsyncMethods:
         await cache.adelete("async_set_2")
 
     async def test_async_incr_decr(self, cache: KeyValueCache):
-        """Test aincr and adecr methods."""
         await cache.aset("async_counter", 10)
         result = await cache.aincr("async_counter")
         assert result == 11
@@ -323,7 +305,6 @@ class TestAsyncMethods:
         await cache.adelete("async_counter")
 
     async def test_async_touch(self, cache: KeyValueCache):
-        """Test atouch method."""
         await cache.aset("async_touch_key", "value", timeout=100)
         result = await cache.atouch("async_touch_key", timeout=200)
         assert result is True

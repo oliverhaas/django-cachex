@@ -19,14 +19,12 @@ class TestShouldRecompute:
     """Tests for the should_recompute() XFetch function."""
 
     def test_fresh_value_no_recompute(self):
-        """With plenty of TTL remaining, should never trigger."""
         config = StampedeConfig(buffer=60, delta=1.0, beta=1.0)
         # TTL = 350 → remaining = 350 - 60 = 290s
         triggers = sum(1 for _ in range(1000) if should_recompute(350, config))
         assert triggers == 0
 
     def test_expired_always_recomputes(self):
-        """When TTL <= buffer, always triggers (logically expired)."""
         config = StampedeConfig(buffer=60, delta=1.0, beta=1.0)
         # TTL = 50 → remaining = 50 - 60 = -10 → always True
         assert should_recompute(50, config) is True
@@ -41,7 +39,6 @@ class TestShouldRecompute:
         assert triggers > 50
 
     def test_higher_beta_triggers_more(self):
-        """Higher beta increases recomputation probability."""
         low_beta = StampedeConfig(buffer=60, delta=2.0, beta=0.5)
         high_beta = StampedeConfig(buffer=60, delta=2.0, beta=5.0)
         # TTL = 65 → remaining = 5s
@@ -148,7 +145,6 @@ class TestStampedeExtendedTTL:
         assert 300 < ttl <= 360
 
     def test_no_timeout_no_buffer(self, stampede_cache: KeyValueCache):
-        """Persistent keys (timeout=None) should not have TTL extended."""
         stampede_cache.set("sp_persist", "val", timeout=None)
         ttl = stampede_cache.ttl("sp_persist")
         assert ttl is None  # No expiry
@@ -168,7 +164,6 @@ class TestStampedeGetMany:
         assert len(result) == 2
 
     def test_get_many_filters_expired(self, stampede_cache: KeyValueCache):
-        """get_many should filter out logically expired keys."""
         stampede_cache.set("sp_gm_exp", "val", timeout=300)
         # Shrink TTL below buffer → logically expired
         stampede_cache.expire("sp_gm_exp", 50)
@@ -340,7 +335,6 @@ class TestShouldRecomputeEdgeCases:
             assert isinstance(result, bool)
 
     def test_expovariate_edge_via_mock(self):
-        """Mock expovariate to return extreme values and verify no crash."""
         config = StampedeConfig(buffer=60, delta=1.0, beta=1.0)
 
         # Very large expovariate value → large negative threshold → always triggers
@@ -405,7 +399,6 @@ class TestStampedeGetManyConsistency:
     """get_many() stampede behavior should match get() for various value types."""
 
     def test_get_many_filters_logically_expired_consistently(self, stampede_cache: KeyValueCache):
-        """get_many() and get() should agree on which keys are logically expired."""
         stampede_cache.set("sp_gmc_str", "hello", timeout=300)
         stampede_cache.set("sp_gmc_int", 42, timeout=300)
         # Shrink TTL below buffer → logically expired
@@ -419,7 +412,6 @@ class TestStampedeGetManyConsistency:
         assert len(result) == 0
 
     def test_get_many_preserves_fresh_values(self, stampede_cache: KeyValueCache):
-        """Fresh values (well above buffer) should never be filtered."""
         stampede_cache.set("sp_gmc_fresh1", "val", timeout=300)
         stampede_cache.set("sp_gmc_fresh2", 99, timeout=300)
 

@@ -161,7 +161,6 @@ class TestTieredBasicOps:
         assert tiered_cache.get("dict") == {"a": 1}
 
     def test_set_none_value(self, tiered_cache: BaseCache):
-        """Storing None should be distinguishable from missing."""
         tiered_cache.set("none_key", None)
         assert tiered_cache.get("none_key", "MISS") is None
 
@@ -182,7 +181,6 @@ class TestL1Behavior:
         assert l1.get("l1key") == "l1val"
 
     def test_l1_populated_on_get_miss(self, tiered_cache: BaseCache):
-        """When L1 misses but L2 hits, L1 is populated."""
         l1 = self._get_l1()
         tiered_cache.set("pop_key", "pop_val")
         # Clear L1 only
@@ -306,14 +304,12 @@ class TestL1Behavior:
         assert tiered_cache.has_key("hk_key") is True
 
     def test_add_populates_l1_on_success(self, tiered_cache: BaseCache):
-        """add() populates L1 when L2 add succeeds."""
         tiered_cache.delete("add_l1")
         tiered_cache.add("add_l1", "new_val")
         l1 = self._get_l1()
         assert l1.get("add_l1") == "new_val"
 
     def test_add_skips_l1_on_failure(self, tiered_cache: BaseCache):
-        """add() does not update L1 when key already exists in L2."""
         tiered_cache.set("add_exists", "original")
         l1 = self._get_l1()
         l1.delete("add_exists")
@@ -323,7 +319,6 @@ class TestL1Behavior:
         assert l1.get("add_exists") is None
 
     def test_touch_refreshes_l1(self, tiered_cache: BaseCache):
-        """touch() refreshes L1 TTL when L2 touch succeeds."""
         tiered_cache.set("touch_l1", "val")
         l1 = self._get_l1()
         assert l1.get("touch_l1") == "val"
@@ -450,7 +445,6 @@ class TestTieredAsync:
         assert await tiered_cache.aget("acl") is None
 
     async def test_async_l1_populated_on_miss(self, tiered_cache: BaseCache):
-        """Async get populates L1 on L2 hit."""
         await tiered_cache.aset("al1pop", "val")
         l1 = caches["l1"]
         l1.delete("al1pop")
@@ -460,7 +454,6 @@ class TestTieredAsync:
         assert l1.get("al1pop") == "val"
 
     async def test_async_get_many_partial_l1(self, tiered_cache: BaseCache):
-        """Async get_many with partial L1 hits."""
         await tiered_cache.aset_many({"agm1": "a", "agm2": "b"})
         l1 = caches["l1"]
         l1.delete("agm2")
@@ -501,11 +494,9 @@ class TestTieredCacheConfig:
             caches["default"].get("test")
 
     def test_l1_timeout_from_option(self, tiered_cache: BaseCache):
-        """L1 TTL cap comes from TieredCache's L1_TIMEOUT option."""
         assert tiered_cache._l1_cap == L1_TIMEOUT
 
     def test_l1_timeout_fallback_to_l1_default(self, redis_container: RedisContainerInfo):
-        """When L1_TIMEOUT is omitted, _l1_cap falls back to L1's default_timeout."""
         options = _get_client_library_options(redis_container.client_library)
         location = f"redis://{redis_container.host}:{redis_container.port}?db=1"
         backend_class = BACKENDS[("default", redis_container.client_library, "py")]
@@ -533,17 +524,14 @@ class TestTieredCacheConfig:
             assert cache._l1_cap == 42
 
     def test_cachex_support_level(self, tiered_cache: BaseCache):
-        """TieredCache has 'cachex' support level for admin."""
         assert tiered_cache._cachex_support == "cachex"
 
     def test_locmem_support_level(self):
-        """Our LocMemCache overrides CachexMixin to 'cachex'."""
         from django_cachex.cache.locmem import LocMemCache
 
         assert LocMemCache._cachex_support == "cachex"
 
     def test_mixin_support_level(self):
-        """CachexMixin itself defaults to 'wrapped'."""
         from django_cachex.cache.mixin import CachexMixin
 
         assert CachexMixin._cachex_support == "wrapped"
@@ -566,6 +554,5 @@ class TestTieredSetManyOrdering:
         assert tiered_cache._l2.get("order_b") == "vb"
 
     def test_set_many_returns_l2_result(self, tiered_cache: BaseCache):
-        """set_many should return L2's result (empty list = no failures)."""
         result = tiered_cache.set_many({"order_c": "vc"})
         assert result == []

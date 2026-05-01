@@ -28,7 +28,6 @@ class TestRedisClusterCacheClient:
     """Tests for RedisClusterCacheClient."""
 
     def test_get_client_creates_cluster(self):
-        """Test get_client creates a RedisCluster instance."""
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
         mock_cluster_cls.return_value = mock_cluster
@@ -41,7 +40,6 @@ class TestRedisClusterCacheClient:
         mock_cluster_cls.assert_called_once()
 
     def test_get_client_caches_cluster(self):
-        """Test get_client caches cluster instances."""
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
         mock_cluster_cls.return_value = mock_cluster
@@ -55,7 +53,6 @@ class TestRedisClusterCacheClient:
         assert mock_cluster_cls.call_count == 1
 
     def test_group_keys_by_slot(self):
-        """Test _group_keys_by_slot groups keys correctly."""
         client = setup_cluster_client()
 
         # Keys with same hash tag should be in same slot
@@ -68,7 +65,6 @@ class TestRedisClusterCacheClient:
         assert len(slot_keys) == 3
 
     def test_group_keys_by_slot_different_slots(self):
-        """Test _group_keys_by_slot separates keys in different slots."""
         client = setup_cluster_client()
 
         # Use hash tags that are guaranteed to hash to different slots:
@@ -120,14 +116,12 @@ class TestRedisClusterCacheClient:
         assert "value_c" in result.values()
 
     def test_get_many_empty_keys(self):
-        """Test get_many with empty keys list."""
         client = setup_cluster_client()
 
         result = client.get_many([])
         assert result == {}
 
     def test_delete_many_groups_by_slot(self):
-        """Test delete_many handles cross-slot keys."""
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
         mock_cluster_cls.return_value = mock_cluster
@@ -149,7 +143,6 @@ class TestRedisClusterCacheClient:
         assert mock_cluster.delete.call_count == 3
 
     def test_delete_many_empty_keys(self):
-        """Test delete_many with empty keys list."""
         client = setup_cluster_client()
 
         client.delete_many([])
@@ -177,7 +170,6 @@ class TestRedisClusterCacheClient:
         mock_cluster.delete.assert_called_once()
 
     def test_clear_flushes_all_primaries(self):
-        """Test low-level clear() calls flushdb on all primary nodes."""
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
         mock_cluster_cls.return_value = mock_cluster
@@ -192,7 +184,6 @@ class TestRedisClusterCacheClient:
         mock_cluster.flushdb.assert_called_once_with(target_nodes="primaries")
 
     def test_keys_scans_all_primaries(self):
-        """Test keys() returns keys from all primary nodes."""
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
         mock_cluster_cls.return_value = mock_cluster
@@ -226,7 +217,6 @@ class TestRedisClusterCacheClient:
         assert "prefix:1:foo_3" in result
 
     def test_keys_empty_result(self):
-        """Test keys() with no matching keys."""
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
         mock_cluster_cls.return_value = mock_cluster
@@ -247,7 +237,6 @@ class TestRedisClusterCacheClient:
         mock_cluster.keys.assert_called_once()
 
     def test_iter_keys_scans_all_primaries(self):
-        """Test iter_keys() iterates keys from all primary nodes."""
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
         mock_cluster_cls.return_value = mock_cluster
@@ -284,7 +273,6 @@ class TestRedisClusterCacheClient:
         assert "prefix:1:bar_3" in result
 
     def test_iter_keys_with_itersize(self):
-        """Test iter_keys() passes itersize to scan_iter."""
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
         mock_cluster_cls.return_value = mock_cluster
@@ -307,7 +295,6 @@ class TestRedisClusterCacheClient:
         assert call_kwargs.get("target_nodes") == "primaries"
 
     def test_delete_pattern_deletes_across_primaries(self):
-        """Test delete_pattern() deletes keys from all primary nodes."""
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
         mock_cluster_cls.return_value = mock_cluster
@@ -341,7 +328,6 @@ class TestRedisClusterCacheClient:
         assert result == 3
 
     def test_delete_pattern_empty_result(self):
-        """Test delete_pattern() with no matching keys."""
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
         mock_cluster_cls.return_value = mock_cluster
@@ -363,7 +349,6 @@ class TestRedisClusterCacheClient:
         mock_cluster.delete.assert_not_called()
 
     def test_delete_pattern_groups_by_slot(self):
-        """Test delete_pattern() groups keys by slot for deletion."""
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
         mock_cluster_cls.return_value = mock_cluster

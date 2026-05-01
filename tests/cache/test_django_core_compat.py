@@ -140,7 +140,6 @@ class TestDjangoCoreRedisCompatibility:
         django_core_cache: DjangoCoreRedisCache,
         cachex_cache: CachexRedisCache,
     ) -> None:
-        """delete() behaves identically."""
         # Set values
         django_core_cache.set("del_test_dj", "value")
         cachex_cache.set("del_test_cx", "value")
@@ -166,7 +165,6 @@ class TestDjangoCoreRedisCompatibility:
         django_core_cache: DjangoCoreRedisCache,
         cachex_cache: CachexRedisCache,
     ) -> None:
-        """has_key() behaves identically."""
         django_core_cache.set("has_key_dj", "value")
         cachex_cache.set("has_key_cx", "value")
 
@@ -191,7 +189,6 @@ class TestDjangoCoreRedisCompatibility:
         django_core_cache: DjangoCoreRedisCache,
         cachex_cache: CachexRedisCache,
     ) -> None:
-        """get_many() behaves identically."""
         # Set some values with both caches
         django_core_cache.set("many_1", "v1")
         django_core_cache.set("many_2", "v2")
@@ -216,7 +213,6 @@ class TestDjangoCoreRedisCompatibility:
         django_core_cache: DjangoCoreRedisCache,
         cachex_cache: CachexRedisCache,
     ) -> None:
-        """set_many() behaves identically."""
         data = {"sm_a": "val_a", "sm_b": "val_b", "sm_c": 123}
 
         # Both set_many calls
@@ -247,7 +243,6 @@ class TestDjangoCoreRedisCompatibility:
         django_core_cache: DjangoCoreRedisCache,
         cachex_cache: CachexRedisCache,
     ) -> None:
-        """delete_many() behaves identically."""
         # Set values
         django_core_cache.set("dm_1", "v1")
         django_core_cache.set("dm_2", "v2")
@@ -272,7 +267,6 @@ class TestDjangoCoreRedisCompatibility:
         django_core_cache: DjangoCoreRedisCache,
         cachex_cache: CachexRedisCache,
     ) -> None:
-        """incr() and decr() behave identically."""
         # Set initial values
         django_core_cache.set("counter_dj", 10)
         cachex_cache.set("counter_cx", 10)
@@ -314,7 +308,6 @@ class TestDjangoCoreRedisCompatibility:
         django_core_cache: DjangoCoreRedisCache,
         cachex_cache: CachexRedisCache,
     ) -> None:
-        """touch() behaves identically."""
         django_core_cache.set("touch_dj", "value", timeout=100)
         cachex_cache.set("touch_cx", "value", timeout=100)
 
@@ -358,7 +351,6 @@ class TestDjangoCoreRedisCompatibility:
         django_core_cache: DjangoCoreRedisCache,
         cachex_cache: CachexRedisCache,
     ) -> None:
-        """get_or_set() behaves identically."""
         # Non-existent key - should set and return default
         dj_result = django_core_cache.get_or_set("gos_dj", "default_val")
         cx_result = cachex_cache.get_or_set("gos_cx", "default_val")
@@ -384,7 +376,6 @@ class TestDjangoCoreRedisCompatibility:
         django_core_cache: DjangoCoreRedisCache,
         cachex_cache: CachexRedisCache,
     ) -> None:
-        """get_or_set() with callable default behaves identically."""
         call_count = {"dj": 0, "cx": 0}
 
         def dj_factory() -> str:
@@ -420,7 +411,6 @@ class TestDjangoCoreRedisCompatibility:
         django_core_cache: DjangoCoreRedisCache,
         cachex_cache: CachexRedisCache,
     ) -> None:
-        """get() with default parameter behaves identically."""
         dj_result = django_core_cache.get("missing_key", default="fallback")
         cx_result = cachex_cache.get("missing_key", default="fallback")
         assert dj_result == "fallback"
@@ -437,7 +427,6 @@ class TestDjangoCoreRedisCompatibility:
         django_core_cache: DjangoCoreRedisCache,
         cachex_cache: CachexRedisCache,
     ) -> None:
-        """set() with timeout behaves identically."""
         import time
 
         # Set with very short timeout
@@ -460,7 +449,6 @@ class TestDjangoCoreRedisCompatibility:
         django_core_cache: DjangoCoreRedisCache,
         cachex_cache: CachexRedisCache,
     ) -> None:
-        """set() with timeout=None uses default timeout."""
         # This tests that None timeout behaves consistently
         django_core_cache.set("none_timeout_dj", "value", timeout=None)
         cachex_cache.set("none_timeout_cx", "value", timeout=None)

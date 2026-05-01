@@ -8,7 +8,6 @@ class TestDefaultClientCompressorConfig:
     """Tests for DefaultClient compressor configuration handling."""
 
     def test_single_string_config_backwards_compatible(self, redis_container):
-        """Test that single string compressor config still works."""
         from django.test import override_settings
 
         host, port = redis_container.host, redis_container.port
@@ -31,7 +30,6 @@ class TestDefaultClientCompressorConfig:
             cache.delete("test_key")
 
     def test_list_config_with_fallback(self, redis_container):
-        """Test that list compressor config with fallback works."""
         from django.test import override_settings
 
         host, port = redis_container.host, redis_container.port
@@ -58,7 +56,6 @@ class TestDefaultClientCompressorConfig:
             cache.delete("test_key")
 
     def test_migration_scenario(self, redis_container):
-        """Test migrating from one compressor to another."""
         from django.test import override_settings
 
         host, port = redis_container.host, redis_container.port
@@ -111,7 +108,6 @@ class TestDecompressFallback:
     """Tests for the _decompress fallback logic."""
 
     def test_decompress_gzip_with_multiple_compressors(self):
-        """Test that _decompress correctly decompresses gzip data."""
         from django_cachex.client import RedisCacheClient
 
         client = RedisCacheClient(
@@ -190,7 +186,6 @@ class TestDecompressFallback:
             client._decompress(fake_gzip)
 
     def test_decompress_with_no_compressors_returns_raw(self):
-        """When no compressors are configured, _decompress is a no-op pass-through."""
         from django_cachex.client import RedisCacheClient
 
         client = RedisCacheClient(
