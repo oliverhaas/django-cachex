@@ -20,6 +20,7 @@ Usage::
 from __future__ import annotations
 
 import fnmatch
+import threading
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -29,7 +30,18 @@ from django_cachex.cache.mixin import CachexMixin
 from django_cachex.utils import _deep_getsizeof, _format_bytes
 
 if TYPE_CHECKING:
+    import contextlib
+
     from django_cachex.types import ExpiryT, KeyT
+
+
+# Reentrant per-backend-name locks for compound (read-modify-write) ops.
+# Django's stock `LocMemCache._lock` is a non-reentrant `threading.Lock`, so
+# we can't reuse it — wrapping a compound op in `with self._lock:` would
+# deadlock the moment the inner `self.get`/`self.set` re-acquired it.
+# Sharing by `name` mirrors Django's `_locks` dict so multiple LocMemCache
+# instances against the same backing store agree on a single envelope lock.
+_compound_locks: dict[str, threading.RLock] = {}
 
 
 class LocMemCache(CachexMixin, DjangoLocMemCache):
@@ -41,6 +53,22 @@ class LocMemCache(CachexMixin, DjangoLocMemCache):
     """
 
     _cachex_support: str = "cachex"
+
+    def __init__(self, name: str, params: dict[str, Any]) -> None:
+        super().__init__(name, params)
+        # Per-name reentrant lock so concurrent compound ops serialize.
+        # Separate from Django's `self._lock` (non-reentrant) — see the
+        # module docstring on `_compound_locks`.
+        self._compound_lock = _compound_locks.setdefault(name, threading.RLock())
+
+    def _compound_op_lock(self) -> contextlib.AbstractContextManager[Any]:
+        """Reentrant per-backend lock around compound (read-modify-write) ops.
+
+        Serializes concurrent ``lpush``/``sadd``/``hincrby``/etc. on this
+        backend so they don't lose updates. Reentrant so a compound op can
+        nest into another (rare, but the surface allows it).
+        """
+        return self._compound_lock
 
     # =========================================================================
     # Internal accessors

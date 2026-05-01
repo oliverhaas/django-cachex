@@ -9,7 +9,9 @@ making them compatible with any BaseCache-conformant backend.
 
 from __future__ import annotations
 
+import contextlib
 import random
+from functools import wraps
 from typing import TYPE_CHECKING, Any
 
 from django_cachex.admin.wrappers import BaseCacheExtensions
@@ -17,7 +19,7 @@ from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping, Sequence
+    from collections.abc import Callable, Iterator, Mapping, Sequence
 
     from django_cachex.types import KeyT
 
@@ -26,6 +28,23 @@ _set = set
 
 # Sentinel for distinguishing "key not found" from "key holds None"
 _MISSING = object()
+
+
+def _compound_op(method: Callable[..., Any]) -> Callable[..., Any]:
+    """Wrap a read-modify-write op in the backend's compound-op lock.
+
+    ``CachexMixin._compound_op_lock`` is a no-op by default; subclasses with
+    real synchronization (e.g. ``LocMemCache``) override it. Reentrant locks
+    (Django's ``RLock``) make this safe even when ``self.set``/``self.delete``
+    re-acquire the same lock internally.
+    """
+
+    @wraps(method)
+    def wrapper(self: CachexMixin, *args: Any, **kwargs: Any) -> Any:
+        with self._compound_op_lock():
+            return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 class CachexMixin(BaseCacheExtensions):
@@ -46,15 +65,26 @@ class CachexMixin(BaseCacheExtensions):
 
     **Limitations:**
 
-    - **Thread safety:** Compound read-modify-write operations (e.g. ``lpush``:
-      get list, append, set) are NOT atomic. Two concurrent calls may lose a
-      write. Use locking externally if needed.
+    - **Thread safety:** Compound read-modify-write ops (``lpush``, ``sadd``,
+      ``hset``, ``hincrby``, ``zadd``, …) are wrapped in
+      ``self._compound_op_lock()``, which defaults to a no-op. Subclasses
+      with thread-safe locking primitives (e.g. ``LocMemCache``, which has
+      ``self._lock``) should override the hook to make these ops atomic.
     - **Type detection:** ``type()`` inspects the stored Python value. Sorted
       sets (stored as ``dict[Any, float]``) are indistinguishable from hashes
       (``dict[str, Any]``) when the sorted set has string keys.
     """
 
     _cachex_support = "wrapped"
+
+    def _compound_op_lock(self) -> contextlib.AbstractContextManager[Any]:
+        """Context manager around compound (read-modify-write) ops.
+
+        Default is a no-op. Subclasses with locking primitives should override
+        this — e.g. ``LocMemCache`` returns ``self._lock`` so concurrent
+        ``lpush``/``sadd``/``hincrby``/etc. on the same key don't lose updates.
+        """
+        return contextlib.nullcontext()
 
     # =========================================================================
     # Key Operations
@@ -143,6 +173,7 @@ class CachexMixin(BaseCacheExtensions):
     # List Operations
     # =========================================================================
 
+    @_compound_op
     def lpush(self, key: KeyT, *values: Any, version: int | None = None) -> int:
         """Prepend values to the head of a list."""
         current = self._get_list(key, version=version)
@@ -153,6 +184,7 @@ class CachexMixin(BaseCacheExtensions):
         self.set(key, new_list, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return len(new_list)
 
+    @_compound_op
     def rpush(self, key: KeyT, *values: Any, version: int | None = None) -> int:
         """Append values to the tail of a list."""
         current = self._get_list(key, version=version)
@@ -163,6 +195,7 @@ class CachexMixin(BaseCacheExtensions):
         self.set(key, new_list, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return len(new_list)
 
+    @_compound_op
     def lpop(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[Any]:
         """Remove and return element(s) from the head of a list."""
         current = self._get_list(key, version=version)
@@ -178,6 +211,7 @@ class CachexMixin(BaseCacheExtensions):
             self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return popped
 
+    @_compound_op
     def rpop(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[Any]:
         """Remove and return element(s) from the tail of a list."""
         current = self._get_list(key, version=version)
@@ -214,6 +248,7 @@ class CachexMixin(BaseCacheExtensions):
             return 0
         return len(current)
 
+    @_compound_op
     def lrem(  # noqa: PLR0912
         self,
         key: KeyT,
@@ -253,6 +288,7 @@ class CachexMixin(BaseCacheExtensions):
                 self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return removed
 
+    @_compound_op
     def ltrim(self, key: KeyT, start: int, end: int, version: int | None = None) -> bool:
         """Trim a list to the specified range (inclusive end, Redis-style)."""
         current = self._get_list(key, version=version)
@@ -284,6 +320,7 @@ class CachexMixin(BaseCacheExtensions):
         except IndexError:
             return None
 
+    @_compound_op
     def lset(self, key: KeyT, index: int, value: Any, version: int | None = None) -> bool:
         """Set element at index in list."""
         current = self._get_list(key, version=version)
@@ -299,6 +336,7 @@ class CachexMixin(BaseCacheExtensions):
         self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return True
 
+    @_compound_op
     def linsert(self, key: KeyT, where: str, pivot: Any, value: Any, version: int | None = None) -> int:
         """Insert value before or after pivot in list."""
         current = self._get_list(key, version=version)
@@ -358,6 +396,7 @@ class CachexMixin(BaseCacheExtensions):
     # Set Operations
     # =========================================================================
 
+    @_compound_op
     def sadd(self, key: KeyT, *members: Any, version: int | None = None) -> int:
         """Add members to a set."""
         current = self._get_set(key, version=version)
@@ -369,6 +408,7 @@ class CachexMixin(BaseCacheExtensions):
         self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return len(current) - before
 
+    @_compound_op
     def srem(self, key: KeyT, *members: Any, version: int | None = None) -> int:
         """Remove members from a set."""
         current = self._get_set(key, version=version)
@@ -398,6 +438,7 @@ class CachexMixin(BaseCacheExtensions):
         current = self._get_set(key, version=version)
         return _set() if current is None else _set(current)
 
+    @_compound_op
     def spop(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | _set[Any]:
         """Remove and return random member(s) from set."""
         current = self._get_set(key, version=version)
@@ -485,6 +526,7 @@ class CachexMixin(BaseCacheExtensions):
     # Hash Operations
     # =========================================================================
 
+    @_compound_op
     def hset(  # noqa: C901
         self,
         key: KeyT,
@@ -521,6 +563,7 @@ class CachexMixin(BaseCacheExtensions):
         self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return added
 
+    @_compound_op
     def hdel(self, key: KeyT, *fields: str, version: int | None = None) -> int:
         """Delete hash fields."""
         current = self._get_hash(key, version=version)
@@ -574,6 +617,7 @@ class CachexMixin(BaseCacheExtensions):
             return [None] * len(fields)
         return [current.get(f) for f in fields]
 
+    @_compound_op
     def hsetnx(self, key: KeyT, field: str, value: Any, version: int | None = None) -> bool:
         """Set field in hash only if it doesn't exist."""
         current = self._get_hash(key, version=version)
@@ -586,6 +630,7 @@ class CachexMixin(BaseCacheExtensions):
         self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return True
 
+    @_compound_op
     def hincrby(self, key: KeyT, field: str, amount: int = 1, version: int | None = None) -> int:
         """Increment integer value of field in hash."""
         current = self._get_hash(key, version=version)
@@ -596,6 +641,7 @@ class CachexMixin(BaseCacheExtensions):
         self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return current[field]
 
+    @_compound_op
     def hincrbyfloat(self, key: KeyT, field: str, amount: float = 1.0, version: int | None = None) -> float:
         """Increment float value of field in hash."""
         current = self._get_hash(key, version=version)
@@ -628,6 +674,7 @@ class CachexMixin(BaseCacheExtensions):
     # Sorted Set Operations
     # =========================================================================
 
+    @_compound_op
     def zadd(
         self,
         key: KeyT,
@@ -772,6 +819,7 @@ class CachexMixin(BaseCacheExtensions):
             return filtered
         return [m for m, _ in filtered]
 
+    @_compound_op
     def zrem(self, key: KeyT, *members: Any, version: int | None = None) -> int:
         """Remove members from a sorted set."""
         current = self._get_zset(key, version=version)
@@ -788,6 +836,7 @@ class CachexMixin(BaseCacheExtensions):
                 self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return removed
 
+    @_compound_op
     def zincrby(self, key: KeyT, amount: float, member: Any, version: int | None = None) -> float:
         """Increment the score of a member."""
         current = self._get_zset(key, version=version) or {}
@@ -811,6 +860,7 @@ class CachexMixin(BaseCacheExtensions):
         hi = float("inf") if max_score == "+inf" else float(max_score)
         return sum(1 for s in current.values() if lo <= s <= hi)
 
+    @_compound_op
     def zpopmin(self, key: KeyT, count: int = 1, version: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with lowest scores."""
         current = self._get_zset(key, version=version)
@@ -827,6 +877,7 @@ class CachexMixin(BaseCacheExtensions):
             self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return popped
 
+    @_compound_op
     def zpopmax(self, key: KeyT, count: int = 1, version: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with highest scores."""
         current = self._get_zset(key, version=version)
@@ -850,6 +901,7 @@ class CachexMixin(BaseCacheExtensions):
             return [None] * len(members)
         return [current.get(m) for m in members]
 
+    @_compound_op
     def zremrangebyscore(
         self,
         key: KeyT,
@@ -874,6 +926,7 @@ class CachexMixin(BaseCacheExtensions):
                 self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return len(to_remove)
 
+    @_compound_op
     def zremrangebyrank(self, key: KeyT, start: int, end: int, version: int | None = None) -> int:
         """Remove members by rank range."""
         current = self._get_zset(key, version=version)
