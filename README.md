@@ -77,7 +77,7 @@ Full documentation at [oliverhaas.github.io/django-cachex](https://oliverhaas.gi
 - Python 3.14+ (free-threaded supported)
 - Django 6.0+
 - Linux x86_64 (only target with prebuilt wheels for now)
-- valkey-py 6.0+ or redis-py 6.0+
+- valkey-py 6.1+ or redis-py 6.0+
 
 ## Acknowledgments
 
