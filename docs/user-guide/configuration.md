@@ -21,6 +21,10 @@ CACHES = {
 
 ## Backend Classes
 
+All backends live in `django_cachex.cache`.
+
+### Valkey / Redis (Python driver)
+
 | Backend | Description |
 |---------|-------------|
 | `ValkeyCache` | Standard Valkey connection |
@@ -30,7 +34,32 @@ CACHES = {
 | `ValkeyClusterCache` | Valkey Cluster sharding |
 | `RedisClusterCache` | Redis Cluster sharding |
 
-All backends are in `django_cachex.cache`.
+### Valkey / Redis (Rust driver)
+
+Same wire-level features, dispatched through the bundled `_driver` Rust extension (PyO3 + tokio + redis-rs). Async paths skip the threadpool round-trip and a single tokio runtime serves sync and async callers.
+
+| Backend | Description |
+|---------|-------------|
+| `RustValkeyCache` | Standard Valkey connection |
+| `RustRedisCache` | Standard Redis connection |
+| `RustValkeySentinelCache` | Valkey Sentinel high availability |
+| `RustRedisSentinelCache` | Redis Sentinel high availability |
+| `RustValkeyClusterCache` | Valkey Cluster sharding |
+| `RustRedisClusterCache` | Redis Cluster sharding |
+
+### Local backends
+
+| Backend | Description |
+|---------|-------------|
+| `LocMemCache` | Drop-in replacement for Django's `LocMemCache` with data-structure ops, TTL helpers, and admin support |
+| `DatabaseCache` | Drop-in replacement for Django's `DatabaseCache` with the same extensions |
+
+### Composite backends
+
+| Backend | Description |
+|---------|-------------|
+| `SyncCache` | In-memory store synchronized across pods via a Redis Stream consumer |
+| `TieredCache` | Composes two existing `CACHES` entries as L1/L2 with TTL propagation |
 
 !!! note "Valkey and Redis Compatibility"
     Valkey and Redis are likely still fully compatible, so either backend works with either server. Valkey is recommended as it remains fully open source.
@@ -142,6 +171,35 @@ Compression is only applied to values larger than `min_length` bytes (default: 2
     "parser_class": "valkey.connection.LibvalkeyParser",
     # For Redis with hiredis
     # "parser_class": "redis.connection.HiredisParser",
+}
+```
+
+### Cache stampede prevention
+
+Probabilistic early recompute (XFetch) to avoid thundering-herd recompute when a hot key expires:
+
+```python
+"OPTIONS": {
+    # Enable with defaults (buffer=60s, beta=1.0, delta=1.0)
+    "stampede_prevention": True,
+
+    # Or tune individually
+    "stampede_prevention": {
+        "buffer": 30,   # extra TTL added to writes; recompute window inside this buffer
+        "beta": 1.0,    # higher = more aggressive early recompute
+        "delta": 1.0,   # estimated recompute cost (seconds)
+    },
+}
+```
+
+Per-call overrides accept the same shapes via the `stampede_prevention=` keyword on `get`/`set`/`add`/`get_or_set`/`get_many`/`set_many`.
+
+### Custom client class
+
+```python
+"OPTIONS": {
+    # Use the Rust driver client
+    "client_class": "django_cachex.client.rust.RustValkeyCacheClient",
 }
 ```
 

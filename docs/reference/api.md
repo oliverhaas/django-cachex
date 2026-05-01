@@ -53,7 +53,7 @@ Hash operations for field-value data structures:
 
 | Method | Description |
 |--------|-------------|
-| `hset(key, field, value)` | Set a hash field value |
+| `hset(key, field=None, value=None, mapping=None, items=None)` | Set hash field(s); pass `field`/`value`, a `mapping` dict, or a flat `items` list |
 | `hdel(key, *fields)` | Delete hash field(s) |
 | `hexists(key, field)` | Check if hash field exists |
 | `hget(key, field)` | Get a hash field value |
@@ -63,7 +63,6 @@ Hash operations for field-value data structures:
 | `hincrbyfloat(key, field, amount=1.0)` | Increment hash field by float |
 | `hlen(key)` | Get number of fields in hash |
 | `hmget(key, *fields)` | Get multiple hash field values |
-| `hmset(key, mapping)` | Set multiple hash fields |
 | `hsetnx(key, field, value)` | Set hash field only if it doesn't exist |
 | `hvals(key)` | Get all values in a hash |
 
@@ -220,14 +219,14 @@ Extended methods (data structures, TTL, patterns) have async versions on the cac
 # Sync (on cache object directly)
 cache.hset("hash", "field", "value")
 
-# Async (on cache client -- note: client methods use raw/prefixed keys)
+# Async (on cache client; note that client methods take raw/prefixed keys)
 key = cache.make_and_validate_key("hash")
 await cache._cache.ahset(key, "field", "value")
 ```
 
 - `attl`, `apttl`, `aexpire`, `apexpire`, `aexpireat`, `apexpireat`, `apersist`
 - `akeys`, `aiter_keys`, `adelete_pattern`
-- `ahset`, `ahdel`, `ahexists`, `ahget`, `ahgetall`, `ahincrby`, `ahincrbyfloat`, `ahkeys`, `ahlen`, `ahmget`, `ahmset`, `ahsetnx`, `ahvals`
+- `ahset`, `ahdel`, `ahexists`, `ahget`, `ahgetall`, `ahincrby`, `ahincrbyfloat`, `ahkeys`, `ahlen`, `ahmget`, `ahsetnx`, `ahvals`
 - `asadd`, `asrem`, `asmembers`, `asismember`, `asmismember`, `ascard`, `aspop`, `asrandmember`, `asmove`, `asdiff`, `asdiffstore`, `asinter`, `asinterstore`, `asunion`, `asunionstore`
 - `azadd`, `azcard`, `azcount`, `azincrby`, `azrange`, `azrevrange`, `azrangebyscore`, `azrevrangebyscore`, `azrank`, `azrevrank`, `azrem`, `azremrangebyrank`, `azremrangebyscore`, `azscore`, `azmscore`, `azpopmin`, `azpopmax`
 - `allen`, `alpush`, `arpush`, `alpop`, `arpop`, `alindex`, `alrange`, `alset`, `altrim`, `alrem`, `alpos`, `almove`, `alinsert`, `ablpop`, `abrpop`, `ablmove`

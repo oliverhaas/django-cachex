@@ -143,6 +143,7 @@ class SyncCache(LocMemCache):
         # Non-blocking publish: single-worker executor serializes XADD calls
         # without blocking the calling thread on network I/O.
         self._publish_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sync-pub")
+        self._publish_executor_shutdown = False
 
         # Admin display: show stream key and transport alias as location
         self._cachex_location = f"stream:{self._stream_key} [transport: {self._transport_alias}]"
@@ -246,8 +247,9 @@ class SyncCache(LocMemCache):
 
     def _start_consumer(self) -> None:
         # Recreate executor if it was shut down (e.g. after shutdown() + reuse)
-        if self._publish_executor._shutdown:
+        if self._publish_executor_shutdown:
             self._publish_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sync-pub")
+            self._publish_executor_shutdown = False
         if self._replay_count > 0:
             self._replay_stream(self._replay_count)
         self._stop_event.clear()
@@ -408,6 +410,7 @@ class SyncCache(LocMemCache):
             self._initialized = False
             self._stop_event.clear()
         self._publish_executor.shutdown(wait=True, cancel_futures=False)
+        self._publish_executor_shutdown = True
 
     # -- Standard Django cache interface (LocMemCache + stream sync) --
 
@@ -555,7 +558,7 @@ class SyncCache(LocMemCache):
         made_key = self.make_and_validate_key(key, version=version)
         with self._lock:
             if made_key not in self._cache or self._has_expired(made_key):
-                return 0
+                return -2
             exp = self._expire_info.get(made_key)
             if exp is None:
                 return None
@@ -567,7 +570,7 @@ class SyncCache(LocMemCache):
         made_key = self.make_and_validate_key(key, version=version)
         with self._lock:
             if made_key not in self._cache or self._has_expired(made_key):
-                return 0
+                return -2
             exp = self._expire_info.get(made_key)
             if exp is None:
                 return None

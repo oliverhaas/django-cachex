@@ -1,10 +1,10 @@
 # Async Support
 
-django-cachex implements Django's async cache methods (`aget`, `aset`, `adelete`, etc.) using native async clients from `redis.asyncio` and `valkey.asyncio`, providing true async operations without thread pool overhead.
+django-cachex implements Django's async cache methods (`aget`, `aset`, `adelete`, etc.) using native async clients from `redis.asyncio` and `valkey.asyncio`. There is no threadpool round-trip.
 
 ## Overview
 
-A single cache backend supports both sync and async operations simultaneously -- `cache.get()` and `await cache.aget()` work on the same backend with no separate configuration needed.
+A single cache backend serves both sync and async callers. `cache.get()` and `await cache.aget()` operate on the same backend with no separate configuration.
 
 ## Basic Usage
 

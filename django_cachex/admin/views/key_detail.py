@@ -526,7 +526,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             key_type = cache.type(key)
         with contextlib.suppress(Exception):
             ttl = cache.ttl(key)
-            if ttl >= 0:
+            if ttl is not None and ttl >= 0:
                 ttl_expires_at = timezone.now() + timedelta(seconds=ttl)
         # Get type-specific data for non-string types
         if key_type and key_type != KeyType.STRING:

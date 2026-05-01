@@ -25,8 +25,8 @@ if _REDIS_AVAILABLE:
     class RedisSentinelCache(KeyValueSentinelCache):
         """Django cache backend for Redis Sentinel high availability.
 
-        Provides automatic failover and service discovery via Redis Sentinel.
-        LOCATION should use the Sentinel service name as the hostname.
+        Failover and service discovery happen through Redis Sentinel; the
+        ``LOCATION`` hostname is the Sentinel service name.
         """
 
         _class = RedisSentinelCacheClient
@@ -49,8 +49,8 @@ if _VALKEY_AVAILABLE:
     class ValkeySentinelCache(KeyValueSentinelCache):
         """Django cache backend for Valkey Sentinel high availability.
 
-        Provides automatic failover and service discovery via Valkey Sentinel.
-        LOCATION should use the Sentinel service name as the hostname.
+        Failover and service discovery happen through Valkey Sentinel; the
+        ``LOCATION`` hostname is the Sentinel service name.
         """
 
         _class = ValkeySentinelCacheClient

@@ -25,13 +25,13 @@ from django.core.cache import cache
 
 cache.set("foo", "value", timeout=25)
 cache.ttl("foo")      # Returns 25
-cache.ttl("missing")  # Returns 0 (key doesn't exist)
+cache.ttl("missing")  # Returns -2 (key doesn't exist)
 ```
 
 Returns:
 
-- `0` - Key doesn't exist or already expired
-- `None` - Key exists but has no expiration
+- `-2` - Key doesn't exist or already expired
+- `None` - Key exists but has no expiration (set with `timeout=None`)
 - `int` - Seconds until expiration
 
 ### Get TTL in Milliseconds
@@ -163,7 +163,7 @@ from django.core.cache import cache
 cache.hset("user:1", "name", "Alice")
 
 # Set multiple fields at once
-cache.hmset("user:1", {"email": "alice@example.com", "age": 30})
+cache.hset("user:1", mapping={"email": "alice@example.com", "age": 30})
 
 # Get a single field
 name = cache.hget("user:1", "name")  # "Alice"
