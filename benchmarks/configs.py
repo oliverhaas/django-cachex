@@ -106,7 +106,7 @@ COMPRESSOR_CONFIGS: tuple[CompressorConfig, ...] = (
     CompressorConfig(id="gzip", dotted_path="django_cachex.compressors.gzip.GzipCompressor"),
     CompressorConfig(id="lzma", dotted_path="django_cachex.compressors.lzma.LzmaCompressor"),
     CompressorConfig(id="lz4", dotted_path="django_cachex.compressors.lz4.Lz4Compressor"),
-    CompressorConfig(id="zstd", dotted_path="django_cachex.compressors.zstd.ZStdCompressor"),
+    CompressorConfig(id="zstd", dotted_path="django_cachex.compressors.zstd.ZstdCompressor"),
 )
 
 

@@ -1,25 +1,20 @@
 import lzma
-from typing import Any
 
 from django_cachex.compressors.base import BaseCompressor
-from django_cachex.exceptions import CompressorError
 
 
 class LzmaCompressor(BaseCompressor):
-    """LZMA compressor with configurable preset level."""
+    """LZMA compressor with configurable compression level (``preset`` in lzma terms)."""
 
-    preset: int = 4
+    level: int = 4
 
-    def __init__(self, *, preset: int | None = None, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        if preset is not None:
-            self.preset = preset
+    def __init__(self, *, level: int | None = None, min_length: int | None = None) -> None:
+        super().__init__(min_length=min_length)
+        if level is not None:
+            self.level = level
 
     def _compress(self, data: bytes) -> bytes:
-        return lzma.compress(data, preset=self.preset)
+        return lzma.compress(data, preset=self.level)
 
-    def decompress(self, data: bytes) -> bytes:
-        try:
-            return lzma.decompress(data)
-        except Exception as e:
-            raise CompressorError from e
+    def _decompress(self, data: bytes) -> bytes:
+        return lzma.decompress(data)

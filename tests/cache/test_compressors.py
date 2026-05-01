@@ -6,7 +6,7 @@ from django_cachex.compressors.gzip import GzipCompressor
 from django_cachex.compressors.lz4 import Lz4Compressor
 from django_cachex.compressors.lzma import LzmaCompressor
 from django_cachex.compressors.zlib import ZlibCompressor
-from django_cachex.compressors.zstd import ZStdCompressor
+from django_cachex.compressors.zstd import ZstdCompressor
 from django_cachex.exceptions import CompressorError
 
 ALL_COMPRESSORS = [
@@ -14,7 +14,7 @@ ALL_COMPRESSORS = [
     Lz4Compressor,
     LzmaCompressor,
     ZlibCompressor,
-    ZStdCompressor,
+    ZstdCompressor,
 ]
 
 
@@ -90,3 +90,15 @@ class TestDecompressErrors:
     def test_invalid_data_raises_error(self, compressor):
         with pytest.raises(CompressorError):
             compressor.decompress(b"this is not compressed data!!")
+
+
+class TestCompressionLevel:
+    """Each compressor accepts a `level=` constructor arg."""
+
+    def test_custom_level(self, compressor):
+        cls = type(compressor)
+        custom = cls(level=1)
+        assert custom.level == 1
+        # Roundtrip still works at custom level.
+        data = b"abcdefghij" * 100
+        assert custom.decompress(custom.compress(data)) == data

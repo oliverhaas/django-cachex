@@ -18,7 +18,7 @@ COMPRESSORS = {
     "lz4": "django_cachex.compressors.lz4.Lz4Compressor",
     "lzma": "django_cachex.compressors.lzma.LzmaCompressor",
     "zlib": "django_cachex.compressors.zlib.ZlibCompressor",
-    "zstd": "django_cachex.compressors.zstd.ZStdCompressor",
+    "zstd": "django_cachex.compressors.zstd.ZstdCompressor",
 }
 
 # Available serializers (None means default pickle)

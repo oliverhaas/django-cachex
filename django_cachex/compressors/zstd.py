@@ -1,15 +1,20 @@
 from compression import zstd
 
 from django_cachex.compressors.base import BaseCompressor
-from django_cachex.exceptions import CompressorError
 
 
-class ZStdCompressor(BaseCompressor):
+class ZstdCompressor(BaseCompressor):
+    """Zstandard compressor with configurable compression level."""
+
+    level: int = 3
+
+    def __init__(self, *, level: int | None = None, min_length: int | None = None) -> None:
+        super().__init__(min_length=min_length)
+        if level is not None:
+            self.level = level
+
     def _compress(self, data: bytes) -> bytes:
-        return zstd.compress(data)
+        return zstd.compress(data, level=self.level)
 
-    def decompress(self, data: bytes) -> bytes:
-        try:
-            return zstd.decompress(data)
-        except Exception as e:
-            raise CompressorError from e
+    def _decompress(self, data: bytes) -> bytes:
+        return zstd.decompress(data)
