@@ -74,6 +74,20 @@ DRIVER_CONFIGS: tuple[DriverConfig, ...] = (
         options={},
         server="valkey",
     ),
+    # Django's official built-in Redis cache backend (added in Django 4.0,
+    # `django.core.cache.backends.redis.RedisCache`). Not to be confused with
+    # the third-party `jazzband/django-redis` package — that one ships under
+    # `django_redis.cache.RedisCache` and is unrelated.
+    #
+    # Useful as an external reference point: its `get_client()` instantiates
+    # a fresh `redis.Redis` per cache call, sharing only the pool. Makes it
+    # an interesting subject for our connection tracking.
+    DriverConfig(
+        id="django (builtin)",
+        backend="django.core.cache.backends.redis.RedisCache",
+        options={},
+        server="redis",
+    ),
 )
 
 

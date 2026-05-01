@@ -72,6 +72,9 @@ dev = [
   "testcontainers==4.14.2",
   "ty==0.0.32",
   "types-docker==7.1.0.20260409",
+  # ASGI benchmark only — granian (real ASGI server) + httpx (load gen)
+  "granian>=2.6,<3",
+  "httpx>=0.28,<0.29",
 ]
 docs = ["mkdocs==1.6.1", "mkdocs-material==9.7.6", "mike==2.2.0"]
 

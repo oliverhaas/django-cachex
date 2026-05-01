@@ -8,7 +8,14 @@ import pytest
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
 
-from benchmarks.runner import BenchmarkResult, MicroResult, format_micro_table, format_table
+from benchmarks.runner import (
+    AsgiResult,
+    BenchmarkResult,
+    MicroResult,
+    format_asgi_table,
+    format_micro_table,
+    format_table,
+)
 
 
 def _start(image: str) -> tuple[str, str]:
@@ -90,4 +97,25 @@ def micro_results() -> Iterator[_MicroResults]:
         print("COMPRESSOR MICRO SUMMARY")
         print("=" * 80)
         print(format_micro_table(sink.items))
+        print("=" * 80)
+
+
+class _AsgiResults:
+    def __init__(self) -> None:
+        self.items: list[AsgiResult] = []
+
+    def add(self, r: AsgiResult) -> None:
+        self.items.append(r)
+
+
+@pytest.fixture(scope="session")
+def asgi_results() -> Iterator[_AsgiResults]:
+    sink = _AsgiResults()
+    yield sink
+    if sink.items:
+        print()
+        print("=" * 80)
+        print("ASGI BENCHMARK SUMMARY")
+        print("=" * 80)
+        print(format_asgi_table(sink.items))
         print("=" * 80)
