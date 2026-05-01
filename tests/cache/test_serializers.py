@@ -6,9 +6,13 @@ from django.core.exceptions import ImproperlyConfigured
 from django_cachex.exceptions import SerializerError
 from django_cachex.serializers.json import JSONSerializer
 from django_cachex.serializers.msgpack import MessagePackSerializer
-from django_cachex.serializers.orjson import OrjsonSerializer
 from django_cachex.serializers.ormsgpack import OrMessagePackSerializer
 from django_cachex.serializers.pickle import PickleSerializer
+
+try:
+    from django_cachex.serializers.orjson import OrjsonSerializer
+except ImportError:
+    OrjsonSerializer = None  # type: ignore[assignment,misc]
 
 
 class TestJSONSerializer:
@@ -111,6 +115,7 @@ class TestOrMessagePackSerializer:
         assert decoded is None
 
 
+@pytest.mark.skipif(OrjsonSerializer is None, reason="orjson not installed")
 class TestOrjsonSerializer:
     def test_basic_roundtrip(self):
         serializer = OrjsonSerializer()

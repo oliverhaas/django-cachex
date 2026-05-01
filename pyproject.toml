@@ -58,7 +58,6 @@ dev = [
   "maturin==1.13.1",
   "msgpack==1.1.2",
   "ormsgpack==1.12.2",
-  "orjson==3.11.8",
   "mypy==1.20.2",
   "pre-commit==4.6.0",
   "pytest-asyncio==1.3.0",
@@ -213,6 +212,14 @@ unresolved-attribute = "ignore"
 invalid-argument-type = "ignore"
 # Tests patch timezone.now for expiry testing
 invalid-assignment = "ignore"
+
+# orjson is an opt-in extra (no cp314t wheel as of 3.11.8); ty mustn't fail
+# the local check when the package isn't installed in the dev venv.
+[[tool.ty.overrides]]
+include = ["django_cachex/serializers/orjson.py"]
+
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "settings.base"
