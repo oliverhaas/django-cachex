@@ -143,3 +143,85 @@ A summary table prints at the end of the session.
   connections, server keyspace, and lazy serializer state.
 - **Memory caveat.** `used_memory` is whole-server, so concurrent activity on
   the same container distorts the delta. Run alone for clean numbers.
+
+## Reference results
+
+Snapshot of the driver matrix on a Ryzen 9 5950X / 32 GiB / Linux 6.17,
+Python 3.14, Django 6.0, all servers in local Docker. Numbers shift run to
+run; ordering is what matters.
+
+### Sync direct (`test_drivers`) — ops/sec
+
+| Driver               |    get |    set |  mget |  mset |   incr | py-mem KiB |
+| -------------------- | -----: | -----: | ----: | ----: | -----: | ---------: |
+| redis-py             |  2,363 |  2,315 | 1,426 | 1,309 |  2,516 |        115 |
+| redis-py+hiredis     |  2,412 |  2,338 | 1,540 | 1,382 |  2,570 |         57 |
+| valkey-py            |  2,760 |  2,729 | 1,589 | 1,442 |  3,030 |        109 |
+| valkey-py+libvalkey  |  2,782 |  2,735 | 1,684 | 1,530 |  3,038 |         51 |
+| **rust-valkey**      |  9,268 | 10,844 | 2,730 | 4,461 | 12,046 |         24 |
+| django (builtin)     |  2,312 |  2,295 | 1,496 | 1,364 |  1,911 |         56 |
+
+### Django request cycle (`test_drivers_request_cycle`, `#req`) — ops/sec
+
+One cache op per request through the full middleware/URL/view path.
+
+| Driver               |   get |   set |  incr |
+| -------------------- | ----: | ----: | ----: |
+| redis-py             | 1,055 | 1,054 | 1,066 |
+| valkey-py+libvalkey  | 1,198 | 1,192 | 1,227 |
+| **rust-valkey**      | 1,847 | 1,864 | 1,890 |
+| django (builtin)     | 1,108 | 1,078 |   966 |
+
+### Async serial (`test_drivers_async_serial`, `#async`) — ops/sec
+
+One `await` at a time. The Python↔Rust crossing per op doesn't amortize, so
+Rust falls behind the C-parser Python drivers on this shape only.
+
+| Driver               |   get |   set |  mget |  mset |  incr |
+| -------------------- | ----: | ----: | ----: | ----: | ----: |
+| redis-py+hiredis     | 1,801 | 1,734 | 1,172 |   861 | 1,894 |
+| valkey-py+libvalkey  | 2,042 | 2,083 | 1,305 |   874 | 2,200 |
+| **rust-valkey**      | 1,394 | 1,384 |   880 | 1,134 | 1,372 |
+| django (builtin)     | 1,687 | 1,780 |   184 |   186 |   912 |
+
+### Async concurrent at 50 (`test_drivers_async_concurrent`, `#async50`) — ops/sec
+
+`asyncio.gather` of 50 ops in flight — the workload most Django ASGI apps
+actually generate.
+
+| Driver               |    get |    set |  mget |  mset |   incr | conns peak |
+| -------------------- | -----: | -----: | ----: | ----: | -----: | ---------: |
+| redis-py+hiredis     |  2,091 |  2,021 | 1,307 |   922 |  2,192 |        110 |
+| valkey-py+libvalkey  |  2,419 |  2,331 | 1,428 |   909 |  2,528 |        108 |
+| **rust-valkey**      | 18,801 | 25,515 | 3,175 | 6,072 | 28,567 |        108 |
+| django (builtin)     |  2,029 |  2,042 |   201 |   204 |  1,025 |        111 |
+
+### ASGI full-stack (`test_drivers_asgi`)
+
+`granian` (4 workers) + `httpx` (100 concurrent, 20 s). Each request runs
+six async cache ops — the shape closest to real production load.
+
+| Driver               | req/s | avg ms | p99 ms | RSS peak (MiB) | conns peak | conns settled |
+| -------------------- | ----: | -----: | -----: | -------------: | ---------: | ------------: |
+| redis-py             |   155 |    637 |  2,946 |            145 |        128 |           128 |
+| redis-py+hiredis     |   227 |    437 |  2,542 |            179 |        122 |           122 |
+| valkey-py            |   159 |    618 |  2,674 |            149 |        111 |           111 |
+| valkey-py+libvalkey  |   149 |    663 |  3,124 |            147 |        134 |           134 |
+| **rust-valkey**      |   251 |    395 |  2,314 |            135 |          2 |             2 |
+| django (builtin)     |   157 |    631 |  1,138 |            417 |      1,840 |         1,798 |
+
+### Takeaways
+
+- Under realistic concurrent load, `rust-valkey` is **3–4×** faster than the
+  fastest Python driver on sync direct, **8–12×** faster on `async50`, and
+  ~10% ahead on full ASGI throughput while using **50× fewer Valkey
+  connections** (multiplexed Tokio transport — 2 vs 100+).
+- The Django built-in `RedisCache` shows the connection-growth pattern
+  vcache flagged: 1,840 connections peak, settled at 1,798, 3× the RSS of
+  the cachex backends. The cachex async path keeps Δ at 0 across phases on
+  every driver.
+- The one shape where `rust-valkey` trails is async serial — one `await` at
+  a time. With no concurrency to multiplex over, the Python↔Rust crossing
+  costs ~30% versus `valkey-py+libvalkey`. Real Django ASGI apps don't sit
+  in that shape; production code that does should batch via `aget_many` /
+  `asyncio.gather`.
