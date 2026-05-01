@@ -1547,6 +1547,9 @@
 <li><strong><code>SyncCache</code> wire format changed.</strong> Stream entries now flow through the transport's serializer + compressor pipeline instead of raw pickle. Pods running the new code cannot read entries written by older pods on the same stream — coordinate the rollout (drain or rotate <code>STREAM_KEY</code>).</li>
 <li><strong><code>hmset</code> removed.</strong> Use <code>hset(key, mapping=...)</code> or <code>hset(key, items=...)</code> (flat key-value list, matching redis-py/valkey-py).</li>
 <li><strong><code>django_cachex.unfold</code> removed.</strong> The django-unfold theme variant of the admin is gone, along with the <code>[unfold]</code> extra and <code>examples/unfold/</code>. Plain <code>django_cachex.admin</code> remains. Unfold support may return as a thin theme override once the core admin app stabilises.</li>
+<li><strong><code>ZStdCompressor</code> renamed to <code>ZstdCompressor</code></strong> (<code>django_cachex.compressors.zstd.ZstdCompressor</code>). Update <code>OPTIONS["compressor"]</code> strings.</li>
+<li><strong><code>LzmaCompressor</code> constructor <code>preset=</code> renamed to <code>level=</code></strong> for consistency with the other compressors. All compressors now accept <code>level=</code> (mapped to the underlying library's native parameter).</li>
+<li><strong><code>PickleSerializer</code> no longer raises <code>ImproperlyConfigured</code> for <code>protocol &gt; pickle.HIGHEST_PROTOCOL</code></strong>; pickle's own <code>ValueError</code> propagates at first dumps call (wrapped as <code>SerializerError</code>).</li>
 </ul>
 <h3 id="new-features">New features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h3>
 <ul>
@@ -1560,6 +1563,8 @@
 <li><strong>PyPI wheels via cibuildwheel.</strong> Manylinux x86_64 wheels for cp314 and cp314t.</li>
 <li><strong>Async pool sharing.</strong> A single async connection pool is shared across per-task <code>Cache</code> instances (#83), avoiding the thundering-herd reconnect on cold start.</li>
 <li><strong>Pipeline parity.</strong> Stream ops, CAS ops, missing key ops (<code>persist</code>/<code>pttl</code>/<code>expire_at</code>/etc.), context manager, <code>zpopmin</code>/<code>zpopmax</code> default <code>count=1</code> aligned with the cache API.</li>
+<li><strong>Compressors gain a uniform <code>level=</code> parameter</strong> (gzip, lz4, zstd join zlib/lzma in exposing it). Defaults match each library's own default.</li>
+<li><strong>Serializer/compressor wrappers consolidated.</strong> Subclasses now implement <code>_dumps</code>/<code>_loads</code> (serializers) or <code>_compress</code>/<code>_decompress</code> (compressors); the base classes wrap the boilerplate (<code>SerializerError</code> / <code>CompressorError</code> translation, int-passthrough on loads).</li>
 </ul>
 <h3 id="fixes">Fixes<a class="headerlink" href="#fixes" title="Permanent link">&para;</a></h3>
 <ul>
