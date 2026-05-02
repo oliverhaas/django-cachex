@@ -1780,7 +1780,7 @@
 </tbody>
 </table>
 <h3 id="valkey-redis-rust-driver">Valkey / Redis (Rust driver)<a class="headerlink" href="#valkey-redis-rust-driver" title="Permanent link">&para;</a></h3>
-<p>Same wire-level features as the Python driver, dispatched through the optional <code>django-cachex-rust</code> extension (PyO3 + tokio + redis-rs). Sync and async share one tokio runtime, so async paths skip the asgiref threadpool round-trip. Install via the <code>redis-rs</code> extra.</p>
+<p>Same wire-level features as the Python driver, dispatched through the optional <code>django-cachex-redis-rs</code> extension (PyO3 + tokio + redis-rs). Sync and async share one tokio runtime, so async paths skip the asgiref threadpool round-trip. Install via the <code>redis-rs</code> extra.</p>
 <table>
 <thead>
 <tr>
@@ -1790,27 +1790,27 @@
 </thead>
 <tbody>
 <tr>
-<td><code>RustValkeyCache</code></td>
+<td><code>RedisRsValkeyCache</code></td>
 <td>Standard Valkey connection</td>
 </tr>
 <tr>
-<td><code>RustRedisCache</code></td>
+<td><code>RedisRsValkeyCache</code></td>
 <td>Standard Redis connection</td>
 </tr>
 <tr>
-<td><code>RustValkeySentinelCache</code></td>
+<td><code>RedisRsValkeySentinelCache</code></td>
 <td>Valkey Sentinel high availability</td>
 </tr>
 <tr>
-<td><code>RustRedisSentinelCache</code></td>
+<td><code>RedisRsValkeySentinelCache</code></td>
 <td>Redis Sentinel high availability</td>
 </tr>
 <tr>
-<td><code>RustValkeyClusterCache</code></td>
+<td><code>RedisRsValkeyClusterCache</code></td>
 <td>Valkey Cluster sharding</td>
 </tr>
 <tr>
-<td><code>RustRedisClusterCache</code></td>
+<td><code>RedisRsValkeyClusterCache</code></td>
 <td>Redis Cluster sharding</td>
 </tr>
 </tbody>
@@ -2020,7 +2020,7 @@ selected by your <code>BACKEND</code>. Each cache class has a fixed adapter:</p>
 <td>valkey-py</td>
 </tr>
 <tr>
-<td><code>django_cachex.cache.RustValkeyCache</code></td>
+<td><code>django_cachex.cache.RedisRsValkeyCache</code></td>
 <td>Rust driver</td>
 </tr>
 <tr>

@@ -1059,9 +1059,9 @@
 </span></code></pre></div>
 <p>These provide C-based parsers that improve protocol parsing throughput on the hot read path.</p>
 <h2 id="rust-io-driver-optional">Rust I/O driver (optional)<a class="headerlink" href="#rust-io-driver-optional" title="Permanent link">&para;</a></h2>
-<p>The <code>RustValkeyCache</code> / <code>RustRedisCache</code> backends are powered by an
+<p>The <code>RedisRsValkeyCache</code> backends are powered by an
 opt-in native extension built on PyO3 + tokio + <a href="https://github.com/redis-rs/redis-rs">redis-rs</a>. It ships as
-a separate package, <code>django-cachex-rust</code>, so users who only want the
+a separate package, <code>django-cachex-redis-rs</code>, so users who only want the
 pure-Python backends never carry the binary.</p>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="gp"># </span>Pure<span class="w"> </span>Python<span class="w"> </span><span class="o">(</span>default<span class="p">;</span><span class="w"> </span>no<span class="w"> </span>Rust<span class="w"> </span>binary<span class="o">)</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="go">uv add django-cachex[valkey]</span>
@@ -1069,11 +1069,11 @@ pure-Python backends never carry the binary.</p>
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="gp"># </span>With<span class="w"> </span>the<span class="w"> </span>Rust<span class="w"> </span>I/O<span class="w"> </span>driver
 </span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="go">uv add django-cachex[valkey,redis-rs]</span>
 </span></code></pre></div>
-<p>Prebuilt <code>django-cachex-rust</code> wheels are published for Linux x86_64,
+<p>Prebuilt <code>django-cachex-redis-rs</code> wheels are published for Linux x86_64,
 Linux aarch64, macOS arm64, and Windows amd64 on both cp314 and cp314t.
 On other platforms pip will try to build from source, which needs the
 Rust toolchain. Drop the <code>redis-rs</code> extra to avoid that.</p>
-<p>When the binary isn't installed, <code>RustValkeyCache</code> / <code>RustRedisCache</code>
+<p>When the binary isn't installed, <code>RedisRsValkeyCache</code>
 classes are still importable but raise a clean <code>ImportError</code> on first
 use, naming the extra you need.</p>
 
