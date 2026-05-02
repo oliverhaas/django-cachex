@@ -38,10 +38,10 @@ if TYPE_CHECKING:
 # raises at backend instantiation time with an actionable message rather
 # than at module import time. Mirrors the pattern in ``_rust_clients``.
 try:
-    from glide import GlideClient as AsyncGlideClient
-    from glide import GlideClientConfiguration as AsyncGlideClientConfiguration
-    from glide import NodeAddress as AsyncNodeAddress
-    from glide_sync import (
+    from glide import GlideClient as AsyncGlideClient  # ty: ignore[unresolved-import]
+    from glide import GlideClientConfiguration as AsyncGlideClientConfiguration  # ty: ignore[unresolved-import]
+    from glide import NodeAddress as AsyncNodeAddress  # ty: ignore[unresolved-import]
+    from glide_sync import (  # ty: ignore[unresolved-import]
         Batch,
         ConditionalChange,
         ExpirySet,
@@ -50,11 +50,18 @@ try:
         GlideClientConfiguration,
         NodeAddress,
     )
-    from glide_sync.glide_client import GlideClient
+    from glide_sync.glide_client import GlideClient  # ty: ignore[unresolved-import]
 except ImportError as _exc:
     _GLIDE_IMPORT_ERROR: ImportError | None = _exc
 else:
     _GLIDE_IMPORT_ERROR = None
+
+
+# `set` is shadowed inside the cache-client class scope by the cache `set`
+# method, so a bare ``-> set[Any]`` return annotation resolves to that
+# method instead of the builtin. Alias here so annotations can refer to
+# the type unambiguously.
+_BuiltinSet = set
 
 
 def _check_installed() -> None:
@@ -1007,7 +1014,7 @@ class ValkeyGlideCacheClient(KeyValueCacheClient):
     def srem(self, key: KeyT, *members: Any) -> int:
         return self._client().srem(key, [_enc(self.encode(m)) for m in members])
 
-    def smembers(self, key: KeyT) -> set:
+    def smembers(self, key: KeyT) -> _BuiltinSet[Any]:
         return {self.decode(m) for m in self._client().smembers(key)}
 
     def sismember(self, key: KeyT, member: Any) -> bool:
@@ -1036,13 +1043,13 @@ class ValkeyGlideCacheClient(KeyValueCacheClient):
     def smove(self, src: KeyT, dst: KeyT, member: Any) -> bool:
         return bool(self._client().smove(src, dst, _enc(self.encode(member))))
 
-    def sinter(self, *keys: KeyT) -> set:
+    def sinter(self, *keys: KeyT) -> _BuiltinSet[Any]:
         return {self.decode(m) for m in self._client().sinter(list(keys))}
 
-    def sunion(self, *keys: KeyT) -> set:
+    def sunion(self, *keys: KeyT) -> _BuiltinSet[Any]:
         return {self.decode(m) for m in self._client().sunion(list(keys))}
 
-    def sdiff(self, *keys: KeyT) -> set:
+    def sdiff(self, *keys: KeyT) -> _BuiltinSet[Any]:
         return {self.decode(m) for m in self._client().sdiff(list(keys))}
 
     def sinterstore(self, dst: KeyT, *keys: KeyT) -> int:
@@ -1345,7 +1352,7 @@ class ValkeyGlideCacheClient(KeyValueCacheClient):
     # =========================================================================
 
     def info(self, section: str | None = None) -> dict[str, Any]:
-        args = [b"INFO"]
+        args: list[bytes | str] = [b"INFO"]
         if section:
             args.append(_enc(section))
         result = self._client().custom_command(args)
@@ -1722,7 +1729,7 @@ class ValkeyGlideCacheClient(KeyValueCacheClient):
     async def asrem(self, key: KeyT, *members: Any) -> int:
         return await (await self._aclient()).srem(key, [_enc(self.encode(m)) for m in members])
 
-    async def asmembers(self, key: KeyT) -> set:
+    async def asmembers(self, key: KeyT) -> _BuiltinSet[Any]:
         return {self.decode(m) for m in await (await self._aclient()).smembers(key)}
 
     async def asismember(self, key: KeyT, member: Any) -> bool:
@@ -1751,13 +1758,13 @@ class ValkeyGlideCacheClient(KeyValueCacheClient):
     async def asmove(self, src: KeyT, dst: KeyT, member: Any) -> bool:
         return bool(await (await self._aclient()).smove(src, dst, _enc(self.encode(member))))
 
-    async def asinter(self, *keys: KeyT) -> set:
+    async def asinter(self, *keys: KeyT) -> _BuiltinSet[Any]:
         return {self.decode(m) for m in await (await self._aclient()).sinter(list(keys))}
 
-    async def asunion(self, *keys: KeyT) -> set:
+    async def asunion(self, *keys: KeyT) -> _BuiltinSet[Any]:
         return {self.decode(m) for m in await (await self._aclient()).sunion(list(keys))}
 
-    async def asdiff(self, *keys: KeyT) -> set:
+    async def asdiff(self, *keys: KeyT) -> _BuiltinSet[Any]:
         return {self.decode(m) for m in await (await self._aclient()).sdiff(list(keys))}
 
     async def asinterstore(self, dst: KeyT, *keys: KeyT) -> int:
