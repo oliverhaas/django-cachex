@@ -1,10 +1,8 @@
 """Django cache backends backed by the Rust ``RustValkeyDriver``.
 
-These backends extend :class:`KeyValueCache` and only differ from the
-existing pure-Python backends in their ``_class`` attribute — every
-high-level cache method is inherited unchanged. Users opt in via Django's
-``CACHES["default"]["BACKEND"]`` setting; the existing
-``ValkeyCache`` / ``RedisCache`` etc. continue to work side by side.
+Each subclass differs from the corresponding pure-Python backend only in its
+``_class`` attribute; every high-level cache method is inherited unchanged.
+Users opt in via ``CACHES["default"]["BACKEND"]``.
 """
 
 from __future__ import annotations

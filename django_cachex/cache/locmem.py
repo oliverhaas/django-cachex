@@ -22,6 +22,7 @@ from __future__ import annotations
 import fnmatch
 import threading
 import time
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from django.core.cache.backends.locmem import LocMemCache as DjangoLocMemCache
@@ -54,6 +55,14 @@ class LocMemCache(CachexMixin, DjangoLocMemCache):
 
     _cachex_support: str = "cachex"
 
+    # Type-only declarations for attributes Django's BaseCache + LocMemCache
+    # set in __init__ but don't surface in stubs.
+    if TYPE_CHECKING:
+        _cache: dict[str, Any]
+        _expire_info: dict[str, float | None]
+        _max_entries: int
+        _cull_frequency: int
+
     def __init__(self, name: str, params: dict[str, Any]) -> None:
         super().__init__(name, params)
         # Per-name reentrant lock so concurrent compound ops serialize.
@@ -76,11 +85,11 @@ class LocMemCache(CachexMixin, DjangoLocMemCache):
 
     def _get_internal_cache(self) -> dict[str, Any]:
         """Access the internal cache dictionary of LocMemCache."""
-        return getattr(self, "_cache", {})
+        return self._cache
 
     def _get_expire_info(self) -> dict[str, float | None]:
         """Access the internal expiry info dictionary."""
-        return getattr(self, "_expire_info", {})
+        return self._expire_info
 
     # =========================================================================
     # TTL Operations
@@ -105,8 +114,6 @@ class LocMemCache(CachexMixin, DjangoLocMemCache):
 
     def expire(self, key: KeyT, timeout: ExpiryT, version: int | None = None) -> bool:
         """Set the TTL of a key."""
-        from datetime import timedelta
-
         internal_key = self.make_key(str(key), version=version)
         internal_cache = self._get_internal_cache()
         if internal_key not in internal_cache:
@@ -171,8 +178,8 @@ class LocMemCache(CachexMixin, DjangoLocMemCache):
             total_size += sum(_deep_getsizeof(k) for k in internal_cache)
         except Exception:  # noqa: BLE001
             total_size = 0
-        max_entries = getattr(self, "_max_entries", 300)
-        cull_frequency = getattr(self, "_cull_frequency", 3)
+        max_entries = self._max_entries
+        cull_frequency = self._cull_frequency
         return {
             "backend": "LocMemCache",
             "server": {

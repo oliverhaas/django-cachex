@@ -188,32 +188,26 @@ class DatabaseCache(CachexMixin, DjangoDatabaseCache):
     # =========================================================================
 
     def info(self, section: str | None = None) -> dict[str, Any]:
-        """Get DatabaseCache info in structured format."""
+        """Get DatabaseCache info in Redis-INFO-shaped format for admin uniformity."""
         conn = self._get_connection()
         table = self._get_table_name()
         quoted = conn.ops.quote_name(table)
 
-        total_count: int | str = 0
-        active_count: int | str = 0
-        expired_count: int | str = 0
-
+        total_count = 0
+        active_count = 0
         try:
             with conn.cursor() as cursor:
                 cursor.execute(f"SELECT COUNT(*) FROM {quoted}")  # noqa: S608
                 total_count = cursor.fetchone()[0]
-
                 now_adapted = _adapt_dt(conn, _now())
                 cursor.execute(
                     f"SELECT COUNT(*) FROM {quoted} WHERE expires > %s",  # noqa: S608
                     [now_adapted],
                 )
                 active_count = cursor.fetchone()[0]
-                expired_count = (
-                    total_count - active_count if isinstance(total_count, int) and isinstance(active_count, int) else 0
-                )
-        except Exception:  # noqa: BLE001
-            total_count = "error"
-            active_count = "error"
+        except Exception:  # noqa: BLE001, S110
+            # Don't crash the admin if a query fails; return zeros.
+            pass
 
         return {
             "backend": "DatabaseCache",
@@ -223,11 +217,11 @@ class DatabaseCache(CachexMixin, DjangoDatabaseCache):
             },
             "keyspace": {
                 "db0": {
-                    "keys": active_count if active_count != "error" else 0,
-                    "expires": active_count if active_count != "error" else 0,
+                    "keys": active_count,
+                    "expires": active_count,
                 },
             },
             "stats": {
-                "expired_keys": expired_count,
+                "expired_keys": total_count - active_count,
             },
         }
