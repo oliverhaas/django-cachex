@@ -14,6 +14,7 @@ from django_cachex.cache.default import (
     RedisCache,
     ValkeyCache,
 )
+from django_cachex.cache.glide import ValkeyGlideCache
 from django_cachex.cache.locmem import LocMemCache
 from django_cachex.cache.mixin import CachexMixin
 from django_cachex.cache.rust import (
@@ -52,5 +53,6 @@ __all__ = [
     "TieredCache",
     "ValkeyCache",
     "ValkeyClusterCache",
+    "ValkeyGlideCache",
     "ValkeySentinelCache",
 ]

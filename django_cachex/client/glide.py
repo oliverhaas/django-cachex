@@ -22,20 +22,6 @@ import asyncio
 from typing import TYPE_CHECKING, Any, Self
 from urllib.parse import urlparse
 
-from glide import GlideClient as AsyncGlideClient
-from glide import GlideClientConfiguration as AsyncGlideClientConfiguration
-from glide import NodeAddress as AsyncNodeAddress
-from glide_sync import (
-    Batch,
-    ConditionalChange,
-    ExpirySet,
-    ExpiryType,
-    FlushMode,
-    GlideClientConfiguration,
-    NodeAddress,
-)
-from glide_sync.glide_client import GlideClient
-
 from django_cachex.client.default import KeyValueCacheClient
 from django_cachex.types import KeyType
 
@@ -44,6 +30,41 @@ if TYPE_CHECKING:
 
     from django_cachex.client.pipeline import Pipeline
     from django_cachex.types import KeyT
+
+
+# valkey-glide is an optional install. The names below are unbound when it
+# isn't available; method bodies that reference them only run at runtime
+# after ``_check_installed`` has gated construction, so a missing install
+# raises at backend instantiation time with an actionable message rather
+# than at module import time. Mirrors the pattern in ``_rust_clients``.
+try:
+    from glide import GlideClient as AsyncGlideClient
+    from glide import GlideClientConfiguration as AsyncGlideClientConfiguration
+    from glide import NodeAddress as AsyncNodeAddress
+    from glide_sync import (
+        Batch,
+        ConditionalChange,
+        ExpirySet,
+        ExpiryType,
+        FlushMode,
+        GlideClientConfiguration,
+        NodeAddress,
+    )
+    from glide_sync.glide_client import GlideClient
+except ImportError as _exc:
+    _GLIDE_IMPORT_ERROR: ImportError | None = _exc
+else:
+    _GLIDE_IMPORT_ERROR = None
+
+
+def _check_installed() -> None:
+    if _GLIDE_IMPORT_ERROR is not None:
+        msg = (
+            "valkey-glide is not installed. Install with the `valkey-glide` "
+            "extra: pip install django-cachex[valkey-glide]. This pulls in "
+            "both `valkey-glide-sync` (sync API) and `valkey-glide` (async API)."
+        )
+        raise ImportError(msg) from _GLIDE_IMPORT_ERROR
 
 
 # =============================================================================
@@ -632,6 +653,7 @@ class ValkeyGlideCacheClient(KeyValueCacheClient):
     _async_pool_class: Any = None
 
     def __init__(self, servers: list[str], **options: Any) -> None:
+        _check_installed()
         super().__init__(servers, **options)
         self._sync_glide_client: GlideClient | None = None
         self._async_glide_clients: dict[int, AsyncGlideClient] = {}
