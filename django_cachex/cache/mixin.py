@@ -48,31 +48,21 @@ def _compound_op(method: Callable[..., Any]) -> Callable[..., Any]:
 
 
 class CachexMixin(BaseCacheExtensions):
-    """Mixin providing cachex extension methods for any BaseCache subclass.
+    """Cachex extension methods for any BaseCache subclass.
 
-    Add this as a parent class alongside a Django cache backend to get:
-    - Data structure operations (lists, sets, hashes, sorted sets)
-    - Type detection
-    - Admin support markers (``_cachex_support``)
-    - Default ``scan()`` built on ``keys()``
-
-    Inherits from ``BaseCacheExtensions``, which provides the full method
-    surface as ``raise NotSupportedError`` defaults — this class overrides
-    only the operations it implements via get/set on Python objects.
-
+    Adds data structure ops (lists, sets, hashes, sorted sets), type
+    detection, admin markers, and a default ``scan()`` built on ``keys()``.
     Subclasses should implement ``ttl()``, ``expire()``, ``persist()``,
     ``info()``, and ``keys()`` for full admin support.
 
-    **Limitations:**
-
-    - **Thread safety:** Compound read-modify-write ops (``lpush``, ``sadd``,
-      ``hset``, ``hincrby``, ``zadd``, …) are wrapped in
-      ``self._compound_op_lock()``, which defaults to a no-op. Subclasses
-      with thread-safe locking primitives (e.g. ``LocMemCache``, which has
-      ``self._lock``) should override the hook to make these ops atomic.
-    - **Type detection:** ``type()`` inspects the stored Python value. Sorted
-      sets (stored as ``dict[Any, float]``) are indistinguishable from hashes
-      (``dict[str, Any]``) when the sorted set has string keys.
+    Limitations:
+    - Compound read-modify-write ops (``lpush``/``sadd``/``hset``/etc.) are
+      wrapped in ``self._compound_op_lock()``, which defaults to a no-op.
+      Subclasses with locking primitives should override the hook to make
+      these ops atomic (``LocMemCache`` does so via its own ``RLock``).
+    - ``type()`` inspects the stored Python value, so sorted sets stored
+      as ``dict[Any, float]`` with string members are indistinguishable
+      from hashes.
     """
 
     _cachex_support = "wrapped"

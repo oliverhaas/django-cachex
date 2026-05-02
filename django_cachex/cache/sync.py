@@ -26,19 +26,19 @@ Configuration::
         },
     }
 
-``TRANSPORT`` is the alias of any cachex ``KeyValueCache`` subclass — pure-Python
-or Rust-driver-backed — used for stream I/O.
+``TRANSPORT`` is the alias of any cachex ``KeyValueCache`` subclass (pure-Python
+or Rust-driver-backed) used for stream I/O.
 ``STREAM_KEY`` is the Redis Stream key shared by all pods (default ``cache:sync``).
 ``MAXLEN`` caps stream length via approximate trimming (default 10000).
 ``BLOCK_TIMEOUT`` is the XREAD BLOCK timeout in milliseconds (default 1000).
 ``REPLAY`` is the number of recent stream entries to replay on startup to
-warm the local cache (default 0 = no replay). Values up to ``MAXLEN`` are
-useful — e.g. ``1000`` replays the last 1000 mutations so a restarting pod
-doesn't start with an empty cache.
+warm the local cache (default 0 = no replay). Values up to ``MAXLEN`` work;
+``1000`` replays the last 1000 mutations so a restarting pod doesn't start
+with an empty cache.
 
-**Wire format:** stream fields go through the *transport* cache's high-level
+Wire format: stream fields go through the transport cache's high-level
 ``xadd``/``xread``/``xrevrange`` methods, which apply its configured serializer
-and compressor end-to-end. So if the transport is configured with
+and compressor end-to-end. If the transport is configured with
 ``OPTIONS={"serializer": "msgpack", "compressor": "zstd"}``, stream entries
 are msgpack-then-zstd. All pods sharing one ``STREAM_KEY`` must use the same
 transport ``BACKEND`` + ``OPTIONS`` so their serializers agree.
@@ -75,21 +75,19 @@ logger = logging.getLogger(__name__)
 class SyncCache(LocMemCache):
     """Stream-synchronized in-memory cache.
 
-    Extends Django's ``LocMemCache`` with cross-pod synchronization. All reads
-    are local dict lookups (inherited from ``LocMemCache``). Writes update
-    the local dict and publish to a Redis Stream via the transport cache's
-    high-level ``xadd``. A daemon thread consumes the stream via ``xread``
-    and applies remote changes. All supported operations are
-    **eventually consistent** (last-writer-wins).
+    Extends Django's ``LocMemCache`` with cross-pod synchronization. Reads are
+    local dict lookups (inherited from ``LocMemCache``). Writes update the
+    local dict and publish to a Redis Stream via the transport cache's
+    ``xadd``. A daemon thread consumes the stream via ``xread`` and applies
+    remote changes. Supported operations are eventually consistent
+    (last-writer-wins).
 
-    **Unsupported operations**: ``add``, ``incr``, and ``decr`` raise
-    ``NotSupportedError``. These have semantics (atomic check-and-set,
-    atomic increment) that cannot be provided with eventual consistency.
-    Use the transport cache directly for these.
+    ``add``, ``incr``, and ``decr`` raise ``NotSupportedError``: their
+    semantics (atomic check-and-set, atomic increment) can't be provided
+    with eventual consistency. Use the transport cache directly for these.
 
-    **Fail-safe**: The consumer thread is automatically restarted if it dies.
-    Use ``info()["sync"]`` to monitor consumer health, last read age, and
-    stream position.
+    The consumer thread is restarted if it dies; use ``info()["sync"]`` to
+    monitor consumer health, last read age, and stream position.
     """
 
     _cachex_support: str = "cachex"
@@ -526,7 +524,7 @@ class SyncCache(LocMemCache):
         self._publish("clear")
 
     def close(self, **kwargs: Any) -> None:
-        """No-op: consumer thread persists across requests (daemon=True for cleanup)."""
+        """No-op. Use ``shutdown()`` to stop the consumer thread + publish executor."""
 
     # -- Admin methods (local implementations for fast reads) --
 

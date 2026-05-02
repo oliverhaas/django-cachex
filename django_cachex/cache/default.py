@@ -782,9 +782,9 @@ class KeyValueCache(BaseCache):
     def flush_db(self) -> bool:
         """Flush the entire Redis database (``FLUSHDB``).
 
-        **Danger:** This removes *all* keys in the database, not just those
-        belonging to this cache. Only use when this cache has a dedicated
-        Redis database.
+        Removes all keys in the database, not just those belonging to this
+        cache. Only use when this cache has a dedicated Redis database;
+        otherwise use ``clear()``.
         """
         return self._cache.clear()
 

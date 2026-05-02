@@ -45,7 +45,7 @@ from django_cachex.exceptions import NotSupportedError
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
-    from django_cachex.types import KeyT
+    from django_cachex.types import ExpiryT, KeyT
 
 # Sentinel to distinguish "not in L1" from a stored None
 _L1_MISS = object()
@@ -401,7 +401,7 @@ class TieredCache(BaseCache):
     def persist(self, key: KeyT, version: int | None = None) -> bool:
         return self._delegate("persist", key, version=version)
 
-    def expire(self, key: KeyT, timeout: int, version: int | None = None) -> bool:
+    def expire(self, key: KeyT, timeout: ExpiryT, version: int | None = None) -> bool:
         self._l1.delete(key, version=version)
         return self._delegate("expire", key, timeout, version=version)
 
