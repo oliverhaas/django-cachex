@@ -43,7 +43,7 @@ _RUST_RAW_CLIENT_PROBE_NODES: tuple[str, ...] = (
 # which doesn't expose those concepts.
 _PY_INTERNALS_TEST_FILES: frozenset[str] = frozenset(
     {
-        "test_django_cachex_internals.py",
+        "test_internals.py",
         "test_client.py",
         "test_replica.py",
     },
