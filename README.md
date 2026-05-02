@@ -78,9 +78,11 @@ Full documentation at [oliverhaas.github.io/django-cachex](https://oliverhaas.gi
 
 The Rust I/O driver is optional. To opt in, install with the `redis-rs`
 extra (`pip install django-cachex[redis-rs]`); this pulls in the
-`django-cachex-rust` companion package, which has prebuilt wheels for
-Linux x86_64 (cp314 / cp314t). Without it, the `RustValkeyCache` /
-`RustRedisCache` backends are unavailable but everything else works.
+`django-cachex-rust` companion package. Prebuilt wheels are published
+for Linux x86_64, Linux aarch64, macOS arm64, and Windows amd64, on
+both cp314 and cp314t (free-threaded). Without the extra, the
+`RustValkeyCache` / `RustRedisCache` backends are unavailable but
+everything else works.
 
 ## Acknowledgments
 

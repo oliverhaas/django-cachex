@@ -405,8 +405,6 @@ def run_benchmark(  # noqa: PLR0915 — phase-by-phase flow is the readable shap
             _bench_incr(cache, 100)
             _bench_delete(cache, 100)
 
-            before_used = _server_used_memory(info_client) or 0
-
             # Record baseline connection count after warmup but before any timed
             # phases, so per-phase samples reveal what the workload itself opens.
             baseline_conns = _server_connections(info_client)
@@ -462,8 +460,6 @@ def run_benchmark(  # noqa: PLR0915 — phase-by-phase flow is the readable shap
                 )
 
             _flush_cache(cache)
-            # Avoid reporting startup churn — record absolute used_memory once at end.
-            _ = before_used
     finally:
         info_client.close()
 
