@@ -1353,23 +1353,25 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         return decoded
 
     @override
-    def zpopmin(self, key: KeyT, count: int = 1) -> list[tuple[Any, float]]:
-        raw = self._driver.zpopmin(_str_key(key), count)
+    def zpopmin(self, key: KeyT, count: int | None = None) -> list[tuple[Any, float]]:
+        # Rust driver wants a concrete i64; default-None semantics ("return one")
+        # are encoded as count=1 here, mirroring redis-py's no-count call shape.
+        raw = self._driver.zpopmin(_str_key(key), 1 if count is None else count)
         return [(self.decode(m), float(s)) for m, s in raw]
 
     @override
-    async def azpopmin(self, key: KeyT, count: int = 1) -> list[tuple[Any, float]]:
-        raw = await self._driver.azpopmin(_str_key(key), count)
+    async def azpopmin(self, key: KeyT, count: int | None = None) -> list[tuple[Any, float]]:
+        raw = await self._driver.azpopmin(_str_key(key), 1 if count is None else count)
         return [(self.decode(m), float(s)) for m, s in raw]
 
     @override
-    def zpopmax(self, key: KeyT, count: int = 1) -> list[tuple[Any, float]]:
-        raw = self._driver.zpopmax(_str_key(key), count)
+    def zpopmax(self, key: KeyT, count: int | None = None) -> list[tuple[Any, float]]:
+        raw = self._driver.zpopmax(_str_key(key), 1 if count is None else count)
         return [(self.decode(m), float(s)) for m, s in raw]
 
     @override
-    async def azpopmax(self, key: KeyT, count: int = 1) -> list[tuple[Any, float]]:
-        raw = await self._driver.azpopmax(_str_key(key), count)
+    async def azpopmax(self, key: KeyT, count: int | None = None) -> list[tuple[Any, float]]:
+        raw = await self._driver.azpopmax(_str_key(key), 1 if count is None else count)
         return [(self.decode(m), float(s)) for m, s in raw]
 
     # =========================================================================

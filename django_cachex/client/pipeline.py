@@ -1029,7 +1029,7 @@ class Pipeline:
     def zpopmax(
         self,
         key: KeyT,
-        count: int = 1,
+        count: int | None = None,
         version: int | None = None,
     ) -> Self:
         """Queue ZPOPMAX command (pop highest scoring members)."""
@@ -1041,7 +1041,7 @@ class Pipeline:
     def zpopmin(
         self,
         key: KeyT,
-        count: int = 1,
+        count: int | None = None,
         version: int | None = None,
     ) -> Self:
         """Queue ZPOPMIN command (pop lowest scoring members)."""

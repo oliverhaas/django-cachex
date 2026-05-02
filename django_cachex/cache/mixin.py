@@ -851,14 +851,15 @@ class CachexMixin(BaseCacheExtensions):
         return sum(1 for s in current.values() if lo <= s <= hi)
 
     @_compound_op
-    def zpopmin(self, key: KeyT, count: int = 1, version: int | None = None) -> list[tuple[Any, float]]:
+    def zpopmin(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with lowest scores."""
         current = self._get_zset(key, version=version)
         if not current:
             return []
         timeout = self._get_ttl_timeout(key, version=version)
         sorted_members = self._sorted_members(current)
-        popped = sorted_members[:count]
+        n = 1 if count is None else count
+        popped = sorted_members[:n]
         for m, _ in popped:
             del current[m]
         if current:
@@ -868,14 +869,15 @@ class CachexMixin(BaseCacheExtensions):
         return popped
 
     @_compound_op
-    def zpopmax(self, key: KeyT, count: int = 1, version: int | None = None) -> list[tuple[Any, float]]:
+    def zpopmax(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with highest scores."""
         current = self._get_zset(key, version=version)
         if not current:
             return []
         timeout = self._get_ttl_timeout(key, version=version)
         sorted_members = list(reversed(self._sorted_members(current)))
-        popped = sorted_members[:count]
+        n = 1 if count is None else count
+        popped = sorted_members[:n]
         for m, _ in popped:
             del current[m]
         if current:

@@ -479,11 +479,11 @@ class BaseCacheExtensions:
         """Increment the score of a member."""
         raise NotSupportedError("zincrby", self.__class__.__name__)
 
-    def zpopmax(self, key: KeyT, count: int = 1, version: int | None = None) -> list[tuple[Any, float]]:
+    def zpopmax(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with highest scores."""
         raise NotSupportedError("zpopmax", self.__class__.__name__)
 
-    def zpopmin(self, key: KeyT, count: int = 1, version: int | None = None) -> list[tuple[Any, float]]:
+    def zpopmin(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with lowest scores."""
         raise NotSupportedError("zpopmin", self.__class__.__name__)
 

@@ -646,11 +646,11 @@ class _RustRawPipeline:
     def zincrby(self, key: Any, amount: float, value: Any) -> _RustRawPipeline:
         return self._queue("ZINCRBY", key, amount, value, parser=_zincrby)
 
-    def zpopmax(self, key: Any, count: int = 1) -> _RustRawPipeline:
-        return self._queue("ZPOPMAX", key, count, parser=_zpop)
+    def zpopmax(self, key: Any, count: int | None = None) -> _RustRawPipeline:
+        return self._queue("ZPOPMAX", key, 1 if count is None else count, parser=_zpop)
 
-    def zpopmin(self, key: Any, count: int = 1) -> _RustRawPipeline:
-        return self._queue("ZPOPMIN", key, count, parser=_zpop)
+    def zpopmin(self, key: Any, count: int | None = None) -> _RustRawPipeline:
+        return self._queue("ZPOPMIN", key, 1 if count is None else count, parser=_zpop)
 
     def zrange(
         self,

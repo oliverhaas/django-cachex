@@ -2120,14 +2120,14 @@ class KeyValueCacheClient:
 
         return cast("int", client.zremrangebyscore(key, min_score, max_score))
 
-    def zpopmin(self, key: KeyT, count: int = 1) -> list[tuple[Any, float]]:
+    def zpopmin(self, key: KeyT, count: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with lowest scores."""
         client = self.get_client(key, write=True)
 
         result = client.zpopmin(key, count)
         return [(self.decode(m), float(s)) for m, s in result]
 
-    def zpopmax(self, key: KeyT, count: int = 1) -> list[tuple[Any, float]]:
+    def zpopmax(self, key: KeyT, count: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with highest scores."""
         client = self.get_client(key, write=True)
 
@@ -2301,14 +2301,14 @@ class KeyValueCacheClient:
 
         return cast("int", await client.zremrangebyscore(key, min_score, max_score))
 
-    async def azpopmin(self, key: KeyT, count: int = 1) -> list[tuple[Any, float]]:
+    async def azpopmin(self, key: KeyT, count: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with lowest scores asynchronously."""
         client = self.get_async_client(key, write=True)
 
         result = await client.zpopmin(key, count)
         return [(self.decode(m), float(s)) for m, s in result]
 
-    async def azpopmax(self, key: KeyT, count: int = 1) -> list[tuple[Any, float]]:
+    async def azpopmax(self, key: KeyT, count: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with highest scores asynchronously."""
         client = self.get_async_client(key, write=True)
 

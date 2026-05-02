@@ -1844,7 +1844,7 @@ class KeyValueCache(BaseCache):
     def zpopmax(
         self,
         key: KeyT,
-        count: int = 1,
+        count: int | None = None,
         version: int | None = None,
     ) -> list[tuple[Any, float]]:
         """Remove and return members with highest scores."""
@@ -1854,7 +1854,7 @@ class KeyValueCache(BaseCache):
     def zpopmin(
         self,
         key: KeyT,
-        count: int = 1,
+        count: int | None = None,
         version: int | None = None,
     ) -> list[tuple[Any, float]]:
         """Remove and return members with lowest scores."""
@@ -2035,7 +2035,7 @@ class KeyValueCache(BaseCache):
     async def azpopmax(
         self,
         key: KeyT,
-        count: int = 1,
+        count: int | None = None,
         version: int | None = None,
     ) -> list[tuple[Any, float]]:
         """Remove and return members with highest scores asynchronously."""
@@ -2045,7 +2045,7 @@ class KeyValueCache(BaseCache):
     async def azpopmin(
         self,
         key: KeyT,
-        count: int = 1,
+        count: int | None = None,
         version: int | None = None,
     ) -> list[tuple[Any, float]]:
         """Remove and return members with lowest scores asynchronously."""
