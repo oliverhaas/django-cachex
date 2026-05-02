@@ -4,7 +4,7 @@
 
 - Python 3.14+ (free-threaded supported)
 - Django 6.0+
-- valkey-py 6.1+ or redis-py 6+
+- valkey-py 6.1+ or redis-py 6.0+
 - Valkey server 7+ or Redis server 6+
 
 ## Install with uv
@@ -13,7 +13,7 @@
 uv add django-cachex
 ```
 
-## Install with libvalkey/hiredis (recommended)
+## Install with libvalkey/hiredis
 
 For better performance, install with the libvalkey (for Valkey) or hiredis (for Redis) parser:
 
@@ -25,7 +25,7 @@ uv add django-cachex[libvalkey]
 uv add django-cachex[hiredis]
 ```
 
-These provide C-based parsers that significantly improve performance.
+These provide C-based parsers that improve protocol parsing throughput on the hot read path.
 
 ## Rust I/O driver (optional)
 
@@ -35,16 +35,17 @@ a separate package, `django-cachex-rust`, so users who only want the
 pure-Python backends never carry the binary.
 
 ```console
-# Pure Python (default — no Rust binary)
+# Pure Python (default; no Rust binary)
 uv add django-cachex[valkey]
 
 # With the Rust I/O driver
 uv add django-cachex[valkey,redis-rs]
 ```
 
-Prebuilt `django-cachex-rust` wheels are published for Linux x86_64
-(cp314, cp314t). On other platforms pip will try to build from source,
-which needs the Rust toolchain — drop the `redis-rs` extra to avoid that.
+Prebuilt `django-cachex-rust` wheels are published for Linux x86_64,
+Linux aarch64, macOS arm64, and Windows amd64 on both cp314 and cp314t.
+On other platforms pip will try to build from source, which needs the
+Rust toolchain. Drop the `redis-rs` extra to avoid that.
 
 When the binary isn't installed, `RustValkeyCache` / `RustRedisCache`
 classes are still importable but raise a clean `ImportError` on first

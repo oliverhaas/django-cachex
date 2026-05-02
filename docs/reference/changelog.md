@@ -6,7 +6,7 @@
 
 - **Python 3.14+ required.** Dropped support for 3.12 and 3.13. The package now ships on cp314 and cp314t (free-threaded) wheels.
 - **Django 6.0+ required.** Dropped support for Django 5.2.
-- **`SyncCache` wire format changed.** Stream entries now flow through the transport's serializer + compressor pipeline instead of raw pickle. Pods running the new code cannot read entries written by older pods on the same stream — coordinate the rollout (drain or rotate `STREAM_KEY`).
+- **`SyncCache` wire format changed.** Stream entries now flow through the transport's serializer + compressor pipeline instead of raw pickle. Pods running the new code cannot read entries written by older pods on the same stream; coordinate the rollout (drain or rotate `STREAM_KEY`).
 - **`hmset` removed.** Use `hset(key, mapping=...)` or `hset(key, items=...)` (flat key-value list, matching redis-py/valkey-py).
 - **`django_cachex.unfold` removed.** The django-unfold theme variant of the admin is gone, along with the `[unfold]` extra and `examples/unfold/`. Plain `django_cachex.admin` remains. Unfold support may return as a thin theme override once the core admin app stabilises.
 - **`ZStdCompressor` renamed to `ZstdCompressor`** (`django_cachex.compressors.zstd.ZstdCompressor`). Update `OPTIONS["compressor"]` strings.
@@ -67,29 +67,28 @@ Initial stable release of django-cachex.
 
 ### Features
 
-- **Unified Valkey + Redis support** in one package
-- **Full-featured cache backend** for Django
-- **Session backend support** via Django's cache sessions
-- **Pluggable clients** (Default, Sentinel, Cluster)
-- **Pluggable serializers** (Pickle, JSON, MsgPack)
-- **Pluggable compressors** (Zlib, Gzip, LZMA, LZ4, Zstandard)
-- **Multi-serializer/compressor fallback** for safe migrations
-- **Connection pooling** with configurable options
-- **Primary/replica replication** support
-- **Valkey/Redis Sentinel support** for high availability
-- **Valkey/Redis Cluster support** with automatic slot handling
-- **Distributed locks** compatible with `threading.Lock`
-- **TTL operations** (`ttl()`, `pttl()`, `expire()`, `persist()`)
-- **Pattern operations** (`keys()`, `iter_keys()`, `delete_pattern()`)
-- **Pipelines** for batched operations
-- **Lua script interface** with automatic key prefixing and value encoding/decoding
-- **Django Cache Admin** for cache inspection and management
-  - Browse, search, edit, and delete cache keys
-  - View server info, memory statistics, and slowlog
-  - Key type filter sidebar
-  - Support for Django builtin backends (LocMemCache, DatabaseCache, FileBasedCache) via wrappers
-  - Django Unfold theme support (`django_cachex.unfold`)
-- **Async support** for all extended methods
+- Valkey and Redis support in one package.
+- Session backend support via Django's cache sessions.
+- Pluggable clients: Default, Sentinel, Cluster.
+- Pluggable serializers: Pickle, JSON, MsgPack.
+- Pluggable compressors: Zlib, Gzip, LZMA, LZ4, Zstandard.
+- Multi-serializer/compressor fallback for safe migrations.
+- Connection pooling with configurable options.
+- Primary/replica replication support.
+- Valkey/Redis Sentinel support for high availability.
+- Valkey/Redis Cluster support with automatic slot handling.
+- Distributed locks compatible with `threading.Lock`.
+- TTL operations: `ttl()`, `pttl()`, `expire()`, `persist()`.
+- Pattern operations: `keys()`, `iter_keys()`, `delete_pattern()`.
+- Pipelines for batched operations.
+- Lua script interface with automatic key prefixing and value encoding/decoding.
+- Django Cache Admin for cache inspection and management:
+  - Browse, search, edit, and delete cache keys.
+  - View server info, memory statistics, and slowlog.
+  - Key type filter sidebar.
+  - Support for Django builtin backends (LocMemCache, DatabaseCache, FileBasedCache) via wrappers.
+  - Django Unfold theme support (`django_cachex.unfold`).
+- Async support for all extended methods.
 
 ### Data Structure Operations
 

@@ -36,7 +36,7 @@ All backends live in `django_cachex.cache`.
 
 ### Valkey / Redis (Rust driver)
 
-Same wire-level features, dispatched through the bundled `_driver` Rust extension (PyO3 + tokio + redis-rs). Async paths skip the threadpool round-trip and a single tokio runtime serves sync and async callers.
+Same wire-level features as the Python driver, dispatched through the optional `django-cachex-rust` extension (PyO3 + tokio + redis-rs). Sync and async share one tokio runtime, so async paths skip the asgiref threadpool round-trip. Install via the `redis-rs` extra.
 
 | Backend | Description |
 |---------|-------------|
@@ -62,7 +62,7 @@ Same wire-level features, dispatched through the bundled `_driver` Rust extensio
 | `TieredCache` | Composes two existing `CACHES` entries as L1/L2 with TTL propagation |
 
 !!! note "Valkey and Redis Compatibility"
-    Valkey and Redis are likely still fully compatible, so either backend works with either server. Valkey is recommended as it remains fully open source.
+    Valkey and Redis are protocol-compatible, so either backend works with either server. Valkey is recommended as it remains fully open source.
 
 ## LOCATION
 

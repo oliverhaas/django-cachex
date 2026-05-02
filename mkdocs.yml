@@ -1,5 +1,5 @@
 site_name: Django CacheX
-site_description: Full featured Redis and Valkey cache backend for Django
+site_description: Valkey and Redis cache backend for Django, with a Django admin UI for cache inspection.
 site_url: https://oliverhaas.github.io/django-cachex/
 repo_url: https://github.com/oliverhaas/django-cachex
 repo_name: oliverhaas/django-cachex
