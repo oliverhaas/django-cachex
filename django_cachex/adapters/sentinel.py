@@ -2,8 +2,8 @@
 
 The Sentinel topology adds primary/replica discovery on top of the
 single-node base. Per-driver concrete subclasses live in
-:mod:`django_cachex.adapter.valkey_py` (``valkey-py``) and
-:mod:`django_cachex.adapter.redis_py` (``redis-py``).
+:mod:`django_cachex.adapters.valkey_py` (``valkey-py``) and
+:mod:`django_cachex.adapters.redis_py` (``redis-py``).
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from django.core.exceptions import ImproperlyConfigured
 
-from django_cachex.adapter.default import _ASYNC_POOLS, BaseKeyValueAdapter, _options_key
+from django_cachex.adapters.default import _ASYNC_POOLS, BaseKeyValueAdapter, _options_key
 
 if TYPE_CHECKING:
     from redis.connection import ConnectionPool

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from redis.cluster import RedisCluster, key_slot
 
-from django_cachex.adapter import RedisClusterAdapter
+from django_cachex.adapters import RedisClusterAdapter
 
 
 def setup_cluster_client(mock_cluster_cls=None):

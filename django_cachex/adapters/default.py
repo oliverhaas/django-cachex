@@ -5,11 +5,11 @@ sets, sorted sets, streams, scripts, …); concrete adapters slot in the
 underlying client + pool classes via class attributes. Per-driver subclasses
 live in:
 
-- :mod:`django_cachex.adapter.valkey_py` — ``valkey-py``
-- :mod:`django_cachex.adapter.redis_py` — ``redis-py`` (thin layer over the
+- :mod:`django_cachex.adapters.valkey_py` — ``valkey-py``
+- :mod:`django_cachex.adapters.redis_py` — ``redis-py`` (thin layer over the
   ``valkey-py`` adapters; the two libs share an API)
-- :mod:`django_cachex.adapter.redis_rs` — Rust ``redis-rs`` driver
-- :mod:`django_cachex.adapter.valkey_glide` — ``valkey-glide``
+- :mod:`django_cachex.adapters.redis_rs` — Rust ``redis-rs`` driver
+- :mod:`django_cachex.adapters.valkey_glide` — ``valkey-glide``
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     import builtins
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
 
-    from django_cachex.adapter.pipeline import BaseKeyValuePipelineAdapter
+    from django_cachex.adapters.pipeline import BaseKeyValuePipelineAdapter
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, _Set
 
 
@@ -995,7 +995,7 @@ class BaseKeyValueAdapter:
         ``KeyValueCache.pipeline()`` wraps the result in a :class:`Pipeline`
         that adds key-prefixing, value encoding, and result decoding.
         """
-        from django_cachex.adapter.pipeline import RedisPipelineAdapter
+        from django_cachex.adapters.pipeline import RedisPipelineAdapter
 
         client = self.get_client(write=True)
         return RedisPipelineAdapter(client.pipeline(transaction=transaction))

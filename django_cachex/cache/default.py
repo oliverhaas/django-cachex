@@ -19,12 +19,12 @@ if TYPE_CHECKING:
     import builtins
     from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 
-    from django_cachex.adapter.pipeline import Pipeline
+    from django_cachex.adapters.pipeline import Pipeline
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, KeyType, _Set
 
-from django_cachex.adapter.default import BaseKeyValueAdapter
-from django_cachex.adapter.redis_py import RedisAdapter
-from django_cachex.adapter.valkey_py import ValkeyAdapter
+from django_cachex.adapters.default import BaseKeyValueAdapter
+from django_cachex.adapters.redis_py import RedisAdapter
+from django_cachex.adapters.valkey_py import ValkeyAdapter
 from django_cachex.exceptions import CompressorError, SerializerError
 from django_cachex.script import ScriptHelpers
 
@@ -862,7 +862,7 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> Pipeline:
         """Create a pipeline for batched operations."""
-        from django_cachex.adapter.pipeline import Pipeline
+        from django_cachex.adapters.pipeline import Pipeline
 
         v = version if version is not None else self.version
         pipeline_adapter = self.adapter.pipeline(transaction=transaction)

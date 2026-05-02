@@ -16,8 +16,8 @@ import pytest
 from django.core.cache import caches
 from django.test import override_settings
 
-from django_cachex.adapter import RedisAdapter
-from django_cachex.adapter.default import _ASYNC_POOLS
+from django_cachex.adapters import RedisAdapter
+from django_cachex.adapters.default import _ASYNC_POOLS
 
 if TYPE_CHECKING:
     from django_cachex.cache import KeyValueCache

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from django_cachex.adapter.redis_py import RedisSentinelAdapter
-from django_cachex.adapter.sentinel import BaseKeyValueSentinelAdapter
-from django_cachex.adapter.valkey_py import ValkeySentinelAdapter
+from django_cachex.adapters.redis_py import RedisSentinelAdapter
+from django_cachex.adapters.sentinel import BaseKeyValueSentinelAdapter
+from django_cachex.adapters.valkey_py import ValkeySentinelAdapter
 from django_cachex.cache.default import KeyValueCache
 
 

@@ -29,7 +29,7 @@ class KeyValuePipelineProtocol(Protocol):
     """Pipeline-adapter contract: collect ops, batch-execute, return raw results.
 
     Concrete implementations are
-    :class:`~django_cachex.adapter.pipeline.BaseKeyValuePipelineAdapter`
+    :class:`~django_cachex.adapters.pipeline.BaseKeyValuePipelineAdapter`
     subclasses (one per driver). They expose the cachex pipeline method
     surface — ``set``/``lpush``/``hset``/``zadd``/... — but those are not
     enumerated here; the ``Pipeline`` wrapper queues them dynamically and

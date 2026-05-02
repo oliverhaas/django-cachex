@@ -2,12 +2,12 @@
 
 ``redis-py`` and ``valkey-py`` share an API surface (``valkey-py`` is a fork);
 each class here is a thin subclass of its
-:mod:`django_cachex.adapter.valkey_py` counterpart that swaps in the
+:mod:`django_cachex.adapters.valkey_py` counterpart that swaps in the
 ``redis-py`` lib + client/pool/sentinel/cluster classes. All behaviour comes
 from the base classes in
-:mod:`~django_cachex.adapter.default`,
-:mod:`~django_cachex.adapter.sentinel`, and
-:mod:`~django_cachex.adapter.cluster`.
+:mod:`~django_cachex.adapters.default`,
+:mod:`~django_cachex.adapters.sentinel`, and
+:mod:`~django_cachex.adapters.cluster`.
 
 If ``redis-py`` isn't installed, ``__init__`` raises a clean
 :class:`ImportError`. ``valkey-py`` doesn't need to be installed for these to
@@ -19,10 +19,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from django_cachex.adapter.cluster import BaseKeyValueClusterAdapter
-from django_cachex.adapter.default import BaseKeyValueAdapter
-from django_cachex.adapter.sentinel import BaseKeyValueSentinelAdapter
-from django_cachex.adapter.valkey_py import (
+from django_cachex.adapters.cluster import BaseKeyValueClusterAdapter
+from django_cachex.adapters.default import BaseKeyValueAdapter
+from django_cachex.adapters.sentinel import BaseKeyValueSentinelAdapter
+from django_cachex.adapters.valkey_py import (
     ValkeyAdapter,
     ValkeyClusterAdapter,
     ValkeySentinelAdapter,

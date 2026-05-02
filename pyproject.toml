@@ -222,7 +222,7 @@ module = "glide_sync.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "django_cachex.adapter.valkey_glide"
+module = "django_cachex.adapters.valkey_glide"
 ignore_errors = true
 
 [tool.ty.rules]

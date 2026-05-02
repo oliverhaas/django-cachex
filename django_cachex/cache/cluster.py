@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from django_cachex.adapter.cluster import BaseKeyValueClusterAdapter
-from django_cachex.adapter.redis_py import RedisClusterAdapter
-from django_cachex.adapter.valkey_py import ValkeyClusterAdapter
+from django_cachex.adapters.cluster import BaseKeyValueClusterAdapter
+from django_cachex.adapters.redis_py import RedisClusterAdapter
+from django_cachex.adapters.valkey_py import ValkeyClusterAdapter
 from django_cachex.cache.default import KeyValueCache
 
 if TYPE_CHECKING:
-    from django_cachex.adapter.pipeline import Pipeline
+    from django_cachex.adapters.pipeline import Pipeline
 
 
 class KeyValueClusterCache(KeyValueCache):

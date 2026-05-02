@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from django_cachex.adapter import BaseKeyValueAdapter, RedisAdapter
+from django_cachex.adapters import BaseKeyValueAdapter, RedisAdapter
 
 if TYPE_CHECKING:
     from django_cachex.cache import KeyValueCache

@@ -11,9 +11,9 @@ Concrete pipeline adapters (one per driver):
   ``Pipeline`` object. Since those already expose the cachex method
   surface one-for-one (``lpush``/``hset``/``zadd``/...), this adapter is a
   thin ``__getattr__`` forwarder.
-- :class:`~django_cachex.adapter.pipeline_redis_rs.RedisRsValkeyPipelineAdapter` —
+- :class:`~django_cachex.adapters.pipeline_redis_rs.RedisRsValkeyPipelineAdapter` —
   buffers RESP wire commands for the Rust driver's ``pipeline_exec``.
-- :class:`~django_cachex.adapter.valkey_glide.ValkeyGlidePipelineAdapter` —
+- :class:`~django_cachex.adapters.valkey_glide.ValkeyGlidePipelineAdapter` —
   drives ``valkey-glide``'s ``Batch``.
 
 Each adapter's ``KeyValueAdapter.pipeline()`` factory constructs the right
@@ -616,8 +616,8 @@ class RedisPipelineAdapter(BaseKeyValuePipelineAdapter):
     cachex method surface one-for-one (because the cachex method names
     mirror redis-py's command methods), so we inherit ``BaseKeyValuePipelineAdapter``
     unchanged. Exists as a named subclass for symmetry with
-    :class:`~django_cachex.adapter.default.RedisAdapter` /
-    :class:`~django_cachex.adapter.default.ValkeyAdapter`.
+    :class:`~django_cachex.adapters.default.RedisAdapter` /
+    :class:`~django_cachex.adapters.default.ValkeyAdapter`.
     """
 
 

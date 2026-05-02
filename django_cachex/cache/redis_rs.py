@@ -7,7 +7,7 @@ Users opt in via ``CACHES["default"]["BACKEND"]``.
 
 from __future__ import annotations
 
-from django_cachex.adapter.redis_rs import (
+from django_cachex.adapters.redis_rs import (
     RedisRsValkeyAdapter,
     RedisRsValkeyClusterAdapter,
     RedisRsValkeySentinelAdapter,

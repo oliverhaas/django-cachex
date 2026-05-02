@@ -15,7 +15,7 @@ from django_cachex.types import KeyType
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
 
-    from django_cachex.adapter.pipeline import Pipeline
+    from django_cachex.adapters.pipeline import Pipeline
     from django_cachex.script import ScriptHelpers
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT
 

@@ -1,13 +1,13 @@
 """Pipeline adapter for the Rust driver.
 
 :class:`RedisRsValkeyPipelineAdapter` is the Rust-backed implementation of
-:class:`~django_cachex.adapter.pipeline.BaseKeyValuePipelineAdapter`.
+:class:`~django_cachex.adapters.pipeline.BaseKeyValuePipelineAdapter`.
 Each method buffers a Redis wire command plus an optional response parser,
 and ``execute()`` dispatches the whole batch in one round trip via
 ``RedisRsDriver.pipeline_exec``.
 
 Results are normalized to the Python shapes redis-py would return so the
-shared :class:`~django_cachex.adapter.pipeline.Pipeline` wrapper's decoders
+shared :class:`~django_cachex.adapters.pipeline.Pipeline` wrapper's decoders
 work unchanged. The driver runs RESP3 — HGETALL returns a real ``dict``,
 ZRANGE WITHSCORES returns nested arrays, sets come back as lists — see the
 parsers below for the per-command normalizers.
@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from django_cachex.adapter.pipeline import BaseKeyValuePipelineAdapter
+from django_cachex.adapters.pipeline import BaseKeyValuePipelineAdapter
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping

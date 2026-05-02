@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from django_cachex.adapter.valkey_glide import ValkeyGlideAdapter
+from django_cachex.adapters.valkey_glide import ValkeyGlideAdapter
 from django_cachex.cache.default import KeyValueCache
 
 

@@ -2,8 +2,8 @@
 
 Cluster mode handles server-side sharding and slot-aware operations on top
 of the single-node base. Per-driver concrete subclasses live in
-:mod:`django_cachex.adapter.valkey_py` (``valkey-py``) and
-:mod:`django_cachex.adapter.redis_py` (``redis-py``).
+:mod:`django_cachex.adapters.valkey_py` (``valkey-py``) and
+:mod:`django_cachex.adapters.redis_py` (``redis-py``).
 """
 
 from __future__ import annotations
@@ -15,13 +15,13 @@ from itertools import batched
 from typing import TYPE_CHECKING, Any, cast, override
 from urllib.parse import urlparse
 
-from django_cachex.adapter.default import BaseKeyValueAdapter
+from django_cachex.adapters.default import BaseKeyValueAdapter
 from django_cachex.exceptions import NotSupportedError
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
 
-    from django_cachex.adapter.pipeline import BaseKeyValuePipelineAdapter
+    from django_cachex.adapters.pipeline import BaseKeyValuePipelineAdapter
     from django_cachex.types import KeyT
 
 # =============================================================================
@@ -473,7 +473,7 @@ class BaseKeyValueClusterAdapter(BaseKeyValueAdapter):
     @override
     def pipeline(self, *, transaction: bool = True) -> BaseKeyValuePipelineAdapter:
         """Construct a cluster pipeline adapter. Transactions are ignored in cluster mode."""
-        from django_cachex.adapter.pipeline import RedisPipelineAdapter
+        from django_cachex.adapters.pipeline import RedisPipelineAdapter
 
         client = self.get_client(write=True)
         return RedisPipelineAdapter(client.pipeline(transaction=False))

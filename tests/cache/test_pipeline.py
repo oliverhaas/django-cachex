@@ -13,7 +13,7 @@ class TestPipelineBasic:
     """Test basic pipeline functionality."""
 
     def test_pipeline_returns_pipeline_object(self, cache: KeyValueCache):
-        from django_cachex.adapter.pipeline import Pipeline
+        from django_cachex.adapters.pipeline import Pipeline
 
         pipe = cache.pipeline()
         assert isinstance(pipe, Pipeline)

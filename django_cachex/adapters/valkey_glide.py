@@ -21,8 +21,8 @@ import asyncio
 from typing import TYPE_CHECKING, Any, Self
 from urllib.parse import urlparse
 
-from django_cachex.adapter.default import BaseKeyValueAdapter
-from django_cachex.adapter.pipeline import BaseKeyValuePipelineAdapter
+from django_cachex.adapters.default import BaseKeyValueAdapter
+from django_cachex.adapters.pipeline import BaseKeyValuePipelineAdapter
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
@@ -124,7 +124,7 @@ def _normalize_ttl(result: int) -> int | None:
 
 
 # =============================================================================
-# Pipeline wrappers (redis-py-shaped) — required by django_cachex.adapter.pipeline.Pipeline
+# Pipeline wrappers (redis-py-shaped) — required by django_cachex.adapters.pipeline.Pipeline
 # =============================================================================
 
 

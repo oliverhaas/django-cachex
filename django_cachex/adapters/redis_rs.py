@@ -18,7 +18,7 @@ from django_cachex._redis_rs_clients import (
     get_driver_sentinel,
     get_driver_standard,
 )
-from django_cachex.adapter.default import BaseKeyValueAdapter
+from django_cachex.adapters.default import BaseKeyValueAdapter
 from django_cachex.lock import AsyncValkeyLock, ValkeyLock
 from django_cachex.stampede import should_recompute
 from django_cachex.types import KeyType
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
 
     from django_cachex._driver import RedisRsDriver
-    from django_cachex.adapter.pipeline import BaseKeyValuePipelineAdapter
+    from django_cachex.adapters.pipeline import BaseKeyValuePipelineAdapter
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, _Set
 
 
@@ -924,7 +924,7 @@ class RedisRsValkeyAdapter(BaseKeyValueAdapter):
 
     @override
     def pipeline(self, *, transaction: bool = True) -> BaseKeyValuePipelineAdapter:
-        from django_cachex.adapter.pipeline_redis_rs import RedisRsValkeyPipelineAdapter
+        from django_cachex.adapters.pipeline_redis_rs import RedisRsValkeyPipelineAdapter
 
         return RedisRsValkeyPipelineAdapter(self._driver, transaction=transaction)
 

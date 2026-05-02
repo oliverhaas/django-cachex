@@ -3,15 +3,15 @@
 Three topologies live here:
 
 - :class:`ValkeyAdapter` — single-node / replicated (extends
-  :class:`~django_cachex.adapter.default.BaseKeyValueAdapter`).
+  :class:`~django_cachex.adapters.default.BaseKeyValueAdapter`).
 - :class:`ValkeySentinelAdapter` — Sentinel-discovered primary/replicas
-  (extends :class:`~django_cachex.adapter.sentinel.BaseKeyValueSentinelAdapter`).
+  (extends :class:`~django_cachex.adapters.sentinel.BaseKeyValueSentinelAdapter`).
 - :class:`ValkeyClusterAdapter` — Cluster mode
-  (extends :class:`~django_cachex.adapter.cluster.BaseKeyValueClusterAdapter`).
+  (extends :class:`~django_cachex.adapters.cluster.BaseKeyValueClusterAdapter`).
 
 Each class fills in the lib-specific ``_lib`` / ``_*_class`` slots that the
 base classes consume; behaviour is otherwise inherited verbatim. See
-:mod:`django_cachex.adapter.redis_py` for the parallel set built on
+:mod:`django_cachex.adapters.redis_py` for the parallel set built on
 ``redis-py`` (a thin subclass layer — ``redis-py`` and ``valkey-py`` share an
 API).
 
@@ -24,9 +24,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from django_cachex.adapter.cluster import BaseKeyValueClusterAdapter
-from django_cachex.adapter.default import BaseKeyValueAdapter
-from django_cachex.adapter.sentinel import BaseKeyValueSentinelAdapter
+from django_cachex.adapters.cluster import BaseKeyValueClusterAdapter
+from django_cachex.adapters.default import BaseKeyValueAdapter
+from django_cachex.adapters.sentinel import BaseKeyValueSentinelAdapter
 
 _VALKEY_AVAILABLE = False
 try:
