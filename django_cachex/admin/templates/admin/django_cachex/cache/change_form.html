@@ -60,152 +60,46 @@
         </table>
     </fieldset>
 
-    {% if info_data.server %}
-    <!-- Server Information -->
+    {% if info_data.server_rows %}
     <fieldset class="module aligned info-section">
         <h2>{% trans 'Server' %}</h2>
         <table class="info-table">
-            {% if info_data.server.redis_version %}
-            <tr>
-                <th>{% trans 'Redis/Valkey Version' %}</th>
-                <td>{{ info_data.server.redis_version }}</td>
-            </tr>
-            {% endif %}
-            {% if info_data.server.os %}
-            <tr>
-                <th>{% trans 'Operating System' %}</th>
-                <td>{{ info_data.server.os }}</td>
-            </tr>
-            {% endif %}
-            {% if info_data.server.arch_bits %}
-            <tr>
-                <th>{% trans 'Architecture' %}</th>
-                <td>{{ info_data.server.arch_bits }}-bit</td>
-            </tr>
-            {% endif %}
-            {% if info_data.server.tcp_port %}
-            <tr>
-                <th>{% trans 'TCP Port' %}</th>
-                <td>{{ info_data.server.tcp_port }}</td>
-            </tr>
-            {% endif %}
-            {% if info_data.server.uptime_in_days is not None %}
-            <tr>
-                <th>{% trans 'Uptime' %}</th>
-                <td>{{ info_data.server.uptime_in_days }} {% trans 'days' %} ({{ info_data.server.uptime_in_seconds }} {% trans 'seconds' %})</td>
-            </tr>
-            {% endif %}
-            {% if info_data.server.process_id %}
-            <tr>
-                <th>{% trans 'Process ID' %}</th>
-                <td>{{ info_data.server.process_id }}</td>
-            </tr>
-            {% endif %}
+            {% for row in info_data.server_rows %}
+            <tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>
+            {% endfor %}
         </table>
     </fieldset>
     {% endif %}
 
-    {% if info_data.memory %}
-    <!-- Memory Information -->
+    {% if info_data.memory_rows %}
     <fieldset class="module aligned info-section">
         <h2>{% trans 'Memory' %}</h2>
         <table class="info-table">
-            {% if info_data.memory.used_memory_human %}
-            <tr>
-                <th>{% trans 'Used Memory' %}</th>
-                <td>{{ info_data.memory.used_memory_human }} ({{ info_data.memory.used_memory }} bytes)</td>
-            </tr>
-            {% endif %}
-            {% if info_data.memory.used_memory_peak_human %}
-            <tr>
-                <th>{% trans 'Peak Memory' %}</th>
-                <td>{{ info_data.memory.used_memory_peak_human }} ({{ info_data.memory.used_memory_peak }} bytes)</td>
-            </tr>
-            {% endif %}
-            {% if info_data.memory.maxmemory %}
-            <tr>
-                <th>{% trans 'Max Memory' %}</th>
-                <td>{{ info_data.memory.maxmemory_human|default:info_data.memory.maxmemory }}</td>
-            </tr>
-            {% endif %}
-            {% if info_data.memory.maxmemory_policy %}
-            <tr>
-                <th>{% trans 'Eviction Policy' %}</th>
-                <td>{{ info_data.memory.maxmemory_policy }}</td>
-            </tr>
-            {% endif %}
+            {% for row in info_data.memory_rows %}
+            <tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>
+            {% endfor %}
         </table>
     </fieldset>
     {% endif %}
 
-    {% if info_data.clients %}
-    <!-- Clients Information -->
+    {% if info_data.clients_rows %}
     <fieldset class="module aligned info-section">
         <h2>{% trans 'Clients' %}</h2>
         <table class="info-table">
-            {% if info_data.clients.connected_clients is not None %}
-            <tr>
-                <th>{% trans 'Connected Clients' %}</th>
-                <td>{{ info_data.clients.connected_clients }}</td>
-            </tr>
-            {% endif %}
-            {% if info_data.clients.blocked_clients is not None %}
-            <tr>
-                <th>{% trans 'Blocked Clients' %}</th>
-                <td>{{ info_data.clients.blocked_clients }}</td>
-            </tr>
-            {% endif %}
+            {% for row in info_data.clients_rows %}
+            <tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>
+            {% endfor %}
         </table>
     </fieldset>
     {% endif %}
 
-    {% if info_data.stats %}
-    <!-- Statistics -->
+    {% if info_data.stats_rows %}
     <fieldset class="module aligned info-section">
         <h2>{% trans 'Statistics' %}</h2>
         <table class="info-table">
-            {% if info_data.stats.total_connections_received is not None %}
-            <tr>
-                <th>{% trans 'Total Connections' %}</th>
-                <td>{{ info_data.stats.total_connections_received }}</td>
-            </tr>
-            {% endif %}
-            {% if info_data.stats.total_commands_processed is not None %}
-            <tr>
-                <th>{% trans 'Total Commands' %}</th>
-                <td>{{ info_data.stats.total_commands_processed }}</td>
-            </tr>
-            {% endif %}
-            {% if info_data.stats.instantaneous_ops_per_sec is not None %}
-            <tr>
-                <th>{% trans 'Ops/sec' %}</th>
-                <td>{{ info_data.stats.instantaneous_ops_per_sec }}</td>
-            </tr>
-            {% endif %}
-            {% if info_data.stats.keyspace_hits is not None %}
-            <tr>
-                <th>{% trans 'Keyspace Hits' %}</th>
-                <td>{{ info_data.stats.keyspace_hits }}</td>
-            </tr>
-            {% endif %}
-            {% if info_data.stats.keyspace_misses is not None %}
-            <tr>
-                <th>{% trans 'Keyspace Misses' %}</th>
-                <td>{{ info_data.stats.keyspace_misses }}</td>
-            </tr>
-            {% endif %}
-            {% if info_data.stats.expired_keys is not None %}
-            <tr>
-                <th>{% trans 'Expired Keys' %}</th>
-                <td>{{ info_data.stats.expired_keys }}</td>
-            </tr>
-            {% endif %}
-            {% if info_data.stats.evicted_keys is not None %}
-            <tr>
-                <th>{% trans 'Evicted Keys' %}</th>
-                <td>{{ info_data.stats.evicted_keys }}</td>
-            </tr>
-            {% endif %}
+            {% for row in info_data.stats_rows %}
+            <tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>
+            {% endfor %}
         </table>
     </fieldset>
     {% endif %}

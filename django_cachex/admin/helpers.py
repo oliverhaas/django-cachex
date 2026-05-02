@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 from django.core.cache import caches
+from django.utils.translation import gettext_lazy as _
 
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
@@ -15,6 +16,74 @@ from django_cachex.utils import _deep_getsizeof
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+
+def _row(label: Any, value: Any) -> dict[str, Any] | None:
+    """Build one display-row dict, or None if there's nothing to show."""
+    if value is None or value == "":
+        return None
+    return {"label": label, "value": value}
+
+
+def _server_rows(server: Mapping[str, Any]) -> list[dict[str, Any]]:
+    uptime_days = server.get("uptime_in_days")
+    uptime_seconds = server.get("uptime_in_seconds")
+    uptime = (
+        f"{uptime_days} days ({uptime_seconds} seconds)"
+        if uptime_days is not None and uptime_seconds is not None
+        else None
+    )
+    arch = server.get("arch_bits")
+    candidates = [
+        _row(_("Redis/Valkey Version"), server.get("redis_version")),
+        _row(_("Operating System"), server.get("os")),
+        _row(_("Architecture"), f"{arch}-bit" if arch else None),
+        _row(_("TCP Port"), server.get("tcp_port")),
+        _row(_("Uptime"), uptime),
+        _row(_("Process ID"), server.get("process_id")),
+    ]
+    return [r for r in candidates if r is not None]
+
+
+def _memory_rows(memory: Mapping[str, Any]) -> list[dict[str, Any]]:
+    used_human = memory.get("used_memory_human")
+    used = memory.get("used_memory")
+    peak_human = memory.get("used_memory_peak_human")
+    peak = memory.get("used_memory_peak")
+    candidates = [
+        _row(
+            _("Used Memory"),
+            f"{used_human} ({used} bytes)" if used_human and used is not None else None,
+        ),
+        _row(
+            _("Peak Memory"),
+            f"{peak_human} ({peak} bytes)" if peak_human and peak is not None else None,
+        ),
+        _row(_("Max Memory"), memory.get("maxmemory_human") or memory.get("maxmemory")),
+        _row(_("Eviction Policy"), memory.get("maxmemory_policy")),
+    ]
+    return [r for r in candidates if r is not None]
+
+
+def _clients_rows(clients: Mapping[str, Any]) -> list[dict[str, Any]]:
+    candidates = [
+        _row(_("Connected Clients"), clients.get("connected_clients")),
+        _row(_("Blocked Clients"), clients.get("blocked_clients")),
+    ]
+    return [r for r in candidates if r is not None]
+
+
+def _stats_rows(stats: Mapping[str, Any]) -> list[dict[str, Any]]:
+    candidates = [
+        _row(_("Total Connections"), stats.get("total_connections_received")),
+        _row(_("Total Commands"), stats.get("total_commands_processed")),
+        _row(_("Ops/sec"), stats.get("instantaneous_ops_per_sec")),
+        _row(_("Keyspace Hits"), stats.get("keyspace_hits")),
+        _row(_("Keyspace Misses"), stats.get("keyspace_misses")),
+        _row(_("Expired Keys"), stats.get("expired_keys")),
+        _row(_("Evicted Keys"), stats.get("evicted_keys")),
+    ]
+    return [r for r in candidates if r is not None]
 
 
 def get_cache(cache_name: str) -> Any:
@@ -48,63 +117,36 @@ def parse_metadata(
         "key_prefix": cache.key_prefix,
         "version": cache.version,
         "location": location,
-        "server": None,
+        "server_rows": [],
         "keyspace": None,
-        "memory": None,
-        "clients": None,
-        "stats": None,
+        "memory_rows": [],
+        "clients_rows": [],
+        "stats_rows": [],
     }
 
     if not raw_info:
         return base_info
 
-    # Check if info() returned already-structured data (from wrappers)
-    if isinstance(raw_info.get("server"), dict):
-        base_info.update(raw_info)
-        return base_info
+    # Wrappers (LocMem/Database/Stream) return already-structured sections
+    # under the "server"/"memory"/"clients"/"stats" keys; pre-structured
+    # backends short-circuit the flat-INFO parse.
+    def _section(name: str) -> Mapping[str, Any]:
+        sub = raw_info.get(name)
+        return sub if isinstance(sub, dict) else raw_info
 
-    # Parse flat Redis/Valkey INFO into structured sections
     try:
-        base_info["server"] = {
-            "redis_version": raw_info.get("redis_version"),
-            "os": raw_info.get("os"),
-            "arch_bits": raw_info.get("arch_bits"),
-            "uptime_in_seconds": raw_info.get("uptime_in_seconds"),
-            "uptime_in_days": raw_info.get("uptime_in_days"),
-            "tcp_port": raw_info.get("tcp_port"),
-            "process_id": raw_info.get("process_id"),
-            "run_id": raw_info.get("run_id"),
-        }
+        base_info["server_rows"] = _server_rows(_section("server"))
+        base_info["memory_rows"] = _memory_rows(_section("memory"))
+        base_info["clients_rows"] = _clients_rows(_section("clients"))
+        base_info["stats_rows"] = _stats_rows(_section("stats"))
 
-        base_info["memory"] = {
-            "used_memory": raw_info.get("used_memory"),
-            "used_memory_human": raw_info.get("used_memory_human"),
-            "used_memory_peak": raw_info.get("used_memory_peak"),
-            "used_memory_peak_human": raw_info.get("used_memory_peak_human"),
-            "maxmemory": raw_info.get("maxmemory"),
-            "maxmemory_human": raw_info.get("maxmemory_human"),
-            "maxmemory_policy": raw_info.get("maxmemory_policy"),
-        }
-
-        base_info["clients"] = {
-            "connected_clients": raw_info.get("connected_clients"),
-            "blocked_clients": raw_info.get("blocked_clients"),
-            "tracking_clients": raw_info.get("tracking_clients"),
-        }
-
-        base_info["stats"] = {
-            "total_connections_received": raw_info.get("total_connections_received"),
-            "total_commands_processed": raw_info.get("total_commands_processed"),
-            "instantaneous_ops_per_sec": raw_info.get("instantaneous_ops_per_sec"),
-            "keyspace_hits": raw_info.get("keyspace_hits"),
-            "keyspace_misses": raw_info.get("keyspace_misses"),
-            "expired_keys": raw_info.get("expired_keys"),
-            "evicted_keys": raw_info.get("evicted_keys"),
-        }
-
-        keyspace = {k: v for k, v in raw_info.items() if k.startswith("db") and isinstance(v, dict)}
-        if keyspace:
-            base_info["keyspace"] = keyspace
+        # Keyspace stays nested (per-db cards in the template).
+        if isinstance(raw_info.get("keyspace"), dict):
+            base_info["keyspace"] = raw_info["keyspace"]
+        else:
+            ks = {k: v for k, v in raw_info.items() if k.startswith("db") and isinstance(v, dict)}
+            if ks:
+                base_info["keyspace"] = ks
 
     except Exception:  # noqa: BLE001, S110
         pass
