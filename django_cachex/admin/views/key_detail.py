@@ -570,8 +570,11 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     else:
         value_display = "null"
 
-    # Show type-specific help message if requested
-    help_key = f"key_detail_{key_type}" if isinstance(key_type, KeyType) else "key_detail"
+    # Show type-specific help message if requested. ``key_type`` is either a
+    # ``KeyType`` enum (existing key, set by ``cache.type()``) or the raw
+    # string from the ``?type=`` query param (create mode); both interpolate
+    # the same way since ``KeyType`` is a ``StrEnum``.
+    help_key = f"key_detail_{key_type}" if key_type else "key_detail"
     help_active = show_help(request, help_key, config.help_messages)
 
     # Get cache metadata for displaying the raw key info
