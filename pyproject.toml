@@ -210,6 +210,21 @@ ignore_missing_imports = true
 module = "testcontainers.*"
 ignore_missing_imports = true
 
+# valkey-glide ships only as an optional install — let mypy skip it when
+# absent, and ignore the spike file's many Liskov violations from the
+# Design B overrides until/unless we keep this backend long-term.
+[[tool.mypy.overrides]]
+module = "glide.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "glide_sync.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "django_cachex.client.glide"
+ignore_errors = true
+
 [tool.ty.rules]
 # Disable rules that conflict with intentional Django extensions:
 # - We extend return types (set returns bool|None, delete_many returns int)
