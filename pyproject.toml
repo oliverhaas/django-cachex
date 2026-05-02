@@ -78,9 +78,12 @@ dev = [
   "httpx>=0.28,<0.29",
   # Rust I/O driver: workspace member so `uv sync` builds it for tests/benchmarks
   "django-cachex-rust",
-  "valkey-glide-sync==2.3.1",
-  "valkey-glide==2.3.1",
 ]
+# valkey-glide ships prebuilt wheels only for cp312 (works on cp314 GIL build
+# via FFI, but cp314t free-threaded has no wheel and the source build needs
+# protoc). Keep it out of `dev` so `uv sync` works on either interpreter; opt
+# in via `uv sync --extra valkey-glide` when you want to run the glide bench
+# slice or work on the backend.
 docs = ["mkdocs==1.6.1", "mkdocs-material==9.7.6", "mike==2.2.0"]
 
 [build-system]

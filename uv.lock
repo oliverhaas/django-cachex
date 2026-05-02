@@ -363,8 +363,6 @@ dev = [
     { name = "ty" },
     { name = "types-docker" },
     { name = "valkey", extra = ["libvalkey"] },
-    { name = "valkey-glide" },
-    { name = "valkey-glide-sync" },
 ]
 docs = [
     { name = "mike" },
@@ -416,8 +414,6 @@ dev = [
     { name = "ty", specifier = "==0.0.33" },
     { name = "types-docker", specifier = "==7.1.0.20260409" },
     { name = "valkey", extras = ["libvalkey"], specifier = "==6.1.1" },
-    { name = "valkey-glide", specifier = "==2.3.1" },
-    { name = "valkey-glide-sync", specifier = "==2.3.1" },
 ]
 docs = [
     { name = "mike", specifier = "==2.2.0" },
