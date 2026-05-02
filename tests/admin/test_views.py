@@ -212,10 +212,11 @@ class TestKeyListView:
         response = admin_client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        # Should have help link
-        assert "help=1" in content or "Help" in content
-        # Should have add key link
-        assert "Add" in content
+        # The change_list template renders the help link with `&help=1` and
+        # the add-key link with `class="addlink"`; match the exact markup so
+        # an unrelated word "Add" or "Help" elsewhere can't satisfy the test.
+        assert "&amp;help=1" in content
+        assert 'class="addlink"' in content
 
     def test_key_list_bulk_delete(
         self,
@@ -844,8 +845,8 @@ class TestKeyDetailView:
 
         # Should show the value as JSON (with quotes) - HTML escaped in textarea
         assert "&quot;hello world&quot;" in content
-        # Should have the save/update button visible (edit_supported)
-        assert "Update" in content or "Save" in content
+        # Update form must be present (edit supported on JSON-serializable string).
+        assert 'name="action" value="update"' in content
 
     def test_json_serializable_dict_is_editable(
         self,
@@ -863,8 +864,8 @@ class TestKeyDetailView:
         assert "&quot;name&quot;" in content
         assert "&quot;Alice&quot;" in content
         assert "&quot;age&quot;" in content
-        # Should have the update button visible
-        assert "Update" in content or "Save" in content
+        # Update form must be present.
+        assert 'name="action" value="update"' in content
 
     def test_json_serializable_list_value_is_editable(
         self,
@@ -1796,8 +1797,9 @@ class TestKeyDetailCreateMode:
 
         assert response.status_code == 200
         content = response.content.decode()
-        # Should show push operations
-        assert "Push" in content or "LPUSH" in content or "RPUSH" in content
+        # The list-key template must render both lpush and rpush forms.
+        assert 'name="action" value="lpush"' in content
+        assert 'name="action" value="rpush"' in content
 
     def test_create_mode_set_shows_add_form(
         self,
@@ -1809,8 +1811,7 @@ class TestKeyDetailCreateMode:
 
         assert response.status_code == 200
         content = response.content.decode()
-        # Should show add member operation
-        assert "Add" in content or "SADD" in content
+        assert 'name="action" value="sadd"' in content
 
     def test_create_mode_hash_shows_set_form(
         self,
@@ -1822,8 +1823,7 @@ class TestKeyDetailCreateMode:
 
         assert response.status_code == 200
         content = response.content.decode()
-        # Should show set field operation
-        assert "Set" in content or "HSET" in content or "Add" in content
+        assert 'name="action" value="hset"' in content
 
     def test_create_mode_zset_shows_add_form(
         self,
@@ -1835,8 +1835,7 @@ class TestKeyDetailCreateMode:
 
         assert response.status_code == 200
         content = response.content.decode()
-        # Should show add member operation
-        assert "Add" in content or "ZADD" in content
+        assert 'name="action" value="zadd"' in content
 
     def test_create_mode_string_shows_value_form(
         self,
