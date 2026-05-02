@@ -26,14 +26,18 @@ if TYPE_CHECKING:
 
 @runtime_checkable
 class KeyValuePipelineProtocol(Protocol):
-    """Pipeline-like object: collects ops and runs them as one wire round-trip."""
+    """Pipeline-adapter contract: collect ops, batch-execute, return raw results.
+
+    Concrete implementations are
+    :class:`~django_cachex.adapter.pipeline.BaseKeyValuePipelineAdapter`
+    subclasses (one per driver). They expose the cachex pipeline method
+    surface — ``set``/``lpush``/``hset``/``zadd``/... — but those are not
+    enumerated here; the ``Pipeline`` wrapper queues them dynamically and
+    type-checkers verify them per-call.
+    """
 
     def execute(self) -> list[Any]: ...
     def reset(self) -> None: ...
-
-    # Adapters' raw pipelines support the redis-py-shaped op surface
-    # (set/get/delete/mget/mset/incrby/expire/ttl/...). Not enumerated here;
-    # ``Pipeline`` (django_cachex.adapter.pipeline) calls them dynamically.
 
 
 @runtime_checkable

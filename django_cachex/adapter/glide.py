@@ -6,10 +6,9 @@ Each operation method overrides ``BaseKeyValueAdapter`` and calls
 no redis-py-shaped intermediary for the operation surface — only
 ``encode``/``decode``/``_resolve_stampede`` are shared from the base.
 
-The pipeline wrapper (``_GlidePipeline`` / ``_AsyncGlidePipeline``)
-exposes the redis-py-pipeline shape because ``django_cachex.adapter.pipeline.Pipeline``
-is backend-agnostic and assumes that shape on the wrapped raw pipeline.
-A future refactor of ``Pipeline`` could remove this wrapper too.
+The pipeline adapter (``ValkeyGlidePipelineAdapter`` / ``_AsyncGlidePipeline``)
+implements ``BaseKeyValuePipelineAdapter`` natively against glide's ``Batch``
+— no redis-py-shaped intermediary on the queueing surface either.
 
 Standalone only; no cluster, no sentinel. Spike-quality — many
 ruff rules suppressed at the file level since this is intentionally
@@ -23,6 +22,7 @@ from typing import TYPE_CHECKING, Any, Self
 from urllib.parse import urlparse
 
 from django_cachex.adapter.default import BaseKeyValueAdapter
+from django_cachex.adapter.pipeline import BaseKeyValuePipelineAdapter
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
@@ -129,8 +129,8 @@ def _normalize_ttl(result: int) -> int | None:
 # =============================================================================
 
 
-class _GlidePipeline:
-    """redis-py-shaped pipeline buffering ops into a glide ``Batch``."""
+class ValkeyGlidePipelineAdapter(BaseKeyValuePipelineAdapter):
+    """Pipeline adapter that buffers cachex ops into glide's ``Batch``."""
 
     def __init__(self, client: GlideClient, *, transaction: bool = False) -> None:
         self._client = client
@@ -575,7 +575,7 @@ class _GlidePipeline:
 
 
 class _AsyncGlidePipeline:
-    """Async parallel of ``_GlidePipeline``."""
+    """Async parallel of ``ValkeyGlidePipelineAdapter``."""
 
     def __init__(self, client: AsyncGlideClient, *, transaction: bool = False) -> None:
         self._client = client
@@ -1388,14 +1388,14 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
     # Pipeline (sync)
     # =========================================================================
 
-    def _pipeline(self, *, transaction: bool = False) -> _GlidePipeline:
-        return _GlidePipeline(self._client(), transaction=transaction)
+    def _pipeline(self, *, transaction: bool = False) -> ValkeyGlidePipelineAdapter:
+        return ValkeyGlidePipelineAdapter(self._client(), transaction=transaction)
 
     def pipeline(self, *, transaction: bool = True, version: int | None = None) -> Pipeline:
         from django_cachex.adapter.pipeline import Pipeline
 
-        raw_pipeline = self._pipeline(transaction=transaction)
-        return Pipeline(adapter=self, pipeline=raw_pipeline, version=version)
+        pipeline_adapter = self._pipeline(transaction=transaction)
+        return Pipeline(adapter=self, pipeline_adapter=pipeline_adapter, version=version)
 
     # =========================================================================
     # Async core ops

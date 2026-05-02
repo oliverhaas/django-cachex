@@ -1,22 +1,24 @@
-"""Raw pipeline shim for the Rust driver.
+"""Pipeline adapter for the Rust driver.
 
-The shared :class:`~django_cachex.adapter.pipeline.Pipeline` wrapper drives an
-underlying ``self._pipeline`` object whose method surface mirrors redis-py's
-``Pipeline`` (``set``, ``get``, ``hset``, ``zadd``, ...). This module provides
-that surface for the Rust driver: each method buffers a Redis wire command
-plus an optional response parser, and ``execute()`` dispatches the whole batch
-in one round trip via ``RustValkeyDriver.pipeline_exec``.
+:class:`RustValkeyPipelineAdapter` is the Rust-backed implementation of
+:class:`~django_cachex.adapter.pipeline.BaseKeyValuePipelineAdapter`.
+Each method buffers a Redis wire command plus an optional response parser,
+and ``execute()`` dispatches the whole batch in one round trip via
+``RustValkeyDriver.pipeline_exec``.
 
-We deliver results in the same Python shapes redis-py returns so the wrapper's
-decoders (which were written against redis-py) work unchanged. The driver runs
-RESP3, so HGETALL/CONFIG GET return real ``dict``s, ZRANGE WITHSCORES returns
-nested arrays, sets come back as lists, etc. — see the parsers below.
+Results are normalized to the Python shapes redis-py would return so the
+shared :class:`~django_cachex.adapter.pipeline.Pipeline` wrapper's decoders
+work unchanged. The driver runs RESP3 — HGETALL returns a real ``dict``,
+ZRANGE WITHSCORES returns nested arrays, sets come back as lists — see the
+parsers below for the per-command normalizers.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
+
+from django_cachex.adapter.pipeline import BaseKeyValuePipelineAdapter
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -225,11 +227,13 @@ def _xautoclaim(v: Any) -> list[Any]:
 # =============================================================================
 
 
-class _RustRawPipeline:
-    """Buffers commands for batched execution against the Rust driver.
+class RustValkeyPipelineAdapter(BaseKeyValuePipelineAdapter):
+    """Pipeline adapter that buffers ops for the Rust driver's ``pipeline_exec``.
 
-    Implements the subset of the redis-py ``Pipeline`` API that the shared
-    :class:`~django_cachex.adapter.pipeline.Pipeline` wrapper actually calls.
+    Implements the cachex pipeline method surface natively against
+    ``RustValkeyDriver`` — each method appends a RESP wire command (plus
+    an optional shape-normalizing parser) to an internal queue, and
+    ``execute()`` dispatches the whole batch in one round trip.
     """
 
     def __init__(self, driver: RustValkeyDriver, *, transaction: bool = True) -> None:
@@ -245,7 +249,7 @@ class _RustRawPipeline:
         cmd: str,
         *args: Any,
         parser: Callable[[Any], Any] | None = None,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         self._commands.append((cmd, [_to_bytes(a) for a in args]))
         self._parsers.append(parser)
         return self
@@ -268,7 +272,7 @@ class _RustRawPipeline:
             out.append(parser(value) if parser is not None else value)
         return out
 
-    def execute_command(self, *args: Any) -> _RustRawPipeline:
+    def execute_command(self, *args: Any) -> RustValkeyPipelineAdapter:
         """Queue a raw Redis command (used by the wrapper's ``eval_script``)."""
         if not args:
             msg = "execute_command requires at least the command name"
@@ -291,7 +295,7 @@ class _RustRawPipeline:
         pxat: int | datetime | None = None,
         keepttl: bool = False,
         get: bool = False,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key, value]
         if ex is not None:
             args.extend([b"EX", _seconds(ex)])
@@ -311,13 +315,13 @@ class _RustRawPipeline:
             args.append(b"GET")
         return self._queue("SET", *args)
 
-    def get(self, key: Any) -> _RustRawPipeline:
+    def get(self, key: Any) -> RustValkeyPipelineAdapter:
         return self._queue("GET", key)
 
-    def delete(self, *keys: Any) -> _RustRawPipeline:
+    def delete(self, *keys: Any) -> RustValkeyPipelineAdapter:
         return self._queue("DEL", *keys)
 
-    def exists(self, *keys: Any) -> _RustRawPipeline:
+    def exists(self, *keys: Any) -> RustValkeyPipelineAdapter:
         return self._queue("EXISTS", *keys)
 
     def expire(
@@ -329,7 +333,7 @@ class _RustRawPipeline:
         xx: bool = False,
         gt: bool = False,
         lt: bool = False,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key, _seconds(seconds)]
         if nx:
             args.append(b"NX")
@@ -350,7 +354,7 @@ class _RustRawPipeline:
         xx: bool = False,
         gt: bool = False,
         lt: bool = False,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key, _epoch_seconds(when)]
         if nx:
             args.append(b"NX")
@@ -371,7 +375,7 @@ class _RustRawPipeline:
         xx: bool = False,
         gt: bool = False,
         lt: bool = False,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key, _milliseconds(milliseconds)]
         if nx:
             args.append(b"NX")
@@ -392,7 +396,7 @@ class _RustRawPipeline:
         xx: bool = False,
         gt: bool = False,
         lt: bool = False,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key, _epoch_milliseconds(when)]
         if nx:
             args.append(b"NX")
@@ -404,70 +408,70 @@ class _RustRawPipeline:
             args.append(b"LT")
         return self._queue("PEXPIREAT", *args, parser=bool)
 
-    def persist(self, key: Any) -> _RustRawPipeline:
+    def persist(self, key: Any) -> RustValkeyPipelineAdapter:
         return self._queue("PERSIST", key, parser=bool)
 
-    def ttl(self, key: Any) -> _RustRawPipeline:
+    def ttl(self, key: Any) -> RustValkeyPipelineAdapter:
         return self._queue("TTL", key)
 
-    def pttl(self, key: Any) -> _RustRawPipeline:
+    def pttl(self, key: Any) -> RustValkeyPipelineAdapter:
         return self._queue("PTTL", key)
 
-    def expiretime(self, key: Any) -> _RustRawPipeline:
+    def expiretime(self, key: Any) -> RustValkeyPipelineAdapter:
         return self._queue("EXPIRETIME", key)
 
-    def type(self, key: Any) -> _RustRawPipeline:
+    def type(self, key: Any) -> RustValkeyPipelineAdapter:
         return self._queue("TYPE", key)
 
-    def rename(self, src: Any, dst: Any) -> _RustRawPipeline:
+    def rename(self, src: Any, dst: Any) -> RustValkeyPipelineAdapter:
         return self._queue("RENAME", src, dst)
 
-    def renamenx(self, src: Any, dst: Any) -> _RustRawPipeline:
+    def renamenx(self, src: Any, dst: Any) -> RustValkeyPipelineAdapter:
         return self._queue("RENAMENX", src, dst)
 
-    def incrby(self, key: Any, amount: int = 1) -> _RustRawPipeline:
+    def incrby(self, key: Any, amount: int = 1) -> RustValkeyPipelineAdapter:
         return self._queue("INCRBY", key, amount)
 
-    def decrby(self, key: Any, amount: int = 1) -> _RustRawPipeline:
+    def decrby(self, key: Any, amount: int = 1) -> RustValkeyPipelineAdapter:
         return self._queue("DECRBY", key, amount)
 
     # ================================================================ lists
 
-    def lpush(self, key: Any, *values: Any) -> _RustRawPipeline:
+    def lpush(self, key: Any, *values: Any) -> RustValkeyPipelineAdapter:
         return self._queue("LPUSH", key, *values)
 
-    def rpush(self, key: Any, *values: Any) -> _RustRawPipeline:
+    def rpush(self, key: Any, *values: Any) -> RustValkeyPipelineAdapter:
         return self._queue("RPUSH", key, *values)
 
-    def lpop(self, key: Any, count: int | None = None) -> _RustRawPipeline:
+    def lpop(self, key: Any, count: int | None = None) -> RustValkeyPipelineAdapter:
         if count is None:
             return self._queue("LPOP", key)
         return self._queue("LPOP", key, count)
 
-    def rpop(self, key: Any, count: int | None = None) -> _RustRawPipeline:
+    def rpop(self, key: Any, count: int | None = None) -> RustValkeyPipelineAdapter:
         if count is None:
             return self._queue("RPOP", key)
         return self._queue("RPOP", key, count)
 
-    def lrange(self, key: Any, start: int, end: int) -> _RustRawPipeline:
+    def lrange(self, key: Any, start: int, end: int) -> RustValkeyPipelineAdapter:
         return self._queue("LRANGE", key, start, end)
 
-    def lindex(self, key: Any, index: int) -> _RustRawPipeline:
+    def lindex(self, key: Any, index: int) -> RustValkeyPipelineAdapter:
         return self._queue("LINDEX", key, index)
 
-    def llen(self, key: Any) -> _RustRawPipeline:
+    def llen(self, key: Any) -> RustValkeyPipelineAdapter:
         return self._queue("LLEN", key)
 
-    def lrem(self, key: Any, count: int, value: Any) -> _RustRawPipeline:
+    def lrem(self, key: Any, count: int, value: Any) -> RustValkeyPipelineAdapter:
         return self._queue("LREM", key, count, value)
 
-    def ltrim(self, key: Any, start: int, end: int) -> _RustRawPipeline:
+    def ltrim(self, key: Any, start: int, end: int) -> RustValkeyPipelineAdapter:
         return self._queue("LTRIM", key, start, end)
 
-    def lset(self, key: Any, index: int, value: Any) -> _RustRawPipeline:
+    def lset(self, key: Any, index: int, value: Any) -> RustValkeyPipelineAdapter:
         return self._queue("LSET", key, index, value)
 
-    def linsert(self, key: Any, where: str, pivot: Any, value: Any) -> _RustRawPipeline:
+    def linsert(self, key: Any, where: str, pivot: Any, value: Any) -> RustValkeyPipelineAdapter:
         return self._queue("LINSERT", key, where.upper(), pivot, value)
 
     def lpos(
@@ -477,7 +481,7 @@ class _RustRawPipeline:
         rank: int | None = None,
         count: int | None = None,
         maxlen: int | None = None,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key, value]
         if rank is not None:
             args.extend([b"RANK", rank])
@@ -493,56 +497,56 @@ class _RustRawPipeline:
         destination: Any,
         src: str = "LEFT",
         dest: str = "RIGHT",
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         return self._queue("LMOVE", source, destination, src.upper(), dest.upper())
 
     # ================================================================= sets
 
-    def sadd(self, key: Any, *members: Any) -> _RustRawPipeline:
+    def sadd(self, key: Any, *members: Any) -> RustValkeyPipelineAdapter:
         return self._queue("SADD", key, *members)
 
-    def srem(self, key: Any, *members: Any) -> _RustRawPipeline:
+    def srem(self, key: Any, *members: Any) -> RustValkeyPipelineAdapter:
         return self._queue("SREM", key, *members)
 
-    def smembers(self, key: Any) -> _RustRawPipeline:
+    def smembers(self, key: Any) -> RustValkeyPipelineAdapter:
         return self._queue("SMEMBERS", key)
 
-    def sismember(self, key: Any, member: Any) -> _RustRawPipeline:
+    def sismember(self, key: Any, member: Any) -> RustValkeyPipelineAdapter:
         return self._queue("SISMEMBER", key, member)
 
-    def smismember(self, key: Any, *members: Any) -> _RustRawPipeline:
+    def smismember(self, key: Any, *members: Any) -> RustValkeyPipelineAdapter:
         return self._queue("SMISMEMBER", key, *members)
 
-    def scard(self, key: Any) -> _RustRawPipeline:
+    def scard(self, key: Any) -> RustValkeyPipelineAdapter:
         return self._queue("SCARD", key)
 
-    def sdiff(self, *keys: Any) -> _RustRawPipeline:
+    def sdiff(self, *keys: Any) -> RustValkeyPipelineAdapter:
         return self._queue("SDIFF", *keys)
 
-    def sdiffstore(self, dest: Any, *keys: Any) -> _RustRawPipeline:
+    def sdiffstore(self, dest: Any, *keys: Any) -> RustValkeyPipelineAdapter:
         return self._queue("SDIFFSTORE", dest, *keys)
 
-    def sinter(self, *keys: Any) -> _RustRawPipeline:
+    def sinter(self, *keys: Any) -> RustValkeyPipelineAdapter:
         return self._queue("SINTER", *keys)
 
-    def sinterstore(self, dest: Any, *keys: Any) -> _RustRawPipeline:
+    def sinterstore(self, dest: Any, *keys: Any) -> RustValkeyPipelineAdapter:
         return self._queue("SINTERSTORE", dest, *keys)
 
-    def sunion(self, *keys: Any) -> _RustRawPipeline:
+    def sunion(self, *keys: Any) -> RustValkeyPipelineAdapter:
         return self._queue("SUNION", *keys)
 
-    def sunionstore(self, dest: Any, *keys: Any) -> _RustRawPipeline:
+    def sunionstore(self, dest: Any, *keys: Any) -> RustValkeyPipelineAdapter:
         return self._queue("SUNIONSTORE", dest, *keys)
 
-    def smove(self, source: Any, destination: Any, member: Any) -> _RustRawPipeline:
+    def smove(self, source: Any, destination: Any, member: Any) -> RustValkeyPipelineAdapter:
         return self._queue("SMOVE", source, destination, member)
 
-    def spop(self, key: Any, count: int | None = None) -> _RustRawPipeline:
+    def spop(self, key: Any, count: int | None = None) -> RustValkeyPipelineAdapter:
         if count is None:
             return self._queue("SPOP", key)
         return self._queue("SPOP", key, count)
 
-    def srandmember(self, key: Any, count: int | None = None) -> _RustRawPipeline:
+    def srandmember(self, key: Any, count: int | None = None) -> RustValkeyPipelineAdapter:
         if count is None:
             return self._queue("SRANDMEMBER", key)
         return self._queue("SRANDMEMBER", key, count)
@@ -556,7 +560,7 @@ class _RustRawPipeline:
         value: Any = None,
         mapping: Mapping[str, Any] | None = None,
         items: list[Any] | None = None,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key]
         if field is not None:
             args.extend([field, value])
@@ -569,39 +573,39 @@ class _RustRawPipeline:
                 args.extend([f, v])
         return self._queue("HSET", *args)
 
-    def hsetnx(self, key: Any, field: str, value: Any) -> _RustRawPipeline:
+    def hsetnx(self, key: Any, field: str, value: Any) -> RustValkeyPipelineAdapter:
         return self._queue("HSETNX", key, field, value)
 
-    def hdel(self, key: Any, *fields: str) -> _RustRawPipeline:
+    def hdel(self, key: Any, *fields: str) -> RustValkeyPipelineAdapter:
         return self._queue("HDEL", key, *fields)
 
-    def hexists(self, key: Any, field: str) -> _RustRawPipeline:
+    def hexists(self, key: Any, field: str) -> RustValkeyPipelineAdapter:
         return self._queue("HEXISTS", key, field)
 
-    def hget(self, key: Any, field: str) -> _RustRawPipeline:
+    def hget(self, key: Any, field: str) -> RustValkeyPipelineAdapter:
         return self._queue("HGET", key, field)
 
-    def hgetall(self, key: Any) -> _RustRawPipeline:
+    def hgetall(self, key: Any) -> RustValkeyPipelineAdapter:
         return self._queue("HGETALL", key, parser=_hgetall)
 
-    def hkeys(self, key: Any) -> _RustRawPipeline:
+    def hkeys(self, key: Any) -> RustValkeyPipelineAdapter:
         return self._queue("HKEYS", key)
 
-    def hvals(self, key: Any) -> _RustRawPipeline:
+    def hvals(self, key: Any) -> RustValkeyPipelineAdapter:
         return self._queue("HVALS", key)
 
-    def hlen(self, key: Any) -> _RustRawPipeline:
+    def hlen(self, key: Any) -> RustValkeyPipelineAdapter:
         return self._queue("HLEN", key)
 
-    def hmget(self, key: Any, fields: Iterable[str] | str) -> _RustRawPipeline:
+    def hmget(self, key: Any, fields: Iterable[str] | str) -> RustValkeyPipelineAdapter:
         if isinstance(fields, (str, bytes)):
             return self._queue("HMGET", key, fields)
         return self._queue("HMGET", key, *fields)
 
-    def hincrby(self, key: Any, field: str, amount: int = 1) -> _RustRawPipeline:
+    def hincrby(self, key: Any, field: str, amount: int = 1) -> RustValkeyPipelineAdapter:
         return self._queue("HINCRBY", key, field, amount)
 
-    def hincrbyfloat(self, key: Any, field: str, amount: float = 1.0) -> _RustRawPipeline:
+    def hincrbyfloat(self, key: Any, field: str, amount: float = 1.0) -> RustValkeyPipelineAdapter:
         return self._queue("HINCRBYFLOAT", key, field, amount, parser=_to_float_or_none)
 
     # ========================================================== sorted sets
@@ -617,7 +621,7 @@ class _RustRawPipeline:
         incr: bool = False,
         gt: bool = False,
         lt: bool = False,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key]
         if nx:
             args.append(b"NX")
@@ -637,19 +641,19 @@ class _RustRawPipeline:
         parser = _to_float_or_none if incr else None
         return self._queue("ZADD", *args, parser=parser)
 
-    def zcard(self, key: Any) -> _RustRawPipeline:
+    def zcard(self, key: Any) -> RustValkeyPipelineAdapter:
         return self._queue("ZCARD", key)
 
-    def zcount(self, key: Any, min: Any, max: Any) -> _RustRawPipeline:
+    def zcount(self, key: Any, min: Any, max: Any) -> RustValkeyPipelineAdapter:
         return self._queue("ZCOUNT", key, min, max)
 
-    def zincrby(self, key: Any, amount: float, value: Any) -> _RustRawPipeline:
+    def zincrby(self, key: Any, amount: float, value: Any) -> RustValkeyPipelineAdapter:
         return self._queue("ZINCRBY", key, amount, value, parser=_zincrby)
 
-    def zpopmax(self, key: Any, count: int | None = None) -> _RustRawPipeline:
+    def zpopmax(self, key: Any, count: int | None = None) -> RustValkeyPipelineAdapter:
         return self._queue("ZPOPMAX", key, 1 if count is None else count, parser=_zpop)
 
-    def zpopmin(self, key: Any, count: int | None = None) -> _RustRawPipeline:
+    def zpopmin(self, key: Any, count: int | None = None) -> RustValkeyPipelineAdapter:
         return self._queue("ZPOPMIN", key, 1 if count is None else count, parser=_zpop)
 
     def zrange(
@@ -661,7 +665,7 @@ class _RustRawPipeline:
         desc: bool = False,
         withscores: bool = False,
         score_cast_func: Any = float,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key, start, end]
         if desc:
             args.append(b"REV")
@@ -678,7 +682,7 @@ class _RustRawPipeline:
         *,
         withscores: bool = False,
         score_cast_func: Any = float,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key, start, end]
         if withscores:
             args.append(b"WITHSCORES")
@@ -695,7 +699,7 @@ class _RustRawPipeline:
         *,
         withscores: bool = False,
         score_cast_func: Any = float,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key, min, max]
         if withscores:
             args.append(b"WITHSCORES")
@@ -714,7 +718,7 @@ class _RustRawPipeline:
         *,
         withscores: bool = False,
         score_cast_func: Any = float,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key, max, min]
         if withscores:
             args.append(b"WITHSCORES")
@@ -723,19 +727,19 @@ class _RustRawPipeline:
         parser = _zset_with_scores if withscores else None
         return self._queue("ZREVRANGEBYSCORE", *args, parser=parser)
 
-    def zrank(self, key: Any, value: Any) -> _RustRawPipeline:
+    def zrank(self, key: Any, value: Any) -> RustValkeyPipelineAdapter:
         return self._queue("ZRANK", key, value)
 
-    def zrevrank(self, key: Any, value: Any) -> _RustRawPipeline:
+    def zrevrank(self, key: Any, value: Any) -> RustValkeyPipelineAdapter:
         return self._queue("ZREVRANK", key, value)
 
-    def zscore(self, key: Any, value: Any) -> _RustRawPipeline:
+    def zscore(self, key: Any, value: Any) -> RustValkeyPipelineAdapter:
         return self._queue("ZSCORE", key, value, parser=_to_float_or_none)
 
-    def zmscore(self, key: Any, members: Iterable[Any]) -> _RustRawPipeline:
+    def zmscore(self, key: Any, members: Iterable[Any]) -> RustValkeyPipelineAdapter:
         return self._queue("ZMSCORE", key, *members, parser=_list_to_float_or_none)
 
-    def zrem(self, key: Any, *values: Any) -> _RustRawPipeline:
+    def zrem(self, key: Any, *values: Any) -> RustValkeyPipelineAdapter:
         return self._queue("ZREM", key, *values)
 
     def zremrangebyscore(
@@ -743,10 +747,10 @@ class _RustRawPipeline:
         key: Any,
         min: Any,
         max: Any,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         return self._queue("ZREMRANGEBYSCORE", key, min, max)
 
-    def zremrangebyrank(self, key: Any, start: int, end: int) -> _RustRawPipeline:
+    def zremrangebyrank(self, key: Any, start: int, end: int) -> RustValkeyPipelineAdapter:
         return self._queue("ZREMRANGEBYRANK", key, start, end)
 
     # ============================================================== streams
@@ -762,7 +766,7 @@ class _RustRawPipeline:
         nomkstream: bool = False,
         minid: str | None = None,
         limit: int | None = None,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key]
         if nomkstream:
             args.append(b"NOMKSTREAM")
@@ -781,7 +785,7 @@ class _RustRawPipeline:
             args.extend([k, v])
         return self._queue("XADD", *args, parser=_bytes_or_none_to_str)
 
-    def xlen(self, key: Any) -> _RustRawPipeline:
+    def xlen(self, key: Any) -> RustValkeyPipelineAdapter:
         return self._queue("XLEN", key)
 
     def xrange(
@@ -790,7 +794,7 @@ class _RustRawPipeline:
         min: str = "-",
         max: str = "+",
         count: int | None = None,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key, min, max]
         if count is not None:
             args.extend([b"COUNT", count])
@@ -802,7 +806,7 @@ class _RustRawPipeline:
         max: str = "+",
         min: str = "-",
         count: int | None = None,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key, max, min]
         if count is not None:
             args.extend([b"COUNT", count])
@@ -813,7 +817,7 @@ class _RustRawPipeline:
         streams: Mapping[Any, Any],
         count: int | None = None,
         block: int | None = None,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = []
         if count is not None:
             args.extend([b"COUNT", count])
@@ -834,7 +838,7 @@ class _RustRawPipeline:
         count: int | None = None,
         block: int | None = None,
         noack: bool = False,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [b"GROUP", groupname, consumername]
         if count is not None:
             args.extend([b"COUNT", count])
@@ -856,7 +860,7 @@ class _RustRawPipeline:
         approximate: bool = True,
         minid: str | None = None,
         limit: int | None = None,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key]
         if maxlen is not None:
             args.append(b"MAXLEN")
@@ -870,18 +874,18 @@ class _RustRawPipeline:
             args.extend([b"LIMIT", limit])
         return self._queue("XTRIM", *args)
 
-    def xdel(self, key: Any, *entry_ids: str) -> _RustRawPipeline:
+    def xdel(self, key: Any, *entry_ids: str) -> RustValkeyPipelineAdapter:
         return self._queue("XDEL", key, *entry_ids)
 
-    def xinfo_stream(self, key: Any, full: bool = False) -> _RustRawPipeline:
+    def xinfo_stream(self, key: Any, full: bool = False) -> RustValkeyPipelineAdapter:
         if full:
             return self._queue("XINFO", b"STREAM", key, b"FULL", parser=_xinfo_dict)
         return self._queue("XINFO", b"STREAM", key, parser=_xinfo_dict)
 
-    def xinfo_groups(self, key: Any) -> _RustRawPipeline:
+    def xinfo_groups(self, key: Any) -> RustValkeyPipelineAdapter:
         return self._queue("XINFO", b"GROUPS", key, parser=_xinfo_dict_list)
 
-    def xinfo_consumers(self, key: Any, group: str) -> _RustRawPipeline:
+    def xinfo_consumers(self, key: Any, group: str) -> RustValkeyPipelineAdapter:
         return self._queue("XINFO", b"CONSUMERS", key, group, parser=_xinfo_dict_list)
 
     def xgroup_create(
@@ -892,7 +896,7 @@ class _RustRawPipeline:
         *,
         mkstream: bool = False,
         entries_read: int | None = None,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [b"CREATE", key, group, id]
         if mkstream:
             args.append(b"MKSTREAM")
@@ -900,7 +904,7 @@ class _RustRawPipeline:
             args.extend([b"ENTRIESREAD", entries_read])
         return self._queue("XGROUP", *args)
 
-    def xgroup_destroy(self, key: Any, group: str) -> _RustRawPipeline:
+    def xgroup_destroy(self, key: Any, group: str) -> RustValkeyPipelineAdapter:
         return self._queue("XGROUP", b"DESTROY", key, group)
 
     def xgroup_setid(
@@ -910,19 +914,19 @@ class _RustRawPipeline:
         id: str,
         *,
         entries_read: int | None = None,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [b"SETID", key, group, id]
         if entries_read is not None:
             args.extend([b"ENTRIESREAD", entries_read])
         return self._queue("XGROUP", *args)
 
-    def xgroup_delconsumer(self, key: Any, group: str, consumer: str) -> _RustRawPipeline:
+    def xgroup_delconsumer(self, key: Any, group: str, consumer: str) -> RustValkeyPipelineAdapter:
         return self._queue("XGROUP", b"DELCONSUMER", key, group, consumer)
 
-    def xack(self, key: Any, group: str, *ids: str) -> _RustRawPipeline:
+    def xack(self, key: Any, group: str, *ids: str) -> RustValkeyPipelineAdapter:
         return self._queue("XACK", key, group, *ids)
 
-    def xpending(self, key: Any, group: str) -> _RustRawPipeline:
+    def xpending(self, key: Any, group: str) -> RustValkeyPipelineAdapter:
         """Summary form: ``XPENDING key group``."""
         return self._queue("XPENDING", key, group, parser=_xpending_summary)
 
@@ -936,7 +940,7 @@ class _RustRawPipeline:
         count: int,
         consumername: str | None = None,
         idle: int | None = None,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key, group]
         if idle is not None:
             args.extend([b"IDLE", idle])
@@ -957,7 +961,7 @@ class _RustRawPipeline:
         retrycount: int | None = None,
         force: bool = False,
         justid: bool = False,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key, group, consumer, min_idle_time, *message_ids]
         if idle is not None:
             args.extend([b"IDLE", idle])
@@ -981,7 +985,7 @@ class _RustRawPipeline:
         start_id: str = "0-0",
         count: int | None = None,
         justid: bool = False,
-    ) -> _RustRawPipeline:
+    ) -> RustValkeyPipelineAdapter:
         args: list[Any] = [key, group, consumer, min_idle_time, start_id]
         if count is not None:
             args.extend([b"COUNT", count])
@@ -991,4 +995,4 @@ class _RustRawPipeline:
         return self._queue("XAUTOCLAIM", *args, parser=_xautoclaim)
 
 
-__all__ = ["_RustRawPipeline"]
+__all__ = ["RustValkeyPipelineAdapter"]

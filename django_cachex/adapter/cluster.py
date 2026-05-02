@@ -476,11 +476,11 @@ class BaseKeyValueClusterAdapter(BaseKeyValueAdapter):
         version: int | None = None,
     ) -> Pipeline:
         """Create a pipeline for batched operations. Transactions are ignored in cluster mode."""
-        from django_cachex.adapter.pipeline import Pipeline
+        from django_cachex.adapter.pipeline import Pipeline, RedisPipelineAdapter
 
         client = self.get_client(write=True)
-        raw_pipeline = client.pipeline(transaction=False)
-        return Pipeline(adapter=self, pipeline=raw_pipeline, version=version)
+        pipeline_adapter = RedisPipelineAdapter(client.pipeline(transaction=False))
+        return Pipeline(adapter=self, pipeline_adapter=pipeline_adapter, version=version)
 
 
 # =============================================================================

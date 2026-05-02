@@ -761,11 +761,11 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         transaction: bool = True,
         version: int | None = None,
     ) -> Pipeline:
-        from django_cachex.adapter._rust_pipeline import _RustRawPipeline
         from django_cachex.adapter.pipeline import Pipeline
+        from django_cachex.adapter.pipeline_rust import RustValkeyPipelineAdapter
 
-        raw = _RustRawPipeline(self._driver, transaction=transaction)
-        return Pipeline(adapter=self, pipeline=raw, version=version)
+        pipeline_adapter = RustValkeyPipelineAdapter(self._driver, transaction=transaction)
+        return Pipeline(adapter=self, pipeline_adapter=pipeline_adapter, version=version)
 
     # =========================================================================
     # Hashes
