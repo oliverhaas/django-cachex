@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Full featured Redis and Valkey cache backend for Django">
+        <meta name="description" content="Valkey and Redis cache backend for Django, with a Django admin UI for cache inspection.">
       
       
       
@@ -1252,11 +1252,11 @@
 <h2 id="permissions">Permissions<a class="headerlink" href="#permissions" title="Permanent link">&para;</a></h2>
 <p>The admin uses Django's built-in permission system. Superusers have full access. Staff users need explicit permissions:</p>
 <ul>
-<li><code>django_cachex.view_cache</code> / <code>view_key</code> — view caches and keys</li>
-<li><code>django_cachex.change_cache</code> — flush caches, update TTL</li>
-<li><code>django_cachex.add_key</code> — create keys</li>
-<li><code>django_cachex.change_key</code> — edit values</li>
-<li><code>django_cachex.delete_key</code> — delete keys</li>
+<li><code>django_cachex.view_cache</code> / <code>view_key</code>: view caches and keys</li>
+<li><code>django_cachex.change_cache</code>: flush caches, update TTL</li>
+<li><code>django_cachex.add_key</code>: create keys</li>
+<li><code>django_cachex.change_key</code>: edit values</li>
+<li><code>django_cachex.delete_key</code>: delete keys</li>
 </ul>
 <h2 id="support-levels">Support Levels<a class="headerlink" href="#support-levels" title="Permanent link">&para;</a></h2>
 <p>Different cache backends have different levels of support:</p>
@@ -1287,7 +1287,7 @@
 </tbody>
 </table>
 <h3 id="using-redisvalkey">Using Redis/Valkey?<a class="headerlink" href="#using-redisvalkey" title="Permanent link">&para;</a></h3>
-<p>If you are using Django's builtin Redis backend (<code>django.core.cache.backends.redis.RedisCache</code>), consider switching to django-cachex's <code>ValkeyCache</code> or <code>RedisCache</code> backends for full admin functionality: key browsing, pattern search, TTL inspection, native data type support, and server statistics. See the <a href="../../getting-started/quickstart/">quickstart guide</a> for migration instructions.</p>
+<p>The admin works against Django's builtin Redis backend (<code>django.core.cache.backends.redis.RedisCache</code>) at the <strong>limited</strong> support level only. Switch to <code>ValkeyCache</code> / <code>RedisCache</code> for full functionality. See the <a href="../../getting-started/quickstart/">quickstart guide</a> for migration instructions.</p>
 <h2 id="views">Views<a class="headerlink" href="#views" title="Permanent link">&para;</a></h2>
 <h3 id="caches-index">Caches (Index)<a class="headerlink" href="#caches-index" title="Permanent link">&para;</a></h3>
 <p>Lists all configured caches showing name, backend class, location, and support level.</p>

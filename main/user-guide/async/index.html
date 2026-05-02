@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Full featured Redis and Valkey cache backend for Django">
+        <meta name="description" content="Valkey and Redis cache backend for Django, with a Django admin UI for cache inspection.">
       
       
       
@@ -1417,9 +1417,9 @@
 
 
 <h1 id="async-support">Async Support<a class="headerlink" href="#async-support" title="Permanent link">&para;</a></h1>
-<p>django-cachex implements Django's async cache methods (<code>aget</code>, <code>aset</code>, <code>adelete</code>, etc.) using native async clients from <code>redis.asyncio</code> and <code>valkey.asyncio</code>. There is no threadpool round-trip.</p>
+<p>django-cachex implements Django's async cache methods (<code>aget</code>, <code>aset</code>, <code>adelete</code>, etc.) using native async clients from <code>redis.asyncio</code> and <code>valkey.asyncio</code>, so async callers don't pay the asgiref threadpool round-trip.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>A single cache backend serves both sync and async callers. <code>cache.get()</code> and <code>await cache.aget()</code> operate on the same backend with no separate configuration.</p>
+<p><code>cache.get()</code> and <code>await cache.aget()</code> operate on the same backend with no separate configuration.</p>
 <h2 id="basic-usage">Basic Usage<a class="headerlink" href="#basic-usage" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
@@ -1720,7 +1720,7 @@
 </span><span id="__span-10-29"><a id="__codelineno-10-29" name="__codelineno-10-29" href="#__codelineno-10-29"></a>
 </span><span id="__span-10-30"><a id="__codelineno-10-30" name="__codelineno-10-30" href="#__codelineno-10-30"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">leaderboard</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
 </span><span id="__span-10-31"><a id="__codelineno-10-31" name="__codelineno-10-31" href="#__codelineno-10-31"></a>    <span class="c1"># Get top 10 from sorted set (descending by score)</span>
-</span><span id="__span-10-32"><a id="__codelineno-10-32" name="__codelineno-10-32" href="#__codelineno-10-32"></a>    <span class="n">top_players</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">zrevrange</span><span class="p">(</span>
+</span><span id="__span-10-32"><a id="__codelineno-10-32" name="__codelineno-10-32" href="#__codelineno-10-32"></a>    <span class="n">top_players</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">azrevrange</span><span class="p">(</span>
 </span><span id="__span-10-33"><a id="__codelineno-10-33" name="__codelineno-10-33" href="#__codelineno-10-33"></a>        <span class="s2">&quot;game:leaderboard&quot;</span><span class="p">,</span>
 </span><span id="__span-10-34"><a id="__codelineno-10-34" name="__codelineno-10-34" href="#__codelineno-10-34"></a>        <span class="mi">0</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span>
 </span><span id="__span-10-35"><a id="__codelineno-10-35" name="__codelineno-10-35" href="#__codelineno-10-35"></a>        <span class="n">withscores</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>

@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Full featured Redis and Valkey cache backend for Django">
+        <meta name="description" content="Valkey and Redis cache backend for Django, with a Django admin UI for cache inspection.">
       
       
       
@@ -1544,7 +1544,7 @@
 <ul>
 <li><strong>Python 3.14+ required.</strong> Dropped support for 3.12 and 3.13. The package now ships on cp314 and cp314t (free-threaded) wheels.</li>
 <li><strong>Django 6.0+ required.</strong> Dropped support for Django 5.2.</li>
-<li><strong><code>SyncCache</code> wire format changed.</strong> Stream entries now flow through the transport's serializer + compressor pipeline instead of raw pickle. Pods running the new code cannot read entries written by older pods on the same stream — coordinate the rollout (drain or rotate <code>STREAM_KEY</code>).</li>
+<li><strong><code>SyncCache</code> wire format changed.</strong> Stream entries now flow through the transport's serializer + compressor pipeline instead of raw pickle. Pods running the new code cannot read entries written by older pods on the same stream; coordinate the rollout (drain or rotate <code>STREAM_KEY</code>).</li>
 <li><strong><code>hmset</code> removed.</strong> Use <code>hset(key, mapping=...)</code> or <code>hset(key, items=...)</code> (flat key-value list, matching redis-py/valkey-py).</li>
 <li><strong><code>django_cachex.unfold</code> removed.</strong> The django-unfold theme variant of the admin is gone, along with the <code>[unfold]</code> extra and <code>examples/unfold/</code>. Plain <code>django_cachex.admin</code> remains. Unfold support may return as a thin theme override once the core admin app stabilises.</li>
 <li><strong><code>ZStdCompressor</code> renamed to <code>ZstdCompressor</code></strong> (<code>django_cachex.compressors.zstd.ZstdCompressor</code>). Update <code>OPTIONS["compressor"]</code> strings.</li>
@@ -1600,29 +1600,28 @@
 <p>Initial stable release of django-cachex.</p>
 <h3 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Unified Valkey + Redis support</strong> in one package</li>
-<li><strong>Full-featured cache backend</strong> for Django</li>
-<li><strong>Session backend support</strong> via Django's cache sessions</li>
-<li><strong>Pluggable clients</strong> (Default, Sentinel, Cluster)</li>
-<li><strong>Pluggable serializers</strong> (Pickle, JSON, MsgPack)</li>
-<li><strong>Pluggable compressors</strong> (Zlib, Gzip, LZMA, LZ4, Zstandard)</li>
-<li><strong>Multi-serializer/compressor fallback</strong> for safe migrations</li>
-<li><strong>Connection pooling</strong> with configurable options</li>
-<li><strong>Primary/replica replication</strong> support</li>
-<li><strong>Valkey/Redis Sentinel support</strong> for high availability</li>
-<li><strong>Valkey/Redis Cluster support</strong> with automatic slot handling</li>
-<li><strong>Distributed locks</strong> compatible with <code>threading.Lock</code></li>
-<li><strong>TTL operations</strong> (<code>ttl()</code>, <code>pttl()</code>, <code>expire()</code>, <code>persist()</code>)</li>
-<li><strong>Pattern operations</strong> (<code>keys()</code>, <code>iter_keys()</code>, <code>delete_pattern()</code>)</li>
-<li><strong>Pipelines</strong> for batched operations</li>
-<li><strong>Lua script interface</strong> with automatic key prefixing and value encoding/decoding</li>
-<li><strong>Django Cache Admin</strong> for cache inspection and management</li>
-<li>Browse, search, edit, and delete cache keys</li>
-<li>View server info, memory statistics, and slowlog</li>
-<li>Key type filter sidebar</li>
-<li>Support for Django builtin backends (LocMemCache, DatabaseCache, FileBasedCache) via wrappers</li>
-<li>Django Unfold theme support (<code>django_cachex.unfold</code>)</li>
-<li><strong>Async support</strong> for all extended methods</li>
+<li>Valkey and Redis support in one package.</li>
+<li>Session backend support via Django's cache sessions.</li>
+<li>Pluggable clients: Default, Sentinel, Cluster.</li>
+<li>Pluggable serializers: Pickle, JSON, MsgPack.</li>
+<li>Pluggable compressors: Zlib, Gzip, LZMA, LZ4, Zstandard.</li>
+<li>Multi-serializer/compressor fallback for safe migrations.</li>
+<li>Connection pooling with configurable options.</li>
+<li>Primary/replica replication support.</li>
+<li>Valkey/Redis Sentinel support for high availability.</li>
+<li>Valkey/Redis Cluster support with automatic slot handling.</li>
+<li>Distributed locks compatible with <code>threading.Lock</code>.</li>
+<li>TTL operations: <code>ttl()</code>, <code>pttl()</code>, <code>expire()</code>, <code>persist()</code>.</li>
+<li>Pattern operations: <code>keys()</code>, <code>iter_keys()</code>, <code>delete_pattern()</code>.</li>
+<li>Pipelines for batched operations.</li>
+<li>Lua script interface with automatic key prefixing and value encoding/decoding.</li>
+<li>Django Cache Admin for cache inspection and management:</li>
+<li>Browse, search, edit, and delete cache keys.</li>
+<li>View server info, memory statistics, and slowlog.</li>
+<li>Key type filter sidebar.</li>
+<li>Support for Django builtin backends (LocMemCache, DatabaseCache, FileBasedCache) via wrappers.</li>
+<li>Django Unfold theme support (<code>django_cachex.unfold</code>).</li>
+<li>Async support for all extended methods.</li>
 </ul>
 <h3 id="data-structure-operations">Data Structure Operations<a class="headerlink" href="#data-structure-operations" title="Permanent link">&para;</a></h3>
 <ul>

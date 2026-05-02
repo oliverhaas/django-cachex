@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Full featured Redis and Valkey cache backend for Django">
+        <meta name="description" content="Valkey and Redis cache backend for Django, with a Django admin UI for cache inspection.">
       
       
       
@@ -1085,27 +1085,27 @@
 <tbody>
 <tr>
 <td><code>django_cachex.serializers.pickle.PickleSerializer</code></td>
-<td>Python pickle (default) — supports nearly all Python types</td>
+<td>Python pickle (default); supports nearly all Python types</td>
 <td>—</td>
 </tr>
 <tr>
 <td><code>django_cachex.serializers.json.JSONSerializer</code></td>
-<td>JSON via Django's <code>DjangoJSONEncoder</code> — best Django type coverage of the JSON family</td>
+<td>JSON via Django's <code>DjangoJSONEncoder</code> (broadest Django type coverage of the JSON family)</td>
 <td>—</td>
 </tr>
 <tr>
 <td><code>django_cachex.serializers.msgpack.MessagePackSerializer</code></td>
-<td>Pure-Python MessagePack — compact binary format</td>
+<td>Pure-Python MessagePack; compact binary format</td>
 <td><code>msgpack</code></td>
 </tr>
 <tr>
 <td><code>django_cachex.serializers.orjson.OrjsonSerializer</code></td>
-<td>Rust-backed JSON — fastest JSON, fewer types than <code>DjangoJSONEncoder</code></td>
+<td>Rust-backed JSON; fewer types than <code>DjangoJSONEncoder</code></td>
 <td><code>orjson</code></td>
 </tr>
 <tr>
 <td><code>django_cachex.serializers.ormsgpack.OrMessagePackSerializer</code></td>
-<td>Rust-backed MessagePack — fastest overall in our benchmarks</td>
+<td>Rust-backed MessagePack</td>
 <td><code>ormsgpack</code></td>
 </tr>
 </tbody>
@@ -1235,7 +1235,7 @@ Real network or larger payloads dampen the spread. Reproduce with the
 <a href="https://github.com/e1plus/django-cachex/tree/main/benchmarks">benchmarks</a> harness.</p>
 <p>Notes:</p>
 <ul>
-<li>The "~" cells are not bugs — they reflect what the underlying format can
+<li>The "~" cells are not bugs; they reflect what the underlying format can
   represent. <code>Decimal("1.99")</code> round-trips through <code>DjangoJSONEncoder</code> as the
   string <code>"1.99"</code>; if you need a <code>Decimal</code> back, convert on read.</li>
 <li><code>orjson</code> natively encodes <code>dataclass</code> and <code>Enum</code> values, but loses the

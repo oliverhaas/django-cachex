@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Full featured Redis and Valkey cache backend for Django">
+        <meta name="description" content="Valkey and Redis cache backend for Django, with a Django admin UI for cache inspection.">
       
       
       
@@ -1135,13 +1135,13 @@
 <h2 id="new-features">New Features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h2>
 <p>After migrating, you gain:</p>
 <ul>
-<li><strong>Unified Valkey + Redis support</strong> in one package</li>
-<li><strong>Multi-serializer/compressor fallback</strong> for safe migrations</li>
-<li><strong>Extended data structures</strong> (hashes, lists, sets, sorted sets) directly on cache</li>
-<li><strong>TTL operations</strong> (<code>ttl()</code>, <code>pttl()</code>, <code>expire()</code>, <code>persist()</code>)</li>
-<li><strong>Pattern operations</strong> (<code>keys()</code>, <code>iter_keys()</code>, <code>delete_pattern()</code>)</li>
-<li><strong>Distributed locking</strong> (<code>cache.lock()</code>)</li>
-<li><strong>Pipelines</strong> (<code>cache.pipeline()</code>)</li>
+<li>Valkey and Redis in one package.</li>
+<li>Multi-serializer/compressor fallback for safe migrations.</li>
+<li>Extended data structures (hashes, lists, sets, sorted sets) directly on the cache object.</li>
+<li>TTL operations: <code>ttl()</code>, <code>pttl()</code>, <code>expire()</code>, <code>persist()</code>.</li>
+<li>Pattern operations: <code>keys()</code>, <code>iter_keys()</code>, <code>delete_pattern()</code>.</li>
+<li>Distributed locking via <code>cache.lock()</code>.</li>
+<li>Pipelines via <code>cache.pipeline()</code>.</li>
 </ul>
 
 

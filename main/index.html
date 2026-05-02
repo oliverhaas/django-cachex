@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Full featured Redis and Valkey cache backend for Django">
+        <meta name="description" content="Valkey and Redis cache backend for Django, with a Django admin UI for cache inspection.">
       
       
       
@@ -1067,7 +1067,7 @@
 <p>A drop-in replacement for Django's built-in Redis cache, plus:</p>
 <ul>
 <li>One package for both Valkey and Redis, default and Sentinel and Cluster.</li>
-<li>Sync and async are first-class. The async cache also works from sync code.</li>
+<li>Sync and async support sharing one configuration. The async cache works from sync code too.</li>
 <li>Hash, list, set, sorted set, and stream operations on the cache object.</li>
 <li>TTL and pattern helpers (<code>ttl()</code>, <code>expire()</code>, <code>keys()</code>, <code>delete_pattern()</code>).</li>
 <li>Distributed locks: <code>cache.lock()</code>.</li>
@@ -1076,7 +1076,7 @@
 <li>Cache stampede prevention (TTL-based XFetch).</li>
 <li>Two composite backends: <code>SyncCache</code> (cross-pod stream-synchronized in-memory cache) and <code>TieredCache</code> (L1/L2 with TTL propagation).</li>
 <li>Django <code>LocMemCache</code> and <code>DatabaseCache</code> extensions with the same data-structure ops and admin support.</li>
-<li>Optional Rust I/O driver (PyO3 + tokio + redis-rs) under the same <code>KeyValueCache</code> API. Free-threaded CPython (3.14t) supported.</li>
+<li>Optional Rust I/O driver (PyO3 + tokio + redis-rs) behind the same <code>KeyValueCache</code> API. Free-threaded CPython (3.14t) supported.</li>
 <li>Django admin UI for browsing keys, inspecting values, editing, and flushing.</li>
 </ul>
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
@@ -1105,7 +1105,7 @@
 </span></code></pre></div>
 <h2 id="acknowledgments">Acknowledgments<a class="headerlink" href="#acknowledgments" title="Permanent link">&para;</a></h2>
 <p>This project was inspired by <a href="https://github.com/jazzband/django-redis">django-redis</a> and Django's official <a href="https://docs.djangoproject.com/en/stable/topics/cache/#redis">Redis cache backend</a>. Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause. The admin functionality was inspired by <a href="https://github.com/ionelmc/django-redisboard">django-redisboard</a>.</p>
-<p>The Rust I/O driver and async bridge are heavily inspired by — and in places directly adapted from — <a href="https://gitlab.com/glitchtip/django-vcache">django-vcache</a> (MIT, by David Burke / GlitchTip). The fork-safe tokio runtime, the <code>RustAwaitable</code> deferred-loop-binding pattern, and the multiplexed-connection design all originate there.</p>
+<p>The Rust I/O driver and async bridge are heavily inspired by, and in places directly adapted from, <a href="https://gitlab.com/glitchtip/django-vcache">django-vcache</a> (MIT, by David Burke / GlitchTip). The fork-safe tokio runtime, the <code>RustAwaitable</code> deferred-loop-binding pattern, and the multiplexed-connection design all originate there.</p>
 <p>See also <a href="https://github.com/django-commons/django-valkey">django-valkey</a> and <a href="https://github.com/yassi/dj-cache-panel">dj-cache-panel</a> for related projects with similar goals.</p>
 <h2 id="license">License<a class="headerlink" href="#license" title="Permanent link">&para;</a></h2>
 <p>MIT License. See <a href="https://github.com/oliverhaas/django-cachex/blob/main/LICENSE">LICENSE</a> for details.</p>

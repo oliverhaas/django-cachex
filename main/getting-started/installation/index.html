@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Full featured Redis and Valkey cache backend for Django">
+        <meta name="description" content="Valkey and Redis cache backend for Django, with a Django admin UI for cache inspection.">
       
       
       
@@ -427,10 +427,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#install-with-libvalkeyhiredis-recommended" class="md-nav__link">
+  <a href="#install-with-libvalkeyhiredis" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install with libvalkey/hiredis (recommended)
+        Install with libvalkey/hiredis
       
     </span>
   </a>
@@ -997,10 +997,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#install-with-libvalkeyhiredis-recommended" class="md-nav__link">
+  <a href="#install-with-libvalkeyhiredis" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install with libvalkey/hiredis (recommended)
+        Install with libvalkey/hiredis
       
     </span>
   </a>
@@ -1043,13 +1043,13 @@
 <ul>
 <li>Python 3.14+ (free-threaded supported)</li>
 <li>Django 6.0+</li>
-<li>valkey-py 6.1+ or redis-py 6+</li>
+<li>valkey-py 6.1+ or redis-py 6.0+</li>
 <li>Valkey server 7+ or Redis server 6+</li>
 </ul>
 <h2 id="install-with-uv">Install with uv<a class="headerlink" href="#install-with-uv" title="Permanent link">&para;</a></h2>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="go">uv add django-cachex</span>
 </span></code></pre></div>
-<h2 id="install-with-libvalkeyhiredis-recommended">Install with libvalkey/hiredis (recommended)<a class="headerlink" href="#install-with-libvalkeyhiredis-recommended" title="Permanent link">&para;</a></h2>
+<h2 id="install-with-libvalkeyhiredis">Install with libvalkey/hiredis<a class="headerlink" href="#install-with-libvalkeyhiredis" title="Permanent link">&para;</a></h2>
 <p>For better performance, install with the libvalkey (for Valkey) or hiredis (for Redis) parser:</p>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="gp"># </span>For<span class="w"> </span>Valkey
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="go">uv add django-cachex[libvalkey]</span>
@@ -1057,21 +1057,22 @@
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="gp"># </span>For<span class="w"> </span>Redis
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="go">uv add django-cachex[hiredis]</span>
 </span></code></pre></div>
-<p>These provide C-based parsers that significantly improve performance.</p>
+<p>These provide C-based parsers that improve protocol parsing throughput on the hot read path.</p>
 <h2 id="rust-io-driver-optional">Rust I/O driver (optional)<a class="headerlink" href="#rust-io-driver-optional" title="Permanent link">&para;</a></h2>
 <p>The <code>RustValkeyCache</code> / <code>RustRedisCache</code> backends are powered by an
 opt-in native extension built on PyO3 + tokio + <a href="https://github.com/redis-rs/redis-rs">redis-rs</a>. It ships as
 a separate package, <code>django-cachex-rust</code>, so users who only want the
 pure-Python backends never carry the binary.</p>
-<div class="language-console highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="gp"># </span>Pure<span class="w"> </span>Python<span class="w"> </span><span class="o">(</span>default<span class="w"> </span>—<span class="w"> </span>no<span class="w"> </span>Rust<span class="w"> </span>binary<span class="o">)</span>
+<div class="language-console highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="gp"># </span>Pure<span class="w"> </span>Python<span class="w"> </span><span class="o">(</span>default<span class="p">;</span><span class="w"> </span>no<span class="w"> </span>Rust<span class="w"> </span>binary<span class="o">)</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="go">uv add django-cachex[valkey]</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="gp"># </span>With<span class="w"> </span>the<span class="w"> </span>Rust<span class="w"> </span>I/O<span class="w"> </span>driver
 </span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="go">uv add django-cachex[valkey,redis-rs]</span>
 </span></code></pre></div>
-<p>Prebuilt <code>django-cachex-rust</code> wheels are published for Linux x86_64
-(cp314, cp314t). On other platforms pip will try to build from source,
-which needs the Rust toolchain — drop the <code>redis-rs</code> extra to avoid that.</p>
+<p>Prebuilt <code>django-cachex-rust</code> wheels are published for Linux x86_64,
+Linux aarch64, macOS arm64, and Windows amd64 on both cp314 and cp314t.
+On other platforms pip will try to build from source, which needs the
+Rust toolchain. Drop the <code>redis-rs</code> extra to avoid that.</p>
 <p>When the binary isn't installed, <code>RustValkeyCache</code> / <code>RustRedisCache</code>
 classes are still importable but raise a clean <code>ImportError</code> on first
 use, naming the extra you need.</p>

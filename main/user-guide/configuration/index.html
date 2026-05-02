@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Full featured Redis and Valkey cache backend for Django">
+        <meta name="description" content="Valkey and Redis cache backend for Django, with a Django admin UI for cache inspection.">
       
       
       
@@ -1780,7 +1780,7 @@
 </tbody>
 </table>
 <h3 id="valkey-redis-rust-driver">Valkey / Redis (Rust driver)<a class="headerlink" href="#valkey-redis-rust-driver" title="Permanent link">&para;</a></h3>
-<p>Same wire-level features, dispatched through the bundled <code>_driver</code> Rust extension (PyO3 + tokio + redis-rs). Async paths skip the threadpool round-trip and a single tokio runtime serves sync and async callers.</p>
+<p>Same wire-level features as the Python driver, dispatched through the optional <code>django-cachex-rust</code> extension (PyO3 + tokio + redis-rs). Sync and async share one tokio runtime, so async paths skip the asgiref threadpool round-trip. Install via the <code>redis-rs</code> extra.</p>
 <table>
 <thead>
 <tr>
@@ -1855,7 +1855,7 @@
 </table>
 <div class="admonition note">
 <p class="admonition-title">Valkey and Redis Compatibility</p>
-<p>Valkey and Redis are likely still fully compatible, so either backend works with either server. Valkey is recommended as it remains fully open source.</p>
+<p>Valkey and Redis are protocol-compatible, so either backend works with either server. Valkey is recommended as it remains fully open source.</p>
 </div>
 <h2 id="location">LOCATION<a class="headerlink" href="#location" title="Permanent link">&para;</a></h2>
 <p>Server URL(s):</p>
