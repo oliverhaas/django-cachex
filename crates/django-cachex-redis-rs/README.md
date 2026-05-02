@@ -1,4 +1,4 @@
-# django-cachex-rust
+# django-cachex-redis-rs
 
 Rust I/O driver for [django-cachex] — built on PyO3 + tokio + [redis-rs].
 
@@ -15,7 +15,7 @@ platforms there's no wheel — pip will try to build from source (requires
 the Rust toolchain) or fail clearly.
 
 The pure-Python `django-cachex` package is fully usable on its own; this
-binary just unlocks the `RustValkeyCache` / `RustRedisCache` family of
+binary just unlocks the `RedisRsValkeyCache` family of
 backends.
 
 [django-cachex]: https://github.com/oliverhaas/django-cachex

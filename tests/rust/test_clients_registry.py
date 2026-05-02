@@ -1,8 +1,8 @@
 import os
 from unittest.mock import patch
 
-from django_cachex import _rust_clients
-from django_cachex._rust_clients import (
+from django_cachex import _redis_rs_clients
+from django_cachex._redis_rs_clients import (
     _CLIENTS,
     _reset_for_tests,
     get_driver_cluster,
@@ -61,7 +61,7 @@ def test_pid_change_clears_registry(redis_container):
     first = get_driver_standard(url)
     assert _CLIENTS  # populated
 
-    with patch.object(_rust_clients, "_PID", os.getpid() + 1):
+    with patch.object(_redis_rs_clients, "_PID", os.getpid() + 1):
         second = get_driver_standard(url)
 
     assert second is not first

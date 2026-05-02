@@ -70,7 +70,7 @@ DRIVER_CONFIGS: tuple[DriverConfig, ...] = (
     ),
     DriverConfig(
         id="redis-rs",
-        backend="django_cachex.cache.RustValkeyCache",
+        backend="django_cachex.cache.RedisRsValkeyCache",
         options={},
         server="valkey",
     ),

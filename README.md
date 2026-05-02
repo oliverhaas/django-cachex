@@ -78,17 +78,17 @@ Full documentation at [oliverhaas.github.io/django-cachex](https://oliverhaas.gi
 
 The Rust I/O driver is optional. To opt in, install with the `redis-rs`
 extra (`pip install django-cachex[redis-rs]`); this pulls in the
-`django-cachex-rust` companion package. Prebuilt wheels are published
+`django-cachex-redis-rs` companion package. Prebuilt wheels are published
 for Linux x86_64, Linux aarch64, macOS arm64, and Windows amd64, on
 both cp314 and cp314t (free-threaded). Without the extra, the
-`RustValkeyCache` / `RustRedisCache` backends are unavailable but
+`RedisRsValkeyCache` backends are unavailable but
 everything else works.
 
 ## Acknowledgments
 
 This project started from [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some serializer and compressor utility code is derived from django-redis, licensed under BSD-3-Clause. The admin UI was inspired by [django-redisboard](https://github.com/ionelmc/django-redisboard).
 
-The Rust I/O driver and async bridge are heavily inspired by — and in places directly adapted from — [django-vcache](https://gitlab.com/glitchtip/django-vcache) (MIT, by David Burke / GlitchTip). The fork-safe tokio runtime, the `RustAwaitable` deferred-loop-binding pattern, and the multiplexed-connection design all originate there.
+The Rust I/O driver and async bridge are heavily inspired by — and in places directly adapted from — [django-vcache](https://gitlab.com/glitchtip/django-vcache) (MIT, by David Burke / GlitchTip). The fork-safe tokio runtime, the `RedisRsAwaitable` deferred-loop-binding pattern, and the multiplexed-connection design all originate there.
 
 I also want to mention [django-valkey](https://github.com/django-commons/django-valkey) and [dj-cache-panel](https://github.com/yassi/dj-cache-panel), which I never really used, but are newer and interesting efforts of similar goals as this package has.
 

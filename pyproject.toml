@@ -33,7 +33,7 @@ libvalkey = ["valkey[libvalkey]>=6.1.0,<7"]
 redis = ["redis>=6,<8"]
 hiredis = ["redis[hiredis]<8,>=6"]
 # Rust I/O driver — separate binary package, prebuilt wheels for Linux x86_64 only
-redis-rs = ["django-cachex-rust==0.3.0"]
+redis-rs = ["django-cachex-redis-rs==0.3.0"]
 # valkey-glide — Rust-cored Valkey client (sync + async are separate distributions)
 valkey-glide = ["valkey-glide-sync>=2.3,<3", "valkey-glide>=2.3,<3"]
 # Compressors
@@ -77,7 +77,7 @@ dev = [
   "granian>=2.6,<3",
   "httpx>=0.28,<0.29",
   # Rust I/O driver: workspace member so `uv sync` builds it for tests/benchmarks
-  "django-cachex-rust",
+  "django-cachex-redis-rs",
 ]
 # valkey-glide ships prebuilt wheels only for cp312 (works on cp314 GIL build
 # via FFI, but cp314t free-threaded has no wheel and the source build needs
@@ -94,7 +94,7 @@ build-backend = "hatchling.build"
 packages = ["django_cachex"]
 # _driver.pyi is the type stub for the optional Rust extension. It lives
 # alongside django_cachex source so type checkers find it during dev, but
-# it ships with the django-cachex-rust binary package, not this one.
+# it ships with the django-cachex-redis-rs binary package, not this one.
 exclude = ["**/_driver.pyi"]
 
 [tool.hatch.build.targets.sdist]
@@ -105,7 +105,7 @@ exclude = ["**/_driver.pyi"]
 members = ["crates/*"]
 
 [tool.uv.sources]
-django-cachex-rust = { workspace = true }
+django-cachex-redis-rs = { workspace = true }
 
 [tool.ruff]
 target-version = "py314"

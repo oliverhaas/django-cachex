@@ -36,16 +36,16 @@ All backends live in `django_cachex.cache`.
 
 ### Valkey / Redis (Rust driver)
 
-Same wire-level features as the Python driver, dispatched through the optional `django-cachex-rust` extension (PyO3 + tokio + redis-rs). Sync and async share one tokio runtime, so async paths skip the asgiref threadpool round-trip. Install via the `redis-rs` extra.
+Same wire-level features as the Python driver, dispatched through the optional `django-cachex-redis-rs` extension (PyO3 + tokio + redis-rs). Sync and async share one tokio runtime, so async paths skip the asgiref threadpool round-trip. Install via the `redis-rs` extra.
 
 | Backend | Description |
 |---------|-------------|
-| `RustValkeyCache` | Standard Valkey connection |
-| `RustRedisCache` | Standard Redis connection |
-| `RustValkeySentinelCache` | Valkey Sentinel high availability |
-| `RustRedisSentinelCache` | Redis Sentinel high availability |
-| `RustValkeyClusterCache` | Valkey Cluster sharding |
-| `RustRedisClusterCache` | Redis Cluster sharding |
+| `RedisRsValkeyCache` | Standard Valkey connection |
+| `RedisRsValkeyCache` | Standard Redis connection |
+| `RedisRsValkeySentinelCache` | Valkey Sentinel high availability |
+| `RedisRsValkeySentinelCache` | Redis Sentinel high availability |
+| `RedisRsValkeyClusterCache` | Valkey Cluster sharding |
+| `RedisRsValkeyClusterCache` | Redis Cluster sharding |
 
 ### Local backends
 
@@ -203,7 +203,7 @@ selected by your ``BACKEND``. Each cache class has a fixed adapter:
 |----------------------------------------------------|-----------------|
 | ``django_cachex.cache.RedisCache``                 | redis-py        |
 | ``django_cachex.cache.ValkeyCache``                | valkey-py       |
-| ``django_cachex.cache.RustValkeyCache``            | Rust driver     |
+| ``django_cachex.cache.RedisRsValkeyCache``            | Rust driver     |
 | ``django_cachex.cache.ValkeyGlideCache``           | valkey-glide    |
 
 To use a different adapter, change ``BACKEND``. The matching

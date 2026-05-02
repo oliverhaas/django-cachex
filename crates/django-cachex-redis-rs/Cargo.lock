@@ -173,7 +173,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "django-cachex-rust"
+name = "django-cachex-redis-rs"
 version = "0.3.0"
 dependencies = [
  "pyo3",

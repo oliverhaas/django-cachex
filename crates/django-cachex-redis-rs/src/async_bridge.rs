@@ -1,4 +1,4 @@
-// Async bridge: tokio runtime + RustAwaitable Python class.
+// Async bridge: tokio runtime + RedisRsAwaitable Python class.
 //
 // Verbatim port of django-vcache's `src/async_bridge.rs` (MIT,
 // David Burke / GlitchTip). Upstream:
@@ -260,7 +260,7 @@ impl RawResult {
 }
 
 // =========================================================================
-// RustAwaitable — deferred-callback async bridge
+// RedisRsAwaitable — deferred-callback async bridge
 //
 // The tokio task sends its result via a oneshot channel — no GIL needed.
 //
@@ -290,7 +290,7 @@ struct DoneCallback {
 
 /// Callback-mode state — only allocated when an operation doesn't resolve
 /// within the busy-yield window (5 polls). Most fast ops never need this,
-/// so keeping it boxed avoids bloating every RustAwaitable allocation.
+/// so keeping it boxed avoids bloating every RedisRsAwaitable allocation.
 struct CallbackState {
     event_loop: Py<PyAny>,
     callbacks: Vec<DoneCallback>,
@@ -298,7 +298,7 @@ struct CallbackState {
 }
 
 #[pyclass]
-pub struct RustAwaitable {
+pub struct RedisRsAwaitable {
     rx: Option<oneshot::Receiver<RawResult>>,
     /// Successful result value — stored for result() after StopIteration delivery.
     value: Option<Py<PyAny>>,
@@ -330,7 +330,7 @@ fn cancelled_error(py: Python<'_>) -> PyErr {
 
 /// Helper: deliver a successful result via StopIteration and store in self.value.
 fn deliver_value(
-    this: &mut RustAwaitable,
+    this: &mut RedisRsAwaitable,
     py: Python<'_>,
     val: Py<PyAny>,
 ) -> PyResult<Py<PyAny>> {
@@ -343,14 +343,14 @@ fn deliver_value(
 }
 
 /// Helper: store an error and raise it.
-fn deliver_error(this: &mut RustAwaitable, py: Python<'_>, err: PyErr) -> PyResult<Py<PyAny>> {
+fn deliver_error(this: &mut RedisRsAwaitable, py: Python<'_>, err: PyErr) -> PyResult<Py<PyAny>> {
     this.resolved = true;
     this.error = Some(err.value(py).clone().into_any().unbind());
     Err(err)
 }
 
 #[pymethods]
-impl RustAwaitable {
+impl RedisRsAwaitable {
     fn __await__(slf: Py<Self>) -> Py<Self> {
         slf
     }
@@ -591,9 +591,9 @@ impl RustAwaitable {
     }
 }
 
-impl RustAwaitable {
+impl RedisRsAwaitable {
     pub fn new(rx: oneshot::Receiver<RawResult>) -> Self {
-        RustAwaitable {
+        RedisRsAwaitable {
             rx: Some(rx),
             value: None,
             error: None,

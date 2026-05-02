@@ -17,13 +17,10 @@ from django_cachex.cache.default import (
 from django_cachex.cache.glide import ValkeyGlideCache
 from django_cachex.cache.locmem import LocMemCache
 from django_cachex.cache.mixin import CachexCompat
-from django_cachex.cache.rust import (
-    RustRedisCache,
-    RustRedisClusterCache,
-    RustRedisSentinelCache,
-    RustValkeyCache,
-    RustValkeyClusterCache,
-    RustValkeySentinelCache,
+from django_cachex.cache.redis_rs import (
+    RedisRsValkeyCache,
+    RedisRsValkeyClusterCache,
+    RedisRsValkeySentinelCache,
 )
 from django_cachex.cache.sentinel import (
     KeyValueSentinelCache,
@@ -42,13 +39,10 @@ __all__ = [
     "LocMemCache",
     "RedisCache",
     "RedisClusterCache",
+    "RedisRsValkeyCache",
+    "RedisRsValkeyClusterCache",
+    "RedisRsValkeySentinelCache",
     "RedisSentinelCache",
-    "RustRedisCache",
-    "RustRedisClusterCache",
-    "RustRedisSentinelCache",
-    "RustValkeyCache",
-    "RustValkeyClusterCache",
-    "RustValkeySentinelCache",
     "StreamCache",
     "TieredCache",
     "ValkeyCache",

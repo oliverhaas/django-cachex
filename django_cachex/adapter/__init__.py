@@ -21,19 +21,16 @@ from django_cachex.adapter.pipeline import (
     Pipeline,
     RedisPipelineAdapter,
 )
-from django_cachex.adapter.pipeline_rust import RustValkeyPipelineAdapter
+from django_cachex.adapter.pipeline_redis_rs import RedisRsValkeyPipelineAdapter
 from django_cachex.adapter.protocols import (
     CachexProtocol,
     KeyValueAdapterProtocol,
     KeyValuePipelineProtocol,
 )
-from django_cachex.adapter.rust import (
-    RustRedisAdapter,
-    RustRedisClusterAdapter,
-    RustRedisSentinelAdapter,
-    RustValkeyAdapter,
-    RustValkeyClusterAdapter,
-    RustValkeySentinelAdapter,
+from django_cachex.adapter.redis_rs import (
+    RedisRsValkeyAdapter,
+    RedisRsValkeyClusterAdapter,
+    RedisRsValkeySentinelAdapter,
 )
 from django_cachex.adapter.sentinel import (
     BaseKeyValueSentinelAdapter,
@@ -53,14 +50,11 @@ __all__ = [
     "RedisAdapter",
     "RedisClusterAdapter",
     "RedisPipelineAdapter",
+    "RedisRsValkeyAdapter",
+    "RedisRsValkeyClusterAdapter",
+    "RedisRsValkeyPipelineAdapter",
+    "RedisRsValkeySentinelAdapter",
     "RedisSentinelAdapter",
-    "RustRedisAdapter",
-    "RustRedisClusterAdapter",
-    "RustRedisSentinelAdapter",
-    "RustValkeyAdapter",
-    "RustValkeyClusterAdapter",
-    "RustValkeyPipelineAdapter",
-    "RustValkeySentinelAdapter",
     "ValkeyAdapter",
     "ValkeyClusterAdapter",
     "ValkeyGlideAdapter",

@@ -1,8 +1,8 @@
-"""Cache client backed by the Rust ``RustValkeyDriver``.
+"""Cache client backed by the Rust ``RedisRsDriver``.
 
 Subclass of :class:`BaseKeyValueAdapter`. Reuses the serializer/compressor
 stack and stampede prevention logic from the base, but routes every I/O
-call to the Rust driver from ``_rust_clients`` instead of redis-py /
+call to the Rust driver from ``_redis_rs_clients`` instead of redis-py /
 valkey-py. Each driver is process-shared via the registry; per-cache state
 lives on the subclass instance.
 """
@@ -13,7 +13,7 @@ from itertools import batched
 from typing import TYPE_CHECKING, Any, cast, override
 from urllib.parse import parse_qs, urlparse
 
-from django_cachex._rust_clients import (
+from django_cachex._redis_rs_clients import (
     get_driver_cluster,
     get_driver_sentinel,
     get_driver_standard,
@@ -26,7 +26,7 @@ from django_cachex.types import KeyType
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
 
-    from django_cachex._driver import RustValkeyDriver
+    from django_cachex._driver import RedisRsDriver
     from django_cachex.adapter.pipeline import BaseKeyValuePipelineAdapter
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, _Set
 
@@ -272,7 +272,7 @@ def _decode_xautoclaim(
     return (next_id, _decode_xrange(entries), deleted)
 
 
-class RustValkeyAdapter(BaseKeyValueAdapter):
+class RedisRsValkeyAdapter(BaseKeyValueAdapter):
     """Base Rust-driver client. Subclasses choose the topology.
 
     We don't run redis-py's pool/parser machinery — every I/O call routes
@@ -288,12 +288,12 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     # ------------------------------------------------------------------ hooks
 
     @property
-    def _driver(self) -> RustValkeyDriver:
+    def _driver(self) -> RedisRsDriver:
         # Always go through the registry so its PID-check rebuilds drivers
         # in post-fork children — caching on the instance would defeat that.
         return self._connect()
 
-    def _connect(self) -> RustValkeyDriver:
+    def _connect(self) -> RedisRsDriver:
         """Resolve a process-shared driver. Subclasses override."""
         return get_driver_standard(self._servers[0], **self._driver_kwargs())
 
@@ -308,7 +308,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     def get_async_client(self, key: KeyT | None = None, *, write: bool = False) -> Any:
         return self._driver
 
-    def get_raw_client(self) -> RustValkeyDriver:
+    def get_raw_client(self) -> RedisRsDriver:
         """Expose the underlying Rust driver (use sparingly)."""
         return self._driver
 
@@ -924,9 +924,9 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
 
     @override
     def pipeline(self, *, transaction: bool = True) -> BaseKeyValuePipelineAdapter:
-        from django_cachex.adapter.pipeline_rust import RustValkeyPipelineAdapter
+        from django_cachex.adapter.pipeline_redis_rs import RedisRsValkeyPipelineAdapter
 
-        return RustValkeyPipelineAdapter(self._driver, transaction=transaction)
+        return RedisRsValkeyPipelineAdapter(self._driver, transaction=transaction)
 
     # =========================================================================
     # Hashes
@@ -2549,11 +2549,11 @@ def _select_info_section(raw: str, section: str) -> str:
 # =============================================================================
 
 
-class RustValkeyClusterAdapter(RustValkeyAdapter):
+class RedisRsValkeyClusterAdapter(RedisRsValkeyAdapter):
     """Rust driver client for Valkey/Redis cluster mode."""
 
     @override
-    def _connect(self) -> RustValkeyDriver:
+    def _connect(self) -> RedisRsDriver:
         # Cluster URLs may be a comma-joined string in Django LOCATION; the
         # base ``KeyValueCache`` already splits them into ``self._servers``.
         return get_driver_cluster(list(self._servers), **self._driver_kwargs())
@@ -2563,11 +2563,11 @@ class RustValkeyClusterAdapter(RustValkeyAdapter):
     # special-casing here.
 
 
-class RustValkeySentinelAdapter(RustValkeyAdapter):
+class RedisRsValkeySentinelAdapter(RedisRsValkeyAdapter):
     """Rust driver client for sentinel-managed Valkey/Redis topologies."""
 
     @override
-    def _connect(self) -> RustValkeyDriver:
+    def _connect(self) -> RedisRsDriver:
         # Django LOCATION is a list of valkey://service-name?db=N URLs. We
         # need a service name + db plus a list of sentinel hosts/ports
         # (provided in OPTIONS["sentinels"] as [(host, port), ...]).
@@ -2588,17 +2588,8 @@ class RustValkeySentinelAdapter(RustValkeyAdapter):
         return get_driver_sentinel(sentinel_urls, service_name, db, **self._driver_kwargs())
 
 
-# Aliases — vendor names are interchangeable from the driver's perspective.
-RustRedisAdapter = RustValkeyAdapter
-RustRedisClusterAdapter = RustValkeyClusterAdapter
-RustRedisSentinelAdapter = RustValkeySentinelAdapter
-
-
 __all__ = [
-    "RustRedisAdapter",
-    "RustRedisClusterAdapter",
-    "RustRedisSentinelAdapter",
-    "RustValkeyAdapter",
-    "RustValkeyClusterAdapter",
-    "RustValkeySentinelAdapter",
+    "RedisRsValkeyAdapter",
+    "RedisRsValkeyClusterAdapter",
+    "RedisRsValkeySentinelAdapter",
 ]

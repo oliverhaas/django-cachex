@@ -30,7 +30,7 @@ SERIALIZERS = {
 
 # Available cache backends - keyed by (backend_type, client_library, driver)
 # - driver="py": pure-Python clients (redis-py / valkey-py)
-# - driver="redis-rs": Rust extension driver shared via _rust_clients registry
+# - driver="redis-rs": Rust extension driver shared via _redis_rs_clients registry
 BACKENDS = {
     # Pure-Python — Valkey
     ("default", "valkey", "py"): "django_cachex.cache.ValkeyCache",
@@ -40,14 +40,13 @@ BACKENDS = {
     ("default", "redis", "py"): "django_cachex.cache.RedisCache",
     ("sentinel", "redis", "py"): "django_cachex.cache.RedisSentinelCache",
     ("cluster", "redis", "py"): "django_cachex.cache.RedisClusterCache",
-    # Rust driver — Valkey
-    ("default", "valkey", "redis-rs"): "django_cachex.cache.RustValkeyCache",
-    ("sentinel", "valkey", "redis-rs"): "django_cachex.cache.RustValkeySentinelCache",
-    ("cluster", "valkey", "redis-rs"): "django_cachex.cache.RustValkeyClusterCache",
-    # Rust driver — Redis
-    ("default", "redis", "redis-rs"): "django_cachex.cache.RustRedisCache",
-    ("sentinel", "redis", "redis-rs"): "django_cachex.cache.RustRedisSentinelCache",
-    ("cluster", "redis", "redis-rs"): "django_cachex.cache.RustRedisClusterCache",
+    # Rust driver (handles both Valkey and Redis transparently)
+    ("default", "valkey", "redis-rs"): "django_cachex.cache.RedisRsValkeyCache",
+    ("sentinel", "valkey", "redis-rs"): "django_cachex.cache.RedisRsValkeySentinelCache",
+    ("cluster", "valkey", "redis-rs"): "django_cachex.cache.RedisRsValkeyClusterCache",
+    ("default", "redis", "redis-rs"): "django_cachex.cache.RedisRsValkeyCache",
+    ("sentinel", "redis", "redis-rs"): "django_cachex.cache.RedisRsValkeySentinelCache",
+    ("cluster", "redis", "redis-rs"): "django_cachex.cache.RedisRsValkeyClusterCache",
 }
 
 # Client library configurations: maps client_library -> (pool_class, parser_class)
