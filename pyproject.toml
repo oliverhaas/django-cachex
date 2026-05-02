@@ -34,6 +34,8 @@ redis = ["redis>=6,<8"]
 hiredis = ["redis[hiredis]<8,>=6"]
 # Rust I/O driver — separate binary package, prebuilt wheels for Linux x86_64 only
 redis-rs = ["django-cachex-rust==0.3.0"]
+# valkey-glide — Rust-cored Valkey client (sync + async are separate distributions)
+valkey-glide = ["valkey-glide-sync>=2.3,<3", "valkey-glide>=2.3,<3"]
 # Compressors
 lz4 = ["lz4>=4.4.0"]
 # Serializers
