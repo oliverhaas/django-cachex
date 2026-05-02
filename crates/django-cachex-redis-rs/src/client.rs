@@ -84,141 +84,117 @@ fn is_connection_error(e: &redis::RedisError) -> bool {
 }
 
 // =========================================================================
-// Result-to-RawResult conversion helpers (used by `async_op!` bodies)
+// Result → RawResult conversion
 // =========================================================================
+//
+// `async_op!` bodies emit `RawResult`. Every command returns
+// `Result<T, redis::RedisError>` for some `T` matching a `RawResult` variant;
+// the trait below routes either side: `Ok(v)` goes through a per-`T` `From`
+// impl into the corresponding variant, `Err(e)` flows through `classify`.
 
-fn r_opt_bytes(r: Result<Option<Vec<u8>>, redis::RedisError>) -> RawResult {
-    match r {
-        Ok(v) => RawResult::OptBytes(v),
-        Err(e) => classify(e),
+trait IntoRawResult {
+    fn into_raw_result(self) -> RawResult;
+}
+
+impl<T: Into<RawResult>> IntoRawResult for Result<T, redis::RedisError> {
+    fn into_raw_result(self) -> RawResult {
+        match self {
+            Ok(v) => v.into(),
+            Err(e) => classify(e),
+        }
     }
 }
 
-fn r_bool(r: Result<bool, redis::RedisError>) -> RawResult {
-    match r {
-        Ok(v) => RawResult::Bool(v),
-        Err(e) => classify(e),
+// `()` maps to `Nil` so async siblings of sync `-> PyResult<()>` calls render
+// as Python `None` (parity).
+impl From<()> for RawResult {
+    fn from((): ()) -> Self {
+        Self::Nil
     }
 }
-
-fn r_int(r: Result<i64, redis::RedisError>) -> RawResult {
-    match r {
-        Ok(v) => RawResult::Int(v),
-        Err(e) => classify(e),
+impl From<bool> for RawResult {
+    fn from(v: bool) -> Self {
+        Self::Bool(v)
     }
 }
-
-fn r_opt_int(r: Result<Option<i64>, redis::RedisError>) -> RawResult {
-    match r {
-        Ok(v) => RawResult::OptInt(v),
-        Err(e) => classify(e),
+impl From<i64> for RawResult {
+    fn from(v: i64) -> Self {
+        Self::Int(v)
     }
 }
-
-fn r_f64(r: Result<f64, redis::RedisError>) -> RawResult {
-    match r {
-        Ok(v) => RawResult::F64(v),
-        Err(e) => classify(e),
+impl From<f64> for RawResult {
+    fn from(v: f64) -> Self {
+        Self::F64(v)
     }
 }
-
-fn r_opt_f64(r: Result<Option<f64>, redis::RedisError>) -> RawResult {
-    match r {
-        Ok(v) => RawResult::OptF64(v),
-        Err(e) => classify(e),
+impl From<String> for RawResult {
+    fn from(v: String) -> Self {
+        Self::Str(v)
     }
 }
-
-fn r_unit(r: Result<(), redis::RedisError>) -> RawResult {
-    // Sync siblings of these calls return PyResult<()> → Python None;
-    // emit Nil here so async resolves to None too (parity).
-    match r {
-        Ok(()) => RawResult::Nil,
-        Err(e) => classify(e),
+impl From<Option<i64>> for RawResult {
+    fn from(v: Option<i64>) -> Self {
+        Self::OptInt(v)
     }
 }
-
-fn r_opt_bytes_list(r: Result<Vec<Option<Vec<u8>>>, redis::RedisError>) -> RawResult {
-    match r {
-        Ok(v) => RawResult::OptBytesList(v),
-        Err(e) => classify(e),
+impl From<Option<f64>> for RawResult {
+    fn from(v: Option<f64>) -> Self {
+        Self::OptF64(v)
     }
 }
-
-fn r_bytes_list(r: Result<Vec<Vec<u8>>, redis::RedisError>) -> RawResult {
-    match r {
-        Ok(v) => RawResult::BytesList(v),
-        Err(e) => classify(e),
+impl From<Option<Vec<u8>>> for RawResult {
+    fn from(v: Option<Vec<u8>>) -> Self {
+        Self::OptBytes(v)
     }
 }
-
-fn r_string_list(r: Result<Vec<String>, redis::RedisError>) -> RawResult {
-    match r {
-        Ok(v) => RawResult::StringList(v),
-        Err(e) => classify(e),
+impl From<Option<String>> for RawResult {
+    fn from(v: Option<String>) -> Self {
+        Self::OptStr(v)
     }
 }
-
-fn r_bytes_pairs(r: Result<Vec<(Vec<u8>, Vec<u8>)>, redis::RedisError>) -> RawResult {
-    match r {
-        Ok(v) => RawResult::BytesPairs(v),
-        Err(e) => classify(e),
+impl From<Vec<Option<Vec<u8>>>> for RawResult {
+    fn from(v: Vec<Option<Vec<u8>>>) -> Self {
+        Self::OptBytesList(v)
     }
 }
-
-fn r_scored_members(r: Result<Vec<(Vec<u8>, f64)>, redis::RedisError>) -> RawResult {
-    match r {
-        Ok(v) => RawResult::ScoredMembers(v),
-        Err(e) => classify(e),
+impl From<Vec<Vec<u8>>> for RawResult {
+    fn from(v: Vec<Vec<u8>>) -> Self {
+        Self::BytesList(v)
     }
 }
-
-fn r_value(r: Result<redis::Value, redis::RedisError>) -> RawResult {
-    match r {
-        Ok(v) => RawResult::Value(v),
-        Err(e) => classify(e),
+impl From<Vec<String>> for RawResult {
+    fn from(v: Vec<String>) -> Self {
+        Self::StringList(v)
     }
 }
-
-fn r_string(r: Result<String, redis::RedisError>) -> RawResult {
-    // Renders as Python str (matches sync siblings that return PyResult<String>).
-    match r {
-        Ok(v) => RawResult::Str(v),
-        Err(e) => classify(e),
+impl From<Vec<(Vec<u8>, Vec<u8>)>> for RawResult {
+    fn from(v: Vec<(Vec<u8>, Vec<u8>)>) -> Self {
+        Self::BytesPairs(v)
     }
 }
-
-fn r_opt_string(r: Result<Option<String>, redis::RedisError>) -> RawResult {
-    match r {
-        Ok(v) => RawResult::OptStr(v),
-        Err(e) => classify(e),
+impl From<Vec<(Vec<u8>, f64)>> for RawResult {
+    fn from(v: Vec<(Vec<u8>, f64)>) -> Self {
+        Self::ScoredMembers(v)
     }
 }
-
-fn r_opt_key_and_bytes_list(
-    r: Result<Option<(String, Vec<Vec<u8>>)>, redis::RedisError>,
-) -> RawResult {
-    match r {
-        Ok(v) => RawResult::OptKeyAndBytesList(v),
-        Err(e) => classify(e),
+impl From<Option<(String, Vec<Vec<u8>>)>> for RawResult {
+    fn from(v: Option<(String, Vec<Vec<u8>>)>) -> Self {
+        Self::OptKeyAndBytesList(v)
     }
 }
-
-fn r_opt_key_and_bytes(
-    r: Result<Option<(String, Vec<u8>)>, redis::RedisError>,
-) -> RawResult {
-    match r {
-        Ok(v) => RawResult::OptKeyAndBytes(v),
-        Err(e) => classify(e),
+impl From<Option<(String, Vec<u8>)>> for RawResult {
+    fn from(v: Option<(String, Vec<u8>)>) -> Self {
+        Self::OptKeyAndBytes(v)
     }
 }
-
-fn r_cursor_strings(
-    r: Result<(u64, Vec<String>), redis::RedisError>,
-) -> RawResult {
-    match r {
-        Ok((cursor, keys)) => RawResult::CursorAndStrings(cursor, keys),
-        Err(e) => classify(e),
+impl From<(u64, Vec<String>)> for RawResult {
+    fn from((cursor, keys): (u64, Vec<String>)) -> Self {
+        Self::CursorAndStrings(cursor, keys)
+    }
+}
+impl From<redis::Value> for RawResult {
+    fn from(v: redis::Value) -> Self {
+        Self::Value(v)
     }
 }
 
@@ -471,7 +447,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn aget(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_opt_bytes(conn.get_bytes(&key).await))
+        async_op!(self, py, conn, conn.get_bytes(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -484,7 +460,7 @@ impl RedisRsDriver {
     fn aset(&self, py: Python<'_>, key: &str, value: &[u8], ttl: Option<u64>) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let value = value.to_vec();
-        async_op!(self, py, conn, r_unit(conn.set_bytes(&key, value, ttl).await))
+        async_op!(self, py, conn, conn.set_bytes(&key, value, ttl).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, value, ttl=None))]
@@ -509,7 +485,7 @@ impl RedisRsDriver {
     ) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let value = value.to_vec();
-        async_op!(self, py, conn, r_bool(conn.set_nx(&key, value, ttl).await))
+        async_op!(self, py, conn, conn.set_nx(&key, value, ttl).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, value, ttl=None))]
@@ -527,7 +503,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn adelete(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_int(conn.del(&key).await))
+        async_op!(self, py, conn, conn.del(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -537,7 +513,7 @@ impl RedisRsDriver {
 
     #[pyo3(signature = (keys))]
     fn adelete_many(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
-        async_op!(self, py, conn, r_int(conn.del_many(&keys).await))
+        async_op!(self, py, conn, conn.del_many(&keys).await.into_raw_result())
     }
 
     #[pyo3(signature = (keys))]
@@ -547,7 +523,7 @@ impl RedisRsDriver {
 
     #[pyo3(signature = (keys))]
     fn amget(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
-        async_op!(self, py, conn, r_opt_bytes_list(conn.mget_bytes(&keys).await))
+        async_op!(self, py, conn, conn.mget_bytes(&keys).await.into_raw_result())
     }
 
     #[pyo3(signature = (keys))]
@@ -564,7 +540,7 @@ impl RedisRsDriver {
         entries: Vec<(String, Vec<u8>)>,
         ttl: Option<u64>,
     ) -> PyResult<Py<PyAny>> {
-        async_op!(self, py, conn, r_unit(conn.pipeline_set(&entries, ttl).await))
+        async_op!(self, py, conn, conn.pipeline_set(&entries, ttl).await.into_raw_result())
     }
 
     #[pyo3(signature = (entries, ttl=None))]
@@ -580,7 +556,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key, delta))]
     fn aincr_by(&self, py: Python<'_>, key: &str, delta: i64) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_int(conn.incr_by(&key, delta).await))
+        async_op!(self, py, conn, conn.incr_by(&key, delta).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, delta))]
@@ -591,7 +567,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn aexists(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_bool(conn.exists(&key).await))
+        async_op!(self, py, conn, conn.exists(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -602,7 +578,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key, seconds))]
     fn aexpire(&self, py: Python<'_>, key: &str, seconds: u64) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_bool(conn.expire(&key, seconds).await))
+        async_op!(self, py, conn, conn.expire(&key, seconds).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, seconds))]
@@ -613,7 +589,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn apersist(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_bool(conn.persist(&key).await))
+        async_op!(self, py, conn, conn.persist(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -624,7 +600,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn attl(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_int(conn.ttl(&key).await))
+        async_op!(self, py, conn, conn.ttl(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -635,7 +611,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn apttl(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_int(conn.pttl(&key).await))
+        async_op!(self, py, conn, conn.pttl(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -644,7 +620,7 @@ impl RedisRsDriver {
     }
 
     fn aflushdb(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        async_op!(self, py, conn, r_unit(conn.flushdb().await))
+        async_op!(self, py, conn, conn.flushdb().await.into_raw_result())
     }
 
     fn flushdb(&self, py: Python<'_>) -> PyResult<()> {
@@ -654,7 +630,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (pattern))]
     fn akeys(&self, py: Python<'_>, pattern: &str) -> PyResult<Py<PyAny>> {
         let pattern = pattern.to_string();
-        async_op!(self, py, conn, r_string_list(conn.keys(&pattern).await))
+        async_op!(self, py, conn, conn.keys(&pattern).await.into_raw_result())
     }
 
     #[pyo3(signature = (pattern))]
@@ -666,7 +642,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn atype(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_string(conn.key_type(&key).await))
+        async_op!(self, py, conn, conn.key_type(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -678,7 +654,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (pattern, count))]
     fn ascan(&self, py: Python<'_>, pattern: &str, count: i64) -> PyResult<Py<PyAny>> {
         let pattern = pattern.to_string();
-        async_op!(self, py, conn, r_string_list(conn.scan_all(&pattern, count).await))
+        async_op!(self, py, conn, conn.scan_all(&pattern, count).await.into_raw_result())
     }
 
     #[pyo3(signature = (pattern, count))]
@@ -701,7 +677,7 @@ impl RedisRsDriver {
             self,
             py,
             conn,
-            r_cursor_strings(conn.scan_one(cursor, &pattern, count).await)
+            conn.scan_one(cursor, &pattern, count).await.into_raw_result()
         )
     }
 
@@ -720,7 +696,7 @@ impl RedisRsDriver {
     }
 
     fn adbsize(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        async_op!(self, py, conn, r_int(conn.dbsize().await))
+        async_op!(self, py, conn, conn.dbsize().await.into_raw_result())
     }
 
     fn dbsize(&self, py: Python<'_>) -> PyResult<i64> {
@@ -728,7 +704,7 @@ impl RedisRsDriver {
     }
 
     fn ainfo(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        async_op!(self, py, conn, r_value(conn.info().await))
+        async_op!(self, py, conn, conn.info().await.into_raw_result())
     }
 
     fn info(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
@@ -737,7 +713,7 @@ impl RedisRsDriver {
     }
 
     fn aclient_list(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        async_op!(self, py, conn, r_value(conn.client_list().await))
+        async_op!(self, py, conn, conn.client_list().await.into_raw_result())
     }
 
     fn client_list(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
@@ -748,7 +724,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (parameter))]
     fn aconfig_get(&self, py: Python<'_>, parameter: &str) -> PyResult<Py<PyAny>> {
         let parameter = parameter.to_string();
-        async_op!(self, py, conn, r_value(conn.config_get(&parameter).await))
+        async_op!(self, py, conn, conn.config_get(&parameter).await.into_raw_result())
     }
 
     #[pyo3(signature = (parameter))]
@@ -761,7 +737,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn aobject_encoding(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_opt_string(conn.object_encoding(&key).await))
+        async_op!(self, py, conn, conn.object_encoding(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -772,7 +748,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn aobject_idletime(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_opt_int(conn.object_idletime(&key).await))
+        async_op!(self, py, conn, conn.object_idletime(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -783,7 +759,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn amemory_usage(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_opt_int(conn.memory_usage(&key).await))
+        async_op!(self, py, conn, conn.memory_usage(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -806,7 +782,7 @@ impl RedisRsDriver {
         let key = key.to_string();
         let token = token.to_string();
         async_op!(self, py, conn, {
-            r_bool(conn.lock_acquire(&key, &token, timeout_ms).await)
+            conn.lock_acquire(&key, &token, timeout_ms).await.into_raw_result()
         })
     }
 
@@ -826,7 +802,7 @@ impl RedisRsDriver {
     fn alock_release(&self, py: Python<'_>, key: &str, token: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let token = token.to_string();
-        async_op!(self, py, conn, r_int(conn.lock_release(&key, &token).await))
+        async_op!(self, py, conn, conn.lock_release(&key, &token).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, token))]
@@ -845,7 +821,7 @@ impl RedisRsDriver {
         let key = key.to_string();
         let token = token.to_string();
         async_op!(self, py, conn, {
-            r_int(conn.lock_extend(&key, &token, additional_ms).await)
+            conn.lock_extend(&key, &token, additional_ms).await.into_raw_result()
         })
     }
 
@@ -874,7 +850,7 @@ impl RedisRsDriver {
         args: Vec<Vec<u8>>,
     ) -> PyResult<Py<PyAny>> {
         let script = script.to_string();
-        async_op!(self, py, conn, r_value(conn.eval(&script, &keys, &args).await))
+        async_op!(self, py, conn, conn.eval(&script, &keys, &args).await.into_raw_result())
     }
 
     #[pyo3(signature = (script, keys, args))]
@@ -899,7 +875,7 @@ impl RedisRsDriver {
         args: Vec<Vec<u8>>,
     ) -> PyResult<Py<PyAny>> {
         let sha = sha.to_string();
-        async_op!(self, py, conn, r_value(conn.evalsha(&sha, &keys, &args).await))
+        async_op!(self, py, conn, conn.evalsha(&sha, &keys, &args).await.into_raw_result())
     }
 
     #[pyo3(signature = (sha, keys, args))]
@@ -918,7 +894,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (script))]
     fn ascript_load(&self, py: Python<'_>, script: &str) -> PyResult<Py<PyAny>> {
         let script = script.to_string();
-        async_op!(self, py, conn, r_string(conn.script_load(&script).await))
+        async_op!(self, py, conn, conn.script_load(&script).await.into_raw_result())
     }
 
     #[pyo3(signature = (script))]
@@ -929,7 +905,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (sha))]
     fn ascript_exists(&self, py: Python<'_>, sha: &str) -> PyResult<Py<PyAny>> {
         let sha = sha.to_string();
-        async_op!(self, py, conn, r_bool(conn.script_exists(&sha).await))
+        async_op!(self, py, conn, conn.script_exists(&sha).await.into_raw_result())
     }
 
     #[pyo3(signature = (sha))]
@@ -975,7 +951,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key, values))]
     fn alpush(&self, py: Python<'_>, key: &str, values: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_int(conn.lpush(&key, values).await))
+        async_op!(self, py, conn, conn.lpush(&key, values).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, values))]
@@ -986,7 +962,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key, values))]
     fn arpush(&self, py: Python<'_>, key: &str, values: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_int(conn.rpush(&key, values).await))
+        async_op!(self, py, conn, conn.rpush(&key, values).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, values))]
@@ -997,7 +973,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn alpop(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_opt_bytes(conn.lpop(&key).await))
+        async_op!(self, py, conn, conn.lpop(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -1009,7 +985,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn arpop(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_opt_bytes(conn.rpop(&key).await))
+        async_op!(self, py, conn, conn.rpop(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -1021,7 +997,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key, start, stop))]
     fn alrange(&self, py: Python<'_>, key: &str, start: i64, stop: i64) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_bytes_list(conn.lrange(&key, start, stop).await))
+        async_op!(self, py, conn, conn.lrange(&key, start, stop).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, start, stop))]
@@ -1034,7 +1010,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn allen(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_int(conn.llen(&key).await))
+        async_op!(self, py, conn, conn.llen(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -1046,7 +1022,7 @@ impl RedisRsDriver {
     fn alrem(&self, py: Python<'_>, key: &str, count: i64, value: &[u8]) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let value = value.to_vec();
-        async_op!(self, py, conn, r_int(conn.lrem(&key, count, &value).await))
+        async_op!(self, py, conn, conn.lrem(&key, count, &value).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, count, value))]
@@ -1057,7 +1033,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key, index))]
     fn alindex(&self, py: Python<'_>, key: &str, index: i64) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_opt_bytes(conn.lindex(&key, index).await))
+        async_op!(self, py, conn, conn.lindex(&key, index).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, index))]
@@ -1070,7 +1046,7 @@ impl RedisRsDriver {
     fn alset(&self, py: Python<'_>, key: &str, index: i64, value: &[u8]) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let value = value.to_vec();
-        async_op!(self, py, conn, r_unit(conn.lset(&key, index, &value).await))
+        async_op!(self, py, conn, conn.lset(&key, index, &value).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, index, value))]
@@ -1090,7 +1066,7 @@ impl RedisRsDriver {
         let key = key.to_string();
         let pivot = pivot.to_vec();
         let value = value.to_vec();
-        async_op!(self, py, conn, r_int(conn.linsert(&key, before, &pivot, &value).await))
+        async_op!(self, py, conn, conn.linsert(&key, before, &pivot, &value).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, before, pivot, value))]
@@ -1109,7 +1085,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key, start, stop))]
     fn altrim(&self, py: Python<'_>, key: &str, start: i64, stop: i64) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_unit(conn.ltrim(&key, start, stop).await))
+        async_op!(self, py, conn, conn.ltrim(&key, start, stop).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, start, stop))]
@@ -1132,7 +1108,7 @@ impl RedisRsDriver {
         let wherefrom = wherefrom.to_string();
         let whereto = whereto.to_string();
         async_op!(self, py, conn, {
-            r_opt_bytes(conn.blmove(&source, &destination, &wherefrom, &whereto, timeout).await)
+            conn.blmove(&source, &destination, &wherefrom, &whereto, timeout).await.into_raw_result()
         })
     }
 
@@ -1166,7 +1142,7 @@ impl RedisRsDriver {
     ) -> PyResult<Py<PyAny>> {
         let direction = direction.to_string();
         async_op!(self, py, conn, {
-            r_opt_key_and_bytes_list(conn.blmpop(timeout, &keys, &direction, count).await)
+            conn.blmpop(timeout, &keys, &direction, count).await.into_raw_result()
         })
     }
 
@@ -1195,7 +1171,7 @@ impl RedisRsDriver {
         keys: Vec<String>,
         timeout: f64,
     ) -> PyResult<Py<PyAny>> {
-        async_op!(self, py, conn, r_opt_key_and_bytes(conn.blpop(&keys, timeout).await))
+        async_op!(self, py, conn, conn.blpop(&keys, timeout).await.into_raw_result())
     }
 
     #[pyo3(signature = (keys, timeout))]
@@ -1221,7 +1197,7 @@ impl RedisRsDriver {
         keys: Vec<String>,
         timeout: f64,
     ) -> PyResult<Py<PyAny>> {
-        async_op!(self, py, conn, r_opt_key_and_bytes(conn.brpop(&keys, timeout).await))
+        async_op!(self, py, conn, conn.brpop(&keys, timeout).await.into_raw_result())
     }
 
     #[pyo3(signature = (keys, timeout))]
@@ -1248,7 +1224,7 @@ impl RedisRsDriver {
     fn ahget(&self, py: Python<'_>, key: &str, field: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let field = field.to_string();
-        async_op!(self, py, conn, r_opt_bytes(conn.hget(&key, &field).await))
+        async_op!(self, py, conn, conn.hget(&key, &field).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, field))]
@@ -1262,7 +1238,7 @@ impl RedisRsDriver {
         let key = key.to_string();
         let field = field.to_string();
         let value = value.to_vec();
-        async_op!(self, py, conn, r_int(conn.hset(&key, &field, &value).await))
+        async_op!(self, py, conn, conn.hset(&key, &field, &value).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, field, value))]
@@ -1273,7 +1249,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn ahgetall(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_bytes_pairs(conn.hgetall(&key).await))
+        async_op!(self, py, conn, conn.hgetall(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -1286,7 +1262,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key, fields))]
     fn ahdel(&self, py: Python<'_>, key: &str, fields: Vec<String>) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_int(conn.hdel(&key, &fields).await))
+        async_op!(self, py, conn, conn.hdel(&key, &fields).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, fields))]
@@ -1298,7 +1274,7 @@ impl RedisRsDriver {
     fn ahincrby(&self, py: Python<'_>, key: &str, field: &str, delta: i64) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let field = field.to_string();
-        async_op!(self, py, conn, r_int(conn.hincrby(&key, &field, delta).await))
+        async_op!(self, py, conn, conn.hincrby(&key, &field, delta).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, field, delta))]
@@ -1309,7 +1285,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn ahkeys(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_string_list(conn.hkeys(&key).await))
+        async_op!(self, py, conn, conn.hkeys(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -1321,7 +1297,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn ahvals(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_bytes_list(conn.hvals(&key).await))
+        async_op!(self, py, conn, conn.hvals(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -1334,7 +1310,7 @@ impl RedisRsDriver {
     fn ahexists(&self, py: Python<'_>, key: &str, field: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let field = field.to_string();
-        async_op!(self, py, conn, r_bool(conn.hexists(&key, &field).await))
+        async_op!(self, py, conn, conn.hexists(&key, &field).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, field))]
@@ -1345,7 +1321,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn ahlen(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_int(conn.hlen(&key).await))
+        async_op!(self, py, conn, conn.hlen(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -1356,7 +1332,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key, fields))]
     fn ahmget(&self, py: Python<'_>, key: &str, fields: Vec<String>) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_opt_bytes_list(conn.hmget(&key, &fields).await))
+        async_op!(self, py, conn, conn.hmget(&key, &fields).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, fields))]
@@ -1374,7 +1350,7 @@ impl RedisRsDriver {
         fields: Vec<(String, Vec<u8>)>,
     ) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_unit(conn.hmset(&key, &fields).await))
+        async_op!(self, py, conn, conn.hmset(&key, &fields).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, fields))]
@@ -1394,7 +1370,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key, members))]
     fn asadd(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_int(conn.sadd(&key, members).await))
+        async_op!(self, py, conn, conn.sadd(&key, members).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, members))]
@@ -1405,7 +1381,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key, members))]
     fn asrem(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_int(conn.srem(&key, members).await))
+        async_op!(self, py, conn, conn.srem(&key, members).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, members))]
@@ -1416,7 +1392,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn asmembers(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_bytes_list(conn.smembers(&key).await))
+        async_op!(self, py, conn, conn.smembers(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -1429,7 +1405,7 @@ impl RedisRsDriver {
     fn asismember(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let member = member.to_vec();
-        async_op!(self, py, conn, r_bool(conn.sismember(&key, &member).await))
+        async_op!(self, py, conn, conn.sismember(&key, &member).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, member))]
@@ -1440,7 +1416,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn ascard(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_int(conn.scard(&key).await))
+        async_op!(self, py, conn, conn.scard(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -1450,7 +1426,7 @@ impl RedisRsDriver {
 
     #[pyo3(signature = (keys))]
     fn asinter(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
-        async_op!(self, py, conn, r_bytes_list(conn.sinter(&keys).await))
+        async_op!(self, py, conn, conn.sinter(&keys).await.into_raw_result())
     }
 
     #[pyo3(signature = (keys))]
@@ -1461,7 +1437,7 @@ impl RedisRsDriver {
 
     #[pyo3(signature = (keys))]
     fn asunion(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
-        async_op!(self, py, conn, r_bytes_list(conn.sunion(&keys).await))
+        async_op!(self, py, conn, conn.sunion(&keys).await.into_raw_result())
     }
 
     #[pyo3(signature = (keys))]
@@ -1472,7 +1448,7 @@ impl RedisRsDriver {
 
     #[pyo3(signature = (keys))]
     fn asdiff(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<Py<PyAny>> {
-        async_op!(self, py, conn, r_bytes_list(conn.sdiff(&keys).await))
+        async_op!(self, py, conn, conn.sdiff(&keys).await.into_raw_result())
     }
 
     #[pyo3(signature = (keys))]
@@ -1493,7 +1469,7 @@ impl RedisRsDriver {
         members: Vec<(Vec<u8>, f64)>,
     ) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_int(conn.zadd(&key, members).await))
+        async_op!(self, py, conn, conn.zadd(&key, members).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, members))]
@@ -1509,7 +1485,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key, members))]
     fn azrem(&self, py: Python<'_>, key: &str, members: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_int(conn.zrem(&key, members).await))
+        async_op!(self, py, conn, conn.zrem(&key, members).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, members))]
@@ -1528,7 +1504,7 @@ impl RedisRsDriver {
     ) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, {
-            r_value(conn.zrange(&key, start, stop, with_scores).await)
+            conn.zrange(&key, start, stop, with_scores).await.into_raw_result()
         })
     }
 
@@ -1559,7 +1535,7 @@ impl RedisRsDriver {
         let min = min.to_string();
         let max = max.to_string();
         async_op!(self, py, conn, {
-            r_value(conn.zrangebyscore(&key, &min, &max, with_scores).await)
+            conn.zrangebyscore(&key, &min, &max, with_scores).await.into_raw_result()
         })
     }
 
@@ -1592,7 +1568,7 @@ impl RedisRsDriver {
     ) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         async_op!(self, py, conn, {
-            r_value(conn.zrevrange(&key, start, stop, with_scores).await)
+            conn.zrevrange(&key, start, stop, with_scores).await.into_raw_result()
         })
     }
 
@@ -1618,7 +1594,7 @@ impl RedisRsDriver {
     fn azincrby(&self, py: Python<'_>, key: &str, member: &[u8], delta: f64) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let member = member.to_vec();
-        async_op!(self, py, conn, r_f64(conn.zincrby(&key, &member, delta).await))
+        async_op!(self, py, conn, conn.zincrby(&key, &member, delta).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, member, delta))]
@@ -1629,7 +1605,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn azcard(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_int(conn.zcard(&key).await))
+        async_op!(self, py, conn, conn.zcard(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -1641,7 +1617,7 @@ impl RedisRsDriver {
     fn azscore(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let member = member.to_vec();
-        async_op!(self, py, conn, r_opt_f64(conn.zscore(&key, &member).await))
+        async_op!(self, py, conn, conn.zscore(&key, &member).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, member))]
@@ -1653,7 +1629,7 @@ impl RedisRsDriver {
     fn azrank(&self, py: Python<'_>, key: &str, member: &[u8]) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let member = member.to_vec();
-        async_op!(self, py, conn, r_opt_int(conn.zrank(&key, &member).await))
+        async_op!(self, py, conn, conn.zrank(&key, &member).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, member))]
@@ -1666,7 +1642,7 @@ impl RedisRsDriver {
         let key = key.to_string();
         let min = min.to_string();
         let max = max.to_string();
-        async_op!(self, py, conn, r_int(conn.zcount(&key, &min, &max).await))
+        async_op!(self, py, conn, conn.zcount(&key, &min, &max).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, min, max))]
@@ -1677,7 +1653,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key, count=1))]
     fn azpopmin(&self, py: Python<'_>, key: &str, count: i64) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_scored_members(conn.zpopmin(&key, count).await))
+        async_op!(self, py, conn, conn.zpopmin(&key, count).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, count=1))]
@@ -1690,7 +1666,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key, count=1))]
     fn azpopmax(&self, py: Python<'_>, key: &str, count: i64) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_scored_members(conn.zpopmax(&key, count).await))
+        async_op!(self, py, conn, conn.zpopmax(&key, count).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, count=1))]
@@ -1714,7 +1690,7 @@ impl RedisRsDriver {
     ) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let id = id.to_string();
-        async_op!(self, py, conn, r_string(conn.xadd(&key, &id, &fields).await))
+        async_op!(self, py, conn, conn.xadd(&key, &id, &fields).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, id, fields))]
@@ -1731,7 +1707,7 @@ impl RedisRsDriver {
     #[pyo3(signature = (key))]
     fn axlen(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_int(conn.xlen(&key).await))
+        async_op!(self, py, conn, conn.xlen(&key).await.into_raw_result())
     }
 
     #[pyo3(signature = (key))]
@@ -1751,7 +1727,7 @@ impl RedisRsDriver {
         let key = key.to_string();
         let start = start.to_string();
         let end = end.to_string();
-        async_op!(self, py, conn, r_value(conn.xrange(&key, &start, &end, count).await))
+        async_op!(self, py, conn, conn.xrange(&key, &start, &end, count).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, start, end, count=None))]
@@ -1776,7 +1752,7 @@ impl RedisRsDriver {
         ids: Vec<String>,
         count: Option<i64>,
     ) -> PyResult<Py<PyAny>> {
-        async_op!(self, py, conn, r_value(conn.xread(&keys, &ids, count).await))
+        async_op!(self, py, conn, conn.xread(&keys, &ids, count).await.into_raw_result())
     }
 
     #[pyo3(signature = (keys, ids, count=None))]
@@ -1805,7 +1781,7 @@ impl RedisRsDriver {
         let group = group.to_string();
         let consumer = consumer.to_string();
         async_op!(self, py, conn, {
-            r_value(conn.xreadgroup(&group, &consumer, &keys, &ids, count).await)
+            conn.xreadgroup(&group, &consumer, &keys, &ids, count).await.into_raw_result()
         })
     }
 
@@ -1838,7 +1814,7 @@ impl RedisRsDriver {
     ) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let group = group.to_string();
-        async_op!(self, py, conn, r_int(conn.xack(&key, &group, &ids).await))
+        async_op!(self, py, conn, conn.xack(&key, &group, &ids).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, group, ids))]
@@ -1855,7 +1831,7 @@ impl RedisRsDriver {
         approximate: bool,
     ) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
-        async_op!(self, py, conn, r_int(conn.xtrim(&key, max_len, approximate).await))
+        async_op!(self, py, conn, conn.xtrim(&key, max_len, approximate).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, max_len, approximate=false))]
@@ -1882,7 +1858,7 @@ impl RedisRsDriver {
         let group = group.to_string();
         let id = id.to_string();
         async_op!(self, py, conn, {
-            r_unit(conn.xgroup_create(&key, &group, &id, mkstream).await)
+            conn.xgroup_create(&key, &group, &id, mkstream).await.into_raw_result()
         })
     }
 
@@ -1903,7 +1879,7 @@ impl RedisRsDriver {
     fn axpending(&self, py: Python<'_>, key: &str, group: &str) -> PyResult<Py<PyAny>> {
         let key = key.to_string();
         let group = group.to_string();
-        async_op!(self, py, conn, r_value(conn.xpending(&key, &group).await))
+        async_op!(self, py, conn, conn.xpending(&key, &group).await.into_raw_result())
     }
 
     #[pyo3(signature = (key, group))]
@@ -1929,12 +1905,14 @@ impl RedisRsDriver {
         let group = group.to_string();
         let start = start.to_string();
         let end = end.to_string();
-        async_op!(self, py, conn, {
-            r_value(
-                conn.xpending_range(&key, &group, &start, &end, count, consumer.as_deref(), idle)
-                    .await,
-            )
-        })
+        async_op!(
+            self,
+            py,
+            conn,
+            conn.xpending_range(&key, &group, &start, &end, count, consumer.as_deref(), idle)
+                .await
+                .into_raw_result()
+        )
     }
 
     #[pyo3(signature = (key, group, start, end, count, consumer=None, idle=None))]
@@ -1979,23 +1957,25 @@ impl RedisRsDriver {
         let key = key.to_string();
         let group = group.to_string();
         let consumer = consumer.to_string();
-        async_op!(self, py, conn, {
-            r_value(
-                conn.xclaim(
-                    &key,
-                    &group,
-                    &consumer,
-                    min_idle_time,
-                    &ids,
-                    idle,
-                    time_ms,
-                    retrycount,
-                    force,
-                    justid,
-                )
-                .await,
+        async_op!(
+            self,
+            py,
+            conn,
+            conn.xclaim(
+                &key,
+                &group,
+                &consumer,
+                min_idle_time,
+                &ids,
+                idle,
+                time_ms,
+                retrycount,
+                force,
+                justid,
             )
-        })
+            .await
+            .into_raw_result()
+        )
     }
 
     #[pyo3(signature = (key, group, consumer, min_idle_time, ids, idle=None, time_ms=None, retrycount=None, force=false, justid=false))]
@@ -2052,12 +2032,14 @@ impl RedisRsDriver {
         let group = group.to_string();
         let consumer = consumer.to_string();
         let start = start.to_string();
-        async_op!(self, py, conn, {
-            r_value(
-                conn.xautoclaim(&key, &group, &consumer, min_idle_time, &start, count, justid)
-                    .await,
-            )
-        })
+        async_op!(
+            self,
+            py,
+            conn,
+            conn.xautoclaim(&key, &group, &consumer, min_idle_time, &start, count, justid)
+                .await
+                .into_raw_result()
+        )
     }
 
     #[pyo3(signature = (key, group, consumer, min_idle_time, start, count=None, justid=false))]
