@@ -102,13 +102,13 @@ class TestRedisCacheInternals:
         Django's test checks _serializer.dumps() but our architecture uses encode().
         """
         # Integers are stored directly (no serialization overhead)
-        assert cache.adapter.encode(123) == 123
+        assert cache.encode(123) == 123
 
         # Booleans are serialized to bytes
-        assert isinstance(cache.adapter.encode(True), bytes)
+        assert isinstance(cache.encode(True), bytes)
 
         # Strings are serialized to bytes
-        assert isinstance(cache.adapter.encode("abc"), bytes)
+        assert isinstance(cache.encode("abc"), bytes)
 
     def test_redis_pool_options(self, redis_container: RedisContainerInfo):
         from contextlib import suppress

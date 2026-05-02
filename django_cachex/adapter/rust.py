@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
 
     from django_cachex._driver import RustValkeyDriver
-    from django_cachex.adapter.pipeline import Pipeline
+    from django_cachex.adapter.pipeline import BaseKeyValuePipelineAdapter
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, _Set
 
 
@@ -127,7 +127,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         *,
         stampede_prevention: bool | dict | None = None,
     ) -> bool:
-        nvalue = _value_to_bytes(self.encode(value))
+        nvalue = _value_to_bytes(value)
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
         if actual_timeout == 0:
             if self._driver.set_nx(_str_key(key), nvalue, ttl=None):
@@ -145,7 +145,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         *,
         stampede_prevention: bool | dict | None = None,
     ) -> bool:
-        nvalue = _value_to_bytes(self.encode(value))
+        nvalue = _value_to_bytes(value)
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
         if actual_timeout == 0:
             if await self._driver.aset_nx(_str_key(key), nvalue, ttl=None):
@@ -164,7 +164,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
             ttl = self._driver.ttl(_str_key(key))
             if ttl > 0 and should_recompute(ttl, config):
                 return None
-        return self.decode(val)
+        return val
 
     @override
     async def aget(self, key: KeyT, *, stampede_prevention: bool | dict | None = None) -> Any:
@@ -176,7 +176,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
             ttl = await self._driver.attl(_str_key(key))
             if ttl > 0 and should_recompute(ttl, config):
                 return None
-        return self.decode(val)
+        return val
 
     @override
     def set(
@@ -187,7 +187,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         *,
         stampede_prevention: bool | dict | None = None,
     ) -> None:
-        nvalue = _value_to_bytes(self.encode(value))
+        nvalue = _value_to_bytes(value)
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
         if actual_timeout == 0:
             self._driver.delete(_str_key(key))
@@ -203,7 +203,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         *,
         stampede_prevention: bool | dict | None = None,
     ) -> None:
-        nvalue = _value_to_bytes(self.encode(value))
+        nvalue = _value_to_bytes(value)
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
         if actual_timeout == 0:
             await self._driver.adelete(_str_key(key))
@@ -250,7 +250,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         get: bool = False,
         stampede_prevention: bool | dict | None = None,
     ) -> bool | Any:
-        nvalue = _value_to_bytes(self.encode(value))
+        nvalue = _value_to_bytes(value)
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
         if actual_timeout == 0:
             return None if get else False
@@ -261,7 +261,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         )
         if get:
             # SET ... GET returns the previous value (bytes) or nil.
-            return None if result is None else self.decode(result)
+            return None if result is None else result
         # Without GET: Redis's "OK" status surfaces from the driver as ``True``
         # (Value::Okay → Python bool); NX/XX rejection comes through as None.
         return result is True
@@ -278,7 +278,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         get: bool = False,
         stampede_prevention: bool | dict | None = None,
     ) -> bool | Any:
-        nvalue = _value_to_bytes(self.encode(value))
+        nvalue = _value_to_bytes(value)
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
         if actual_timeout == 0:
             return None if get else False
@@ -288,7 +288,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
             self._set_with_flags_argv(nvalue, actual_timeout, nx, xx, get),
         )
         if get:
-            return None if result is None else self.decode(result)
+            return None if result is None else result
         return result is True
 
     @override
@@ -325,7 +325,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
                 ttl = self._driver.ttl(k)
                 if ttl > 0 and should_recompute(ttl, config):
                     del found[k]
-        return {k: self.decode(v) for k, v in found.items()}
+        return dict(found.items())
 
     @override
     async def aget_many(
@@ -346,7 +346,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
                 ttl = await self._driver.attl(k)
                 if ttl > 0 and should_recompute(ttl, config):
                     del found[k]
-        return {k: self.decode(v) for k, v in found.items()}
+        return dict(found.items())
 
     @override
     def has_key(self, key: KeyT) -> bool:
@@ -384,7 +384,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     ) -> list:
         if not data:
             return []
-        prepared = [(_str_key(k), _value_to_bytes(self.encode(v))) for k, v in data.items()]
+        prepared = [(_str_key(k), _value_to_bytes(v)) for k, v in data.items()]
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
         if actual_timeout == 0:
             self._driver.delete_many([k for k, _ in prepared])
@@ -402,7 +402,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     ) -> list:
         if not data:
             return []
-        prepared = [(_str_key(k), _value_to_bytes(self.encode(v))) for k, v in data.items()]
+        prepared = [(_str_key(k), _value_to_bytes(v)) for k, v in data.items()]
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
         if actual_timeout == 0:
             await self._driver.adelete_many([k for k, _ in prepared])
@@ -755,17 +755,10 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     # =========================================================================
 
     @override
-    def pipeline(
-        self,
-        *,
-        transaction: bool = True,
-        version: int | None = None,
-    ) -> Pipeline:
-        from django_cachex.adapter.pipeline import Pipeline
+    def pipeline(self, *, transaction: bool = True) -> BaseKeyValuePipelineAdapter:
         from django_cachex.adapter.pipeline_rust import RustValkeyPipelineAdapter
 
-        pipeline_adapter = RustValkeyPipelineAdapter(self._driver, transaction=transaction)
-        return Pipeline(adapter=self, pipeline_adapter=pipeline_adapter, version=version)
+        return RustValkeyPipelineAdapter(self._driver, transaction=transaction)
 
     # =========================================================================
     # Hashes
@@ -782,13 +775,13 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     ) -> int:
         pairs: list[tuple[str, bytes]] = []
         if field is not None:
-            pairs.append((str(field), _value_to_bytes(self.encode(value))))
+            pairs.append((str(field), _value_to_bytes(value)))
         if mapping:
-            pairs.extend((str(k), _value_to_bytes(self.encode(v))) for k, v in mapping.items())
+            pairs.extend((str(k), _value_to_bytes(v)) for k, v in mapping.items())
         if items:
             it = iter(items)
             for f, v in zip(it, it, strict=False):
-                pairs.append((str(f), _value_to_bytes(self.encode(v))))
+                pairs.append((str(f), _value_to_bytes(v)))
         if not pairs:
             return 0
         if len(pairs) == 1:
@@ -810,13 +803,13 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     ) -> int:
         pairs: list[tuple[str, bytes]] = []
         if field is not None:
-            pairs.append((str(field), _value_to_bytes(self.encode(value))))
+            pairs.append((str(field), _value_to_bytes(value)))
         if mapping:
-            pairs.extend((str(k), _value_to_bytes(self.encode(v))) for k, v in mapping.items())
+            pairs.extend((str(k), _value_to_bytes(v)) for k, v in mapping.items())
         if items:
             it = iter(items)
             for f, v in zip(it, it, strict=False):
-                pairs.append((str(f), _value_to_bytes(self.encode(v))))
+                pairs.append((str(f), _value_to_bytes(v)))
         if not pairs:
             return 0
         if len(pairs) == 1:
@@ -833,7 +826,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         result = self._driver.eval(
             "return redis.call('HSETNX', KEYS[1], ARGV[1], ARGV[2])",
             [_str_key(key)],
-            [str(field).encode("utf-8"), _value_to_bytes(self.encode(value))],
+            [str(field).encode("utf-8"), _value_to_bytes(value)],
         )
         return bool(result)
 
@@ -842,43 +835,43 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         result = await self._driver.aeval(
             "return redis.call('HSETNX', KEYS[1], ARGV[1], ARGV[2])",
             [_str_key(key)],
-            [str(field).encode("utf-8"), _value_to_bytes(self.encode(value))],
+            [str(field).encode("utf-8"), _value_to_bytes(value)],
         )
         return bool(result)
 
     @override
     def hget(self, key: KeyT, field: str) -> Any | None:
         val = self._driver.hget(_str_key(key), str(field))
-        return None if val is None else self.decode(val)
+        return None if val is None else val
 
     @override
     async def ahget(self, key: KeyT, field: str) -> Any | None:
         val = await self._driver.ahget(_str_key(key), str(field))
-        return None if val is None else self.decode(val)
+        return None if val is None else val
 
     @override
     def hmget(self, key: KeyT, *fields: str) -> list[Any | None]:
         if not fields:
             return []
         result = self._driver.hmget(_str_key(key), [str(f) for f in fields])
-        return [None if v is None else self.decode(v) for v in result]
+        return [None if v is None else v for v in result]
 
     @override
     async def ahmget(self, key: KeyT, *fields: str) -> list[Any | None]:
         if not fields:
             return []
         result = await self._driver.ahmget(_str_key(key), [str(f) for f in fields])
-        return [None if v is None else self.decode(v) for v in result]
+        return [None if v is None else v for v in result]
 
     @override
     def hgetall(self, key: KeyT) -> dict[str, Any]:
         result = self._driver.hgetall(_str_key(key))
-        return {(k.decode() if isinstance(k, bytes) else k): self.decode(v) for k, v in result.items()}
+        return {(k.decode() if isinstance(k, bytes) else k): v for k, v in result.items()}
 
     @override
     async def ahgetall(self, key: KeyT) -> dict[str, Any]:
         result = await self._driver.ahgetall(_str_key(key))
-        return {(k.decode() if isinstance(k, bytes) else k): self.decode(v) for k, v in result.items()}
+        return {(k.decode() if isinstance(k, bytes) else k): v for k, v in result.items()}
 
     @override
     def hdel(self, key: KeyT, *fields: str) -> int:
@@ -921,12 +914,12 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     @override
     def hvals(self, key: KeyT) -> list[Any]:
         result = self._driver.hvals(_str_key(key))
-        return [self.decode(v) for v in result]
+        return list(result)
 
     @override
     async def ahvals(self, key: KeyT) -> list[Any]:
         result = await self._driver.ahvals(_str_key(key))
-        return [self.decode(v) for v in result]
+        return list(result)
 
     @override
     def hincrby(self, key: KeyT, field: str, amount: int = 1) -> int:
@@ -966,25 +959,25 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     def lpush(self, key: KeyT, *values: Any) -> int:
         if not values:
             return self.llen(key)
-        return int(self._driver.lpush(_str_key(key), [_value_to_bytes(self.encode(v)) for v in values]))
+        return int(self._driver.lpush(_str_key(key), [_value_to_bytes(v) for v in values]))
 
     @override
     def rpush(self, key: KeyT, *values: Any) -> int:
         if not values:
             return self.llen(key)
-        return int(self._driver.rpush(_str_key(key), [_value_to_bytes(self.encode(v)) for v in values]))
+        return int(self._driver.rpush(_str_key(key), [_value_to_bytes(v) for v in values]))
 
     @override
     async def alpush(self, key: KeyT, *values: Any) -> int:
         if not values:
             return await self.allen(key)
-        return int(await self._driver.alpush(_str_key(key), [_value_to_bytes(self.encode(v)) for v in values]))
+        return int(await self._driver.alpush(_str_key(key), [_value_to_bytes(v) for v in values]))
 
     @override
     async def arpush(self, key: KeyT, *values: Any) -> int:
         if not values:
             return await self.allen(key)
-        return int(await self._driver.arpush(_str_key(key), [_value_to_bytes(self.encode(v)) for v in values]))
+        return int(await self._driver.arpush(_str_key(key), [_value_to_bytes(v) for v in values]))
 
     # lpop / rpop / alpop / arpop with the optional ``count`` argument are
     # implemented in the eval-fallback section below.
@@ -1000,43 +993,43 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     @override
     def lrange(self, key: KeyT, start: int, end: int) -> list[Any]:
         result = self._driver.lrange(_str_key(key), start, end)
-        return [self.decode(v) for v in result]
+        return list(result)
 
     @override
     async def alrange(self, key: KeyT, start: int, end: int) -> list[Any]:
         result = await self._driver.alrange(_str_key(key), start, end)
-        return [self.decode(v) for v in result]
+        return list(result)
 
     @override
     def lindex(self, key: KeyT, index: int) -> Any | None:
         val = self._driver.lindex(_str_key(key), index)
-        return None if val is None else self.decode(val)
+        return None if val is None else val
 
     @override
     async def alindex(self, key: KeyT, index: int) -> Any | None:
         val = await self._driver.alindex(_str_key(key), index)
-        return None if val is None else self.decode(val)
+        return None if val is None else val
 
     @override
     def lset(self, key: KeyT, index: int, value: Any) -> bool:
-        self._driver.lset(_str_key(key), index, _value_to_bytes(self.encode(value)))
+        self._driver.lset(_str_key(key), index, _value_to_bytes(value))
         return True
 
     @override
     async def alset(self, key: KeyT, index: int, value: Any) -> bool:
-        await self._driver.alset(_str_key(key), index, _value_to_bytes(self.encode(value)))
+        await self._driver.alset(_str_key(key), index, _value_to_bytes(value))
         return True
 
     @override
     def lrem(self, key: KeyT, count: int, value: Any) -> int:
         return int(
-            self._driver.lrem(_str_key(key), count, _value_to_bytes(self.encode(value))),
+            self._driver.lrem(_str_key(key), count, _value_to_bytes(value)),
         )
 
     @override
     async def alrem(self, key: KeyT, count: int, value: Any) -> int:
         return int(
-            await self._driver.alrem(_str_key(key), count, _value_to_bytes(self.encode(value))),
+            await self._driver.alrem(_str_key(key), count, _value_to_bytes(value)),
         )
 
     @override
@@ -1062,8 +1055,8 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
             self._driver.linsert(
                 _str_key(key),
                 before=before,
-                pivot=_value_to_bytes(self.encode(pivot)),
-                value=_value_to_bytes(self.encode(value)),
+                pivot=_value_to_bytes(pivot),
+                value=_value_to_bytes(value),
             ),
         )
 
@@ -1080,8 +1073,8 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
             await self._driver.alinsert(
                 _str_key(key),
                 before=before,
-                pivot=_value_to_bytes(self.encode(pivot)),
-                value=_value_to_bytes(self.encode(value)),
+                pivot=_value_to_bytes(pivot),
+                value=_value_to_bytes(value),
             ),
         )
 
@@ -1093,46 +1086,46 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     def sadd(self, key: KeyT, *members: Any) -> int:
         if not members:
             return 0
-        return int(self._driver.sadd(_str_key(key), [_value_to_bytes(self.encode(m)) for m in members]))
+        return int(self._driver.sadd(_str_key(key), [_value_to_bytes(m) for m in members]))
 
     @override
     async def asadd(self, key: KeyT, *members: Any) -> int:
         if not members:
             return 0
-        return int(await self._driver.asadd(_str_key(key), [_value_to_bytes(self.encode(m)) for m in members]))
+        return int(await self._driver.asadd(_str_key(key), [_value_to_bytes(m) for m in members]))
 
     @override
     def srem(self, key: KeyT, *members: Any) -> int:
         if not members:
             return 0
-        return int(self._driver.srem(_str_key(key), [_value_to_bytes(self.encode(m)) for m in members]))
+        return int(self._driver.srem(_str_key(key), [_value_to_bytes(m) for m in members]))
 
     @override
     async def asrem(self, key: KeyT, *members: Any) -> int:
         if not members:
             return 0
-        return int(await self._driver.asrem(_str_key(key), [_value_to_bytes(self.encode(m)) for m in members]))
+        return int(await self._driver.asrem(_str_key(key), [_value_to_bytes(m) for m in members]))
 
     @override
     def smembers(self, key: KeyT) -> Any:
         result = self._driver.smembers(_str_key(key))
-        return {self.decode(m) for m in result}
+        return set(result)
 
     @override
     async def asmembers(self, key: KeyT) -> Any:
         result = await self._driver.asmembers(_str_key(key))
-        return {self.decode(m) for m in result}
+        return set(result)
 
     @override
     def sismember(self, key: KeyT, member: Any) -> bool:
         return bool(
-            self._driver.sismember(_str_key(key), _value_to_bytes(self.encode(member))),
+            self._driver.sismember(_str_key(key), _value_to_bytes(member)),
         )
 
     @override
     async def asismember(self, key: KeyT, member: Any) -> bool:
         return bool(
-            await self._driver.asismember(_str_key(key), _value_to_bytes(self.encode(member))),
+            await self._driver.asismember(_str_key(key), _value_to_bytes(member)),
         )
 
     @override
@@ -1152,32 +1145,32 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     @override
     def sinter(self, keys: Any) -> Any:
         result = self._driver.sinter(self._coerce_keys_arg(keys))
-        return {self.decode(m) for m in result}
+        return set(result)
 
     @override
     async def asinter(self, keys: Any) -> Any:
         result = await self._driver.asinter(self._coerce_keys_arg(keys))
-        return {self.decode(m) for m in result}
+        return set(result)
 
     @override
     def sunion(self, keys: Any) -> Any:
         result = self._driver.sunion(self._coerce_keys_arg(keys))
-        return {self.decode(m) for m in result}
+        return set(result)
 
     @override
     async def asunion(self, keys: Any) -> Any:
         result = await self._driver.asunion(self._coerce_keys_arg(keys))
-        return {self.decode(m) for m in result}
+        return set(result)
 
     @override
     def sdiff(self, keys: Any) -> Any:
         result = self._driver.sdiff(self._coerce_keys_arg(keys))
-        return {self.decode(m) for m in result}
+        return set(result)
 
     @override
     async def asdiff(self, keys: Any) -> Any:
         result = await self._driver.asdiff(self._coerce_keys_arg(keys))
-        return {self.decode(m) for m in result}
+        return set(result)
 
     # =========================================================================
     # Sorted sets
@@ -1190,30 +1183,30 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     def zrem(self, key: KeyT, *members: Any) -> int:
         if not members:
             return 0
-        return int(self._driver.zrem(_str_key(key), [_value_to_bytes(self.encode(m)) for m in members]))
+        return int(self._driver.zrem(_str_key(key), [_value_to_bytes(m) for m in members]))
 
     @override
     async def azrem(self, key: KeyT, *members: Any) -> int:
         if not members:
             return 0
-        return int(await self._driver.azrem(_str_key(key), [_value_to_bytes(self.encode(m)) for m in members]))
+        return int(await self._driver.azrem(_str_key(key), [_value_to_bytes(m) for m in members]))
 
     @override
     def zscore(self, key: KeyT, member: Any) -> float | None:
-        return self._driver.zscore(_str_key(key), _value_to_bytes(self.encode(member)))
+        return self._driver.zscore(_str_key(key), _value_to_bytes(member))
 
     @override
     async def azscore(self, key: KeyT, member: Any) -> float | None:
-        return await self._driver.azscore(_str_key(key), _value_to_bytes(self.encode(member)))
+        return await self._driver.azscore(_str_key(key), _value_to_bytes(member))
 
     @override
     def zrank(self, key: KeyT, member: Any) -> int | None:
-        result = self._driver.zrank(_str_key(key), _value_to_bytes(self.encode(member)))
+        result = self._driver.zrank(_str_key(key), _value_to_bytes(member))
         return None if result is None else int(result)
 
     @override
     async def azrank(self, key: KeyT, member: Any) -> int | None:
-        result = await self._driver.azrank(_str_key(key), _value_to_bytes(self.encode(member)))
+        result = await self._driver.azrank(_str_key(key), _value_to_bytes(member))
         return None if result is None else int(result)
 
     @override
@@ -1235,26 +1228,26 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     @override
     def zincrby(self, key: KeyT, amount: float, member: Any) -> float:
         return float(
-            self._driver.zincrby(_str_key(key), _value_to_bytes(self.encode(member)), float(amount)),
+            self._driver.zincrby(_str_key(key), _value_to_bytes(member), float(amount)),
         )
 
     @override
     async def azincrby(self, key: KeyT, amount: float, member: Any) -> float:
         return float(
-            await self._driver.azincrby(_str_key(key), _value_to_bytes(self.encode(member)), float(amount)),
+            await self._driver.azincrby(_str_key(key), _value_to_bytes(member), float(amount)),
         )
 
     def _decode_zrange(self, raw: list[Any], *, withscores: bool) -> list[Any]:
         if not withscores:
-            return [self.decode(m) for m in raw]
+            return list(raw)
         # Driver returns either ``[[m, s], [m, s], ...]`` (standard) or a flat
         # ``[m1, s1, m2, s2, ...]`` (cluster) — handle both.
         if raw and isinstance(raw[0], (list, tuple)):
-            return [(self.decode(member), float(score)) for member, score in raw]
+            return [(member, float(score)) for member, score in raw]
         out: list[tuple[Any, float]] = []
         it = iter(raw)
         for member, score in zip(it, it, strict=False):
-            out.append((self.decode(member), float(score)))
+            out.append((member, float(score)))
         return out
 
     @override
@@ -1357,22 +1350,22 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         # Rust driver wants a concrete i64; default-None semantics ("return one")
         # are encoded as count=1 here, mirroring redis-py's no-count call shape.
         raw = self._driver.zpopmin(_str_key(key), 1 if count is None else count)
-        return [(self.decode(m), float(s)) for m, s in raw]
+        return [(m, float(s)) for m, s in raw]
 
     @override
     async def azpopmin(self, key: KeyT, count: int | None = None) -> list[tuple[Any, float]]:
         raw = await self._driver.azpopmin(_str_key(key), 1 if count is None else count)
-        return [(self.decode(m), float(s)) for m, s in raw]
+        return [(m, float(s)) for m, s in raw]
 
     @override
     def zpopmax(self, key: KeyT, count: int | None = None) -> list[tuple[Any, float]]:
         raw = self._driver.zpopmax(_str_key(key), 1 if count is None else count)
-        return [(self.decode(m), float(s)) for m, s in raw]
+        return [(m, float(s)) for m, s in raw]
 
     @override
     async def azpopmax(self, key: KeyT, count: int | None = None) -> list[tuple[Any, float]]:
         raw = await self._driver.azpopmax(_str_key(key), 1 if count is None else count)
-        return [(self.decode(m), float(s)) for m, s in raw]
+        return [(m, float(s)) for m, s in raw]
 
     # =========================================================================
     # Scripts
@@ -1434,33 +1427,33 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     def lpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
         if count is None:
             val = self._driver.lpop(_str_key(key))
-            return None if val is None else self.decode(val)
+            return None if val is None else val
         result = self._eval_call("LPOP", [key], [count])
-        return None if result is None else [self.decode(v) for v in result]
+        return None if result is None else list(result)
 
     @override
     def rpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
         if count is None:
             val = self._driver.rpop(_str_key(key))
-            return None if val is None else self.decode(val)
+            return None if val is None else val
         result = self._eval_call("RPOP", [key], [count])
-        return None if result is None else [self.decode(v) for v in result]
+        return None if result is None else list(result)
 
     @override
     async def alpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
         if count is None:
             val = await self._driver.alpop(_str_key(key))
-            return None if val is None else self.decode(val)
+            return None if val is None else val
         result = await self._aeval_call("LPOP", [key], [count])
-        return None if result is None else [self.decode(v) for v in result]
+        return None if result is None else list(result)
 
     @override
     async def arpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
         if count is None:
             val = await self._driver.arpop(_str_key(key))
-            return None if val is None else self.decode(val)
+            return None if val is None else val
         result = await self._aeval_call("RPOP", [key], [count])
-        return None if result is None else [self.decode(v) for v in result]
+        return None if result is None else list(result)
 
     # ---- zadd flags ----
 
@@ -1491,7 +1484,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         lt: bool = False,
         ch: bool = False,
     ) -> int:
-        pairs = [(_value_to_bytes(self.encode(m)), float(s)) for m, s in mapping.items()]
+        pairs = [(_value_to_bytes(m), float(s)) for m, s in mapping.items()]
         if not pairs:
             return 0
         if not (nx or xx or gt or lt or ch):
@@ -1514,7 +1507,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         lt: bool = False,
         ch: bool = False,
     ) -> int:
-        pairs = [(_value_to_bytes(self.encode(m)), float(s)) for m, s in mapping.items()]
+        pairs = [(_value_to_bytes(m), float(s)) for m, s in mapping.items()]
         if not pairs:
             return 0
         if not (nx or xx or gt or lt or ch):
@@ -1529,19 +1522,19 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
 
     @override
     def zrevrank(self, key: KeyT, member: Any) -> int | None:
-        result = self._eval_call("ZREVRANK", [key], [_value_to_bytes(self.encode(member))])
+        result = self._eval_call("ZREVRANK", [key], [_value_to_bytes(member)])
         return None if result is None else int(result)
 
     @override
     async def azrevrank(self, key: KeyT, member: Any) -> int | None:
-        result = await self._aeval_call("ZREVRANK", [key], [_value_to_bytes(self.encode(member))])
+        result = await self._aeval_call("ZREVRANK", [key], [_value_to_bytes(member)])
         return None if result is None else int(result)
 
     @override
     def zmscore(self, key: KeyT, *members: Any) -> list[float | None]:
         if not members:
             return []
-        argv = [_value_to_bytes(self.encode(m)) for m in members]
+        argv = [_value_to_bytes(m) for m in members]
         result = self._eval_call("ZMSCORE", [key], argv)
         return [None if s is None else float(s) for s in result]
 
@@ -1549,7 +1542,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     async def azmscore(self, key: KeyT, *members: Any) -> list[float | None]:
         if not members:
             return []
-        argv = [_value_to_bytes(self.encode(m)) for m in members]
+        argv = [_value_to_bytes(m) for m in members]
         result = await self._aeval_call("ZMSCORE", [key], argv)
         return [None if s is None else float(s) for s in result]
 
@@ -1615,30 +1608,30 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     def _decode_zrevrangebyscore(self, raw: list, *, withscores: bool) -> list[Any]:
         # ZREVRANGEBYSCORE WITHSCORES returns a flat [m1, s1, m2, s2, ...].
         if not withscores:
-            return [self.decode(m) for m in raw]
+            return list(raw)
         out: list[tuple[Any, float]] = []
         it = iter(raw)
         for member, score in zip(it, it, strict=False):
-            out.append((self.decode(member), float(score)))
+            out.append((member, float(score)))
         return out
 
     # ---- set ops the driver doesn't expose ----
 
     @override
     def smove(self, src: KeyT, dst: KeyT, member: Any) -> bool:
-        return bool(self._eval_call("SMOVE", [src, dst], [_value_to_bytes(self.encode(member))]))
+        return bool(self._eval_call("SMOVE", [src, dst], [_value_to_bytes(member)]))
 
     @override
     async def asmove(self, src: KeyT, dst: KeyT, member: Any) -> bool:
         return bool(
-            await self._aeval_call("SMOVE", [src, dst], [_value_to_bytes(self.encode(member))]),
+            await self._aeval_call("SMOVE", [src, dst], [_value_to_bytes(member)]),
         )
 
     @override
     def smismember(self, key: KeyT, *members: Any) -> list[bool]:
         if not members:
             return []
-        argv = [_value_to_bytes(self.encode(m)) for m in members]
+        argv = [_value_to_bytes(m) for m in members]
         result = self._eval_call("SMISMEMBER", [key], argv)
         return [bool(r) for r in result]
 
@@ -1646,7 +1639,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     async def asmismember(self, key: KeyT, *members: Any) -> list[bool]:
         if not members:
             return []
-        argv = [_value_to_bytes(self.encode(m)) for m in members]
+        argv = [_value_to_bytes(m) for m in members]
         result = await self._aeval_call("SMISMEMBER", [key], argv)
         return [bool(r) for r in result]
 
@@ -1654,25 +1647,25 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     def spop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
         if count is None:
             val = self._eval_call("SPOP", [key], [])
-            return None if val is None else self.decode(val)
+            return None if val is None else val
         result = self._eval_call("SPOP", [key], [count])
-        return None if result is None else [self.decode(v) for v in result]
+        return None if result is None else list(result)
 
     @override
     async def aspop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
         if count is None:
             val = await self._aeval_call("SPOP", [key], [])
-            return None if val is None else self.decode(val)
+            return None if val is None else val
         result = await self._aeval_call("SPOP", [key], [count])
-        return None if result is None else [self.decode(v) for v in result]
+        return None if result is None else list(result)
 
     @override
     def srandmember(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
         if count is None:
             val = self._eval_call("SRANDMEMBER", [key], [])
-            return None if val is None else self.decode(val)
+            return None if val is None else val
         result = self._eval_call("SRANDMEMBER", [key], [count])
-        return [] if result is None else [self.decode(v) for v in result]
+        return [] if result is None else list(result)
 
     @override
     async def asrandmember(
@@ -1682,9 +1675,9 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     ) -> Any | list[Any] | None:
         if count is None:
             val = await self._aeval_call("SRANDMEMBER", [key], [])
-            return None if val is None else self.decode(val)
+            return None if val is None else val
         result = await self._aeval_call("SRANDMEMBER", [key], [count])
-        return [] if result is None else [self.decode(v) for v in result]
+        return [] if result is None else list(result)
 
     @override
     def sdiffstore(self, dest: KeyT, keys: Any) -> int:
@@ -1721,7 +1714,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     @override
     def lmove(self, src: KeyT, dst: KeyT, wherefrom: str = "LEFT", whereto: str = "RIGHT") -> Any | None:
         val = self._eval_call("LMOVE", [src, dst], [wherefrom.encode(), whereto.encode()])
-        return None if val is None else self.decode(val)
+        return None if val is None else val
 
     @override
     async def almove(
@@ -1732,7 +1725,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         whereto: str = "RIGHT",
     ) -> Any | None:
         val = await self._aeval_call("LMOVE", [src, dst], [wherefrom.encode(), whereto.encode()])
-        return None if val is None else self.decode(val)
+        return None if val is None else val
 
     @override
     def lpos(
@@ -1743,7 +1736,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         count: int | None = None,
         maxlen: int | None = None,
     ) -> int | list[int] | None:
-        argv: list[Any] = [_value_to_bytes(self.encode(value))]
+        argv: list[Any] = [_value_to_bytes(value)]
         if rank is not None:
             argv.extend([b"RANK", rank])
         if count is not None:
@@ -1764,7 +1757,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         count: int | None = None,
         maxlen: int | None = None,
     ) -> int | list[int] | None:
-        argv: list[Any] = [_value_to_bytes(self.encode(value))]
+        argv: list[Any] = [_value_to_bytes(value)]
         if rank is not None:
             argv.extend([b"RANK", rank])
         if count is not None:
@@ -1821,7 +1814,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         minid: str | None = None,
         limit: int | None = None,
     ) -> str:
-        encoded = [(str(k), _value_to_bytes(self.encode(v))) for k, v in fields.items()]
+        encoded = [(str(k), _value_to_bytes(v)) for k, v in fields.items()]
         if maxlen is None and minid is None and not nomkstream and limit is None:
             return self._driver.xadd(_str_key(key), entry_id, encoded)
         argv = self._xadd_argv(entry_id, encoded, maxlen, approximate, nomkstream, minid, limit)
@@ -1840,7 +1833,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         minid: str | None = None,
         limit: int | None = None,
     ) -> str:
-        encoded = [(str(k), _value_to_bytes(self.encode(v))) for k, v in fields.items()]
+        encoded = [(str(k), _value_to_bytes(v)) for k, v in fields.items()]
         if maxlen is None and minid is None and not nomkstream and limit is None:
             return await self._driver.axadd(_str_key(key), entry_id, encoded)
         argv = self._xadd_argv(entry_id, encoded, maxlen, approximate, nomkstream, minid, limit)
@@ -1879,22 +1872,22 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     @override
     def blpop(self, keys: Any, timeout: float = 0) -> tuple[str, Any] | None:
         raw = self._driver.blpop(self._coerce_keys_arg(keys), float(timeout))
-        return None if raw is None else (raw[0], self.decode(raw[1]))
+        return None if raw is None else (raw[0], raw[1])
 
     @override
     def brpop(self, keys: Any, timeout: float = 0) -> tuple[str, Any] | None:
         raw = self._driver.brpop(self._coerce_keys_arg(keys), float(timeout))
-        return None if raw is None else (raw[0], self.decode(raw[1]))
+        return None if raw is None else (raw[0], raw[1])
 
     @override
     async def ablpop(self, keys: Any, timeout: float = 0) -> tuple[str, Any] | None:
         raw = await self._driver.ablpop(self._coerce_keys_arg(keys), float(timeout))
-        return None if raw is None else (raw[0], self.decode(raw[1]))
+        return None if raw is None else (raw[0], raw[1])
 
     @override
     async def abrpop(self, keys: Any, timeout: float = 0) -> tuple[str, Any] | None:
         raw = await self._driver.abrpop(self._coerce_keys_arg(keys), float(timeout))
-        return None if raw is None else (raw[0], self.decode(raw[1]))
+        return None if raw is None else (raw[0], raw[1])
 
     @override
     def blmove(
@@ -1907,7 +1900,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     ) -> Any | None:
         # Driver positional order is (src, dst, wherefrom, whereto, timeout_secs).
         val = self._driver.blmove(_str_key(src), _str_key(dst), wherefrom, whereto, float(timeout))
-        return None if val is None else self.decode(val)
+        return None if val is None else val
 
     @override
     async def ablmove(
@@ -1919,7 +1912,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         whereto: str = "RIGHT",
     ) -> Any | None:
         val = await self._driver.ablmove(_str_key(src), _str_key(dst), wherefrom, whereto, float(timeout))
-        return None if val is None else self.decode(val)
+        return None if val is None else val
 
     # ---- streams: range/read/trim signature translations ----
 
@@ -1988,11 +1981,11 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
                 it = iter(kv)
                 for f, v in zip(it, it, strict=False):
                     field_name = f.decode() if isinstance(f, bytes) else str(f)
-                    fields[field_name] = self.decode(v)
+                    fields[field_name] = v
             elif isinstance(kv, dict):
                 for f, v in kv.items():
                     field_name = f.decode() if isinstance(f, bytes) else str(f)
-                    fields[field_name] = self.decode(v)
+                    fields[field_name] = v
             out.append((entry_id, fields))
         return out
 
@@ -2459,7 +2452,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
             argv.extend([b"COUNT", count])
         result = self._eval_call("SSCAN", [key], argv)
         next_cursor = int(result[0]) if isinstance(result[0], (int, str, bytes)) else 0
-        return next_cursor, {self.decode(v) for v in result[1]}
+        return next_cursor, set(result[1])
 
     @override
     async def asscan(
@@ -2476,7 +2469,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
             argv.extend([b"COUNT", count])
         result = await self._aeval_call("SSCAN", [key], argv)
         next_cursor = int(result[0]) if isinstance(result[0], (int, str, bytes)) else 0
-        return next_cursor, {self.decode(v) for v in result[1]}
+        return next_cursor, set(result[1])
 
     @override
     def sscan_iter(self, key: KeyT, match: str | None = None, count: int | None = None) -> Iterator[Any]:

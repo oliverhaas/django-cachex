@@ -2,6 +2,7 @@
 
 import gzip
 import zlib
+from typing import Any
 
 
 class TestDefaultClientCompressorConfig:
@@ -104,42 +105,49 @@ class TestDefaultClientCompressorConfig:
             cache.delete("new_key")
 
 
+def _make_cache(*, compressor: Any = None, serializer: Any = None) -> Any:
+    """Construct a :class:`RedisCache` purely to exercise the encoding stack.
+
+    ``_decompress`` / ``_deserialize`` / ``encode`` / ``decode`` live on the
+    cache layer; the adapter is wire-only. The cache's ``adapter`` property
+    is lazy, so we never actually open a connection.
+    """
+    from django_cachex.cache import RedisCache
+
+    options: dict[str, Any] = {}
+    if compressor is not None:
+        options["compressor"] = compressor
+    if serializer is not None:
+        options["serializer"] = serializer
+    return RedisCache(server="redis://localhost:6379", params={"OPTIONS": options})
+
+
 class TestDecompressFallback:
-    """Tests for the _decompress fallback logic."""
+    """Tests for the _decompress fallback logic on the cache layer."""
 
     def test_decompress_gzip_with_multiple_compressors(self):
-        from django_cachex.adapter import RedisAdapter
-
-        client = RedisAdapter(
-            servers=["redis://localhost:6379"],
+        cache = _make_cache(
             compressor=[
                 "django_cachex.compressors.gzip.GzipCompressor",
                 "django_cachex.compressors.zlib.ZlibCompressor",
             ],
         )
-
         data = b"Test data for compression! " * 50
         gzip_data = gzip.compress(data)
-
-        assert client._decompress(gzip_data) == data
+        assert cache._decompress(gzip_data) == data
 
     def test_decompress_zlib_with_fallback(self):
         """Test that _decompress falls back to zlib for zlib-compressed data."""
-        from django_cachex.adapter import RedisAdapter
-
-        client = RedisAdapter(
-            servers=["redis://localhost:6379"],
+        cache = _make_cache(
             compressor=[
                 "django_cachex.compressors.gzip.GzipCompressor",
                 "django_cachex.compressors.zlib.ZlibCompressor",
             ],
         )
-
         data = b"Test data for compression! " * 50
         zlib_data = zlib.compress(data)
-
         # gzip will fail, zlib should succeed
-        assert client._decompress(zlib_data) == data
+        assert cache._decompress(zlib_data) == data
 
     def test_decompress_raises_when_all_compressors_fail(self):
         """When every configured compressor fails, _decompress raises CompressorError.
@@ -150,48 +158,32 @@ class TestDecompressFallback:
         """
         import pytest
 
-        from django_cachex.adapter import RedisAdapter
         from django_cachex.exceptions import CompressorError
 
-        client = RedisAdapter(
-            servers=["redis://localhost:6379"],
-            compressor=[
-                "django_cachex.compressors.gzip.GzipCompressor",
-            ],
-        )
-
+        cache = _make_cache(compressor=["django_cachex.compressors.gzip.GzipCompressor"])
         # Plain data that isn't gzip — the only configured compressor fails.
         data = b"Plain uncompressed data"
         with pytest.raises(CompressorError):
-            client._decompress(data)
+            cache._decompress(data)
 
     def test_decompress_raises_after_full_chain_fails(self):
         """_decompress walks the full chain before raising; raises when none succeed."""
         import pytest
 
-        from django_cachex.adapter import RedisAdapter
         from django_cachex.exceptions import CompressorError
 
-        client = RedisAdapter(
-            servers=["redis://localhost:6379"],
+        cache = _make_cache(
             compressor=[
                 "django_cachex.compressors.gzip.GzipCompressor",
                 "django_cachex.compressors.zlib.ZlibCompressor",
             ],
         )
-
         # Looks like gzip (magic bytes) but isn't valid; zlib also fails.
         fake_gzip = b"\x1f\x8bNot actually valid gzip data"
         with pytest.raises(CompressorError):
-            client._decompress(fake_gzip)
+            cache._decompress(fake_gzip)
 
     def test_decompress_with_no_compressors_returns_raw(self):
-        from django_cachex.adapter import RedisAdapter
-
-        client = RedisAdapter(
-            servers=["redis://localhost:6379"],
-            compressor=None,
-        )
-
+        cache = _make_cache(compressor=None)
         data = b"Plain uncompressed data"
-        assert client._decompress(data) == data
+        assert cache._decompress(data) == data
