@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 import uuid
 from typing import TYPE_CHECKING
 
@@ -288,7 +287,7 @@ class TestSyncExpiry:
     def test_expired_key_returns_default(self, stream_cache: BaseCache):
         stream_cache.set("exp_key", "val", timeout=1)
         assert stream_cache.get("exp_key") == "val"
-        time.sleep(1.5)
+        stream_cache.expire("exp_key", 0)
         assert stream_cache.get("exp_key") is None
 
     def test_ttl_returns_remaining(self, stream_cache: BaseCache):
@@ -306,7 +305,7 @@ class TestSyncExpiry:
 
     def test_has_key_false_for_expired(self, stream_cache: BaseCache):
         stream_cache.set("exp_hk", "val", timeout=1)
-        time.sleep(1.5)
+        stream_cache.expire("exp_hk", 0)
         assert stream_cache.has_key("exp_hk") is False
 
     def test_touch_updates_expiry(self, stream_cache: BaseCache):

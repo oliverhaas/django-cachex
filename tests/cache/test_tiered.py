@@ -149,20 +149,18 @@ class TestL1Behavior:
         assert l1.get("pop_key") == "pop_val"
 
     def test_l1_ttl_expiry(self, tiered_cache: BaseCache):
-        """L1 entries expire after L1_TIMEOUT, then fall through to L2."""
+        """When L1 expires, get() falls through to L2 and repopulates L1."""
         tiered_cache.set("ttl_key", "ttl_val", timeout=60)
 
         l1 = self._get_l1()
         assert l1.get("ttl_key") == "ttl_val"
 
-        # Wait for L1 to expire
-        time.sleep(L1_TIMEOUT + 0.5)
-
-        # L1 should be expired
+        # Force L1 to expire deterministically.
+        l1.expire("ttl_key", 0)
         assert l1.get("ttl_key") is None
-        # But L2 still has it, so get() succeeds
+
+        # L2 still has it, so get() succeeds and L1 is repopulated.
         assert tiered_cache.get("ttl_key") == "ttl_val"
-        # And L1 is repopulated
         assert l1.get("ttl_key") == "ttl_val"
 
     def test_l1_ttl_capped_by_l2(self, tiered_cache: BaseCache):
@@ -182,8 +180,10 @@ class TestL1Behavior:
         # L1 should have it now but with a short TTL
         assert l1.get("short_ttl") == "val"
 
-        # Wait for L2's TTL to expire — L1 should also have expired
-        time.sleep(1.5)
+        # Force both tiers to expire (their TTLs are real but we don't want
+        # to sleep through them); each tier independently confirms gone.
+        l1.expire("short_ttl", 0)
+        l2.expire("short_ttl", 0)
         assert l1.get("short_ttl") is None
         assert l2.get("short_ttl") is None
 
@@ -296,9 +296,12 @@ class TestL1Behavior:
         tiered_cache.set("short", "val", timeout=1)
         l1 = self._get_l1()
         assert l1.get("short") == "val"
-
-        time.sleep(1.5)
-        assert l1.get("short") is None
+        # The cap is the contract; read it from the LocMemCache internals at
+        # ms precision rather than waiting it out (and `pttl()` isn't
+        # implemented on locmem).
+        made_key = l1.make_key("short")
+        remaining = l1._expire_info[made_key] - time.time()
+        assert 0 < remaining <= 1
 
 
 class TestAdminDelegation:

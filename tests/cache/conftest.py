@@ -34,7 +34,7 @@ def _build_tiered_config(host: str, port: int, client_library: str = "redis") ->
 
     return {
         "l1": {
-            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "BACKEND": "django_cachex.cache.LocMemCache",
             "OPTIONS": {"MAX_ENTRIES": 100},
         },
         "l2": {

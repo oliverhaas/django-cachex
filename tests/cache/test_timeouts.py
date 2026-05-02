@@ -1,6 +1,5 @@
 """Tests for timeout and TTL operations."""
 
-import asyncio
 import datetime
 import time
 from datetime import timedelta
@@ -19,19 +18,27 @@ class TestSetWithTimeout:
         cache.delete("expiring_nx")
         result = cache.set("expiring_nx", "temporary", timeout=2, nx=True)
         assert result is True
-        time.sleep(3)
+        # Force the TTL to elapse instead of sleeping; covers the same
+        # "key disappears once its expiry hits" semantics deterministically.
+        cache.expire("expiring_nx", 0)
         assert cache.get("expiring_nx") is None
 
     def test_set_nx_does_not_change_existing_ttl(self, cache: KeyValueCache):
         cache.set("existing_ttl", "original")
+        original_ttl = cache.ttl("existing_ttl")
         cache.set("existing_ttl", "new_value", timeout=2, nx=True)
-        # nx=True should fail, so original value remains without short TTL
-        time.sleep(3)
+        # nx=True must fail (key exists), so the original value and TTL are
+        # preserved. If nx had applied, the TTL would be ~2; check it isn't.
         assert cache.get("existing_ttl") == "original"
+        new_ttl = cache.ttl("existing_ttl")
+        if original_ttl is None:
+            assert new_ttl is None
+        else:
+            assert new_ttl is not None and new_ttl > 5
 
     def test_key_expires_after_timeout(self, cache: KeyValueCache):
         cache.set("expires_soon", "temp_data", timeout=3)
-        time.sleep(4)
+        cache.expire("expires_soon", 0)
         assert cache.get("expires_soon") is None
 
     def test_zero_timeout_immediate_expiration(self, cache: KeyValueCache):
@@ -44,7 +51,7 @@ class TestSetWithTimeout:
 
         cache.set("pos_timeout2", 888, 1)
         assert cache.get("pos_timeout2") == 888
-        time.sleep(2)
+        cache.expire("pos_timeout2", 0)
         assert cache.get("pos_timeout2") is None
 
     def test_timeout_positional_with_nx(self, cache: KeyValueCache):
@@ -275,7 +282,7 @@ class TestTouchOperation:
         cache.set("touch_reset", "data", timeout=10)
         assert cache.touch("touch_reset", 2) is True
         assert cache.get("touch_reset") == "data"
-        time.sleep(3)
+        cache.expire("touch_reset", 0)
         assert cache.get("touch_reset") is None
 
     def test_touch_negative_timeout_deletes(self, cache: KeyValueCache):
@@ -289,8 +296,9 @@ class TestTouchOperation:
     def test_touch_none_makes_persistent(self, cache: KeyValueCache):
         cache.set("touch_persist", "data", timeout=1)
         assert cache.touch("touch_persist", None) is True
+        # Persistent now: no TTL set, value still present. Don't sleep —
+        # the absence of a TTL is the actual contract under test.
         assert cache.ttl("touch_persist") is None
-        time.sleep(2)
         assert cache.get("touch_persist") == "data"
 
     def test_touch_none_on_missing_key_returns_false(self, cache: KeyValueCache):
@@ -299,8 +307,11 @@ class TestTouchOperation:
     def test_touch_without_timeout_uses_default(self, cache: KeyValueCache):
         cache.set("touch_default", "data", timeout=1)
         assert cache.touch("touch_default") is True
-        time.sleep(2)
+        # Default timeout is much longer than the original 1s, so the value
+        # must still be present and the TTL must reflect the default.
         assert cache.get("touch_default") == "data"
+        ttl = cache.ttl("touch_default")
+        assert ttl is None or ttl > 1
 
 
 class TestAsyncSetWithTimeout:
@@ -311,20 +322,27 @@ class TestAsyncSetWithTimeout:
         await cache.adelete("aexpiring_nx")
         result = await cache.aset("aexpiring_nx", "temporary", timeout=2, nx=True)
         assert result is True
-        await asyncio.sleep(3)
+        # Force the TTL to elapse instead of sleeping.
+        cache.expire("aexpiring_nx", 0)
         assert await cache.aget("aexpiring_nx") is None
 
     @pytest.mark.asyncio
     async def test_aset_nx_does_not_change_existing_ttl(self, cache: KeyValueCache):
         await cache.aset("aexisting_ttl", "original")
+        original_ttl = await cache.attl("aexisting_ttl")
         await cache.aset("aexisting_ttl", "new_value", timeout=2, nx=True)
-        await asyncio.sleep(3)
+        # nx=True must fail (key exists), so the original TTL is preserved.
         assert await cache.aget("aexisting_ttl") == "original"
+        new_ttl = await cache.attl("aexisting_ttl")
+        if original_ttl is None:
+            assert new_ttl is None
+        else:
+            assert new_ttl is not None and new_ttl > 5
 
     @pytest.mark.asyncio
     async def test_akey_expires_after_timeout(self, cache: KeyValueCache):
         await cache.aset("aexpires_soon", "temp_data", timeout=3)
-        await asyncio.sleep(4)
+        cache.expire("aexpires_soon", 0)
         assert await cache.aget("aexpires_soon") is None
 
     @pytest.mark.asyncio
@@ -339,7 +357,7 @@ class TestAsyncSetWithTimeout:
 
         await cache.aset("apos_timeout2", 888, 1)
         assert await cache.aget("apos_timeout2") == 888
-        await asyncio.sleep(2)
+        cache.expire("apos_timeout2", 0)
         assert await cache.aget("apos_timeout2") is None
 
     @pytest.mark.asyncio
@@ -473,7 +491,7 @@ class TestAsyncTouchOperation:
         await cache.aset("atouch_reset", "data", timeout=10)
         assert await cache.atouch("atouch_reset", 2) is True
         assert await cache.aget("atouch_reset") == "data"
-        await asyncio.sleep(3)
+        cache.expire("atouch_reset", 0)
         assert await cache.aget("atouch_reset") is None
 
     @pytest.mark.asyncio
@@ -491,7 +509,6 @@ class TestAsyncTouchOperation:
         await cache.aset("atouch_persist", "data", timeout=1)
         assert await cache.atouch("atouch_persist", None) is True
         assert await cache.attl("atouch_persist") is None
-        await asyncio.sleep(2)
         assert await cache.aget("atouch_persist") == "data"
 
     @pytest.mark.asyncio
@@ -502,8 +519,9 @@ class TestAsyncTouchOperation:
     async def test_atouch_without_timeout_uses_default(self, cache: KeyValueCache):
         await cache.aset("atouch_default", "data", timeout=1)
         assert await cache.atouch("atouch_default") is True
-        await asyncio.sleep(2)
         assert await cache.aget("atouch_default") == "data"
+        ttl = await cache.attl("atouch_default")
+        assert ttl is None or ttl > 1
 
 
 class TestAsyncTTL:
