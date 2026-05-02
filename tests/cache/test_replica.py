@@ -177,8 +177,12 @@ class TestReplicaSetup:
                 )
                 read_indices.add(read_idx)
 
-            # Should have selected multiple different replicas
-            assert len(read_indices) >= 1, "Should select from available replicas"
+            # Over 50 uniform-random picks, every replica index should have
+            # been hit at least once. Catches a stuck-on-one-replica regression.
+            expected_indices = set(range(1, total_servers))
+            assert read_indices == expected_indices, (
+                f"Expected reads to distribute across {expected_indices}, got {read_indices}"
+            )
 
         with suppress(KeyError, AttributeError):
             del caches["default"]

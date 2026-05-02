@@ -116,8 +116,14 @@ class TestStampedeBasicOperations:
         assert stampede_cache.get("sp_add_exists") == "original"
 
 
-class TestStampedeIntegerPassthrough:
-    """Integers bypass stampede TTL check (int values parsed by decode, not bytes)."""
+class TestStampedeWithIntegerValues:
+    """Stampede prevention coexists with integer storage and INCR/DECR.
+
+    Integers do *not* bypass the stampede TTL check (Redis GET returns
+    bytes; `b"42"` is bytes, not int). These tests verify the cache
+    surface still works when stampede is enabled and the values happen
+    to be integers.
+    """
 
     def test_integer_set_get(self, stampede_cache: KeyValueCache):
         stampede_cache.set("sp_int", 42, timeout=300)

@@ -68,7 +68,7 @@ class TestClearAllVersions:
         cache.set("cav_key2", "v2", version=2)
 
         count = cache.clear_all_versions()
-        assert count >= 2
+        assert count == 2
 
         assert cache.get("cav_key1", version=1) is None
         assert cache.get("cav_key2", version=2) is None
@@ -184,7 +184,7 @@ class TestAsyncClearAllVersions:
         cache.set("acav_key2", "v2", version=2)
 
         count = await cache.aclear_all_versions()
-        assert count >= 2
+        assert count == 2
 
         assert cache.get("acav_key1", version=1) is None
         assert cache.get("acav_key2", version=2) is None

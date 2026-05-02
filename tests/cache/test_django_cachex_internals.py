@@ -404,15 +404,21 @@ class TestConnectionCleanup:
         if cache._cache._async_pool_class is None:
             pytest.skip("Async not supported for this client type")
 
-        # Perform some async operations
+        # Snapshot the write pool before any ops; the same object must
+        # still be the active write pool after a batch of mixed ops
+        # (this is what verifies "reuse", not just an upper bound).
+        loop = asyncio.get_running_loop()
+        original_write_pool = cache._cache._get_async_connection_pool(write=True)
+
         await cache.aset("test_reuse_1", "value1")
         await cache.aset("test_reuse_2", "value2")
         await cache.aget("test_reuse_1")
         await cache.adelete("test_reuse_1")
 
-        # Should still have at most one pool per server in the registry.
-        loop = asyncio.get_running_loop()
-        assert len(_ASYNC_POOLS.get(loop, {})) <= len(cache._cache._servers)
+        # Same write-pool object is still active.
+        assert cache._cache._get_async_connection_pool(write=True) is original_write_pool
+        # And we never created more than one pool per configured server.
+        assert 1 <= len(_ASYNC_POOLS.get(loop, {})) <= len(cache._cache._servers)
 
         # Clean up
         await cache.adelete("test_reuse_2")
