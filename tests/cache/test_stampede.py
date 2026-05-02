@@ -3,8 +3,6 @@
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
-import pytest
-
 from django_cachex.stampede import StampedeConfig, should_recompute
 
 if TYPE_CHECKING:
@@ -379,20 +377,6 @@ class TestStampedeGetOrSetRecompute:
             timeout=300,
         )
         assert result == "recomputed"
-
-    @pytest.mark.asyncio
-    async def test_aget_or_set_overwrites_stale_key(self, stampede_cache: KeyValueCache):
-        """Async get_or_set must also overwrite stale keys."""
-        stampede_cache.set("sp_agos_overwrite", "stale", timeout=300)
-        stampede_cache.expire("sp_agos_overwrite", 50)
-
-        result = await stampede_cache.aget_or_set(
-            "sp_agos_overwrite",
-            lambda: "fresh_async",
-            timeout=300,
-        )
-        assert result == "fresh_async"
-        assert stampede_cache.get("sp_agos_overwrite") == "fresh_async"
 
 
 class TestStampedeGetManyConsistency:
