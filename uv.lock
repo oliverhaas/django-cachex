@@ -322,18 +322,18 @@ orjson = [
 ormsgpack = [
     { name = "ormsgpack" },
 ]
-redis = [
+redis-py = [
     { name = "redis" },
 ]
 redis-rs = [
     { name = "django-cachex-redis-rs" },
 ]
-valkey = [
-    { name = "valkey" },
-]
 valkey-glide = [
     { name = "valkey-glide" },
     { name = "valkey-glide-sync" },
+]
+valkey-py = [
+    { name = "valkey" },
 ]
 
 [package.dev-dependencies]
@@ -378,14 +378,14 @@ requires-dist = [
     { name = "msgpack", marker = "extra == 'msgpack'", specifier = ">=1.1.0" },
     { name = "orjson", marker = "extra == 'orjson'", specifier = ">=3.10.0" },
     { name = "ormsgpack", marker = "extra == 'ormsgpack'", specifier = ">=1.10.0" },
-    { name = "redis", marker = "extra == 'redis'", specifier = ">=6,<8" },
+    { name = "redis", marker = "extra == 'redis-py'", specifier = ">=6,<8" },
     { name = "redis", extras = ["hiredis"], marker = "extra == 'hiredis'", specifier = ">=6,<8" },
-    { name = "valkey", marker = "extra == 'valkey'", specifier = ">=6.1.0,<7" },
+    { name = "valkey", marker = "extra == 'valkey-py'", specifier = ">=6.1.0,<7" },
     { name = "valkey", extras = ["libvalkey"], marker = "extra == 'libvalkey'", specifier = ">=6.1.0,<7" },
     { name = "valkey-glide", marker = "extra == 'valkey-glide'", specifier = ">=2.3,<3" },
     { name = "valkey-glide-sync", marker = "extra == 'valkey-glide'", specifier = ">=2.3,<3" },
 ]
-provides-extras = ["valkey", "libvalkey", "redis", "hiredis", "redis-rs", "valkey-glide", "lz4", "msgpack", "ormsgpack", "orjson"]
+provides-extras = ["valkey-py", "libvalkey", "redis-py", "hiredis", "redis-rs", "valkey-glide", "lz4", "msgpack", "ormsgpack", "orjson"]
 
 [package.metadata.requires-dev]
 dev = [

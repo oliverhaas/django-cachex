@@ -14,7 +14,6 @@ from django_cachex.cache.default import (
     RedisCache,
     ValkeyCache,
 )
-from django_cachex.cache.glide import ValkeyGlideCache
 from django_cachex.cache.locmem import LocMemCache
 from django_cachex.cache.mixin import CachexCompat
 from django_cachex.cache.redis_rs import (
@@ -29,6 +28,7 @@ from django_cachex.cache.sentinel import (
 )
 from django_cachex.cache.stream import StreamCache
 from django_cachex.cache.tiered import TieredCache
+from django_cachex.cache.valkey_glide import ValkeyGlideCache
 
 __all__ = [
     "CachexCompat",

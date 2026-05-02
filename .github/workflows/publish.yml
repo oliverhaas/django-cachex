@@ -64,7 +64,7 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.4
         with:
-          package-dir: crates/django-cachex-rust
+          package-dir: crates/django-cachex-redis-rs
         env:
           CIBW_BUILD: ${{ matrix.cibw_build }}
           CIBW_ENABLE: cpython-freethreading
@@ -79,7 +79,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           command: sdist
-          args: --manifest-path crates/django-cachex-rust/Cargo.toml --out wheelhouse/
+          args: --manifest-path crates/django-cachex-redis-rs/Cargo.toml --out wheelhouse/
 
       - uses: actions/upload-artifact@v4
         with:
@@ -108,7 +108,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/project/django-cachex-rust/
+      url: https://pypi.org/project/django-cachex-redis-rs/
     permissions:
       id-token: write
     steps:
@@ -118,5 +118,5 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Publish django-cachex-rust to PyPI
+      - name: Publish django-cachex-redis-rs to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

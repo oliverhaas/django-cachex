@@ -76,7 +76,7 @@ DRIVER_CONFIGS: tuple[DriverConfig, ...] = (
     ),
     DriverConfig(
         id="valkey-glide",
-        backend="django_cachex.cache.glide.ValkeyGlideCache",
+        backend="django_cachex.cache.valkey_glide.ValkeyGlideCache",
         options={},
         server="valkey",
     ),

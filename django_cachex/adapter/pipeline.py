@@ -13,7 +13,7 @@ Concrete pipeline adapters (one per driver):
   thin ``__getattr__`` forwarder.
 - :class:`~django_cachex.adapter.pipeline_redis_rs.RedisRsValkeyPipelineAdapter` —
   buffers RESP wire commands for the Rust driver's ``pipeline_exec``.
-- :class:`~django_cachex.adapter.glide.ValkeyGlidePipelineAdapter` —
+- :class:`~django_cachex.adapter.valkey_glide.ValkeyGlidePipelineAdapter` —
   drives ``valkey-glide``'s ``Batch``.
 
 Each adapter's ``KeyValueAdapter.pipeline()`` factory constructs the right

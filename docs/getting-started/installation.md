@@ -36,7 +36,7 @@ pure-Python backends never carry the binary.
 
 ```console
 # Pure Python (default; no Rust binary)
-uv add django-cachex[valkey]
+uv add django-cachex[valkey-py]
 
 # With the Rust I/O driver
 uv add django-cachex[valkey,redis-rs]

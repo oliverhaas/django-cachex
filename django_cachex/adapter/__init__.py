@@ -1,21 +1,12 @@
 """Adapter layer — low-level Redis/Valkey ops per driver.
 
 Each adapter wraps a specific underlying client library (redis-py,
-valkey-py, our Rust driver, valkey-glide) and exposes the operation
-surface that ``KeyValueCache`` delegates to.
+valkey-py, our Rust ``redis-rs`` driver, valkey-glide) and exposes the
+operation surface that ``KeyValueCache`` delegates to.
 """
 
-from django_cachex.adapter.cluster import (
-    BaseKeyValueClusterAdapter,
-    RedisClusterAdapter,
-    ValkeyClusterAdapter,
-)
-from django_cachex.adapter.default import (
-    BaseKeyValueAdapter,
-    RedisAdapter,
-    ValkeyAdapter,
-)
-from django_cachex.adapter.glide import ValkeyGlideAdapter, ValkeyGlidePipelineAdapter
+from django_cachex.adapter.cluster import BaseKeyValueClusterAdapter
+from django_cachex.adapter.default import BaseKeyValueAdapter
 from django_cachex.adapter.pipeline import (
     BaseKeyValuePipelineAdapter,
     Pipeline,
@@ -27,14 +18,21 @@ from django_cachex.adapter.protocols import (
     KeyValueAdapterProtocol,
     KeyValuePipelineProtocol,
 )
+from django_cachex.adapter.redis_py import (
+    RedisAdapter,
+    RedisClusterAdapter,
+    RedisSentinelAdapter,
+)
 from django_cachex.adapter.redis_rs import (
     RedisRsValkeyAdapter,
     RedisRsValkeyClusterAdapter,
     RedisRsValkeySentinelAdapter,
 )
-from django_cachex.adapter.sentinel import (
-    BaseKeyValueSentinelAdapter,
-    RedisSentinelAdapter,
+from django_cachex.adapter.sentinel import BaseKeyValueSentinelAdapter
+from django_cachex.adapter.valkey_glide import ValkeyGlideAdapter, ValkeyGlidePipelineAdapter
+from django_cachex.adapter.valkey_py import (
+    ValkeyAdapter,
+    ValkeyClusterAdapter,
     ValkeySentinelAdapter,
 )
 

@@ -184,7 +184,7 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.4
         with:
-          package-dir: crates/django-cachex-rust
+          package-dir: crates/django-cachex-redis-rs
         env:
           CIBW_BUILD: ${{ matrix.cibw_build }}
           CIBW_ENABLE: cpython-freethreading
@@ -290,13 +290,13 @@ jobs:
           uv run --no-sync python -c "
           import django_cachex
           import django_cachex.cache, django_cachex.client
-          from django_cachex.cache import RustValkeyCache, ValkeyCache
+          from django_cachex.cache import RedisRsValkeyCache, ValkeyCache
           try:
               from django_cachex import _driver
               raise SystemExit('FAIL: _driver present in pure-only install')
           except ImportError:
               pass
-          rust = RustValkeyCache(server='valkey://localhost:6379/0', params={'OPTIONS': {}})
+          rust = RedisRsValkeyCache(server='valkey://localhost:6379/0', params={'OPTIONS': {}})
           try:
               rust.get('foo')
               raise SystemExit('FAIL: rust backend should have raised')

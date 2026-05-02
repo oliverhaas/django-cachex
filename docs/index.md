@@ -34,7 +34,7 @@ A drop-in replacement for Django's built-in Redis cache, plus:
 Install with pip:
 
 ```console
-pip install django-cachex[valkey]
+pip install django-cachex[valkey-py]
 ```
 
 Configure as cache backend:

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from django_cachex.adapter.sentinel import _REDIS_AVAILABLE, _VALKEY_AVAILABLE, BaseKeyValueSentinelAdapter
+from django_cachex.adapter.redis_py import RedisSentinelAdapter
+from django_cachex.adapter.sentinel import BaseKeyValueSentinelAdapter
+from django_cachex.adapter.valkey_py import ValkeySentinelAdapter
 from django_cachex.cache.default import KeyValueCache
 
 
@@ -18,52 +18,26 @@ class KeyValueSentinelCache(KeyValueCache):
     _adapter_class: type[BaseKeyValueSentinelAdapter] = BaseKeyValueSentinelAdapter
 
 
-# Redis Sentinel
-if _REDIS_AVAILABLE:
-    from django_cachex.adapter.sentinel import RedisSentinelAdapter
+class RedisSentinelCache(KeyValueSentinelCache):
+    """Django cache backend for Redis Sentinel high availability (redis-py).
 
-    class RedisSentinelCache(KeyValueSentinelCache):
-        """Django cache backend for Redis Sentinel high availability.
+    Failover and service discovery happen through Redis Sentinel; the
+    ``LOCATION`` hostname is the Sentinel service name. Raises
+    :class:`ImportError` on instantiation if ``redis-py`` isn't installed.
+    """
 
-        Failover and service discovery happen through Redis Sentinel; the
-        ``LOCATION`` hostname is the Sentinel service name.
-        """
-
-        _adapter_class = RedisSentinelAdapter
-
-else:
-
-    class RedisSentinelCache(KeyValueCache):  # type: ignore[no-redef]
-        """Redis Sentinel cache backend (requires redis-py to be installed)."""
-
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            raise ImportError(
-                "RedisSentinelCache requires redis-py to be installed. Install it with: pip install redis",
-            )
+    _adapter_class = RedisSentinelAdapter
 
 
-# Valkey Sentinel
-if _VALKEY_AVAILABLE:
-    from django_cachex.adapter.sentinel import ValkeySentinelAdapter
+class ValkeySentinelCache(KeyValueSentinelCache):
+    """Django cache backend for Valkey Sentinel high availability (valkey-py).
 
-    class ValkeySentinelCache(KeyValueSentinelCache):
-        """Django cache backend for Valkey Sentinel high availability.
+    Failover and service discovery happen through Valkey Sentinel; the
+    ``LOCATION`` hostname is the Sentinel service name. Raises
+    :class:`ImportError` on instantiation if ``valkey-py`` isn't installed.
+    """
 
-        Failover and service discovery happen through Valkey Sentinel; the
-        ``LOCATION`` hostname is the Sentinel service name.
-        """
-
-        _adapter_class = ValkeySentinelAdapter
-
-else:
-
-    class ValkeySentinelCache(KeyValueCache):  # type: ignore[no-redef]
-        """Valkey Sentinel cache backend (requires valkey-py to be installed)."""
-
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            raise ImportError(
-                "ValkeySentinelCache requires valkey-py to be installed. Install it with: pip install valkey",
-            )
+    _adapter_class = ValkeySentinelAdapter
 
 
 __all__ = [

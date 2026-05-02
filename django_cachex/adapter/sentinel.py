@@ -1,4 +1,10 @@
-"""Sentinel cache clients for Redis-compatible backends."""
+"""Sentinel-aware adapter base class.
+
+The Sentinel topology adds primary/replica discovery on top of the
+single-node base. Per-driver concrete subclasses live in
+:mod:`django_cachex.adapter.valkey_py` (``valkey-py``) and
+:mod:`django_cachex.adapter.redis_py` (``redis-py``).
+"""
 
 from __future__ import annotations
 
@@ -13,39 +19,6 @@ from django_cachex.adapter.default import _ASYNC_POOLS, BaseKeyValueAdapter, _op
 
 if TYPE_CHECKING:
     from redis.connection import ConnectionPool
-
-# Try to import redis-py
-_REDIS_AVAILABLE = False
-try:
-    import redis
-    from redis.asyncio import Redis as AsyncRedisClient
-    from redis.asyncio.sentinel import Sentinel as AsyncRedisSentinel
-    from redis.asyncio.sentinel import SentinelConnectionPool as AsyncRedisSentinelConnectionPool
-    from redis.sentinel import Sentinel as RedisSentinel
-    from redis.sentinel import SentinelConnectionPool as RedisSentinelConnectionPool
-
-    _REDIS_AVAILABLE = True
-except ImportError:
-    redis = None  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-
-# Try to import valkey-py
-_VALKEY_AVAILABLE = False
-try:
-    import valkey
-    from valkey.asyncio import Valkey as AsyncValkeyClient
-    from valkey.asyncio.sentinel import Sentinel as AsyncValkeySentinel
-    from valkey.asyncio.sentinel import SentinelConnectionPool as AsyncValkeySentinelConnectionPool
-    from valkey.sentinel import Sentinel as ValkeySentinel
-    from valkey.sentinel import SentinelConnectionPool as ValkeySentinelConnectionPool
-
-    _VALKEY_AVAILABLE = True
-except ImportError:
-    valkey = None  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-
-
-# =============================================================================
-# CacheClient Classes (actual Redis operations)
-# =============================================================================
 
 
 class BaseKeyValueSentinelAdapter(BaseKeyValueAdapter):
@@ -256,64 +229,4 @@ class BaseKeyValueSentinelAdapter(BaseKeyValueAdapter):
         return pool
 
 
-# =============================================================================
-# Concrete Implementations
-# =============================================================================
-
-if _REDIS_AVAILABLE:
-
-    class RedisSentinelAdapter(BaseKeyValueSentinelAdapter):
-        """Redis Sentinel cache client using redis-py."""
-
-        _lib = redis
-        _client_class = redis.Redis
-        _pool_class = RedisSentinelConnectionPool
-        _sentinel_class = RedisSentinel
-        _sentinel_pool_class = RedisSentinelConnectionPool
-        _async_client_class = AsyncRedisClient
-        _async_sentinel_class = AsyncRedisSentinel
-        _async_sentinel_pool_class = AsyncRedisSentinelConnectionPool
-
-else:
-
-    class RedisSentinelAdapter(BaseKeyValueAdapter):  # type: ignore[no-redef]
-        """Redis Sentinel cache client (requires redis-py to be installed)."""
-
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            raise ImportError(
-                "RedisSentinelAdapter requires redis-py to be installed. Install it with: pip install redis",
-            )
-
-
-if _VALKEY_AVAILABLE:
-
-    class ValkeySentinelAdapter(BaseKeyValueSentinelAdapter):
-        """Valkey Sentinel cache client using valkey-py."""
-
-        _lib = valkey
-        _client_class = valkey.Valkey
-        _pool_class = ValkeySentinelConnectionPool
-        _sentinel_class = ValkeySentinel
-        _sentinel_pool_class = ValkeySentinelConnectionPool
-        _async_client_class = AsyncValkeyClient
-        _async_sentinel_class = AsyncValkeySentinel
-        _async_sentinel_pool_class = AsyncValkeySentinelConnectionPool
-
-else:
-
-    class ValkeySentinelAdapter(BaseKeyValueAdapter):  # type: ignore[no-redef]
-        """Valkey Sentinel cache client (requires valkey-py to be installed)."""
-
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            raise ImportError(
-                "ValkeySentinelAdapter requires valkey-py to be installed. Install it with: pip install valkey",
-            )
-
-
-__all__ = [
-    "_REDIS_AVAILABLE",
-    "_VALKEY_AVAILABLE",
-    "BaseKeyValueSentinelAdapter",
-    "RedisSentinelAdapter",
-    "ValkeySentinelAdapter",
-]
+__all__ = ["BaseKeyValueSentinelAdapter"]

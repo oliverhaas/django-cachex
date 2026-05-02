@@ -1,7 +1,9 @@
-"""Cluster cache clients for Redis-compatible backends.
+"""Cluster-aware adapter base class.
 
-This module provides cache clients for Redis Cluster mode, handling
-server-side sharding and slot-aware operations.
+Cluster mode handles server-side sharding and slot-aware operations on top
+of the single-node base. Per-driver concrete subclasses live in
+:mod:`django_cachex.adapter.valkey_py` (``valkey-py``) and
+:mod:`django_cachex.adapter.redis_py` (``redis-py``).
 """
 
 from __future__ import annotations
@@ -477,68 +479,4 @@ class BaseKeyValueClusterAdapter(BaseKeyValueAdapter):
         return RedisPipelineAdapter(client.pipeline(transaction=False))
 
 
-# =============================================================================
-# Concrete Implementations
-# =============================================================================
-
-# Try to import Redis Cluster
-try:
-    import redis
-    from redis.asyncio.cluster import RedisCluster as AsyncRedisCluster
-    from redis.cluster import RedisCluster
-    from redis.cluster import key_slot as redis_key_slot
-
-    class RedisClusterAdapter(BaseKeyValueClusterAdapter):
-        """Redis Cluster cache client using redis-py."""
-
-        _lib = redis
-        _client_class = redis.Redis  # Not used for cluster but required by base
-        _pool_class = redis.ConnectionPool  # Not used for cluster but required by base
-        _cluster_class = RedisCluster
-        _async_cluster_class = AsyncRedisCluster
-        _key_slot_func = staticmethod(redis_key_slot)
-
-except ImportError:
-
-    class RedisClusterAdapter(BaseKeyValueAdapter):  # type: ignore[no-redef]
-        """Redis Cluster cache client (requires redis-py to be installed)."""
-
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            raise ImportError(
-                "RedisClusterAdapter requires redis-py to be installed. Install it with: pip install redis",
-            )
-
-
-# Try to import Valkey Cluster
-try:
-    import valkey
-    from valkey.asyncio.cluster import ValkeyCluster as AsyncValkeyCluster
-    from valkey.cluster import ValkeyCluster
-    from valkey.cluster import key_slot as valkey_key_slot
-
-    class ValkeyClusterAdapter(BaseKeyValueClusterAdapter):
-        """Valkey Cluster cache client using valkey-py."""
-
-        _lib = valkey
-        _client_class = valkey.Valkey  # Not used for cluster but required by base
-        _pool_class = valkey.ConnectionPool  # Not used for cluster but required by base
-        _cluster_class = ValkeyCluster
-        _async_cluster_class = AsyncValkeyCluster
-        _key_slot_func = staticmethod(valkey_key_slot)
-
-except ImportError:
-
-    class ValkeyClusterAdapter(BaseKeyValueAdapter):  # type: ignore[no-redef]
-        """Valkey Cluster cache client (requires valkey-py with cluster support)."""
-
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            raise ImportError(
-                "ValkeyClusterAdapter requires valkey-py with cluster support. Install it with: pip install valkey",
-            )
-
-
-__all__ = [
-    "BaseKeyValueClusterAdapter",
-    "RedisClusterAdapter",
-    "ValkeyClusterAdapter",
-]
+__all__ = ["BaseKeyValueClusterAdapter"]

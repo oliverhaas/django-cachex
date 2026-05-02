@@ -28,9 +28,9 @@ classifiers = [
 dependencies = ["Django>=6,<7"]
 
 [project.optional-dependencies]
-valkey = ["valkey>=6.1.0,<7"]
+valkey-py = ["valkey>=6.1.0,<7"]
 libvalkey = ["valkey[libvalkey]>=6.1.0,<7"]
-redis = ["redis>=6,<8"]
+redis-py = ["redis>=6,<8"]
 hiredis = ["redis[hiredis]<8,>=6"]
 # Rust I/O driver — separate binary package, prebuilt wheels for Linux x86_64 only
 redis-rs = ["django-cachex-redis-rs==0.3.0"]
@@ -222,7 +222,7 @@ module = "glide_sync.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "django_cachex.adapter.glide"
+module = "django_cachex.adapter.valkey_glide"
 ignore_errors = true
 
 [tool.ty.rules]

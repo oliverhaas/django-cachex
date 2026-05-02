@@ -9,9 +9,9 @@ Valkey and Redis cache backend for Django, with a Django admin UI for cache insp
 ## Installation
 
 ```console
-pip install django-cachex[valkey]
+pip install django-cachex[valkey-py]
 # or
-pip install django-cachex[redis]
+pip install django-cachex[redis-py]
 ```
 
 ## Quick Start

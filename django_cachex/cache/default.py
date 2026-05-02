@@ -22,11 +22,9 @@ if TYPE_CHECKING:
     from django_cachex.adapter.pipeline import Pipeline
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, KeyType, _Set
 
-from django_cachex.adapter.default import (
-    BaseKeyValueAdapter,
-    RedisAdapter,
-    ValkeyAdapter,
-)
+from django_cachex.adapter.default import BaseKeyValueAdapter
+from django_cachex.adapter.redis_py import RedisAdapter
+from django_cachex.adapter.valkey_py import ValkeyAdapter
 from django_cachex.exceptions import CompressorError, SerializerError
 from django_cachex.script import ScriptHelpers
 

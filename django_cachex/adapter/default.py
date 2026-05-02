@@ -1,7 +1,15 @@
-"""Cache client classes for Redis-compatible backends.
+"""Library-agnostic adapter base class.
 
-Provides library-agnostic BaseKeyValueAdapter base class with RedisAdapter
-and ValkeyAdapter subclasses that swap the underlying library via class attributes.
+:class:`BaseKeyValueAdapter` carries every command method (get/set, hashes,
+sets, sorted sets, streams, scripts, …); concrete adapters slot in the
+underlying client + pool classes via class attributes. Per-driver subclasses
+live in:
+
+- :mod:`django_cachex.adapter.valkey_py` — ``valkey-py``
+- :mod:`django_cachex.adapter.redis_py` — ``redis-py`` (thin layer over the
+  ``valkey-py`` adapters; the two libs share an API)
+- :mod:`django_cachex.adapter.redis_rs` — Rust ``redis-rs`` driver
+- :mod:`django_cachex.adapter.valkey_glide` — ``valkey-glide``
 """
 
 from __future__ import annotations
@@ -24,24 +32,6 @@ if TYPE_CHECKING:
 
     from django_cachex.adapter.pipeline import BaseKeyValuePipelineAdapter
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, _Set
-
-# Try to import redis-py and/or valkey-py
-_REDIS_AVAILABLE = False
-_VALKEY_AVAILABLE = False
-
-try:
-    import redis
-
-    _REDIS_AVAILABLE = True
-except ImportError:
-    redis = None  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-
-try:
-    import valkey
-
-    _VALKEY_AVAILABLE = True
-except ImportError:
-    valkey = None  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
 
 
 # =============================================================================
@@ -2842,64 +2832,7 @@ class BaseKeyValueAdapter:
 
 
 # =============================================================================
-# RedisAdapter - concrete implementation for redis-py
-# =============================================================================
-
-if _REDIS_AVAILABLE:
-    from redis.asyncio import ConnectionPool as RedisAsyncConnectionPool
-    from redis.asyncio import Redis as RedisAsyncClient
-
-    class RedisAdapter(BaseKeyValueAdapter):
-        """Redis cache client using redis-py."""
-
-        _lib = redis
-        _client_class = redis.Redis
-        _pool_class = redis.ConnectionPool
-        _async_client_class = RedisAsyncClient
-        _async_pool_class = RedisAsyncConnectionPool
-
-else:
-
-    class RedisAdapter(BaseKeyValueAdapter):  # type: ignore[no-redef]
-        """Redis cache client (requires redis-py)."""
-
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            msg = "RedisAdapter requires redis-py. Install with: pip install redis"
-            raise ImportError(msg)
-
-
-# =============================================================================
-# ValkeyAdapter - concrete implementation for valkey-py
-# =============================================================================
-
-if _VALKEY_AVAILABLE:
-    from valkey.asyncio import ConnectionPool as ValkeyAsyncConnectionPool
-    from valkey.asyncio import Valkey as ValkeyAsyncClient
-
-    class ValkeyAdapter(BaseKeyValueAdapter):
-        """Valkey cache client using valkey-py."""
-
-        _lib = valkey
-        _client_class = valkey.Valkey
-        _pool_class = valkey.ConnectionPool
-        _async_client_class = ValkeyAsyncClient
-        _async_pool_class = ValkeyAsyncConnectionPool
-
-else:
-
-    class ValkeyAdapter(BaseKeyValueAdapter):  # type: ignore[no-redef]
-        """Valkey cache client (requires valkey-py)."""
-
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            raise ImportError("ValkeyAdapter requires valkey-py. Install with: pip install valkey")
-
-
-# =============================================================================
 # Exports
 # =============================================================================
 
-__all__ = [
-    "BaseKeyValueAdapter",
-    "RedisAdapter",
-    "ValkeyAdapter",
-]
+__all__ = ["BaseKeyValueAdapter"]
