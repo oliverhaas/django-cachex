@@ -1874,62 +1874,27 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         await self._driver.axgroup_create(_str_key(key), group, identifier, mkstream=mkstream)
         return True
 
-    # ---- blocking list ops (driver has only blmove/blmpop) ----
-
-    def _blpop_via_eval(self, command: str, keys: Any, timeout: float) -> tuple[str, Any] | None:
-        # Redis BLPOP/BRPOP can't be used inside EVAL (it would block the
-        # whole server). Emulate non-blocking semantics: try once, sleep,
-        # retry until the timeout — best-effort but matches the test surface.
-        import time
-
-        keys_list = self._coerce_keys_arg(keys)
-        end = time.monotonic() + timeout if timeout > 0 else None
-        while True:
-            for k in keys_list:
-                fn = self._driver.lpop if command == "BLPOP" else self._driver.rpop
-                val = fn(k)
-                if val is not None:
-                    return (k, self.decode(val))
-            if end is None or time.monotonic() >= end:
-                return None
-            time.sleep(0.05)
+    # ---- blocking list ops ----
 
     @override
     def blpop(self, keys: Any, timeout: float = 0) -> tuple[str, Any] | None:
-        return self._blpop_via_eval("BLPOP", keys, timeout)
+        raw = self._driver.blpop(self._coerce_keys_arg(keys), float(timeout))
+        return None if raw is None else (raw[0], self.decode(raw[1]))
 
     @override
     def brpop(self, keys: Any, timeout: float = 0) -> tuple[str, Any] | None:
-        return self._blpop_via_eval("BRPOP", keys, timeout)
-
-    async def _ablpop_via_eval(
-        self,
-        command: str,
-        keys: Any,
-        timeout: float,
-    ) -> tuple[str, Any] | None:
-        import asyncio
-        import time
-
-        keys_list = self._coerce_keys_arg(keys)
-        end = time.monotonic() + timeout if timeout > 0 else None
-        while True:
-            for k in keys_list:
-                fn = self._driver.alpop if command == "BLPOP" else self._driver.arpop
-                val = await fn(k)
-                if val is not None:
-                    return (k, self.decode(val))
-            if end is None or time.monotonic() >= end:
-                return None
-            await asyncio.sleep(0.05)
+        raw = self._driver.brpop(self._coerce_keys_arg(keys), float(timeout))
+        return None if raw is None else (raw[0], self.decode(raw[1]))
 
     @override
     async def ablpop(self, keys: Any, timeout: float = 0) -> tuple[str, Any] | None:
-        return await self._ablpop_via_eval("BLPOP", keys, timeout)
+        raw = await self._driver.ablpop(self._coerce_keys_arg(keys), float(timeout))
+        return None if raw is None else (raw[0], self.decode(raw[1]))
 
     @override
     async def abrpop(self, keys: Any, timeout: float = 0) -> tuple[str, Any] | None:
-        return await self._ablpop_via_eval("BRPOP", keys, timeout)
+        raw = await self._driver.abrpop(self._coerce_keys_arg(keys), float(timeout))
+        return None if raw is None else (raw[0], self.decode(raw[1]))
 
     @override
     def blmove(

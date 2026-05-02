@@ -204,6 +204,15 @@ fn r_opt_key_and_bytes_list(
     }
 }
 
+fn r_opt_key_and_bytes(
+    r: Result<Option<(String, Vec<u8>)>, redis::RedisError>,
+) -> RawResult {
+    match r {
+        Ok(v) => RawResult::OptKeyAndBytes(v),
+        Err(e) => classify(e),
+    }
+}
+
 // =========================================================================
 // Sync-side conversion helpers (translate Rust types to Python)
 // =========================================================================
@@ -265,6 +274,20 @@ fn py_redis_value(py: Python<'_>, v: redis::Value) -> PyResult<Py<PyAny>> {
     // Reuse the conversion path that RawResult::Value goes through.
     let raw = RawResult::Value(v);
     raw.into_py(py)
+}
+
+fn py_opt_key_and_bytes(
+    py: Python<'_>,
+    v: Option<(String, Vec<u8>)>,
+) -> PyResult<Py<PyAny>> {
+    match v {
+        Some((key, value)) => {
+            let py_key = pyo3::types::PyString::new(py, &key).into_any().unbind();
+            let py_value = PyBytes::new(py, &value).into_any().unbind();
+            Ok(PyTuple::new(py, [py_key, py_value])?.into_any().unbind())
+        }
+        None => Ok(py.None()),
+    }
 }
 
 fn py_opt_key_and_bytes_list(
@@ -1109,6 +1132,58 @@ impl RustValkeyDriver {
             conn.blmpop(timeout, &keys, direction, count).await
         );
         py_opt_key_and_bytes_list(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (keys, timeout))]
+    fn ablpop(
+        &self,
+        py: Python<'_>,
+        keys: Vec<String>,
+        timeout: f64,
+    ) -> PyResult<Py<PyAny>> {
+        async_op!(self, py, conn, r_opt_key_and_bytes(conn.blpop(&keys, timeout).await))
+    }
+
+    #[pyo3(signature = (keys, timeout))]
+    fn blpop(
+        &self,
+        py: Python<'_>,
+        keys: Vec<String>,
+        timeout: f64,
+    ) -> PyResult<Py<PyAny>> {
+        let r: Result<Option<(String, Vec<u8>)>, _> = sync_op!(
+            py,
+            self,
+            conn,
+            conn.blpop(&keys, timeout).await
+        );
+        py_opt_key_and_bytes(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (keys, timeout))]
+    fn abrpop(
+        &self,
+        py: Python<'_>,
+        keys: Vec<String>,
+        timeout: f64,
+    ) -> PyResult<Py<PyAny>> {
+        async_op!(self, py, conn, r_opt_key_and_bytes(conn.brpop(&keys, timeout).await))
+    }
+
+    #[pyo3(signature = (keys, timeout))]
+    fn brpop(
+        &self,
+        py: Python<'_>,
+        keys: Vec<String>,
+        timeout: f64,
+    ) -> PyResult<Py<PyAny>> {
+        let r: Result<Option<(String, Vec<u8>)>, _> = sync_op!(
+            py,
+            self,
+            conn,
+            conn.brpop(&keys, timeout).await
+        );
+        py_opt_key_and_bytes(py, r.map_err(to_py_err)?)
     }
 
     // =====================================================================

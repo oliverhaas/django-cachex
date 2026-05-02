@@ -94,6 +94,8 @@ pub enum RawResult {
     /// Member/score pairs for ZRANGE WITHSCORES, ZPOPMIN/MAX.
     ScoredMembers(Vec<(Vec<u8>, f64)>),
     OptKeyAndBytesList(Option<(String, Vec<Vec<u8>>)>),
+    /// Key + single bytes value for BLPOP/BRPOP-style results.
+    OptKeyAndBytes(Option<(String, Vec<u8>)>),
     /// Generic redis::Value, recursively converted to Python.
     /// Used for EVAL/EVALSHA, INFO, CLIENT LIST, XREAD, XRANGE, and other
     /// commands whose return shape varies enough that a typed variant doesn't help.
@@ -207,6 +209,12 @@ impl RawResult {
                 Ok(PyTuple::new(py, [py_key, py_list])?.into_any().unbind())
             }
             RawResult::OptKeyAndBytesList(None) => Ok(py.None()),
+            RawResult::OptKeyAndBytes(Some((key, value))) => {
+                let py_key = PyString::new(py, &key).into_any().unbind();
+                let py_value = PyBytes::new(py, &value).into_any().unbind();
+                Ok(PyTuple::new(py, [py_key, py_value])?.into_any().unbind())
+            }
+            RawResult::OptKeyAndBytes(None) => Ok(py.None()),
             RawResult::OptInt(Some(n)) => Ok(n.into_pyobject(py)?.into_any().unbind()),
             RawResult::OptInt(None) => Ok(py.None()),
             RawResult::F64(f) => Ok(f.into_pyobject(py)?.into_any().unbind()),

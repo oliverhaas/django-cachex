@@ -649,6 +649,47 @@ impl ValkeyConnInner {
         }
     }
 
+    pub async fn blpop(
+        &mut self,
+        keys: &[String],
+        timeout: f64,
+    ) -> RedisResult<Option<(String, Vec<u8>)>> {
+        self.bpop_inner("BLPOP", keys, timeout).await
+    }
+
+    pub async fn brpop(
+        &mut self,
+        keys: &[String],
+        timeout: f64,
+    ) -> RedisResult<Option<(String, Vec<u8>)>> {
+        self.bpop_inner("BRPOP", keys, timeout).await
+    }
+
+    async fn bpop_inner(
+        &mut self,
+        command: &str,
+        keys: &[String],
+        timeout: f64,
+    ) -> RedisResult<Option<(String, Vec<u8>)>> {
+        let mut cmd = redis::cmd(command);
+        for k in keys {
+            cmd.arg(k.as_str());
+        }
+        cmd.arg(timeout);
+        let val: redis::Value = dispatch_cmd!(self, cmd)?;
+        match val {
+            redis::Value::Nil => Ok(None),
+            redis::Value::Array(mut items) if items.len() == 2 => {
+                let value_val = items.pop().unwrap();
+                let key_val = items.pop().unwrap();
+                let key: String = redis::from_redis_value(key_val)?;
+                let value: Vec<u8> = redis::from_redis_value(value_val)?;
+                Ok(Some((key, value)))
+            }
+            _ => Ok(None),
+        }
+    }
+
     // Scan
 
     pub async fn scan_all(&mut self, pattern: &str, count: i64) -> RedisResult<Vec<String>> {
@@ -997,6 +1038,24 @@ impl ValkeyConn {
     ) -> RedisResult<Option<(String, Vec<Vec<u8>>)>> {
         let mut conn = self.get_blocking().await?;
         conn.blmpop(timeout, keys, direction, count).await
+    }
+
+    pub async fn blpop(
+        &mut self,
+        keys: &[String],
+        timeout: f64,
+    ) -> RedisResult<Option<(String, Vec<u8>)>> {
+        let mut conn = self.get_blocking().await?;
+        conn.blpop(keys, timeout).await
+    }
+
+    pub async fn brpop(
+        &mut self,
+        keys: &[String],
+        timeout: f64,
+    ) -> RedisResult<Option<(String, Vec<u8>)>> {
+        let mut conn = self.get_blocking().await?;
+        conn.brpop(keys, timeout).await
     }
 }
 
