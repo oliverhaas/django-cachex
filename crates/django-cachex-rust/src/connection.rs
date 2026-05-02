@@ -752,6 +752,67 @@ impl ValkeyConnInner {
             }
         }
     }
+
+    /// One SCAN iteration. Returns `(next_cursor, keys)`; caller drives
+    /// the loop. ``next_cursor == 0`` signals end of iteration.
+    ///
+    /// Cluster mode has no global cursor (each node has its own keyspace
+    /// slice); here it falls back to a single ``KEYS`` call and returns
+    /// cursor=0, mirroring the existing cluster behaviour of ``scan_all``.
+    pub async fn scan_one(
+        &mut self,
+        cursor: u64,
+        pattern: &str,
+        count: i64,
+    ) -> RedisResult<(u64, Vec<String>)> {
+        match self {
+            Self::Cluster(_) => {
+                let mut cmd = redis::cmd("KEYS");
+                cmd.arg(pattern);
+                let keys: Vec<String> = dispatch_cmd!(self, cmd)?;
+                Ok((0, keys))
+            }
+            Self::Standard(c) => {
+                let (next_cursor, keys): (u64, Vec<String>) = redis::cmd("SCAN")
+                    .arg(cursor)
+                    .arg("MATCH")
+                    .arg(pattern)
+                    .arg("COUNT")
+                    .arg(count)
+                    .query_async(c)
+                    .await?;
+                Ok((next_cursor, keys))
+            }
+            Self::Sentinel(s) => {
+                let mut c = s.get_conn().await;
+                let result: RedisResult<(u64, Vec<String>)> = redis::cmd("SCAN")
+                    .arg(cursor)
+                    .arg("MATCH")
+                    .arg(pattern)
+                    .arg("COUNT")
+                    .arg(count)
+                    .query_async(&mut c)
+                    .await;
+                match result {
+                    Ok(pair) => Ok(pair),
+                    Err(e) if cursor == 0 && SentinelConn::is_failover_error(&e) => {
+                        s.rediscover().await?;
+                        let mut c = s.get_conn().await;
+                        let pair: (u64, Vec<String>) = redis::cmd("SCAN")
+                            .arg(cursor)
+                            .arg("MATCH")
+                            .arg(pattern)
+                            .arg("COUNT")
+                            .arg(count)
+                            .query_async(&mut c)
+                            .await?;
+                        Ok(pair)
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+        }
+    }
 }
 
 // =========================================================================
@@ -1008,6 +1069,15 @@ impl ValkeyConn {
 
     pub async fn scan_all(&mut self, pattern: &str, count: i64) -> RedisResult<Vec<String>> {
         self.regular.scan_all(pattern, count).await
+    }
+
+    pub async fn scan_one(
+        &mut self,
+        cursor: u64,
+        pattern: &str,
+        count: i64,
+    ) -> RedisResult<(u64, Vec<String>)> {
+        self.regular.scan_one(cursor, pattern, count).await
     }
 
     pub fn cache_statistics(&self) -> Option<CacheStatistics> {

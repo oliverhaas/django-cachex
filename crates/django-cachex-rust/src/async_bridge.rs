@@ -96,6 +96,8 @@ pub enum RawResult {
     OptKeyAndBytesList(Option<(String, Vec<Vec<u8>>)>),
     /// Key + single bytes value for BLPOP/BRPOP-style results.
     OptKeyAndBytes(Option<(String, Vec<u8>)>),
+    /// (cursor, keys) for one SCAN iteration.
+    CursorAndStrings(u64, Vec<String>),
     /// Generic redis::Value, recursively converted to Python.
     /// Used for EVAL/EVALSHA, INFO, CLIENT LIST, XREAD, XRANGE, and other
     /// commands whose return shape varies enough that a typed variant doesn't help.
@@ -215,6 +217,15 @@ impl RawResult {
                 Ok(PyTuple::new(py, [py_key, py_value])?.into_any().unbind())
             }
             RawResult::OptKeyAndBytes(None) => Ok(py.None()),
+            RawResult::CursorAndStrings(cursor, keys) => {
+                let py_cursor = cursor.into_pyobject(py)?.into_any().unbind();
+                let py_items: Vec<Py<PyAny>> = keys
+                    .iter()
+                    .map(|s| PyString::new(py, s).into_any().unbind())
+                    .collect();
+                let py_list = PyList::new(py, py_items)?.into_any().unbind();
+                Ok(PyTuple::new(py, [py_cursor, py_list])?.into_any().unbind())
+            }
             RawResult::OptInt(Some(n)) => Ok(n.into_pyobject(py)?.into_any().unbind()),
             RawResult::OptInt(None) => Ok(py.None()),
             RawResult::F64(f) => Ok(f.into_pyobject(py)?.into_any().unbind()),

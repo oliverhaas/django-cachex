@@ -213,6 +213,15 @@ fn r_opt_key_and_bytes(
     }
 }
 
+fn r_cursor_strings(
+    r: Result<(u64, Vec<String>), redis::RedisError>,
+) -> RawResult {
+    match r {
+        Ok((cursor, keys)) => RawResult::CursorAndStrings(cursor, keys),
+        Err(e) => classify(e),
+    }
+}
+
 // =========================================================================
 // Sync-side conversion helpers (translate Rust types to Python)
 // =========================================================================
@@ -288,6 +297,20 @@ fn py_opt_key_and_bytes(
         }
         None => Ok(py.None()),
     }
+}
+
+fn py_cursor_strings(
+    py: Python<'_>,
+    cursor: u64,
+    keys: Vec<String>,
+) -> PyResult<Py<PyAny>> {
+    let py_cursor = cursor.into_pyobject(py)?.into_any().unbind();
+    let py_items: Vec<Py<PyAny>> = keys
+        .into_iter()
+        .map(|s| pyo3::types::PyString::new(py, &s).into_any().unbind())
+        .collect();
+    let py_list = PyList::new(py, py_items)?.into_any().unbind();
+    Ok(PyTuple::new(py, [py_cursor, py_list])?.into_any().unbind())
 }
 
 fn py_opt_key_and_bytes_list(
@@ -663,6 +686,37 @@ impl RustValkeyDriver {
         let r: Result<Vec<String>, _> =
             sync_op!(py, self, conn, conn.scan_all(pattern, count).await);
         py_string_list(py, r.map_err(to_py_err)?)
+    }
+
+    #[pyo3(signature = (cursor, pattern, count))]
+    fn ascan_one(
+        &self,
+        py: Python<'_>,
+        cursor: u64,
+        pattern: &str,
+        count: i64,
+    ) -> PyResult<Py<PyAny>> {
+        let pattern = pattern.to_string();
+        async_op!(
+            self,
+            py,
+            conn,
+            r_cursor_strings(conn.scan_one(cursor, &pattern, count).await)
+        )
+    }
+
+    #[pyo3(signature = (cursor, pattern, count))]
+    fn scan_one(
+        &self,
+        py: Python<'_>,
+        cursor: u64,
+        pattern: &str,
+        count: i64,
+    ) -> PyResult<Py<PyAny>> {
+        let r: Result<(u64, Vec<String>), _> =
+            sync_op!(py, self, conn, conn.scan_one(cursor, pattern, count).await);
+        let (next_cursor, keys) = r.map_err(to_py_err)?;
+        py_cursor_strings(py, next_cursor, keys)
     }
 
     fn adbsize(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {

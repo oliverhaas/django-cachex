@@ -592,12 +592,12 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         count: int | None = None,
         _type: str | None = None,
     ) -> tuple[int, list[str]]:
-        # The driver collapses SCAN into a single batched call (no cursor
-        # exposed). Returning cursor=0 signals "no more pages".
+        # One SCAN iteration; caller drives the loop. Cluster mode falls
+        # back to a single-shot KEYS call and always returns next_cursor=0.
         if count is None:
             count = self._default_scan_itersize
-        keys = self._driver.scan(match or "*", count)
-        return 0, [k.decode() if isinstance(k, bytes) else k for k in keys]
+        next_cursor, keys = self._driver.scan_one(cursor, match or "*", count)
+        return next_cursor, [k.decode() if isinstance(k, bytes) else k for k in keys]
 
     @override
     async def ascan(
@@ -609,8 +609,8 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
     ) -> tuple[int, list[str]]:
         if count is None:
             count = self._default_scan_itersize
-        keys = await self._driver.ascan(match or "*", count)
-        return 0, [k.decode() if isinstance(k, bytes) else k for k in keys]
+        next_cursor, keys = await self._driver.ascan_one(cursor, match or "*", count)
+        return next_cursor, [k.decode() if isinstance(k, bytes) else k for k in keys]
 
     @override
     def delete_pattern(self, pattern: str, itersize: int | None = None) -> int:
