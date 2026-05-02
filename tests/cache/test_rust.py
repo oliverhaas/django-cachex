@@ -2,7 +2,7 @@
 
 The basic CRUD / hash / list / set / zset / TTL surface is already covered
 by the parametrized ``cache`` fixture (which runs every test in
-``test_cache_basic.py`` & friends against ``driver=rust``). This file is
+``test_basic.py`` & friends against ``driver=rust``). This file is
 limited to behavior that's specific to the Rust driver: lazy connection,
 the ``RustValkeyDriver`` raw client object, and regression tests for bugs
 that only surfaced in the Rust path.
