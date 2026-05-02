@@ -10,7 +10,7 @@ from __future__ import annotations
 import inspect
 import re
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, override
+from typing import TYPE_CHECKING, Any, cast, override
 
 from django.core.cache.backends.base import DEFAULT_TIMEOUT, BaseCache
 from django.utils.module_loading import import_string
@@ -27,6 +27,7 @@ from django_cachex.adapter.default import (
     RedisAdapter,
     ValkeyAdapter,
 )
+from django_cachex.exceptions import CompressorError, SerializerError
 from django_cachex.script import ScriptHelpers
 
 # Regex for escaping glob special characters
@@ -36,6 +37,15 @@ _special_re = re.compile("([*?[])")
 def _glob_escape(s: str) -> str:
     """Escape glob special characters in a string."""
     return _special_re.sub(r"[\1]", s)
+
+
+def _load_codec(config: str | type | Any) -> Any:
+    """Resolve a serializer/compressor config: dotted-path / class / instance → instance."""
+    if isinstance(config, str):
+        config = import_string(config)
+    if callable(config):
+        return config()
+    return config
 
 
 # =============================================================================
@@ -76,10 +86,87 @@ class KeyValueCache(BaseCache):
         else:
             self._reverse_key_func = None
 
+        # Setup serializer chain (multi-serializer fallback)
+        serializer_config = self._options.get(
+            "serializer",
+            "django_cachex.serializers.pickle.PickleSerializer",
+        )
+        self._serializers: list[Any] = self._create_serializers(serializer_config)
+
+        # Setup compressor chain (optional; empty = no compression)
+        self._compressors: list[Any] = self._create_compressors(self._options.get("compressor"))
+
     @cached_property
     def adapter(self) -> BaseKeyValueAdapter:
         """Get the BaseKeyValueAdapter instance (matches Django's pattern)."""
         return self._adapter_class(self._servers, **self._options)
+
+    # =========================================================================
+    # Serializer / Compressor stack — encoding lives at the cache layer
+    # =========================================================================
+
+    @staticmethod
+    def _create_serializers(config: Any) -> list[Any]:
+        if config is None:
+            config = "django_cachex.serializers.pickle.PickleSerializer"
+        items: list = config if isinstance(config, list) else [config]
+        return [_load_codec(item) for item in items]
+
+    @staticmethod
+    def _create_compressors(config: Any) -> list[Any]:
+        if config is None:
+            return []
+        items: list = config if isinstance(config, list) else [config]
+        return [_load_codec(item) for item in items]
+
+    def _decompress(self, value: bytes) -> bytes:
+        """Decompress with fallback support for multiple compressors.
+
+        Returns ``value`` unchanged when no compressors are configured.
+        Raises ``CompressorError`` if every configured compressor fails. To
+        accept uncompressed payloads alongside compressed ones (e.g.
+        mid-migration), keep the previously-used compressor at the end of
+        the fallback chain.
+        """
+        if not self._compressors:
+            return value
+        last_error: CompressorError | None = None
+        for compressor in self._compressors:
+            try:
+                return compressor.decompress(value)
+            except CompressorError as e:
+                last_error = e
+        raise last_error if last_error is not None else CompressorError("decompression failed")
+
+    def _deserialize(self, value: bytes) -> Any:
+        """Deserialize with fallback support for multiple serializers."""
+        last_error: SerializerError | None = None
+        for serializer in self._serializers:
+            try:
+                return serializer.loads(value)
+            except SerializerError as e:
+                last_error = e
+                continue
+        if last_error is not None:
+            raise last_error
+        raise SerializerError("No serializers configured")
+
+    def encode(self, value: Any) -> bytes | int:
+        """Encode a value for storage (serialize + compress). Plain ints pass through unchanged."""
+        if isinstance(value, bool) or not isinstance(value, int):
+            value = self._serializers[0].dumps(value)
+            if self._compressors:
+                return self._compressors[0].compress(value)
+            return value
+        return value
+
+    def decode(self, value: Any) -> Any:
+        """Decode a value from storage. Returns int directly if parseable, otherwise decompress + deserialize."""
+        try:
+            return int(value)
+        except ValueError, TypeError:
+            value = self._decompress(value)
+            return self._deserialize(value)
 
     def get_backend_timeout(self, timeout: float | None = DEFAULT_TIMEOUT) -> int | None:
         """Convert timeout to backend format (matches Django's RedisCache).
@@ -128,7 +215,12 @@ class KeyValueCache(BaseCache):
     ) -> bool:
         """Set a value only if the key doesn't exist."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.add(key, value, self.get_backend_timeout(timeout), stampede_prevention=stampede_prevention)
+        return self.adapter.add(
+            key,
+            self.encode(value),
+            self.get_backend_timeout(timeout),
+            stampede_prevention=stampede_prevention,
+        )
 
     @override
     async def aadd(
@@ -144,7 +236,7 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.aadd(
             key,
-            value,
+            self.encode(value),
             self.get_backend_timeout(timeout),
             stampede_prevention=stampede_prevention,
         )
@@ -163,7 +255,7 @@ class KeyValueCache(BaseCache):
         value = self.adapter.get(key, stampede_prevention=stampede_prevention)
         if value is None:
             return default
-        return value
+        return self.decode(value)
 
     @override
     async def aget(
@@ -179,7 +271,7 @@ class KeyValueCache(BaseCache):
         value = await self.adapter.aget(key, stampede_prevention=stampede_prevention)
         if value is None:
             return default
-        return value
+        return self.decode(value)
 
     @override
     async def aset(
@@ -202,16 +294,26 @@ class KeyValueCache(BaseCache):
         get = kwargs.get("get", False)
         key = self.make_and_validate_key(key, version=version)
         if nx or xx or get:
-            return await self.adapter.aset_with_flags(
+            result = await self.adapter.aset_with_flags(
                 key,
-                value,
+                self.encode(value),
                 self.get_backend_timeout(timeout),
                 nx=nx,
                 xx=xx,
                 get=get,
                 stampede_prevention=stampede_prevention,
             )
-        await self.adapter.aset(key, value, self.get_backend_timeout(timeout), stampede_prevention=stampede_prevention)
+            # set_with_flags returns the previous value when get=True (bytes or None);
+            # otherwise a bool indicating NX/XX success.
+            if get:
+                return self.decode(result) if result is not None else None
+            return result
+        await self.adapter.aset(
+            key,
+            self.encode(value),
+            self.get_backend_timeout(timeout),
+            stampede_prevention=stampede_prevention,
+        )
         return None
 
     @override
@@ -236,17 +338,25 @@ class KeyValueCache(BaseCache):
         get = kwargs.get("get", False)
         key = self.make_and_validate_key(key, version=version)
         if nx or xx or get:
-            return self.adapter.set_with_flags(
+            result = self.adapter.set_with_flags(
                 key,
-                value,
+                self.encode(value),
                 self.get_backend_timeout(timeout),
                 nx=nx,
                 xx=xx,
                 get=get,
                 stampede_prevention=stampede_prevention,
             )
+            if get:
+                return self.decode(result) if result is not None else None
+            return result
         # Use standard Django method - returns None
-        self.adapter.set(key, value, self.get_backend_timeout(timeout), stampede_prevention=stampede_prevention)
+        self.adapter.set(
+            key,
+            self.encode(value),
+            self.get_backend_timeout(timeout),
+            stampede_prevention=stampede_prevention,
+        )
         return None
 
     @override
@@ -284,7 +394,7 @@ class KeyValueCache(BaseCache):
         """Retrieve many keys."""
         key_map = {self.make_and_validate_key(key, version=version): key for key in keys}
         ret = self.adapter.get_many(key_map.keys(), stampede_prevention=stampede_prevention)
-        return {key_map[k]: v for k, v in ret.items()}  # type: ignore[index]  # ty: ignore[invalid-argument-type]
+        return {key_map[k]: self.decode(v) for k, v in ret.items()}  # type: ignore[index]  # ty: ignore[invalid-argument-type]
 
     @override
     async def aget_many(  # type: ignore[override]
@@ -297,7 +407,7 @@ class KeyValueCache(BaseCache):
         """Retrieve many keys asynchronously."""
         key_map = {self.make_and_validate_key(key, version=version): key for key in keys}
         ret = await self.adapter.aget_many(key_map.keys(), stampede_prevention=stampede_prevention)
-        return {key_map[k]: v for k, v in ret.items()}  # type: ignore[index]  # ty: ignore[invalid-argument-type]
+        return {key_map[k]: self.decode(v) for k, v in ret.items()}  # type: ignore[index]  # ty: ignore[invalid-argument-type]
 
     @override
     def has_key(self, key: KeyT, version: int | None = None) -> bool:
@@ -393,7 +503,9 @@ class KeyValueCache(BaseCache):
         """Set multiple values."""
         if not data:
             return []
-        safe_data = {self.make_and_validate_key(key, version=version): value for key, value in data.items()}
+        safe_data = {
+            self.make_and_validate_key(key, version=version): self.encode(value) for key, value in data.items()
+        }
         self.adapter.set_many(safe_data, self.get_backend_timeout(timeout), stampede_prevention=stampede_prevention)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         return []
 
@@ -409,7 +521,9 @@ class KeyValueCache(BaseCache):
         """Set multiple values asynchronously."""
         if not data:
             return []
-        safe_data = {self.make_and_validate_key(key, version=version): value for key, value in data.items()}
+        safe_data = {
+            self.make_and_validate_key(key, version=version): self.encode(value) for key, value in data.items()
+        }
         await self.adapter.aset_many(
             safe_data,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
             self.get_backend_timeout(timeout),
@@ -750,13 +864,14 @@ class KeyValueCache(BaseCache):
         version: int | None = None,
     ) -> Pipeline:
         """Create a pipeline for batched operations."""
-        pipe = self.adapter.pipeline(
-            transaction=transaction,
-            version=version if version is not None else self.version,
-        )
+        from django_cachex.adapter.pipeline import Pipeline
+
+        v = version if version is not None else self.version
+        pipeline_adapter = self.adapter.pipeline(transaction=transaction)
+        pipe = Pipeline(cache=self, pipeline_adapter=pipeline_adapter, version=v)
         # Set key_func for proper key prefixing
         pipe._key_func = self.make_and_validate_key
-        pipe._cache_version = version if version is not None else self.version
+        pipe._cache_version = v
         return pipe
 
     # =========================================================================
@@ -807,7 +922,10 @@ class KeyValueCache(BaseCache):
     ) -> int:
         """Set hash field(s). Use field/value, mapping, or items (flat key-value pairs)."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.hset(key, field, value, mapping=mapping, items=items)
+        nvalue = self.encode(value) if field is not None else None
+        nmapping = {f: self.encode(v) for f, v in mapping.items()} if mapping else None
+        nitems = [self.encode(v) if i % 2 else v for i, v in enumerate(items)] if items else None
+        return self.adapter.hset(key, field, nvalue, mapping=nmapping, items=nitems)
 
     def hdel(
         self,
@@ -827,7 +945,7 @@ class KeyValueCache(BaseCache):
     def hkeys(self, key: KeyT, version: int | None = None) -> list[str]:
         """Get all field names in hash at key."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.hkeys(key)
+        return [f.decode() if isinstance(f, bytes) else f for f in self.adapter.hkeys(key)]
 
     def hexists(
         self,
@@ -847,7 +965,8 @@ class KeyValueCache(BaseCache):
     ) -> Any:
         """Get value of field in hash at key."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.hget(key, field)
+        result = self.adapter.hget(key, field)
+        return self.decode(result) if result is not None else None
 
     def hgetall(
         self,
@@ -856,7 +975,9 @@ class KeyValueCache(BaseCache):
     ) -> dict[str, Any]:
         """Get all fields and values in hash at key."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.hgetall(key)
+        return {
+            (f.decode() if isinstance(f, bytes) else f): self.decode(v) for f, v in self.adapter.hgetall(key).items()
+        }
 
     def hmget(
         self,
@@ -866,7 +987,7 @@ class KeyValueCache(BaseCache):
     ) -> list[Any]:
         """Get values of multiple fields in hash."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.hmget(key, *fields)
+        return [self.decode(v) if v is not None else None for v in self.adapter.hmget(key, *fields)]
 
     def hincrby(
         self,
@@ -899,7 +1020,7 @@ class KeyValueCache(BaseCache):
     ) -> bool:
         """Set field in hash only if it doesn't exist."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.hsetnx(key, field, value)
+        return self.adapter.hsetnx(key, field, self.encode(value))
 
     def hvals(
         self,
@@ -908,7 +1029,7 @@ class KeyValueCache(BaseCache):
     ) -> list[Any]:
         """Get all values in hash at key."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.hvals(key)
+        return [self.decode(v) for v in self.adapter.hvals(key)]
 
     async def ahset(
         self,
@@ -921,7 +1042,10 @@ class KeyValueCache(BaseCache):
     ) -> int:
         """Set hash field(s) asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.ahset(key, field, value, mapping=mapping, items=items)
+        nvalue = self.encode(value) if field is not None else None
+        nmapping = {f: self.encode(v) for f, v in mapping.items()} if mapping else None
+        nitems = [self.encode(v) if i % 2 else v for i, v in enumerate(items)] if items else None
+        return await self.adapter.ahset(key, field, nvalue, mapping=nmapping, items=nitems)
 
     async def ahdel(
         self,
@@ -941,7 +1065,7 @@ class KeyValueCache(BaseCache):
     async def ahkeys(self, key: KeyT, version: int | None = None) -> list[str]:
         """Get all field names in hash at key asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.ahkeys(key)
+        return [f.decode() if isinstance(f, bytes) else f for f in await self.adapter.ahkeys(key)]
 
     async def ahexists(
         self,
@@ -961,7 +1085,8 @@ class KeyValueCache(BaseCache):
     ) -> Any:
         """Get value of field in hash at key asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.ahget(key, field)
+        result = await self.adapter.ahget(key, field)
+        return self.decode(result) if result is not None else None
 
     async def ahgetall(
         self,
@@ -970,7 +1095,8 @@ class KeyValueCache(BaseCache):
     ) -> dict[str, Any]:
         """Get all fields and values in hash at key asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.ahgetall(key)
+        raw = await self.adapter.ahgetall(key)
+        return {(f.decode() if isinstance(f, bytes) else f): self.decode(v) for f, v in raw.items()}
 
     async def ahmget(
         self,
@@ -980,7 +1106,7 @@ class KeyValueCache(BaseCache):
     ) -> list[Any]:
         """Get values of multiple fields in hash asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.ahmget(key, *fields)
+        return [self.decode(v) if v is not None else None for v in await self.adapter.ahmget(key, *fields)]
 
     async def ahincrby(
         self,
@@ -1013,7 +1139,7 @@ class KeyValueCache(BaseCache):
     ) -> bool:
         """Set field in hash only if it doesn't exist asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.ahsetnx(key, field, value)
+        return await self.adapter.ahsetnx(key, field, self.encode(value))
 
     async def ahvals(
         self,
@@ -1022,7 +1148,7 @@ class KeyValueCache(BaseCache):
     ) -> list[Any]:
         """Get all values in hash at key asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.ahvals(key)
+        return [self.decode(v) for v in await self.adapter.ahvals(key)]
 
     # =========================================================================
     # List Operations
@@ -1036,7 +1162,7 @@ class KeyValueCache(BaseCache):
     ) -> int:
         """Push values onto head of list at key."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.lpush(key, *values)
+        return self.adapter.lpush(key, *(self.encode(v) for v in values))
 
     def rpush(
         self,
@@ -1046,7 +1172,7 @@ class KeyValueCache(BaseCache):
     ) -> int:
         """Push values onto tail of list at key."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.rpush(key, *values)
+        return self.adapter.rpush(key, *(self.encode(v) for v in values))
 
     def lpop(
         self,
@@ -1056,7 +1182,12 @@ class KeyValueCache(BaseCache):
     ) -> Any | list[Any] | None:
         """Remove and return element(s) from head of list."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.lpop(key, count=count)
+        result = self.adapter.lpop(key, count=count)
+        if result is None:
+            return None
+        if isinstance(result, list):
+            return [self.decode(v) for v in result]
+        return self.decode(result)
 
     def rpop(
         self,
@@ -1066,7 +1197,12 @@ class KeyValueCache(BaseCache):
     ) -> Any | list[Any] | None:
         """Remove and return element(s) from tail of list."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.rpop(key, count=count)
+        result = self.adapter.rpop(key, count=count)
+        if result is None:
+            return None
+        if isinstance(result, list):
+            return [self.decode(v) for v in result]
+        return self.decode(result)
 
     def lrange(
         self,
@@ -1077,7 +1213,7 @@ class KeyValueCache(BaseCache):
     ) -> list[Any]:
         """Get a range of elements from list."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.lrange(key, start, end)
+        return [self.decode(v) for v in self.adapter.lrange(key, start, end)]
 
     def lindex(
         self,
@@ -1087,7 +1223,8 @@ class KeyValueCache(BaseCache):
     ) -> Any:
         """Get element at index in list."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.lindex(key, index)
+        result = self.adapter.lindex(key, index)
+        return self.decode(result) if result is not None else None
 
     def llen(self, key: KeyT, version: int | None = None) -> int:
         """Get length of list at key."""
@@ -1105,7 +1242,7 @@ class KeyValueCache(BaseCache):
     ) -> int | list[int] | None:
         """Find position(s) of element in list."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.lpos(key, value, rank=rank, count=count, maxlen=maxlen)
+        return self.adapter.lpos(key, self.encode(value), rank=rank, count=count, maxlen=maxlen)
 
     def lmove(
         self,
@@ -1122,7 +1259,8 @@ class KeyValueCache(BaseCache):
         dst_ver = version_dst if version_dst is not None else version
         src = self.make_and_validate_key(src, version=src_ver)
         dst = self.make_and_validate_key(dst, version=dst_ver)
-        return self.adapter.lmove(src, dst, wherefrom, whereto)
+        result = self.adapter.lmove(src, dst, wherefrom, whereto)
+        return self.decode(result) if result is not None else None
 
     def lrem(
         self,
@@ -1133,7 +1271,7 @@ class KeyValueCache(BaseCache):
     ) -> int:
         """Remove elements equal to value from list."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.lrem(key, count, value)
+        return self.adapter.lrem(key, count, self.encode(value))
 
     def ltrim(
         self,
@@ -1155,7 +1293,7 @@ class KeyValueCache(BaseCache):
     ) -> bool:
         """Set element at index in list."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.lset(key, index, value)
+        return self.adapter.lset(key, index, self.encode(value))
 
     def linsert(
         self,
@@ -1167,7 +1305,7 @@ class KeyValueCache(BaseCache):
     ) -> int:
         """Insert value before or after pivot in list."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.linsert(key, where, pivot, value)
+        return self.adapter.linsert(key, where, self.encode(pivot), self.encode(value))
 
     def blpop(
         self,
@@ -1182,7 +1320,7 @@ class KeyValueCache(BaseCache):
         if result is None:
             return None
         # Reverse the key back to original
-        return (self.reverse_key(result[0]), result[1])
+        return (self.reverse_key(result[0]), self.decode(result[1]))
 
     def brpop(
         self,
@@ -1197,7 +1335,7 @@ class KeyValueCache(BaseCache):
         if result is None:
             return None
         # Reverse the key back to original
-        return (self.reverse_key(result[0]), result[1])
+        return (self.reverse_key(result[0]), self.decode(result[1]))
 
     def blmove(
         self,
@@ -1215,7 +1353,8 @@ class KeyValueCache(BaseCache):
         dst_ver = version_dst if version_dst is not None else version
         src = self.make_and_validate_key(src, version=src_ver)
         dst = self.make_and_validate_key(dst, version=dst_ver)
-        return self.adapter.blmove(src, dst, timeout, wherefrom, whereto)
+        result = self.adapter.blmove(src, dst, timeout, wherefrom, whereto)
+        return self.decode(result) if result is not None else None
 
     async def alpush(
         self,
@@ -1225,7 +1364,7 @@ class KeyValueCache(BaseCache):
     ) -> int:
         """Push values onto head of list at key asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.alpush(key, *values)
+        return await self.adapter.alpush(key, *(self.encode(v) for v in values))
 
     async def arpush(
         self,
@@ -1235,7 +1374,7 @@ class KeyValueCache(BaseCache):
     ) -> int:
         """Push values onto tail of list at key asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.arpush(key, *values)
+        return await self.adapter.arpush(key, *(self.encode(v) for v in values))
 
     async def alpop(
         self,
@@ -1245,7 +1384,12 @@ class KeyValueCache(BaseCache):
     ) -> Any | list[Any] | None:
         """Remove and return element(s) from head of list asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.alpop(key, count=count)
+        result = await self.adapter.alpop(key, count=count)
+        if result is None:
+            return None
+        if isinstance(result, list):
+            return [self.decode(v) for v in result]
+        return self.decode(result)
 
     async def arpop(
         self,
@@ -1255,7 +1399,12 @@ class KeyValueCache(BaseCache):
     ) -> Any | list[Any] | None:
         """Remove and return element(s) from tail of list asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.arpop(key, count=count)
+        result = await self.adapter.arpop(key, count=count)
+        if result is None:
+            return None
+        if isinstance(result, list):
+            return [self.decode(v) for v in result]
+        return self.decode(result)
 
     async def alrange(
         self,
@@ -1266,7 +1415,7 @@ class KeyValueCache(BaseCache):
     ) -> list[Any]:
         """Get a range of elements from list asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.alrange(key, start, end)
+        return [self.decode(v) for v in await self.adapter.alrange(key, start, end)]
 
     async def alindex(
         self,
@@ -1276,7 +1425,8 @@ class KeyValueCache(BaseCache):
     ) -> Any:
         """Get element at index in list asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.alindex(key, index)
+        result = await self.adapter.alindex(key, index)
+        return self.decode(result) if result is not None else None
 
     async def allen(self, key: KeyT, version: int | None = None) -> int:
         """Get length of list at key asynchronously."""
@@ -1294,7 +1444,7 @@ class KeyValueCache(BaseCache):
     ) -> int | list[int] | None:
         """Find position(s) of element in list asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.alpos(key, value, rank=rank, count=count, maxlen=maxlen)
+        return await self.adapter.alpos(key, self.encode(value), rank=rank, count=count, maxlen=maxlen)
 
     async def almove(
         self,
@@ -1311,7 +1461,8 @@ class KeyValueCache(BaseCache):
         dst_ver = version_dst if version_dst is not None else version
         src = self.make_and_validate_key(src, version=src_ver)
         dst = self.make_and_validate_key(dst, version=dst_ver)
-        return await self.adapter.almove(src, dst, wherefrom, whereto)
+        result = await self.adapter.almove(src, dst, wherefrom, whereto)
+        return self.decode(result) if result is not None else None
 
     async def alrem(
         self,
@@ -1322,7 +1473,7 @@ class KeyValueCache(BaseCache):
     ) -> int:
         """Remove elements equal to value from list asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.alrem(key, count, value)
+        return await self.adapter.alrem(key, count, self.encode(value))
 
     async def altrim(
         self,
@@ -1344,7 +1495,7 @@ class KeyValueCache(BaseCache):
     ) -> bool:
         """Set element at index in list asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.alset(key, index, value)
+        return await self.adapter.alset(key, index, self.encode(value))
 
     async def alinsert(
         self,
@@ -1356,7 +1507,7 @@ class KeyValueCache(BaseCache):
     ) -> int:
         """Insert value before or after pivot in list asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.alinsert(key, where, pivot, value)
+        return await self.adapter.alinsert(key, where, self.encode(pivot), self.encode(value))
 
     async def ablpop(
         self,
@@ -1370,7 +1521,7 @@ class KeyValueCache(BaseCache):
         result = await self.adapter.ablpop(nkeys, timeout=timeout)
         if result is None:
             return None
-        return (self.reverse_key(result[0]), result[1])
+        return (self.reverse_key(result[0]), self.decode(result[1]))
 
     async def abrpop(
         self,
@@ -1384,7 +1535,7 @@ class KeyValueCache(BaseCache):
         result = await self.adapter.abrpop(nkeys, timeout=timeout)
         if result is None:
             return None
-        return (self.reverse_key(result[0]), result[1])
+        return (self.reverse_key(result[0]), self.decode(result[1]))
 
     async def ablmove(
         self,
@@ -1402,7 +1553,8 @@ class KeyValueCache(BaseCache):
         dst_ver = version_dst if version_dst is not None else version
         src = self.make_and_validate_key(src, version=src_ver)
         dst = self.make_and_validate_key(dst, version=dst_ver)
-        return await self.adapter.ablmove(src, dst, timeout, wherefrom, whereto)
+        result = await self.adapter.ablmove(src, dst, timeout, wherefrom, whereto)
+        return self.decode(result) if result is not None else None
 
     # =========================================================================
     # Set Operations
@@ -1416,7 +1568,7 @@ class KeyValueCache(BaseCache):
     ) -> int:
         """Add members to a set."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.sadd(key, *members)
+        return self.adapter.sadd(key, *(self.encode(m) for m in members))
 
     def scard(self, key: KeyT, version: int | None = None) -> int:
         """Get the number of members in a set."""
@@ -1431,7 +1583,7 @@ class KeyValueCache(BaseCache):
         """Return the difference between the first set and all successive sets."""
         keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
-        return self.adapter.sdiff(nkeys)
+        return {self.decode(m) for m in self.adapter.sdiff(nkeys)}
 
     def sdiffstore(
         self,
@@ -1458,7 +1610,7 @@ class KeyValueCache(BaseCache):
         """Return the intersection of all sets."""
         keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
-        return self.adapter.sinter(nkeys)
+        return {self.decode(m) for m in self.adapter.sinter(nkeys)}
 
     def sinterstore(
         self,
@@ -1485,7 +1637,7 @@ class KeyValueCache(BaseCache):
     ) -> bool:
         """Check if member is in set."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.sismember(key, member)
+        return self.adapter.sismember(key, self.encode(member))
 
     def smembers(
         self,
@@ -1494,7 +1646,7 @@ class KeyValueCache(BaseCache):
     ) -> _Set[Any]:
         """Get all members of a set."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.smembers(key)
+        return {self.decode(m) for m in self.adapter.smembers(key)}
 
     def smove(
         self,
@@ -1510,7 +1662,7 @@ class KeyValueCache(BaseCache):
         dst_ver = version_dst if version_dst is not None else version
         src = self.make_and_validate_key(src, version=src_ver)
         dst = self.make_and_validate_key(dst, version=dst_ver)
-        return self.adapter.smove(src, dst, member)
+        return self.adapter.smove(src, dst, self.encode(member))
 
     def spop(
         self,
@@ -1520,7 +1672,12 @@ class KeyValueCache(BaseCache):
     ) -> Any | list[Any] | None:
         """Remove and return random member(s) from set."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.spop(key, count)
+        result = self.adapter.spop(key, count)
+        if result is None:
+            return None
+        if isinstance(result, (list, set)):
+            return type(result)(self.decode(m) for m in result)
+        return self.decode(result)
 
     def srandmember(
         self,
@@ -1530,7 +1687,12 @@ class KeyValueCache(BaseCache):
     ) -> Any | list[Any]:
         """Get random member(s) from set without removing."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.srandmember(key, count)
+        result = self.adapter.srandmember(key, count)
+        if result is None:
+            return None
+        if isinstance(result, list):
+            return [self.decode(m) for m in result]
+        return self.decode(result)
 
     def srem(
         self,
@@ -1540,7 +1702,7 @@ class KeyValueCache(BaseCache):
     ) -> int:
         """Remove members from a set."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.srem(key, *members)
+        return self.adapter.srem(key, *(self.encode(m) for m in members))
 
     def sunion(
         self,
@@ -1550,7 +1712,7 @@ class KeyValueCache(BaseCache):
         """Return the union of all sets."""
         keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
-        return self.adapter.sunion(nkeys)
+        return {self.decode(m) for m in self.adapter.sunion(nkeys)}
 
     def sunionstore(
         self,
@@ -1577,7 +1739,7 @@ class KeyValueCache(BaseCache):
     ) -> list[bool]:
         """Check if multiple values are members of a set."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.smismember(key, *members)
+        return self.adapter.smismember(key, *(self.encode(m) for m in members))
 
     def sscan(
         self,
@@ -1589,7 +1751,8 @@ class KeyValueCache(BaseCache):
     ) -> tuple[int, _Set[Any]]:
         """Incrementally iterate over set members."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.sscan(key, cursor=cursor, match=match, count=count)
+        new_cursor, members = self.adapter.sscan(key, cursor=cursor, match=match, count=count)
+        return (new_cursor, {self.decode(m) for m in members})
 
     def sscan_iter(
         self,
@@ -1600,7 +1763,8 @@ class KeyValueCache(BaseCache):
     ) -> Iterator[Any]:
         """Iterate over set members using SSCAN."""
         key = self.make_and_validate_key(key, version=version)
-        yield from self.adapter.sscan_iter(key, match=match, count=count)
+        for member in self.adapter.sscan_iter(key, match=match, count=count):
+            yield self.decode(member)
 
     async def asadd(
         self,
@@ -1610,7 +1774,7 @@ class KeyValueCache(BaseCache):
     ) -> int:
         """Add members to a set asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.asadd(key, *members)
+        return await self.adapter.asadd(key, *(self.encode(m) for m in members))
 
     async def ascard(self, key: KeyT, version: int | None = None) -> int:
         """Get the number of members in a set asynchronously."""
@@ -1625,7 +1789,7 @@ class KeyValueCache(BaseCache):
         """Return the difference between the first set and all successive sets asynchronously."""
         keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
-        return await self.adapter.asdiff(nkeys)
+        return {self.decode(m) for m in await self.adapter.asdiff(nkeys)}
 
     async def asdiffstore(
         self,
@@ -1651,7 +1815,7 @@ class KeyValueCache(BaseCache):
         """Return the intersection of all sets asynchronously."""
         keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
-        return await self.adapter.asinter(nkeys)
+        return {self.decode(m) for m in await self.adapter.asinter(nkeys)}
 
     async def asinterstore(
         self,
@@ -1677,7 +1841,7 @@ class KeyValueCache(BaseCache):
     ) -> bool:
         """Check if member is in set asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.asismember(key, member)
+        return await self.adapter.asismember(key, self.encode(member))
 
     async def asmembers(
         self,
@@ -1686,7 +1850,7 @@ class KeyValueCache(BaseCache):
     ) -> _Set[Any]:
         """Get all members of a set asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.asmembers(key)
+        return {self.decode(m) for m in await self.adapter.asmembers(key)}
 
     async def asmove(
         self,
@@ -1702,7 +1866,7 @@ class KeyValueCache(BaseCache):
         dst_ver = version_dst if version_dst is not None else version
         src = self.make_and_validate_key(src, version=src_ver)
         dst = self.make_and_validate_key(dst, version=dst_ver)
-        return await self.adapter.asmove(src, dst, member)
+        return await self.adapter.asmove(src, dst, self.encode(member))
 
     async def aspop(
         self,
@@ -1712,7 +1876,12 @@ class KeyValueCache(BaseCache):
     ) -> Any | list[Any] | None:
         """Remove and return random member(s) from set asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.aspop(key, count)
+        result = await self.adapter.aspop(key, count)
+        if result is None:
+            return None
+        if isinstance(result, (list, set)):
+            return type(result)(self.decode(m) for m in result)
+        return self.decode(result)
 
     async def asrandmember(
         self,
@@ -1722,7 +1891,12 @@ class KeyValueCache(BaseCache):
     ) -> Any | list[Any]:
         """Get random member(s) from set without removing asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.asrandmember(key, count)
+        result = await self.adapter.asrandmember(key, count)
+        if result is None:
+            return None
+        if isinstance(result, list):
+            return [self.decode(m) for m in result]
+        return self.decode(result)
 
     async def asrem(
         self,
@@ -1732,7 +1906,7 @@ class KeyValueCache(BaseCache):
     ) -> int:
         """Remove members from a set asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.asrem(key, *members)
+        return await self.adapter.asrem(key, *(self.encode(m) for m in members))
 
     async def asunion(
         self,
@@ -1742,7 +1916,7 @@ class KeyValueCache(BaseCache):
         """Return the union of all sets asynchronously."""
         keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
-        return await self.adapter.asunion(nkeys)
+        return {self.decode(m) for m in await self.adapter.asunion(nkeys)}
 
     async def asunionstore(
         self,
@@ -1768,7 +1942,7 @@ class KeyValueCache(BaseCache):
     ) -> list[bool]:
         """Check if multiple values are members of a set asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.asmismember(key, *members)
+        return await self.adapter.asmismember(key, *(self.encode(m) for m in members))
 
     async def asscan(
         self,
@@ -1780,7 +1954,8 @@ class KeyValueCache(BaseCache):
     ) -> tuple[int, _Set[Any]]:
         """Incrementally iterate over set members asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.asscan(key, cursor=cursor, match=match, count=count)
+        new_cursor, members = await self.adapter.asscan(key, cursor=cursor, match=match, count=count)
+        return (new_cursor, {self.decode(m) for m in members})
 
     async def asscan_iter(
         self,
@@ -1792,7 +1967,7 @@ class KeyValueCache(BaseCache):
         """Iterate over set members using SSCAN asynchronously."""
         key = self.make_and_validate_key(key, version=version)
         async for member in self.adapter.asscan_iter(key, match=match, count=count):
-            yield member
+            yield self.decode(member)
 
     # =========================================================================
     # Sorted Set Operations
@@ -1812,7 +1987,8 @@ class KeyValueCache(BaseCache):
     ) -> int:
         """Add members to a sorted set."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.zadd(key, mapping, nx=nx, xx=xx, ch=ch, gt=gt, lt=lt)
+        encoded = {self.encode(member): score for member, score in mapping.items()}
+        return self.adapter.zadd(key, encoded, nx=nx, xx=xx, ch=ch, gt=gt, lt=lt)
 
     def zcard(self, key: KeyT, version: int | None = None) -> int:
         """Get the number of members in a sorted set."""
@@ -1839,7 +2015,7 @@ class KeyValueCache(BaseCache):
     ) -> float:
         """Increment the score of a member."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.zincrby(key, amount, member)
+        return self.adapter.zincrby(key, amount, self.encode(member))
 
     def zpopmax(
         self,
@@ -1849,7 +2025,7 @@ class KeyValueCache(BaseCache):
     ) -> list[tuple[Any, float]]:
         """Remove and return members with highest scores."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.zpopmax(key, count)
+        return [(self.decode(m), s) for m, s in self.adapter.zpopmax(key, count)]
 
     def zpopmin(
         self,
@@ -1859,7 +2035,7 @@ class KeyValueCache(BaseCache):
     ) -> list[tuple[Any, float]]:
         """Remove and return members with lowest scores."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.zpopmin(key, count)
+        return [(self.decode(m), s) for m, s in self.adapter.zpopmin(key, count)]
 
     def zrange(
         self,
@@ -1872,7 +2048,10 @@ class KeyValueCache(BaseCache):
     ) -> list[Any] | list[tuple[Any, float]]:
         """Return a range of members by index."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.zrange(key, start, end, withscores=withscores)
+        result = self.adapter.zrange(key, start, end, withscores=withscores)
+        if withscores:
+            return [(self.decode(m), s) for m, s in result]
+        return [self.decode(m) for m in result]
 
     def zrangebyscore(
         self,
@@ -1887,7 +2066,10 @@ class KeyValueCache(BaseCache):
     ) -> list[Any] | list[tuple[Any, float]]:
         """Return members with scores between min and max."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.zrangebyscore(key, min_score, max_score, withscores=withscores, start=start, num=num)
+        result = self.adapter.zrangebyscore(key, min_score, max_score, withscores=withscores, start=start, num=num)
+        if withscores:
+            return [(self.decode(m), s) for m, s in result]
+        return [self.decode(m) for m in result]
 
     def zrank(
         self,
@@ -1897,7 +2079,7 @@ class KeyValueCache(BaseCache):
     ) -> int | None:
         """Get the rank of a member (0-based, lowest score first)."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.zrank(key, member)
+        return self.adapter.zrank(key, self.encode(member))
 
     def zrem(
         self,
@@ -1907,7 +2089,7 @@ class KeyValueCache(BaseCache):
     ) -> int:
         """Remove members from a sorted set."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.zrem(key, *members)
+        return self.adapter.zrem(key, *(self.encode(m) for m in members))
 
     def zremrangebyscore(
         self,
@@ -1942,7 +2124,10 @@ class KeyValueCache(BaseCache):
     ) -> list[Any] | list[tuple[Any, float]]:
         """Return a range of members by index, highest to lowest."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.zrevrange(key, start, end, withscores=withscores)
+        result = self.adapter.zrevrange(key, start, end, withscores=withscores)
+        if withscores:
+            return [(self.decode(m), s) for m, s in result]
+        return [self.decode(m) for m in result]
 
     def zrevrangebyscore(
         self,
@@ -1957,7 +2142,10 @@ class KeyValueCache(BaseCache):
     ) -> list[Any] | list[tuple[Any, float]]:
         """Return members with scores between max and min, highest first."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.zrevrangebyscore(key, max_score, min_score, withscores=withscores, start=start, num=num)
+        result = self.adapter.zrevrangebyscore(key, max_score, min_score, withscores=withscores, start=start, num=num)
+        if withscores:
+            return [(self.decode(m), s) for m, s in result]
+        return [self.decode(m) for m in result]
 
     def zscore(
         self,
@@ -1967,7 +2155,7 @@ class KeyValueCache(BaseCache):
     ) -> float | None:
         """Get the score of a member."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.zscore(key, member)
+        return self.adapter.zscore(key, self.encode(member))
 
     def zrevrank(
         self,
@@ -1977,7 +2165,7 @@ class KeyValueCache(BaseCache):
     ) -> int | None:
         """Get the rank of a member (0-based, highest score first)."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.zrevrank(key, member)
+        return self.adapter.zrevrank(key, self.encode(member))
 
     def zmscore(
         self,
@@ -1987,7 +2175,7 @@ class KeyValueCache(BaseCache):
     ) -> list[float | None]:
         """Get the scores of multiple members."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.zmscore(key, *members)
+        return self.adapter.zmscore(key, *(self.encode(m) for m in members))
 
     async def azadd(
         self,
@@ -2003,7 +2191,8 @@ class KeyValueCache(BaseCache):
     ) -> int:
         """Add members to a sorted set asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.azadd(key, mapping, nx=nx, xx=xx, ch=ch, gt=gt, lt=lt)
+        encoded = {self.encode(member): score for member, score in mapping.items()}
+        return await self.adapter.azadd(key, encoded, nx=nx, xx=xx, ch=ch, gt=gt, lt=lt)
 
     async def azcard(self, key: KeyT, version: int | None = None) -> int:
         """Get the number of members in a sorted set asynchronously."""
@@ -2030,7 +2219,7 @@ class KeyValueCache(BaseCache):
     ) -> float:
         """Increment the score of a member asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.azincrby(key, amount, member)
+        return await self.adapter.azincrby(key, amount, self.encode(member))
 
     async def azpopmax(
         self,
@@ -2040,7 +2229,7 @@ class KeyValueCache(BaseCache):
     ) -> list[tuple[Any, float]]:
         """Remove and return members with highest scores asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.azpopmax(key, count)
+        return [(self.decode(m), s) for m, s in await self.adapter.azpopmax(key, count)]
 
     async def azpopmin(
         self,
@@ -2050,7 +2239,7 @@ class KeyValueCache(BaseCache):
     ) -> list[tuple[Any, float]]:
         """Remove and return members with lowest scores asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.azpopmin(key, count)
+        return [(self.decode(m), s) for m, s in await self.adapter.azpopmin(key, count)]
 
     async def azrange(
         self,
@@ -2063,7 +2252,10 @@ class KeyValueCache(BaseCache):
     ) -> list[Any] | list[tuple[Any, float]]:
         """Return a range of members by index asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.azrange(key, start, end, withscores=withscores)
+        result = await self.adapter.azrange(key, start, end, withscores=withscores)
+        if withscores:
+            return [(self.decode(m), s) for m, s in result]
+        return [self.decode(m) for m in result]
 
     async def azrangebyscore(
         self,
@@ -2078,7 +2270,17 @@ class KeyValueCache(BaseCache):
     ) -> list[Any] | list[tuple[Any, float]]:
         """Return members with scores between min and max asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.azrangebyscore(key, min_score, max_score, withscores=withscores, start=start, num=num)
+        result = await self.adapter.azrangebyscore(
+            key,
+            min_score,
+            max_score,
+            withscores=withscores,
+            start=start,
+            num=num,
+        )
+        if withscores:
+            return [(self.decode(m), s) for m, s in result]
+        return [self.decode(m) for m in result]
 
     async def azrank(
         self,
@@ -2088,7 +2290,7 @@ class KeyValueCache(BaseCache):
     ) -> int | None:
         """Get the rank of a member (0-based, lowest score first) asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.azrank(key, member)
+        return await self.adapter.azrank(key, self.encode(member))
 
     async def azrem(
         self,
@@ -2098,7 +2300,7 @@ class KeyValueCache(BaseCache):
     ) -> int:
         """Remove members from a sorted set asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.azrem(key, *members)
+        return await self.adapter.azrem(key, *(self.encode(m) for m in members))
 
     async def azremrangebyscore(
         self,
@@ -2133,7 +2335,10 @@ class KeyValueCache(BaseCache):
     ) -> list[Any] | list[tuple[Any, float]]:
         """Return a range of members by index, highest to lowest, asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.azrevrange(key, start, end, withscores=withscores)
+        result = await self.adapter.azrevrange(key, start, end, withscores=withscores)
+        if withscores:
+            return [(self.decode(m), s) for m, s in result]
+        return [self.decode(m) for m in result]
 
     async def azrevrangebyscore(
         self,
@@ -2148,7 +2353,7 @@ class KeyValueCache(BaseCache):
     ) -> list[Any] | list[tuple[Any, float]]:
         """Return members with scores between max and min, highest first, asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.azrevrangebyscore(
+        result = await self.adapter.azrevrangebyscore(
             key,
             max_score,
             min_score,
@@ -2156,6 +2361,9 @@ class KeyValueCache(BaseCache):
             start=start,
             num=num,
         )
+        if withscores:
+            return [(self.decode(m), s) for m, s in result]
+        return [self.decode(m) for m in result]
 
     async def azscore(
         self,
@@ -2165,7 +2373,7 @@ class KeyValueCache(BaseCache):
     ) -> float | None:
         """Get the score of a member asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.azscore(key, member)
+        return await self.adapter.azscore(key, self.encode(member))
 
     async def azrevrank(
         self,
@@ -2175,7 +2383,7 @@ class KeyValueCache(BaseCache):
     ) -> int | None:
         """Get the rank of a member (0-based, highest score first) asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.azrevrank(key, member)
+        return await self.adapter.azrevrank(key, self.encode(member))
 
     async def azmscore(
         self,
@@ -2185,7 +2393,7 @@ class KeyValueCache(BaseCache):
     ) -> list[float | None]:
         """Get the scores of multiple members asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.azmscore(key, *members)
+        return await self.adapter.azmscore(key, *(self.encode(m) for m in members))
 
     # =========================================================================
     # Stream Operations
@@ -2205,9 +2413,10 @@ class KeyValueCache(BaseCache):
     ) -> str:
         """Add an entry to a stream."""
         key = self.make_and_validate_key(key, version=version)
+        encoded_fields = {f: self.encode(v) for f, v in fields.items()}
         return self.adapter.xadd(
             key,
-            fields,
+            encoded_fields,
             entry_id,
             maxlen=maxlen,
             approximate=approximate,
@@ -2230,9 +2439,10 @@ class KeyValueCache(BaseCache):
     ) -> str:
         """Add an entry to a stream asynchronously."""
         key = self.make_and_validate_key(key, version=version)
+        encoded_fields = {f: self.encode(v) for f, v in fields.items()}
         return await self.adapter.axadd(
             key,
-            fields,
+            encoded_fields,
             entry_id,
             maxlen=maxlen,
             approximate=approximate,
@@ -2251,6 +2461,13 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.axlen(key)
 
+    def _decode_stream_entries(
+        self,
+        entries: list[tuple[str, dict[str, Any]]],
+    ) -> list[tuple[str, dict[str, Any]]]:
+        """Decode field values in a list of (entry_id, fields_dict) entries."""
+        return [(entry_id, {f: self.decode(v) for f, v in fields.items()}) for entry_id, fields in entries]
+
     def xrange(
         self,
         key: KeyT,
@@ -2261,7 +2478,7 @@ class KeyValueCache(BaseCache):
     ) -> list[tuple[str, dict[str, Any]]]:
         """Get entries from a stream in ascending order."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.xrange(key, start, end, count=count)
+        return self._decode_stream_entries(self.adapter.xrange(key, start, end, count=count))
 
     async def axrange(
         self,
@@ -2273,7 +2490,7 @@ class KeyValueCache(BaseCache):
     ) -> list[tuple[str, dict[str, Any]]]:
         """Get entries from a stream in ascending order asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.axrange(key, start, end, count=count)
+        return self._decode_stream_entries(await self.adapter.axrange(key, start, end, count=count))
 
     def xrevrange(
         self,
@@ -2285,7 +2502,7 @@ class KeyValueCache(BaseCache):
     ) -> list[tuple[str, dict[str, Any]]]:
         """Get entries from a stream in descending order."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.xrevrange(key, end, start, count=count)
+        return self._decode_stream_entries(self.adapter.xrevrange(key, end, start, count=count))
 
     async def axrevrange(
         self,
@@ -2297,7 +2514,7 @@ class KeyValueCache(BaseCache):
     ) -> list[tuple[str, dict[str, Any]]]:
         """Get entries from a stream in descending order asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.axrevrange(key, end, start, count=count)
+        return self._decode_stream_entries(await self.adapter.axrevrange(key, end, start, count=count))
 
     def xread(
         self,
@@ -2312,7 +2529,7 @@ class KeyValueCache(BaseCache):
         result = self.adapter.xread(nstreams, count=count, block=block)
         if result is None:
             return None
-        return {str(key_map.get(k, k)): v for k, v in result.items()}
+        return {str(key_map.get(k, k)): self._decode_stream_entries(v) for k, v in result.items()}
 
     async def axread(
         self,
@@ -2327,7 +2544,7 @@ class KeyValueCache(BaseCache):
         result = await self.adapter.axread(nstreams, count=count, block=block)
         if result is None:
             return None
-        return {str(key_map.get(k, k)): v for k, v in result.items()}
+        return {str(key_map.get(k, k)): self._decode_stream_entries(v) for k, v in result.items()}
 
     def xtrim(
         self,
@@ -2481,7 +2698,7 @@ class KeyValueCache(BaseCache):
         result = self.adapter.xreadgroup(group, consumer, nstreams, count=count, block=block, noack=noack)
         if result is None:
             return None
-        return {str(key_map.get(k, k)): v for k, v in result.items()}
+        return {str(key_map.get(k, k)): self._decode_stream_entries(v) for k, v in result.items()}
 
     async def axreadgroup(
         self,
@@ -2499,7 +2716,7 @@ class KeyValueCache(BaseCache):
         result = await self.adapter.axreadgroup(group, consumer, nstreams, count=count, block=block, noack=noack)
         if result is None:
             return None
-        return {str(key_map.get(k, k)): v for k, v in result.items()}
+        return {str(key_map.get(k, k)): self._decode_stream_entries(v) for k, v in result.items()}
 
     def xack(self, key: KeyT, group: str, *entry_ids: str, version: int | None = None) -> int:
         """Acknowledge message processing."""
@@ -2557,7 +2774,7 @@ class KeyValueCache(BaseCache):
     ) -> list[tuple[str, dict[str, Any]]] | list[str]:
         """Claim pending messages."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.xclaim(
+        result = self.adapter.xclaim(
             key,
             group,
             consumer,
@@ -2569,6 +2786,10 @@ class KeyValueCache(BaseCache):
             force=force,
             justid=justid,
         )
+        # justid=True returns list[str] (entry IDs only); else list[(id, fields_dict)].
+        if justid:
+            return result
+        return self._decode_stream_entries(cast("list[tuple[str, dict[str, Any]]]", result))
 
     async def axclaim(
         self,
@@ -2586,7 +2807,7 @@ class KeyValueCache(BaseCache):
     ) -> list[tuple[str, dict[str, Any]]] | list[str]:
         """Claim pending messages asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.axclaim(
+        result = await self.adapter.axclaim(
             key,
             group,
             consumer,
@@ -2598,6 +2819,9 @@ class KeyValueCache(BaseCache):
             force=force,
             justid=justid,
         )
+        if justid:
+            return result
+        return self._decode_stream_entries(cast("list[tuple[str, dict[str, Any]]]", result))
 
     def xautoclaim(
         self,
@@ -2612,7 +2836,18 @@ class KeyValueCache(BaseCache):
     ) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
         """Auto-claim pending messages that have been idle."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.xautoclaim(key, group, consumer, min_idle_time, start_id, count=count, justid=justid)
+        next_id, claimed, deleted = self.adapter.xautoclaim(
+            key,
+            group,
+            consumer,
+            min_idle_time,
+            start_id,
+            count=count,
+            justid=justid,
+        )
+        if justid:
+            return (next_id, claimed, deleted)
+        return (next_id, self._decode_stream_entries(cast("list[tuple[str, dict[str, Any]]]", claimed)), deleted)
 
     async def axautoclaim(
         self,
@@ -2627,7 +2862,18 @@ class KeyValueCache(BaseCache):
     ) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
         """Auto-claim pending messages asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.axautoclaim(key, group, consumer, min_idle_time, start_id, count=count, justid=justid)
+        next_id, claimed, deleted = await self.adapter.axautoclaim(
+            key,
+            group,
+            consumer,
+            min_idle_time,
+            start_id,
+            count=count,
+            justid=justid,
+        )
+        if justid:
+            return (next_id, claimed, deleted)
+        return (next_id, self._decode_stream_entries(cast("list[tuple[str, dict[str, Any]]]", claimed)), deleted)
 
     # =========================================================================
     # Direct Client Access
@@ -2760,8 +3006,8 @@ class KeyValueCache(BaseCache):
         """Create a ScriptHelpers instance for script processing."""
         return ScriptHelpers(
             make_key=self.make_and_validate_key,
-            encode=self.adapter.encode,
-            decode=self.adapter.decode,
+            encode=self.encode,
+            decode=self.decode,
             version=version if version is not None else self.version,
         )
 

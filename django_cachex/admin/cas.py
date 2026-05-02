@@ -210,7 +210,7 @@ def cas_update_string(
     Returns:
         1 = success, 0 = conflict, -1 = key gone.
     """
-    encoded = cache.adapter.encode(new_value)
+    encoded = cache.encode(new_value)
     return cache.eval_script(
         _CAS_STRING_UPDATE,
         keys=[key],
@@ -231,7 +231,7 @@ def cas_update_hash_field(
     Returns:
         1 = success, 0 = conflict, -1 = field gone.
     """
-    encoded = cache.adapter.encode(new_value)
+    encoded = cache.encode(new_value)
     return cache.eval_script(
         _CAS_HASH_UPDATE,
         keys=[key],
@@ -252,7 +252,7 @@ def cas_update_zset_score(
     Returns:
         1 = success, 0 = conflict, -1 = member gone.
     """
-    encoded_member = cache.adapter.encode(member)
+    encoded_member = cache.encode(member)
     return cache.eval_script(
         _CAS_ZSET_SCORE_UPDATE,
         keys=[key],
@@ -273,7 +273,7 @@ def cas_update_list_element(
     Returns:
         1 = success, 0 = conflict, -1 = index gone.
     """
-    encoded = cache.adapter.encode(new_value)
+    encoded = cache.encode(new_value)
     return cache.eval_script(
         _CAS_LIST_UPDATE,
         keys=[key],

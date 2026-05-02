@@ -19,7 +19,7 @@ from django_cachex.exceptions import NotSupportedError
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
 
-    from django_cachex.adapter.pipeline import Pipeline
+    from django_cachex.adapter.pipeline import BaseKeyValuePipelineAdapter
     from django_cachex.types import KeyT
 
 # =============================================================================
@@ -160,7 +160,7 @@ class BaseKeyValueClusterAdapter(BaseKeyValueAdapter):
                 if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
                     del found[k]
 
-        return {k: self.decode(v) for k, v in found.items()}
+        return dict(found.items())
 
     @override
     def set_many(
@@ -176,7 +176,7 @@ class BaseKeyValueClusterAdapter(BaseKeyValueAdapter):
 
         client = self.get_client(write=True)
 
-        prepared_data = {k: self.encode(v) for k, v in data.items()}
+        prepared_data = dict(data.items())
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -333,7 +333,7 @@ class BaseKeyValueClusterAdapter(BaseKeyValueAdapter):
                 if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
                     del found[k]
 
-        return {k: self.decode(v) for k, v in found.items()}
+        return dict(found.items())
 
     @override
     async def aset_many(
@@ -349,7 +349,7 @@ class BaseKeyValueClusterAdapter(BaseKeyValueAdapter):
 
         client = self.get_async_client(write=True)
 
-        prepared_data = {k: self.encode(v) for k, v in data.items()}
+        prepared_data = dict(data.items())
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -469,18 +469,12 @@ class BaseKeyValueClusterAdapter(BaseKeyValueAdapter):
         """No-op. Cluster lives for the instance's lifetime (matches Django's BaseCache)."""
 
     @override
-    def pipeline(
-        self,
-        *,
-        transaction: bool = True,
-        version: int | None = None,
-    ) -> Pipeline:
-        """Create a pipeline for batched operations. Transactions are ignored in cluster mode."""
-        from django_cachex.adapter.pipeline import Pipeline, RedisPipelineAdapter
+    def pipeline(self, *, transaction: bool = True) -> BaseKeyValuePipelineAdapter:
+        """Construct a cluster pipeline adapter. Transactions are ignored in cluster mode."""
+        from django_cachex.adapter.pipeline import RedisPipelineAdapter
 
         client = self.get_client(write=True)
-        pipeline_adapter = RedisPipelineAdapter(client.pipeline(transaction=False))
-        return Pipeline(adapter=self, pipeline_adapter=pipeline_adapter, version=version)
+        return RedisPipelineAdapter(client.pipeline(transaction=False))
 
 
 # =============================================================================

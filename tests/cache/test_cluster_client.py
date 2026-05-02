@@ -107,13 +107,13 @@ class TestRedisClusterAdapter:
         # Using hash tags that hash to different slots
         result = client.get_many(["{a}key1", "{b}key2", "{c}key3"])
 
-        # Should return decoded values
+        # Adapter returns raw bytes (cache layer is responsible for decoding).
         assert len(result) == 3
         # mget_nonatomic is called once with all keys
         mock_cluster.mget_nonatomic.assert_called_once()
-        assert "value_a" in result.values()
-        assert "value_b" in result.values()
-        assert "value_c" in result.values()
+        assert pickle.dumps("value_a") in result.values()
+        assert pickle.dumps("value_b") in result.values()
+        assert pickle.dumps("value_c") in result.values()
 
     def test_get_many_empty_keys(self):
         client = setup_cluster_client()

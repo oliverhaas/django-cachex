@@ -28,7 +28,6 @@ from django_cachex.types import KeyType
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
-    from django_cachex.adapter.pipeline import Pipeline
     from django_cachex.types import KeyT
 
 
@@ -711,7 +710,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         stampede_prevention: bool | dict | None = None,
     ) -> bool:
         client = self._client()
-        nvalue = self.encode(value)
+        nvalue = value
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -742,7 +741,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
 
             if ttl > 0 and should_recompute(ttl, config):
                 return None
-        return self.decode(val)
+        return val
 
     def set(
         self,
@@ -753,7 +752,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         stampede_prevention: bool | dict | None = None,
     ) -> None:
         client = self._client()
-        nvalue = self.encode(value)
+        nvalue = value
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -775,7 +774,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         stampede_prevention: bool | dict | None = None,
     ) -> bool | Any:
         client = self._client()
-        nvalue = self.encode(value)
+        nvalue = value
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -793,7 +792,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
 
         result = client.set(key, _enc(nvalue), **kw)
         if get:
-            return None if result is None else self.decode(result)
+            return None if result is None else result
         return result == "OK"
 
     def touch(self, key: KeyT, timeout: int | None) -> bool:
@@ -828,7 +827,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
                     if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
                         del found[k]
 
-        return {k: self.decode(v) for k, v in found.items()}
+        return dict(found.items())
 
     def has_key(self, key: KeyT) -> bool:
         return bool(self._client().exists([key]))
@@ -855,7 +854,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         if not data:
             return []
         client = self._client()
-        prepared = {k: _enc(self.encode(v)) for k, v in data.items()}
+        prepared = {k: _enc(v) for k, v in data.items()}
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -956,38 +955,38 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         client = self._client()
         m: dict[Any, Any] = {}
         if field is not None:
-            m[field] = _enc(self.encode(value))
+            m[field] = _enc(value)
         if mapping:
-            m.update({f: _enc(self.encode(v)) for f, v in mapping.items()})
+            m.update({f: _enc(v) for f, v in mapping.items()})
         if items:
             for i in range(0, len(items), 2):
-                m[items[i]] = _enc(self.encode(items[i + 1]))
+                m[items[i]] = _enc(items[i + 1])
         if not m:
             return 0
         return client.hset(key, m)
 
     def hsetnx(self, key: KeyT, field: str, value: Any) -> bool:
-        return self._client().hsetnx(key, field, _enc(self.encode(value)))
+        return self._client().hsetnx(key, field, _enc(value))
 
     def hget(self, key: KeyT, field: str) -> Any | None:
         val = self._client().hget(key, field)
-        return None if val is None else self.decode(val)
+        return None if val is None else val
 
     def hmget(self, key: KeyT, *fields: str) -> list[Any]:
         if len(fields) == 1 and isinstance(fields[0], (list, tuple)):
             fields = tuple(fields[0])
         values = self._client().hmget(key, list(fields))
-        return [self.decode(v) if v is not None else None for v in values]
+        return [v if v is not None else None for v in values]
 
     def hgetall(self, key: KeyT) -> dict[str, Any]:
         result = self._client().hgetall(key)
-        return {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in result.items()}
+        return {k.decode() if isinstance(k, bytes) else k: v for k, v in result.items()}
 
     def hkeys(self, key: KeyT) -> list[str]:
         return [k.decode() if isinstance(k, bytes) else k for k in self._client().hkeys(key)]
 
     def hvals(self, key: KeyT) -> list[Any]:
-        return [self.decode(v) for v in self._client().hvals(key)]
+        return list(self._client().hvals(key))
 
     def hlen(self, key: KeyT) -> int:
         return self._client().hlen(key)
@@ -1009,19 +1008,19 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
     # =========================================================================
 
     def sadd(self, key: KeyT, *members: Any) -> int:
-        return self._client().sadd(key, [_enc(self.encode(m)) for m in members])
+        return self._client().sadd(key, [_enc(m) for m in members])
 
     def srem(self, key: KeyT, *members: Any) -> int:
-        return self._client().srem(key, [_enc(self.encode(m)) for m in members])
+        return self._client().srem(key, [_enc(m) for m in members])
 
     def smembers(self, key: KeyT) -> _BuiltinSet[Any]:
-        return {self.decode(m) for m in self._client().smembers(key)}
+        return set(self._client().smembers(key))
 
     def sismember(self, key: KeyT, member: Any) -> bool:
-        return bool(self._client().sismember(key, _enc(self.encode(member))))
+        return bool(self._client().sismember(key, _enc(member)))
 
     def smismember(self, key: KeyT, *members: Any) -> list[bool]:
-        return list(self._client().smismember(key, [_enc(self.encode(m)) for m in members]))
+        return list(self._client().smismember(key, [_enc(m) for m in members]))
 
     def scard(self, key: KeyT) -> int:
         return self._client().scard(key)
@@ -1030,27 +1029,27 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         client = self._client()
         if count is None:
             v = client.spop(key)
-            return None if v is None else self.decode(v)
-        return {self.decode(v) for v in client.spop_count(key, count)}
+            return None if v is None else v
+        return set(client.spop_count(key, count))
 
     def srandmember(self, key: KeyT, count: int | None = None) -> Any:
         client = self._client()
         if count is None:
             v = client.srandmember(key)
-            return None if v is None else self.decode(v)
-        return [self.decode(v) for v in client.srandmember_count(key, count)]
+            return None if v is None else v
+        return list(client.srandmember_count(key, count))
 
     def smove(self, src: KeyT, dst: KeyT, member: Any) -> bool:
-        return bool(self._client().smove(src, dst, _enc(self.encode(member))))
+        return bool(self._client().smove(src, dst, _enc(member)))
 
     def sinter(self, *keys: KeyT) -> _BuiltinSet[Any]:
-        return {self.decode(m) for m in self._client().sinter(list(keys))}
+        return set(self._client().sinter(list(keys)))
 
     def sunion(self, *keys: KeyT) -> _BuiltinSet[Any]:
-        return {self.decode(m) for m in self._client().sunion(list(keys))}
+        return set(self._client().sunion(list(keys)))
 
     def sdiff(self, *keys: KeyT) -> _BuiltinSet[Any]:
-        return {self.decode(m) for m in self._client().sdiff(list(keys))}
+        return set(self._client().sdiff(list(keys)))
 
     def sinterstore(self, dst: KeyT, *keys: KeyT) -> int:
         return self._client().sinterstore(dst, list(keys))
@@ -1069,7 +1068,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         count: int | None = None,
     ) -> tuple[bytes, list]:
         result = self._client().sscan(key, _enc(cursor), match=match, count=count)
-        return result[0], [self.decode(v) for v in result[1]]
+        return result[0], list(result[1])
 
     def sscan_iter(self, key: KeyT, match: str | None = None, count: int | None = None) -> Iterable[Any]:
         client = self._client()
@@ -1077,8 +1076,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         while True:
             result = client.sscan(key, cursor, match=match, count=count)
             cursor, members = result[0], result[1]
-            for m in members:
-                yield self.decode(m)
+            yield from members
             if cursor in (b"0", "0", 0):
                 return
 
@@ -1099,27 +1097,27 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
             if kwargs.get("incr"):
                 args.append(b"INCR")
             for member, score in mapping.items():
-                args.extend([_enc(score), _enc(self.encode(member))])
+                args.extend([_enc(score), _enc(member)])
             return client.custom_command(args)
-        return client.zadd(key, {_enc(self.encode(m)): float(s) for m, s in mapping.items()})
+        return client.zadd(key, {_enc(m): float(s) for m, s in mapping.items()})
 
     def zrem(self, key: KeyT, *members: Any) -> int:
-        return self._client().zrem(key, [_enc(self.encode(m)) for m in members])
+        return self._client().zrem(key, [_enc(m) for m in members])
 
     def zscore(self, key: KeyT, member: Any) -> float | None:
-        return self._client().zscore(key, _enc(self.encode(member)))
+        return self._client().zscore(key, _enc(member))
 
     def zmscore(self, key: KeyT, members: list[Any]) -> list[float | None]:
-        return list(self._client().zmscore(key, [_enc(self.encode(m)) for m in members]))
+        return list(self._client().zmscore(key, [_enc(m) for m in members]))
 
     def zrank(self, key: KeyT, member: Any) -> int | None:
-        return self._client().zrank(key, _enc(self.encode(member)))
+        return self._client().zrank(key, _enc(member))
 
     def zrevrank(self, key: KeyT, member: Any) -> int | None:
-        return self._client().zrevrank(key, _enc(self.encode(member)))
+        return self._client().zrevrank(key, _enc(member))
 
     def zincrby(self, key: KeyT, amount: float, member: Any) -> float:
-        return self._client().zincrby(key, amount, _enc(self.encode(member)))
+        return self._client().zincrby(key, amount, _enc(member))
 
     def zremrangebyrank(self, key: KeyT, start: int, end: int) -> int:
         return self._client().zremrangebyrank(key, start, end)
@@ -1140,7 +1138,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         if withscores:
             args.append(b"WITHSCORES")
         result = self._client().custom_command(args)
-        return _decode_zrange(result, self.decode, withscores=withscores)
+        return _decode_zrange(result, _passthrough, withscores=withscores)
 
     def zrevrange(self, key: KeyT, start: int, end: int, withscores: bool = False) -> list:
         return self.zrange(key, start, end, withscores=withscores, desc=True)
@@ -1149,48 +1147,48 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         args = [b"ZRANGEBYSCORE", key, _enc(mn), _enc(mx)]
         if withscores:
             args.append(b"WITHSCORES")
-        return _decode_zrange(self._client().custom_command(args), self.decode, withscores=withscores)
+        return _decode_zrange(self._client().custom_command(args), _passthrough, withscores=withscores)
 
     def zrevrangebyscore(self, key: KeyT, mx: Any, mn: Any, withscores: bool = False) -> list:
         args = [b"ZREVRANGEBYSCORE", key, _enc(mx), _enc(mn)]
         if withscores:
             args.append(b"WITHSCORES")
-        return _decode_zrange(self._client().custom_command(args), self.decode, withscores=withscores)
+        return _decode_zrange(self._client().custom_command(args), _passthrough, withscores=withscores)
 
     def zpopmin(self, key: KeyT, count: int = 1) -> list[tuple[Any, float]]:
-        return _decode_zpop(self._client().zpopmin(key, count), self.decode)
+        return _decode_zpop(self._client().zpopmin(key, count), _passthrough)
 
     def zpopmax(self, key: KeyT, count: int = 1) -> list[tuple[Any, float]]:
-        return _decode_zpop(self._client().zpopmax(key, count), self.decode)
+        return _decode_zpop(self._client().zpopmax(key, count), _passthrough)
 
     # =========================================================================
     # Lists (sync)
     # =========================================================================
 
     def lpush(self, key: KeyT, *values: Any) -> int:
-        return self._client().lpush(key, [_enc(self.encode(v)) for v in values])
+        return self._client().lpush(key, [_enc(v) for v in values])
 
     def rpush(self, key: KeyT, *values: Any) -> int:
-        return self._client().rpush(key, [_enc(self.encode(v)) for v in values])
+        return self._client().rpush(key, [_enc(v) for v in values])
 
     def lpop(self, key: KeyT, count: int | None = None) -> Any:
         client = self._client()
         if count is None:
             v = client.lpop(key)
-            return None if v is None else self.decode(v)
+            return None if v is None else v
         result = client.lpop_count(key, count)
-        return [self.decode(v) for v in result] if result else []
+        return list(result) if result else []
 
     def rpop(self, key: KeyT, count: int | None = None) -> Any:
         client = self._client()
         if count is None:
             v = client.rpop(key)
-            return None if v is None else self.decode(v)
+            return None if v is None else v
         result = client.rpop_count(key, count)
-        return [self.decode(v) for v in result] if result else []
+        return list(result) if result else []
 
     def lrange(self, key: KeyT, start: int, end: int) -> list:
-        return [self.decode(v) for v in self._client().lrange(key, start, end)]
+        return list(self._client().lrange(key, start, end))
 
     def ltrim(self, key: KeyT, start: int, end: int) -> bool:
         return self._client().ltrim(key, start, end) == "OK"
@@ -1200,13 +1198,13 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
 
     def lindex(self, key: KeyT, index: int) -> Any:
         v = self._client().lindex(key, index)
-        return None if v is None else self.decode(v)
+        return None if v is None else v
 
     def lset(self, key: KeyT, index: int, value: Any) -> bool:
-        return self._client().lset(key, index, _enc(self.encode(value))) == "OK"
+        return self._client().lset(key, index, _enc(value)) == "OK"
 
     def lrem(self, key: KeyT, count: int, value: Any) -> int:
-        return self._client().lrem(key, count, _enc(self.encode(value)))
+        return self._client().lrem(key, count, _enc(value))
 
     def linsert(self, key: KeyT, where: str, pivot: Any, value: Any) -> int:
         return self._client().custom_command(
@@ -1214,13 +1212,13 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
                 b"LINSERT",
                 key,
                 _enc(where.upper()),
-                _enc(self.encode(pivot)),
-                _enc(self.encode(value)),
+                _enc(pivot),
+                _enc(value),
             ],
         )
 
     def lpos(self, key: KeyT, element: Any, **kwargs: Any) -> Any:
-        args: list[Any] = [b"LPOS", key, _enc(self.encode(element))]
+        args: list[Any] = [b"LPOS", key, _enc(element)]
         if "rank" in kwargs:
             args.extend([b"RANK", str(kwargs["rank"]).encode()])
         if "count" in kwargs:
@@ -1231,7 +1229,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
 
     def lmove(self, src: KeyT, dst: KeyT, src_dir: str, dst_dir: str) -> Any:
         v = self._client().custom_command([b"LMOVE", src, dst, _enc(src_dir.upper()), _enc(dst_dir.upper())])
-        return None if v is None else self.decode(v)
+        return None if v is None else v
 
     def blmove(self, src: KeyT, dst: KeyT, src_dir: str, dst_dir: str, timeout: float) -> Any:
         v = self._client().custom_command(
@@ -1244,7 +1242,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
                 str(timeout).encode(),
             ],
         )
-        return None if v is None else self.decode(v)
+        return None if v is None else v
 
     def blpop(self, keys: Any, timeout: float = 0) -> Any:
         ks = list(keys) if isinstance(keys, (list, tuple)) else [keys]
@@ -1261,7 +1259,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
     def xadd(self, key: KeyT, fields: Mapping[Any, Any], id: str = "*", **kwargs: Any) -> str:
         args = [b"XADD", key, _enc(id)]
         for f, v in fields.items():
-            args.extend([_enc(f), _enc(self.encode(v))])
+            args.extend([_enc(f), _enc(v)])
         result = self._client().custom_command(args)
         return result.decode() if isinstance(result, bytes) else result
 
@@ -1391,11 +1389,8 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
     def _pipeline(self, *, transaction: bool = False) -> ValkeyGlidePipelineAdapter:
         return ValkeyGlidePipelineAdapter(self._client(), transaction=transaction)
 
-    def pipeline(self, *, transaction: bool = True, version: int | None = None) -> Pipeline:
-        from django_cachex.adapter.pipeline import Pipeline
-
-        pipeline_adapter = self._pipeline(transaction=transaction)
-        return Pipeline(adapter=self, pipeline_adapter=pipeline_adapter, version=version)
+    def pipeline(self, *, transaction: bool = True) -> BaseKeyValuePipelineAdapter:
+        return self._pipeline(transaction=transaction)
 
     # =========================================================================
     # Async core ops
@@ -1410,7 +1405,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         stampede_prevention: bool | dict | None = None,
     ) -> bool:
         client = await self._aclient()
-        nvalue = self.encode(value)
+        nvalue = value
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -1441,7 +1436,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
 
             if ttl > 0 and should_recompute(ttl, config):
                 return None
-        return self.decode(val)
+        return val
 
     async def aset(
         self,
@@ -1452,7 +1447,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         stampede_prevention: bool | dict | None = None,
     ) -> None:
         client = await self._aclient()
-        nvalue = self.encode(value)
+        nvalue = value
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -1474,7 +1469,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         stampede_prevention: bool | dict | None = None,
     ) -> bool | Any:
         client = await self._aclient()
-        nvalue = self.encode(value)
+        nvalue = value
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -1492,7 +1487,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
 
         result = await client.set(key, _enc(nvalue), **kw)
         if get:
-            return None if result is None else self.decode(result)
+            return None if result is None else result
         return result == "OK"
 
     async def atouch(self, key: KeyT, timeout: int | None) -> bool:
@@ -1532,7 +1527,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
                     if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
                         del found[k]
 
-        return {k: self.decode(v) for k, v in found.items()}
+        return dict(found.items())
 
     async def ahas_key(self, key: KeyT) -> bool:
         return bool(await (await self._aclient()).exists([key]))
@@ -1559,7 +1554,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         if not data:
             return []
         client = await self._aclient()
-        prepared = {k: _enc(self.encode(v)) for k, v in data.items()}
+        prepared = {k: _enc(v) for k, v in data.items()}
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -1671,38 +1666,38 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         client = await self._aclient()
         m: dict[Any, Any] = {}
         if field is not None:
-            m[field] = _enc(self.encode(value))
+            m[field] = _enc(value)
         if mapping:
-            m.update({f: _enc(self.encode(v)) for f, v in mapping.items()})
+            m.update({f: _enc(v) for f, v in mapping.items()})
         if items:
             for i in range(0, len(items), 2):
-                m[items[i]] = _enc(self.encode(items[i + 1]))
+                m[items[i]] = _enc(items[i + 1])
         if not m:
             return 0
         return await client.hset(key, m)
 
     async def ahsetnx(self, key: KeyT, field: str, value: Any) -> bool:
-        return await (await self._aclient()).hsetnx(key, field, _enc(self.encode(value)))
+        return await (await self._aclient()).hsetnx(key, field, _enc(value))
 
     async def ahget(self, key: KeyT, field: str) -> Any:
         val = await (await self._aclient()).hget(key, field)
-        return None if val is None else self.decode(val)
+        return None if val is None else val
 
     async def ahmget(self, key: KeyT, *fields: str) -> list:
         if len(fields) == 1 and isinstance(fields[0], (list, tuple)):
             fields = tuple(fields[0])
         values = await (await self._aclient()).hmget(key, list(fields))
-        return [self.decode(v) if v is not None else None for v in values]
+        return [v if v is not None else None for v in values]
 
     async def ahgetall(self, key: KeyT) -> dict[str, Any]:
         result = await (await self._aclient()).hgetall(key)
-        return {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in result.items()}
+        return {k.decode() if isinstance(k, bytes) else k: v for k, v in result.items()}
 
     async def ahkeys(self, key: KeyT) -> list[str]:
         return [k.decode() if isinstance(k, bytes) else k for k in await (await self._aclient()).hkeys(key)]
 
     async def ahvals(self, key: KeyT) -> list:
-        return [self.decode(v) for v in await (await self._aclient()).hvals(key)]
+        return list(await (await self._aclient()).hvals(key))
 
     async def ahlen(self, key: KeyT) -> int:
         return await (await self._aclient()).hlen(key)
@@ -1724,19 +1719,19 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
     # =========================================================================
 
     async def asadd(self, key: KeyT, *members: Any) -> int:
-        return await (await self._aclient()).sadd(key, [_enc(self.encode(m)) for m in members])
+        return await (await self._aclient()).sadd(key, [_enc(m) for m in members])
 
     async def asrem(self, key: KeyT, *members: Any) -> int:
-        return await (await self._aclient()).srem(key, [_enc(self.encode(m)) for m in members])
+        return await (await self._aclient()).srem(key, [_enc(m) for m in members])
 
     async def asmembers(self, key: KeyT) -> _BuiltinSet[Any]:
-        return {self.decode(m) for m in await (await self._aclient()).smembers(key)}
+        return set(await (await self._aclient()).smembers(key))
 
     async def asismember(self, key: KeyT, member: Any) -> bool:
-        return bool(await (await self._aclient()).sismember(key, _enc(self.encode(member))))
+        return bool(await (await self._aclient()).sismember(key, _enc(member)))
 
     async def asmismember(self, key: KeyT, *members: Any) -> list[bool]:
-        return list(await (await self._aclient()).smismember(key, [_enc(self.encode(m)) for m in members]))
+        return list(await (await self._aclient()).smismember(key, [_enc(m) for m in members]))
 
     async def ascard(self, key: KeyT) -> int:
         return await (await self._aclient()).scard(key)
@@ -1745,27 +1740,27 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         client = await self._aclient()
         if count is None:
             v = await client.spop(key)
-            return None if v is None else self.decode(v)
-        return {self.decode(v) for v in await client.spop_count(key, count)}
+            return None if v is None else v
+        return set(await client.spop_count(key, count))
 
     async def asrandmember(self, key: KeyT, count: int | None = None) -> Any:
         client = await self._aclient()
         if count is None:
             v = await client.srandmember(key)
-            return None if v is None else self.decode(v)
-        return [self.decode(v) for v in await client.srandmember_count(key, count)]
+            return None if v is None else v
+        return list(await client.srandmember_count(key, count))
 
     async def asmove(self, src: KeyT, dst: KeyT, member: Any) -> bool:
-        return bool(await (await self._aclient()).smove(src, dst, _enc(self.encode(member))))
+        return bool(await (await self._aclient()).smove(src, dst, _enc(member)))
 
     async def asinter(self, *keys: KeyT) -> _BuiltinSet[Any]:
-        return {self.decode(m) for m in await (await self._aclient()).sinter(list(keys))}
+        return set(await (await self._aclient()).sinter(list(keys)))
 
     async def asunion(self, *keys: KeyT) -> _BuiltinSet[Any]:
-        return {self.decode(m) for m in await (await self._aclient()).sunion(list(keys))}
+        return set(await (await self._aclient()).sunion(list(keys)))
 
     async def asdiff(self, *keys: KeyT) -> _BuiltinSet[Any]:
-        return {self.decode(m) for m in await (await self._aclient()).sdiff(list(keys))}
+        return set(await (await self._aclient()).sdiff(list(keys)))
 
     async def asinterstore(self, dst: KeyT, *keys: KeyT) -> int:
         return await (await self._aclient()).sinterstore(dst, list(keys))
@@ -1784,7 +1779,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         count: int | None = None,
     ) -> tuple[bytes, list]:
         result = await (await self._aclient()).sscan(key, _enc(cursor), match=match, count=count)
-        return result[0], [self.decode(v) for v in result[1]]
+        return result[0], list(result[1])
 
     async def asscan_iter(self, key: KeyT, match: str | None = None, count: int | None = None):
         client = await self._aclient()
@@ -1793,7 +1788,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
             result = await client.sscan(key, cursor, match=match, count=count)
             cursor, members = result[0], result[1]
             for m in members:
-                yield self.decode(m)
+                yield m
             if cursor in (b"0", "0", 0):
                 return
 
@@ -1814,27 +1809,27 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
             if kwargs.get("incr"):
                 args.append(b"INCR")
             for member, score in mapping.items():
-                args.extend([_enc(score), _enc(self.encode(member))])
+                args.extend([_enc(score), _enc(member)])
             return await client.custom_command(args)
-        return await client.zadd(key, {_enc(self.encode(m)): float(s) for m, s in mapping.items()})
+        return await client.zadd(key, {_enc(m): float(s) for m, s in mapping.items()})
 
     async def azrem(self, key: KeyT, *members: Any) -> int:
-        return await (await self._aclient()).zrem(key, [_enc(self.encode(m)) for m in members])
+        return await (await self._aclient()).zrem(key, [_enc(m) for m in members])
 
     async def azscore(self, key: KeyT, member: Any) -> float | None:
-        return await (await self._aclient()).zscore(key, _enc(self.encode(member)))
+        return await (await self._aclient()).zscore(key, _enc(member))
 
     async def azmscore(self, key: KeyT, members: list[Any]) -> list[float | None]:
-        return list(await (await self._aclient()).zmscore(key, [_enc(self.encode(m)) for m in members]))
+        return list(await (await self._aclient()).zmscore(key, [_enc(m) for m in members]))
 
     async def azrank(self, key: KeyT, member: Any) -> int | None:
-        return await (await self._aclient()).zrank(key, _enc(self.encode(member)))
+        return await (await self._aclient()).zrank(key, _enc(member))
 
     async def azrevrank(self, key: KeyT, member: Any) -> int | None:
-        return await (await self._aclient()).zrevrank(key, _enc(self.encode(member)))
+        return await (await self._aclient()).zrevrank(key, _enc(member))
 
     async def azincrby(self, key: KeyT, amount: float, member: Any) -> float:
-        return await (await self._aclient()).zincrby(key, amount, _enc(self.encode(member)))
+        return await (await self._aclient()).zincrby(key, amount, _enc(member))
 
     async def azremrangebyrank(self, key: KeyT, start: int, end: int) -> int:
         return await (await self._aclient()).zremrangebyrank(key, start, end)
@@ -1854,7 +1849,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
             args.append(b"REV")
         if withscores:
             args.append(b"WITHSCORES")
-        return _decode_zrange(await (await self._aclient()).custom_command(args), self.decode, withscores=withscores)
+        return _decode_zrange(await (await self._aclient()).custom_command(args), _passthrough, withscores=withscores)
 
     async def azrevrange(self, key: KeyT, start: int, end: int, withscores: bool = False) -> list:
         return await self.azrange(key, start, end, withscores=withscores, desc=True)
@@ -1863,48 +1858,48 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         args = [b"ZRANGEBYSCORE", key, _enc(mn), _enc(mx)]
         if withscores:
             args.append(b"WITHSCORES")
-        return _decode_zrange(await (await self._aclient()).custom_command(args), self.decode, withscores=withscores)
+        return _decode_zrange(await (await self._aclient()).custom_command(args), _passthrough, withscores=withscores)
 
     async def azrevrangebyscore(self, key: KeyT, mx: Any, mn: Any, withscores: bool = False) -> list:
         args = [b"ZREVRANGEBYSCORE", key, _enc(mx), _enc(mn)]
         if withscores:
             args.append(b"WITHSCORES")
-        return _decode_zrange(await (await self._aclient()).custom_command(args), self.decode, withscores=withscores)
+        return _decode_zrange(await (await self._aclient()).custom_command(args), _passthrough, withscores=withscores)
 
     async def azpopmin(self, key: KeyT, count: int = 1) -> list[tuple[Any, float]]:
-        return _decode_zpop(await (await self._aclient()).zpopmin(key, count), self.decode)
+        return _decode_zpop(await (await self._aclient()).zpopmin(key, count), _passthrough)
 
     async def azpopmax(self, key: KeyT, count: int = 1) -> list[tuple[Any, float]]:
-        return _decode_zpop(await (await self._aclient()).zpopmax(key, count), self.decode)
+        return _decode_zpop(await (await self._aclient()).zpopmax(key, count), _passthrough)
 
     # =========================================================================
     # Async lists
     # =========================================================================
 
     async def alpush(self, key: KeyT, *values: Any) -> int:
-        return await (await self._aclient()).lpush(key, [_enc(self.encode(v)) for v in values])
+        return await (await self._aclient()).lpush(key, [_enc(v) for v in values])
 
     async def arpush(self, key: KeyT, *values: Any) -> int:
-        return await (await self._aclient()).rpush(key, [_enc(self.encode(v)) for v in values])
+        return await (await self._aclient()).rpush(key, [_enc(v) for v in values])
 
     async def alpop(self, key: KeyT, count: int | None = None) -> Any:
         client = await self._aclient()
         if count is None:
             v = await client.lpop(key)
-            return None if v is None else self.decode(v)
+            return None if v is None else v
         result = await client.lpop_count(key, count)
-        return [self.decode(v) for v in result] if result else []
+        return list(result) if result else []
 
     async def arpop(self, key: KeyT, count: int | None = None) -> Any:
         client = await self._aclient()
         if count is None:
             v = await client.rpop(key)
-            return None if v is None else self.decode(v)
+            return None if v is None else v
         result = await client.rpop_count(key, count)
-        return [self.decode(v) for v in result] if result else []
+        return list(result) if result else []
 
     async def alrange(self, key: KeyT, start: int, end: int) -> list:
-        return [self.decode(v) for v in await (await self._aclient()).lrange(key, start, end)]
+        return list(await (await self._aclient()).lrange(key, start, end))
 
     async def altrim(self, key: KeyT, start: int, end: int) -> bool:
         return (await (await self._aclient()).ltrim(key, start, end)) == "OK"
@@ -1914,13 +1909,13 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
 
     async def alindex(self, key: KeyT, index: int) -> Any:
         v = await (await self._aclient()).lindex(key, index)
-        return None if v is None else self.decode(v)
+        return None if v is None else v
 
     async def alset(self, key: KeyT, index: int, value: Any) -> bool:
-        return (await (await self._aclient()).lset(key, index, _enc(self.encode(value)))) == "OK"
+        return (await (await self._aclient()).lset(key, index, _enc(value))) == "OK"
 
     async def alrem(self, key: KeyT, count: int, value: Any) -> int:
-        return await (await self._aclient()).lrem(key, count, _enc(self.encode(value)))
+        return await (await self._aclient()).lrem(key, count, _enc(value))
 
     async def alinsert(self, key: KeyT, where: str, pivot: Any, value: Any) -> int:
         return await (await self._aclient()).custom_command(
@@ -1928,13 +1923,13 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
                 b"LINSERT",
                 key,
                 _enc(where.upper()),
-                _enc(self.encode(pivot)),
-                _enc(self.encode(value)),
+                _enc(pivot),
+                _enc(value),
             ],
         )
 
     async def alpos(self, key: KeyT, element: Any, **kwargs: Any) -> Any:
-        args: list[Any] = [b"LPOS", key, _enc(self.encode(element))]
+        args: list[Any] = [b"LPOS", key, _enc(element)]
         if "rank" in kwargs:
             args.extend([b"RANK", str(kwargs["rank"]).encode()])
         if "count" in kwargs:
@@ -1947,7 +1942,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
         v = await (await self._aclient()).custom_command(
             [b"LMOVE", src, dst, _enc(src_dir.upper()), _enc(dst_dir.upper())],
         )
-        return None if v is None else self.decode(v)
+        return None if v is None else v
 
     async def ablmove(self, src: KeyT, dst: KeyT, src_dir: str, dst_dir: str, timeout: float) -> Any:
         v = await (await self._aclient()).custom_command(
@@ -1960,7 +1955,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
                 str(timeout).encode(),
             ],
         )
-        return None if v is None else self.decode(v)
+        return None if v is None else v
 
     async def ablpop(self, keys: Any, timeout: float = 0) -> Any:
         ks = list(keys) if isinstance(keys, (list, tuple)) else [keys]
@@ -1977,7 +1972,7 @@ class ValkeyGlideAdapter(BaseKeyValueAdapter):
     async def axadd(self, key: KeyT, fields: Mapping[Any, Any], id: str = "*", **kwargs: Any) -> str:
         args = [b"XADD", key, _enc(id)]
         for f, v in fields.items():
-            args.extend([_enc(f), _enc(self.encode(v))])
+            args.extend([_enc(f), _enc(v)])
         result = await (await self._aclient()).custom_command(args)
         return result.decode() if isinstance(result, bytes) else result
 
@@ -2099,6 +2094,11 @@ def _batched(it: Iterable[Any], n: int) -> Iterable[list[Any]]:
             chunk = []
     if chunk:
         yield chunk
+
+
+def _passthrough(value: Any) -> Any:
+    """No-op decoder. Decoding now happens at the cache layer."""
+    return value
 
 
 def _decode_zrange(result: Any, decoder: Any, *, withscores: bool) -> list:

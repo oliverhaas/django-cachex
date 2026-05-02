@@ -113,8 +113,8 @@ class TestScriptHelpers:
     def test_script_helpers_make_keys(self, cache: KeyValueCache):
         helpers = ScriptHelpers(
             make_key=cache.make_and_validate_key,
-            encode=cache.adapter.encode,
-            decode=cache.adapter.decode,
+            encode=cache.encode,
+            decode=cache.decode,
             version=1,
         )
 
@@ -127,8 +127,8 @@ class TestScriptHelpers:
     def test_script_helpers_encode_decode(self, cache: KeyValueCache):
         helpers = ScriptHelpers(
             make_key=cache.make_and_validate_key,
-            encode=cache.adapter.encode,
-            decode=cache.adapter.decode,
+            encode=cache.encode,
+            decode=cache.decode,
             version=1,
         )
 
@@ -146,8 +146,8 @@ class TestPreBuiltHooks:
         """Test keys_only_pre helper."""
         helpers = ScriptHelpers(
             make_key=cache.make_and_validate_key,
-            encode=cache.adapter.encode,
-            decode=cache.adapter.decode,
+            encode=cache.encode,
+            decode=cache.decode,
             version=1,
         )
 
@@ -164,8 +164,8 @@ class TestPreBuiltHooks:
     def test_full_encode_pre(self, cache: KeyValueCache):
         helpers = ScriptHelpers(
             make_key=cache.make_and_validate_key,
-            encode=cache.adapter.encode,
-            decode=cache.adapter.decode,
+            encode=cache.encode,
+            decode=cache.decode,
             version=1,
         )
 
@@ -183,8 +183,8 @@ class TestPreBuiltHooks:
     def test_decode_single_post(self, cache: KeyValueCache):
         helpers = ScriptHelpers(
             make_key=cache.make_and_validate_key,
-            encode=cache.adapter.encode,
-            decode=cache.adapter.decode,
+            encode=cache.encode,
+            decode=cache.decode,
             version=1,
         )
 
@@ -200,8 +200,8 @@ class TestPreBuiltHooks:
     def test_decode_list_post(self, cache: KeyValueCache):
         helpers = ScriptHelpers(
             make_key=cache.make_and_validate_key,
-            encode=cache.adapter.encode,
-            decode=cache.adapter.decode,
+            encode=cache.encode,
+            decode=cache.decode,
             version=1,
         )
 

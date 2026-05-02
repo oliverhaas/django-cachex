@@ -67,7 +67,6 @@ class BaseKeyValueSentinelAdapter(BaseKeyValueAdapter):
     def __init__(
         self,
         servers: list[str],
-        serializer: str | list | type | None = None,
         pool_class: str | type | None = None,
         parser_class: str | type | None = None,
         **options: Any,
@@ -77,7 +76,7 @@ class BaseKeyValueSentinelAdapter(BaseKeyValueAdapter):
         if servers:
             servers = self._transform_sentinel_urls(servers[0])
 
-        super().__init__(servers, serializer, pool_class, parser_class, **options)
+        super().__init__(servers, pool_class, parser_class, **options)
 
         # Initialize async sentinels dict
         self._async_sentinels = weakref.WeakKeyDictionary()

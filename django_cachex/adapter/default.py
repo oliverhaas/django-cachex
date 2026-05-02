@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from django.utils.module_loading import import_string
 
-from django_cachex.exceptions import CompressorError, SerializerError, _main_exceptions
+from django_cachex.exceptions import _main_exceptions
 from django_cachex.stampede import StampedeConfig, should_recompute
 from django_cachex.types import KeyType
 
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     import builtins
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
 
-    from django_cachex.adapter.pipeline import Pipeline
+    from django_cachex.adapter.pipeline import BaseKeyValuePipelineAdapter
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, _Set
 
 # Try to import redis-py and/or valkey-py
@@ -69,15 +69,6 @@ except ImportError:
 _ASYNC_POOLS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], Any]] = (
     weakref.WeakKeyDictionary()
 )
-
-
-def _load_codec(config: str | type | Any) -> Any:
-    """Resolve a serializer/compressor config: dotted-path / class / instance → instance."""
-    if isinstance(config, str):
-        config = import_string(config)
-    if callable(config):
-        return config()
-    return config
 
 
 def _options_key(options: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
@@ -131,13 +122,18 @@ class BaseKeyValueAdapter:
     def __init__(
         self,
         servers: list[str],
-        serializer: str | list | builtins.type[Any] | None = None,
         pool_class: str | builtins.type[Any] | None = None,
         parser_class: str | builtins.type[Any] | None = None,
         async_pool_class: str | builtins.type[Any] | None = None,
         **options: Any,
     ) -> None:
-        """Initialize the cache client."""
+        """Initialize the wire-level adapter.
+
+        Encoding (serializer + compressor) is owned by the cache layer
+        (``KeyValueCache``); adapter methods take and return raw bytes.
+        ``serializer`` / ``compressor`` keys in ``options`` are silently
+        ignored here — the cache reads them directly from its own options.
+        """
         # Store servers
         self._servers = servers
         self._pools: dict[int, Any] = {}
@@ -171,19 +167,6 @@ class BaseKeyValueAdapter:
         # Store full options for our extensions
         self._options = options
 
-        # Setup compressors (extension beyond Django)
-        compressor_config = options.get("compressor")
-        self._compressors = self._create_compressors(compressor_config)
-
-        # Setup multi-serializer fallback (extension beyond Django)
-        # Use the explicit serializer parameter if provided, otherwise check options
-        serializer_config = (
-            serializer
-            if serializer is not None
-            else options.get("serializer", "django_cachex.serializers.pickle.PickleSerializer")
-        )
-        self._serializers = self._create_serializers(serializer_config)
-
         # Setup stampede prevention (XFetch algorithm)
         stampede_config = options.get("stampede_prevention")
         if stampede_config:
@@ -193,77 +176,6 @@ class BaseKeyValueAdapter:
                 self._stampede_config = StampedeConfig()
         else:
             self._stampede_config = None
-
-    # =========================================================================
-    # Serializer/Compressor Setup
-    # =========================================================================
-
-    def _create_serializers(self, config: str | list | builtins.type[Any] | Any) -> list:
-        if config is None:
-            config = "django_cachex.serializers.pickle.PickleSerializer"
-        items: list = config if isinstance(config, list) else [config]
-        return [_load_codec(item) for item in items]
-
-    def _create_compressors(self, config: str | list | builtins.type[Any] | Any | None) -> list:
-        if config is None:
-            return []
-        items: list = config if isinstance(config, list) else [config]
-        return [_load_codec(item) for item in items]
-
-    def _decompress(self, value: bytes) -> bytes:
-        """Decompress with fallback support for multiple compressors.
-
-        Returns ``value`` unchanged when no compressors are configured. Raises
-        ``CompressorError`` if every configured compressor fails — symmetric
-        with ``_deserialize``. To accept uncompressed payloads alongside
-        compressed ones (e.g. mid-migration), keep the previously-used
-        compressor at the end of the fallback chain.
-        """
-        if not self._compressors:
-            return value
-        last_error: CompressorError | None = None
-        for compressor in self._compressors:
-            try:
-                return compressor.decompress(value)
-            except CompressorError as e:
-                last_error = e
-        # Every configured compressor failed.
-        raise last_error if last_error is not None else CompressorError("decompression failed")
-
-    def _deserialize(self, value: bytes) -> Any:
-        """Deserialize with fallback support for multiple serializers."""
-        last_error: SerializerError | None = None
-        for serializer in self._serializers:
-            try:
-                return serializer.loads(value)
-            except SerializerError as e:
-                last_error = e
-                continue
-
-        if last_error is not None:
-            raise last_error
-        raise SerializerError("No serializers configured")
-
-    # =========================================================================
-    # Encoding/Decoding
-    # =========================================================================
-
-    def encode(self, value: Any) -> bytes | int:
-        """Encode a value for storage (serialize + compress). Plain ints pass through unchanged."""
-        if isinstance(value, bool) or not isinstance(value, int):
-            value = self._serializers[0].dumps(value)
-            if self._compressors:
-                return self._compressors[0].compress(value)
-            return value
-        return value
-
-    def decode(self, value: Any) -> Any:
-        """Decode a value from storage. Returns int directly if parseable, otherwise decompress + deserialize."""
-        try:
-            return int(value)
-        except ValueError, TypeError:
-            value = self._decompress(value)
-            return self._deserialize(value)
 
     # =========================================================================
     # Stampede Prevention Helpers
@@ -401,7 +313,7 @@ class BaseKeyValueAdapter:
     ) -> bool:
         """Set a value only if the key doesn't exist."""
         client = self.get_client(key, write=True)
-        nvalue = self.encode(value)
+        nvalue = value
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -420,7 +332,7 @@ class BaseKeyValueAdapter:
     ) -> bool:
         """Set a value only if the key doesn't exist, asynchronously."""
         client = self.get_async_client(key, write=True)
-        nvalue = self.encode(value)
+        nvalue = value
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -440,7 +352,7 @@ class BaseKeyValueAdapter:
             ttl = client.ttl(key)
             if ttl > 0 and should_recompute(ttl, config):
                 return None
-        return self.decode(val)
+        return val
 
     async def aget(self, key: KeyT, *, stampede_prevention: bool | dict | None = None) -> Any:
         """Fetch a value from the cache asynchronously."""
@@ -453,7 +365,7 @@ class BaseKeyValueAdapter:
             ttl = await client.ttl(key)
             if ttl > 0 and should_recompute(ttl, config):
                 return None
-        return self.decode(val)
+        return val
 
     def set(
         self,
@@ -465,7 +377,7 @@ class BaseKeyValueAdapter:
     ) -> None:
         """Set a value in the cache (standard Django interface)."""
         client = self.get_client(key, write=True)
-        nvalue = self.encode(value)
+        nvalue = value
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -483,7 +395,7 @@ class BaseKeyValueAdapter:
     ) -> None:
         """Set a value in the cache asynchronously."""
         client = self.get_async_client(key, write=True)
-        nvalue = self.encode(value)
+        nvalue = value
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -508,7 +420,7 @@ class BaseKeyValueAdapter:
         (decoded) when get=True.
         """
         client = self.get_client(key, write=True)
-        nvalue = self.encode(value)
+        nvalue = value
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -519,7 +431,7 @@ class BaseKeyValueAdapter:
         if get:
             if result is None:
                 return None
-            return self.decode(result)
+            return result
         return bool(result)
 
     async def aset_with_flags(
@@ -539,7 +451,7 @@ class BaseKeyValueAdapter:
         (decoded) when get=True.
         """
         client = self.get_async_client(key, write=True)
-        nvalue = self.encode(value)
+        nvalue = value
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -550,7 +462,7 @@ class BaseKeyValueAdapter:
         if get:
             if result is None:
                 return None
-            return self.decode(result)
+            return result
         return bool(result)
 
     def touch(self, key: KeyT, timeout: int | None) -> bool:
@@ -607,7 +519,7 @@ class BaseKeyValueAdapter:
                     if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
                         del found[k]
 
-        return {k: self.decode(v) for k, v in found.items()}
+        return dict(found.items())
 
     async def aget_many(
         self,
@@ -640,7 +552,7 @@ class BaseKeyValueAdapter:
                     if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
                         del found[k]
 
-        return {k: self.decode(v) for k, v in found.items()}
+        return dict(found.items())
 
     def has_key(self, key: KeyT) -> bool:
         """Check if a key exists."""
@@ -694,7 +606,7 @@ class BaseKeyValueAdapter:
             return []
 
         client = self.get_client(write=True)
-        prepared = {k: self.encode(v) for k, v in data.items()}
+        prepared = dict(data.items())
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -721,7 +633,7 @@ class BaseKeyValueAdapter:
             return []
 
         client = self.get_async_client(write=True)
-        prepared = {k: self.encode(v) for k, v in data.items()}
+        prepared = dict(data.items())
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -1086,18 +998,17 @@ class BaseKeyValueAdapter:
             thread_local=thread_local,
         )
 
-    def pipeline(
-        self,
-        *,
-        transaction: bool = True,
-        version: int | None = None,
-    ) -> Pipeline:
-        """Create a pipeline for batched operations."""
-        from django_cachex.adapter.pipeline import Pipeline, RedisPipelineAdapter
+    def pipeline(self, *, transaction: bool = True) -> BaseKeyValuePipelineAdapter:
+        """Construct a pipeline adapter (raw command queue) for this driver.
+
+        Returns the per-driver :class:`BaseKeyValuePipelineAdapter` subclass.
+        ``KeyValueCache.pipeline()`` wraps the result in a :class:`Pipeline`
+        that adds key-prefixing, value encoding, and result decoding.
+        """
+        from django_cachex.adapter.pipeline import RedisPipelineAdapter
 
         client = self.get_client(write=True)
-        pipeline_adapter = RedisPipelineAdapter(client.pipeline(transaction=transaction))
-        return Pipeline(adapter=self, pipeline_adapter=pipeline_adapter, version=version)
+        return RedisPipelineAdapter(client.pipeline(transaction=transaction))
 
     # =========================================================================
     # Server Operations
@@ -1179,16 +1090,16 @@ class BaseKeyValueAdapter:
     ) -> int:
         """Set hash field(s). Use field/value, mapping, or items (flat key-value pairs)."""
         client = self.get_client(key, write=True)
-        nvalue = self.encode(value) if field is not None else None
-        nmapping = {f: self.encode(v) for f, v in mapping.items()} if mapping else None
-        nitems = [self.encode(v) if i % 2 else v for i, v in enumerate(items)] if items else None
+        nvalue = value if field is not None else None
+        nmapping = dict(mapping.items()) if mapping else None
+        nitems = list(items) if items else None
 
         return cast("int", client.hset(key, field, nvalue, mapping=nmapping, items=nitems))
 
     def hsetnx(self, key: KeyT, field: str, value: Any) -> bool:
         """Set a hash field only if it doesn't exist."""
         client = self.get_client(key, write=True)
-        nvalue = self.encode(value)
+        nvalue = value
 
         return bool(client.hsetnx(key, field, nvalue))
 
@@ -1197,21 +1108,21 @@ class BaseKeyValueAdapter:
         client = self.get_client(key, write=False)
 
         val = client.hget(key, field)
-        return self.decode(val) if val is not None else None
+        return val if val is not None else None
 
     def hmget(self, key: KeyT, *fields: str) -> list[Any | None]:
         """Get multiple hash fields."""
         client = self.get_client(key, write=False)
 
         values = client.hmget(key, fields)
-        return [self.decode(v) if v is not None else None for v in values]
+        return [v if v is not None else None for v in values]
 
     def hgetall(self, key: KeyT) -> dict[str, Any]:
         """Get all hash fields."""
         client = self.get_client(key, write=False)
 
         raw = client.hgetall(key)
-        return {(f.decode() if isinstance(f, bytes) else f): self.decode(v) for f, v in raw.items()}
+        return {(f.decode() if isinstance(f, bytes) else f): v for f, v in raw.items()}
 
     def hdel(self, key: KeyT, *fields: str) -> int:
         """Delete hash fields."""
@@ -1243,7 +1154,7 @@ class BaseKeyValueAdapter:
         client = self.get_client(key, write=False)
 
         values = client.hvals(key)
-        return [self.decode(v) for v in values]
+        return list(values)
 
     def hincrby(self, key: KeyT, field: str, amount: int = 1) -> int:
         """Increment a hash field by an integer."""
@@ -1267,16 +1178,16 @@ class BaseKeyValueAdapter:
     ) -> int:
         """Set hash field(s) asynchronously. Use field/value, mapping, or items (flat key-value pairs)."""
         client = self.get_async_client(key, write=True)
-        nvalue = self.encode(value) if field is not None else None
-        nmapping = {f: self.encode(v) for f, v in mapping.items()} if mapping else None
-        nitems = [self.encode(v) if i % 2 else v for i, v in enumerate(items)] if items else None
+        nvalue = value if field is not None else None
+        nmapping = dict(mapping.items()) if mapping else None
+        nitems = list(items) if items else None
 
         return cast("int", await client.hset(key, field, nvalue, mapping=nmapping, items=nitems))
 
     async def ahsetnx(self, key: KeyT, field: str, value: Any) -> bool:
         """Set a hash field only if it doesn't exist, asynchronously."""
         client = self.get_async_client(key, write=True)
-        nvalue = self.encode(value)
+        nvalue = value
 
         return bool(await client.hsetnx(key, field, nvalue))
 
@@ -1285,21 +1196,21 @@ class BaseKeyValueAdapter:
         client = self.get_async_client(key, write=False)
 
         val = await client.hget(key, field)
-        return self.decode(val) if val is not None else None
+        return val if val is not None else None
 
     async def ahmget(self, key: KeyT, *fields: str) -> list[Any | None]:
         """Get multiple hash fields asynchronously."""
         client = self.get_async_client(key, write=False)
 
         values = await client.hmget(key, fields)
-        return [self.decode(v) if v is not None else None for v in values]
+        return [v if v is not None else None for v in values]
 
     async def ahgetall(self, key: KeyT) -> dict[str, Any]:
         """Get all hash fields asynchronously."""
         client = self.get_async_client(key, write=False)
 
         raw = await client.hgetall(key)
-        return {(f.decode() if isinstance(f, bytes) else f): self.decode(v) for f, v in raw.items()}
+        return {(f.decode() if isinstance(f, bytes) else f): v for f, v in raw.items()}
 
     async def ahdel(self, key: KeyT, *fields: str) -> int:
         """Delete hash fields asynchronously."""
@@ -1331,7 +1242,7 @@ class BaseKeyValueAdapter:
         client = self.get_async_client(key, write=False)
 
         values = await client.hvals(key)
-        return [self.decode(v) for v in values]
+        return list(values)
 
     async def ahincrby(self, key: KeyT, field: str, amount: int = 1) -> int:
         """Increment a hash field by an integer asynchronously."""
@@ -1352,14 +1263,14 @@ class BaseKeyValueAdapter:
     def lpush(self, key: KeyT, *values: Any) -> int:
         """Push values to the left of a list."""
         client = self.get_client(key, write=True)
-        nvalues = [self.encode(v) for v in values]
+        nvalues = list(values)
 
         return cast("int", client.lpush(key, *nvalues))
 
     def rpush(self, key: KeyT, *values: Any) -> int:
         """Push values to the right of a list."""
         client = self.get_client(key, write=True)
-        nvalues = [self.encode(v) for v in values]
+        nvalues = list(values)
 
         return cast("int", client.rpush(key, *nvalues))
 
@@ -1369,9 +1280,9 @@ class BaseKeyValueAdapter:
 
         if count is not None:
             vals = client.lpop(key, count)
-            return [self.decode(v) for v in vals] if vals else []
+            return list(vals) if vals else []
         val = client.lpop(key)
-        return self.decode(val) if val is not None else None
+        return val if val is not None else None
 
     def rpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
         """Pop value(s) from the right of a list."""
@@ -1379,9 +1290,9 @@ class BaseKeyValueAdapter:
 
         if count is not None:
             vals = client.rpop(key, count)
-            return [self.decode(v) for v in vals] if vals else []
+            return list(vals) if vals else []
         val = client.rpop(key)
-        return self.decode(val) if val is not None else None
+        return val if val is not None else None
 
     def llen(self, key: KeyT) -> int:
         """Get the length of a list."""
@@ -1399,7 +1310,7 @@ class BaseKeyValueAdapter:
     ) -> int | list[int] | None:
         """Find position(s) of element in list."""
         client = self.get_client(key, write=False)
-        encoded_value = self.encode(value)
+        encoded_value = value
 
         kwargs: dict[str, Any] = {}
         if rank is not None:
@@ -1422,26 +1333,26 @@ class BaseKeyValueAdapter:
         client = self.get_client(src, write=True)
 
         val = client.lmove(src, dst, wherefrom, whereto)
-        return self.decode(val) if val is not None else None
+        return val if val is not None else None
 
     def lrange(self, key: KeyT, start: int, end: int) -> list[Any]:
         """Get a range of elements from a list."""
         client = self.get_client(key, write=False)
 
         values = client.lrange(key, start, end)
-        return [self.decode(v) for v in values]
+        return list(values)
 
     def lindex(self, key: KeyT, index: int) -> Any | None:
         """Get an element from a list by index."""
         client = self.get_client(key, write=False)
 
         val = client.lindex(key, index)
-        return self.decode(val) if val is not None else None
+        return val if val is not None else None
 
     def lset(self, key: KeyT, index: int, value: Any) -> bool:
         """Set an element in a list by index."""
         client = self.get_client(key, write=True)
-        nvalue = self.encode(value)
+        nvalue = value
 
         client.lset(key, index, nvalue)
         return True
@@ -1449,7 +1360,7 @@ class BaseKeyValueAdapter:
     def lrem(self, key: KeyT, count: int, value: Any) -> int:
         """Remove elements from a list."""
         client = self.get_client(key, write=True)
-        nvalue = self.encode(value)
+        nvalue = value
 
         return cast("int", client.lrem(key, count, nvalue))
 
@@ -1469,8 +1380,8 @@ class BaseKeyValueAdapter:
     ) -> int:
         """Insert an element before or after another element."""
         client = self.get_client(key, write=True)
-        npivot = self.encode(pivot)
-        nvalue = self.encode(value)
+        npivot = pivot
+        nvalue = value
 
         return cast("int", client.linsert(key, where, npivot, nvalue))
 
@@ -1487,7 +1398,7 @@ class BaseKeyValueAdapter:
             return None
         key_bytes, value_bytes = result
         key_str = key_bytes.decode() if isinstance(key_bytes, bytes) else key_bytes
-        return (key_str, self.decode(value_bytes))
+        return (key_str, value_bytes)
 
     def brpop(
         self,
@@ -1502,7 +1413,7 @@ class BaseKeyValueAdapter:
             return None
         key_bytes, value_bytes = result
         key_str = key_bytes.decode() if isinstance(key_bytes, bytes) else key_bytes
-        return (key_str, self.decode(value_bytes))
+        return (key_str, value_bytes)
 
     def blmove(
         self,
@@ -1516,19 +1427,19 @@ class BaseKeyValueAdapter:
         client = self.get_client(src, write=True)
 
         val = client.blmove(src, dst, timeout, wherefrom, whereto)
-        return self.decode(val) if val is not None else None
+        return val if val is not None else None
 
     async def alpush(self, key: KeyT, *values: Any) -> int:
         """Push values to the left of a list asynchronously."""
         client = self.get_async_client(key, write=True)
-        nvalues = [self.encode(v) for v in values]
+        nvalues = list(values)
 
         return cast("int", await client.lpush(key, *nvalues))
 
     async def arpush(self, key: KeyT, *values: Any) -> int:
         """Push values to the right of a list asynchronously."""
         client = self.get_async_client(key, write=True)
-        nvalues = [self.encode(v) for v in values]
+        nvalues = list(values)
 
         return cast("int", await client.rpush(key, *nvalues))
 
@@ -1538,9 +1449,9 @@ class BaseKeyValueAdapter:
 
         if count is not None:
             vals = await client.lpop(key, count)
-            return [self.decode(v) for v in vals] if vals else []
+            return list(vals) if vals else []
         val = await client.lpop(key)
-        return self.decode(val) if val is not None else None
+        return val if val is not None else None
 
     async def arpop(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
         """Pop value(s) from the right of a list asynchronously."""
@@ -1548,9 +1459,9 @@ class BaseKeyValueAdapter:
 
         if count is not None:
             vals = await client.rpop(key, count)
-            return [self.decode(v) for v in vals] if vals else []
+            return list(vals) if vals else []
         val = await client.rpop(key)
-        return self.decode(val) if val is not None else None
+        return val if val is not None else None
 
     async def allen(self, key: KeyT) -> int:
         """Get the length of a list asynchronously."""
@@ -1568,7 +1479,7 @@ class BaseKeyValueAdapter:
     ) -> int | list[int] | None:
         """Find position(s) of element in list asynchronously."""
         client = self.get_async_client(key, write=False)
-        encoded_value = self.encode(value)
+        encoded_value = value
 
         kwargs: dict[str, Any] = {}
         if rank is not None:
@@ -1591,26 +1502,26 @@ class BaseKeyValueAdapter:
         client = self.get_async_client(src, write=True)
 
         val = await client.lmove(src, dst, wherefrom, whereto)
-        return self.decode(val) if val is not None else None
+        return val if val is not None else None
 
     async def alrange(self, key: KeyT, start: int, end: int) -> list[Any]:
         """Get a range of elements from a list asynchronously."""
         client = self.get_async_client(key, write=False)
 
         values = await client.lrange(key, start, end)
-        return [self.decode(v) for v in values]
+        return list(values)
 
     async def alindex(self, key: KeyT, index: int) -> Any | None:
         """Get an element from a list by index asynchronously."""
         client = self.get_async_client(key, write=False)
 
         val = await client.lindex(key, index)
-        return self.decode(val) if val is not None else None
+        return val if val is not None else None
 
     async def alset(self, key: KeyT, index: int, value: Any) -> bool:
         """Set an element in a list by index asynchronously."""
         client = self.get_async_client(key, write=True)
-        nvalue = self.encode(value)
+        nvalue = value
 
         await client.lset(key, index, nvalue)
         return True
@@ -1618,7 +1529,7 @@ class BaseKeyValueAdapter:
     async def alrem(self, key: KeyT, count: int, value: Any) -> int:
         """Remove elements from a list asynchronously."""
         client = self.get_async_client(key, write=True)
-        nvalue = self.encode(value)
+        nvalue = value
 
         return cast("int", await client.lrem(key, count, nvalue))
 
@@ -1638,8 +1549,8 @@ class BaseKeyValueAdapter:
     ) -> int:
         """Insert an element before or after another element asynchronously."""
         client = self.get_async_client(key, write=True)
-        npivot = self.encode(pivot)
-        nvalue = self.encode(value)
+        npivot = pivot
+        nvalue = value
 
         return cast("int", await client.linsert(key, where, npivot, nvalue))
 
@@ -1656,7 +1567,7 @@ class BaseKeyValueAdapter:
             return None
         key_bytes, value_bytes = result
         key_str = key_bytes.decode() if isinstance(key_bytes, bytes) else key_bytes
-        return (key_str, self.decode(value_bytes))
+        return (key_str, value_bytes)
 
     async def abrpop(
         self,
@@ -1671,7 +1582,7 @@ class BaseKeyValueAdapter:
             return None
         key_bytes, value_bytes = result
         key_str = key_bytes.decode() if isinstance(key_bytes, bytes) else key_bytes
-        return (key_str, self.decode(value_bytes))
+        return (key_str, value_bytes)
 
     async def ablmove(
         self,
@@ -1685,7 +1596,7 @@ class BaseKeyValueAdapter:
         client = self.get_async_client(src, write=True)
 
         val = await client.blmove(src, dst, timeout, wherefrom, whereto)
-        return self.decode(val) if val is not None else None
+        return val if val is not None else None
 
     # =========================================================================
     # Set Operations
@@ -1694,14 +1605,14 @@ class BaseKeyValueAdapter:
     def sadd(self, key: KeyT, *members: Any) -> int:
         """Add members to a set."""
         client = self.get_client(key, write=True)
-        nmembers = [self.encode(m) for m in members]
+        nmembers = list(members)
 
         return cast("int", client.sadd(key, *nmembers))
 
     def srem(self, key: KeyT, *members: Any) -> int:
         """Remove members from a set."""
         client = self.get_client(key, write=True)
-        nmembers = [self.encode(m) for m in members]
+        nmembers = list(members)
 
         return cast("int", client.srem(key, *nmembers))
 
@@ -1710,12 +1621,12 @@ class BaseKeyValueAdapter:
         client = self.get_client(key, write=False)
 
         result = client.smembers(key)
-        return {self.decode(v) for v in result}
+        return set(result)
 
     def sismember(self, key: KeyT, member: Any) -> bool:
         """Check if a value is a member of a set."""
         client = self.get_client(key, write=False)
-        nmember = self.encode(member)
+        nmember = member
 
         return bool(client.sismember(key, nmember))
 
@@ -1731,9 +1642,9 @@ class BaseKeyValueAdapter:
 
         if count is None:
             val = client.spop(key)
-            return self.decode(val) if val is not None else None
+            return val if val is not None else None
         vals = client.spop(key, count)
-        return [self.decode(v) for v in vals] if vals else []
+        return list(vals) if vals else []
 
     def srandmember(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
         """Get random member(s) from a set."""
@@ -1741,14 +1652,14 @@ class BaseKeyValueAdapter:
 
         if count is None:
             val = client.srandmember(key)
-            return self.decode(val) if val is not None else None
+            return val if val is not None else None
         vals = client.srandmember(key, count)
-        return [self.decode(v) for v in vals] if vals else []
+        return list(vals) if vals else []
 
     def smove(self, src: KeyT, dst: KeyT, member: Any) -> bool:
         """Move a member from one set to another."""
         client = self.get_client(write=True)
-        nmember = self.encode(member)
+        nmember = member
 
         return bool(client.smove(src, dst, nmember))
 
@@ -1757,7 +1668,7 @@ class BaseKeyValueAdapter:
         client = self.get_client(write=False)
 
         result = client.sdiff(keys)
-        return {self.decode(v) for v in result}
+        return set(result)
 
     def sdiffstore(self, dest: KeyT, keys: KeyT | Sequence[KeyT]) -> int:
         """Store the difference of sets."""
@@ -1770,7 +1681,7 @@ class BaseKeyValueAdapter:
         client = self.get_client(write=False)
 
         result = client.sinter(keys)
-        return {self.decode(v) for v in result}
+        return set(result)
 
     def sinterstore(self, dest: KeyT, keys: KeyT | Sequence[KeyT]) -> int:
         """Store the intersection of sets."""
@@ -1783,7 +1694,7 @@ class BaseKeyValueAdapter:
         client = self.get_client(write=False)
 
         result = client.sunion(keys)
-        return {self.decode(v) for v in result}
+        return set(result)
 
     def sunionstore(self, dest: KeyT, keys: KeyT | Sequence[KeyT]) -> int:
         """Store the union of sets."""
@@ -1794,7 +1705,7 @@ class BaseKeyValueAdapter:
     def smismember(self, key: KeyT, *members: Any) -> list[bool]:
         """Check if multiple values are members of a set."""
         client = self.get_client(key, write=False)
-        nmembers = [self.encode(m) for m in members]
+        nmembers = list(members)
 
         result = client.smismember(key, nmembers)
         return [bool(v) for v in result]
@@ -1810,7 +1721,7 @@ class BaseKeyValueAdapter:
         client = self.get_client(key, write=False)
 
         next_cursor, members = client.sscan(key, cursor=cursor, match=match, count=count)
-        return next_cursor, {self.decode(m) for m in members}
+        return next_cursor, set(members)
 
     def sscan_iter(
         self,
@@ -1821,20 +1732,19 @@ class BaseKeyValueAdapter:
         """Iterate over set members using SSCAN."""
         client = self.get_client(key, write=False)
 
-        for member in client.sscan_iter(key, match=match, count=count):
-            yield self.decode(member)
+        yield from client.sscan_iter(key, match=match, count=count)
 
     async def asadd(self, key: KeyT, *members: Any) -> int:
         """Add members to a set asynchronously."""
         client = self.get_async_client(key, write=True)
-        nmembers = [self.encode(m) for m in members]
+        nmembers = list(members)
 
         return cast("int", await client.sadd(key, *nmembers))
 
     async def asrem(self, key: KeyT, *members: Any) -> int:
         """Remove members from a set asynchronously."""
         client = self.get_async_client(key, write=True)
-        nmembers = [self.encode(m) for m in members]
+        nmembers = list(members)
 
         return cast("int", await client.srem(key, *nmembers))
 
@@ -1843,12 +1753,12 @@ class BaseKeyValueAdapter:
         client = self.get_async_client(key, write=False)
 
         result = await client.smembers(key)
-        return {self.decode(v) for v in result}
+        return set(result)
 
     async def asismember(self, key: KeyT, member: Any) -> bool:
         """Check if a value is a member of a set asynchronously."""
         client = self.get_async_client(key, write=False)
-        nmember = self.encode(member)
+        nmember = member
 
         return bool(await client.sismember(key, nmember))
 
@@ -1864,9 +1774,9 @@ class BaseKeyValueAdapter:
 
         if count is None:
             val = await client.spop(key)
-            return self.decode(val) if val is not None else None
+            return val if val is not None else None
         vals = await client.spop(key, count)
-        return [self.decode(v) for v in vals] if vals else []
+        return list(vals) if vals else []
 
     async def asrandmember(self, key: KeyT, count: int | None = None) -> Any | list[Any] | None:
         """Get random member(s) from a set asynchronously."""
@@ -1874,14 +1784,14 @@ class BaseKeyValueAdapter:
 
         if count is None:
             val = await client.srandmember(key)
-            return self.decode(val) if val is not None else None
+            return val if val is not None else None
         vals = await client.srandmember(key, count)
-        return [self.decode(v) for v in vals] if vals else []
+        return list(vals) if vals else []
 
     async def asmove(self, src: KeyT, dst: KeyT, member: Any) -> bool:
         """Move a member from one set to another asynchronously."""
         client = self.get_async_client(write=True)
-        nmember = self.encode(member)
+        nmember = member
 
         return bool(await client.smove(src, dst, nmember))
 
@@ -1890,7 +1800,7 @@ class BaseKeyValueAdapter:
         client = self.get_async_client(write=False)
 
         result = await client.sdiff(keys)
-        return {self.decode(v) for v in result}
+        return set(result)
 
     async def asdiffstore(self, dest: KeyT, keys: KeyT | Sequence[KeyT]) -> int:
         """Store the difference of sets asynchronously."""
@@ -1903,7 +1813,7 @@ class BaseKeyValueAdapter:
         client = self.get_async_client(write=False)
 
         result = await client.sinter(keys)
-        return {self.decode(v) for v in result}
+        return set(result)
 
     async def asinterstore(self, dest: KeyT, keys: KeyT | Sequence[KeyT]) -> int:
         """Store the intersection of sets asynchronously."""
@@ -1916,7 +1826,7 @@ class BaseKeyValueAdapter:
         client = self.get_async_client(write=False)
 
         result = await client.sunion(keys)
-        return {self.decode(v) for v in result}
+        return set(result)
 
     async def asunionstore(self, dest: KeyT, keys: KeyT | Sequence[KeyT]) -> int:
         """Store the union of sets asynchronously."""
@@ -1927,7 +1837,7 @@ class BaseKeyValueAdapter:
     async def asmismember(self, key: KeyT, *members: Any) -> list[bool]:
         """Check if multiple values are members of a set asynchronously."""
         client = self.get_async_client(key, write=False)
-        nmembers = [self.encode(m) for m in members]
+        nmembers = list(members)
 
         result = await client.smismember(key, nmembers)
         return [bool(v) for v in result]
@@ -1943,7 +1853,7 @@ class BaseKeyValueAdapter:
         client = self.get_async_client(key, write=False)
 
         next_cursor, members = await client.sscan(key, cursor=cursor, match=match, count=count)
-        return next_cursor, {self.decode(m) for m in members}
+        return next_cursor, set(members)
 
     async def asscan_iter(
         self,
@@ -1955,7 +1865,7 @@ class BaseKeyValueAdapter:
         client = self.get_async_client(key, write=False)
 
         async for member in client.sscan_iter(key, match=match, count=count):
-            yield self.decode(member)
+            yield member
 
     # =========================================================================
     # Sorted Set Operations
@@ -1974,21 +1884,21 @@ class BaseKeyValueAdapter:
     ) -> int:
         """Add members to a sorted set."""
         client = self.get_client(key, write=True)
-        scored_mapping = {self.encode(m): s for m, s in mapping.items()}
+        scored_mapping = dict(mapping.items())
 
         return cast("int", client.zadd(key, scored_mapping, nx=nx, xx=xx, gt=gt, lt=lt, ch=ch))
 
     def zrem(self, key: KeyT, *members: Any) -> int:
         """Remove members from a sorted set."""
         client = self.get_client(key, write=True)
-        nmembers = [self.encode(m) for m in members]
+        nmembers = list(members)
 
         return cast("int", client.zrem(key, *nmembers))
 
     def zscore(self, key: KeyT, member: Any) -> float | None:
         """Get the score of a member."""
         client = self.get_client(key, write=False)
-        nmember = self.encode(member)
+        nmember = member
 
         result = client.zscore(key, nmember)
         return float(result) if result is not None else None
@@ -1996,14 +1906,14 @@ class BaseKeyValueAdapter:
     def zrank(self, key: KeyT, member: Any) -> int | None:
         """Get the rank of a member (0-based)."""
         client = self.get_client(key, write=False)
-        nmember = self.encode(member)
+        nmember = member
 
         return client.zrank(key, nmember)
 
     def zrevrank(self, key: KeyT, member: Any) -> int | None:
         """Get the reverse rank of a member."""
         client = self.get_client(key, write=False)
-        nmember = self.encode(member)
+        nmember = member
 
         return client.zrevrank(key, nmember)
 
@@ -2022,7 +1932,7 @@ class BaseKeyValueAdapter:
     def zincrby(self, key: KeyT, amount: float, member: Any) -> float:
         """Increment the score of a member."""
         client = self.get_client(key, write=True)
-        nmember = self.encode(member)
+        nmember = member
 
         return float(client.zincrby(key, amount, nmember))
 
@@ -2039,8 +1949,8 @@ class BaseKeyValueAdapter:
 
         result = client.zrange(key, start, end, withscores=withscores)
         if withscores:
-            return [(self.decode(m), float(s)) for m, s in result]
-        return [self.decode(m) for m in result]
+            return [(m, float(s)) for m, s in result]
+        return list(result)
 
     def zrevrange(
         self,
@@ -2055,8 +1965,8 @@ class BaseKeyValueAdapter:
 
         result = client.zrevrange(key, start, end, withscores=withscores)
         if withscores:
-            return [(self.decode(m), float(s)) for m, s in result]
-        return [self.decode(m) for m in result]
+            return [(m, float(s)) for m, s in result]
+        return list(result)
 
     def zrangebyscore(
         self,
@@ -2080,8 +1990,8 @@ class BaseKeyValueAdapter:
             withscores=withscores,
         )
         if withscores:
-            return [(self.decode(m), float(s)) for m, s in result]
-        return [self.decode(m) for m in result]
+            return [(m, float(s)) for m, s in result]
+        return list(result)
 
     def zrevrangebyscore(
         self,
@@ -2105,8 +2015,8 @@ class BaseKeyValueAdapter:
             withscores=withscores,
         )
         if withscores:
-            return [(self.decode(m), float(s)) for m, s in result]
-        return [self.decode(m) for m in result]
+            return [(m, float(s)) for m, s in result]
+        return list(result)
 
     def zremrangebyrank(self, key: KeyT, start: int, end: int) -> int:
         """Remove members by rank range."""
@@ -2125,19 +2035,19 @@ class BaseKeyValueAdapter:
         client = self.get_client(key, write=True)
 
         result = client.zpopmin(key, count)
-        return [(self.decode(m), float(s)) for m, s in result]
+        return [(m, float(s)) for m, s in result]
 
     def zpopmax(self, key: KeyT, count: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with highest scores."""
         client = self.get_client(key, write=True)
 
         result = client.zpopmax(key, count)
-        return [(self.decode(m), float(s)) for m, s in result]
+        return [(m, float(s)) for m, s in result]
 
     def zmscore(self, key: KeyT, *members: Any) -> list[float | None]:
         """Get scores for multiple members."""
         client = self.get_client(key, write=False)
-        nmembers = [self.encode(m) for m in members]
+        nmembers = list(members)
 
         results = client.zmscore(key, nmembers)
         return [float(r) if r is not None else None for r in results]
@@ -2155,21 +2065,21 @@ class BaseKeyValueAdapter:
     ) -> int:
         """Add members to a sorted set asynchronously."""
         client = self.get_async_client(key, write=True)
-        scored_mapping = {self.encode(m): s for m, s in mapping.items()}
+        scored_mapping = dict(mapping.items())
 
         return cast("int", await client.zadd(key, scored_mapping, nx=nx, xx=xx, gt=gt, lt=lt, ch=ch))
 
     async def azrem(self, key: KeyT, *members: Any) -> int:
         """Remove members from a sorted set asynchronously."""
         client = self.get_async_client(key, write=True)
-        nmembers = [self.encode(m) for m in members]
+        nmembers = list(members)
 
         return cast("int", await client.zrem(key, *nmembers))
 
     async def azscore(self, key: KeyT, member: Any) -> float | None:
         """Get the score of a member asynchronously."""
         client = self.get_async_client(key, write=False)
-        nmember = self.encode(member)
+        nmember = member
 
         result = await client.zscore(key, nmember)
         return float(result) if result is not None else None
@@ -2177,14 +2087,14 @@ class BaseKeyValueAdapter:
     async def azrank(self, key: KeyT, member: Any) -> int | None:
         """Get the rank of a member (0-based) asynchronously."""
         client = self.get_async_client(key, write=False)
-        nmember = self.encode(member)
+        nmember = member
 
         return await client.zrank(key, nmember)
 
     async def azrevrank(self, key: KeyT, member: Any) -> int | None:
         """Get the reverse rank of a member asynchronously."""
         client = self.get_async_client(key, write=False)
-        nmember = self.encode(member)
+        nmember = member
 
         return await client.zrevrank(key, nmember)
 
@@ -2203,7 +2113,7 @@ class BaseKeyValueAdapter:
     async def azincrby(self, key: KeyT, amount: float, member: Any) -> float:
         """Increment the score of a member asynchronously."""
         client = self.get_async_client(key, write=True)
-        nmember = self.encode(member)
+        nmember = member
 
         return float(await client.zincrby(key, amount, nmember))
 
@@ -2220,8 +2130,8 @@ class BaseKeyValueAdapter:
 
         result = await client.zrange(key, start, end, withscores=withscores)
         if withscores:
-            return [(self.decode(m), float(s)) for m, s in result]
-        return [self.decode(m) for m in result]
+            return [(m, float(s)) for m, s in result]
+        return list(result)
 
     async def azrevrange(
         self,
@@ -2236,8 +2146,8 @@ class BaseKeyValueAdapter:
 
         result = await client.zrevrange(key, start, end, withscores=withscores)
         if withscores:
-            return [(self.decode(m), float(s)) for m, s in result]
-        return [self.decode(m) for m in result]
+            return [(m, float(s)) for m, s in result]
+        return list(result)
 
     async def azrangebyscore(
         self,
@@ -2261,8 +2171,8 @@ class BaseKeyValueAdapter:
             withscores=withscores,
         )
         if withscores:
-            return [(self.decode(m), float(s)) for m, s in result]
-        return [self.decode(m) for m in result]
+            return [(m, float(s)) for m, s in result]
+        return list(result)
 
     async def azrevrangebyscore(
         self,
@@ -2286,8 +2196,8 @@ class BaseKeyValueAdapter:
             withscores=withscores,
         )
         if withscores:
-            return [(self.decode(m), float(s)) for m, s in result]
-        return [self.decode(m) for m in result]
+            return [(m, float(s)) for m, s in result]
+        return list(result)
 
     async def azremrangebyrank(self, key: KeyT, start: int, end: int) -> int:
         """Remove members by rank range asynchronously."""
@@ -2306,19 +2216,19 @@ class BaseKeyValueAdapter:
         client = self.get_async_client(key, write=True)
 
         result = await client.zpopmin(key, count)
-        return [(self.decode(m), float(s)) for m, s in result]
+        return [(m, float(s)) for m, s in result]
 
     async def azpopmax(self, key: KeyT, count: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with highest scores asynchronously."""
         client = self.get_async_client(key, write=True)
 
         result = await client.zpopmax(key, count)
-        return [(self.decode(m), float(s)) for m, s in result]
+        return [(m, float(s)) for m, s in result]
 
     async def azmscore(self, key: KeyT, *members: Any) -> list[float | None]:
         """Get scores for multiple members asynchronously."""
         client = self.get_async_client(key, write=False)
-        nmembers = [self.encode(m) for m in members]
+        nmembers = list(members)
 
         results = await client.zmscore(key, nmembers)
         return [float(r) if r is not None else None for r in results]
@@ -2340,7 +2250,7 @@ class BaseKeyValueAdapter:
     ) -> str:
         """Add an entry to a stream."""
         client = self.get_client(key, write=True)
-        encoded_fields = {k: self.encode(v) for k, v in fields.items()}
+        encoded_fields = dict(fields.items())
 
         result = client.xadd(
             key,
@@ -2362,7 +2272,7 @@ class BaseKeyValueAdapter:
         return [
             (
                 entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
-                {k.decode() if isinstance(k, bytes) else k: self.decode(v) for k, v in fields.items()},
+                {k.decode() if isinstance(k, bytes) else k: v for k, v in fields.items()},
             )
             for entry_id, fields in results
         ]
@@ -2644,7 +2554,7 @@ class BaseKeyValueAdapter:
     ) -> str:
         """Add an entry to a stream asynchronously."""
         client = self.get_async_client(key, write=True)
-        encoded_fields = {k: self.encode(v) for k, v in fields.items()}
+        encoded_fields = dict(fields.items())
 
         result = await client.xadd(
             key,
