@@ -223,6 +223,8 @@ class TestAsyncSortedSetPop:
     async def test_azpopmin_empty(self, cache: KeyValueCache):
         result = await cache.azpopmin("anonexistent_zset")
         assert result == []
+        result = await cache.azpopmin("anonexistent_zset", count=5)
+        assert result == []
 
     @pytest.mark.asyncio
     async def test_azpopmax(self, cache: KeyValueCache):
@@ -243,3 +245,40 @@ class TestAsyncSortedSetPop:
     async def test_azpopmax_empty(self, cache: KeyValueCache):
         result = await cache.azpopmax("anonexistent_zset2")
         assert result == []
+        result = await cache.azpopmax("anonexistent_zset2", count=5)
+        assert result == []
+
+
+class TestAsyncSortedSetSerialization:
+    """Tests for async sorted-set serialization, version, and score-edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_asorted_set_serialization(self, cache: KeyValueCache):
+        await cache.azadd("acomplex", {("tuple", "key"): 1.0, "string": 2.0})
+        result = await cache.azrange("acomplex", 0, -1)
+        assert ("tuple", "key") in result or ["tuple", "key"] in result
+        assert "string" in result
+
+    @pytest.mark.asyncio
+    async def test_asorted_set_version_support(self, cache: KeyValueCache):
+        await cache.azadd("adata", {"v1": 1.0}, version=1)
+        await cache.azadd("adata", {"v2": 2.0}, version=2)
+
+        assert await cache.azcard("adata", version=1) == 1
+        assert await cache.azcard("adata", version=2) == 1
+        assert await cache.azrange("adata", 0, -1, version=1) == ["v1"]
+        assert await cache.azrange("adata", 0, -1, version=2) == ["v2"]
+
+    @pytest.mark.asyncio
+    async def test_asorted_set_float_scores(self, cache: KeyValueCache):
+        await cache.azadd("aprecise", {"a": 1.1, "b": 1.2, "c": 1.15})
+        result = await cache.azrange("aprecise", 0, -1, withscores=True)
+        assert result[0] == ("a", 1.1)
+        assert result[1] == ("c", 1.15)
+        assert result[2] == ("b", 1.2)
+
+    @pytest.mark.asyncio
+    async def test_asorted_set_negative_scores(self, cache: KeyValueCache):
+        await cache.azadd("atemps", {"freezing": -10.0, "cold": 0.0, "warm": 20.0})
+        result = await cache.azrange("atemps", 0, -1)
+        assert result == ["freezing", "cold", "warm"]

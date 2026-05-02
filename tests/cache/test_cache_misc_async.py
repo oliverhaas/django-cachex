@@ -29,6 +29,16 @@ class TestAsyncScan:
             all_keys.update(keys)
         assert all_keys == {"ascantest_a", "ascantest_b"}
 
+    @pytest.mark.asyncio
+    async def test_ascan_empty(self, cache: KeyValueCache, client_class: str, sentinel_mode: str | bool):
+        if client_class == "cluster" and not sentinel_mode:
+            with pytest.raises(NotSupportedError):
+                await cache.ascan(pattern="nonexistent_pattern_xyz_*")
+            return
+
+        _cursor, keys = await cache.ascan(pattern="nonexistent_pattern_xyz_*")
+        assert keys == []
+
 
 class TestAsyncLock:
     @pytest.fixture(autouse=True)
@@ -82,6 +92,15 @@ class TestAsyncVersionOperations:
         assert new_version == 1
         assert cache.get("{adv}:key", version=2) is None
         assert cache.get("{adv}:key", version=1) == "hello"
+
+    @pytest.mark.asyncio
+    async def test_adecr_version_default(self, cache: KeyValueCache):
+        cache.set("{adv2}:key", "value")
+        new_version = await cache.adecr_version("{adv2}:key")
+
+        assert new_version == 0
+        assert cache.get("{adv2}:key") is None
+        assert cache.get("{adv2}:key", version=0) == "value"
 
 
 class TestAsyncClearAllVersions:

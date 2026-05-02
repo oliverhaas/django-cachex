@@ -177,3 +177,68 @@ class TestAsyncVersionSrcDst:
         assert result is True
         assert cache.smembers("{vs}:assrc", version=1) == {"b"}
         assert cache.smembers("{vs}:asdst", version=2) == {"x", "a"}
+
+
+class TestAsyncSetStoreOperations:
+    """Tests for async sinterstore / sdiffstore."""
+
+    @pytest.mark.asyncio
+    async def test_asinterstore(self, cache: KeyValueCache):
+        cache.sadd("{afoo}1", "bar1", "bar2")
+        cache.sadd("{afoo}2", "bar2", "bar3")
+        assert await cache.asinterstore("{afoo}3", ["{afoo}1", "{afoo}2"]) == 1
+        assert cache.smembers("{afoo}3") == {"bar2"}
+
+    @pytest.mark.asyncio
+    async def test_asdiffstore_with_keys_version(self, cache: KeyValueCache):
+        cache.sadd("{afoo}1", "bar1", "bar2", version=2)
+        cache.sadd("{afoo}2", "bar2", "bar3", version=2)
+        assert await cache.asdiffstore("{afoo}3", ["{afoo}1", "{afoo}2"], version_keys=2) == 1
+        assert cache.smembers("{afoo}3") == {"bar1"}
+
+    @pytest.mark.asyncio
+    async def test_asdiffstore_with_different_keys_versions_without_initial_set_in_version(
+        self,
+        cache: KeyValueCache,
+    ):
+        cache.sadd("{afoo}1", "bar1", "bar2", version=1)
+        cache.sadd("{afoo}2", "bar2", "bar3", version=2)
+        assert await cache.asdiffstore("{afoo}3", ["{afoo}1", "{afoo}2"], version_keys=2) == 0
+
+    @pytest.mark.asyncio
+    async def test_asdiffstore_with_different_keys_versions_with_initial_set_in_version(
+        self,
+        cache: KeyValueCache,
+    ):
+        cache.sadd("{afoo}1", "bar1", "bar2", version=2)
+        cache.sadd("{afoo}2", "bar2", "bar3", version=1)
+        assert await cache.asdiffstore("{afoo}3", ["{afoo}1", "{afoo}2"], version_keys=2) == 2
+
+
+class TestAsyncRandomMembers:
+    """Tests for aspop / asrandmember with explicit count."""
+
+    @pytest.mark.asyncio
+    async def test_aspop(self, cache: KeyValueCache):
+        cache.sadd("aspop_foo", "bar1", "bar2")
+        assert await cache.aspop("aspop_foo", 1) in [["bar1"], ["bar2"]]
+        assert cache.smembers("aspop_foo") in [{"bar1"}, {"bar2"}]
+
+    @pytest.mark.asyncio
+    async def test_asrandmember(self, cache: KeyValueCache):
+        cache.sadd("asrand_foo", "bar1", "bar2")
+        assert await cache.asrandmember("asrand_foo", 1) in [["bar1"], ["bar2"]]
+
+
+class TestAsyncSScanMatch:
+    """Coverage for the match-pattern path on asscan / asscan_iter."""
+
+    @pytest.mark.asyncio
+    async def test_asscan_with_match(self):
+        # SSCAN match operates on raw bytes, not deserialized values.
+        # Since values are serialized, match patterns won't work for strings.
+        pytest.skip("SSCAN match doesn't work with serialized values")
+
+    @pytest.mark.asyncio
+    async def test_asscan_iter_with_match(self):
+        pytest.skip("SSCAN match doesn't work with serialized values")

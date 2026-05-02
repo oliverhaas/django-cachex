@@ -30,10 +30,12 @@ from tests.fixtures import (
 # fan-out limitations the Rust driver doesn't share).
 _RUST_RAW_CLIENT_PROBE_NODES: tuple[str, ...] = (
     "tests/cache/test_cache_hashes.py::TestHashKeyPrefixing::test_key_prefixed_but_fields_raw",
+    "tests/cache/test_cache_hashes_async.py::TestAsyncHashKeyPrefixing::test_akey_prefixed_but_fields_raw",
     "tests/cache/test_cache_options.py::test_custom_key_function",
     "tests/cache/test_cache_misc.py::TestScanOperations::test_scan_returns_keys",
     "tests/cache/test_cache_misc.py::TestScanOperations::test_scan_empty",
     "tests/cache/test_cache_misc_async.py::TestAsyncScan::test_ascan_returns_keys",
+    "tests/cache/test_cache_misc_async.py::TestAsyncScan::test_ascan_empty",
 )
 
 # Tests that probe redis-py-specific internals (connection pools, parser

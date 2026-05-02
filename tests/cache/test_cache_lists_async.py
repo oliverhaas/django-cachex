@@ -289,3 +289,55 @@ class TestAsyncVersionSrcDst:
         assert result == "a"
         assert cache.lrange("{vs}:ablsrc", 0, -1, version=1) == ["b"]
         assert cache.lrange("{vs}:abldst", 0, -1, version=2) == ["x", "a"]
+
+
+class TestAsyncListSerialization:
+    """Tests for serialization of complex values into list operations."""
+
+    @pytest.mark.asyncio
+    async def test_alist_with_complex_values(self, cache: KeyValueCache):
+        await cache.arpush("amylist15", {"name": "Alice"}, {"name": "Bob"})
+
+        result = cache.lrange("amylist15", 0, -1)
+        assert result == [{"name": "Alice"}, {"name": "Bob"}]
+
+        popped = await cache.alpop("amylist15")
+        assert popped == {"name": "Alice"}
+
+
+class TestAsyncListVersioning:
+    """Tests for version parameter on async list operations."""
+
+    @pytest.mark.asyncio
+    async def test_alist_version_support(self, cache: KeyValueCache):
+        await cache.arpush("amylist", "v1_a", "v1_b", version=1)
+        await cache.arpush("amylist", "v2_a", version=2)
+
+        assert cache.llen("amylist", version=1) == 2
+        assert cache.llen("amylist", version=2) == 1
+
+        assert cache.lrange("amylist", 0, -1, version=1) == ["v1_a", "v1_b"]
+        assert cache.lrange("amylist", 0, -1, version=2) == ["v2_a"]
+
+
+class TestAsyncBlockingPopExtra:
+    """Additional ablpop coverage."""
+
+    @pytest.mark.asyncio
+    async def test_ablpop_multiple_keys(self, cache: KeyValueCache):
+        cache.rpush("{ablpop}list2", "x", "y")
+
+        result = await cache.ablpop(["{ablpop}list1", "{ablpop}list2"], timeout=1)
+        assert result is not None
+        key, value = result
+        assert "{ablpop}list2" in key
+        assert value == "x"
+
+    @pytest.mark.asyncio
+    async def test_ablpop_with_complex_values(self, cache: KeyValueCache):
+        cache.rpush("ablpop_complex", {"name": "Alice"}, {"name": "Bob"})
+
+        result = await cache.ablpop("ablpop_complex", timeout=1)
+        assert result is not None
+        _key, value = result
+        assert value == {"name": "Alice"}

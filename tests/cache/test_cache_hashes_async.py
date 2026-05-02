@@ -173,3 +173,51 @@ class TestAsyncHashIncrementOperations:
     async def test_ahincrbyfloat_creates_field_if_missing(self, cache: KeyValueCache):
         result = await cache.ahincrbyfloat("anew_metrics", "rate", 2.718)
         assert abs(result - 2.718) < 0.001
+
+
+class TestAsyncHashVersionSupport:
+    """Tests for version parameter on async hash operations."""
+
+    @pytest.mark.asyncio
+    async def test_adifferent_versions_are_independent(self, cache: KeyValueCache):
+        await cache.ahset("adata", "key", "value_v1", version=1)
+        await cache.ahset("adata", "other", "other_v1", version=1)
+        await cache.ahset("adata", "key", "value_v2", version=2)
+
+        assert await cache.ahexists("adata", "key", version=1)
+        assert await cache.ahexists("adata", "other", version=1)
+        assert await cache.ahexists("adata", "key", version=2)
+        assert not await cache.ahexists("adata", "other", version=2)
+
+        assert await cache.ahlen("adata", version=1) == 2
+        assert await cache.ahlen("adata", version=2) == 1
+
+        keys_v1 = await cache.ahkeys("adata", version=1)
+        assert set(keys_v1) == {"key", "other"}
+
+        keys_v2 = await cache.ahkeys("adata", version=2)
+        assert keys_v2 == ["key"]
+
+        await cache.ahdel("adata", "key", version=1)
+        assert not await cache.ahexists("adata", "key", version=1)
+        assert await cache.ahexists("adata", "key", version=2)
+
+
+class TestAsyncHashKeyPrefixing:
+    """Tests verifying async hash keys use prefixes but fields do not."""
+
+    @pytest.mark.asyncio
+    async def test_akey_prefixed_but_fields_raw(self, cache: KeyValueCache):
+        client = cache.get_client(write=False)
+
+        await cache.ahset("aaccount:500", "balance", 1000.00, version=2)
+        await cache.ahset("aaccount:500", "currency", "USD", version=2)
+
+        prefixed_key = cache.make_key("aaccount:500", version=2)
+
+        assert client.exists(prefixed_key)
+        assert client.type(prefixed_key) == b"hash"
+
+        raw_fields = client.hkeys(prefixed_key)
+        assert b"balance" in raw_fields
+        assert b"currency" in raw_fields

@@ -1,6 +1,8 @@
 """Tests for async timeout and TTL operations."""
 
+import asyncio
 import datetime
+import time
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
@@ -8,6 +10,209 @@ import pytest
 
 if TYPE_CHECKING:
     from django_cachex.cache import KeyValueCache
+
+
+class TestAsyncSetWithTimeout:
+    """Tests for aset() with timeout parameter."""
+
+    @pytest.mark.asyncio
+    async def test_aset_nx_with_expiration(self, cache: KeyValueCache):
+        await cache.adelete("aexpiring_nx")
+        result = await cache.aset("aexpiring_nx", "temporary", timeout=2, nx=True)
+        assert result is True
+        await asyncio.sleep(3)
+        assert await cache.aget("aexpiring_nx") is None
+
+    @pytest.mark.asyncio
+    async def test_aset_nx_does_not_change_existing_ttl(self, cache: KeyValueCache):
+        await cache.aset("aexisting_ttl", "original")
+        await cache.aset("aexisting_ttl", "new_value", timeout=2, nx=True)
+        await asyncio.sleep(3)
+        assert await cache.aget("aexisting_ttl") == "original"
+
+    @pytest.mark.asyncio
+    async def test_akey_expires_after_timeout(self, cache: KeyValueCache):
+        await cache.aset("aexpires_soon", "temp_data", timeout=3)
+        await asyncio.sleep(4)
+        assert await cache.aget("aexpires_soon") is None
+
+    @pytest.mark.asyncio
+    async def test_azero_timeout_immediate_expiration(self, cache: KeyValueCache):
+        await cache.aset("ainstant_expire", "gone", timeout=0)
+        assert await cache.aget("ainstant_expire") is None
+
+    @pytest.mark.asyncio
+    async def test_atimeout_as_positional_arg(self, cache: KeyValueCache):
+        await cache.aset("apos_timeout", 999, -1)
+        assert await cache.aget("apos_timeout") is None
+
+        await cache.aset("apos_timeout2", 888, 1)
+        assert await cache.aget("apos_timeout2") == 888
+        await asyncio.sleep(2)
+        assert await cache.aget("apos_timeout2") is None
+
+    @pytest.mark.asyncio
+    async def test_atimeout_positional_with_nx(self, cache: KeyValueCache):
+        await cache.aset("anx_pos", "value", None)
+        await cache.aset("anx_pos", "changed", -1, nx=True)
+        assert await cache.aget("anx_pos") == "value"
+
+    @pytest.mark.asyncio
+    async def test_anegative_timeout_deletes_key(self, cache: KeyValueCache):
+        await cache.aset("aneg_timeout", "value", timeout=-1)
+        assert await cache.aget("aneg_timeout") is None
+
+    @pytest.mark.asyncio
+    async def test_anegative_timeout_on_existing_key(self, cache: KeyValueCache):
+        await cache.aset("ato_delete", "value", timeout=None)
+        await cache.aset("ato_delete", "value", timeout=-1)
+        assert await cache.aget("ato_delete") is None
+
+    @pytest.mark.asyncio
+    async def test_anegative_timeout_with_nx_preserves_existing(self, cache: KeyValueCache):
+        await cache.aset("apreserve_me", "original", timeout=None)
+        await cache.aset("apreserve_me", "changed", timeout=-1, nx=True)
+        assert await cache.aget("apreserve_me") == "original"
+
+    @pytest.mark.asyncio
+    async def test_asubsecond_float_timeout_is_accepted(self, cache: KeyValueCache):
+        await cache.aset("atiny_ttl", "value", timeout=0.00001)
+
+
+class TestAsyncTTLNegative:
+    """Tests for the -2 (missing) / -1 (no expiry) TTL conventions on async."""
+
+    @pytest.mark.asyncio
+    async def test_attl_negative_for_deleted_key(self, cache: KeyValueCache):
+        await cache.aset("aalready_gone", "value", timeout=-1)
+        ttl = await cache.attl("aalready_gone")
+        assert ttl is not None and ttl < 0
+
+
+class TestAsyncPTTLEdgeCases:
+    """Tests for apttl() edge cases (fractional / deleted)."""
+
+    @pytest.mark.asyncio
+    async def test_apttl_with_fractional_timeout(self, cache: KeyValueCache):
+        await cache.aset("ahalf_sec", "data", 5.5)
+        pttl = await cache.apttl("ahalf_sec")
+        assert pytest.approx(pttl, 10) == 5500
+
+    @pytest.mark.asyncio
+    async def test_apttl_negative_for_deleted_key(self, cache: KeyValueCache):
+        await cache.aset("apttl_expired", "data", timeout=-1)
+        pttl = await cache.apttl("apttl_expired")
+        assert pttl is not None and pttl < 0
+
+
+class TestAsyncExpireTimeFlow:
+    """Tests for aexpiretime() observing aexpire_at()."""
+
+    @pytest.mark.asyncio
+    async def test_aexpiretime_after_expire_at(self, cache: KeyValueCache):
+        await cache.aset("aet_at", "data", timeout=None)
+        target = int(time.time()) + 7200
+        await cache.aexpire_at("aet_at", target)
+        result = await cache.aexpiretime("aet_at")
+        assert result is not None
+        assert abs(result - target) < 2
+
+
+class TestAsyncExpireDefaults:
+    """Tests for aexpire() against the cache's default timeout."""
+
+    @pytest.mark.asyncio
+    async def test_aexpire_with_cache_default_timeout(self, cache: KeyValueCache):
+        await cache.aset("adefault_exp", "data", timeout=None)
+        assert await cache.aexpire("adefault_exp", 300) is True
+        assert await cache.aexpire("ano_such_key", 300) is False
+
+
+class TestAsyncPExpireDefaults:
+    """Tests for apexpire() with millisecond input."""
+
+    @pytest.mark.asyncio
+    async def test_apexpire_with_millisecond_timeout(self, cache: KeyValueCache):
+        await cache.aset("apexp_default", "data", timeout=None)
+        assert await cache.apexpire("apexp_default", 300000) is True
+        assert await cache.apexpire("apexp_no_key", 300000) is False
+
+
+class TestAsyncExpireAtPast:
+    """Tests for aexpire_at() with past timestamps and timestamp argument."""
+
+    @pytest.mark.asyncio
+    async def test_aexpire_at_with_timestamp(self, cache: KeyValueCache):
+        await cache.aset("aexp_at_ts", "data", timeout=None)
+        future = datetime.datetime.now() + timedelta(hours=2)
+        assert await cache.aexpire_at("aexp_at_ts", int(future.timestamp())) is True
+        ttl = await cache.attl("aexp_at_ts")
+        assert pytest.approx(ttl, 1) == timedelta(hours=1).total_seconds() * 2
+
+    @pytest.mark.asyncio
+    async def test_aexpire_at_past_time_deletes_key(self, cache: KeyValueCache):
+        await cache.aset("aexp_at_past", "data", timeout=None)
+        past = datetime.datetime.now() - timedelta(hours=2)
+        assert await cache.aexpire_at("aexp_at_past", past) is True
+        assert await cache.aget("aexp_at_past") is None
+
+
+class TestAsyncPExpireAtPast:
+    """Tests for apexpire_at() with past timestamps."""
+
+    @pytest.mark.asyncio
+    async def test_apexpire_at_past_time_deletes_key(self, cache: KeyValueCache):
+        await cache.aset("apexp_at_past", "data", timeout=None)
+        past = datetime.datetime.now() - timedelta(hours=2)
+        assert await cache.apexpire_at("apexp_at_past", past) is True
+        assert await cache.aget("apexp_at_past") is None
+
+
+class TestAsyncTouchOperation:
+    """Tests for atouch() with various timeout values."""
+
+    @pytest.mark.asyncio
+    async def test_atouch_with_zero_timeout_deletes(self, cache: KeyValueCache):
+        await cache.aset("atouch_zero", "data", timeout=10)
+        assert await cache.atouch("atouch_zero", 0) is True
+        assert await cache.aget("atouch_zero") is None
+
+    @pytest.mark.asyncio
+    async def test_atouch_resets_expiration(self, cache: KeyValueCache):
+        await cache.aset("atouch_reset", "data", timeout=10)
+        assert await cache.atouch("atouch_reset", 2) is True
+        assert await cache.aget("atouch_reset") == "data"
+        await asyncio.sleep(3)
+        assert await cache.aget("atouch_reset") is None
+
+    @pytest.mark.asyncio
+    async def test_atouch_negative_timeout_deletes(self, cache: KeyValueCache):
+        await cache.aset("atouch_neg", "data", timeout=10)
+        assert await cache.atouch("atouch_neg", -1) is True
+        assert await cache.aget("atouch_neg") is None
+
+    @pytest.mark.asyncio
+    async def test_atouch_missing_key_returns_false(self, cache: KeyValueCache):
+        assert await cache.atouch("atouch_ghost", 1) is False
+
+    @pytest.mark.asyncio
+    async def test_atouch_none_makes_persistent(self, cache: KeyValueCache):
+        await cache.aset("atouch_persist", "data", timeout=1)
+        assert await cache.atouch("atouch_persist", None) is True
+        assert await cache.attl("atouch_persist") is None
+        await asyncio.sleep(2)
+        assert await cache.aget("atouch_persist") == "data"
+
+    @pytest.mark.asyncio
+    async def test_atouch_none_on_missing_key_returns_false(self, cache: KeyValueCache):
+        assert await cache.atouch("atouch_persist_ghost", None) is False
+
+    @pytest.mark.asyncio
+    async def test_atouch_without_timeout_uses_default(self, cache: KeyValueCache):
+        await cache.aset("atouch_default", "data", timeout=1)
+        assert await cache.atouch("atouch_default") is True
+        await asyncio.sleep(2)
+        assert await cache.aget("atouch_default") == "data"
 
 
 class TestAsyncTTL:

@@ -1,11 +1,59 @@
 """Tests for async key operations: akeys, aiter_keys, adelete_pattern, arename, arenamenx."""
 
+from contextlib import suppress
 from typing import TYPE_CHECKING
 
 import pytest
+from django.core.cache import caches
+from django.test import override_settings
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from django_cachex.cache import KeyValueCache
+    from tests.settings_wrapper import SettingsWrapper
+
+
+@pytest.fixture
+def patch_itersize_setting() -> Iterable[None]:
+    with suppress(AttributeError):
+        del caches["default"]
+    with override_settings(DJANGO_REDIS_SCAN_ITERSIZE=30):
+        yield
+    with suppress(AttributeError):
+        del caches["default"]
+
+
+class TestAsyncVersionOperations:
+    @pytest.mark.asyncio
+    async def test_aversion(self, cache: KeyValueCache):
+        await cache.aset("akeytest", 2, version=2)
+        res = await cache.aget("akeytest")
+        assert res is None
+
+        res = await cache.aget("akeytest", version=2)
+        assert res == 2
+
+    @pytest.mark.asyncio
+    async def test_aincr_version(self, cache: KeyValueCache):
+        await cache.aset("{akeytest}", 2)
+        await cache.aincr_version("{akeytest}")
+
+        res = await cache.aget("{akeytest}")
+        assert res is None
+
+        res = await cache.aget("{akeytest}", version=2)
+        assert res == 2
+
+    @pytest.mark.asyncio
+    async def test_attl_aincr_version_no_timeout(self, cache: KeyValueCache):
+        await cache.aset("{amy_key}", "hello world!", timeout=None)
+
+        await cache.aincr_version("{amy_key}")
+
+        my_value = await cache.aget("{amy_key}", version=2)
+
+        assert my_value == "hello world!"
 
 
 class TestAsyncKeys:
@@ -133,3 +181,72 @@ class TestAsyncVersionSrcDst:
         assert result is True
         assert cache.get("{vs}:arnxsrc", version=1) is None
         assert cache.get("{vs}:arnxdst", version=2) == "value"
+
+
+class TestAsyncRenameTTL:
+    """Tests covering TTL preservation across arename()."""
+
+    @pytest.mark.asyncio
+    async def test_arename_preserves_ttl(self, cache: KeyValueCache):
+        await cache.aset("{aslotttl}:key", "value", timeout=3600)
+        await cache.arename("{aslotttl}:key", "{aslotttl}:dest")
+
+        ttl = await cache.attl("{aslotttl}:dest")
+        assert ttl is not None
+        assert ttl > 3500
+
+
+class TestAsyncDeletePatternExtra:
+    """Coverage for itersize / SCAN-count knobs on adelete_pattern."""
+
+    @pytest.mark.asyncio
+    async def test_adelete_pattern_with_custom_count(self, cache: KeyValueCache):
+        for key in ["afoo-aa", "afoo-ab", "afoo-bb", "afoo-bc"]:
+            cache.set(key, "foo")
+
+        res = await cache.adelete_pattern("*afoo-a*", itersize=2)
+        assert bool(res) is True
+
+        keys = cache.keys("afoo*")
+        assert set(keys) == {"afoo-bb", "afoo-bc"}
+
+    @pytest.mark.asyncio
+    async def test_adelete_pattern_with_settings_default_scan_count(
+        self,
+        patch_itersize_setting,
+        cache: KeyValueCache,
+        settings: SettingsWrapper,
+    ):
+        for key in ["asfoo-aa", "asfoo-ab", "asfoo-bb", "asfoo-bc"]:
+            cache.set(key, "foo")
+
+        assert settings.DJANGO_REDIS_SCAN_ITERSIZE == 30
+
+        res = await cache.adelete_pattern("*asfoo-a*")
+        assert bool(res) is True
+
+        keys = cache.keys("asfoo*")
+        assert set(keys) == {"asfoo-bb", "asfoo-bc"}
+
+
+class TestAsyncIterKeysExtra:
+    """Coverage for the async iter_keys generator surface."""
+
+    @pytest.mark.asyncio
+    async def test_aiter_keys_itersize(self, cache: KeyValueCache):
+        cache.set("aiks_foo1", 1)
+        cache.set("aiks_foo2", 1)
+        cache.set("aiks_foo3", 1)
+
+        result = [key async for key in cache.aiter_keys("aiks_foo*", itersize=2)]
+        assert len(result) == 3
+
+    @pytest.mark.asyncio
+    async def test_aiter_keys_async_generator(self, cache: KeyValueCache):
+        cache.set("aikgen_foo1", 1)
+        cache.set("aikgen_foo2", 1)
+        cache.set("aikgen_foo3", 1)
+
+        result = cache.aiter_keys("aikgen_foo*")
+        next_value = await anext(result)
+        assert next_value is not None
