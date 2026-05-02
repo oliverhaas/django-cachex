@@ -24,7 +24,7 @@
 - **Free-threaded CPython (3.14t) support.** A cp314t wheel is built; `_driver` works with the GIL disabled. The Rust driver also runs on the free-threaded build.
 - **PyPI wheels via cibuildwheel.** Manylinux x86_64 wheels for cp314 and cp314t.
 - **Async pool sharing.** A single async connection pool is shared across per-task `Cache` instances (#83), avoiding the thundering-herd reconnect on cold start.
-- **Pipeline parity.** Stream ops, CAS ops, missing key ops (`persist`/`pttl`/`expire_at`/etc.), context manager, `zpopmin`/`zpopmax` default `count=1` aligned with the cache API.
+- **Pipeline parity.** Stream ops, CAS ops, missing key ops (`persist`/`pttl`/`expireat`/etc.), context manager, `zpopmin`/`zpopmax` default `count=1` aligned with the cache API.
 - **Compressors gain a uniform `level=` parameter** (gzip, lz4, zstd join zlib/lzma in exposing it). Defaults match each library's own default.
 - **Serializer/compressor wrappers consolidated.** Subclasses now implement `_dumps`/`_loads` (serializers) or `_compress`/`_decompress` (compressors); the base classes wrap the boilerplate (`SerializerError` / `CompressorError` translation, int-passthrough on loads).
 

@@ -148,10 +148,10 @@ class TestExpireTimeOperation:
         result = cache.expiretime("et_missing")
         assert result is not None and result < 0
 
-    def test_expiretime_after_expire_at(self, cache: KeyValueCache):
+    def test_expiretime_after_expireat(self, cache: KeyValueCache):
         cache.set("et_at", "data", timeout=None)
         target = int(time.time()) + 7200
-        cache.expire_at("et_at", target)
+        cache.expireat("et_at", target)
         result = cache.expiretime("et_at")
         assert result is not None
         assert abs(result - target) < 2
@@ -208,59 +208,59 @@ class TestPExpireOperation:
 
 
 class TestPExpireAtOperation:
-    """Tests for pexpire_at() method."""
+    """Tests for pexpireat() method."""
 
-    def test_pexpire_at_with_datetime(self, cache: KeyValueCache):
+    def test_pexpireat_with_datetime(self, cache: KeyValueCache):
         cache.set("pexp_at_dt", "data", timeout=None)
         future = datetime.datetime.now() + timedelta(hours=1)
-        assert cache.pexpire_at("pexp_at_dt", future) is True
+        assert cache.pexpireat("pexp_at_dt", future) is True
         pttl = cache.pttl("pexp_at_dt")
         assert pytest.approx(pttl, 10) == timedelta(hours=1).total_seconds()
 
-    def test_pexpire_at_with_timestamp(self, cache: KeyValueCache):
+    def test_pexpireat_with_timestamp(self, cache: KeyValueCache):
         cache.set("pexp_at_ts", "data", timeout=None)
         future = datetime.datetime.now() + timedelta(hours=2)
-        assert cache.pexpire_at("pexp_at_ts", int(future.timestamp() * 1000)) is True
+        assert cache.pexpireat("pexp_at_ts", int(future.timestamp() * 1000)) is True
         pttl = cache.pttl("pexp_at_ts")
         assert pytest.approx(pttl, 10) == timedelta(hours=2).total_seconds() * 1000
 
-    def test_pexpire_at_past_time_deletes_key(self, cache: KeyValueCache):
+    def test_pexpireat_past_time_deletes_key(self, cache: KeyValueCache):
         cache.set("pexp_at_past", "data", timeout=None)
         past = datetime.datetime.now() - timedelta(hours=2)
-        assert cache.pexpire_at("pexp_at_past", past) is True
+        assert cache.pexpireat("pexp_at_past", past) is True
         assert cache.get("pexp_at_past") is None
 
-    def test_pexpire_at_missing_key_returns_false(self, cache: KeyValueCache):
+    def test_pexpireat_missing_key_returns_false(self, cache: KeyValueCache):
         future = datetime.datetime.now() + timedelta(hours=2)
-        assert cache.pexpire_at("pexp_at_ghost", future) is False
+        assert cache.pexpireat("pexp_at_ghost", future) is False
 
 
 class TestExpireAtOperation:
-    """Tests for expire_at() method."""
+    """Tests for expireat() method."""
 
-    def test_expire_at_with_datetime(self, cache: KeyValueCache):
+    def test_expireat_with_datetime(self, cache: KeyValueCache):
         cache.set("exp_at_dt", "data", timeout=None)
         future = datetime.datetime.now() + timedelta(hours=1)
-        assert cache.expire_at("exp_at_dt", future) is True
+        assert cache.expireat("exp_at_dt", future) is True
         ttl = cache.ttl("exp_at_dt")
         assert pytest.approx(ttl, 1) == timedelta(hours=1).total_seconds()
 
-    def test_expire_at_with_timestamp(self, cache: KeyValueCache):
+    def test_expireat_with_timestamp(self, cache: KeyValueCache):
         cache.set("exp_at_ts", "data", timeout=None)
         future = datetime.datetime.now() + timedelta(hours=2)
-        assert cache.expire_at("exp_at_ts", int(future.timestamp())) is True
+        assert cache.expireat("exp_at_ts", int(future.timestamp())) is True
         ttl = cache.ttl("exp_at_ts")
         assert pytest.approx(ttl, 1) == timedelta(hours=1).total_seconds() * 2
 
-    def test_expire_at_past_time_deletes_key(self, cache: KeyValueCache):
+    def test_expireat_past_time_deletes_key(self, cache: KeyValueCache):
         cache.set("exp_at_past", "data", timeout=None)
         past = datetime.datetime.now() - timedelta(hours=2)
-        assert cache.expire_at("exp_at_past", past) is True
+        assert cache.expireat("exp_at_past", past) is True
         assert cache.get("exp_at_past") is None
 
-    def test_expire_at_missing_key_returns_false(self, cache: KeyValueCache):
+    def test_expireat_missing_key_returns_false(self, cache: KeyValueCache):
         future = datetime.datetime.now() + timedelta(hours=2)
-        assert cache.expire_at("exp_at_ghost", future) is False
+        assert cache.expireat("exp_at_ghost", future) is False
 
 
 class TestTouchOperation:
@@ -397,13 +397,13 @@ class TestAsyncPTTLEdgeCases:
 
 
 class TestAsyncExpireTimeFlow:
-    """Tests for aexpiretime() observing aexpire_at()."""
+    """Tests for aexpiretime() observing aexpireat()."""
 
     @pytest.mark.asyncio
-    async def test_aexpiretime_after_expire_at(self, cache: KeyValueCache):
+    async def test_aexpiretime_after_expireat(self, cache: KeyValueCache):
         await cache.aset("aet_at", "data", timeout=None)
         target = int(time.time()) + 7200
-        await cache.aexpire_at("aet_at", target)
+        await cache.aexpireat("aet_at", target)
         result = await cache.aexpiretime("aet_at")
         assert result is not None
         assert abs(result - target) < 2
@@ -430,32 +430,32 @@ class TestAsyncPExpireDefaults:
 
 
 class TestAsyncExpireAtPast:
-    """Tests for aexpire_at() with past timestamps and timestamp argument."""
+    """Tests for aexpireat() with past timestamps and timestamp argument."""
 
     @pytest.mark.asyncio
-    async def test_aexpire_at_with_timestamp(self, cache: KeyValueCache):
+    async def test_aexpireat_with_timestamp(self, cache: KeyValueCache):
         await cache.aset("aexp_at_ts", "data", timeout=None)
         future = datetime.datetime.now() + timedelta(hours=2)
-        assert await cache.aexpire_at("aexp_at_ts", int(future.timestamp())) is True
+        assert await cache.aexpireat("aexp_at_ts", int(future.timestamp())) is True
         ttl = await cache.attl("aexp_at_ts")
         assert pytest.approx(ttl, 1) == timedelta(hours=1).total_seconds() * 2
 
     @pytest.mark.asyncio
-    async def test_aexpire_at_past_time_deletes_key(self, cache: KeyValueCache):
+    async def test_aexpireat_past_time_deletes_key(self, cache: KeyValueCache):
         await cache.aset("aexp_at_past", "data", timeout=None)
         past = datetime.datetime.now() - timedelta(hours=2)
-        assert await cache.aexpire_at("aexp_at_past", past) is True
+        assert await cache.aexpireat("aexp_at_past", past) is True
         assert await cache.aget("aexp_at_past") is None
 
 
 class TestAsyncPExpireAtPast:
-    """Tests for apexpire_at() with past timestamps."""
+    """Tests for apexpireat() with past timestamps."""
 
     @pytest.mark.asyncio
-    async def test_apexpire_at_past_time_deletes_key(self, cache: KeyValueCache):
+    async def test_apexpireat_past_time_deletes_key(self, cache: KeyValueCache):
         await cache.aset("apexp_at_past", "data", timeout=None)
         past = datetime.datetime.now() - timedelta(hours=2)
-        assert await cache.apexpire_at("apexp_at_past", past) is True
+        assert await cache.apexpireat("apexp_at_past", past) is True
         assert await cache.aget("apexp_at_past") is None
 
 
@@ -608,49 +608,49 @@ class TestAsyncPExpire:
 
 
 class TestAsyncExpireAt:
-    """Tests for aexpire_at() method."""
+    """Tests for aexpireat() method."""
 
     @pytest.mark.asyncio
-    async def test_aexpire_at_with_datetime(self, cache: KeyValueCache):
+    async def test_aexpireat_with_datetime(self, cache: KeyValueCache):
         cache.set("aexpireat_dt", "data", timeout=None)
         future = datetime.datetime.now() + timedelta(hours=1)
-        result = await cache.aexpire_at("aexpireat_dt", future)
+        result = await cache.aexpireat("aexpireat_dt", future)
         assert result is True
         ttl = cache.ttl("aexpireat_dt")
         assert pytest.approx(ttl, 1) == timedelta(hours=1).total_seconds()
 
     @pytest.mark.asyncio
-    async def test_aexpire_at_missing_key_returns_false(self, cache: KeyValueCache):
+    async def test_aexpireat_missing_key_returns_false(self, cache: KeyValueCache):
         future = datetime.datetime.now() + timedelta(hours=1)
-        result = await cache.aexpire_at("aexpireat_ghost", future)
+        result = await cache.aexpireat("aexpireat_ghost", future)
         assert result is False
 
 
 class TestAsyncPExpireAt:
-    """Tests for apexpire_at() method."""
+    """Tests for apexpireat() method."""
 
     @pytest.mark.asyncio
-    async def test_apexpire_at_with_datetime(self, cache: KeyValueCache):
+    async def test_apexpireat_with_datetime(self, cache: KeyValueCache):
         cache.set("apexpireat_dt", "data", timeout=None)
         future = datetime.datetime.now() + timedelta(hours=1)
-        result = await cache.apexpire_at("apexpireat_dt", future)
+        result = await cache.apexpireat("apexpireat_dt", future)
         assert result is True
         pttl = cache.pttl("apexpireat_dt")
         assert pytest.approx(pttl, 10) == timedelta(hours=1).total_seconds() * 1000
 
     @pytest.mark.asyncio
-    async def test_apexpire_at_with_timestamp(self, cache: KeyValueCache):
+    async def test_apexpireat_with_timestamp(self, cache: KeyValueCache):
         cache.set("apexpireat_ts", "data", timeout=None)
         future = datetime.datetime.now() + timedelta(hours=2)
-        result = await cache.apexpire_at("apexpireat_ts", int(future.timestamp() * 1000))
+        result = await cache.apexpireat("apexpireat_ts", int(future.timestamp() * 1000))
         assert result is True
         pttl = cache.pttl("apexpireat_ts")
         assert pytest.approx(pttl, 10) == timedelta(hours=2).total_seconds() * 1000
 
     @pytest.mark.asyncio
-    async def test_apexpire_at_missing_key_returns_false(self, cache: KeyValueCache):
+    async def test_apexpireat_missing_key_returns_false(self, cache: KeyValueCache):
         future = datetime.datetime.now() + timedelta(hours=2)
-        result = await cache.apexpire_at("apexpireat_ghost", future)
+        result = await cache.apexpireat("apexpireat_ghost", future)
         assert result is False
 
 

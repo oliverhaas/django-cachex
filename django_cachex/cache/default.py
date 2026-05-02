@@ -527,7 +527,7 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return await self._cache.aexpire(key, timeout)
 
-    def expire_at(
+    def expireat(
         self,
         key: KeyT,
         when: AbsExpiryT,
@@ -537,7 +537,7 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return self._cache.expireat(key, when)
 
-    async def aexpire_at(
+    async def aexpireat(
         self,
         key: KeyT,
         when: AbsExpiryT,
@@ -567,7 +567,7 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return await self._cache.apexpire(key, timeout)
 
-    def pexpire_at(
+    def pexpireat(
         self,
         key: KeyT,
         when: AbsExpiryT,
@@ -577,7 +577,7 @@ class KeyValueCache(BaseCache):
         key = self.make_and_validate_key(key, version=version)
         return self._cache.pexpireat(key, when)
 
-    async def apexpire_at(
+    async def apexpireat(
         self,
         key: KeyT,
         when: AbsExpiryT,

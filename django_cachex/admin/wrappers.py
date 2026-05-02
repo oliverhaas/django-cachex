@@ -64,17 +64,17 @@ class BaseCacheExtensions:
         """Set expiry time on a key."""
         raise NotSupportedError("expire", self.__class__.__name__)
 
-    def expire_at(self, key: KeyT, when: AbsExpiryT, version: int | None = None) -> bool:
+    def expireat(self, key: KeyT, when: AbsExpiryT, version: int | None = None) -> bool:
         """Set expiry to an absolute time."""
-        raise NotSupportedError("expire_at", self.__class__.__name__)
+        raise NotSupportedError("expireat", self.__class__.__name__)
 
     def pexpire(self, key: KeyT, timeout: ExpiryT, version: int | None = None) -> bool:
         """Set expiry time in milliseconds."""
         raise NotSupportedError("pexpire", self.__class__.__name__)
 
-    def pexpire_at(self, key: KeyT, when: AbsExpiryT, version: int | None = None) -> bool:
+    def pexpireat(self, key: KeyT, when: AbsExpiryT, version: int | None = None) -> bool:
         """Set expiry to an absolute time in milliseconds."""
-        raise NotSupportedError("pexpire_at", self.__class__.__name__)
+        raise NotSupportedError("pexpireat", self.__class__.__name__)
 
     # =========================================================================
     # Key Operations

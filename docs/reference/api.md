@@ -35,8 +35,8 @@ django-cachex adds these extended methods:
 | `pttl(key)` | Get TTL in milliseconds (`None` = no expiry, `-2` = not found) |
 | `expire(key, timeout)` | Set expiration in seconds |
 | `pexpire(key, timeout)` | Set expiration in milliseconds |
-| `expire_at(key, when)` | Set expiration at datetime |
-| `pexpire_at(key, when)` | Set expiration at datetime (ms precision) |
+| `expireat(key, when)` | Set expiration at datetime |
+| `pexpireat(key, when)` | Set expiration at datetime (ms precision) |
 | `persist(key)` | Remove expiration |
 | `type(key)` | Get the data type of a key |
 | `lock(key, ...)` | Get a distributed lock |
@@ -231,8 +231,6 @@ await cache._cache.ahset(key, "field", "value")
 - `azadd`, `azcard`, `azcount`, `azincrby`, `azrange`, `azrevrange`, `azrangebyscore`, `azrevrangebyscore`, `azrank`, `azrevrank`, `azrem`, `azremrangebyrank`, `azremrangebyscore`, `azscore`, `azmscore`, `azpopmin`, `azpopmax`
 - `allen`, `alpush`, `arpush`, `alpop`, `arpop`, `alindex`, `alrange`, `alset`, `altrim`, `alrem`, `alpos`, `almove`, `alinsert`, `ablpop`, `abrpop`, `ablmove`
 - `asscan`, `asscan_iter`
-
-The cache object also exposes `aexpire_at` / `apexpire_at` (with underscore) as ergonomic aliases for the client's `aexpireat` / `apexpireat`.
 
 ## Raw Client Access
 

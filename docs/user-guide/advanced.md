@@ -65,7 +65,7 @@ cache.pttl("foo")  # Returns 5500
 from datetime import datetime, timedelta
 
 cache.set("foo", "bar", timeout=22)
-cache.expire_at("foo", datetime.now() + timedelta(hours=1))
+cache.expireat("foo", datetime.now() + timedelta(hours=1))
 cache.ttl("foo")  # Returns ~3600
 ```
 
@@ -73,7 +73,7 @@ cache.ttl("foo")  # Returns ~3600
 
 ```python
 cache.set("foo", "bar", timeout=22)
-cache.pexpire_at("foo", datetime.now() + timedelta(milliseconds=900, hours=1))
+cache.pexpireat("foo", datetime.now() + timedelta(milliseconds=900, hours=1))
 cache.pttl("foo")  # Returns ~3600900
 ```
 

@@ -316,7 +316,7 @@ class Pipeline:
         self._decoders.append(self._noop)
         return self
 
-    def expire_at(
+    def expireat(
         self,
         key: KeyT,
         when: AbsExpiryT,
@@ -340,7 +340,7 @@ class Pipeline:
         self._decoders.append(bool)
         return self
 
-    def pexpire_at(
+    def pexpireat(
         self,
         key: KeyT,
         when: AbsExpiryT,
