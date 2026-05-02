@@ -18,7 +18,7 @@ A drop-in replacement for Django's built-in Redis cache, plus:
 - Lua scripting with automatic key prefixing and value encoding/decoding.
 - Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with fallback chains for safe migrations.
 - Cache stampede prevention (TTL-based XFetch).
-- Two composite backends: `SyncCache` (cross-pod stream-synchronized in-memory cache) and `TieredCache` (L1/L2 with TTL propagation).
+- Two composite backends: `StreamCache` (cross-pod stream-synchronized in-memory cache) and `TieredCache` (L1/L2 with TTL propagation).
 - Django `LocMemCache` and `DatabaseCache` extensions with the same data-structure ops and admin support.
 - Optional Rust I/O driver (PyO3 + tokio + redis-rs) behind the same `KeyValueCache` API. Free-threaded CPython (3.14t) supported.
 - Django admin UI for browsing keys, inspecting values, editing, and flushing.

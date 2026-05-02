@@ -145,16 +145,16 @@ CACHES = {
     # Uses a dedicated transport for stream I/O and atomic operations.
     # -------------------------------------------------------------------------
     "sync": {
-        "BACKEND": "django_cachex.cache.SyncCache",
+        "BACKEND": "django_cachex.cache.StreamCache",
         "OPTIONS": {
-            "TRANSPORT": "sync_transport",
+            "TRANSPORT": "stream_transport",
             "STREAM_KEY": "cache:sync",
             "MAXLEN": 10000,
             "BLOCK_TIMEOUT": 1000,
         },
     },
-    # Dedicated transport for SyncCache (same Redis server, separate db)
-    "sync_transport": {
+    # Dedicated transport for StreamCache (same Redis server, separate db)
+    "stream_transport": {
         "BACKEND": "django_cachex.cache.RedisCache",
         "LOCATION": "redis://127.0.0.1:6380/2",
         "KEY_PREFIX": "sync",

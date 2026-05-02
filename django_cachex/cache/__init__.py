@@ -29,7 +29,7 @@ from django_cachex.cache.sentinel import (
     RedisSentinelCache,
     ValkeySentinelCache,
 )
-from django_cachex.cache.sync import SyncCache
+from django_cachex.cache.stream import StreamCache
 from django_cachex.cache.tiered import TieredCache
 
 __all__ = [
@@ -48,7 +48,7 @@ __all__ = [
     "RustValkeyCache",
     "RustValkeyClusterCache",
     "RustValkeySentinelCache",
-    "SyncCache",
+    "StreamCache",
     "TieredCache",
     "ValkeyCache",
     "ValkeyClusterCache",

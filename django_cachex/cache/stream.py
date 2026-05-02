@@ -16,7 +16,7 @@ Configuration::
             "LOCATION": "redis://127.0.0.1:6379/0",
         },
         "default": {
-            "BACKEND": "django_cachex.cache.SyncCache",
+            "BACKEND": "django_cachex.cache.StreamCache",
             "OPTIONS": {
                 "TRANSPORT": "redis",
                 "STREAM_KEY": "cache:sync",
@@ -72,7 +72,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class SyncCache(LocMemCache):
+class StreamCache(LocMemCache):
     """Stream-synchronized in-memory cache.
 
     Extends Django's ``LocMemCache`` with cross-pod synchronization. Reads are
@@ -111,7 +111,7 @@ class SyncCache(LocMemCache):
 
         self._transport_alias: str = options.get("TRANSPORT", "")
         if not self._transport_alias:
-            msg = "SyncCache requires OPTIONS['TRANSPORT'] with a cache alias for stream transport."
+            msg = "StreamCache requires OPTIONS['TRANSPORT'] with a cache alias for stream transport."
             raise ImproperlyConfigured(msg)
 
         self._stream_key: str = options.get("STREAM_KEY", "cache:sync")
@@ -212,7 +212,7 @@ class SyncCache(LocMemCache):
             )
         except Exception:  # noqa: BLE001
             logger.warning(
-                "SyncCache: Failed to publish %s to stream",
+                "StreamCache: Failed to publish %s to stream",
                 fields.get("op", "?"),
                 exc_info=True,
             )
@@ -237,7 +237,7 @@ class SyncCache(LocMemCache):
                 return
             if self._initialized and not self._consumer_alive():
                 logger.warning(
-                    "SyncCache: Consumer thread died, restarting (stream=%s)",
+                    "StreamCache: Consumer thread died, restarting (stream=%s)",
                     self._stream_key,
                 )
             self._start_consumer()
@@ -275,12 +275,12 @@ class SyncCache(LocMemCache):
                     self._apply_message(fields)
                     self._last_id = entry_id
             logger.info(
-                "SyncCache: Replayed %d entries from stream %s",
+                "StreamCache: Replayed %d entries from stream %s",
                 len(entries),
                 self._stream_key,
             )
         except Exception:  # noqa: BLE001
-            logger.warning("SyncCache: stream replay failed", exc_info=True)
+            logger.warning("StreamCache: stream replay failed", exc_info=True)
 
     def _consumer_loop(self) -> None:
         while not self._stop_event.is_set():
@@ -303,14 +303,14 @@ class SyncCache(LocMemCache):
                                 self._apply_message(fields)
                             except Exception:  # noqa: BLE001
                                 logger.warning(
-                                    "SyncCache: Failed to apply message %s, skipping",
+                                    "StreamCache: Failed to apply message %s, skipping",
                                     self._last_id,
                                     exc_info=True,
                                 )
             except Exception:  # noqa: BLE001
                 if not self._stop_event.is_set():
                     logger.warning(
-                        "SyncCache: Consumer error, retrying in 1s",
+                        "StreamCache: Consumer error, retrying in 1s",
                         exc_info=True,
                     )
                     self._stop_event.wait(1.0)
@@ -434,7 +434,7 @@ class SyncCache(LocMemCache):
         return True
 
     def add(self, key: KeyT, value: Any, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
-        raise NotSupportedError("add", "SyncCache")
+        raise NotSupportedError("add", "StreamCache")
 
     def delete(self, key: KeyT, version: int | None = None) -> bool:
         self._ensure_consumer()
@@ -480,10 +480,10 @@ class SyncCache(LocMemCache):
         return super().has_key(key, version=version)
 
     def incr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
-        raise NotSupportedError("incr", "SyncCache")
+        raise NotSupportedError("incr", "StreamCache")
 
     def decr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
-        raise NotSupportedError("decr", "SyncCache")
+        raise NotSupportedError("decr", "StreamCache")
 
     def get_or_set(
         self,
@@ -599,7 +599,7 @@ class SyncCache(LocMemCache):
         last_read_age = round(now - self._last_read_time, 1) if self._last_read_time else None
         return {
             "server": {
-                "redis_version": f"SyncCache (stream: {self._stream_key})",
+                "redis_version": f"StreamCache (stream: {self._stream_key})",
                 "transport": self._transport_alias,
             },
             "keyspace": {
@@ -663,5 +663,5 @@ class SyncCache(LocMemCache):
 
 
 __all__ = [
-    "SyncCache",
+    "StreamCache",
 ]

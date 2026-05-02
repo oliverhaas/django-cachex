@@ -1,6 +1,6 @@
 """Per-cache-test-suite fixtures.
 
-Backend-specific cache fixtures (TieredCache, SyncCache) live here so they
+Backend-specific cache fixtures (TieredCache, StreamCache) live here so they
 can be shared between sync and async test modules without re-importing
 across files. The general-purpose ``cache`` fixture lives in
 ``tests/conftest.py``.

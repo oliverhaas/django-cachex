@@ -63,7 +63,7 @@ class Cache(models.Model):
         """Get the cache location.
 
         Checks for a ``_cachex_location`` attribute on the cache instance
-        first (used by backends like SyncCache that have no ``LOCATION``
+        first (used by backends like StreamCache that have no ``LOCATION``
         setting), then falls back to the ``LOCATION`` config key.
         """
         cache = self._get_cache()

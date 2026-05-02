@@ -58,7 +58,7 @@ Same wire-level features as the Python driver, dispatched through the optional `
 
 | Backend | Description |
 |---------|-------------|
-| `SyncCache` | In-memory store synchronized across pods via a Redis Stream consumer |
+| `StreamCache` | In-memory store synchronized across pods via a Redis Stream consumer |
 | `TieredCache` | Composes two existing `CACHES` entries as L1/L2 with TTL propagation |
 
 !!! note "Valkey and Redis Compatibility"
