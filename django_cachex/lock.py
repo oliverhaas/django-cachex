@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Self
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from django_cachex._driver import RustValkeyDriver
+    from django_cachex._driver import RedisRsDriver
 
 
 class LockError(Exception):
@@ -36,7 +36,7 @@ class ValkeyLock:
 
     def __init__(
         self,
-        driver: RustValkeyDriver,
+        driver: RedisRsDriver,
         name: str,
         timeout: float | None = None,
         sleep: float = 0.1,

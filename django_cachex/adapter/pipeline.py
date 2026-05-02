@@ -11,7 +11,7 @@ Concrete pipeline adapters (one per driver):
   ``Pipeline`` object. Since those already expose the cachex method
   surface one-for-one (``lpush``/``hset``/``zadd``/...), this adapter is a
   thin ``__getattr__`` forwarder.
-- :class:`~django_cachex.adapter.pipeline_rust.RustValkeyPipelineAdapter` —
+- :class:`~django_cachex.adapter.pipeline_redis_rs.RedisRsValkeyPipelineAdapter` —
   buffers RESP wire commands for the Rust driver's ``pipeline_exec``.
 - :class:`~django_cachex.adapter.glide.ValkeyGlidePipelineAdapter` —
   drives ``valkey-glide``'s ``Batch``.

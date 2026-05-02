@@ -1,8 +1,8 @@
-from django_cachex._driver import RustValkeyDriver
+from django_cachex._driver import RedisRsDriver
 
 
 def test_connect_sentinel_and_round_trip(sentinel_container):
-    driver = RustValkeyDriver.connect_sentinel(
+    driver = RedisRsDriver.connect_sentinel(
         [f"redis://{sentinel_container.host}:{sentinel_container.port}"],
         "mymaster",
         0,
@@ -17,7 +17,7 @@ def test_sentinel_with_no_quorum_fails(sentinel_container):
     import pytest
 
     with pytest.raises(ConnectionError):
-        RustValkeyDriver.connect_sentinel(
+        RedisRsDriver.connect_sentinel(
             [f"redis://{sentinel_container.host}:{sentinel_container.port}"],
             "no-such-service",
             0,

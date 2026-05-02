@@ -9,7 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "django-cachex",
-    "django-cachex-rust",
+    "django-cachex-redis-rs",
 ]
 
 [[package]]
@@ -326,7 +326,7 @@ redis = [
     { name = "redis" },
 ]
 redis-rs = [
-    { name = "django-cachex-rust" },
+    { name = "django-cachex-redis-rs" },
 ]
 valkey = [
     { name = "valkey" },
@@ -339,7 +339,7 @@ valkey-glide = [
 [package.dev-dependencies]
 dev = [
     { name = "beautifulsoup4" },
-    { name = "django-cachex-rust" },
+    { name = "django-cachex-redis-rs" },
     { name = "django-stubs" },
     { name = "djlint" },
     { name = "granian" },
@@ -373,7 +373,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=6,<7" },
-    { name = "django-cachex-rust", marker = "extra == 'redis-rs'", editable = "crates/django-cachex-rust" },
+    { name = "django-cachex-redis-rs", marker = "extra == 'redis-rs'", editable = "crates/django-cachex-redis-rs" },
     { name = "lz4", marker = "extra == 'lz4'", specifier = ">=4.4.0" },
     { name = "msgpack", marker = "extra == 'msgpack'", specifier = ">=1.1.0" },
     { name = "orjson", marker = "extra == 'orjson'", specifier = ">=3.10.0" },
@@ -390,7 +390,7 @@ provides-extras = ["valkey", "libvalkey", "redis", "hiredis", "redis-rs", "valke
 [package.metadata.requires-dev]
 dev = [
     { name = "beautifulsoup4", specifier = "==4.14.3" },
-    { name = "django-cachex-rust", editable = "crates/django-cachex-rust" },
+    { name = "django-cachex-redis-rs", editable = "crates/django-cachex-redis-rs" },
     { name = "django-stubs", specifier = "==6.0.3" },
     { name = "djlint", specifier = "==1.36.4" },
     { name = "granian", specifier = ">=2.6,<3" },
@@ -422,9 +422,9 @@ docs = [
 ]
 
 [[package]]
-name = "django-cachex-rust"
+name = "django-cachex-redis-rs"
 version = "0.3.0"
-source = { editable = "crates/django-cachex-rust" }
+source = { editable = "crates/django-cachex-redis-rs" }
 
 [[package]]
 name = "django-stubs"

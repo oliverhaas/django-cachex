@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 # isn't available; method bodies that reference them only run at runtime
 # after ``_check_installed`` has gated construction, so a missing install
 # raises at backend instantiation time with an actionable message rather
-# than at module import time. Mirrors the pattern in ``_rust_clients``.
+# than at module import time. Mirrors the pattern in ``_redis_rs_clients``.
 try:
     from glide import GlideClient as AsyncGlideClient  # ty: ignore[unresolved-import]
     from glide import GlideClientConfiguration as AsyncGlideClientConfiguration  # ty: ignore[unresolved-import]

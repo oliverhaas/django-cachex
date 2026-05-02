@@ -4,7 +4,7 @@ The basic CRUD / hash / list / set / zset / TTL surface is already covered
 by the parametrized ``cache`` fixture (which runs every test in
 ``test_basic.py`` & friends against ``driver=rust``). This file is
 limited to behavior that's specific to the Rust driver: lazy connection,
-the ``RustValkeyDriver`` raw client object, and regression tests for bugs
+the ``RedisRsDriver`` raw client object, and regression tests for bugs
 that only surfaced in the Rust path.
 """
 
@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 import pytest
 from django.test import override_settings
 
-from django_cachex._rust_clients import _reset_for_tests
+from django_cachex._redis_rs_clients import _reset_for_tests
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -37,7 +37,7 @@ def rust_cache(redis_container: RedisContainerInfo) -> Iterator[KeyValueCache]:
     location = f"redis://{redis_container.host}:{redis_container.port}/0"
     caches = {
         "default": {
-            "BACKEND": "django_cachex.cache.RustValkeyCache",
+            "BACKEND": "django_cachex.cache.RedisRsValkeyCache",
             "LOCATION": location,
             "OPTIONS": {},
         },
@@ -54,10 +54,10 @@ def rust_cache(redis_container: RedisContainerInfo) -> Iterator[KeyValueCache]:
 
 
 def test_get_raw_client_returns_driver(rust_cache):
-    from django_cachex._driver import RustValkeyDriver  # ty: ignore[unresolved-import]
+    from django_cachex._driver import RedisRsDriver  # ty: ignore[unresolved-import]
 
     raw = rust_cache.adapter.get_raw_client()
-    assert isinstance(raw, RustValkeyDriver)
+    assert isinstance(raw, RedisRsDriver)
     raw.set("rawkey", b"rawval")
     assert raw.get("rawkey") == b"rawval"
 
@@ -69,7 +69,7 @@ def test_unreachable_server_does_not_raise_at_construction(redis_container):
     """Driver must connect lazily so IGNORE_EXCEPTIONS-style wrappers can catch errors."""
     caches = {
         "default": {
-            "BACKEND": "django_cachex.cache.RustValkeyCache",
+            "BACKEND": "django_cachex.cache.RedisRsValkeyCache",
             "LOCATION": "redis://127.0.0.1:1/0",
             "OPTIONS": {},
         },

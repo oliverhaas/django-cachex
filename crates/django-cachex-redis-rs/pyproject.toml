@@ -1,5 +1,5 @@
 [project]
-name = "django-cachex-rust"
+name = "django-cachex-redis-rs"
 version = "0.3.0"
 description = "Rust I/O driver (PyO3 + tokio + redis-rs) for django-cachex"
 readme = "README.md"

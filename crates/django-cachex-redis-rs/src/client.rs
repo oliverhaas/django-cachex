@@ -5,7 +5,7 @@
 //
 // The full sync + async command surface (~85 commands × 2 variants) is
 // django-cachex's extension. Each command pair follows the same shape:
-//   * `a<cmd>` — async; returns a `RustAwaitable`. Spawns the operation on the
+//   * `a<cmd>` — async; returns a `RedisRsAwaitable`. Spawns the operation on the
 //     tokio runtime and routes through `RawResult` for type conversion.
 //   * `<cmd>` — sync; releases the GIL and blocks on the runtime,
 //     returning the typed Python value directly.
@@ -13,13 +13,13 @@
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
 
-use crate::async_bridge::{RawResult, RustAwaitable, get_runtime};
+use crate::async_bridge::{RawResult, RedisRsAwaitable, get_runtime};
 use crate::connection::{
     ClientCacheOpts, TlsOpts, ValkeyConn, connect_cluster, connect_sentinel, connect_standard,
 };
 
 #[pyclass]
-pub struct RustValkeyDriver {
+pub struct RedisRsDriver {
     connection: ValkeyConn,
 }
 
@@ -28,12 +28,12 @@ pub struct RustValkeyDriver {
 // =========================================================================
 
 // Async: spawn a tokio task that sends RawResult through a oneshot. The tokio
-// task never touches the GIL — zero Python interaction. RustAwaitable handles
+// task never touches the GIL — zero Python interaction. RedisRsAwaitable handles
 // the asyncio future-blocking protocol.
 macro_rules! async_op {
     ($self:expr, $py:expr, $conn:ident, $body:expr) => {{
         let (tx, rx) = tokio::sync::oneshot::channel();
-        let awaitable = RustAwaitable::new(rx);
+        let awaitable = RedisRsAwaitable::new(rx);
         let mut $conn = $self.connection.clone();
         get_runtime().spawn(async move {
             let result: RawResult = async { $body }.await;
@@ -386,7 +386,7 @@ fn make_tls_opts(
 }
 
 #[pymethods]
-impl RustValkeyDriver {
+impl RedisRsDriver {
     // =====================================================================
     // Connection constructors
     // =====================================================================

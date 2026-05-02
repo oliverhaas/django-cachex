@@ -12,8 +12,8 @@ use pyo3::prelude::*;
 
 #[pymodule]
 fn _driver(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<async_bridge::RustAwaitable>()?;
-    m.add_class::<client::RustValkeyDriver>()?;
+    m.add_class::<async_bridge::RedisRsAwaitable>()?;
+    m.add_class::<client::RedisRsDriver>()?;
     m.add_function(wrap_pyfunction!(test_helpers::_test_resolved_bytes, m)?)?;
     m.add_function(wrap_pyfunction!(test_helpers::_test_resolved_none, m)?)?;
     m.add_function(wrap_pyfunction!(test_helpers::_test_resolved_int, m)?)?;

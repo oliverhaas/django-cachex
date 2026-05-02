@@ -12,7 +12,7 @@ Configuration::
 
     CACHES = {
         "redis": {
-            "BACKEND": "django_cachex.cache.RedisCache",  # or RustValkeyCache, etc.
+            "BACKEND": "django_cachex.cache.RedisCache",  # or RedisRsValkeyCache, etc.
             "LOCATION": "redis://127.0.0.1:6379/0",
         },
         "default": {

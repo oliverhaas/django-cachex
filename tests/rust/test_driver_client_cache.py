@@ -1,13 +1,13 @@
-from django_cachex._driver import RustValkeyDriver
+from django_cachex._driver import RedisRsDriver
 
 
 def test_cache_statistics_disabled_by_default(redis_container):
-    driver = RustValkeyDriver.connect_standard(f"redis://{redis_container.host}:{redis_container.port}/0")
+    driver = RedisRsDriver.connect_standard(f"redis://{redis_container.host}:{redis_container.port}/0")
     assert driver.cache_statistics() is None
 
 
 def test_client_side_cache_records_hits(redis_container):
-    driver = RustValkeyDriver.connect_standard(
+    driver = RedisRsDriver.connect_standard(
         f"redis://{redis_container.host}:{redis_container.port}/0",
         cache_max_size=128,
         cache_ttl_secs=60,
@@ -28,7 +28,7 @@ def test_client_side_cache_records_hits(redis_container):
 
 
 def test_client_side_cache_invalidates_on_write(redis_container):
-    driver = RustValkeyDriver.connect_standard(
+    driver = RedisRsDriver.connect_standard(
         f"redis://{redis_container.host}:{redis_container.port}/0",
         cache_max_size=128,
         cache_ttl_secs=60,
@@ -40,7 +40,7 @@ def test_client_side_cache_invalidates_on_write(redis_container):
     assert driver.get("k") == b"v1"  # hit
 
     # Write the same key from a separate connection (server pushes invalidation).
-    other = RustValkeyDriver.connect_standard(f"redis://{redis_container.host}:{redis_container.port}/0")
+    other = RedisRsDriver.connect_standard(f"redis://{redis_container.host}:{redis_container.port}/0")
     other.set("k", b"v2")
 
     # Read until we observe the new value (gives the invalidation push time to land).

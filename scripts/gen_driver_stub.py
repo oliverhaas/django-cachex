@@ -4,11 +4,11 @@ Run from the repo root:
     python3 scripts/gen_driver_stub.py > django_cachex/_driver.pyi
     uv run ruff format django_cachex/_driver.pyi
 
-We parse the #[pymethods] impl RustValkeyDriver block — for each fn, extract
+We parse the #[pymethods] impl RedisRsDriver block — for each fn, extract
 the pyo3-exposed name (honoring `#[pyo3(name = ...)]` overrides), the rust
 args (skipping self/py), and the return type, then map to Python equivalents.
 Sync methods get concrete types; async methods are typed as Awaitable[T] (the
-driver returns RustAwaitable, which is awaitable).
+driver returns RedisRsAwaitable, which is awaitable).
 """
 
 import re
@@ -17,10 +17,10 @@ from pathlib import Path
 
 CLIENT = Path("src/client.rs").read_text()
 
-# Find the RustValkeyDriver pymethods block
-m = re.search(r"#\[pymethods\]\s*impl\s+RustValkeyDriver\s*\{(.*?)^\}", CLIENT, re.DOTALL | re.MULTILINE)
+# Find the RedisRsDriver pymethods block
+m = re.search(r"#\[pymethods\]\s*impl\s+RedisRsDriver\s*\{(.*?)^\}", CLIENT, re.DOTALL | re.MULTILINE)
 if not m:
-    sys.exit("RustValkeyDriver pymethods block not found")
+    sys.exit("RedisRsDriver pymethods block not found")
 block = m.group(1)
 
 # Match each fn (with optional preceding pyo3 sig + allow attrs)
@@ -147,7 +147,7 @@ def parse_return(rty, fn_name):
     if inner == "Py<PyAny>":
         return "Any" if is_sync else "Awaitable[Any]"
     if inner == "Self":
-        return "RustValkeyDriver"
+        return "RedisRsDriver"
     py = to_py_type(inner)
     if not is_sync:
         # Async return: wrap concrete type in Awaitable
@@ -178,11 +178,11 @@ out = [
     "from collections.abc import Awaitable",
     "from typing import Any",
     "",
-    "class RustAwaitable:",
+    "class RedisRsAwaitable:",
     "    def __await__(self) -> Any: ...",
     "    def cancel(self) -> bool: ...",
     "",
-    "class RustValkeyDriver:",
+    "class RedisRsDriver:",
 ]
 
 CLASSMETHODS = {"connect_standard", "connect_cluster", "connect_sentinel"}
@@ -204,14 +204,14 @@ for fn, args, defaults, ret in methods:
 # Module-level test helper functions (from src/test_helpers.rs)
 out += [
     "",
-    "def _test_resolved_bytes(value: bytes) -> RustAwaitable: ...",
-    "def _test_resolved_none() -> RustAwaitable: ...",
-    "def _test_resolved_int(value: int) -> RustAwaitable: ...",
-    "def _test_delayed_bytes(value: bytes, delay_ms: int) -> RustAwaitable: ...",
-    "def _test_pending() -> RustAwaitable: ...",
-    "def _test_dropped() -> RustAwaitable: ...",
-    "def _test_error(message: str) -> RustAwaitable: ...",
-    "def _test_server_error(message: str) -> RustAwaitable: ...",
+    "def _test_resolved_bytes(value: bytes) -> RedisRsAwaitable: ...",
+    "def _test_resolved_none() -> RedisRsAwaitable: ...",
+    "def _test_resolved_int(value: int) -> RedisRsAwaitable: ...",
+    "def _test_delayed_bytes(value: bytes, delay_ms: int) -> RedisRsAwaitable: ...",
+    "def _test_pending() -> RedisRsAwaitable: ...",
+    "def _test_dropped() -> RedisRsAwaitable: ...",
+    "def _test_error(message: str) -> RedisRsAwaitable: ...",
+    "def _test_server_error(message: str) -> RedisRsAwaitable: ...",
 ]
 
 print("\n".join(out))

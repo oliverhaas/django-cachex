@@ -4,7 +4,7 @@ One driver per (URL, options) tuple, shared across cache instances. PID-checked
 so post-fork children rebuild their own connection pools instead of inheriting
 the parent's tokio runtime / sockets.
 
-The ``_driver`` extension lives in the optional ``django-cachex-rust``
+The ``_driver`` extension lives in the optional ``django-cachex-redis-rs``
 companion package. Importing this module is supported without it — the
 first attempt to construct a driver raises ``ImportError`` with an
 install hint.
@@ -19,22 +19,22 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Callable, Hashable
 
-    from django_cachex._driver import RustValkeyDriver
+    from django_cachex._driver import RedisRsDriver
 
 
-def _get_driver_class() -> type[RustValkeyDriver]:
+def _get_driver_class() -> type[RedisRsDriver]:
     try:
-        from django_cachex._driver import RustValkeyDriver
+        from django_cachex._driver import RedisRsDriver
     except ImportError as e:
         raise ImportError(
             "django-cachex Rust driver is not available. Install with the "
-            "`redis-rs` extra to pull in the django-cachex-rust binary "
+            "`redis-rs` extra to pull in the django-cachex-redis-rs binary "
             "package: pip install django-cachex[redis-rs]. Prebuilt wheels "
             "are published for Linux x86_64 (cp314, cp314t); on other "
             "platforms pip will try to build from source via the Rust "
             "toolchain.",
         ) from e
-    return RustValkeyDriver
+    return RedisRsDriver
 
 
 _CLIENTS: dict[Hashable, Any] = {}
@@ -42,7 +42,7 @@ _PID = os.getpid()
 _LOCK = threading.Lock()
 
 
-def _get_or_create(key: Hashable, factory: Callable[[], RustValkeyDriver]) -> RustValkeyDriver:
+def _get_or_create(key: Hashable, factory: Callable[[], RedisRsDriver]) -> RedisRsDriver:
     # Lock wraps both the PID check and the dict ops so a concurrent fork-detect
     # under free-threaded 3.14t can't race two clears or skip an in-flight insert.
     # `factory()` is a blocking connect(); double-checked locking would let two
@@ -68,7 +68,7 @@ def get_driver_standard(
     ssl_ca_certs: str | None = None,
     ssl_certfile: str | None = None,
     ssl_keyfile: str | None = None,
-) -> RustValkeyDriver:
+) -> RedisRsDriver:
     driver_cls = _get_driver_class()
     key = ("standard", url, cache_max_size, cache_ttl_secs, ssl_ca_certs, ssl_certfile, ssl_keyfile)
     return _get_or_create(
@@ -90,7 +90,7 @@ def get_driver_cluster(
     ssl_ca_certs: str | None = None,
     ssl_certfile: str | None = None,
     ssl_keyfile: str | None = None,
-) -> RustValkeyDriver:
+) -> RedisRsDriver:
     driver_cls = _get_driver_class()
     key = ("cluster", tuple(urls), ssl_ca_certs, ssl_certfile, ssl_keyfile)
     return _get_or_create(
@@ -114,7 +114,7 @@ def get_driver_sentinel(
     ssl_ca_certs: str | None = None,
     ssl_certfile: str | None = None,
     ssl_keyfile: str | None = None,
-) -> RustValkeyDriver:
+) -> RedisRsDriver:
     # Sentinel nodes are equivalent — sort so reordered lists hit the same driver.
     # (Cluster URLs are NOT sorted: node order can affect initial topology probe.)
     driver_cls = _get_driver_class()
