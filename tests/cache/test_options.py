@@ -85,4 +85,6 @@ def test_custom_key_function(cache: KeyValueCache, settings):
         raw_keys = client.keys("*", target_nodes=RedisCluster.PRIMARIES)
     else:
         raw_keys = client.keys("*")
-    assert {k.decode() for k in raw_keys} == {"#1#foo-bc", "#1#foo-bb"}  # type: ignore[union-attr]
+    # redis-py returns bytes; the Rust driver returns str. Normalize.
+    decoded = {k.decode() if isinstance(k, bytes) else k for k in raw_keys}  # type: ignore[union-attr]
+    assert decoded == {"#1#foo-bc", "#1#foo-bb"}

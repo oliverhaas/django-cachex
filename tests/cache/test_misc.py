@@ -11,12 +11,20 @@ if TYPE_CHECKING:
 
 
 class TestScanOperations:
-    def _is_cluster(self, client_class: str, sentinel_mode: str | bool) -> bool:
-        """Check if using a real cluster client (sentinel mode overrides cluster)."""
-        return client_class == "cluster" and not sentinel_mode
+    def _is_py_cluster(self, client_class: str, sentinel_mode: str | bool, driver: str) -> bool:
+        """redis-py cluster can't combine per-node cursors, so SCAN raises.
+        The Rust driver does scan all nodes itself and returns combined keys.
+        """
+        return client_class == "cluster" and not sentinel_mode and driver == "py"
 
-    def test_scan_returns_keys(self, cache: KeyValueCache, client_class: str, sentinel_mode: str | bool):
-        if self._is_cluster(client_class, sentinel_mode):
+    def test_scan_returns_keys(
+        self,
+        cache: KeyValueCache,
+        client_class: str,
+        sentinel_mode: str | bool,
+        driver: str,
+    ):
+        if self._is_py_cluster(client_class, sentinel_mode, driver):
             with pytest.raises(NotSupportedError):
                 cache.scan(pattern="scantest_*")
             return
@@ -32,8 +40,14 @@ class TestScanOperations:
             all_keys.update(keys)
         assert all_keys == {"scantest_a", "scantest_b"}
 
-    def test_scan_empty(self, cache: KeyValueCache, client_class: str, sentinel_mode: str | bool):
-        if self._is_cluster(client_class, sentinel_mode):
+    def test_scan_empty(
+        self,
+        cache: KeyValueCache,
+        client_class: str,
+        sentinel_mode: str | bool,
+        driver: str,
+    ):
+        if self._is_py_cluster(client_class, sentinel_mode, driver):
             with pytest.raises(NotSupportedError):
                 cache.scan(pattern="nonexistent_pattern_xyz_*")
             return
@@ -86,8 +100,15 @@ class TestFlushDb:
 
 class TestAsyncScan:
     @pytest.mark.asyncio
-    async def test_ascan_returns_keys(self, cache: KeyValueCache, client_class: str, sentinel_mode: str | bool):
-        if client_class == "cluster" and not sentinel_mode:
+    async def test_ascan_returns_keys(
+        self,
+        cache: KeyValueCache,
+        client_class: str,
+        sentinel_mode: str | bool,
+        driver: str,
+    ):
+        # redis-py cluster can't combine per-node cursors; the Rust driver does.
+        if client_class == "cluster" and not sentinel_mode and driver == "py":
             with pytest.raises(NotSupportedError):
                 await cache.ascan(pattern="ascantest_*")
             return
@@ -104,8 +125,14 @@ class TestAsyncScan:
         assert all_keys == {"ascantest_a", "ascantest_b"}
 
     @pytest.mark.asyncio
-    async def test_ascan_empty(self, cache: KeyValueCache, client_class: str, sentinel_mode: str | bool):
-        if client_class == "cluster" and not sentinel_mode:
+    async def test_ascan_empty(
+        self,
+        cache: KeyValueCache,
+        client_class: str,
+        sentinel_mode: str | bool,
+        driver: str,
+    ):
+        if client_class == "cluster" and not sentinel_mode and driver == "py":
             with pytest.raises(NotSupportedError):
                 await cache.ascan(pattern="nonexistent_pattern_xyz_*")
             return

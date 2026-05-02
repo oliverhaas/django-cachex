@@ -144,11 +144,15 @@ class TestHashKeyPrefixing:
         prefixed_key = cache.make_key("account:500", version=2)
 
         assert client.exists(prefixed_key)
-        assert client.type(prefixed_key) == b"hash"
+        # redis-py returns bytes; the Rust driver returns str. Normalize.
+        key_type = client.type(prefixed_key)
+        if isinstance(key_type, bytes):
+            key_type = key_type.decode()
+        assert key_type == "hash"
 
-        raw_fields = client.hkeys(prefixed_key)
-        assert b"balance" in raw_fields
-        assert b"currency" in raw_fields
+        raw_fields = {f.decode() if isinstance(f, bytes) else f for f in client.hkeys(prefixed_key)}
+        assert "balance" in raw_fields
+        assert "currency" in raw_fields
 
 
 class TestHashIncrementOperations:
@@ -417,8 +421,12 @@ class TestAsyncHashKeyPrefixing:
         prefixed_key = cache.make_key("aaccount:500", version=2)
 
         assert client.exists(prefixed_key)
-        assert client.type(prefixed_key) == b"hash"
+        # redis-py returns bytes; the Rust driver returns str. Normalize.
+        key_type = client.type(prefixed_key)
+        if isinstance(key_type, bytes):
+            key_type = key_type.decode()
+        assert key_type == "hash"
 
-        raw_fields = client.hkeys(prefixed_key)
-        assert b"balance" in raw_fields
-        assert b"currency" in raw_fields
+        raw_fields = {f.decode() if isinstance(f, bytes) else f for f in client.hkeys(prefixed_key)}
+        assert "balance" in raw_fields
+        assert "currency" in raw_fields
