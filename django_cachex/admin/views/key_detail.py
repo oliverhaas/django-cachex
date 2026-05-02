@@ -168,7 +168,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             return _redirect_to_key()
 
         elif action == "lpush":
-            value = request.POST.get("push_value", "").strip()
+            value = request.POST.get("value", "").strip()
             if value:
                 try:
                     with contextlib.suppress(json.JSONDecodeError, ValueError):
@@ -182,7 +182,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             return _redirect_to_key()
 
         elif action == "rpush":
-            value = request.POST.get("push_value", "").strip()
+            value = request.POST.get("value", "").strip()
             if value:
                 try:
                     with contextlib.suppress(json.JSONDecodeError, ValueError):
@@ -196,7 +196,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             return _redirect_to_key()
 
         elif action == "lrem":
-            value = request.POST.get("item_value", "").strip()
+            value = request.POST.get("value", "").strip()
             with contextlib.suppress(json.JSONDecodeError, ValueError):
                 value = json.loads(value)
             count = 0  # Default: remove all occurrences
@@ -232,7 +232,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         elif action == "lset":
             try:
                 index = int(request.POST.get("index", "0"))
-                value = request.POST.get("item_value", "").strip()
+                value = request.POST.get("value", "").strip()
                 with contextlib.suppress(json.JSONDecodeError, ValueError):
                     value = json.loads(value)
                 original_sha1 = request.POST.get("original_sha1", "").strip()
@@ -261,7 +261,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
 
         # Set operations
         elif action == "sadd":
-            member = request.POST.get("member_value", "").strip()
+            member = request.POST.get("member", "").strip()
             if member:
                 try:
                     with contextlib.suppress(json.JSONDecodeError, ValueError):
@@ -294,7 +294,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
 
         # Hash operations
         elif action == "hset":
-            field = request.POST.get("field_name", "").strip()
+            field = request.POST.get("field", "").strip()
             value = request.POST.get("field_value", "").strip()
             with contextlib.suppress(json.JSONDecodeError, ValueError):
                 value = json.loads(value)
@@ -339,7 +339,7 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
 
         # Sorted set operations
         elif action == "zadd":
-            member = request.POST.get("member_value", "").strip()
+            member = request.POST.get("member", "").strip()
             score_str = request.POST.get("score_value", "").strip()
             if member and score_str:
                 try:
@@ -457,11 +457,11 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
 
         # Stream operations
         elif action == "xadd":
-            field_name = request.POST.get("field_name", "").strip()
+            field = request.POST.get("field", "").strip()
             field_value = request.POST.get("field_value", "").strip()
-            if field_name and field_value:
+            if field and field_value:
                 try:
-                    entry_id = cache.xadd(key, {field_name: field_value})
+                    entry_id = cache.xadd(key, {field: field_value})
                     messages.success(request, f"Added entry {entry_id}.")
                 except Exception as e:  # noqa: BLE001
                     messages.error(request, str(e))

@@ -1040,7 +1040,7 @@ class TestKeyAddView:
                 url,
                 {
                     "action": "rpush",
-                    "push_value": item,
+                    "value": item,
                 },
             )
             assert response.status_code == 302
@@ -1064,7 +1064,7 @@ class TestKeyAddView:
                 url,
                 {
                     "action": "sadd",
-                    "member_value": member,
+                    "member": member,
                 },
             )
             assert response.status_code == 302
@@ -1088,7 +1088,7 @@ class TestKeyAddView:
                 url,
                 {
                     "action": "hset",
-                    "field_name": field,
+                    "field": field,
                     "field_value": value,
                 },
             )
@@ -1113,7 +1113,7 @@ class TestKeyAddView:
                 url,
                 {
                     "action": "zadd",
-                    "member_value": member,
+                    "member": member,
                     "score_value": str(score),
                 },
             )
@@ -1164,7 +1164,7 @@ class TestKeyOperations:
         url = _key_detail_url("default", "lrem:test")
         response = admin_client.post(
             url,
-            {"action": "lrem", "item_value": "item2"},
+            {"action": "lrem", "value": "item2"},
         )
         assert response.status_code == 302
 
@@ -1200,7 +1200,7 @@ class TestKeyOperations:
         url = _key_detail_url("default", "hash:edit")
         response = admin_client.post(
             url,
-            {"action": "hset", "field_name": "name", "field_value": "new_value"},
+            {"action": "hset", "field": "name", "field_value": "new_value"},
         )
         assert response.status_code == 302
 
@@ -1306,7 +1306,7 @@ class TestKeyOperations:
         url = _key_detail_url("default", "lpush:test")
         response = admin_client.post(
             url,
-            {"action": "lpush", "push_value": "a"},
+            {"action": "lpush", "value": "a"},
         )
         assert response.status_code == 302
 
@@ -1324,7 +1324,7 @@ class TestKeyOperations:
         url = _key_detail_url("default", "rpush:test")
         response = admin_client.post(
             url,
-            {"action": "rpush", "push_value": "c"},
+            {"action": "rpush", "value": "c"},
         )
         assert response.status_code == 302
 
@@ -1342,7 +1342,7 @@ class TestKeyOperations:
         url = _key_detail_url("default", "sadd:test")
         response = admin_client.post(
             url,
-            {"action": "sadd", "member_value": "c"},
+            {"action": "sadd", "member": "c"},
         )
         assert response.status_code == 302
 
@@ -1412,7 +1412,7 @@ class TestKeyOperations:
         url = _key_detail_url("default", "zadd:test")
         response = admin_client.post(
             url,
-            {"action": "zadd", "member_value": "b", "score_value": "2.5"},
+            {"action": "zadd", "member": "b", "score_value": "2.5"},
         )
         assert response.status_code == 302
 
@@ -1432,7 +1432,7 @@ class TestKeyOperations:
         # Try to update existing member "a" with NX flag - should not update
         response = admin_client.post(
             url,
-            {"action": "zadd", "member_value": "a", "score_value": "99.0", "zadd_nx": "on"},
+            {"action": "zadd", "member": "a", "score_value": "99.0", "zadd_nx": "on"},
         )
         assert response.status_code == 302
 
@@ -1443,7 +1443,7 @@ class TestKeyOperations:
         # Try to add new member "b" with NX flag - should succeed
         response = admin_client.post(
             url,
-            {"action": "zadd", "member_value": "b", "score_value": "2.0", "zadd_nx": "on"},
+            {"action": "zadd", "member": "b", "score_value": "2.0", "zadd_nx": "on"},
         )
         assert response.status_code == 302
 
@@ -1463,7 +1463,7 @@ class TestKeyOperations:
         # Try to add new member "b" with XX flag - should not add
         response = admin_client.post(
             url,
-            {"action": "zadd", "member_value": "b", "score_value": "2.0", "zadd_xx": "on"},
+            {"action": "zadd", "member": "b", "score_value": "2.0", "zadd_xx": "on"},
         )
         assert response.status_code == 302
 
@@ -1474,7 +1474,7 @@ class TestKeyOperations:
         # Try to update existing member "a" with XX flag - should succeed
         response = admin_client.post(
             url,
-            {"action": "zadd", "member_value": "a", "score_value": "99.0", "zadd_xx": "on"},
+            {"action": "zadd", "member": "a", "score_value": "99.0", "zadd_xx": "on"},
         )
         assert response.status_code == 302
 
@@ -1494,7 +1494,7 @@ class TestKeyOperations:
         # Try to update with lower score - should not update
         response = admin_client.post(
             url,
-            {"action": "zadd", "member_value": "a", "score_value": "5.0", "zadd_gt": "on"},
+            {"action": "zadd", "member": "a", "score_value": "5.0", "zadd_gt": "on"},
         )
         assert response.status_code == 302
 
@@ -1505,7 +1505,7 @@ class TestKeyOperations:
         # Try to update with higher score - should succeed
         response = admin_client.post(
             url,
-            {"action": "zadd", "member_value": "a", "score_value": "20.0", "zadd_gt": "on"},
+            {"action": "zadd", "member": "a", "score_value": "20.0", "zadd_gt": "on"},
         )
         assert response.status_code == 302
 
@@ -1525,7 +1525,7 @@ class TestKeyOperations:
         # Try to update with higher score - should not update
         response = admin_client.post(
             url,
-            {"action": "zadd", "member_value": "a", "score_value": "20.0", "zadd_lt": "on"},
+            {"action": "zadd", "member": "a", "score_value": "20.0", "zadd_lt": "on"},
         )
         assert response.status_code == 302
 
@@ -1536,7 +1536,7 @@ class TestKeyOperations:
         # Try to update with lower score - should succeed
         response = admin_client.post(
             url,
-            {"action": "zadd", "member_value": "a", "score_value": "5.0", "zadd_lt": "on"},
+            {"action": "zadd", "member": "a", "score_value": "5.0", "zadd_lt": "on"},
         )
         assert response.status_code == 302
 
@@ -1602,7 +1602,7 @@ class TestKeyOperations:
         url = _key_detail_url("default", "zscore:test")
         response = admin_client.post(
             url,
-            {"action": "zadd", "member_value": "b", "score_value": "5.5"},
+            {"action": "zadd", "member": "b", "score_value": "5.5"},
         )
         assert response.status_code == 302
 
@@ -1655,7 +1655,7 @@ class TestKeyOperations:
         url = _key_detail_url("default", "xadd:test")
         response = admin_client.post(
             url,
-            {"action": "xadd", "field_name": "field2", "field_value": "value2"},
+            {"action": "xadd", "field": "field2", "field_value": "value2"},
         )
         assert response.status_code == 302
 
@@ -1864,7 +1864,7 @@ class TestKeyDetailCreateMode:
         # POST to push an item - this should create the key
         response = admin_client.post(
             url,
-            {"action": "rpush", "push_value": "first_item"},
+            {"action": "rpush", "value": "first_item"},
         )
 
         # Should redirect (to stay on same page after operation)
@@ -1884,7 +1884,7 @@ class TestKeyDetailCreateMode:
 
         response = admin_client.post(
             url,
-            {"action": "rpush", "push_value": "item"},
+            {"action": "rpush", "value": "item"},
         )
 
         # Should redirect

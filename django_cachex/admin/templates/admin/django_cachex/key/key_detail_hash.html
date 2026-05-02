@@ -7,7 +7,7 @@
         <form method="post" style="display: inline;">
             {% csrf_token %}
             <input type="hidden" name="action" value="hset">
-            <input type="text" name="field_name" placeholder="{% trans 'field' %}" style="width: 100px;">
+            <input type="text" name="field" placeholder="{% trans 'field' %}" style="width: 100px;">
             <input type="text" name="field_value" placeholder="{% trans 'value' %}" style="width: 150px;">
             <button type="submit" class="button btn-small">{% trans 'Set' %}</button>
         </form>
@@ -47,7 +47,7 @@
     <form id="hash-update-{{ forloop.counter0 }}" method="post" style="display: none;">
         {% csrf_token %}
         <input type="hidden" name="action" value="hset">
-        <input type="hidden" name="field_name" value="{{ field }}">
+        <input type="hidden" name="field" value="{{ field }}">
         {% if sha1 %}<input type="hidden" name="original_sha1" value="{{ sha1 }}">{% endif %}
     </form>
     <form id="hash-delete-{{ forloop.counter0 }}" method="post" style="display: none;">
@@ -86,7 +86,7 @@
     <form id="hash-update-{{ forloop.counter0 }}" method="post" style="display: none;">
         {% csrf_token %}
         <input type="hidden" name="action" value="hset">
-        <input type="hidden" name="field_name" value="{{ field }}">
+        <input type="hidden" name="field" value="{{ field }}">
     </form>
     <form id="hash-delete-{{ forloop.counter0 }}" method="post" style="display: none;">
         {% csrf_token %}

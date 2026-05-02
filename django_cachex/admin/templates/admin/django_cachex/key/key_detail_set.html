@@ -7,7 +7,7 @@
         <form method="post" style="display: inline;">
             {% csrf_token %}
             <input type="hidden" name="action" value="sadd">
-            <input type="text" name="member_value" placeholder="{% trans 'member' %}" style="width: 150px;">
+            <input type="text" name="member" placeholder="{% trans 'member' %}" style="width: 150px;">
             <button type="submit" class="button btn-small">{% trans 'Add' %}</button>
         </form>
     </div>

@@ -7,7 +7,7 @@
         <form method="post" style="display: inline;">
             {% csrf_token %}
             <input type="hidden" name="action" value="zadd">
-            <input type="text" name="member_value" placeholder="{% trans 'member' %}" style="width: 100px; vertical-align: middle;">
+            <input type="text" name="member" placeholder="{% trans 'member' %}" style="width: 100px; vertical-align: middle;">
             <input type="number" name="score_value" placeholder="{% trans 'score' %}" style="width: 70px; vertical-align: middle;" step="any">
             <label class="quiet" title="{% trans 'Only add new' %}" style="display: inline; vertical-align: middle;"><input type="checkbox" name="zadd_nx" style="vertical-align: middle;"> NX</label>
             <label class="quiet" title="{% trans 'Only update existing' %}" style="display: inline; vertical-align: middle;"><input type="checkbox" name="zadd_xx" style="vertical-align: middle;"> XX</label>
@@ -69,7 +69,7 @@
     <form id="zset-update-{{ forloop.counter0 }}" method="post" style="display: none;">
         {% csrf_token %}
         <input type="hidden" name="action" value="zadd">
-        <input type="hidden" name="member_value" value="{{ member }}">
+        <input type="hidden" name="member" value="{{ member }}">
         <input type="hidden" name="original_score" value="{{ score }}">
     </form>
     <form id="zset-remove-{{ forloop.counter0 }}" method="post" style="display: none;">

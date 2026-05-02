@@ -7,7 +7,7 @@
         <form method="post" style="display: inline;">
             {% csrf_token %}
             <input type="hidden" name="action" value="xadd">
-            <input type="text" name="field_name" placeholder="{% trans 'field' %}" style="width: 100px;">
+            <input type="text" name="field" placeholder="{% trans 'field' %}" style="width: 100px;">
             <input type="text" name="field_value" placeholder="{% trans 'value' %}" style="width: 150px;">
             <button type="submit" class="button btn-small">{% trans 'Add' %}</button>
         </form>
