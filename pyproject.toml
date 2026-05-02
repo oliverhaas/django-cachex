@@ -76,6 +76,8 @@ dev = [
   "httpx>=0.28,<0.29",
   # Rust I/O driver: workspace member so `uv sync` builds it for tests/benchmarks
   "django-cachex-rust",
+  "valkey-glide-sync==2.3.1",
+  "valkey-glide==2.3.1",
 ]
 docs = ["mkdocs==1.6.1", "mkdocs-material==9.7.6", "mike==2.2.0"]
 

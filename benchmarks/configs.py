@@ -74,6 +74,12 @@ DRIVER_CONFIGS: tuple[DriverConfig, ...] = (
         options={},
         server="valkey",
     ),
+    DriverConfig(
+        id="valkey-glide",
+        backend="django_cachex.cache.glide.ValkeyGlideCache",
+        options={},
+        server="valkey",
+    ),
     # Django's official built-in Redis cache backend (added in Django 4.0,
     # `django.core.cache.backends.redis.RedisCache`). Not to be confused with
     # the third-party `jazzband/django-redis` package — that one ships under
