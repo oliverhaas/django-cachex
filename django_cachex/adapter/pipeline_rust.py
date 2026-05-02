@@ -76,22 +76,6 @@ def _epoch_milliseconds(value: int | datetime) -> int:
 # =============================================================================
 
 
-def _identity(v: Any) -> Any:
-    return v
-
-
-def _to_int_or_none(v: Any) -> int | None:
-    if v is None:
-        return None
-    if isinstance(v, int):
-        return v
-    if isinstance(v, (bytes, bytearray)):
-        return int(v)
-    if isinstance(v, str):
-        return int(v)
-    return v
-
-
 def _to_float_or_none(v: Any) -> float | None:
     if v is None:
         return None
@@ -138,16 +122,6 @@ def _zset_with_scores(v: Any) -> list[tuple[bytes, float]]:
     return [(v[i], float(v[i + 1])) for i in range(0, len(v), 2)]
 
 
-def _zpop(v: Any) -> list[tuple[bytes, float]]:
-    """ZPOPMIN/ZPOPMAX — same nested/flat handling as WITHSCORES results."""
-    return _zset_with_scores(v)
-
-
-def _zincrby(v: Any) -> float | None:
-    """ZINCRBY returns the new score. RESP3: double; RESP2: bulk string."""
-    return _to_float_or_none(v)
-
-
 def _stream_entry(entry: Any) -> tuple[str, dict[str, bytes]]:
     """One stream entry: [id, [k1,v1,k2,v2,...]] → (id_str, {k_str: v_bytes})."""
     eid = entry[0]
@@ -177,11 +151,6 @@ def _stream_read(v: Any) -> list[tuple[Any, list[tuple[str, dict[str, bytes]]]]]
     if isinstance(v, dict):
         return [(k, _stream_entries(entries)) for k, entries in v.items()]
     return [(stream[0], _stream_entries(stream[1])) for stream in v]
-
-
-def _xpending_summary(v: Any) -> Any:
-    """Summary form: [count, min_id, max_id, [[consumer, count_str], ...]]."""
-    return v
 
 
 def _xpending_range(v: Any) -> list[list[Any]]:
@@ -648,13 +617,13 @@ class RustValkeyPipelineAdapter(BaseKeyValuePipelineAdapter):
         return self._queue("ZCOUNT", key, min, max)
 
     def zincrby(self, key: Any, amount: float, value: Any) -> RustValkeyPipelineAdapter:
-        return self._queue("ZINCRBY", key, amount, value, parser=_zincrby)
+        return self._queue("ZINCRBY", key, amount, value, parser=_to_float_or_none)
 
     def zpopmax(self, key: Any, count: int | None = None) -> RustValkeyPipelineAdapter:
-        return self._queue("ZPOPMAX", key, 1 if count is None else count, parser=_zpop)
+        return self._queue("ZPOPMAX", key, 1 if count is None else count, parser=_zset_with_scores)
 
     def zpopmin(self, key: Any, count: int | None = None) -> RustValkeyPipelineAdapter:
-        return self._queue("ZPOPMIN", key, 1 if count is None else count, parser=_zpop)
+        return self._queue("ZPOPMIN", key, 1 if count is None else count, parser=_zset_with_scores)
 
     def zrange(
         self,
@@ -928,7 +897,7 @@ class RustValkeyPipelineAdapter(BaseKeyValuePipelineAdapter):
 
     def xpending(self, key: Any, group: str) -> RustValkeyPipelineAdapter:
         """Summary form: ``XPENDING key group``."""
-        return self._queue("XPENDING", key, group, parser=_xpending_summary)
+        return self._queue("XPENDING", key, group)
 
     def xpending_range(
         self,

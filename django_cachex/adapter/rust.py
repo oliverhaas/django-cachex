@@ -68,26 +68,222 @@ def _str_key(key: object) -> str:
     return str(key)
 
 
-class RustValkeyAdapter(BaseKeyValueAdapter):
-    """Base Rust-driver client. Subclasses choose the topology."""
+def _coerce_keys_arg(keys: Any) -> list[str]:
+    if isinstance(keys, (str, bytes)):
+        return [_str_key(keys)]
+    return [_str_key(k) for k in keys]
 
-    # The base class uses these to instantiate redis-py pools/parsers; we
-    # have no use for them and leave them as None so the redis-py code
-    # paths stay disabled.
-    _lib: Any = None
-    _client_class = None
-    _pool_class = None
-    _async_client_class = None
-    _async_pool_class = None
+
+def _to_seconds(timeout: ExpiryT) -> int:
+    if isinstance(timeout, int):
+        return timeout
+    return int(timeout.total_seconds())
+
+
+def _to_unix(when: AbsExpiryT) -> int:
+    if isinstance(when, int):
+        return when
+    return int(when.timestamp())
+
+
+def _eval_arg(value: Any) -> bytes:
+    """Encode a Lua/EVAL ARGV value the way redis-py would on the wire."""
+    if isinstance(value, bytes):
+        return value
+    # Match redis-py: bool serializes as the integer 0/1, not "True"/"False".
+    if isinstance(value, bool):
+        return b"1" if value else b"0"
+    if isinstance(value, int):
+        return str(value).encode("ascii")
+    return str(value).encode("utf-8")
+
+
+def _eval_args(args: Sequence[Any]) -> list[bytes]:
+    return [a if isinstance(a, bytes) else _eval_arg(a) for a in args]
+
+
+def _zadd_flag_argv(*, nx: bool, xx: bool, gt: bool, lt: bool, ch: bool) -> list[bytes]:
+    flags: list[bytes] = []
+    if nx:
+        flags.append(b"NX")
+    if xx:
+        flags.append(b"XX")
+    if gt:
+        flags.append(b"GT")
+    if lt:
+        flags.append(b"LT")
+    if ch:
+        flags.append(b"CH")
+    return flags
+
+
+def _set_with_flags_argv(
+    nvalue: bytes,
+    actual_timeout: int | None,
+    nx: bool,
+    xx: bool,
+    get: bool,
+) -> list[bytes]:
+    return [
+        nvalue,
+        str(actual_timeout).encode("ascii") if actual_timeout else b"",
+        b"1" if nx else b"0",
+        b"1" if xx else b"0",
+        b"1" if get else b"0",
+    ]
+
+
+def _xadd_argv(
+    entry_id: str,
+    encoded_fields: list[tuple[str, bytes]],
+    maxlen: int | None,
+    approximate: bool,
+    nomkstream: bool,
+    minid: str | None,
+    limit: int | None,
+) -> list[bytes]:
+    argv: list[bytes] = []
+    if nomkstream:
+        argv.append(b"NOMKSTREAM")
+    if maxlen is not None:
+        argv.append(b"MAXLEN")
+        if approximate:
+            argv.append(b"~")
+        argv.append(str(maxlen).encode("ascii"))
+        if limit is not None:
+            argv.extend([b"LIMIT", str(limit).encode("ascii")])
+    elif minid is not None:
+        argv.append(b"MINID")
+        if approximate:
+            argv.append(b"~")
+        argv.append(minid.encode("ascii"))
+    argv.append(entry_id.encode("ascii"))
+    for f, v in encoded_fields:
+        argv.append(f.encode("utf-8"))
+        argv.append(v)
+    return argv
+
+
+def _decode_str(v: Any) -> str:
+    return v.decode() if isinstance(v, bytes) else str(v)
+
+
+def _decode_zrange(raw: list[Any], *, withscores: bool) -> list[Any]:
+    """Normalize ZRANGE-family results.
+
+    Returns the raw list when ``withscores=False``. With scores, accepts
+    either nested ``[[m, s], ...]`` (RESP3 / standard) or flat ``[m, s,
+    m, s, ...]`` (RESP2 / cluster) and returns ``[(m, float(s)), ...]``.
+    """
+    if not withscores:
+        return list(raw)
+    if raw and isinstance(raw[0], (list, tuple)):
+        return [(member, float(score)) for member, score in raw]
+    out: list[tuple[Any, float]] = []
+    it = iter(raw)
+    for member, score in zip(it, it, strict=False):
+        out.append((member, float(score)))
+    return out
+
+
+def _decode_zrevrangebyscore(raw: list, *, withscores: bool) -> list[Any]:
+    # ZREVRANGEBYSCORE WITHSCORES returns a flat [m1, s1, m2, s2, ...].
+    if not withscores:
+        return list(raw)
+    out: list[tuple[Any, float]] = []
+    it = iter(raw)
+    for member, score in zip(it, it, strict=False):
+        out.append((member, float(score)))
+    return out
+
+
+def _decode_xrange(raw: list[Any] | None) -> list[tuple[str, dict[str, Any]]]:
+    if not raw:
+        return []
+    out: list[tuple[str, dict[str, Any]]] = []
+    for entry in raw:
+        entry_id = entry[0]
+        if isinstance(entry_id, bytes):
+            entry_id = entry_id.decode()
+        kv = entry[1]
+        fields: dict[str, Any] = {}
+        if isinstance(kv, list):
+            it = iter(kv)
+            for f, v in zip(it, it, strict=False):
+                field_name = f.decode() if isinstance(f, bytes) else str(f)
+                fields[field_name] = v
+        elif isinstance(kv, dict):
+            for f, v in kv.items():
+                field_name = f.decode() if isinstance(f, bytes) else str(f)
+                fields[field_name] = v
+        out.append((entry_id, fields))
+    return out
+
+
+def _decode_xread(raw: Any) -> dict[str, list[tuple[str, dict[str, Any]]]]:
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return {(k.decode() if isinstance(k, bytes) else k): _decode_xrange(v) for k, v in raw.items()}
+    return {(item[0].decode() if isinstance(item[0], bytes) else item[0]): _decode_xrange(item[1]) for item in raw}
+
+
+def _decode_xpending_summary(raw: Any) -> dict[str, Any]:
+    # Summary form: ``[count, min_id, max_id, [[consumer, count], ...] | None]``.
+    if not raw:
+        return {"pending": 0, "min": None, "max": None, "consumers": []}
+    count = int(raw[0]) if raw[0] is not None else 0
+    min_id = _decode_str(raw[1]) if raw[1] is not None else None
+    max_id = _decode_str(raw[2]) if raw[2] is not None else None
+    consumers: list[dict[str, Any]] = []
+    if len(raw) > 3 and raw[3]:
+        consumers.extend({"name": _decode_str(entry[0]), "pending": int(entry[1])} for entry in raw[3])
+    return {"pending": count, "min": min_id, "max": max_id, "consumers": consumers}
+
+
+def _decode_xpending_range(raw: Any) -> list[dict[str, Any]]:
+    # Range form: ``[[id, consumer, idle_ms, delivery_count], ...]``.
+    if not raw:
+        return []
+    return [
+        {
+            "message_id": _decode_str(entry[0]),
+            "consumer": _decode_str(entry[1]),
+            "time_since_delivered": int(entry[2]),
+            "times_delivered": int(entry[3]),
+        }
+        for entry in raw
+    ]
+
+
+def _decode_xautoclaim(
+    raw: Any,
+    *,
+    justid: bool,
+) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
+    # XAUTOCLAIM returns ``[next_id, entries, deleted_ids]`` (Redis 7+).
+    next_id = _decode_str(raw[0]) if raw and raw[0] is not None else "0-0"
+    entries = raw[1] if len(raw) > 1 else []
+    deleted_raw = raw[2] if len(raw) > 2 else []
+    deleted = [_decode_str(d) for d in (deleted_raw or [])]
+    if justid:
+        claimed_ids = [_decode_str(eid) for eid in (entries or [])]
+        return (next_id, claimed_ids, deleted)
+    return (next_id, _decode_xrange(entries), deleted)
+
+
+class RustValkeyAdapter(BaseKeyValueAdapter):
+    """Base Rust-driver client. Subclasses choose the topology.
+
+    We don't run redis-py's pool/parser machinery — every I/O call routes
+    through the Rust driver instead — so the ``_lib``/``_client_class``/
+    ``_pool_class`` slots inherited from :class:`BaseKeyValueAdapter` stay
+    at their default ``None``.
+    """
 
     # Option keys we recognize so the registry cache hits across cache
     # instances that share a driver but differ only in cosmetic options.
     _DRIVER_OPTION_KEYS = _DRIVER_KWARGS
-
-    def __init__(self, servers: list[str], **options: Any) -> None:
-        # Honor the base init for serializers/compressors/stampede config,
-        # but skip its pool plumbing — we don't construct redis-py pools.
-        super().__init__(servers, **options)
 
     # ------------------------------------------------------------------ hooks
 
@@ -222,22 +418,6 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         "return redis.call('SET', unpack(args))"
     )
 
-    def _set_with_flags_argv(
-        self,
-        nvalue: bytes,
-        actual_timeout: int | None,
-        nx: bool,
-        xx: bool,
-        get: bool,
-    ) -> list[bytes]:
-        return [
-            nvalue,
-            str(actual_timeout).encode("ascii") if actual_timeout else b"",
-            b"1" if nx else b"0",
-            b"1" if xx else b"0",
-            b"1" if get else b"0",
-        ]
-
     @override
     def set_with_flags(
         self,
@@ -257,7 +437,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         result = self._driver.eval(
             self._SET_WITH_FLAGS_LUA,
             [_str_key(key)],
-            self._set_with_flags_argv(nvalue, actual_timeout, nx, xx, get),
+            _set_with_flags_argv(nvalue, actual_timeout, nx, xx, get),
         )
         if get:
             # SET ... GET returns the previous value (bytes) or nil.
@@ -285,7 +465,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         result = await self._driver.aeval(
             self._SET_WITH_FLAGS_LUA,
             [_str_key(key)],
-            self._set_with_flags_argv(nvalue, actual_timeout, nx, xx, get),
+            _set_with_flags_argv(nvalue, actual_timeout, nx, xx, get),
         )
         if get:
             return None if result is None else result
@@ -442,21 +622,9 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     def pttl(self, key: KeyT) -> int | None:
         return self._normalize_ttl(self._driver.pttl(_str_key(key)))
 
-    @staticmethod
-    def _to_seconds(timeout: ExpiryT) -> int:
-        if isinstance(timeout, int):
-            return timeout
-        return int(timeout.total_seconds())
-
-    @staticmethod
-    def _to_unix(when: AbsExpiryT) -> int:
-        if isinstance(when, int):
-            return when
-        return int(when.timestamp())
-
     @override
     def expire(self, key: KeyT, timeout: ExpiryT) -> bool:
-        return bool(self._driver.expire(_str_key(key), self._to_seconds(timeout)))
+        return bool(self._driver.expire(_str_key(key), _to_seconds(timeout)))
 
     @override
     def persist(self, key: KeyT) -> bool:
@@ -472,7 +640,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
 
     @override
     async def aexpire(self, key: KeyT, timeout: ExpiryT) -> bool:
-        return bool(await self._driver.aexpire(_str_key(key), self._to_seconds(timeout)))
+        return bool(await self._driver.aexpire(_str_key(key), _to_seconds(timeout)))
 
     @override
     async def apersist(self, key: KeyT) -> bool:
@@ -508,7 +676,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
 
     @override
     def expireat(self, key: KeyT, when: AbsExpiryT) -> bool:
-        return self._expire_via_eval("EXPIREAT", key, self._to_unix(when))
+        return self._expire_via_eval("EXPIREAT", key, _to_unix(when))
 
     @override
     def pexpireat(self, key: KeyT, when: AbsExpiryT) -> bool:
@@ -537,7 +705,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
 
     @override
     async def aexpireat(self, key: KeyT, when: AbsExpiryT) -> bool:
-        return await self._aexpire_via_eval("EXPIREAT", key, self._to_unix(when))
+        return await self._aexpire_via_eval("EXPIREAT", key, _to_unix(when))
 
     @override
     async def apexpireat(self, key: KeyT, when: AbsExpiryT) -> bool:
@@ -1136,40 +1304,34 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     async def ascard(self, key: KeyT) -> int:
         return int(await self._driver.ascard(_str_key(key)))
 
-    @staticmethod
-    def _coerce_keys_arg(keys: Any) -> list[str]:
-        if isinstance(keys, (str, bytes)):
-            return [_str_key(keys)]
-        return [_str_key(k) for k in keys]
-
     @override
     def sinter(self, keys: Any) -> Any:
-        result = self._driver.sinter(self._coerce_keys_arg(keys))
+        result = self._driver.sinter(_coerce_keys_arg(keys))
         return set(result)
 
     @override
     async def asinter(self, keys: Any) -> Any:
-        result = await self._driver.asinter(self._coerce_keys_arg(keys))
+        result = await self._driver.asinter(_coerce_keys_arg(keys))
         return set(result)
 
     @override
     def sunion(self, keys: Any) -> Any:
-        result = self._driver.sunion(self._coerce_keys_arg(keys))
+        result = self._driver.sunion(_coerce_keys_arg(keys))
         return set(result)
 
     @override
     async def asunion(self, keys: Any) -> Any:
-        result = await self._driver.asunion(self._coerce_keys_arg(keys))
+        result = await self._driver.asunion(_coerce_keys_arg(keys))
         return set(result)
 
     @override
     def sdiff(self, keys: Any) -> Any:
-        result = self._driver.sdiff(self._coerce_keys_arg(keys))
+        result = self._driver.sdiff(_coerce_keys_arg(keys))
         return set(result)
 
     @override
     async def asdiff(self, keys: Any) -> Any:
-        result = await self._driver.asdiff(self._coerce_keys_arg(keys))
+        result = await self._driver.asdiff(_coerce_keys_arg(keys))
         return set(result)
 
     # =========================================================================
@@ -1237,19 +1399,6 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
             await self._driver.azincrby(_str_key(key), _value_to_bytes(member), float(amount)),
         )
 
-    def _decode_zrange(self, raw: list[Any], *, withscores: bool) -> list[Any]:
-        if not withscores:
-            return list(raw)
-        # Driver returns either ``[[m, s], [m, s], ...]`` (standard) or a flat
-        # ``[m1, s1, m2, s2, ...]`` (cluster) — handle both.
-        if raw and isinstance(raw[0], (list, tuple)):
-            return [(member, float(score)) for member, score in raw]
-        out: list[tuple[Any, float]] = []
-        it = iter(raw)
-        for member, score in zip(it, it, strict=False):
-            out.append((member, float(score)))
-        return out
-
     @override
     def zrange(
         self,
@@ -1260,7 +1409,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         withscores: bool = False,
     ) -> list[Any]:
         raw = self._driver.zrange(_str_key(key), start, end, withscores)
-        return self._decode_zrange(raw, withscores=withscores)
+        return _decode_zrange(raw, withscores=withscores)
 
     @override
     async def azrange(
@@ -1272,7 +1421,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         withscores: bool = False,
     ) -> list[Any]:
         raw = await self._driver.azrange(_str_key(key), start, end, withscores)
-        return self._decode_zrange(raw, withscores=withscores)
+        return _decode_zrange(raw, withscores=withscores)
 
     @override
     def zrevrange(
@@ -1284,7 +1433,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         withscores: bool = False,
     ) -> list[Any]:
         raw = self._driver.zrevrange(_str_key(key), start, end, withscores)
-        return self._decode_zrange(raw, withscores=withscores)
+        return _decode_zrange(raw, withscores=withscores)
 
     @override
     async def azrevrange(
@@ -1296,7 +1445,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         withscores: bool = False,
     ) -> list[Any]:
         raw = await self._driver.azrevrange(_str_key(key), start, end, withscores)
-        return self._decode_zrange(raw, withscores=withscores)
+        return _decode_zrange(raw, withscores=withscores)
 
     @override
     def zrangebyscore(
@@ -1315,7 +1464,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
             str(max_score),
             withscores,
         )
-        decoded = self._decode_zrange(raw, withscores=withscores)
+        decoded = _decode_zrange(raw, withscores=withscores)
         # Driver doesn't expose LIMIT — slice client-side for parity.
         if start is not None or num is not None:
             offset = start or 0
@@ -1339,7 +1488,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
             str(max_score),
             withscores,
         )
-        decoded = self._decode_zrange(raw, withscores=withscores)
+        decoded = _decode_zrange(raw, withscores=withscores)
         if start is not None or num is not None:
             offset = start or 0
             decoded = decoded[offset : offset + num] if num is not None else decoded[offset:]
@@ -1371,27 +1520,16 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     # Scripts
     # =========================================================================
 
-    @staticmethod
-    def _eval_arg(value: Any) -> bytes:
-        if isinstance(value, bytes):
-            return value
-        # Match redis-py: bool serializes as the integer 0/1, not "True"/"False".
-        if isinstance(value, bool):
-            return b"1" if value else b"0"
-        if isinstance(value, int):
-            return str(value).encode("ascii")
-        return str(value).encode("utf-8")
-
     @override
     def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any:
         keys = [_str_key(k) for k in keys_and_args[:numkeys]]
-        args = [self._eval_arg(a) for a in keys_and_args[numkeys:]]
+        args = [_eval_arg(a) for a in keys_and_args[numkeys:]]
         return self._driver.eval(script, keys, args)
 
     @override
     async def aeval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any:
         keys = [_str_key(k) for k in keys_and_args[:numkeys]]
-        args = [self._eval_arg(a) for a in keys_and_args[numkeys:]]
+        args = [_eval_arg(a) for a in keys_and_args[numkeys:]]
         return await self._driver.aeval(script, keys, args)
 
     # =========================================================================
@@ -1411,14 +1549,14 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         return self._driver.eval(
             self._EVAL_CALL_TEMPLATE.format(cmd=command),
             [_str_key(k) for k in keys],
-            [a if isinstance(a, bytes) else self._eval_arg(a) for a in args],
+            _eval_args(args),
         )
 
     async def _aeval_call(self, command: str, keys: Sequence[KeyT], args: Sequence[Any]) -> Any:
         return await self._driver.aeval(
             self._EVAL_CALL_TEMPLATE.format(cmd=command),
             [_str_key(k) for k in keys],
-            [a if isinstance(a, bytes) else self._eval_arg(a) for a in args],
+            _eval_args(args),
         )
 
     # ---- lpop/rpop with count ----
@@ -1457,21 +1595,6 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
 
     # ---- zadd flags ----
 
-    @staticmethod
-    def _zadd_flag_argv(*, nx: bool, xx: bool, gt: bool, lt: bool, ch: bool) -> list[bytes]:
-        flags = []
-        if nx:
-            flags.append(b"NX")
-        if xx:
-            flags.append(b"XX")
-        if gt:
-            flags.append(b"GT")
-        if lt:
-            flags.append(b"LT")
-        if ch:
-            flags.append(b"CH")
-        return flags
-
     @override
     def zadd(
         self,
@@ -1489,7 +1612,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
             return 0
         if not (nx or xx or gt or lt or ch):
             return int(self._driver.zadd(_str_key(key), pairs))
-        argv: list[bytes] = self._zadd_flag_argv(nx=nx, xx=xx, gt=gt, lt=lt, ch=ch)
+        argv: list[bytes] = _zadd_flag_argv(nx=nx, xx=xx, gt=gt, lt=lt, ch=ch)
         for member, score in pairs:
             argv.append(str(score).encode("ascii"))
             argv.append(member)
@@ -1512,7 +1635,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
             return 0
         if not (nx or xx or gt or lt or ch):
             return int(await self._driver.azadd(_str_key(key), pairs))
-        argv: list[bytes] = self._zadd_flag_argv(nx=nx, xx=xx, gt=gt, lt=lt, ch=ch)
+        argv: list[bytes] = _zadd_flag_argv(nx=nx, xx=xx, gt=gt, lt=lt, ch=ch)
         for member, score in pairs:
             argv.append(str(score).encode("ascii"))
             argv.append(member)
@@ -1584,7 +1707,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         if start is not None and num is not None:
             argv.extend([b"LIMIT", start, num])
         raw = self._eval_call("ZREVRANGEBYSCORE", [key], argv)
-        return self._decode_zrevrangebyscore(raw, withscores=withscores)
+        return _decode_zrevrangebyscore(raw, withscores=withscores)
 
     @override
     async def azrevrangebyscore(
@@ -1603,17 +1726,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         if start is not None and num is not None:
             argv.extend([b"LIMIT", start, num])
         raw = await self._aeval_call("ZREVRANGEBYSCORE", [key], argv)
-        return self._decode_zrevrangebyscore(raw, withscores=withscores)
-
-    def _decode_zrevrangebyscore(self, raw: list, *, withscores: bool) -> list[Any]:
-        # ZREVRANGEBYSCORE WITHSCORES returns a flat [m1, s1, m2, s2, ...].
-        if not withscores:
-            return list(raw)
-        out: list[tuple[Any, float]] = []
-        it = iter(raw)
-        for member, score in zip(it, it, strict=False):
-            out.append((member, float(score)))
-        return out
+        return _decode_zrevrangebyscore(raw, withscores=withscores)
 
     # ---- set ops the driver doesn't expose ----
 
@@ -1681,32 +1794,32 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
 
     @override
     def sdiffstore(self, dest: KeyT, keys: Any) -> int:
-        return int(self._eval_call("SDIFFSTORE", [dest, *self._coerce_keys_arg(keys)], []))
+        return int(self._eval_call("SDIFFSTORE", [dest, *_coerce_keys_arg(keys)], []))
 
     @override
     async def asdiffstore(self, dest: KeyT, keys: Any) -> int:
         return int(
-            await self._aeval_call("SDIFFSTORE", [dest, *self._coerce_keys_arg(keys)], []),
+            await self._aeval_call("SDIFFSTORE", [dest, *_coerce_keys_arg(keys)], []),
         )
 
     @override
     def sinterstore(self, dest: KeyT, keys: Any) -> int:
-        return int(self._eval_call("SINTERSTORE", [dest, *self._coerce_keys_arg(keys)], []))
+        return int(self._eval_call("SINTERSTORE", [dest, *_coerce_keys_arg(keys)], []))
 
     @override
     async def asinterstore(self, dest: KeyT, keys: Any) -> int:
         return int(
-            await self._aeval_call("SINTERSTORE", [dest, *self._coerce_keys_arg(keys)], []),
+            await self._aeval_call("SINTERSTORE", [dest, *_coerce_keys_arg(keys)], []),
         )
 
     @override
     def sunionstore(self, dest: KeyT, keys: Any) -> int:
-        return int(self._eval_call("SUNIONSTORE", [dest, *self._coerce_keys_arg(keys)], []))
+        return int(self._eval_call("SUNIONSTORE", [dest, *_coerce_keys_arg(keys)], []))
 
     @override
     async def asunionstore(self, dest: KeyT, keys: Any) -> int:
         return int(
-            await self._aeval_call("SUNIONSTORE", [dest, *self._coerce_keys_arg(keys)], []),
+            await self._aeval_call("SUNIONSTORE", [dest, *_coerce_keys_arg(keys)], []),
         )
 
     # ---- list ops the driver doesn't expose ----
@@ -1771,37 +1884,6 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
 
     # ---- streams: xadd needs signature translation, others use eval ----
 
-    @staticmethod
-    def _xadd_argv(
-        entry_id: str,
-        encoded_fields: list[tuple[str, bytes]],
-        maxlen: int | None,
-        approximate: bool,
-        nomkstream: bool,
-        minid: str | None,
-        limit: int | None,
-    ) -> list[bytes]:
-        argv: list[bytes] = []
-        if nomkstream:
-            argv.append(b"NOMKSTREAM")
-        if maxlen is not None:
-            argv.append(b"MAXLEN")
-            if approximate:
-                argv.append(b"~")
-            argv.append(str(maxlen).encode("ascii"))
-            if limit is not None:
-                argv.extend([b"LIMIT", str(limit).encode("ascii")])
-        elif minid is not None:
-            argv.append(b"MINID")
-            if approximate:
-                argv.append(b"~")
-            argv.append(minid.encode("ascii"))
-        argv.append(entry_id.encode("ascii"))
-        for f, v in encoded_fields:
-            argv.append(f.encode("utf-8"))
-            argv.append(v)
-        return argv
-
     @override
     def xadd(
         self,
@@ -1817,7 +1899,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         encoded = [(str(k), _value_to_bytes(v)) for k, v in fields.items()]
         if maxlen is None and minid is None and not nomkstream and limit is None:
             return self._driver.xadd(_str_key(key), entry_id, encoded)
-        argv = self._xadd_argv(entry_id, encoded, maxlen, approximate, nomkstream, minid, limit)
+        argv = _xadd_argv(entry_id, encoded, maxlen, approximate, nomkstream, minid, limit)
         result = self._eval_call("XADD", [key], argv)
         return result.decode() if isinstance(result, bytes) else result
 
@@ -1836,7 +1918,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         encoded = [(str(k), _value_to_bytes(v)) for k, v in fields.items()]
         if maxlen is None and minid is None and not nomkstream and limit is None:
             return await self._driver.axadd(_str_key(key), entry_id, encoded)
-        argv = self._xadd_argv(entry_id, encoded, maxlen, approximate, nomkstream, minid, limit)
+        argv = _xadd_argv(entry_id, encoded, maxlen, approximate, nomkstream, minid, limit)
         result = await self._aeval_call("XADD", [key], argv)
         return result.decode() if isinstance(result, bytes) else result
 
@@ -1871,22 +1953,22 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
 
     @override
     def blpop(self, keys: Any, timeout: float = 0) -> tuple[str, Any] | None:
-        raw = self._driver.blpop(self._coerce_keys_arg(keys), float(timeout))
+        raw = self._driver.blpop(_coerce_keys_arg(keys), float(timeout))
         return None if raw is None else (raw[0], raw[1])
 
     @override
     def brpop(self, keys: Any, timeout: float = 0) -> tuple[str, Any] | None:
-        raw = self._driver.brpop(self._coerce_keys_arg(keys), float(timeout))
+        raw = self._driver.brpop(_coerce_keys_arg(keys), float(timeout))
         return None if raw is None else (raw[0], raw[1])
 
     @override
     async def ablpop(self, keys: Any, timeout: float = 0) -> tuple[str, Any] | None:
-        raw = await self._driver.ablpop(self._coerce_keys_arg(keys), float(timeout))
+        raw = await self._driver.ablpop(_coerce_keys_arg(keys), float(timeout))
         return None if raw is None else (raw[0], raw[1])
 
     @override
     async def abrpop(self, keys: Any, timeout: float = 0) -> tuple[str, Any] | None:
-        raw = await self._driver.abrpop(self._coerce_keys_arg(keys), float(timeout))
+        raw = await self._driver.abrpop(_coerce_keys_arg(keys), float(timeout))
         return None if raw is None else (raw[0], raw[1])
 
     @override
@@ -1925,7 +2007,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         count: int | None = None,
     ) -> list[tuple[str, dict[str, Any]]]:
         raw = self._driver.xrange(_str_key(key), start, end, count=count)
-        return self._decode_xrange(raw)
+        return _decode_xrange(raw)
 
     @override
     async def axrange(
@@ -1936,7 +2018,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         count: int | None = None,
     ) -> list[tuple[str, dict[str, Any]]]:
         raw = await self._driver.axrange(_str_key(key), start, end, count=count)
-        return self._decode_xrange(raw)
+        return _decode_xrange(raw)
 
     @override
     def xrevrange(
@@ -1950,7 +2032,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         if count is not None:
             argv.extend([b"COUNT", count])
         raw = self._eval_call("XREVRANGE", [key], argv)
-        return self._decode_xrange(raw)
+        return _decode_xrange(raw)
 
     @override
     async def axrevrange(
@@ -1964,40 +2046,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         if count is not None:
             argv.extend([b"COUNT", count])
         raw = await self._aeval_call("XREVRANGE", [key], argv)
-        return self._decode_xrange(raw)
-
-    def _decode_xrange(self, raw: list[Any] | None) -> list[tuple[str, dict[str, Any]]]:
-        if not raw:
-            return []
-        out: list[tuple[str, dict[str, Any]]] = []
-        for entry in raw:
-            entry_id = entry[0]
-            if isinstance(entry_id, bytes):
-                entry_id = entry_id.decode()
-            kv = entry[1]
-            fields: dict[str, Any] = {}
-            if isinstance(kv, list):
-                # RESP2/Lua returns a flat ``[f1, v1, f2, v2, ...]`` list.
-                it = iter(kv)
-                for f, v in zip(it, it, strict=False):
-                    field_name = f.decode() if isinstance(f, bytes) else str(f)
-                    fields[field_name] = v
-            elif isinstance(kv, dict):
-                for f, v in kv.items():
-                    field_name = f.decode() if isinstance(f, bytes) else str(f)
-                    fields[field_name] = v
-            out.append((entry_id, fields))
-        return out
-
-    def _decode_xread(self, raw: Any) -> dict[str, list[tuple[str, dict[str, Any]]]]:
-        if raw is None:
-            return {}
-        if isinstance(raw, dict):
-            return {(k.decode() if isinstance(k, bytes) else k): self._decode_xrange(v) for k, v in raw.items()}
-        # RESP2 list shape: [[stream_key, entries], ...]
-        return {
-            (item[0].decode() if isinstance(item[0], bytes) else item[0]): self._decode_xrange(item[1]) for item in raw
-        }
+        return _decode_xrange(raw)
 
     @override
     def xread(
@@ -2008,7 +2057,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
         keys = [_str_key(k) for k in streams]
         ids = list(streams.values())
-        return self._decode_xread(self._driver.xread(keys, ids, count=count))
+        return _decode_xread(self._driver.xread(keys, ids, count=count))
 
     @override
     async def axread(
@@ -2020,7 +2069,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         keys = [_str_key(k) for k in streams]
         ids = list(streams.values())
         raw = await self._driver.axread(keys, ids, count=count)
-        return self._decode_xread(raw)
+        return _decode_xread(raw)
 
     @override
     def xreadgroup(
@@ -2034,7 +2083,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
     ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
         keys = [_str_key(k) for k in streams]
         ids = list(streams.values())
-        return self._decode_xread(
+        return _decode_xread(
             self._driver.xreadgroup(group, consumer, keys, ids, count=count),
         )
 
@@ -2051,7 +2100,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         keys = [_str_key(k) for k in streams]
         ids = list(streams.values())
         raw = await self._driver.axreadgroup(group, consumer, keys, ids, count=count)
-        return self._decode_xread(raw)
+        return _decode_xread(raw)
 
     @override
     def xtrim(
@@ -2141,7 +2190,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         return self._driver.eval(
             self._EVAL_SUBCALL_TEMPLATE.format(cmd=command),
             [_str_key(k) for k in keys],
-            [sub.encode("ascii"), *(a if isinstance(a, bytes) else self._eval_arg(a) for a in args)],
+            [sub.encode("ascii"), *_eval_args(args)],
         )
 
     async def _aeval_subcall(
@@ -2154,7 +2203,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
         return await self._driver.aeval(
             self._EVAL_SUBCALL_TEMPLATE.format(cmd=command),
             [_str_key(k) for k in keys],
-            [sub.encode("ascii"), *(a if isinstance(a, bytes) else self._eval_arg(a) for a in args)],
+            [sub.encode("ascii"), *_eval_args(args)],
         )
 
     @override
@@ -2225,46 +2274,6 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
 
     # ---- xpending / xclaim / xautoclaim: driver-backed, decoded here ----
 
-    @staticmethod
-    def _decode_id(v: Any) -> str:
-        return v.decode() if isinstance(v, bytes) else str(v)
-
-    @staticmethod
-    def _decode_consumer(v: Any) -> str:
-        return v.decode() if isinstance(v, bytes) else str(v)
-
-    def _decode_xpending_summary(self, raw: Any) -> dict[str, Any]:
-        # Summary form: ``[count, min_id, max_id, [[consumer, count], ...] | None]``.
-        if not raw:
-            return {"pending": 0, "min": None, "max": None, "consumers": []}
-        count = int(raw[0]) if raw[0] is not None else 0
-        min_id = self._decode_id(raw[1]) if raw[1] is not None else None
-        max_id = self._decode_id(raw[2]) if raw[2] is not None else None
-        consumers: list[dict[str, Any]] = []
-        if len(raw) > 3 and raw[3]:
-            consumers.extend(
-                {
-                    "name": self._decode_consumer(entry[0]),
-                    "pending": int(entry[1]),
-                }
-                for entry in raw[3]
-            )
-        return {"pending": count, "min": min_id, "max": max_id, "consumers": consumers}
-
-    def _decode_xpending_range(self, raw: Any) -> list[dict[str, Any]]:
-        # Range form: ``[[id, consumer, idle_ms, delivery_count], ...]``.
-        if not raw:
-            return []
-        return [
-            {
-                "message_id": self._decode_id(entry[0]),
-                "consumer": self._decode_consumer(entry[1]),
-                "time_since_delivered": int(entry[2]),
-                "times_delivered": int(entry[3]),
-            }
-            for entry in raw
-        ]
-
     @override
     def xpending(
         self,
@@ -2286,9 +2295,9 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
                 consumer=consumer,
                 idle=idle,
             )
-            return self._decode_xpending_range(raw)
+            return _decode_xpending_range(raw)
         raw = self._driver.xpending(_str_key(key), group)
-        return self._decode_xpending_summary(raw)
+        return _decode_xpending_summary(raw)
 
     @override
     async def axpending(
@@ -2311,9 +2320,9 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
                 consumer=consumer,
                 idle=idle,
             )
-            return self._decode_xpending_range(raw)
+            return _decode_xpending_range(raw)
         raw = await self._driver.axpending(_str_key(key), group)
-        return self._decode_xpending_summary(raw)
+        return _decode_xpending_summary(raw)
 
     @override
     def xclaim(
@@ -2342,8 +2351,8 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
             justid=justid,
         )
         if justid:
-            return [self._decode_id(eid) for eid in (raw or [])]
-        return self._decode_xrange(raw)
+            return [_decode_str(eid) for eid in (raw or [])]
+        return _decode_xrange(raw)
 
     @override
     async def axclaim(
@@ -2372,24 +2381,8 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
             justid=justid,
         )
         if justid:
-            return [self._decode_id(eid) for eid in (raw or [])]
-        return self._decode_xrange(raw)
-
-    def _decode_xautoclaim(
-        self,
-        raw: Any,
-        *,
-        justid: bool,
-    ) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
-        # XAUTOCLAIM returns ``[next_id, entries, deleted_ids]`` (Redis 7+).
-        next_id = self._decode_id(raw[0]) if raw and raw[0] is not None else "0-0"
-        entries = raw[1] if len(raw) > 1 else []
-        deleted_raw = raw[2] if len(raw) > 2 else []
-        deleted = [self._decode_id(d) for d in (deleted_raw or [])]
-        if justid:
-            claimed_ids = [self._decode_id(eid) for eid in (entries or [])]
-            return (next_id, claimed_ids, deleted)
-        return (next_id, self._decode_xrange(entries), deleted)
+            return [_decode_str(eid) for eid in (raw or [])]
+        return _decode_xrange(raw)
 
     @override
     def xautoclaim(
@@ -2411,7 +2404,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
             count=count,
             justid=justid,
         )
-        return self._decode_xautoclaim(raw, justid=justid)
+        return _decode_xautoclaim(raw, justid=justid)
 
     @override
     async def axautoclaim(
@@ -2433,7 +2426,7 @@ class RustValkeyAdapter(BaseKeyValueAdapter):
             count=count,
             justid=justid,
         )
-        return self._decode_xautoclaim(raw, justid=justid)
+        return _decode_xautoclaim(raw, justid=justid)
 
     # ---- scan iterators: single-shot via driver, no cursor exposed ----
 
