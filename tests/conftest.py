@@ -43,7 +43,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     )
     for item in items:
         callspec = getattr(item, "callspec", None)
-        if callspec is None or callspec.params.get("driver") != "rust":
+        if callspec is None or callspec.params.get("driver") != "redis-rs":
             continue
         if item.path.name in _PY_INTERNALS_TEST_FILES:
             item.add_marker(skip_rust_internals)

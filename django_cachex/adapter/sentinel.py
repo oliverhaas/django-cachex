@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from django.core.exceptions import ImproperlyConfigured
 
-from django_cachex.client.default import _ASYNC_POOLS, KeyValueCacheClient, _options_key
+from django_cachex.adapter.default import _ASYNC_POOLS, BaseKeyValueAdapter, _options_key
 
 if TYPE_CHECKING:
     from redis.connection import ConnectionPool
@@ -48,7 +48,7 @@ except ImportError:
 # =============================================================================
 
 
-class KeyValueSentinelCacheClient(KeyValueCacheClient):
+class BaseKeyValueSentinelAdapter(BaseKeyValueAdapter):
     """Sentinel cache client with automatic primary/replica discovery via Sentinel."""
 
     # Subclasses must set these to the appropriate sentinel classes
@@ -205,8 +205,8 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
         """Get an async sentinel-managed connection pool, shared process-wide.
 
         Uses the same ``_ASYNC_POOLS`` registry as the non-sentinel client so
-        per-task ``KeyValueCacheClient`` instances share a single pool. See
-        ``KeyValueCacheClient._get_async_connection_pool`` for the rationale.
+        per-task ``BaseKeyValueAdapter`` instances share a single pool. See
+        ``BaseKeyValueAdapter._get_async_connection_pool`` for the rationale.
         """
         loop = asyncio.get_running_loop()
         index = self._get_connection_pool_index(write=write)
@@ -263,7 +263,7 @@ class KeyValueSentinelCacheClient(KeyValueCacheClient):
 
 if _REDIS_AVAILABLE:
 
-    class RedisSentinelCacheClient(KeyValueSentinelCacheClient):
+    class RedisSentinelAdapter(BaseKeyValueSentinelAdapter):
         """Redis Sentinel cache client using redis-py."""
 
         _lib = redis
@@ -277,18 +277,18 @@ if _REDIS_AVAILABLE:
 
 else:
 
-    class RedisSentinelCacheClient(KeyValueCacheClient):  # type: ignore[no-redef]
+    class RedisSentinelAdapter(BaseKeyValueAdapter):  # type: ignore[no-redef]
         """Redis Sentinel cache client (requires redis-py to be installed)."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             raise ImportError(
-                "RedisSentinelCacheClient requires redis-py to be installed. Install it with: pip install redis",
+                "RedisSentinelAdapter requires redis-py to be installed. Install it with: pip install redis",
             )
 
 
 if _VALKEY_AVAILABLE:
 
-    class ValkeySentinelCacheClient(KeyValueSentinelCacheClient):
+    class ValkeySentinelAdapter(BaseKeyValueSentinelAdapter):
         """Valkey Sentinel cache client using valkey-py."""
 
         _lib = valkey
@@ -302,19 +302,19 @@ if _VALKEY_AVAILABLE:
 
 else:
 
-    class ValkeySentinelCacheClient(KeyValueCacheClient):  # type: ignore[no-redef]
+    class ValkeySentinelAdapter(BaseKeyValueAdapter):  # type: ignore[no-redef]
         """Valkey Sentinel cache client (requires valkey-py to be installed)."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             raise ImportError(
-                "ValkeySentinelCacheClient requires valkey-py to be installed. Install it with: pip install valkey",
+                "ValkeySentinelAdapter requires valkey-py to be installed. Install it with: pip install valkey",
             )
 
 
 __all__ = [
     "_REDIS_AVAILABLE",
     "_VALKEY_AVAILABLE",
-    "KeyValueSentinelCacheClient",
-    "RedisSentinelCacheClient",
-    "ValkeySentinelCacheClient",
+    "BaseKeyValueSentinelAdapter",
+    "RedisSentinelAdapter",
+    "ValkeySentinelAdapter",
 ]

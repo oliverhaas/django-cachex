@@ -122,7 +122,7 @@ class TestDataTypePersistence:
         assert result == "café résumé"
 
     def test_dictionary_with_datetime(self, cache: KeyValueCache):
-        if isinstance(cache._cache._serializers[0], JSONSerializer | MessagePackSerializer):
+        if isinstance(cache.adapter._serializers[0], JSONSerializer | MessagePackSerializer):
             timestamp: str | datetime.datetime = datetime.datetime.now().isoformat()
         else:
             timestamp = datetime.datetime.now()
@@ -693,7 +693,7 @@ class TestAsyncDataTypePersistence:
 
     @pytest.mark.asyncio
     async def test_adictionary_with_datetime(self, cache: KeyValueCache):
-        if isinstance(cache._cache._serializers[0], JSONSerializer | MessagePackSerializer):
+        if isinstance(cache.adapter._serializers[0], JSONSerializer | MessagePackSerializer):
             timestamp: str | datetime.datetime = datetime.datetime.now().isoformat()
         else:
             timestamp = datetime.datetime.now()

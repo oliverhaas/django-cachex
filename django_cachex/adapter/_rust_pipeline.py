@@ -1,6 +1,6 @@
 """Raw pipeline shim for the Rust driver.
 
-The shared :class:`~django_cachex.client.pipeline.Pipeline` wrapper drives an
+The shared :class:`~django_cachex.adapter.pipeline.Pipeline` wrapper drives an
 underlying ``self._pipeline`` object whose method surface mirrors redis-py's
 ``Pipeline`` (``set``, ``get``, ``hset``, ``zadd``, ...). This module provides
 that surface for the Rust driver: each method buffers a Redis wire command
@@ -229,7 +229,7 @@ class _RustRawPipeline:
     """Buffers commands for batched execution against the Rust driver.
 
     Implements the subset of the redis-py ``Pipeline`` API that the shared
-    :class:`~django_cachex.client.pipeline.Pipeline` wrapper actually calls.
+    :class:`~django_cachex.adapter.pipeline.Pipeline` wrapper actually calls.
     """
 
     def __init__(self, driver: RustValkeyDriver, *, transaction: bool = True) -> None:

@@ -47,7 +47,7 @@ class CacheAdmin(CacheAdminMixin, _CacheBase):  # type: ignore[misc]
             "<td style='padding: 2px 8px;'>Full support — All features including streams, "
             "pipelines, Lua scripting, and data operations</td></tr>"
             "<tr><td style='padding: 2px 8px;'><strong>wrapped</strong></td>"
-            "<td style='padding: 2px 8px;'>CachexMixin — data structures, key browsing, TTL management, "
+            "<td style='padding: 2px 8px;'>CachexCompat — data structures, key browsing, TTL management, "
             "but no streams, pipelines, or Lua</td></tr>"
             "<tr><td style='padding: 2px 8px;'><strong>limited</strong></td>"
             "<td style='padding: 2px 8px;'>Limited support — bare Django or custom backends, "

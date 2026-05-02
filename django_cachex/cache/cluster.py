@@ -4,21 +4,21 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from django_cachex.adapter.cluster import BaseKeyValueClusterAdapter
 from django_cachex.cache.default import KeyValueCache
-from django_cachex.client.cluster import KeyValueClusterCacheClient
 
 if TYPE_CHECKING:
-    from django_cachex.client.pipeline import Pipeline
+    from django_cachex.adapter.pipeline import Pipeline
 
 
 class KeyValueClusterCache(KeyValueCache):
     """Cluster cache backend base class.
 
     Extends KeyValueCache for cluster-specific behavior.
-    Subclasses set `_class` class attribute to their specific ClusterCacheClient.
+    Subclasses set `_adapter_class` class attribute to their specific ClusterCacheClient.
     """
 
-    _class: type[KeyValueClusterCacheClient] = KeyValueClusterCacheClient
+    _adapter_class: type[BaseKeyValueClusterAdapter] = BaseKeyValueClusterAdapter
 
     def pipeline(
         self,
@@ -32,7 +32,7 @@ class KeyValueClusterCache(KeyValueCache):
 
 # Try to import Redis Cluster
 try:
-    from django_cachex.client.cluster import RedisClusterCacheClient
+    from django_cachex.adapter.cluster import RedisClusterAdapter
 
     class RedisClusterCache(KeyValueClusterCache):
         """Django cache backend for Redis Cluster mode.
@@ -40,7 +40,7 @@ try:
         Keys are sharded across nodes by hash slot.
         """
 
-        _class = RedisClusterCacheClient
+        _adapter_class = RedisClusterAdapter
 
 except ImportError:
 
@@ -55,7 +55,7 @@ except ImportError:
 
 # Try to import Valkey Cluster
 try:
-    from django_cachex.client.cluster import ValkeyClusterCacheClient
+    from django_cachex.adapter.cluster import ValkeyClusterAdapter
 
     class ValkeyClusterCache(KeyValueClusterCache):
         """Django cache backend for Valkey Cluster mode.
@@ -63,7 +63,7 @@ try:
         Keys are sharded across nodes by hash slot.
         """
 
-        _class = ValkeyClusterCacheClient
+        _adapter_class = ValkeyClusterAdapter
 
 except ImportError:
 

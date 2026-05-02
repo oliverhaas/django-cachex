@@ -1,4 +1,4 @@
-"""Tests for RedisClusterCacheClient."""
+"""Tests for RedisClusterAdapter."""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
@@ -6,12 +6,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from redis.cluster import RedisCluster, key_slot
 
-from django_cachex.client import RedisClusterCacheClient
+from django_cachex.adapter import RedisClusterAdapter
 
 
 def setup_cluster_client(mock_cluster_cls=None):
-    """Helper to create a properly configured RedisClusterCacheClient for testing."""
-    client = RedisClusterCacheClient.__new__(RedisClusterCacheClient)
+    """Helper to create a properly configured RedisClusterAdapter for testing."""
+    client = RedisClusterAdapter.__new__(RedisClusterAdapter)
     client._servers = ["redis://localhost:7000"]
     client._options = {}
     client._cluster_instance = None
@@ -24,8 +24,8 @@ def setup_cluster_client(mock_cluster_cls=None):
     return client
 
 
-class TestRedisClusterCacheClient:
-    """Tests for RedisClusterCacheClient."""
+class TestRedisClusterAdapter:
+    """Tests for RedisClusterAdapter."""
 
     def test_get_client_creates_cluster(self):
         mock_cluster_cls = MagicMock()

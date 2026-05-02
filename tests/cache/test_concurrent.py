@@ -1,6 +1,6 @@
 """Concurrent thread-safety tests for cache compound data-structure ops.
 
-Targets the read-modify-write race in ``CachexMixin`` (#62): operations like
+Targets the read-modify-write race in ``CachexCompat`` (#62): operations like
 ``lpush``/``sadd``/``hset``/``hincrby``/``zadd``/``zincrby`` are implemented as
 GET-then-SET, so two concurrent calls on the same key can lose data.
 
@@ -10,7 +10,7 @@ the chance of catching the race within the test's iteration budget.
 
 Backends covered:
 
-- ``LocMemCache`` (``CachexMixin``) — RED until #62 is fixed.
+- ``LocMemCache`` (``CachexCompat``) — RED until #62 is fixed.
 - Redis-backed via the existing ``cache`` fixture — uses native atomic
   Redis commands, so these tests serve as cross-backend smoke coverage.
 """
@@ -78,7 +78,7 @@ def _run_in_threads(worker: Callable[[int], None], n_threads: int = N_THREADS) -
 
 
 # =============================================================================
-# CachexMixin race tests (RED on main, GREEN once #62 is fixed)
+# CachexCompat race tests (RED on main, GREEN once #62 is fixed)
 # =============================================================================
 
 

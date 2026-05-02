@@ -25,12 +25,12 @@ class Pipeline:
 
     def __init__(
         self,
-        cache_client: Any,
+        adapter: Any,
         pipeline: Any,
         version: int | None = None,
     ) -> None:
         """Initialize the wrapped pipeline."""
-        self._client = cache_client
+        self._adapter = adapter
         self._pipeline = pipeline
         self._version = version
         self._key_func: Callable[..., str] | None = None
@@ -71,31 +71,31 @@ class Pipeline:
         """
         if value is None:
             return None
-        return self._client.decode(value)
+        return self._adapter.decode(value)
 
     def _decode_list(self, value: list[bytes | None]) -> list[Any]:
         """Decode a list of values."""
-        return [self._client.decode(item) if item is not None else None for item in value]
+        return [self._adapter.decode(item) if item is not None else None for item in value]
 
     def _decode_single_or_list(self, value: bytes | list[bytes | None] | None) -> Any:
         """Decode value that may be single item, list, or None (lpop/rpop with count)."""
         if value is None:
             return None
         if isinstance(value, list):
-            return [self._client.decode(item) if item is not None else None for item in value]
-        return self._client.decode(value)
+            return [self._adapter.decode(item) if item is not None else None for item in value]
+        return self._adapter.decode(value)
 
     def _decode_set(self, value: _Set[bytes]) -> _Set[Any]:
         """Decode a set of values."""
-        return {self._client.decode(item) for item in value}
+        return {self._adapter.decode(item) for item in value}
 
     def _decode_set_or_single(self, value: _Set[bytes] | bytes | None) -> _Set[Any] | Any:
         """Decode spop/srandmember result (set, single value, or None)."""
         if value is None:
             return None
         if isinstance(value, (set, list)):
-            return {self._client.decode(item) for item in value}
-        return self._client.decode(value)
+            return {self._adapter.decode(item) for item in value}
+        return self._adapter.decode(value)
 
     def _decode_hash_keys(self, value: list[bytes]) -> list[str]:
         """Decode hash field names (keys are not serialized, just bytes)."""
@@ -103,19 +103,19 @@ class Pipeline:
 
     def _decode_hash_values(self, value: list[bytes | None]) -> list[Any]:
         """Decode hash values (may contain None for missing fields)."""
-        return [self._client.decode(v) if v is not None else None for v in value]
+        return [self._adapter.decode(v) if v is not None else None for v in value]
 
     def _decode_hash_dict(self, value: dict[bytes, bytes]) -> dict[str, Any]:
         """Decode a full hash (keys are strings, values are decoded)."""
-        return {k.decode(): self._client.decode(v) for k, v in value.items()}
+        return {k.decode(): self._adapter.decode(v) for k, v in value.items()}
 
     def _decode_zset_members(self, value: list[bytes]) -> list[Any]:
         """Decode sorted set members (without scores)."""
-        return [self._client.decode(member) for member in value]
+        return [self._adapter.decode(member) for member in value]
 
     def _decode_zset_with_scores(self, value: list[tuple[bytes, float]]) -> list[tuple[Any, float]]:
         """Decode sorted set members with scores."""
-        return [(self._client.decode(member), score) for member, score in value]
+        return [(self._adapter.decode(member), score) for member, score in value]
 
     def _make_zset_decoder(self, *, withscores: bool) -> Callable[[list[tuple[bytes, float]]], list]:
         """Create decoder based on whether scores are included."""
@@ -127,7 +127,7 @@ class Pipeline:
         """Decode zpopmin/zpopmax result."""
         if not value:
             return []
-        return [(self._client.decode(member), score) for member, score in value]
+        return [(self._adapter.decode(member), score) for member, score in value]
 
     def _decode_type(self, value: bytes | str) -> str:
         """Decode TYPE result to string."""
@@ -142,7 +142,7 @@ class Pipeline:
         return [
             (
                 entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
-                {k.decode() if isinstance(k, bytes) else k: self._client.decode(v) for k, v in fields.items()},
+                {k.decode() if isinstance(k, bytes) else k: self._adapter.decode(v) for k, v in fields.items()},
             )
             for entry_id, fields in results
         ]
@@ -190,11 +190,11 @@ class Pipeline:
         v = version if version is not None else self._version
         if self._key_func is not None:
             return self._key_func(key, version=v)
-        return self._client.make_key(key, version=v)
+        return self._adapter.make_key(key, version=v)
 
     def _encode(self, value: Any) -> bytes | int:
         """Encode a value for storage."""
-        return self._client.encode(value)
+        return self._adapter.encode(value)
 
     # -------------------------------------------------------------------------
     # Core cache operations
@@ -214,7 +214,7 @@ class Pipeline:
         """Queue a SET command."""
         nkey = self._make_key(key, version)
         nvalue = self._encode(value)
-        actual_timeout = self._client._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self._adapter._get_timeout_with_buffer(timeout, stampede_prevention)
 
         # timeout=0 means "expire immediately" (Django convention) — queue a DELETE
         if actual_timeout == 0:
@@ -750,9 +750,9 @@ class Pipeline:
         # Returns list when count is specified, single value otherwise
         self._decoders.append(
             lambda x: (
-                [self._client.decode(item) for item in x]
+                [self._adapter.decode(item) for item in x]
                 if isinstance(x, list)
-                else (self._client.decode(x) if x is not None else None)
+                else (self._adapter.decode(x) if x is not None else None)
             ),
         )
         return self
@@ -951,7 +951,7 @@ class Pipeline:
         """Queue HVALS command (get all values)."""
         nkey = self._make_key(key, version)
         self._pipeline.hvals(nkey)
-        self._decoders.append(lambda x: [self._client.decode(v) for v in x])
+        self._decoders.append(lambda x: [self._adapter.decode(v) for v in x])
         return self
 
     # -------------------------------------------------------------------------
@@ -1569,8 +1569,8 @@ class Pipeline:
         # Create helpers for pre/post processing
         helpers = ScriptHelpers(
             make_key=self._make_key,
-            encode=self._client.encode,
-            decode=self._client.decode,
+            encode=self._adapter.encode,
+            decode=self._adapter.decode,
             version=v,
         )
 

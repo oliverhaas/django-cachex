@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
+from django_cachex.adapter.glide import ValkeyGlideAdapter
 from django_cachex.cache.default import KeyValueCache
-from django_cachex.client.glide import ValkeyGlideCacheClient
 
 
 class ValkeyGlideCache(KeyValueCache):
     """Django cache backend using ``valkey-glide-sync``."""
 
     _cachex_support = "cachex"
-    _class = ValkeyGlideCacheClient
+    _adapter_class = ValkeyGlideAdapter
 
 
 __all__ = ["ValkeyGlideCache"]

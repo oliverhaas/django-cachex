@@ -1,7 +1,7 @@
 """Cache client classes for Redis-compatible backends.
 
-Provides library-agnostic KeyValueCacheClient base class with RedisCacheClient
-and ValkeyCacheClient subclasses that swap the underlying library via class attributes.
+Provides library-agnostic BaseKeyValueAdapter base class with RedisAdapter
+and ValkeyAdapter subclasses that swap the underlying library via class attributes.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     import builtins
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
 
-    from django_cachex.client.pipeline import Pipeline
+    from django_cachex.adapter.pipeline import Pipeline
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, _Set
 
 # Try to import redis-py and/or valkey-py
@@ -49,7 +49,7 @@ except ImportError:
 # =============================================================================
 # Django's ``asgiref.local.Local``-backed cache handler returns a fresh
 # ``BaseCache`` instance per asyncio task, which means our cached
-# ``KeyValueCacheClient`` (and any instance-level pool dict) is fresh per
+# ``BaseKeyValueAdapter`` (and any instance-level pool dict) is fresh per
 # task. Without a process-wide registry every async cache call creates a
 # brand-new pool — ``max_connections`` is moot because each call gets its
 # own pool. Sharing pools at the module level by event loop + config makes
@@ -95,11 +95,11 @@ def _options_key(options: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
 
 
 # =============================================================================
-# KeyValueCacheClient - base class (library-agnostic)
+# BaseKeyValueAdapter - base class (library-agnostic)
 # =============================================================================
 
 
-class KeyValueCacheClient:
+class BaseKeyValueAdapter:
     """Base cache client class with configurable library.
 
     Subclasses must set _lib, _client_class, and _pool_class class attributes.
@@ -356,7 +356,7 @@ class KeyValueCacheClient:
         index = self._get_connection_pool_index(write=write)
 
         if self._async_pool_class is None:
-            msg = "Async operations require _async_pool_class to be set. Use RedisCacheClient or ValkeyCacheClient."
+            msg = "Async operations require _async_pool_class to be set. Use RedisAdapter or ValkeyAdapter."
             raise RuntimeError(msg)
 
         # Filter out parser_class — it's sync-specific.
@@ -383,7 +383,7 @@ class KeyValueCacheClient:
         """Get an async client connection."""
         pool = self._get_async_connection_pool(write=write)
         if self._async_client_class is None:
-            msg = "Async operations require _async_client_class to be set. Use RedisCacheClient or ValkeyCacheClient."
+            msg = "Async operations require _async_client_class to be set. Use RedisAdapter or ValkeyAdapter."
             raise RuntimeError(msg)
         return self._async_client_class(connection_pool=pool)
 
@@ -1093,11 +1093,11 @@ class KeyValueCacheClient:
         version: int | None = None,
     ) -> Pipeline:
         """Create a pipeline for batched operations."""
-        from django_cachex.client.pipeline import Pipeline
+        from django_cachex.adapter.pipeline import Pipeline
 
         client = self.get_client(write=True)
         raw_pipeline = client.pipeline(transaction=transaction)
-        return Pipeline(cache_client=self, pipeline=raw_pipeline, version=version)
+        return Pipeline(adapter=self, pipeline=raw_pipeline, version=version)
 
     # =========================================================================
     # Server Operations
@@ -2932,14 +2932,14 @@ class KeyValueCacheClient:
 
 
 # =============================================================================
-# RedisCacheClient - concrete implementation for redis-py
+# RedisAdapter - concrete implementation for redis-py
 # =============================================================================
 
 if _REDIS_AVAILABLE:
     from redis.asyncio import ConnectionPool as RedisAsyncConnectionPool
     from redis.asyncio import Redis as RedisAsyncClient
 
-    class RedisCacheClient(KeyValueCacheClient):
+    class RedisAdapter(BaseKeyValueAdapter):
         """Redis cache client using redis-py."""
 
         _lib = redis
@@ -2950,23 +2950,23 @@ if _REDIS_AVAILABLE:
 
 else:
 
-    class RedisCacheClient(KeyValueCacheClient):  # type: ignore[no-redef]
+    class RedisAdapter(BaseKeyValueAdapter):  # type: ignore[no-redef]
         """Redis cache client (requires redis-py)."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
-            msg = "RedisCacheClient requires redis-py. Install with: pip install redis"
+            msg = "RedisAdapter requires redis-py. Install with: pip install redis"
             raise ImportError(msg)
 
 
 # =============================================================================
-# ValkeyCacheClient - concrete implementation for valkey-py
+# ValkeyAdapter - concrete implementation for valkey-py
 # =============================================================================
 
 if _VALKEY_AVAILABLE:
     from valkey.asyncio import ConnectionPool as ValkeyAsyncConnectionPool
     from valkey.asyncio import Valkey as ValkeyAsyncClient
 
-    class ValkeyCacheClient(KeyValueCacheClient):
+    class ValkeyAdapter(BaseKeyValueAdapter):
         """Valkey cache client using valkey-py."""
 
         _lib = valkey
@@ -2977,11 +2977,11 @@ if _VALKEY_AVAILABLE:
 
 else:
 
-    class ValkeyCacheClient(KeyValueCacheClient):  # type: ignore[no-redef]
+    class ValkeyAdapter(BaseKeyValueAdapter):  # type: ignore[no-redef]
         """Valkey cache client (requires valkey-py)."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
-            raise ImportError("ValkeyCacheClient requires valkey-py. Install with: pip install valkey")
+            raise ImportError("ValkeyAdapter requires valkey-py. Install with: pip install valkey")
 
 
 # =============================================================================
@@ -2989,7 +2989,7 @@ else:
 # =============================================================================
 
 __all__ = [
-    "KeyValueCacheClient",
-    "RedisCacheClient",
-    "ValkeyCacheClient",
+    "BaseKeyValueAdapter",
+    "RedisAdapter",
+    "ValkeyAdapter",
 ]

@@ -1,4 +1,4 @@
-"""Tests for cachex LocMemCache, DatabaseCache, and CachexMixin."""
+"""Tests for cachex LocMemCache, DatabaseCache, and CachexCompat."""
 
 import pytest
 from django.core.cache import caches

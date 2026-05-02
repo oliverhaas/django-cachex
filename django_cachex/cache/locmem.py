@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 from django.core.cache.backends.locmem import LocMemCache as DjangoLocMemCache
 
-from django_cachex.cache.mixin import CachexMixin
+from django_cachex.cache.mixin import CachexCompat
 from django_cachex.utils import _deep_getsizeof, _format_bytes
 
 if TYPE_CHECKING:
@@ -45,7 +45,7 @@ if TYPE_CHECKING:
 _compound_locks: dict[str, threading.RLock] = {}
 
 
-class LocMemCache(CachexMixin, DjangoLocMemCache):
+class LocMemCache(CachexCompat, DjangoLocMemCache):
     """LocMemCache with cachex extensions.
 
     Drop-in replacement for ``django.core.cache.backends.locmem.LocMemCache``.

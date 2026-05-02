@@ -1,10 +1,23 @@
-"""CachexMixin — shared functionality for non-Redis cache backends.
+"""CachexCompat — emulated cachex surface over plain ``BaseCache``.
 
-Provides data structure operations (lists, sets, hashes, sorted sets),
-TTL helpers, type detection, key scanning, and admin support markers.
+This mixin emulates cachex data-structure ops (hashes, sets, sorted sets,
+lists, locks, etc.) on top of plain ``get``/``set``. Compound ops are
+read-modify-write, so they need a backend-supplied atomicity primitive
+to be safe under concurrency. Subclasses override
+``_compound_op_lock()`` to provide one (default is no-op).
 
-All data structure operations are implemented via get/set on Python objects,
-making them compatible with any BaseCache-conformant backend.
+Sanctioned users:
+
+- ``LocMemCache`` — single-process, ``threading.RLock`` via
+  ``_compound_op_lock()`` makes compound ops atomic within the process.
+- The django-cachex admin views — wrap any backend with the same
+  cachex-shaped surface. Admin traffic is single-user clicking through
+  pages, so the lack of cross-process atomicity is acceptable.
+
+For multi-process or production-throughput cachex usage, prefer a
+backend that implements ops natively against an atomic primitive:
+``KeyValueCache`` (Redis/Valkey via adapter; native ops + EVAL),
+or ``DatabaseCache`` (compound ops in a transaction).
 """
 
 from __future__ import annotations
@@ -33,21 +46,21 @@ _MISSING = object()
 def _compound_op(method: Callable[..., Any]) -> Callable[..., Any]:
     """Wrap a read-modify-write op in the backend's compound-op lock.
 
-    ``CachexMixin._compound_op_lock`` is a no-op by default; subclasses with
+    ``CachexCompat._compound_op_lock`` is a no-op by default; subclasses with
     real synchronization (e.g. ``LocMemCache``) override it. Reentrant locks
     (Django's ``RLock``) make this safe even when ``self.set``/``self.delete``
     re-acquire the same lock internally.
     """
 
     @wraps(method)
-    def wrapper(self: CachexMixin, *args: Any, **kwargs: Any) -> Any:
+    def wrapper(self: CachexCompat, *args: Any, **kwargs: Any) -> Any:
         with self._compound_op_lock():
             return method(self, *args, **kwargs)
 
     return wrapper
 
 
-class CachexMixin(BaseCacheExtensions):
+class CachexCompat(BaseCacheExtensions):
     """Cachex extension methods for any BaseCache subclass.
 
     Adds data structure ops (lists, sets, hashes, sorted sets), type

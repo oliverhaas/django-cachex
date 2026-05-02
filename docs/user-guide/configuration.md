@@ -194,14 +194,21 @@ Probabilistic early recompute (XFetch) to avoid thundering-herd recompute when a
 
 Per-call overrides accept the same shapes via the `stampede_prevention=` keyword on `get`/`set`/`add`/`get_or_set`/`get_many`/`set_many`.
 
-### Custom client class
+### Choosing an adapter
 
-```python
-"OPTIONS": {
-    # Use the Rust driver client
-    "client_class": "django_cachex.client.rust.RustValkeyCacheClient",
-}
-```
+The adapter (the layer that talks to the underlying client lib) is
+selected by your ``BACKEND``. Each cache class has a fixed adapter:
+
+| Backend                                            | Adapter         |
+|----------------------------------------------------|-----------------|
+| ``django_cachex.cache.RedisCache``                 | redis-py        |
+| ``django_cachex.cache.ValkeyCache``                | valkey-py       |
+| ``django_cachex.cache.RustValkeyCache``            | Rust driver     |
+| ``django_cachex.cache.ValkeyGlideCache``           | valkey-glide    |
+
+To use a different adapter, change ``BACKEND``. The matching
+``*ClusterCache`` and ``*SentinelCache`` classes pick the same
+adapter family in cluster/sentinel mode.
 
 ## Authentication
 

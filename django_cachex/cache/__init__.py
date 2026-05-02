@@ -16,7 +16,7 @@ from django_cachex.cache.default import (
 )
 from django_cachex.cache.glide import ValkeyGlideCache
 from django_cachex.cache.locmem import LocMemCache
-from django_cachex.cache.mixin import CachexMixin
+from django_cachex.cache.mixin import CachexCompat
 from django_cachex.cache.rust import (
     RustRedisCache,
     RustRedisClusterCache,
@@ -34,7 +34,7 @@ from django_cachex.cache.stream import StreamCache
 from django_cachex.cache.tiered import TieredCache
 
 __all__ = [
-    "CachexMixin",
+    "CachexCompat",
     "DatabaseCache",
     "KeyValueCache",
     "KeyValueClusterCache",

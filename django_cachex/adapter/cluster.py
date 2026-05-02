@@ -13,13 +13,13 @@ from itertools import batched
 from typing import TYPE_CHECKING, Any, cast, override
 from urllib.parse import urlparse
 
-from django_cachex.client.default import KeyValueCacheClient
+from django_cachex.adapter.default import BaseKeyValueAdapter
 from django_cachex.exceptions import NotSupportedError
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
 
-    from django_cachex.client.pipeline import Pipeline
+    from django_cachex.adapter.pipeline import Pipeline
     from django_cachex.types import KeyT
 
 # =============================================================================
@@ -27,10 +27,10 @@ if TYPE_CHECKING:
 # =============================================================================
 
 
-class KeyValueClusterCacheClient(KeyValueCacheClient):
+class BaseKeyValueClusterAdapter(BaseKeyValueAdapter):
     """Cluster cache client base class.
 
-    Extends KeyValueCacheClient with cluster-specific handling for
+    Extends BaseKeyValueAdapter with cluster-specific handling for
     server-side sharding and slot-aware operations.
     """
 
@@ -476,11 +476,11 @@ class KeyValueClusterCacheClient(KeyValueCacheClient):
         version: int | None = None,
     ) -> Pipeline:
         """Create a pipeline for batched operations. Transactions are ignored in cluster mode."""
-        from django_cachex.client.pipeline import Pipeline
+        from django_cachex.adapter.pipeline import Pipeline
 
         client = self.get_client(write=True)
         raw_pipeline = client.pipeline(transaction=False)
-        return Pipeline(cache_client=self, pipeline=raw_pipeline, version=version)
+        return Pipeline(adapter=self, pipeline=raw_pipeline, version=version)
 
 
 # =============================================================================
@@ -494,7 +494,7 @@ try:
     from redis.cluster import RedisCluster
     from redis.cluster import key_slot as redis_key_slot
 
-    class RedisClusterCacheClient(KeyValueClusterCacheClient):
+    class RedisClusterAdapter(BaseKeyValueClusterAdapter):
         """Redis Cluster cache client using redis-py."""
 
         _lib = redis
@@ -506,12 +506,12 @@ try:
 
 except ImportError:
 
-    class RedisClusterCacheClient(KeyValueCacheClient):  # type: ignore[no-redef]
+    class RedisClusterAdapter(BaseKeyValueAdapter):  # type: ignore[no-redef]
         """Redis Cluster cache client (requires redis-py to be installed)."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             raise ImportError(
-                "RedisClusterCacheClient requires redis-py to be installed. Install it with: pip install redis",
+                "RedisClusterAdapter requires redis-py to be installed. Install it with: pip install redis",
             )
 
 
@@ -522,7 +522,7 @@ try:
     from valkey.cluster import ValkeyCluster
     from valkey.cluster import key_slot as valkey_key_slot
 
-    class ValkeyClusterCacheClient(KeyValueClusterCacheClient):
+    class ValkeyClusterAdapter(BaseKeyValueClusterAdapter):
         """Valkey Cluster cache client using valkey-py."""
 
         _lib = valkey
@@ -534,17 +534,17 @@ try:
 
 except ImportError:
 
-    class ValkeyClusterCacheClient(KeyValueCacheClient):  # type: ignore[no-redef]
+    class ValkeyClusterAdapter(BaseKeyValueAdapter):  # type: ignore[no-redef]
         """Valkey Cluster cache client (requires valkey-py with cluster support)."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             raise ImportError(
-                "ValkeyClusterCacheClient requires valkey-py with cluster support. Install it with: pip install valkey",
+                "ValkeyClusterAdapter requires valkey-py with cluster support. Install it with: pip install valkey",
             )
 
 
 __all__ = [
-    "KeyValueClusterCacheClient",
-    "RedisClusterCacheClient",
-    "ValkeyClusterCacheClient",
+    "BaseKeyValueClusterAdapter",
+    "RedisClusterAdapter",
+    "ValkeyClusterAdapter",
 ]

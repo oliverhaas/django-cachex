@@ -56,7 +56,7 @@ def rust_cache(redis_container: RedisContainerInfo) -> Iterator[KeyValueCache]:
 def test_get_raw_client_returns_driver(rust_cache):
     from django_cachex._driver import RustValkeyDriver  # ty: ignore[unresolved-import]
 
-    raw = rust_cache._cache.get_raw_client()
+    raw = rust_cache.adapter.get_raw_client()
     assert isinstance(raw, RustValkeyDriver)
     raw.set("rawkey", b"rawval")
     assert raw.get("rawkey") == b"rawval"
@@ -77,7 +77,7 @@ def test_unreachable_server_does_not_raise_at_construction(redis_container):
     with override_settings(CACHES=caches):
         from django.core.cache import cache
 
-        client = cache._cache
+        client = cache.adapter
         assert client is not None
         with pytest.raises(ConnectionError):
             cache.get("k")
@@ -102,8 +102,8 @@ def test_lock_extend_replace_ttl_raises(rust_cache):
 
 def test_info_section_filter(rust_cache):
     """``cache.info(section=...)`` must restrict the response to that section."""
-    full = rust_cache._cache.info()
-    section = rust_cache._cache.info(section="server")
+    full = rust_cache.adapter.info()
+    section = rust_cache.adapter.info(section="server")
     # ``redis_version`` lives in the ``server`` section; ``role`` lives in
     # ``replication``. The filtered view must contain the former and not the latter.
     assert "redis_version" in section
@@ -115,18 +115,18 @@ def test_info_section_filter(rust_cache):
 def test_rename_missing_source_raises_valueerror(rust_cache):
     """RENAME on a missing key must surface as ValueError, not RuntimeError."""
     with pytest.raises(ValueError, match="not found"):
-        rust_cache._cache.rename("missing-src", "dst")
+        rust_cache.adapter.rename("missing-src", "dst")
 
 
 def test_renamenx_missing_source_raises_valueerror(rust_cache):
     with pytest.raises(ValueError, match="not found"):
-        rust_cache._cache.renamenx("missing-src", "dst")
+        rust_cache.adapter.renamenx("missing-src", "dst")
 
 
 def test_eval_bool_arg_encoded_as_int(rust_cache):
     """Bools must marshal to 0/1, matching redis-py's ARGV semantics."""
-    assert rust_cache._cache.eval("return ARGV[1]", 0, True) == b"1"
-    assert rust_cache._cache.eval("return ARGV[1]", 0, False) == b"0"
+    assert rust_cache.adapter.eval("return ARGV[1]", 0, True) == b"1"
+    assert rust_cache.adapter.eval("return ARGV[1]", 0, False) == b"0"
 
 
 def test_hincrbyfloat_returns_running_total(rust_cache):

@@ -28,7 +28,7 @@ from django.conf import settings
 from django.core.cache.backends.db import DatabaseCache as DjangoDatabaseCache
 from django.db import connections, router
 
-from django_cachex.cache.mixin import CachexMixin
+from django_cachex.cache.mixin import CachexCompat
 
 if TYPE_CHECKING:
     from django.db.backends.base.base import BaseDatabaseWrapper
@@ -47,7 +47,7 @@ def _adapt_dt(conn: BaseDatabaseWrapper, dt: datetime) -> Any:
     return conn.ops.adapt_datetimefield_value(dt.replace(microsecond=0))
 
 
-class DatabaseCache(CachexMixin, DjangoDatabaseCache):
+class DatabaseCache(CachexCompat, DjangoDatabaseCache):
     """DatabaseCache with cachex extensions.
 
     Drop-in replacement for ``django.core.cache.backends.db.DatabaseCache``.

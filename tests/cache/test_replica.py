@@ -133,7 +133,7 @@ class TestReplicaSetup:
 
             # Check that write always selects index 0
             for _ in range(10):
-                write_idx = cache._cache._get_connection_pool_index(write=True)
+                write_idx = cache.adapter._get_connection_pool_index(write=True)
                 assert write_idx == 0, "Write should always use master (index 0)"
 
         with suppress(KeyError, AttributeError):
@@ -171,7 +171,7 @@ class TestReplicaSetup:
             # Check that read selects valid replica indices
             read_indices = set()
             for _ in range(50):  # Run multiple times to see distribution
-                read_idx = cache._cache._get_connection_pool_index(write=False)
+                read_idx = cache.adapter._get_connection_pool_index(write=False)
                 assert 0 < read_idx < total_servers, (
                     f"Read index {read_idx} should be in replica range [1, {total_servers})"
                 )
@@ -223,7 +223,7 @@ class TestReplicaSetup:
                 cache.get("pool_test")
 
             # Check pools were created
-            pools = cache._cache._pools
+            pools = cache.adapter._pools
             assert len(pools) >= 1, "At least master pool should exist"
 
             # Clean up
@@ -261,8 +261,8 @@ class TestReplicaSetup:
             cache = caches["default"]
 
             # Verify _servers list
-            assert cache._cache._servers == all_urls
-            assert len(cache._cache._servers) == 3  # 1 master + 2 replicas
+            assert cache.adapter._servers == all_urls
+            assert len(cache.adapter._servers) == 3  # 1 master + 2 replicas
 
         with suppress(KeyError, AttributeError):
             del caches["default"]

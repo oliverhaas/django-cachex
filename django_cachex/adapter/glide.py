@@ -1,13 +1,13 @@
 # ruff: noqa: ERA001, PERF401, PLW2901
 """Design B: ``valkey-glide``-backed cache client (sync + async).
 
-Each operation method overrides ``KeyValueCacheClient`` and calls
+Each operation method overrides ``BaseKeyValueAdapter`` and calls
 ``glide_sync.GlideClient`` / ``glide.GlideClient`` natively. There is
 no redis-py-shaped intermediary for the operation surface — only
 ``encode``/``decode``/``_resolve_stampede`` are shared from the base.
 
 The pipeline wrapper (``_GlidePipeline`` / ``_AsyncGlidePipeline``)
-exposes the redis-py-pipeline shape because ``django_cachex.client.pipeline.Pipeline``
+exposes the redis-py-pipeline shape because ``django_cachex.adapter.pipeline.Pipeline``
 is backend-agnostic and assumes that shape on the wrapped raw pipeline.
 A future refactor of ``Pipeline`` could remove this wrapper too.
 
@@ -22,13 +22,13 @@ import asyncio
 from typing import TYPE_CHECKING, Any, Self
 from urllib.parse import urlparse
 
-from django_cachex.client.default import KeyValueCacheClient
+from django_cachex.adapter.default import BaseKeyValueAdapter
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
-    from django_cachex.client.pipeline import Pipeline
+    from django_cachex.adapter.pipeline import Pipeline
     from django_cachex.types import KeyT
 
 
@@ -125,7 +125,7 @@ def _normalize_ttl(result: int) -> int | None:
 
 
 # =============================================================================
-# Pipeline wrappers (redis-py-shaped) — required by django_cachex.client.pipeline.Pipeline
+# Pipeline wrappers (redis-py-shaped) — required by django_cachex.adapter.pipeline.Pipeline
 # =============================================================================
 
 
@@ -645,11 +645,11 @@ class _AsyncGlidePipeline:
 # =============================================================================
 
 
-class ValkeyGlideCacheClient(KeyValueCacheClient):
+class ValkeyGlideAdapter(BaseKeyValueAdapter):
     """Design B backend: each operation method calls glide natively.
 
     Inherits ``encode``, ``decode``, ``_resolve_stampede``, and
-    ``_get_timeout_with_buffer`` from ``KeyValueCacheClient``. Everything
+    ``_get_timeout_with_buffer`` from ``BaseKeyValueAdapter``. Everything
     that touches the wire is overridden.
     """
 
@@ -693,7 +693,7 @@ class ValkeyGlideCacheClient(KeyValueCacheClient):
 
     def get_async_client(self, key: Any = None, *, write: bool = False) -> AsyncGlideClient:
         # Awaiting must happen at call sites; this method is sync-only by
-        # KeyValueCacheClient's contract. Only here for completeness; the
+        # BaseKeyValueAdapter's contract. Only here for completeness; the
         # aXXX methods below do not call this.
         msg = "Use the a* methods on this client; get_async_client is not supported"
         raise NotImplementedError(msg)
@@ -1392,10 +1392,10 @@ class ValkeyGlideCacheClient(KeyValueCacheClient):
         return _GlidePipeline(self._client(), transaction=transaction)
 
     def pipeline(self, *, transaction: bool = True, version: int | None = None) -> Pipeline:
-        from django_cachex.client.pipeline import Pipeline
+        from django_cachex.adapter.pipeline import Pipeline
 
         raw_pipeline = self._pipeline(transaction=transaction)
-        return Pipeline(cache_client=self, pipeline=raw_pipeline, version=version)
+        return Pipeline(adapter=self, pipeline=raw_pipeline, version=version)
 
     # =========================================================================
     # Async core ops
@@ -2228,7 +2228,7 @@ class _GlideLock:
 class _AsyncGlideLock:
     def __init__(
         self,
-        cache_client: ValkeyGlideCacheClient,
+        adapter: ValkeyGlideAdapter,
         key: str,
         *,
         timeout: float | None = None,
@@ -2238,7 +2238,7 @@ class _AsyncGlideLock:
     ) -> None:
         import os
 
-        self._cache_client = cache_client
+        self._adapter = adapter
         self._key = key
         self._timeout = timeout
         self._sleep = sleep
@@ -2253,7 +2253,7 @@ class _AsyncGlideLock:
         bl = self._blocking if blocking is None else blocking
         bt = self._blocking_timeout if blocking_timeout is None else blocking_timeout
         deadline = time.monotonic() + bt if bt else None
-        client = await self._cache_client._aclient()
+        client = await self._adapter._aclient()
 
         kw: dict[str, Any] = {"conditional_set": ConditionalChange.ONLY_IF_DOES_NOT_EXIST}
         if self._timeout is not None:
@@ -2274,7 +2274,7 @@ class _AsyncGlideLock:
         if self._token is None:
             msg = "Cannot release un-acquired lock"
             raise RuntimeError(msg)
-        client = await self._cache_client._aclient()
+        client = await self._adapter._aclient()
         await client.custom_command([b"EVAL", _RELEASE_LUA.encode(), b"1", _enc(self._key), self._token])
         self._token = None
 
@@ -2289,4 +2289,4 @@ class _AsyncGlideLock:
             await self.release()
 
 
-__all__ = ["ValkeyGlideCacheClient"]
+__all__ = ["ValkeyGlideAdapter"]

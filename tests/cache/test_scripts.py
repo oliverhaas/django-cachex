@@ -113,8 +113,8 @@ class TestScriptHelpers:
     def test_script_helpers_make_keys(self, cache: KeyValueCache):
         helpers = ScriptHelpers(
             make_key=cache.make_and_validate_key,
-            encode=cache._cache.encode,
-            decode=cache._cache.decode,
+            encode=cache.adapter.encode,
+            decode=cache.adapter.decode,
             version=1,
         )
 
@@ -127,8 +127,8 @@ class TestScriptHelpers:
     def test_script_helpers_encode_decode(self, cache: KeyValueCache):
         helpers = ScriptHelpers(
             make_key=cache.make_and_validate_key,
-            encode=cache._cache.encode,
-            decode=cache._cache.decode,
+            encode=cache.adapter.encode,
+            decode=cache.adapter.decode,
             version=1,
         )
 
@@ -146,8 +146,8 @@ class TestPreBuiltHooks:
         """Test keys_only_pre helper."""
         helpers = ScriptHelpers(
             make_key=cache.make_and_validate_key,
-            encode=cache._cache.encode,
-            decode=cache._cache.decode,
+            encode=cache.adapter.encode,
+            decode=cache.adapter.decode,
             version=1,
         )
 
@@ -164,8 +164,8 @@ class TestPreBuiltHooks:
     def test_full_encode_pre(self, cache: KeyValueCache):
         helpers = ScriptHelpers(
             make_key=cache.make_and_validate_key,
-            encode=cache._cache.encode,
-            decode=cache._cache.decode,
+            encode=cache.adapter.encode,
+            decode=cache.adapter.decode,
             version=1,
         )
 
@@ -183,8 +183,8 @@ class TestPreBuiltHooks:
     def test_decode_single_post(self, cache: KeyValueCache):
         helpers = ScriptHelpers(
             make_key=cache.make_and_validate_key,
-            encode=cache._cache.encode,
-            decode=cache._cache.decode,
+            encode=cache.adapter.encode,
+            decode=cache.adapter.decode,
             version=1,
         )
 
@@ -200,8 +200,8 @@ class TestPreBuiltHooks:
     def test_decode_list_post(self, cache: KeyValueCache):
         helpers = ScriptHelpers(
             make_key=cache.make_and_validate_key,
-            encode=cache._cache.encode,
-            decode=cache._cache.decode,
+            encode=cache.adapter.encode,
+            decode=cache.adapter.decode,
             version=1,
         )
 
@@ -279,13 +279,13 @@ class TestAsyncEval:
 
     @pytest.mark.asyncio
     async def test_aeval_simple_return(self, cache: KeyValueCache, mk):
-        result = await cache._cache.aeval("return 42", 0)
+        result = await cache.adapter.aeval("return 42", 0)
         assert result == 42
 
     @pytest.mark.asyncio
     async def test_aeval_with_keys_and_args(self, cache: KeyValueCache, mk):
         key = mk("aeval_key")
-        result = await cache._cache.aeval(
+        result = await cache.adapter.aeval(
             "redis.call('SET', KEYS[1], ARGV[1]); return redis.call('GET', KEYS[1])",
             1,
             key,
@@ -295,7 +295,7 @@ class TestAsyncEval:
 
     @pytest.mark.asyncio
     async def test_aeval_string_return(self, cache: KeyValueCache, mk):
-        result = await cache._cache.aeval("return 'async_result'", 0)
+        result = await cache.adapter.aeval("return 'async_result'", 0)
         assert result == b"async_result"
 
 

@@ -4,23 +4,23 @@ from __future__ import annotations
 
 from typing import Any
 
+from django_cachex.adapter.sentinel import _REDIS_AVAILABLE, _VALKEY_AVAILABLE, BaseKeyValueSentinelAdapter
 from django_cachex.cache.default import KeyValueCache
-from django_cachex.client.sentinel import _REDIS_AVAILABLE, _VALKEY_AVAILABLE, KeyValueSentinelCacheClient
 
 
 class KeyValueSentinelCache(KeyValueCache):
     """Sentinel cache backend base class.
 
     Extends KeyValueCache for sentinel-specific behavior.
-    Subclasses set `_class` class attribute to their specific SentinelCacheClient.
+    Subclasses set `_adapter_class` class attribute to their specific SentinelCacheClient.
     """
 
-    _class: type[KeyValueSentinelCacheClient] = KeyValueSentinelCacheClient
+    _adapter_class: type[BaseKeyValueSentinelAdapter] = BaseKeyValueSentinelAdapter
 
 
 # Redis Sentinel
 if _REDIS_AVAILABLE:
-    from django_cachex.client.sentinel import RedisSentinelCacheClient
+    from django_cachex.adapter.sentinel import RedisSentinelAdapter
 
     class RedisSentinelCache(KeyValueSentinelCache):
         """Django cache backend for Redis Sentinel high availability.
@@ -29,7 +29,7 @@ if _REDIS_AVAILABLE:
         ``LOCATION`` hostname is the Sentinel service name.
         """
 
-        _class = RedisSentinelCacheClient
+        _adapter_class = RedisSentinelAdapter
 
 else:
 
@@ -44,7 +44,7 @@ else:
 
 # Valkey Sentinel
 if _VALKEY_AVAILABLE:
-    from django_cachex.client.sentinel import ValkeySentinelCacheClient
+    from django_cachex.adapter.sentinel import ValkeySentinelAdapter
 
     class ValkeySentinelCache(KeyValueSentinelCache):
         """Django cache backend for Valkey Sentinel high availability.
@@ -53,7 +53,7 @@ if _VALKEY_AVAILABLE:
         ``LOCATION`` hostname is the Sentinel service name.
         """
 
-        _class = ValkeySentinelCacheClient
+        _adapter_class = ValkeySentinelAdapter
 
 else:
 

@@ -15,7 +15,7 @@ from django_cachex.types import KeyType
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
 
-    from django_cachex.client.pipeline import Pipeline
+    from django_cachex.adapter.pipeline import Pipeline
     from django_cachex.script import ScriptHelpers
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT
 
@@ -32,7 +32,7 @@ class BaseCacheExtensions:
     """Interface declaring all cachex extension methods.
 
     Most methods raise ``NotSupportedError`` by default. Native cachex backends
-    and the ``CachexMixin`` override them with real implementations.
+    and the ``CachexCompat`` override them with real implementations.
 
     The admin uses ``hasattr`` / ``try-except NotSupportedError`` to detect
     which operations a given cache supports.

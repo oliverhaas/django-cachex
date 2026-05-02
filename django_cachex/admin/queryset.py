@@ -265,7 +265,7 @@ class CacheAdminMixin:
             title = "Full support \u2014 django-cachex backend"
         elif level == "wrapped":
             style = "background:#dbeafe;color:#1d4ed8;"
-            title = "Wrapped \u2014 CachexMixin (data structures, scan, TTL). No streams, pipelines, or Lua."
+            title = "Wrapped \u2014 CachexCompat (data structures, scan, TTL). No streams, pipelines, or Lua."
         else:
             style = "background:#f3f4f6;color:#374151;"
             hint = obj.cachex_upgrade_hint

@@ -65,7 +65,7 @@ def test_drivers(driver, server_url, results, capsys) -> None:
 
 @pytest.mark.parametrize("serializer", SERIALIZER_CONFIGS, ids=lambda c: c.id)
 def test_serializers(serializer, server_url, results, capsys) -> None:
-    rust_driver = DRIVER_BY_ID["rust-valkey"]
+    rust_driver = DRIVER_BY_ID["redis-rs"]
     location = server_url(rust_driver.server)
 
     result = run_benchmark(rust_driver, serializer, location)
@@ -78,7 +78,7 @@ def test_serializers(serializer, server_url, results, capsys) -> None:
 
 @pytest.mark.parametrize("compressor", COMPRESSOR_CONFIGS, ids=lambda c: c.id)
 def test_compressors_macro(compressor, server_url, results, capsys) -> None:
-    rust_driver = DRIVER_BY_ID["rust-valkey"]
+    rust_driver = DRIVER_BY_ID["redis-rs"]
     pickle_serializer = SERIALIZER_BY_ID["pickle"]
     location = server_url(rust_driver.server)
 

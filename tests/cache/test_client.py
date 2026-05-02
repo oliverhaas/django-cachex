@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from django_cachex.client import KeyValueCacheClient, RedisCacheClient
+from django_cachex.adapter import BaseKeyValueAdapter, RedisAdapter
 
 if TYPE_CHECKING:
     from django_cachex.cache import KeyValueCache
@@ -13,12 +13,12 @@ if TYPE_CHECKING:
 def cache_client(cache: KeyValueCache):
     """Fixture that returns the internal cache client for testing client-level behavior."""
     cache.set("TestClientClose", 0)
-    yield cache._cache  # Return the internal client
+    yield cache.adapter  # Return the internal client
     cache.delete("TestClientClose")
 
 
 class TestClientClose:
-    def test_close_is_noop(self, cache_client: KeyValueCacheClient):
+    def test_close_is_noop(self, cache_client: BaseKeyValueAdapter):
         """Test close() is a no-op — pools persist after close."""
         # Create a pool first by accessing it
         pool = cache_client._get_connection_pool(write=True)
@@ -30,9 +30,9 @@ class TestClientClose:
         assert cache_client._pools[0] is pool
 
 
-class TestRedisCacheClient:
-    @patch("tests.cache.test_client.RedisCacheClient.get_client")
-    @patch("tests.cache.test_client.RedisCacheClient.__init__", return_value=None)
+class TestRedisAdapter:
+    @patch("tests.cache.test_client.RedisAdapter.get_client")
+    @patch("tests.cache.test_client.RedisAdapter.__init__", return_value=None)
     def test_delete_pattern_calls_get_client_given_no_client(
         self,
         init_mock,
@@ -42,14 +42,14 @@ class TestRedisCacheClient:
         mock_client.scan_iter.return_value = []
         get_client_mock.return_value = mock_client
 
-        client = RedisCacheClient.__new__(RedisCacheClient)
+        client = RedisAdapter.__new__(RedisAdapter)
         client._default_scan_itersize = 10
 
         client.delete_pattern(pattern="foo*")
         get_client_mock.assert_called_once_with(write=True)
 
-    @patch("tests.cache.test_client.RedisCacheClient.get_client")
-    @patch("tests.cache.test_client.RedisCacheClient.__init__", return_value=None)
+    @patch("tests.cache.test_client.RedisAdapter.get_client")
+    @patch("tests.cache.test_client.RedisAdapter.__init__", return_value=None)
     def test_delete_pattern_calls_scan_iter_with_pattern(
         self,
         init_mock,
@@ -59,7 +59,7 @@ class TestRedisCacheClient:
         mock_client.scan_iter.return_value = []
         get_client_mock.return_value = mock_client
 
-        client = RedisCacheClient.__new__(RedisCacheClient)
+        client = RedisAdapter.__new__(RedisAdapter)
         client._default_scan_itersize = 10
 
         client.delete_pattern(pattern="prefix:1:foo*")
@@ -69,8 +69,8 @@ class TestRedisCacheClient:
             match="prefix:1:foo*",
         )
 
-    @patch("tests.cache.test_client.RedisCacheClient.get_client")
-    @patch("tests.cache.test_client.RedisCacheClient.__init__", return_value=None)
+    @patch("tests.cache.test_client.RedisAdapter.get_client")
+    @patch("tests.cache.test_client.RedisAdapter.__init__", return_value=None)
     def test_delete_pattern_calls_scan_iter_with_count_if_itersize_given(
         self,
         init_mock,
@@ -80,7 +80,7 @@ class TestRedisCacheClient:
         mock_client.scan_iter.return_value = []
         get_client_mock.return_value = mock_client
 
-        client = RedisCacheClient.__new__(RedisCacheClient)
+        client = RedisAdapter.__new__(RedisAdapter)
         client._default_scan_itersize = 10
 
         client.delete_pattern(pattern="prefix:1:foo*", itersize=90210)
@@ -90,8 +90,8 @@ class TestRedisCacheClient:
             match="prefix:1:foo*",
         )
 
-    @patch("tests.cache.test_client.RedisCacheClient.get_client")
-    @patch("tests.cache.test_client.RedisCacheClient.__init__", return_value=None)
+    @patch("tests.cache.test_client.RedisAdapter.get_client")
+    @patch("tests.cache.test_client.RedisAdapter.__init__", return_value=None)
     def test_delete_pattern_deletes_found_keys(
         self,
         init_mock,
@@ -102,7 +102,7 @@ class TestRedisCacheClient:
         mock_client.delete.return_value = 2
         get_client_mock.return_value = mock_client
 
-        client = RedisCacheClient.__new__(RedisCacheClient)
+        client = RedisAdapter.__new__(RedisAdapter)
         client._default_scan_itersize = 10
 
         result = client.delete_pattern(pattern="prefix:1:foo*")

@@ -108,9 +108,9 @@ class TestDecompressFallback:
     """Tests for the _decompress fallback logic."""
 
     def test_decompress_gzip_with_multiple_compressors(self):
-        from django_cachex.client import RedisCacheClient
+        from django_cachex.adapter import RedisAdapter
 
-        client = RedisCacheClient(
+        client = RedisAdapter(
             servers=["redis://localhost:6379"],
             compressor=[
                 "django_cachex.compressors.gzip.GzipCompressor",
@@ -125,9 +125,9 @@ class TestDecompressFallback:
 
     def test_decompress_zlib_with_fallback(self):
         """Test that _decompress falls back to zlib for zlib-compressed data."""
-        from django_cachex.client import RedisCacheClient
+        from django_cachex.adapter import RedisAdapter
 
-        client = RedisCacheClient(
+        client = RedisAdapter(
             servers=["redis://localhost:6379"],
             compressor=[
                 "django_cachex.compressors.gzip.GzipCompressor",
@@ -150,10 +150,10 @@ class TestDecompressFallback:
         """
         import pytest
 
-        from django_cachex.client import RedisCacheClient
+        from django_cachex.adapter import RedisAdapter
         from django_cachex.exceptions import CompressorError
 
-        client = RedisCacheClient(
+        client = RedisAdapter(
             servers=["redis://localhost:6379"],
             compressor=[
                 "django_cachex.compressors.gzip.GzipCompressor",
@@ -169,10 +169,10 @@ class TestDecompressFallback:
         """_decompress walks the full chain before raising; raises when none succeed."""
         import pytest
 
-        from django_cachex.client import RedisCacheClient
+        from django_cachex.adapter import RedisAdapter
         from django_cachex.exceptions import CompressorError
 
-        client = RedisCacheClient(
+        client = RedisAdapter(
             servers=["redis://localhost:6379"],
             compressor=[
                 "django_cachex.compressors.gzip.GzipCompressor",
@@ -186,9 +186,9 @@ class TestDecompressFallback:
             client._decompress(fake_gzip)
 
     def test_decompress_with_no_compressors_returns_raw(self):
-        from django_cachex.client import RedisCacheClient
+        from django_cachex.adapter import RedisAdapter
 
-        client = RedisCacheClient(
+        client = RedisAdapter(
             servers=["redis://localhost:6379"],
             compressor=None,
         )

@@ -1,6 +1,6 @@
 """Cache client backed by the Rust ``RustValkeyDriver``.
 
-Subclass of :class:`KeyValueCacheClient`. Reuses the serializer/compressor
+Subclass of :class:`BaseKeyValueAdapter`. Reuses the serializer/compressor
 stack and stampede prevention logic from the base, but routes every I/O
 call to the Rust driver from ``_rust_clients`` instead of redis-py /
 valkey-py. Each driver is process-shared via the registry; per-cache state
@@ -18,7 +18,7 @@ from django_cachex._rust_clients import (
     get_driver_sentinel,
     get_driver_standard,
 )
-from django_cachex.client.default import KeyValueCacheClient
+from django_cachex.adapter.default import BaseKeyValueAdapter
 from django_cachex.lock import AsyncValkeyLock, ValkeyLock
 from django_cachex.stampede import should_recompute
 from django_cachex.types import KeyType
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
 
     from django_cachex._driver import RustValkeyDriver
-    from django_cachex.client.pipeline import Pipeline
+    from django_cachex.adapter.pipeline import Pipeline
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, _Set
 
 
@@ -46,7 +46,7 @@ _DRIVER_KWARGS = frozenset(
 def _value_to_bytes(value: bytes | int) -> bytes:
     """Coerce an encoded value to bytes for the Rust driver.
 
-    ``KeyValueCacheClient.encode()`` returns ``int`` for plain integers (so
+    ``BaseKeyValueAdapter.encode()`` returns ``int`` for plain integers (so
     Redis can use them as counters); the driver only accepts ``&[u8]``, so
     we serialize integers to their decimal representation here. Decoding on
     the way out goes through ``decode()`` which already tries ``int()``
@@ -68,7 +68,7 @@ def _str_key(key: object) -> str:
     return str(key)
 
 
-class RustKeyValueCacheClient(KeyValueCacheClient):
+class RustValkeyAdapter(BaseKeyValueAdapter):
     """Base Rust-driver client. Subclasses choose the topology."""
 
     # The base class uses these to instantiate redis-py pools/parsers; we
@@ -761,11 +761,11 @@ class RustKeyValueCacheClient(KeyValueCacheClient):
         transaction: bool = True,
         version: int | None = None,
     ) -> Pipeline:
-        from django_cachex.client._rust_pipeline import _RustRawPipeline
-        from django_cachex.client.pipeline import Pipeline
+        from django_cachex.adapter._rust_pipeline import _RustRawPipeline
+        from django_cachex.adapter.pipeline import Pipeline
 
         raw = _RustRawPipeline(self._driver, transaction=transaction)
-        return Pipeline(cache_client=self, pipeline=raw, version=version)
+        return Pipeline(adapter=self, pipeline=raw, version=version)
 
     # =========================================================================
     # Hashes
@@ -2563,7 +2563,7 @@ def _select_info_section(raw: str, section: str) -> str:
 # =============================================================================
 
 
-class RustValkeyClusterCacheClient(RustKeyValueCacheClient):
+class RustValkeyClusterAdapter(RustValkeyAdapter):
     """Rust driver client for Valkey/Redis cluster mode."""
 
     @override
@@ -2577,7 +2577,7 @@ class RustValkeyClusterCacheClient(RustKeyValueCacheClient):
     # special-casing here.
 
 
-class RustValkeySentinelCacheClient(RustKeyValueCacheClient):
+class RustValkeySentinelAdapter(RustValkeyAdapter):
     """Rust driver client for sentinel-managed Valkey/Redis topologies."""
 
     @override
@@ -2603,18 +2603,16 @@ class RustValkeySentinelCacheClient(RustKeyValueCacheClient):
 
 
 # Aliases — vendor names are interchangeable from the driver's perspective.
-RustValkeyCacheClient = RustKeyValueCacheClient
-RustRedisCacheClient = RustKeyValueCacheClient
-RustRedisClusterCacheClient = RustValkeyClusterCacheClient
-RustRedisSentinelCacheClient = RustValkeySentinelCacheClient
+RustRedisAdapter = RustValkeyAdapter
+RustRedisClusterAdapter = RustValkeyClusterAdapter
+RustRedisSentinelAdapter = RustValkeySentinelAdapter
 
 
 __all__ = [
-    "RustKeyValueCacheClient",
-    "RustRedisCacheClient",
-    "RustRedisClusterCacheClient",
-    "RustRedisSentinelCacheClient",
-    "RustValkeyCacheClient",
-    "RustValkeyClusterCacheClient",
-    "RustValkeySentinelCacheClient",
+    "RustRedisAdapter",
+    "RustRedisClusterAdapter",
+    "RustRedisSentinelAdapter",
+    "RustValkeyAdapter",
+    "RustValkeyClusterAdapter",
+    "RustValkeySentinelAdapter",
 ]

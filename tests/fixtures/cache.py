@@ -30,7 +30,7 @@ SERIALIZERS = {
 
 # Available cache backends - keyed by (backend_type, client_library, driver)
 # - driver="py": pure-Python clients (redis-py / valkey-py)
-# - driver="rust": Rust extension driver shared via _rust_clients registry
+# - driver="redis-rs": Rust extension driver shared via _rust_clients registry
 BACKENDS = {
     # Pure-Python — Valkey
     ("default", "valkey", "py"): "django_cachex.cache.ValkeyCache",
@@ -41,13 +41,13 @@ BACKENDS = {
     ("sentinel", "redis", "py"): "django_cachex.cache.RedisSentinelCache",
     ("cluster", "redis", "py"): "django_cachex.cache.RedisClusterCache",
     # Rust driver — Valkey
-    ("default", "valkey", "rust"): "django_cachex.cache.RustValkeyCache",
-    ("sentinel", "valkey", "rust"): "django_cachex.cache.RustValkeySentinelCache",
-    ("cluster", "valkey", "rust"): "django_cachex.cache.RustValkeyClusterCache",
+    ("default", "valkey", "redis-rs"): "django_cachex.cache.RustValkeyCache",
+    ("sentinel", "valkey", "redis-rs"): "django_cachex.cache.RustValkeySentinelCache",
+    ("cluster", "valkey", "redis-rs"): "django_cachex.cache.RustValkeyClusterCache",
     # Rust driver — Redis
-    ("default", "redis", "rust"): "django_cachex.cache.RustRedisCache",
-    ("sentinel", "redis", "rust"): "django_cachex.cache.RustRedisSentinelCache",
-    ("cluster", "redis", "rust"): "django_cachex.cache.RustRedisClusterCache",
+    ("default", "redis", "redis-rs"): "django_cachex.cache.RustRedisCache",
+    ("sentinel", "redis", "redis-rs"): "django_cachex.cache.RustRedisSentinelCache",
+    ("cluster", "redis", "redis-rs"): "django_cachex.cache.RustRedisClusterCache",
 }
 
 # Client library configurations: maps client_library -> (pool_class, parser_class)
@@ -101,7 +101,7 @@ def native_parser(request) -> bool:
     return request.param
 
 
-@pytest.fixture(params=["py", "rust"])
+@pytest.fixture(params=["py", "redis-rs"])
 def driver(request) -> str:
     """Parametrized driver fixture: pure-Python redis-py vs Rust extension."""
     return request.param
@@ -156,10 +156,10 @@ def build_cache_config(
         client_library: Python client library ("redis" or "valkey")
         native_parser: If True, use native parser (hiredis/libvalkey)
         db: Redis database number
-        driver: "py" for pure-Python clients, "rust" for the Rust extension
+        driver: "py" for pure-Python clients, "redis-rs" for the Rust extension
 
     """
-    if driver == "rust":
+    if driver == "redis-rs":
         # Rust driver doesn't take pool/parser_class; only honors a small
         # whitelist of OPTIONS (cache_max_size, ssl_*).
         options: dict = {}
