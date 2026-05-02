@@ -1487,11 +1487,11 @@
 <td>Set expiration in milliseconds</td>
 </tr>
 <tr>
-<td><code>expire_at(key, when)</code></td>
+<td><code>expireat(key, when)</code></td>
 <td>Set expiration at datetime</td>
 </tr>
 <tr>
-<td><code>pexpire_at(key, when)</code></td>
+<td><code>pexpireat(key, when)</code></td>
 <td>Set expiration at datetime (ms precision)</td>
 </tr>
 <tr>
@@ -1989,7 +1989,6 @@
 <li><code>allen</code>, <code>alpush</code>, <code>arpush</code>, <code>alpop</code>, <code>arpop</code>, <code>alindex</code>, <code>alrange</code>, <code>alset</code>, <code>altrim</code>, <code>alrem</code>, <code>alpos</code>, <code>almove</code>, <code>alinsert</code>, <code>ablpop</code>, <code>abrpop</code>, <code>ablmove</code></li>
 <li><code>asscan</code>, <code>asscan_iter</code></li>
 </ul>
-<p>The cache object also exposes <code>aexpire_at</code> / <code>apexpire_at</code> (with underscore) as ergonomic aliases for the client's <code>aexpireat</code> / <code>apexpireat</code>.</p>
 <h2 id="raw-client-access">Raw Client Access<a class="headerlink" href="#raw-client-access" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">client</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get_client</span><span class="p">(</span><span class="n">write</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </span></code></pre></div>

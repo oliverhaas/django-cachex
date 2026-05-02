@@ -1562,7 +1562,7 @@
 <li><strong>Free-threaded CPython (3.14t) support.</strong> A cp314t wheel is built; <code>_driver</code> works with the GIL disabled. The Rust driver also runs on the free-threaded build.</li>
 <li><strong>PyPI wheels via cibuildwheel.</strong> Manylinux x86_64 wheels for cp314 and cp314t.</li>
 <li><strong>Async pool sharing.</strong> A single async connection pool is shared across per-task <code>Cache</code> instances (#83), avoiding the thundering-herd reconnect on cold start.</li>
-<li><strong>Pipeline parity.</strong> Stream ops, CAS ops, missing key ops (<code>persist</code>/<code>pttl</code>/<code>expire_at</code>/etc.), context manager, <code>zpopmin</code>/<code>zpopmax</code> default <code>count=1</code> aligned with the cache API.</li>
+<li><strong>Pipeline parity.</strong> Stream ops, CAS ops, missing key ops (<code>persist</code>/<code>pttl</code>/<code>expireat</code>/etc.), context manager, <code>zpopmin</code>/<code>zpopmax</code> default <code>count=1</code> aligned with the cache API.</li>
 <li><strong>Compressors gain a uniform <code>level=</code> parameter</strong> (gzip, lz4, zstd join zlib/lzma in exposing it). Defaults match each library's own default.</li>
 <li><strong>Serializer/compressor wrappers consolidated.</strong> Subclasses now implement <code>_dumps</code>/<code>_loads</code> (serializers) or <code>_compress</code>/<code>_decompress</code> (compressors); the base classes wrap the boilerplate (<code>SerializerError</code> / <code>CompressorError</code> translation, int-passthrough on loads).</li>
 </ul>
