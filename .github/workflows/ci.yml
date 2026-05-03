@@ -150,7 +150,7 @@ jobs:
       - name: Build wheel + sdist
         run: uv build --out-dir wheelhouse/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-pure
           path: wheelhouse/*
@@ -195,7 +195,7 @@ jobs:
             curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
           CIBW_ENVIRONMENT_LINUX: PATH="$HOME/.cargo/bin:$PATH"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-rust-${{ matrix.label }}
           path: wheelhouse/*.whl
@@ -207,12 +207,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: wheels-pure
           path: wheelhouse
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: wheels-rust-linux-x86_64
           path: wheelhouse
@@ -239,12 +239,12 @@ jobs:
     needs: [build-pure-wheel, build-rust-wheels]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: wheels-pure
           path: wheelhouse
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: wheels-rust-linux-x86_64
           path: wheelhouse
@@ -269,7 +269,7 @@ jobs:
     needs: build-pure-wheel
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: wheels-pure
           path: wheelhouse
