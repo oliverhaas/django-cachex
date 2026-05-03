@@ -107,6 +107,22 @@ rank = await client.azrank(key, "alice")
 top_players = await client.azrange(key, 0, 9, withscores=True)
 ```
 
+### Async Pipelines
+
+Batch multiple operations and dispatch them in a single round trip:
+
+```python
+async with cache.apipeline() as pipe:
+    pipe.set("a", 1)
+    pipe.set("b", 2)
+    pipe.hset("h", "field", "value")
+    results = await pipe.execute()
+```
+
+Queueing methods (`set`, `hset`, `lpush`, ...) stay synchronous; only `execute()` is awaited. The wrapper's behaviour mirrors the sync `pipeline()` — see [Pipelines](../reference/api.md#pipelines) for the shared command surface.
+
+`apipeline()` itself is sync (it just constructs the wrapper). It is safe to call outside of an async context, but `execute()` requires an event loop.
+
 ## How It Works
 
 ### Connection Pool Architecture

@@ -137,6 +137,34 @@ List operations for ordered, indexable collections:
 | `brpop(*keys, timeout=0)` | Blocking pop from tail of list |
 | `blmove(src, dst, timeout, ...)` | Blocking move between lists |
 
+### Stream Methods
+
+Append-only log structure with consumer groups:
+
+| Method | Description |
+|--------|-------------|
+| `xadd(key, fields, *, id="*", maxlen=None, ...)` | Append an entry, returning its ID |
+| `xlen(key)` | Number of entries in the stream |
+| `xrange(key, min="-", max="+", count=None)` | Range of entries (forward) |
+| `xrevrange(key, max="+", min="-", count=None)` | Range of entries (reverse) |
+| `xread(streams, count=None, block=None)` | Read new entries from one or more streams |
+| `xtrim(key, *, maxlen=None, minid=None, approximate=True)` | Cap stream length |
+| `xdel(key, *entry_ids)` | Delete entries by ID |
+| `xinfo_stream(key, full=False)` | Stream metadata |
+| `xinfo_groups(key)` | Consumer group metadata |
+| `xinfo_consumers(key, group)` | Per-consumer metadata for a group |
+| `xgroup_create(key, group, id="$", mkstream=False)` | Create a consumer group |
+| `xgroup_destroy(key, group)` | Drop a consumer group |
+| `xgroup_setid(key, group, id)` | Re-anchor a consumer group's read position |
+| `xgroup_delconsumer(key, group, consumer)` | Drop a consumer from a group |
+| `xreadgroup(group, consumer, streams, count=None, block=None)` | Read entries as a group consumer |
+| `xack(key, group, *entry_ids)` | Acknowledge processed entries |
+| `xpending(key, group, ...)` | Inspect pending (unacked) entries |
+| `xclaim(key, group, consumer, min_idle_time, *entry_ids, ...)` | Claim pending entries |
+| `xautoclaim(key, group, consumer, min_idle_time, ...)` | Auto-claim entries idle longer than threshold |
+
+All methods have an `a*` async counterpart (e.g. `axadd`, `axreadgroup`).
+
 ### Lua Script Methods
 
 Execute Lua scripts with optional key prefixing and value encoding/decoding:
@@ -276,17 +304,42 @@ if lock.acquire():
 
 ## Pipelines
 
-Batch multiple operations for efficiency:
+Batch multiple operations for efficiency. Queueing methods (`set`, `hset`, `lpush`, ...) stay synchronous in both wrappers; only `execute()` performs I/O.
+
+### Sync
 
 ```python
-pipe = cache.pipeline()
-pipe.set("key1", "value1")
-pipe.set("key2", "value2")
-pipe.hset("hash", "field", "value")
-results = pipe.execute()
+with cache.pipeline() as pipe:
+    pipe.set("key1", "value1")
+    pipe.set("key2", "value2")
+    pipe.hset("hash", "field", "value")
+    results = pipe.execute()
 ```
 
+### Async
+
+```python
+async with cache.apipeline() as pipe:
+    pipe.set("key1", "value1")
+    pipe.hset("hash", "field", "value")
+    results = await pipe.execute()
+```
+
+`apipeline()` itself is sync — it just constructs the wrapper, mirroring `redis.asyncio.Redis().pipeline()`.
+
 All cache methods are available on the pipeline. Results are returned as a list in the same order as the commands.
+
+## Clearing keys
+
+| Method | Description |
+|--------|-------------|
+| `clear()` / `aclear()` | Remove only this cache's keys (`KEY_PREFIX` + `VERSION`). Implemented as `delete_pattern("*")`. |
+| `flush_db()` / `aflush_db()` | `FLUSHDB`: remove **all** keys in the underlying Redis/Valkey database, regardless of prefix. |
+
+`clear()` is safe when multiple apps share a Redis database. Use `flush_db()` only when this cache has a dedicated database.
+
+!!! warning "Breaking change"
+    Pre-1.0 versions of django-cachex implemented `clear()` as `FLUSHDB`. The current scoped behaviour is the safer default; callers that need the old wipe-everything semantics must call `flush_db()` explicitly.
 
 ## Settings Reference
 

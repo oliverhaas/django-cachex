@@ -47,6 +47,25 @@ Same wire-level features as the Python driver, dispatched through the optional `
 | `RedisRsClusterCache` | Valkey Cluster sharding |
 | `RedisRsClusterCache` | Redis Cluster sharding |
 
+### Valkey-Glide
+
+Valkey's official client library, bundled as `valkey-glide`. Async-first; cachex wraps the async client transparently. Install via the `valkey-glide` extra.
+
+| Backend | Description |
+|---------|-------------|
+| `ValkeyGlideCache` | Standard Valkey connection via valkey-glide |
+
+```python
+CACHES = {
+    "default": {
+        "BACKEND": "django_cachex.cache.ValkeyGlideCache",
+        "LOCATION": "valkey://127.0.0.1:6379/0",
+    }
+}
+```
+
+See the upstream [valkey-glide](https://github.com/valkey-io/valkey-glide) docs for client-specific tuning. Cluster and Sentinel variants are not currently exposed.
+
 ### Local backends
 
 | Backend | Description |

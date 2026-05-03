@@ -63,6 +63,7 @@ nav:
       - Compression: user-guide/compression.md
       - Sentinel: user-guide/sentinel.md
       - Cluster: user-guide/cluster.md
+      - Composite Backends: user-guide/composite-backends.md
   - Recipes: recipes.md
   - Migration: migration.md
   - Reference:
