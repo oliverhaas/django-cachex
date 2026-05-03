@@ -41,12 +41,12 @@ BACKENDS = {
     ("sentinel", "redis", "py"): "django_cachex.cache.RedisSentinelCache",
     ("cluster", "redis", "py"): "django_cachex.cache.RedisClusterCache",
     # Rust driver (handles both Valkey and Redis transparently)
-    ("default", "valkey", "redis-rs"): "django_cachex.cache.RedisRsValkeyCache",
-    ("sentinel", "valkey", "redis-rs"): "django_cachex.cache.RedisRsValkeySentinelCache",
-    ("cluster", "valkey", "redis-rs"): "django_cachex.cache.RedisRsValkeyClusterCache",
-    ("default", "redis", "redis-rs"): "django_cachex.cache.RedisRsValkeyCache",
-    ("sentinel", "redis", "redis-rs"): "django_cachex.cache.RedisRsValkeySentinelCache",
-    ("cluster", "redis", "redis-rs"): "django_cachex.cache.RedisRsValkeyClusterCache",
+    ("default", "valkey", "redis-rs"): "django_cachex.cache.RedisRsCache",
+    ("sentinel", "valkey", "redis-rs"): "django_cachex.cache.RedisRsSentinelCache",
+    ("cluster", "valkey", "redis-rs"): "django_cachex.cache.RedisRsClusterCache",
+    ("default", "redis", "redis-rs"): "django_cachex.cache.RedisRsCache",
+    ("sentinel", "redis", "redis-rs"): "django_cachex.cache.RedisRsSentinelCache",
+    ("cluster", "redis", "redis-rs"): "django_cachex.cache.RedisRsClusterCache",
 }
 
 # Client library configurations: maps client_library -> (pool_class, parser_class)

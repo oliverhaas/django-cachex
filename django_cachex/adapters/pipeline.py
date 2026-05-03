@@ -8,7 +8,7 @@ implementation — one per driver:
 - :class:`~django_cachex.adapters.valkey_py.ValkeyPyPipelineAdapter` /
   :class:`~django_cachex.adapters.redis_py.RedisPyPipelineAdapter` — wrap a
   redis-py / valkey-py / cluster ``Pipeline`` object.
-- :class:`~django_cachex.adapters.redis_rs.RedisRsValkeyPipelineAdapter` —
+- :class:`~django_cachex.adapters.redis_rs.RedisRsPipelineAdapter` —
   buffers RESP wire commands for the Rust driver's ``pipeline_exec``.
 - :class:`~django_cachex.adapters.valkey_glide.ValkeyGlidePipelineAdapter` —
   drives ``valkey-glide``'s ``Batch``.

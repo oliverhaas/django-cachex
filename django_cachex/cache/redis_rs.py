@@ -6,36 +6,36 @@ Users opt in via ``CACHES["default"]["BACKEND"]``.
 """
 
 from django_cachex.adapters.redis_rs import (
-    RedisRsValkeyAdapter,
-    RedisRsValkeyClusterAdapter,
-    RedisRsValkeySentinelAdapter,
+    RedisRsAdapter,
+    RedisRsClusterAdapter,
+    RedisRsSentinelAdapter,
 )
 from django_cachex.cache.key_value import KeyValueCache
 
 
-class RedisRsValkeyCache(KeyValueCache):
+class RedisRsCache(KeyValueCache):
     """Django cache backend using the Rust driver against a single node."""
 
     _cachex_support = "cachex"
-    _adapter_class = RedisRsValkeyAdapter
+    _adapter_class = RedisRsAdapter
 
 
-class RedisRsValkeyClusterCache(KeyValueCache):
+class RedisRsClusterCache(KeyValueCache):
     """Rust-driven Valkey/Redis cluster backend."""
 
     _cachex_support = "cachex"
-    _adapter_class = RedisRsValkeyClusterAdapter
+    _adapter_class = RedisRsClusterAdapter
 
 
-class RedisRsValkeySentinelCache(KeyValueCache):
+class RedisRsSentinelCache(KeyValueCache):
     """Rust-driven sentinel-managed Valkey/Redis backend."""
 
     _cachex_support = "cachex"
-    _adapter_class = RedisRsValkeySentinelAdapter
+    _adapter_class = RedisRsSentinelAdapter
 
 
 __all__ = [
-    "RedisRsValkeyCache",
-    "RedisRsValkeyClusterCache",
-    "RedisRsValkeySentinelCache",
+    "RedisRsCache",
+    "RedisRsClusterCache",
+    "RedisRsSentinelCache",
 ]

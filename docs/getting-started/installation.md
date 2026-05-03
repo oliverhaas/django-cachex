@@ -29,7 +29,7 @@ These provide C-based parsers that improve protocol parsing throughput on the ho
 
 ## Rust I/O driver (optional)
 
-The `RedisRsValkeyCache` backends are powered by an
+The `RedisRsCache` backends are powered by an
 opt-in native extension built on PyO3 + tokio + [redis-rs]. It ships as
 a separate package, `django-cachex-redis-rs`, so users who only want the
 pure-Python backends never carry the binary.
@@ -47,7 +47,7 @@ Linux aarch64, macOS arm64, and Windows amd64 on both cp314 and cp314t.
 On other platforms pip will try to build from source, which needs the
 Rust toolchain. Drop the `redis-rs` extra to avoid that.
 
-When the binary isn't installed, `RedisRsValkeyCache`
+When the binary isn't installed, `RedisRsCache`
 classes are still importable but raise a clean `ImportError` on first
 use, naming the extra you need.
 

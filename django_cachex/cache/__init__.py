@@ -14,9 +14,9 @@ from django_cachex.cache.redis_py import (
     RedisSentinelCache,
 )
 from django_cachex.cache.redis_rs import (
-    RedisRsValkeyCache,
-    RedisRsValkeyClusterCache,
-    RedisRsValkeySentinelCache,
+    RedisRsCache,
+    RedisRsClusterCache,
+    RedisRsSentinelCache,
 )
 from django_cachex.cache.sentinel import KeyValueSentinelCache
 from django_cachex.cache.stream import StreamCache
@@ -37,9 +37,9 @@ __all__ = [
     "LocMemCache",
     "RedisCache",
     "RedisClusterCache",
-    "RedisRsValkeyCache",
-    "RedisRsValkeyClusterCache",
-    "RedisRsValkeySentinelCache",
+    "RedisRsCache",
+    "RedisRsClusterCache",
+    "RedisRsSentinelCache",
     "RedisSentinelCache",
     "StreamCache",
     "TieredCache",

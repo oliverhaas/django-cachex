@@ -40,12 +40,12 @@ Same wire-level features as the Python driver, dispatched through the optional `
 
 | Backend | Description |
 |---------|-------------|
-| `RedisRsValkeyCache` | Standard Valkey connection |
-| `RedisRsValkeyCache` | Standard Redis connection |
-| `RedisRsValkeySentinelCache` | Valkey Sentinel high availability |
-| `RedisRsValkeySentinelCache` | Redis Sentinel high availability |
-| `RedisRsValkeyClusterCache` | Valkey Cluster sharding |
-| `RedisRsValkeyClusterCache` | Redis Cluster sharding |
+| `RedisRsCache` | Standard Valkey connection |
+| `RedisRsCache` | Standard Redis connection |
+| `RedisRsSentinelCache` | Valkey Sentinel high availability |
+| `RedisRsSentinelCache` | Redis Sentinel high availability |
+| `RedisRsClusterCache` | Valkey Cluster sharding |
+| `RedisRsClusterCache` | Redis Cluster sharding |
 
 ### Local backends
 
@@ -203,7 +203,7 @@ selected by your ``BACKEND``. Each cache class has a fixed adapter:
 |----------------------------------------------------|-----------------|
 | ``django_cachex.cache.RedisCache``                 | redis-py        |
 | ``django_cachex.cache.ValkeyCache``                | valkey-py       |
-| ``django_cachex.cache.RedisRsValkeyCache``            | Rust driver     |
+| ``django_cachex.cache.RedisRsCache``            | Rust driver     |
 | ``django_cachex.cache.ValkeyGlideCache``           | valkey-glide    |
 
 To use a different adapter, change ``BACKEND``. The matching

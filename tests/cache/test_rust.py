@@ -35,7 +35,7 @@ def rust_cache(redis_container: RedisContainerInfo) -> Iterator[KeyValueCache]:
     location = f"redis://{redis_container.host}:{redis_container.port}/0"
     caches = {
         "default": {
-            "BACKEND": "django_cachex.cache.RedisRsValkeyCache",
+            "BACKEND": "django_cachex.cache.RedisRsCache",
             "LOCATION": location,
             "OPTIONS": {},
         },
@@ -67,7 +67,7 @@ def test_unreachable_server_does_not_raise_at_construction(redis_container):
     """Driver must connect lazily so IGNORE_EXCEPTIONS-style wrappers can catch errors."""
     caches = {
         "default": {
-            "BACKEND": "django_cachex.cache.RedisRsValkeyCache",
+            "BACKEND": "django_cachex.cache.RedisRsCache",
             "LOCATION": "redis://127.0.0.1:1/0",
             "OPTIONS": {},
         },

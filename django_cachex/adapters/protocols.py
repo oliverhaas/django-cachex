@@ -8,7 +8,7 @@ pipeline layers rely on.
   :class:`~django_cachex.cache.default.KeyValueCache` calls on its
   underlying adapter. Concrete adapters
   (:class:`~django_cachex.adapters.valkey_py.ValkeyPyAdapter`,
-  :class:`~django_cachex.adapters.redis_rs.RedisRsValkeyAdapter`,
+  :class:`~django_cachex.adapters.redis_rs.RedisRsAdapter`,
   :class:`~django_cachex.adapters.valkey_glide.ValkeyGlideAdapter`)
   inherit from this Protocol so the contract is explicit at the class
   declaration; the inherited method bodies (``...``) are shadowed by each

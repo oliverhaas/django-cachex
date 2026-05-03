@@ -17,10 +17,10 @@ from django_cachex.adapters.redis_py import (
     RedisPySentinelAdapter,
 )
 from django_cachex.adapters.redis_rs import (
-    RedisRsValkeyAdapter,
-    RedisRsValkeyClusterAdapter,
-    RedisRsValkeyPipelineAdapter,
-    RedisRsValkeySentinelAdapter,
+    RedisRsAdapter,
+    RedisRsClusterAdapter,
+    RedisRsPipelineAdapter,
+    RedisRsSentinelAdapter,
 )
 from django_cachex.adapters.valkey_glide import ValkeyGlideAdapter, ValkeyGlidePipelineAdapter
 from django_cachex.adapters.valkey_py import (
@@ -38,10 +38,10 @@ __all__ = [
     "RedisPyClusterAdapter",
     "RedisPyPipelineAdapter",
     "RedisPySentinelAdapter",
-    "RedisRsValkeyAdapter",
-    "RedisRsValkeyClusterAdapter",
-    "RedisRsValkeyPipelineAdapter",
-    "RedisRsValkeySentinelAdapter",
+    "RedisRsAdapter",
+    "RedisRsClusterAdapter",
+    "RedisRsPipelineAdapter",
+    "RedisRsSentinelAdapter",
     "ValkeyGlideAdapter",
     "ValkeyGlidePipelineAdapter",
     "ValkeyPyAdapter",

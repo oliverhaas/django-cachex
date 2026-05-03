@@ -280,7 +280,7 @@ def _decode_xautoclaim(
     return (next_id, _decode_xrange(entries), deleted)
 
 
-class RedisRsValkeyAdapter(KeyValueAdapterProtocol):
+class RedisRsAdapter(KeyValueAdapterProtocol):
     """Base Rust-driver client. Subclasses choose the topology.
 
     Implements the cachex adapter surface against ``RedisRsDriver``. We
@@ -968,8 +968,8 @@ class RedisRsValkeyAdapter(KeyValueAdapterProtocol):
     # =========================================================================
 
     @override
-    def pipeline(self, *, transaction: bool = True) -> RedisRsValkeyPipelineAdapter:
-        return RedisRsValkeyPipelineAdapter(self._driver, transaction=transaction)
+    def pipeline(self, *, transaction: bool = True) -> RedisRsPipelineAdapter:
+        return RedisRsPipelineAdapter(self._driver, transaction=transaction)
 
     # =========================================================================
     # Hashes
@@ -2592,7 +2592,7 @@ def _select_info_section(raw: str, section: str) -> str:
 # =============================================================================
 
 
-class RedisRsValkeyClusterAdapter(RedisRsValkeyAdapter):
+class RedisRsClusterAdapter(RedisRsAdapter):
     """Rust driver client for Valkey/Redis cluster mode."""
 
     @override
@@ -2606,7 +2606,7 @@ class RedisRsValkeyClusterAdapter(RedisRsValkeyAdapter):
     # special-casing here.
 
 
-class RedisRsValkeySentinelAdapter(RedisRsValkeyAdapter):
+class RedisRsSentinelAdapter(RedisRsAdapter):
     """Rust driver client for sentinel-managed Valkey/Redis topologies."""
 
     @override
@@ -2801,7 +2801,7 @@ def _xautoclaim(v: Any) -> list[Any]:
 # =============================================================================
 
 
-class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
+class RedisRsPipelineAdapter(KeyValuePipelineProtocol):
     """Pipeline adapter that buffers ops for the Rust driver's ``pipeline_exec``.
 
     Implements the cachex pipeline method surface natively against
@@ -2823,7 +2823,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         cmd: str,
         *args: Any,
         parser: Callable[[Any], Any] | None = None,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         self._commands.append((cmd, [_to_bytes(a) for a in args]))
         self._parsers.append(parser)
         return self
@@ -2846,7 +2846,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
             out.append(parser(value) if parser is not None else value)
         return out
 
-    def execute_command(self, *args: Any) -> RedisRsValkeyPipelineAdapter:
+    def execute_command(self, *args: Any) -> RedisRsPipelineAdapter:
         """Queue a raw Redis command (used by the wrapper's ``eval_script``)."""
         if not args:
             msg = "execute_command requires at least the command name"
@@ -2869,7 +2869,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         pxat: int | datetime | None = None,
         keepttl: bool = False,
         get: bool = False,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key, value]
         if ex is not None:
             args.extend([b"EX", _seconds(ex)])
@@ -2889,13 +2889,13 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
             args.append(b"GET")
         return self._queue("SET", *args)
 
-    def get(self, key: Any) -> RedisRsValkeyPipelineAdapter:
+    def get(self, key: Any) -> RedisRsPipelineAdapter:
         return self._queue("GET", key)
 
-    def delete(self, *keys: Any) -> RedisRsValkeyPipelineAdapter:
+    def delete(self, *keys: Any) -> RedisRsPipelineAdapter:
         return self._queue("DEL", *keys)
 
-    def exists(self, *keys: Any) -> RedisRsValkeyPipelineAdapter:
+    def exists(self, *keys: Any) -> RedisRsPipelineAdapter:
         return self._queue("EXISTS", *keys)
 
     def expire(
@@ -2907,7 +2907,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         xx: bool = False,
         gt: bool = False,
         lt: bool = False,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key, _seconds(seconds)]
         if nx:
             args.append(b"NX")
@@ -2928,7 +2928,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         xx: bool = False,
         gt: bool = False,
         lt: bool = False,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key, _epoch_seconds(when)]
         if nx:
             args.append(b"NX")
@@ -2949,7 +2949,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         xx: bool = False,
         gt: bool = False,
         lt: bool = False,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key, _milliseconds(milliseconds)]
         if nx:
             args.append(b"NX")
@@ -2970,7 +2970,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         xx: bool = False,
         gt: bool = False,
         lt: bool = False,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key, _epoch_milliseconds(when)]
         if nx:
             args.append(b"NX")
@@ -2982,70 +2982,70 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
             args.append(b"LT")
         return self._queue("PEXPIREAT", *args, parser=bool)
 
-    def persist(self, key: Any) -> RedisRsValkeyPipelineAdapter:
+    def persist(self, key: Any) -> RedisRsPipelineAdapter:
         return self._queue("PERSIST", key, parser=bool)
 
-    def ttl(self, key: Any) -> RedisRsValkeyPipelineAdapter:
+    def ttl(self, key: Any) -> RedisRsPipelineAdapter:
         return self._queue("TTL", key)
 
-    def pttl(self, key: Any) -> RedisRsValkeyPipelineAdapter:
+    def pttl(self, key: Any) -> RedisRsPipelineAdapter:
         return self._queue("PTTL", key)
 
-    def expiretime(self, key: Any) -> RedisRsValkeyPipelineAdapter:
+    def expiretime(self, key: Any) -> RedisRsPipelineAdapter:
         return self._queue("EXPIRETIME", key)
 
-    def type(self, key: Any) -> RedisRsValkeyPipelineAdapter:
+    def type(self, key: Any) -> RedisRsPipelineAdapter:
         return self._queue("TYPE", key)
 
-    def rename(self, src: Any, dst: Any) -> RedisRsValkeyPipelineAdapter:
+    def rename(self, src: Any, dst: Any) -> RedisRsPipelineAdapter:
         return self._queue("RENAME", src, dst)
 
-    def renamenx(self, src: Any, dst: Any) -> RedisRsValkeyPipelineAdapter:
+    def renamenx(self, src: Any, dst: Any) -> RedisRsPipelineAdapter:
         return self._queue("RENAMENX", src, dst)
 
-    def incrby(self, key: Any, amount: int = 1) -> RedisRsValkeyPipelineAdapter:
+    def incrby(self, key: Any, amount: int = 1) -> RedisRsPipelineAdapter:
         return self._queue("INCRBY", key, amount)
 
-    def decrby(self, key: Any, amount: int = 1) -> RedisRsValkeyPipelineAdapter:
+    def decrby(self, key: Any, amount: int = 1) -> RedisRsPipelineAdapter:
         return self._queue("DECRBY", key, amount)
 
     # ================================================================ lists
 
-    def lpush(self, key: Any, *values: Any) -> RedisRsValkeyPipelineAdapter:
+    def lpush(self, key: Any, *values: Any) -> RedisRsPipelineAdapter:
         return self._queue("LPUSH", key, *values)
 
-    def rpush(self, key: Any, *values: Any) -> RedisRsValkeyPipelineAdapter:
+    def rpush(self, key: Any, *values: Any) -> RedisRsPipelineAdapter:
         return self._queue("RPUSH", key, *values)
 
-    def lpop(self, key: Any, count: int | None = None) -> RedisRsValkeyPipelineAdapter:
+    def lpop(self, key: Any, count: int | None = None) -> RedisRsPipelineAdapter:
         if count is None:
             return self._queue("LPOP", key)
         return self._queue("LPOP", key, count)
 
-    def rpop(self, key: Any, count: int | None = None) -> RedisRsValkeyPipelineAdapter:
+    def rpop(self, key: Any, count: int | None = None) -> RedisRsPipelineAdapter:
         if count is None:
             return self._queue("RPOP", key)
         return self._queue("RPOP", key, count)
 
-    def lrange(self, key: Any, start: int, end: int) -> RedisRsValkeyPipelineAdapter:
+    def lrange(self, key: Any, start: int, end: int) -> RedisRsPipelineAdapter:
         return self._queue("LRANGE", key, start, end)
 
-    def lindex(self, key: Any, index: int) -> RedisRsValkeyPipelineAdapter:
+    def lindex(self, key: Any, index: int) -> RedisRsPipelineAdapter:
         return self._queue("LINDEX", key, index)
 
-    def llen(self, key: Any) -> RedisRsValkeyPipelineAdapter:
+    def llen(self, key: Any) -> RedisRsPipelineAdapter:
         return self._queue("LLEN", key)
 
-    def lrem(self, key: Any, count: int, value: Any) -> RedisRsValkeyPipelineAdapter:
+    def lrem(self, key: Any, count: int, value: Any) -> RedisRsPipelineAdapter:
         return self._queue("LREM", key, count, value)
 
-    def ltrim(self, key: Any, start: int, end: int) -> RedisRsValkeyPipelineAdapter:
+    def ltrim(self, key: Any, start: int, end: int) -> RedisRsPipelineAdapter:
         return self._queue("LTRIM", key, start, end)
 
-    def lset(self, key: Any, index: int, value: Any) -> RedisRsValkeyPipelineAdapter:
+    def lset(self, key: Any, index: int, value: Any) -> RedisRsPipelineAdapter:
         return self._queue("LSET", key, index, value)
 
-    def linsert(self, key: Any, where: str, pivot: Any, value: Any) -> RedisRsValkeyPipelineAdapter:
+    def linsert(self, key: Any, where: str, pivot: Any, value: Any) -> RedisRsPipelineAdapter:
         return self._queue("LINSERT", key, where.upper(), pivot, value)
 
     def lpos(
@@ -3055,7 +3055,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         rank: int | None = None,
         count: int | None = None,
         maxlen: int | None = None,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key, value]
         if rank is not None:
             args.extend([b"RANK", rank])
@@ -3071,56 +3071,56 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         destination: Any,
         src: str = "LEFT",
         dest: str = "RIGHT",
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         return self._queue("LMOVE", source, destination, src.upper(), dest.upper())
 
     # ================================================================= sets
 
-    def sadd(self, key: Any, *members: Any) -> RedisRsValkeyPipelineAdapter:
+    def sadd(self, key: Any, *members: Any) -> RedisRsPipelineAdapter:
         return self._queue("SADD", key, *members)
 
-    def srem(self, key: Any, *members: Any) -> RedisRsValkeyPipelineAdapter:
+    def srem(self, key: Any, *members: Any) -> RedisRsPipelineAdapter:
         return self._queue("SREM", key, *members)
 
-    def smembers(self, key: Any) -> RedisRsValkeyPipelineAdapter:
+    def smembers(self, key: Any) -> RedisRsPipelineAdapter:
         return self._queue("SMEMBERS", key)
 
-    def sismember(self, key: Any, member: Any) -> RedisRsValkeyPipelineAdapter:
+    def sismember(self, key: Any, member: Any) -> RedisRsPipelineAdapter:
         return self._queue("SISMEMBER", key, member)
 
-    def smismember(self, key: Any, *members: Any) -> RedisRsValkeyPipelineAdapter:
+    def smismember(self, key: Any, *members: Any) -> RedisRsPipelineAdapter:
         return self._queue("SMISMEMBER", key, *members)
 
-    def scard(self, key: Any) -> RedisRsValkeyPipelineAdapter:
+    def scard(self, key: Any) -> RedisRsPipelineAdapter:
         return self._queue("SCARD", key)
 
-    def sdiff(self, *keys: Any) -> RedisRsValkeyPipelineAdapter:
+    def sdiff(self, *keys: Any) -> RedisRsPipelineAdapter:
         return self._queue("SDIFF", *keys)
 
-    def sdiffstore(self, dest: Any, *keys: Any) -> RedisRsValkeyPipelineAdapter:
+    def sdiffstore(self, dest: Any, *keys: Any) -> RedisRsPipelineAdapter:
         return self._queue("SDIFFSTORE", dest, *keys)
 
-    def sinter(self, *keys: Any) -> RedisRsValkeyPipelineAdapter:
+    def sinter(self, *keys: Any) -> RedisRsPipelineAdapter:
         return self._queue("SINTER", *keys)
 
-    def sinterstore(self, dest: Any, *keys: Any) -> RedisRsValkeyPipelineAdapter:
+    def sinterstore(self, dest: Any, *keys: Any) -> RedisRsPipelineAdapter:
         return self._queue("SINTERSTORE", dest, *keys)
 
-    def sunion(self, *keys: Any) -> RedisRsValkeyPipelineAdapter:
+    def sunion(self, *keys: Any) -> RedisRsPipelineAdapter:
         return self._queue("SUNION", *keys)
 
-    def sunionstore(self, dest: Any, *keys: Any) -> RedisRsValkeyPipelineAdapter:
+    def sunionstore(self, dest: Any, *keys: Any) -> RedisRsPipelineAdapter:
         return self._queue("SUNIONSTORE", dest, *keys)
 
-    def smove(self, source: Any, destination: Any, member: Any) -> RedisRsValkeyPipelineAdapter:
+    def smove(self, source: Any, destination: Any, member: Any) -> RedisRsPipelineAdapter:
         return self._queue("SMOVE", source, destination, member)
 
-    def spop(self, key: Any, count: int | None = None) -> RedisRsValkeyPipelineAdapter:
+    def spop(self, key: Any, count: int | None = None) -> RedisRsPipelineAdapter:
         if count is None:
             return self._queue("SPOP", key)
         return self._queue("SPOP", key, count)
 
-    def srandmember(self, key: Any, count: int | None = None) -> RedisRsValkeyPipelineAdapter:
+    def srandmember(self, key: Any, count: int | None = None) -> RedisRsPipelineAdapter:
         if count is None:
             return self._queue("SRANDMEMBER", key)
         return self._queue("SRANDMEMBER", key, count)
@@ -3134,7 +3134,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         value: Any = None,
         mapping: Mapping[str, Any] | None = None,
         items: list[Any] | None = None,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key]
         if field is not None:
             args.extend([field, value])
@@ -3147,39 +3147,39 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
                 args.extend([f, v])
         return self._queue("HSET", *args)
 
-    def hsetnx(self, key: Any, field: str, value: Any) -> RedisRsValkeyPipelineAdapter:
+    def hsetnx(self, key: Any, field: str, value: Any) -> RedisRsPipelineAdapter:
         return self._queue("HSETNX", key, field, value)
 
-    def hdel(self, key: Any, *fields: str) -> RedisRsValkeyPipelineAdapter:
+    def hdel(self, key: Any, *fields: str) -> RedisRsPipelineAdapter:
         return self._queue("HDEL", key, *fields)
 
-    def hexists(self, key: Any, field: str) -> RedisRsValkeyPipelineAdapter:
+    def hexists(self, key: Any, field: str) -> RedisRsPipelineAdapter:
         return self._queue("HEXISTS", key, field)
 
-    def hget(self, key: Any, field: str) -> RedisRsValkeyPipelineAdapter:
+    def hget(self, key: Any, field: str) -> RedisRsPipelineAdapter:
         return self._queue("HGET", key, field)
 
-    def hgetall(self, key: Any) -> RedisRsValkeyPipelineAdapter:
+    def hgetall(self, key: Any) -> RedisRsPipelineAdapter:
         return self._queue("HGETALL", key, parser=_hgetall)
 
-    def hkeys(self, key: Any) -> RedisRsValkeyPipelineAdapter:
+    def hkeys(self, key: Any) -> RedisRsPipelineAdapter:
         return self._queue("HKEYS", key)
 
-    def hvals(self, key: Any) -> RedisRsValkeyPipelineAdapter:
+    def hvals(self, key: Any) -> RedisRsPipelineAdapter:
         return self._queue("HVALS", key)
 
-    def hlen(self, key: Any) -> RedisRsValkeyPipelineAdapter:
+    def hlen(self, key: Any) -> RedisRsPipelineAdapter:
         return self._queue("HLEN", key)
 
-    def hmget(self, key: Any, fields: Iterable[str] | str) -> RedisRsValkeyPipelineAdapter:
+    def hmget(self, key: Any, fields: Iterable[str] | str) -> RedisRsPipelineAdapter:
         if isinstance(fields, (str, bytes)):
             return self._queue("HMGET", key, fields)
         return self._queue("HMGET", key, *fields)
 
-    def hincrby(self, key: Any, field: str, amount: int = 1) -> RedisRsValkeyPipelineAdapter:
+    def hincrby(self, key: Any, field: str, amount: int = 1) -> RedisRsPipelineAdapter:
         return self._queue("HINCRBY", key, field, amount)
 
-    def hincrbyfloat(self, key: Any, field: str, amount: float = 1.0) -> RedisRsValkeyPipelineAdapter:
+    def hincrbyfloat(self, key: Any, field: str, amount: float = 1.0) -> RedisRsPipelineAdapter:
         return self._queue("HINCRBYFLOAT", key, field, amount, parser=_to_float_or_none)
 
     # ========================================================== sorted sets
@@ -3195,7 +3195,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         incr: bool = False,
         gt: bool = False,
         lt: bool = False,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key]
         if nx:
             args.append(b"NX")
@@ -3215,19 +3215,19 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         parser = _to_float_or_none if incr else None
         return self._queue("ZADD", *args, parser=parser)
 
-    def zcard(self, key: Any) -> RedisRsValkeyPipelineAdapter:
+    def zcard(self, key: Any) -> RedisRsPipelineAdapter:
         return self._queue("ZCARD", key)
 
-    def zcount(self, key: Any, min: Any, max: Any) -> RedisRsValkeyPipelineAdapter:
+    def zcount(self, key: Any, min: Any, max: Any) -> RedisRsPipelineAdapter:
         return self._queue("ZCOUNT", key, min, max)
 
-    def zincrby(self, key: Any, amount: float, value: Any) -> RedisRsValkeyPipelineAdapter:
+    def zincrby(self, key: Any, amount: float, value: Any) -> RedisRsPipelineAdapter:
         return self._queue("ZINCRBY", key, amount, value, parser=_to_float_or_none)
 
-    def zpopmax(self, key: Any, count: int | None = None) -> RedisRsValkeyPipelineAdapter:
+    def zpopmax(self, key: Any, count: int | None = None) -> RedisRsPipelineAdapter:
         return self._queue("ZPOPMAX", key, 1 if count is None else count, parser=_zset_with_scores)
 
-    def zpopmin(self, key: Any, count: int | None = None) -> RedisRsValkeyPipelineAdapter:
+    def zpopmin(self, key: Any, count: int | None = None) -> RedisRsPipelineAdapter:
         return self._queue("ZPOPMIN", key, 1 if count is None else count, parser=_zset_with_scores)
 
     def zrange(
@@ -3239,7 +3239,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         desc: bool = False,
         withscores: bool = False,
         score_cast_func: Any = float,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key, start, end]
         if desc:
             args.append(b"REV")
@@ -3256,7 +3256,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         *,
         withscores: bool = False,
         score_cast_func: Any = float,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key, start, end]
         if withscores:
             args.append(b"WITHSCORES")
@@ -3273,7 +3273,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         *,
         withscores: bool = False,
         score_cast_func: Any = float,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key, min, max]
         if withscores:
             args.append(b"WITHSCORES")
@@ -3292,7 +3292,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         *,
         withscores: bool = False,
         score_cast_func: Any = float,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key, max, min]
         if withscores:
             args.append(b"WITHSCORES")
@@ -3301,19 +3301,19 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         parser = _zset_with_scores if withscores else None
         return self._queue("ZREVRANGEBYSCORE", *args, parser=parser)
 
-    def zrank(self, key: Any, value: Any) -> RedisRsValkeyPipelineAdapter:
+    def zrank(self, key: Any, value: Any) -> RedisRsPipelineAdapter:
         return self._queue("ZRANK", key, value)
 
-    def zrevrank(self, key: Any, value: Any) -> RedisRsValkeyPipelineAdapter:
+    def zrevrank(self, key: Any, value: Any) -> RedisRsPipelineAdapter:
         return self._queue("ZREVRANK", key, value)
 
-    def zscore(self, key: Any, value: Any) -> RedisRsValkeyPipelineAdapter:
+    def zscore(self, key: Any, value: Any) -> RedisRsPipelineAdapter:
         return self._queue("ZSCORE", key, value, parser=_to_float_or_none)
 
-    def zmscore(self, key: Any, members: Iterable[Any]) -> RedisRsValkeyPipelineAdapter:
+    def zmscore(self, key: Any, members: Iterable[Any]) -> RedisRsPipelineAdapter:
         return self._queue("ZMSCORE", key, *members, parser=_list_to_float_or_none)
 
-    def zrem(self, key: Any, *values: Any) -> RedisRsValkeyPipelineAdapter:
+    def zrem(self, key: Any, *values: Any) -> RedisRsPipelineAdapter:
         return self._queue("ZREM", key, *values)
 
     def zremrangebyscore(
@@ -3321,10 +3321,10 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         key: Any,
         min: Any,
         max: Any,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         return self._queue("ZREMRANGEBYSCORE", key, min, max)
 
-    def zremrangebyrank(self, key: Any, start: int, end: int) -> RedisRsValkeyPipelineAdapter:
+    def zremrangebyrank(self, key: Any, start: int, end: int) -> RedisRsPipelineAdapter:
         return self._queue("ZREMRANGEBYRANK", key, start, end)
 
     # ============================================================== streams
@@ -3340,7 +3340,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         nomkstream: bool = False,
         minid: str | None = None,
         limit: int | None = None,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key]
         if nomkstream:
             args.append(b"NOMKSTREAM")
@@ -3359,7 +3359,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
             args.extend([k, v])
         return self._queue("XADD", *args, parser=_bytes_or_none_to_str)
 
-    def xlen(self, key: Any) -> RedisRsValkeyPipelineAdapter:
+    def xlen(self, key: Any) -> RedisRsPipelineAdapter:
         return self._queue("XLEN", key)
 
     def xrange(
@@ -3368,7 +3368,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         min: str = "-",
         max: str = "+",
         count: int | None = None,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key, min, max]
         if count is not None:
             args.extend([b"COUNT", count])
@@ -3380,7 +3380,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         max: str = "+",
         min: str = "-",
         count: int | None = None,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key, max, min]
         if count is not None:
             args.extend([b"COUNT", count])
@@ -3391,7 +3391,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         streams: Mapping[Any, Any],
         count: int | None = None,
         block: int | None = None,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = []
         if count is not None:
             args.extend([b"COUNT", count])
@@ -3412,7 +3412,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         count: int | None = None,
         block: int | None = None,
         noack: bool = False,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [b"GROUP", groupname, consumername]
         if count is not None:
             args.extend([b"COUNT", count])
@@ -3434,7 +3434,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         approximate: bool = True,
         minid: str | None = None,
         limit: int | None = None,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key]
         if maxlen is not None:
             args.append(b"MAXLEN")
@@ -3448,18 +3448,18 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
             args.extend([b"LIMIT", limit])
         return self._queue("XTRIM", *args)
 
-    def xdel(self, key: Any, *entry_ids: str) -> RedisRsValkeyPipelineAdapter:
+    def xdel(self, key: Any, *entry_ids: str) -> RedisRsPipelineAdapter:
         return self._queue("XDEL", key, *entry_ids)
 
-    def xinfo_stream(self, key: Any, full: bool = False) -> RedisRsValkeyPipelineAdapter:
+    def xinfo_stream(self, key: Any, full: bool = False) -> RedisRsPipelineAdapter:
         if full:
             return self._queue("XINFO", b"STREAM", key, b"FULL", parser=_xinfo_dict)
         return self._queue("XINFO", b"STREAM", key, parser=_xinfo_dict)
 
-    def xinfo_groups(self, key: Any) -> RedisRsValkeyPipelineAdapter:
+    def xinfo_groups(self, key: Any) -> RedisRsPipelineAdapter:
         return self._queue("XINFO", b"GROUPS", key, parser=_xinfo_dict_list)
 
-    def xinfo_consumers(self, key: Any, group: str) -> RedisRsValkeyPipelineAdapter:
+    def xinfo_consumers(self, key: Any, group: str) -> RedisRsPipelineAdapter:
         return self._queue("XINFO", b"CONSUMERS", key, group, parser=_xinfo_dict_list)
 
     def xgroup_create(
@@ -3470,7 +3470,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         *,
         mkstream: bool = False,
         entries_read: int | None = None,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [b"CREATE", key, group, id]
         if mkstream:
             args.append(b"MKSTREAM")
@@ -3478,7 +3478,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
             args.extend([b"ENTRIESREAD", entries_read])
         return self._queue("XGROUP", *args)
 
-    def xgroup_destroy(self, key: Any, group: str) -> RedisRsValkeyPipelineAdapter:
+    def xgroup_destroy(self, key: Any, group: str) -> RedisRsPipelineAdapter:
         return self._queue("XGROUP", b"DESTROY", key, group)
 
     def xgroup_setid(
@@ -3488,19 +3488,19 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         id: str,
         *,
         entries_read: int | None = None,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [b"SETID", key, group, id]
         if entries_read is not None:
             args.extend([b"ENTRIESREAD", entries_read])
         return self._queue("XGROUP", *args)
 
-    def xgroup_delconsumer(self, key: Any, group: str, consumer: str) -> RedisRsValkeyPipelineAdapter:
+    def xgroup_delconsumer(self, key: Any, group: str, consumer: str) -> RedisRsPipelineAdapter:
         return self._queue("XGROUP", b"DELCONSUMER", key, group, consumer)
 
-    def xack(self, key: Any, group: str, *ids: str) -> RedisRsValkeyPipelineAdapter:
+    def xack(self, key: Any, group: str, *ids: str) -> RedisRsPipelineAdapter:
         return self._queue("XACK", key, group, *ids)
 
-    def xpending(self, key: Any, group: str) -> RedisRsValkeyPipelineAdapter:
+    def xpending(self, key: Any, group: str) -> RedisRsPipelineAdapter:
         """Summary form: ``XPENDING key group``."""
         return self._queue("XPENDING", key, group)
 
@@ -3514,7 +3514,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         count: int,
         consumername: str | None = None,
         idle: int | None = None,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key, group]
         if idle is not None:
             args.extend([b"IDLE", idle])
@@ -3535,7 +3535,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         retrycount: int | None = None,
         force: bool = False,
         justid: bool = False,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key, group, consumer, min_idle_time, *message_ids]
         if idle is not None:
             args.extend([b"IDLE", idle])
@@ -3559,7 +3559,7 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
         start_id: str = "0-0",
         count: int | None = None,
         justid: bool = False,
-    ) -> RedisRsValkeyPipelineAdapter:
+    ) -> RedisRsPipelineAdapter:
         args: list[Any] = [key, group, consumer, min_idle_time, start_id]
         if count is not None:
             args.extend([b"COUNT", count])
@@ -3570,8 +3570,8 @@ class RedisRsValkeyPipelineAdapter(KeyValuePipelineProtocol):
 
 
 __all__ = [
-    "RedisRsValkeyAdapter",
-    "RedisRsValkeyClusterAdapter",
-    "RedisRsValkeyPipelineAdapter",
-    "RedisRsValkeySentinelAdapter",
+    "RedisRsAdapter",
+    "RedisRsClusterAdapter",
+    "RedisRsPipelineAdapter",
+    "RedisRsSentinelAdapter",
 ]

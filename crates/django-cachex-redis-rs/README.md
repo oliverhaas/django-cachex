@@ -15,7 +15,7 @@ platforms there's no wheel — pip will try to build from source (requires
 the Rust toolchain) or fail clearly.
 
 The pure-Python `django-cachex` package is fully usable on its own; this
-binary just unlocks the `RedisRsValkeyCache` family of
+binary just unlocks the `RedisRsCache` family of
 backends.
 
 [django-cachex]: https://github.com/oliverhaas/django-cachex

@@ -290,13 +290,13 @@ jobs:
           uv run --no-sync python -c "
           import django_cachex
           import django_cachex.cache, django_cachex.client
-          from django_cachex.cache import RedisRsValkeyCache, ValkeyCache
+          from django_cachex.cache import RedisRsCache, ValkeyCache
           try:
               from django_cachex import _driver
               raise SystemExit('FAIL: _driver present in pure-only install')
           except ImportError:
               pass
-          rust = RedisRsValkeyCache(server='valkey://localhost:6379/0', params={'OPTIONS': {}})
+          rust = RedisRsCache(server='valkey://localhost:6379/0', params={'OPTIONS': {}})
           try:
               rust.get('foo')
               raise SystemExit('FAIL: rust backend should have raised')
