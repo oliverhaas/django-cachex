@@ -219,7 +219,7 @@ def _format_value(value: Any) -> str:
     return repr(value)
 
 
-def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> dict[str, Any]:
+def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> dict[str, Any]:  # noqa: PLR0911
     """Fetch type-specific data from cache, paginated."""
     try:
         match key_type:
@@ -259,8 +259,8 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
                 entries = cache.xrange(key, count=pagination["end_index"])
                 sliced = entries[pagination["start_index"] :]
                 return {"entries": sliced, "length": length, "pagination": pagination}
-    except Exception:  # noqa: BLE001, S110
-        pass
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e)}
     return {}
 
 

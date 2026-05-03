@@ -80,48 +80,25 @@
 
     {% if key_exists or create_mode %}
 
+    {% if type_data.error %}
+    <p class="errornote">{% blocktrans with error=type_data.error %}Could not load value for this key: {{ error }}{% endblocktrans %}</p>
+    {% endif %}
+
     {% if key_type == 'list' %}
     {% include "admin/django_cachex/key/key_detail_list.html" %}
-    <div class="submit-row">
-        <a role="button" href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="closelink" style="margin-left: auto; text-decoration: none;">{% trans 'Back' %}</a>
-        <a role="button" href="#" class="deletelink" style="margin-left: 0;" onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); } return false;">{% trans 'Delete' %}</a>
-    </div>
-
     {% elif key_type == 'hash' %}
     {% include "admin/django_cachex/key/key_detail_hash.html" %}
-    <div class="submit-row">
-        <a role="button" href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="closelink" style="margin-left: auto; text-decoration: none;">{% trans 'Back' %}</a>
-        <a role="button" href="#" class="deletelink" style="margin-left: 0;" onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); } return false;">{% trans 'Delete' %}</a>
-    </div>
-
     {% elif key_type == 'set' %}
     {% include "admin/django_cachex/key/key_detail_set.html" %}
-    <div class="submit-row">
-        <a role="button" href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="closelink" style="margin-left: auto; text-decoration: none;">{% trans 'Back' %}</a>
-        <a role="button" href="#" class="deletelink" style="margin-left: 0;" onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); } return false;">{% trans 'Delete' %}</a>
-    </div>
-
     {% elif key_type == 'zset' %}
     {% include "admin/django_cachex/key/key_detail_zset.html" %}
-    <div class="submit-row">
-        <a role="button" href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="closelink" style="margin-left: auto; text-decoration: none;">{% trans 'Back' %}</a>
-        <a role="button" href="#" class="deletelink" style="margin-left: 0;" onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); } return false;">{% trans 'Delete' %}</a>
-    </div>
-
     {% elif key_type == 'stream' %}
     {% include "admin/django_cachex/key/key_detail_stream.html" %}
-    <div class="submit-row">
-        <a role="button" href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="closelink" style="margin-left: auto; text-decoration: none;">{% trans 'Back' %}</a>
-        <a role="button" href="#" class="deletelink" style="margin-left: 0;" onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); } return false;">{% trans 'Delete' %}</a>
-    </div>
-
     {% else %}
     {% include "admin/django_cachex/key/key_detail_string.html" %}
-    <div class="submit-row">
-        <a role="button" href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="closelink" style="margin-left: auto; text-decoration: none;">{% trans 'Back' %}</a>
-        <a role="button" href="#" class="deletelink" style="margin-left: 0;" onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); } return false;">{% trans 'Delete' %}</a>
-    </div>
     {% endif %}
+
+    {% include "admin/django_cachex/key/_key_detail_actions.html" %}
 
     {% endif %}
 

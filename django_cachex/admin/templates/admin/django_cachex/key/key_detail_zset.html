@@ -22,7 +22,7 @@
             {% csrf_token %}
             <input type="hidden" name="action" value="zpopmin">
             <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" title="{% trans 'Count' %}">
-            <button type="submit" class="button btn-small">{% trans 'Pop' %}</button>
+            <button type="submit" class="button btn-small" onclick="return confirm('{% trans 'Pop the lowest-scored members? They will be removed from the set.' %}');">{% trans 'Pop' %}</button>
         </form>
     </div>
     <div class="form-row">
@@ -31,7 +31,7 @@
             {% csrf_token %}
             <input type="hidden" name="action" value="zpopmax">
             <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" title="{% trans 'Count' %}">
-            <button type="submit" class="button btn-small">{% trans 'Pop' %}</button>
+            <button type="submit" class="button btn-small" onclick="return confirm('{% trans 'Pop the highest-scored members? They will be removed from the set.' %}');">{% trans 'Pop' %}</button>
         </form>
     </div>
 </fieldset>
@@ -57,7 +57,7 @@
                     </td>
                     <td>
                         <button type="submit" form="zset-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
-                        <button type="submit" form="zset-remove-{{ forloop.counter0 }}" class="button delete-btn btn-small">{% trans 'Remove' %}</button>
+                        <button type="submit" form="zset-remove-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Remove this member?' %}');">{% trans 'Remove' %}</button>
                     </td>
                 </tr>
                 {% endfor %}

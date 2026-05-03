@@ -17,7 +17,7 @@
             {% csrf_token %}
             <input type="hidden" name="action" value="spop">
             <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" title="{% trans 'Count' %}">
-            <button type="submit" class="button btn-small">{% trans 'Random' %}</button>
+            <button type="submit" class="button btn-small" onclick="return confirm('{% trans 'Pop random members? They will be removed from the set.' %}');">{% trans 'Random' %}</button>
         </form>
     </div>
 </fieldset>
@@ -42,7 +42,7 @@
                             {% csrf_token %}
                             <input type="hidden" name="action" value="srem">
                             <input type="hidden" name="member" value="{{ member }}">
-                            <button type="submit" class="button delete-btn btn-small">{% trans 'Remove' %}</button>
+                            <button type="submit" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Remove this member?' %}');">{% trans 'Remove' %}</button>
                         </form>
                     </td>
                 </tr>

@@ -35,7 +35,7 @@
                     </td>
                     <td>
                         <button type="submit" form="hash-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
-                        <button type="submit" form="hash-delete-{{ forloop.counter0 }}" class="button delete-btn btn-small">{% trans 'Delete' %}</button>
+                        <button type="submit" form="hash-delete-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Delete this field?' %}');">{% trans 'Delete' %}</button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -75,7 +75,7 @@
                     </td>
                     <td>
                         <button type="submit" form="hash-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
-                        <button type="submit" form="hash-delete-{{ forloop.counter0 }}" class="button delete-btn btn-small">{% trans 'Delete' %}</button>
+                        <button type="submit" form="hash-delete-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Delete this field?' %}');">{% trans 'Delete' %}</button>
                     </td>
                 </tr>
                 {% endfor %}
