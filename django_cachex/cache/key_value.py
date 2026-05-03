@@ -20,6 +20,7 @@ from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.utils.module_loading import import_string
 
 if TYPE_CHECKING:
+    import builtins
     from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 
     from django_cachex.adapters.pipeline import Pipeline
@@ -32,6 +33,9 @@ from django_cachex.script import ScriptHelpers
 
 # Alias for the `set` builtin shadowed by the `set` method (PEP 649 defers
 # annotations at runtime, but type checkers still resolve them in class scope).
+# The `type` shadow is worked around with `builtins.type[X]` directly when
+# subscripts are needed — module-level aliases of `type` don't survive
+# subscript through mypy's name resolution.
 _set = set
 
 # Regex for escaping glob special characters
@@ -71,7 +75,7 @@ class KeyValueCache(BaseCachex):
     _cachex_support: str = "cachex"
 
     # Class attribute - subclasses override this
-    _adapter_class: type[KeyValueAdapterProtocol]
+    _adapter_class: builtins.type[KeyValueAdapterProtocol]
 
     def __init__(self, server: str, params: dict[str, Any]) -> None:
         super().__init__(params)

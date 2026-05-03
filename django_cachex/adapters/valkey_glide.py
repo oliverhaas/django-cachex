@@ -7,7 +7,7 @@ no redis-py-shaped intermediary for the operation surface — only
 ``encode``/``decode``/``_resolve_stampede`` are shared from the base.
 
 The pipeline adapter (``ValkeyGlidePipelineAdapter`` / ``_AsyncGlidePipeline``)
-implements ``BaseKeyValuePipelineAdapter`` natively against glide's ``Batch``
+implements ``KeyValuePipelineProtocol`` natively against glide's ``Batch``
 — no redis-py-shaped intermediary on the queueing surface either.
 
 Standalone only; no cluster, no sentinel. Spike-quality — many
@@ -19,8 +19,7 @@ import asyncio
 from typing import TYPE_CHECKING, Any, Self
 from urllib.parse import urlparse
 
-from django_cachex.adapters.pipeline import BaseKeyValuePipelineAdapter
-from django_cachex.adapters.protocols import KeyValueAdapterProtocol
+from django_cachex.adapters.protocols import KeyValueAdapterProtocol, KeyValuePipelineProtocol
 from django_cachex.stampede import (
     StampedeConfig,
     get_timeout_with_buffer,
@@ -68,6 +67,11 @@ def _check_installed() -> None:
             "both `valkey-glide-sync` (sync API) and `valkey-glide` (async API)."
         )
         raise ImportError(msg) from _GLIDE_IMPORT_ERROR
+
+
+# Alias for the `set` builtin shadowed by the `set` method (PEP 649 defers
+# annotations at runtime, but type checkers still resolve them in class scope).
+_set = set
 
 
 # =============================================================================
@@ -125,7 +129,7 @@ def _normalize_ttl(result: int) -> int | None:
 # =============================================================================
 
 
-class ValkeyGlidePipelineAdapter(BaseKeyValuePipelineAdapter):
+class ValkeyGlidePipelineAdapter(KeyValuePipelineProtocol):
     """Pipeline adapter that buffers cachex ops into glide's ``Batch``."""
 
     def __init__(self, client: GlideClient, *, transaction: bool = False) -> None:
@@ -1017,7 +1021,7 @@ class ValkeyGlideAdapter(KeyValueAdapterProtocol):
     def srem(self, key: KeyT, *members: Any) -> int:
         return self._client().srem(key, [_enc(m) for m in members])
 
-    def smembers(self, key: KeyT) -> set[Any]:
+    def smembers(self, key: KeyT) -> _set[Any]:
         return set(self._client().smembers(key))
 
     def sismember(self, key: KeyT, member: Any) -> bool:
@@ -1046,13 +1050,13 @@ class ValkeyGlideAdapter(KeyValueAdapterProtocol):
     def smove(self, src: KeyT, dst: KeyT, member: Any) -> bool:
         return bool(self._client().smove(src, dst, _enc(member)))
 
-    def sinter(self, *keys: KeyT) -> set[Any]:
+    def sinter(self, *keys: KeyT) -> _set[Any]:
         return set(self._client().sinter(list(keys)))
 
-    def sunion(self, *keys: KeyT) -> set[Any]:
+    def sunion(self, *keys: KeyT) -> _set[Any]:
         return set(self._client().sunion(list(keys)))
 
-    def sdiff(self, *keys: KeyT) -> set[Any]:
+    def sdiff(self, *keys: KeyT) -> _set[Any]:
         return set(self._client().sdiff(list(keys)))
 
     def sinterstore(self, dst: KeyT, *keys: KeyT) -> int:
@@ -1393,7 +1397,7 @@ class ValkeyGlideAdapter(KeyValueAdapterProtocol):
     def _pipeline(self, *, transaction: bool = False) -> ValkeyGlidePipelineAdapter:
         return ValkeyGlidePipelineAdapter(self._client(), transaction=transaction)
 
-    def pipeline(self, *, transaction: bool = True) -> BaseKeyValuePipelineAdapter:
+    def pipeline(self, *, transaction: bool = True) -> ValkeyGlidePipelineAdapter:
         return self._pipeline(transaction=transaction)
 
     # =========================================================================
@@ -1728,7 +1732,7 @@ class ValkeyGlideAdapter(KeyValueAdapterProtocol):
     async def asrem(self, key: KeyT, *members: Any) -> int:
         return await (await self._aclient()).srem(key, [_enc(m) for m in members])
 
-    async def asmembers(self, key: KeyT) -> set[Any]:
+    async def asmembers(self, key: KeyT) -> _set[Any]:
         return set(await (await self._aclient()).smembers(key))
 
     async def asismember(self, key: KeyT, member: Any) -> bool:
@@ -1757,13 +1761,13 @@ class ValkeyGlideAdapter(KeyValueAdapterProtocol):
     async def asmove(self, src: KeyT, dst: KeyT, member: Any) -> bool:
         return bool(await (await self._aclient()).smove(src, dst, _enc(member)))
 
-    async def asinter(self, *keys: KeyT) -> set[Any]:
+    async def asinter(self, *keys: KeyT) -> _set[Any]:
         return set(await (await self._aclient()).sinter(list(keys)))
 
-    async def asunion(self, *keys: KeyT) -> set[Any]:
+    async def asunion(self, *keys: KeyT) -> _set[Any]:
         return set(await (await self._aclient()).sunion(list(keys)))
 
-    async def asdiff(self, *keys: KeyT) -> set[Any]:
+    async def asdiff(self, *keys: KeyT) -> _set[Any]:
         return set(await (await self._aclient()).sdiff(list(keys)))
 
     async def asinterstore(self, dst: KeyT, *keys: KeyT) -> int:

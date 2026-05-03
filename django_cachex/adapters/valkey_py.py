@@ -31,7 +31,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
 
-from django_cachex.adapters.protocols import KeyValueAdapterProtocol
+from django_cachex.adapters.protocols import KeyValueAdapterProtocol, KeyValuePipelineProtocol
 from django_cachex.exceptions import NotSupportedError, _main_exceptions
 from django_cachex.stampede import (
     StampedeConfig,
@@ -43,15 +43,18 @@ from django_cachex.stampede import (
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
+    import builtins
+    from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Mapping, Sequence
+    from datetime import datetime, timedelta
 
     from redis.connection import ConnectionPool
 
-    from django_cachex.adapters.pipeline import BaseKeyValuePipelineAdapter
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT
 
 # Alias for the `set` builtin shadowed by the `set` method (PEP 649 defers
 # annotations at runtime, but type checkers still resolve them in class scope).
+# The `type` shadow uses ``builtins.type[X]`` directly — module-level
+# aliases of `type` don't survive subscript through mypy's name resolution.
 _set = set
 
 
@@ -138,10 +141,10 @@ class ValkeyPyAdapter(KeyValueAdapterProtocol):
 
     # Class slots — concrete drivers override under their availability flag.
     _lib: Any = None
-    _client_class: type[Any] | None = None
-    _pool_class: type[Any] | None = None
-    _async_client_class: type[Any] | None = None
-    _async_pool_class: type[Any] | None = None
+    _client_class: builtins.type[Any] | None = None
+    _pool_class: builtins.type[Any] | None = None
+    _async_client_class: builtins.type[Any] | None = None
+    _async_pool_class: builtins.type[Any] | None = None
 
     # Polymorphic availability check — redis-py subclasses override
     # ``_LIB_AVAILABLE`` and ``_missing_lib_error`` (via mixin) to redirect
@@ -180,9 +183,9 @@ class ValkeyPyAdapter(KeyValueAdapterProtocol):
     def __init__(
         self,
         servers: list[str],
-        pool_class: str | type[Any] | None = None,
-        parser_class: str | type[Any] | None = None,
-        async_pool_class: str | type[Any] | None = None,
+        pool_class: str | builtins.type[Any] | None = None,
+        parser_class: str | builtins.type[Any] | None = None,
+        async_pool_class: str | builtins.type[Any] | None = None,
         **options: Any,
     ) -> None:
         """Initialize the wire-level adapter.
@@ -1011,17 +1014,15 @@ class ValkeyPyAdapter(KeyValueAdapterProtocol):
             thread_local=thread_local,
         )
 
-    def pipeline(self, *, transaction: bool = True) -> BaseKeyValuePipelineAdapter:
+    def pipeline(self, *, transaction: bool = True) -> ValkeyPyPipelineAdapter:
         """Construct a pipeline adapter (raw command queue) for this driver.
 
-        Returns the per-driver :class:`BaseKeyValuePipelineAdapter` subclass.
-        ``KeyValueCache.pipeline()`` wraps the result in a :class:`Pipeline`
-        that adds key-prefixing, value encoding, and result decoding.
+        Returns a :class:`ValkeyPyPipelineAdapter`. ``KeyValueCache.pipeline()``
+        wraps the result in a :class:`Pipeline` that adds key-prefixing, value
+        encoding, and result decoding.
         """
-        from django_cachex.adapters.pipeline import RedisPipelineAdapter
-
         client = self.get_client(write=True)
-        return RedisPipelineAdapter(client.pipeline(transaction=transaction))
+        return ValkeyPyPipelineAdapter(client.pipeline(transaction=transaction))
 
     # =========================================================================
     # Server Operations
@@ -2860,17 +2861,17 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
     # Annotations widen the inferred narrow types so the redis-py thin layer
     # in ``redis_py.py`` can override class slots without tripping mypy's
     # ``incompatible-override`` check.
-    _pool_class: type[Any] | None
-    _sentinel_class: type[Any] | None = None
-    _sentinel_pool_class: type[Any] | None = None
-    _async_sentinel_class: type[Any] | None = None
-    _async_sentinel_pool_class: type[Any] | None = None
+    _pool_class: builtins.type[Any] | None
+    _sentinel_class: builtins.type[Any] | None = None
+    _sentinel_pool_class: builtins.type[Any] | None = None
+    _async_sentinel_class: builtins.type[Any] | None = None
+    _async_sentinel_pool_class: builtins.type[Any] | None = None
 
     # Sentinel-managed pools live on ``_async_sentinel_pool_class``; clear the
     # generic ``_async_pool_class`` inherited from ``ValkeyPyAdapter`` so callers
     # that probe it (e.g. tests gating on ``_async_pool_class is None``)
     # correctly identify this adapter as sentinel-shaped.
-    _async_pool_class: type[Any] | None = None
+    _async_pool_class: builtins.type[Any] | None = None
 
     # Async sentinels: WeakKeyDictionary keyed by event loop
     _async_sentinels: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, Any]
@@ -3089,11 +3090,11 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
     # Cluster manages its own pool; clear the generic pool slots inherited
     # from ``ValkeyAdapter`` so callers probing ``_async_pool_class``
     # correctly identify this adapter as cluster-shaped.
-    _async_pool_class: type[Any] | None = None
+    _async_pool_class: builtins.type[Any] | None = None
 
     # Subclasses must set these
-    _cluster_class: type[Any] | None = None
-    _async_cluster_class: type[Any] | None = None
+    _cluster_class: builtins.type[Any] | None = None
+    _async_cluster_class: builtins.type[Any] | None = None
     _key_slot_func: Any = None  # Function to calculate key slot
 
     if _VALKEY_AVAILABLE:
@@ -3118,7 +3119,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         ] = weakref.WeakKeyDictionary()
 
     @property
-    def _cluster(self) -> type[Any]:
+    def _cluster(self) -> builtins.type[Any]:
         """Get the cluster class, asserting it's configured."""
         if self._cluster_class is None:
             msg = "Subclasses must set _cluster_class"
@@ -3126,7 +3127,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         return self._cluster_class
 
     @property
-    def _async_cluster(self) -> type[Any]:
+    def _async_cluster(self) -> builtins.type[Any]:
         """Get the async cluster class, asserting it's configured."""
         if self._async_cluster_class is None:
             msg = "Subclasses must set _async_cluster_class"
@@ -3531,12 +3532,571 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         """No-op. Cluster lives for the instance's lifetime (matches Django's BaseCache)."""
 
     @override
-    def pipeline(self, *, transaction: bool = True) -> BaseKeyValuePipelineAdapter:
+    def pipeline(self, *, transaction: bool = True) -> ValkeyPyPipelineAdapter:
         """Construct a cluster pipeline adapter. Transactions are ignored in cluster mode."""
-        from django_cachex.adapters.pipeline import RedisPipelineAdapter
-
         client = self.get_client(write=True)
-        return RedisPipelineAdapter(client.pipeline(transaction=False))
+        return ValkeyPyPipelineAdapter(client.pipeline(transaction=False))
+
+
+class ValkeyPyPipelineAdapter(KeyValuePipelineProtocol):
+    """Pipeline adapter for the redis-py / valkey-py / cluster driver.
+
+    Forwards each cachex pipeline op to ``self._raw`` — a redis-py-shaped
+    ``Pipeline`` (or ``ClusterPipeline``) whose method surface mirrors the
+    cachex contract one-for-one. The :class:`Pipeline` wrapper passes
+    already-prefixed keys and already-encoded values; raw per-command
+    results are decoded by the wrapper in ``execute()``.
+    """
+
+    def __init__(self, raw_pipeline: Any) -> None:
+        self._raw = raw_pipeline
+
+    # -------------------------------------------------------------------------
+    # Core lifecycle
+    # -------------------------------------------------------------------------
+
+    def execute(self) -> list[Any]:
+        """Run all buffered commands and return their raw results."""
+        return cast("list[Any]", self._raw.execute())
+
+    def reset(self) -> None:
+        """Discard any buffered commands without executing."""
+        self._raw.reset()
+
+    def execute_command(self, *args: Any) -> Any:
+        """Queue a raw Redis command (``EVAL``, etc.)."""
+        return self._raw.execute_command(*args)
+
+    # -------------------------------------------------------------------------
+    # Strings / generic key ops
+    # -------------------------------------------------------------------------
+
+    def set(
+        self,
+        key: Any,
+        value: Any,
+        *,
+        ex: int | timedelta | None = None,
+        px: int | timedelta | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        exat: int | datetime | None = None,
+        pxat: int | datetime | None = None,
+        keepttl: bool = False,
+        get: bool = False,
+    ) -> Any:
+        return self._raw.set(
+            key,
+            value,
+            ex=ex,
+            px=px,
+            nx=nx,
+            xx=xx,
+            exat=exat,
+            pxat=pxat,
+            keepttl=keepttl,
+            get=get,
+        )
+
+    def get(self, key: Any) -> Any:
+        return self._raw.get(key)
+
+    def delete(self, *keys: Any) -> Any:
+        return self._raw.delete(*keys)
+
+    def exists(self, *keys: Any) -> Any:
+        return self._raw.exists(*keys)
+
+    def expire(self, key: Any, seconds: int | timedelta) -> Any:
+        return self._raw.expire(key, seconds)
+
+    def expireat(self, key: Any, when: int | datetime) -> Any:
+        return self._raw.expireat(key, when)
+
+    def pexpire(self, key: Any, milliseconds: int | timedelta) -> Any:
+        return self._raw.pexpire(key, milliseconds)
+
+    def pexpireat(self, key: Any, when: int | datetime) -> Any:
+        return self._raw.pexpireat(key, when)
+
+    def persist(self, key: Any) -> Any:
+        return self._raw.persist(key)
+
+    def ttl(self, key: Any) -> Any:
+        return self._raw.ttl(key)
+
+    def pttl(self, key: Any) -> Any:
+        return self._raw.pttl(key)
+
+    def expiretime(self, key: Any) -> Any:
+        return self._raw.expiretime(key)
+
+    def type(self, key: Any) -> Any:
+        return self._raw.type(key)
+
+    def rename(self, src: Any, dst: Any) -> Any:
+        return self._raw.rename(src, dst)
+
+    def renamenx(self, src: Any, dst: Any) -> Any:
+        return self._raw.renamenx(src, dst)
+
+    def incrby(self, key: Any, amount: int) -> Any:
+        return self._raw.incrby(key, amount)
+
+    def decrby(self, key: Any, amount: int) -> Any:
+        return self._raw.decrby(key, amount)
+
+    # -------------------------------------------------------------------------
+    # Lists
+    # -------------------------------------------------------------------------
+
+    def lpush(self, key: Any, *values: Any) -> Any:
+        return self._raw.lpush(key, *values)
+
+    def rpush(self, key: Any, *values: Any) -> Any:
+        return self._raw.rpush(key, *values)
+
+    def lpop(self, key: Any, count: int | None = None) -> Any:
+        return self._raw.lpop(key, count=count)
+
+    def rpop(self, key: Any, count: int | None = None) -> Any:
+        return self._raw.rpop(key, count=count)
+
+    def lrange(self, key: Any, start: int, end: int) -> Any:
+        return self._raw.lrange(key, start, end)
+
+    def lindex(self, key: Any, index: int) -> Any:
+        return self._raw.lindex(key, index)
+
+    def llen(self, key: Any) -> Any:
+        return self._raw.llen(key)
+
+    def lrem(self, key: Any, count: int, value: Any) -> Any:
+        return self._raw.lrem(key, count, value)
+
+    def ltrim(self, key: Any, start: int, end: int) -> Any:
+        return self._raw.ltrim(key, start, end)
+
+    def lset(self, key: Any, index: int, value: Any) -> Any:
+        return self._raw.lset(key, index, value)
+
+    def linsert(self, key: Any, where: str, pivot: Any, value: Any) -> Any:
+        return self._raw.linsert(key, where, pivot, value)
+
+    def lpos(
+        self,
+        key: Any,
+        value: Any,
+        rank: int | None = None,
+        count: int | None = None,
+        maxlen: int | None = None,
+    ) -> Any:
+        return self._raw.lpos(key, value, rank=rank, count=count, maxlen=maxlen)
+
+    def lmove(self, source: Any, destination: Any, src: str = "LEFT", dest: str = "RIGHT") -> Any:
+        return self._raw.lmove(source, destination, src, dest)
+
+    # -------------------------------------------------------------------------
+    # Sets
+    # -------------------------------------------------------------------------
+
+    def sadd(self, key: Any, *members: Any) -> Any:
+        return self._raw.sadd(key, *members)
+
+    def srem(self, key: Any, *members: Any) -> Any:
+        return self._raw.srem(key, *members)
+
+    def scard(self, key: Any) -> Any:
+        return self._raw.scard(key)
+
+    def sismember(self, key: Any, member: Any) -> Any:
+        return self._raw.sismember(key, member)
+
+    def smismember(self, key: Any, *members: Any) -> Any:
+        return self._raw.smismember(key, *members)
+
+    def smembers(self, key: Any) -> Any:
+        return self._raw.smembers(key)
+
+    def smove(self, src: Any, dst: Any, member: Any) -> Any:
+        return self._raw.smove(src, dst, member)
+
+    def spop(self, key: Any, count: int | None = None) -> Any:
+        return self._raw.spop(key, count)
+
+    def srandmember(self, key: Any, count: int | None = None) -> Any:
+        return self._raw.srandmember(key, count)
+
+    def sdiff(self, *keys: Any) -> Any:
+        return self._raw.sdiff(*keys)
+
+    def sinter(self, *keys: Any) -> Any:
+        return self._raw.sinter(*keys)
+
+    def sunion(self, *keys: Any) -> Any:
+        return self._raw.sunion(*keys)
+
+    def sdiffstore(self, dst: Any, *keys: Any) -> Any:
+        return self._raw.sdiffstore(dst, *keys)
+
+    def sinterstore(self, dst: Any, *keys: Any) -> Any:
+        return self._raw.sinterstore(dst, *keys)
+
+    def sunionstore(self, dst: Any, *keys: Any) -> Any:
+        return self._raw.sunionstore(dst, *keys)
+
+    # -------------------------------------------------------------------------
+    # Hashes
+    # -------------------------------------------------------------------------
+
+    def hset(
+        self,
+        key: Any,
+        field: Any = None,
+        value: Any = None,
+        mapping: Mapping[Any, Any] | None = None,
+        items: list[Any] | None = None,
+    ) -> Any:
+        return self._raw.hset(key, field, value, mapping=mapping, items=items)
+
+    def hsetnx(self, key: Any, field: Any, value: Any) -> Any:
+        return self._raw.hsetnx(key, field, value)
+
+    def hdel(self, key: Any, *fields: Any) -> Any:
+        return self._raw.hdel(key, *fields)
+
+    def hget(self, key: Any, field: Any) -> Any:
+        return self._raw.hget(key, field)
+
+    def hgetall(self, key: Any) -> Any:
+        return self._raw.hgetall(key)
+
+    def hmget(self, key: Any, fields: Sequence[Any]) -> Any:
+        return self._raw.hmget(key, fields)
+
+    def hlen(self, key: Any) -> Any:
+        return self._raw.hlen(key)
+
+    def hkeys(self, key: Any) -> Any:
+        return self._raw.hkeys(key)
+
+    def hvals(self, key: Any) -> Any:
+        return self._raw.hvals(key)
+
+    def hexists(self, key: Any, field: Any) -> Any:
+        return self._raw.hexists(key, field)
+
+    def hincrby(self, key: Any, field: Any, amount: int = 1) -> Any:
+        return self._raw.hincrby(key, field, amount)
+
+    def hincrbyfloat(self, key: Any, field: Any, amount: float = 1.0) -> Any:
+        return self._raw.hincrbyfloat(key, field, amount)
+
+    # -------------------------------------------------------------------------
+    # Sorted sets
+    # -------------------------------------------------------------------------
+
+    def zadd(
+        self,
+        key: Any,
+        mapping: Mapping[Any, float],
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        ch: bool = False,
+        incr: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Any:
+        return self._raw.zadd(key, mapping, nx=nx, xx=xx, ch=ch, incr=incr, gt=gt, lt=lt)
+
+    def zcard(self, key: Any) -> Any:
+        return self._raw.zcard(key)
+
+    def zscore(self, key: Any, member: Any) -> Any:
+        return self._raw.zscore(key, member)
+
+    def zmscore(self, key: Any, members: Sequence[Any]) -> Any:
+        return self._raw.zmscore(key, members)
+
+    def zrank(self, key: Any, member: Any) -> Any:
+        return self._raw.zrank(key, member)
+
+    def zrevrank(self, key: Any, member: Any) -> Any:
+        return self._raw.zrevrank(key, member)
+
+    def zincrby(self, key: Any, amount: float, member: Any) -> Any:
+        return self._raw.zincrby(key, amount, member)
+
+    def zcount(self, key: Any, min: Any, max: Any) -> Any:
+        return self._raw.zcount(key, min, max)
+
+    def zrem(self, key: Any, *members: Any) -> Any:
+        return self._raw.zrem(key, *members)
+
+    def zremrangebyrank(self, key: Any, start: int, end: int) -> Any:
+        return self._raw.zremrangebyrank(key, start, end)
+
+    def zremrangebyscore(self, key: Any, min: Any, max: Any) -> Any:
+        return self._raw.zremrangebyscore(key, min, max)
+
+    def zpopmin(self, key: Any, count: int | None = None) -> Any:
+        return self._raw.zpopmin(key, count)
+
+    def zpopmax(self, key: Any, count: int | None = None) -> Any:
+        return self._raw.zpopmax(key, count)
+
+    def zrange(
+        self,
+        key: Any,
+        start: int,
+        end: int,
+        *,
+        desc: bool = False,
+        withscores: bool = False,
+        score_cast_func: Callable[[Any], Any] = float,
+    ) -> Any:
+        return self._raw.zrange(
+            key,
+            start,
+            end,
+            desc=desc,
+            withscores=withscores,
+            score_cast_func=score_cast_func,
+        )
+
+    def zrevrange(
+        self,
+        key: Any,
+        start: int,
+        end: int,
+        *,
+        withscores: bool = False,
+        score_cast_func: Callable[[Any], Any] = float,
+    ) -> Any:
+        return self._raw.zrevrange(
+            key,
+            start,
+            end,
+            withscores=withscores,
+            score_cast_func=score_cast_func,
+        )
+
+    def zrangebyscore(
+        self,
+        key: Any,
+        min: Any,
+        max: Any,
+        start: int | None = None,
+        num: int | None = None,
+        *,
+        withscores: bool = False,
+        score_cast_func: Callable[[Any], Any] = float,
+    ) -> Any:
+        return self._raw.zrangebyscore(
+            key,
+            min,
+            max,
+            start=start,
+            num=num,
+            withscores=withscores,
+            score_cast_func=score_cast_func,
+        )
+
+    def zrevrangebyscore(
+        self,
+        key: Any,
+        max: Any,
+        min: Any,
+        start: int | None = None,
+        num: int | None = None,
+        *,
+        withscores: bool = False,
+        score_cast_func: Callable[[Any], Any] = float,
+    ) -> Any:
+        return self._raw.zrevrangebyscore(
+            key,
+            max,
+            min,
+            start=start,
+            num=num,
+            withscores=withscores,
+            score_cast_func=score_cast_func,
+        )
+
+    # -------------------------------------------------------------------------
+    # Streams
+    # -------------------------------------------------------------------------
+
+    def xadd(
+        self,
+        key: Any,
+        fields: Mapping[Any, Any],
+        *,
+        id: str = "*",
+        maxlen: int | None = None,
+        approximate: bool = True,
+        nomkstream: bool = False,
+        minid: str | None = None,
+        limit: int | None = None,
+    ) -> Any:
+        return self._raw.xadd(
+            key,
+            fields,
+            id=id,
+            maxlen=maxlen,
+            approximate=approximate,
+            nomkstream=nomkstream,
+            minid=minid,
+            limit=limit,
+        )
+
+    def xlen(self, key: Any) -> Any:
+        return self._raw.xlen(key)
+
+    def xrange(self, key: Any, min: str = "-", max: str = "+", count: int | None = None) -> Any:
+        return self._raw.xrange(key, min=min, max=max, count=count)
+
+    def xrevrange(self, key: Any, max: str = "+", min: str = "-", count: int | None = None) -> Any:
+        return self._raw.xrevrange(key, max=max, min=min, count=count)
+
+    def xread(
+        self,
+        streams: Mapping[Any, Any],
+        count: int | None = None,
+        block: int | None = None,
+    ) -> Any:
+        return self._raw.xread(streams, count=count, block=block)
+
+    def xreadgroup(
+        self,
+        group: str,
+        consumer: str,
+        streams: Mapping[Any, Any],
+        count: int | None = None,
+        block: int | None = None,
+        noack: bool = False,
+    ) -> Any:
+        return self._raw.xreadgroup(group, consumer, streams, count=count, block=block, noack=noack)
+
+    def xtrim(
+        self,
+        key: Any,
+        maxlen: int | None = None,
+        approximate: bool = True,
+        minid: str | None = None,
+        limit: int | None = None,
+    ) -> Any:
+        return self._raw.xtrim(key, maxlen=maxlen, approximate=approximate, minid=minid, limit=limit)
+
+    def xdel(self, key: Any, *entry_ids: str) -> Any:
+        return self._raw.xdel(key, *entry_ids)
+
+    def xinfo_stream(self, key: Any, full: bool = False) -> Any:
+        return self._raw.xinfo_stream(key, full=full)
+
+    def xinfo_groups(self, key: Any) -> Any:
+        return self._raw.xinfo_groups(key)
+
+    def xinfo_consumers(self, key: Any, group: str) -> Any:
+        return self._raw.xinfo_consumers(key, group)
+
+    def xgroup_create(
+        self,
+        key: Any,
+        group: str,
+        id: str = "$",
+        *,
+        mkstream: bool = False,
+        entries_read: int | None = None,
+    ) -> Any:
+        return self._raw.xgroup_create(key, group, id, mkstream=mkstream, entries_read=entries_read)
+
+    def xgroup_destroy(self, key: Any, group: str) -> Any:
+        return self._raw.xgroup_destroy(key, group)
+
+    def xgroup_setid(
+        self,
+        key: Any,
+        group: str,
+        id: str,
+        *,
+        entries_read: int | None = None,
+    ) -> Any:
+        return self._raw.xgroup_setid(key, group, id, entries_read=entries_read)
+
+    def xgroup_delconsumer(self, key: Any, group: str, consumer: str) -> Any:
+        return self._raw.xgroup_delconsumer(key, group, consumer)
+
+    def xack(self, key: Any, group: str, *entry_ids: str) -> Any:
+        return self._raw.xack(key, group, *entry_ids)
+
+    def xpending(self, key: Any, group: str) -> Any:
+        return self._raw.xpending(key, group)
+
+    def xpending_range(
+        self,
+        key: Any,
+        group: str,
+        *,
+        min: str,
+        max: str,
+        count: int,
+        consumername: str | None = None,
+        idle: int | None = None,
+    ) -> Any:
+        kwargs: dict[str, Any] = {}
+        if consumername is not None:
+            kwargs["consumername"] = consumername
+        if idle is not None:
+            kwargs["idle"] = idle
+        return self._raw.xpending_range(key, group, min=min, max=max, count=count, **kwargs)
+
+    def xclaim(
+        self,
+        key: Any,
+        group: str,
+        consumer: str,
+        min_idle_time: int,
+        message_ids: list[str],
+        idle: int | None = None,
+        time: int | None = None,
+        retrycount: int | None = None,
+        force: bool = False,
+        justid: bool = False,
+    ) -> Any:
+        return self._raw.xclaim(
+            key,
+            group,
+            consumer,
+            min_idle_time,
+            message_ids,
+            idle=idle,
+            time=time,
+            retrycount=retrycount,
+            force=force,
+            justid=justid,
+        )
+
+    def xautoclaim(
+        self,
+        key: Any,
+        group: str,
+        consumer: str,
+        min_idle_time: int,
+        start_id: str = "0-0",
+        count: int | None = None,
+        justid: bool = False,
+    ) -> Any:
+        return self._raw.xautoclaim(
+            key,
+            group,
+            consumer,
+            min_idle_time,
+            start_id=start_id,
+            count=count,
+            justid=justid,
+        )
 
 
 __all__ = [
@@ -3544,5 +4104,6 @@ __all__ = [
     "AsyncPoolsRegistry",
     "ValkeyPyAdapter",
     "ValkeyPyClusterAdapter",
+    "ValkeyPyPipelineAdapter",
     "ValkeyPySentinelAdapter",
 ]

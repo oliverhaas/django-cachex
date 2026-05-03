@@ -5,12 +5,7 @@ valkey-py, our Rust ``redis-rs`` driver, valkey-glide) and exposes the
 operation surface that ``KeyValueCache`` delegates to.
 """
 
-from django_cachex.adapters.pipeline import (
-    BaseKeyValuePipelineAdapter,
-    Pipeline,
-    RedisPipelineAdapter,
-)
-from django_cachex.adapters.pipeline_redis_rs import RedisRsValkeyPipelineAdapter
+from django_cachex.adapters.pipeline import Pipeline
 from django_cachex.adapters.protocols import (
     KeyValueAdapterProtocol,
     KeyValuePipelineProtocol,
@@ -18,28 +13,30 @@ from django_cachex.adapters.protocols import (
 from django_cachex.adapters.redis_py import (
     RedisPyAdapter,
     RedisPyClusterAdapter,
+    RedisPyPipelineAdapter,
     RedisPySentinelAdapter,
 )
 from django_cachex.adapters.redis_rs import (
     RedisRsValkeyAdapter,
     RedisRsValkeyClusterAdapter,
+    RedisRsValkeyPipelineAdapter,
     RedisRsValkeySentinelAdapter,
 )
 from django_cachex.adapters.valkey_glide import ValkeyGlideAdapter, ValkeyGlidePipelineAdapter
 from django_cachex.adapters.valkey_py import (
     ValkeyPyAdapter,
     ValkeyPyClusterAdapter,
+    ValkeyPyPipelineAdapter,
     ValkeyPySentinelAdapter,
 )
 
 __all__ = [
-    "BaseKeyValuePipelineAdapter",
     "KeyValueAdapterProtocol",
     "KeyValuePipelineProtocol",
     "Pipeline",
-    "RedisPipelineAdapter",
     "RedisPyAdapter",
     "RedisPyClusterAdapter",
+    "RedisPyPipelineAdapter",
     "RedisPySentinelAdapter",
     "RedisRsValkeyAdapter",
     "RedisRsValkeyClusterAdapter",
@@ -49,5 +46,6 @@ __all__ = [
     "ValkeyGlidePipelineAdapter",
     "ValkeyPyAdapter",
     "ValkeyPyClusterAdapter",
+    "ValkeyPyPipelineAdapter",
     "ValkeyPySentinelAdapter",
 ]

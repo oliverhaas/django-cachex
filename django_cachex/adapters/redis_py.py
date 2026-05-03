@@ -14,6 +14,7 @@ from django_cachex.adapters.valkey_py import (
     AsyncPoolsRegistry,
     ValkeyPyAdapter,
     ValkeyPyClusterAdapter,
+    ValkeyPyPipelineAdapter,
     ValkeyPySentinelAdapter,
 )
 
@@ -66,6 +67,17 @@ class _RedisDriverMixin:
         return _missing_redis()
 
 
+class RedisPyPipelineAdapter(ValkeyPyPipelineAdapter):
+    """Pipeline adapter for the redis-py driver.
+
+    Empty subclass — redis-py and valkey-py share a pipeline API surface,
+    so all the queueing logic is inherited from
+    :class:`~django_cachex.adapters.valkey_py.ValkeyPyPipelineAdapter`.
+    Exists for symmetry with :class:`RedisPyAdapter` so the class
+    hierarchy mirrors the adapter hierarchy.
+    """
+
+
 class RedisPyAdapter(_RedisDriverMixin, ValkeyPyAdapter):
     """Single-node / replicated cache adapter using ``redis-py``."""
 
@@ -75,6 +87,10 @@ class RedisPyAdapter(_RedisDriverMixin, ValkeyPyAdapter):
         _pool_class = redis.ConnectionPool
         _async_client_class = RedisAsyncClient
         _async_pool_class = RedisAsyncConnectionPool
+
+    def pipeline(self, *, transaction: bool = True) -> RedisPyPipelineAdapter:
+        client = self.get_client(write=True)
+        return RedisPyPipelineAdapter(client.pipeline(transaction=transaction))
 
 
 class RedisPySentinelAdapter(_RedisDriverMixin, ValkeyPySentinelAdapter):
@@ -90,6 +106,10 @@ class RedisPySentinelAdapter(_RedisDriverMixin, ValkeyPySentinelAdapter):
         _async_sentinel_class = AsyncRedisSentinel
         _async_sentinel_pool_class = AsyncRedisSentinelConnectionPool
 
+    def pipeline(self, *, transaction: bool = True) -> RedisPyPipelineAdapter:
+        client = self.get_client(write=True)
+        return RedisPyPipelineAdapter(client.pipeline(transaction=transaction))
+
 
 class RedisPyClusterAdapter(_RedisDriverMixin, ValkeyPyClusterAdapter):
     """Cluster cache adapter using ``redis-py``."""
@@ -102,10 +122,15 @@ class RedisPyClusterAdapter(_RedisDriverMixin, ValkeyPyClusterAdapter):
         _async_cluster_class = AsyncRedisCluster
         _key_slot_func = staticmethod(redis_key_slot)
 
+    def pipeline(self, *, transaction: bool = True) -> RedisPyPipelineAdapter:
+        client = self.get_client(write=True)
+        return RedisPyPipelineAdapter(client.pipeline(transaction=False))
+
 
 __all__ = [
     "_REDIS_AVAILABLE",
     "RedisPyAdapter",
     "RedisPyClusterAdapter",
+    "RedisPyPipelineAdapter",
     "RedisPySentinelAdapter",
 ]
