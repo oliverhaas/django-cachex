@@ -16,9 +16,7 @@ from django_cachex.adapters.redis_py import (
     RedisPyClusterAdapter,
     RedisPySentinelAdapter,
 )
-from django_cachex.cache.cluster import RespClusterCache
-from django_cachex.cache.resp import RespCache
-from django_cachex.cache.sentinel import RespSentinelCache
+from django_cachex.cache.resp import RespCache, RespClusterCache, RespSentinelCache
 
 
 class RedisCache(RespCache):

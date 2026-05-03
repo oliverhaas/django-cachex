@@ -3091,4 +3091,29 @@ class RespCache(BaseCachex):
         return result
 
 
-__all__ = ["RespCache"]
+class RespClusterCache(RespCache):
+    """Cluster cache backend base class.
+
+    Extends :class:`RespCache` with cluster-specific behaviour (no
+    transactions on pipelines). Subclasses set ``_adapter_class`` to
+    their specific cluster adapter.
+    """
+
+    def pipeline(
+        self,
+        *,
+        transaction: bool = True,
+        version: int | None = None,
+    ) -> Pipeline:
+        """Create a pipeline. Cluster pipelines never use transactions."""
+        return super().pipeline(transaction=False, version=version)
+
+
+class RespSentinelCache(RespCache):
+    """Sentinel cache backend base class.
+
+    Subclasses set ``_adapter_class`` to their specific sentinel adapter.
+    """
+
+
+__all__ = ["RespCache", "RespClusterCache", "RespSentinelCache"]
