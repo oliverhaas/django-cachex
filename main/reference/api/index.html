@@ -679,6 +679,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/composite-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Composite Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -939,6 +967,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#stream-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stream Methods
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#lua-script-methods" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1042,6 +1081,45 @@
     <span class="md-ellipsis">
       
         Pipelines
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pipelines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sync
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#async" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Async
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#clearing-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clearing keys
       
     </span>
   </a>
@@ -1225,6 +1303,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#stream-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stream Methods
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#lua-script-methods" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1328,6 +1417,45 @@
     <span class="md-ellipsis">
       
         Pipelines
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pipelines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sync
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#async" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Async
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#clearing-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clearing keys
       
     </span>
   </a>
@@ -1828,6 +1956,95 @@
 </tr>
 </tbody>
 </table>
+<h3 id="stream-methods">Stream Methods<a class="headerlink" href="#stream-methods" title="Permanent link">&para;</a></h3>
+<p>Append-only log structure with consumer groups:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>xadd(key, fields, *, id="*", maxlen=None, ...)</code></td>
+<td>Append an entry, returning its ID</td>
+</tr>
+<tr>
+<td><code>xlen(key)</code></td>
+<td>Number of entries in the stream</td>
+</tr>
+<tr>
+<td><code>xrange(key, min="-", max="+", count=None)</code></td>
+<td>Range of entries (forward)</td>
+</tr>
+<tr>
+<td><code>xrevrange(key, max="+", min="-", count=None)</code></td>
+<td>Range of entries (reverse)</td>
+</tr>
+<tr>
+<td><code>xread(streams, count=None, block=None)</code></td>
+<td>Read new entries from one or more streams</td>
+</tr>
+<tr>
+<td><code>xtrim(key, *, maxlen=None, minid=None, approximate=True)</code></td>
+<td>Cap stream length</td>
+</tr>
+<tr>
+<td><code>xdel(key, *entry_ids)</code></td>
+<td>Delete entries by ID</td>
+</tr>
+<tr>
+<td><code>xinfo_stream(key, full=False)</code></td>
+<td>Stream metadata</td>
+</tr>
+<tr>
+<td><code>xinfo_groups(key)</code></td>
+<td>Consumer group metadata</td>
+</tr>
+<tr>
+<td><code>xinfo_consumers(key, group)</code></td>
+<td>Per-consumer metadata for a group</td>
+</tr>
+<tr>
+<td><code>xgroup_create(key, group, id="$", mkstream=False)</code></td>
+<td>Create a consumer group</td>
+</tr>
+<tr>
+<td><code>xgroup_destroy(key, group)</code></td>
+<td>Drop a consumer group</td>
+</tr>
+<tr>
+<td><code>xgroup_setid(key, group, id)</code></td>
+<td>Re-anchor a consumer group's read position</td>
+</tr>
+<tr>
+<td><code>xgroup_delconsumer(key, group, consumer)</code></td>
+<td>Drop a consumer from a group</td>
+</tr>
+<tr>
+<td><code>xreadgroup(group, consumer, streams, count=None, block=None)</code></td>
+<td>Read entries as a group consumer</td>
+</tr>
+<tr>
+<td><code>xack(key, group, *entry_ids)</code></td>
+<td>Acknowledge processed entries</td>
+</tr>
+<tr>
+<td><code>xpending(key, group, ...)</code></td>
+<td>Inspect pending (unacked) entries</td>
+</tr>
+<tr>
+<td><code>xclaim(key, group, consumer, min_idle_time, *entry_ids, ...)</code></td>
+<td>Claim pending entries</td>
+</tr>
+<tr>
+<td><code>xautoclaim(key, group, consumer, min_idle_time, ...)</code></td>
+<td>Auto-claim entries idle longer than threshold</td>
+</tr>
+</tbody>
+</table>
+<p>All methods have an <code>a*</code> async counterpart (e.g. <code>axadd</code>, <code>axreadgroup</code>).</p>
 <h3 id="lua-script-methods">Lua Script Methods<a class="headerlink" href="#lua-script-methods" title="Permanent link">&para;</a></h3>
 <p>Execute Lua scripts with optional key prefixing and value encoding/decoding:</p>
 <table>
@@ -2054,14 +2271,46 @@
 </span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>        <span class="n">lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
 </span></code></pre></div>
 <h2 id="pipelines">Pipelines<a class="headerlink" href="#pipelines" title="Permanent link">&para;</a></h2>
-<p>Batch multiple operations for efficiency:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">pipe</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">pipeline</span><span class="p">()</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">&quot;key1&quot;</span><span class="p">,</span> <span class="s2">&quot;value1&quot;</span><span class="p">)</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">&quot;key2&quot;</span><span class="p">,</span> <span class="s2">&quot;value2&quot;</span><span class="p">)</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">pipe</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">&quot;hash&quot;</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="n">results</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
+<p>Batch multiple operations for efficiency. Queueing methods (<code>set</code>, <code>hset</code>, <code>lpush</code>, ...) stay synchronous in both wrappers; only <code>execute()</code> performs I/O.</p>
+<h3 id="sync">Sync<a class="headerlink" href="#sync" title="Permanent link">&para;</a></h3>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">pipeline</span><span class="p">()</span> <span class="k">as</span> <span class="n">pipe</span><span class="p">:</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">&quot;key1&quot;</span><span class="p">,</span> <span class="s2">&quot;value1&quot;</span><span class="p">)</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">&quot;key2&quot;</span><span class="p">,</span> <span class="s2">&quot;value2&quot;</span><span class="p">)</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">&quot;hash&quot;</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="n">results</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
 </span></code></pre></div>
+<h3 id="async">Async<a class="headerlink" href="#async" title="Permanent link">&para;</a></h3>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">async</span> <span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">apipeline</span><span class="p">()</span> <span class="k">as</span> <span class="n">pipe</span><span class="p">:</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">&quot;key1&quot;</span><span class="p">,</span> <span class="s2">&quot;value1&quot;</span><span class="p">)</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">&quot;hash&quot;</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">pipe</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
+</span></code></pre></div>
+<p><code>apipeline()</code> itself is sync — it just constructs the wrapper, mirroring <code>redis.asyncio.Redis().pipeline()</code>.</p>
 <p>All cache methods are available on the pipeline. Results are returned as a list in the same order as the commands.</p>
+<h2 id="clearing-keys">Clearing keys<a class="headerlink" href="#clearing-keys" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>clear()</code> / <code>aclear()</code></td>
+<td>Remove only this cache's keys (<code>KEY_PREFIX</code> + <code>VERSION</code>). Implemented as <code>delete_pattern("*")</code>.</td>
+</tr>
+<tr>
+<td><code>flush_db()</code> / <code>aflush_db()</code></td>
+<td><code>FLUSHDB</code>: remove <strong>all</strong> keys in the underlying Redis/Valkey database, regardless of prefix.</td>
+</tr>
+</tbody>
+</table>
+<p><code>clear()</code> is safe when multiple apps share a Redis database. Use <code>flush_db()</code> only when this cache has a dedicated database.</p>
+<div class="admonition warning">
+<p class="admonition-title">Breaking change</p>
+<p>Pre-1.0 versions of django-cachex implemented <code>clear()</code> as <code>FLUSHDB</code>. The current scoped behaviour is the safer default; callers that need the old wipe-everything semantics must call <code>flush_db()</code> explicitly.</p>
+</div>
 <h2 id="settings-reference">Settings Reference<a class="headerlink" href="#settings-reference" title="Permanent link">&para;</a></h2>
 <h3 id="cache-options">Cache OPTIONS<a class="headerlink" href="#cache-options" title="Permanent link">&para;</a></h3>
 <table>
