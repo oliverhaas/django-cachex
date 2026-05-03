@@ -17,7 +17,7 @@ from django_cachex.adapters.redis_py import (
     RedisPySentinelAdapter,
 )
 from django_cachex.cache.cluster import KeyValueClusterCache
-from django_cachex.cache.default import KeyValueCache
+from django_cachex.cache.key_value import KeyValueCache
 from django_cachex.cache.sentinel import KeyValueSentinelCache
 
 
