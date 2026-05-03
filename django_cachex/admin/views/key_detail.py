@@ -12,6 +12,13 @@ from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect, render
 from django.utils import timezone
 
+from django_cachex.admin.cas import (
+    cas_update_hash_field,
+    cas_update_list_element,
+    cas_update_string,
+    cas_update_zset_score,
+    get_string_sha1,
+)
 from django_cachex.admin.helpers import get_cache, get_type_data
 from django_cachex.admin.views.base import (
     ViewConfig,
@@ -74,8 +81,6 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
 
                 original_sha1 = request.POST.get("original_sha1", "").strip()
                 if original_sha1 and hasattr(cache, "eval_script"):
-                    from django_cachex.admin.cas import cas_update_string
-
                     cas_result = cas_update_string(cache, key, original_sha1, new_value)
                     if cas_result == 1:
                         messages.success(request, "Key updated successfully.")
@@ -235,8 +240,6 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     value = json.loads(value)
                 original_sha1 = request.POST.get("original_sha1", "").strip()
                 if original_sha1 and hasattr(cache, "eval_script"):
-                    from django_cachex.admin.cas import cas_update_list_element
-
                     cas_result = cas_update_list_element(cache, key, index, original_sha1, value)
                     if cas_result == 1:
                         messages.success(request, f"Updated element at index {index}.")
@@ -300,8 +303,6 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 try:
                     original_sha1 = request.POST.get("original_sha1", "").strip()
                     if original_sha1 and hasattr(cache, "eval_script"):
-                        from django_cachex.admin.cas import cas_update_hash_field
-
                         cas_result = cas_update_hash_field(cache, key, field, original_sha1, value)
                         if cas_result == 1:
                             messages.success(request, f"Updated field '{field}'.")
@@ -346,8 +347,6 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                     score = float(score_str)
                     original_score = request.POST.get("original_score", "").strip()
                     if original_score and hasattr(cache, "eval_script"):
-                        from django_cachex.admin.cas import cas_update_zset_score
-
                         cas_result = cas_update_zset_score(cache, key, member, original_score, score)
                         if cas_result == 1:
                             messages.success(request, f"Updated '{member}' score to {score}.")
@@ -556,8 +555,6 @@ def _key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         else:
             if hasattr(cache, "eval_script"):
                 with contextlib.suppress(Exception):
-                    from django_cachex.admin.cas import get_string_sha1
-
                     string_sha1 = get_string_sha1(cache, key)
 
     if value_decode_error is not None:

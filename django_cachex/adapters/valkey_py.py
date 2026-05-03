@@ -3195,8 +3195,6 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
     @override
     def get_many(self, keys: Iterable[KeyT], *, stampede_prevention: bool | dict | None = None) -> dict[KeyT, Any]:
         """Retrieve many keys, handling cross-slot keys."""
-        from django_cachex.stampede import should_recompute
-
         keys = list(keys)
         if not keys:
             return {}
@@ -3367,7 +3365,6 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         stampede_prevention: bool | dict | None = None,
     ) -> dict[KeyT, Any]:
         """Retrieve many keys asynchronously, handling cross-slot keys."""
-        from django_cachex.stampede import should_recompute
 
         keys = list(keys)
         if not keys:

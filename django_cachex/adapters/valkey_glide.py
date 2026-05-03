@@ -16,6 +16,8 @@ rough until we decide whether to keep this approach.
 """
 
 import asyncio
+import os
+import time
 from typing import TYPE_CHECKING, Any, Self
 from urllib.parse import urlparse
 
@@ -25,6 +27,7 @@ from django_cachex.stampede import (
     get_timeout_with_buffer,
     make_stampede_config,
     resolve_stampede,
+    should_recompute,
 )
 from django_cachex.types import KeyType
 
@@ -745,8 +748,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         config = self._resolve_stampede(stampede_prevention)
         if config and isinstance(val, bytes):
             ttl = client.ttl(key)
-            from django_cachex.stampede import should_recompute
-
             if ttl > 0 and should_recompute(ttl, config):
                 return None
         return val
@@ -823,8 +824,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
         config = self._resolve_stampede(stampede_prevention)
         if config and found:
-            from django_cachex.stampede import should_recompute
-
             stampede_keys = [k for k, v in found.items() if isinstance(v, bytes)]
             if stampede_keys:
                 pipe = self._pipeline()
@@ -1440,8 +1439,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         config = self._resolve_stampede(stampede_prevention)
         if config and isinstance(val, bytes):
             ttl = await client.ttl(key)
-            from django_cachex.stampede import should_recompute
-
             if ttl > 0 and should_recompute(ttl, config):
                 return None
         return val
@@ -1523,8 +1520,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
         config = self._resolve_stampede(stampede_prevention)
         if config and found:
-            from django_cachex.stampede import should_recompute
-
             stampede_keys = [k for k, v in found.items() if isinstance(v, bytes)]
             if stampede_keys:
                 batch = Batch(is_atomic=False)
@@ -2182,8 +2177,6 @@ class _GlideLock:
         blocking: bool = True,
         blocking_timeout: float | None = None,
     ) -> None:
-        import os
-
         self._client = client
         self._key = key
         self._timeout = timeout
@@ -2194,8 +2187,6 @@ class _GlideLock:
         self._initial_token = os.urandom(16).hex().encode()
 
     def acquire(self, *, blocking: bool | None = None, blocking_timeout: float | None = None) -> bool:
-        import time
-
         bl = self._blocking if blocking is None else blocking
         bt = self._blocking_timeout if blocking_timeout is None else blocking_timeout
         deadline = time.monotonic() + bt if bt else None
@@ -2244,8 +2235,6 @@ class _AsyncGlideLock:
         blocking: bool = True,
         blocking_timeout: float | None = None,
     ) -> None:
-        import os
-
         self._adapter = adapter
         self._key = key
         self._timeout = timeout
@@ -2256,8 +2245,6 @@ class _AsyncGlideLock:
         self._initial_token = os.urandom(16).hex().encode()
 
     async def acquire(self, *, blocking: bool | None = None, blocking_timeout: float | None = None) -> bool:
-        import time
-
         bl = self._blocking if blocking is None else blocking
         bt = self._blocking_timeout if blocking_timeout is None else blocking_timeout
         deadline = time.monotonic() + bt if bt else None

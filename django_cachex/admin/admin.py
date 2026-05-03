@@ -12,7 +12,7 @@ from django.utils.safestring import mark_safe
 
 from .models import Cache, Key
 from .queryset import CacheAdminMixin, KeyAdminMixin
-from .views import ViewConfig, _cache_detail_view
+from .views import ViewConfig, _cache_detail_view, _key_add_view, _key_detail_view
 
 if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
@@ -256,8 +256,6 @@ class KeyAdmin(KeyAdminMixin, _KeyBase):  # type: ignore[misc]
         if not self.has_view_or_change_permission(request):
             raise PermissionDenied
 
-        from .views.key_detail import _key_detail_view
-
         cache_name, key_name = Key.parse_pk(unquote(object_id))
 
         if not cache_name:
@@ -277,8 +275,6 @@ class KeyAdmin(KeyAdminMixin, _KeyBase):  # type: ignore[misc]
         """Add a new key to a cache."""
         if not self.has_add_permission(request):
             raise PermissionDenied
-
-        from .views.key_add import _key_add_view
 
         cache_name = request.GET.get("cache") or next(iter(settings.CACHES))
 
