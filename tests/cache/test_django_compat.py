@@ -12,7 +12,7 @@ from django.core.cache import caches
 from django.test import override_settings
 
 if TYPE_CHECKING:
-    from django_cachex.cache import KeyValueCache
+    from django_cachex.cache import RespCache
     from tests.fixtures.containers import RedisContainerInfo
 
 
@@ -185,25 +185,25 @@ class TestSerializerConfiguration:
 class TestIntegerOptimization:
     """Test that integer optimization works correctly."""
 
-    def test_integer_stored_efficiently(self, cache: KeyValueCache):
+    def test_integer_stored_efficiently(self, cache: RespCache):
         """Integers should be stored without serialization overhead."""
         cache.set("test_int", 42)
         result = cache.get("test_int")
         assert result == 42
         assert isinstance(result, int)
 
-    def test_large_integer(self, cache: KeyValueCache):
+    def test_large_integer(self, cache: RespCache):
         large_int = 2**60
         cache.set("test_large_int", large_int)
         result = cache.get("test_large_int")
         assert result == large_int
 
-    def test_negative_integer(self, cache: KeyValueCache):
+    def test_negative_integer(self, cache: RespCache):
         cache.set("test_neg_int", -999)
         result = cache.get("test_neg_int")
         assert result == -999
 
-    def test_boolean_not_integer_optimized(self, cache: KeyValueCache):
+    def test_boolean_not_integer_optimized(self, cache: RespCache):
         cache.set("test_bool_true", True)
         cache.set("test_bool_false", False)
         assert cache.get("test_bool_true") is True
@@ -254,13 +254,13 @@ class TestLocationFormats:
 class TestAsyncMethods:
     """Test that async methods inherited from Django's BaseCache work."""
 
-    async def test_async_get_set(self, cache: KeyValueCache):
+    async def test_async_get_set(self, cache: RespCache):
         await cache.aset("async_test_key", "async_value")
         result = await cache.aget("async_test_key")
         assert result == "async_value"
         await cache.adelete("async_test_key")
 
-    async def test_async_add(self, cache: KeyValueCache):
+    async def test_async_add(self, cache: RespCache):
         await cache.adelete("async_add_key")
         result = await cache.aadd("async_add_key", "first_value")
         assert result is True
@@ -269,19 +269,19 @@ class TestAsyncMethods:
         assert await cache.aget("async_add_key") == "first_value"
         await cache.adelete("async_add_key")
 
-    async def test_async_delete(self, cache: KeyValueCache):
+    async def test_async_delete(self, cache: RespCache):
         await cache.aset("async_delete_key", "value")
         result = await cache.adelete("async_delete_key")
         assert result is True
         assert await cache.aget("async_delete_key") is None
 
-    async def test_async_has_key(self, cache: KeyValueCache):
+    async def test_async_has_key(self, cache: RespCache):
         await cache.aset("async_has_key", "value")
         assert await cache.ahas_key("async_has_key") is True
         await cache.adelete("async_has_key")
         assert await cache.ahas_key("async_has_key") is False
 
-    async def test_async_get_many(self, cache: KeyValueCache):
+    async def test_async_get_many(self, cache: RespCache):
         await cache.aset("async_many_1", "value1")
         await cache.aset("async_many_2", "value2")
         result = await cache.aget_many(["async_many_1", "async_many_2", "async_missing"])
@@ -289,14 +289,14 @@ class TestAsyncMethods:
         await cache.adelete("async_many_1")
         await cache.adelete("async_many_2")
 
-    async def test_async_set_many(self, cache: KeyValueCache):
+    async def test_async_set_many(self, cache: RespCache):
         await cache.aset_many({"async_set_1": "v1", "async_set_2": "v2"})
         assert await cache.aget("async_set_1") == "v1"
         assert await cache.aget("async_set_2") == "v2"
         await cache.adelete("async_set_1")
         await cache.adelete("async_set_2")
 
-    async def test_async_incr_decr(self, cache: KeyValueCache):
+    async def test_async_incr_decr(self, cache: RespCache):
         await cache.aset("async_counter", 10)
         result = await cache.aincr("async_counter")
         assert result == 11
@@ -304,7 +304,7 @@ class TestAsyncMethods:
         assert result == 8
         await cache.adelete("async_counter")
 
-    async def test_async_touch(self, cache: KeyValueCache):
+    async def test_async_touch(self, cache: RespCache):
         await cache.aset("async_touch_key", "value", timeout=100)
         result = await cache.atouch("async_touch_key", timeout=200)
         assert result is True

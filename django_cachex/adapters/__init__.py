@@ -2,13 +2,13 @@
 
 Each adapter wraps a specific underlying client library (redis-py,
 valkey-py, our Rust ``redis-rs`` driver, valkey-glide) and exposes the
-operation surface that ``KeyValueCache`` delegates to.
+operation surface that ``RespCache`` delegates to.
 """
 
 from django_cachex.adapters.pipeline import Pipeline
 from django_cachex.adapters.protocols import (
-    KeyValueAdapterProtocol,
-    KeyValuePipelineProtocol,
+    RespAdapterProtocol,
+    RespPipelineProtocol,
 )
 from django_cachex.adapters.redis_py import (
     RedisPyAdapter,
@@ -31,8 +31,6 @@ from django_cachex.adapters.valkey_py import (
 )
 
 __all__ = [
-    "KeyValueAdapterProtocol",
-    "KeyValuePipelineProtocol",
     "Pipeline",
     "RedisPyAdapter",
     "RedisPyClusterAdapter",
@@ -42,6 +40,8 @@ __all__ = [
     "RedisRsClusterAdapter",
     "RedisRsPipelineAdapter",
     "RedisRsSentinelAdapter",
+    "RespAdapterProtocol",
+    "RespPipelineProtocol",
     "ValkeyGlideAdapter",
     "ValkeyGlidePipelineAdapter",
     "ValkeyPyAdapter",

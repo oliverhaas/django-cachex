@@ -8,7 +8,7 @@ import pytest
 from django_cachex.stampede import StampedeConfig, should_recompute
 
 if TYPE_CHECKING:
-    from django_cachex.cache import KeyValueCache
+    from django_cachex.cache import RespCache
 
 # =============================================================================
 # Unit tests for stampede module (no Redis needed)
@@ -80,37 +80,37 @@ class TestStampedeConfig:
 class TestStampedeBasicOperations:
     """Basic set/get operations with stampede prevention enabled."""
 
-    def test_set_and_get(self, stampede_cache: KeyValueCache):
+    def test_set_and_get(self, stampede_cache: RespCache):
         stampede_cache.set("sp_basic", "hello", timeout=300)
         assert stampede_cache.get("sp_basic") == "hello"
 
-    def test_set_and_get_dict(self, stampede_cache: KeyValueCache):
+    def test_set_and_get_dict(self, stampede_cache: RespCache):
         stampede_cache.set("sp_dict", {"a": 1, "b": [2, 3]}, timeout=300)
         assert stampede_cache.get("sp_dict") == {"a": 1, "b": [2, 3]}
 
-    def test_set_and_get_list(self, stampede_cache: KeyValueCache):
+    def test_set_and_get_list(self, stampede_cache: RespCache):
         stampede_cache.set("sp_list", [1, "two", 3.0], timeout=300)
         assert stampede_cache.get("sp_list") == [1, "two", 3.0]
 
-    def test_get_missing_key(self, stampede_cache: KeyValueCache):
+    def test_get_missing_key(self, stampede_cache: RespCache):
         stampede_cache.delete("sp_missing")
         assert stampede_cache.get("sp_missing") is None
 
-    def test_get_with_default(self, stampede_cache: KeyValueCache):
+    def test_get_with_default(self, stampede_cache: RespCache):
         stampede_cache.delete("sp_default")
         assert stampede_cache.get("sp_default", "fallback") == "fallback"
 
-    def test_delete(self, stampede_cache: KeyValueCache):
+    def test_delete(self, stampede_cache: RespCache):
         stampede_cache.set("sp_del", "val", timeout=300)
         assert stampede_cache.delete("sp_del") is True
         assert stampede_cache.get("sp_del") is None
 
-    def test_add_new_key(self, stampede_cache: KeyValueCache):
+    def test_add_new_key(self, stampede_cache: RespCache):
         stampede_cache.delete("sp_add")
         assert stampede_cache.add("sp_add", "first", timeout=300) is True
         assert stampede_cache.get("sp_add") == "first"
 
-    def test_add_existing_key(self, stampede_cache: KeyValueCache):
+    def test_add_existing_key(self, stampede_cache: RespCache):
         stampede_cache.set("sp_add_exists", "original", timeout=300)
         assert stampede_cache.add("sp_add_exists", "new", timeout=300) is False
         assert stampede_cache.get("sp_add_exists") == "original"
@@ -125,16 +125,16 @@ class TestStampedeWithIntegerValues:
     to be integers.
     """
 
-    def test_integer_set_get(self, stampede_cache: KeyValueCache):
+    def test_integer_set_get(self, stampede_cache: RespCache):
         stampede_cache.set("sp_int", 42, timeout=300)
         assert stampede_cache.get("sp_int") == 42
 
-    def test_incr(self, stampede_cache: KeyValueCache):
+    def test_incr(self, stampede_cache: RespCache):
         stampede_cache.set("sp_incr", 10, timeout=300)
         result = stampede_cache.incr("sp_incr")
         assert result == 11
 
-    def test_decr(self, stampede_cache: KeyValueCache):
+    def test_decr(self, stampede_cache: RespCache):
         stampede_cache.set("sp_decr", 10, timeout=300)
         result = stampede_cache.decr("sp_decr")
         assert result == 9
@@ -143,14 +143,14 @@ class TestStampedeWithIntegerValues:
 class TestStampedeExtendedTTL:
     """Redis TTL should be extended by buffer amount."""
 
-    def test_ttl_includes_buffer(self, stampede_cache: KeyValueCache):
+    def test_ttl_includes_buffer(self, stampede_cache: RespCache):
         stampede_cache.set("sp_ttl", "val", timeout=300)
         ttl = stampede_cache.ttl("sp_ttl")
         # TTL should be between 300 and 360 (300 + 60 buffer)
         assert ttl is not None
         assert 300 < ttl <= 360
 
-    def test_no_timeout_no_buffer(self, stampede_cache: KeyValueCache):
+    def test_no_timeout_no_buffer(self, stampede_cache: RespCache):
         stampede_cache.set("sp_persist", "val", timeout=None)
         ttl = stampede_cache.ttl("sp_persist")
         assert ttl is None  # No expiry
@@ -159,7 +159,7 @@ class TestStampedeExtendedTTL:
 class TestStampedeGetMany:
     """Batch get operations with stampede prevention."""
 
-    def test_get_many(self, stampede_cache: KeyValueCache):
+    def test_get_many(self, stampede_cache: RespCache):
         stampede_cache.set("sp_m1", "v1", timeout=300)
         stampede_cache.set("sp_m2", "v2", timeout=300)
         stampede_cache.delete("sp_m3")
@@ -169,7 +169,7 @@ class TestStampedeGetMany:
         assert "v2" in result.values()
         assert len(result) == 2
 
-    def test_get_many_filters_expired(self, stampede_cache: KeyValueCache):
+    def test_get_many_filters_expired(self, stampede_cache: RespCache):
         stampede_cache.set("sp_gm_exp", "val", timeout=300)
         # Shrink TTL below buffer → logically expired
         stampede_cache.expire("sp_gm_exp", 50)
@@ -181,12 +181,12 @@ class TestStampedeGetMany:
 class TestStampedeSetMany:
     """Batch set operations with stampede prevention."""
 
-    def test_set_many(self, stampede_cache: KeyValueCache):
+    def test_set_many(self, stampede_cache: RespCache):
         stampede_cache.set_many({"sp_sm1": "a", "sp_sm2": "b"}, timeout=300)
         assert stampede_cache.get("sp_sm1") == "a"
         assert stampede_cache.get("sp_sm2") == "b"
 
-    def test_set_many_ttl_includes_buffer(self, stampede_cache: KeyValueCache):
+    def test_set_many_ttl_includes_buffer(self, stampede_cache: RespCache):
         stampede_cache.set_many({"sp_sm_ttl": "val"}, timeout=300)
         ttl = stampede_cache.ttl("sp_sm_ttl")
         assert ttl is not None
@@ -200,7 +200,7 @@ class TestStampedeEarlyRecompute:
     set with timeout=300 (TTL=360), then expire(key, 50) → TTL=50 < buffer=60 → logically expired.
     """
 
-    def test_returns_none_after_logical_expiry(self, stampede_cache: KeyValueCache):
+    def test_returns_none_after_logical_expiry(self, stampede_cache: RespCache):
         """After logical expiry, get() returns None even though key is still in Redis."""
         stampede_cache.set("sp_expire", "val", timeout=300)
         assert stampede_cache.get("sp_expire") == "val"
@@ -209,7 +209,7 @@ class TestStampedeEarlyRecompute:
         stampede_cache.expire("sp_expire", 50)
         assert stampede_cache.get("sp_expire") is None
 
-    def test_get_or_set_recomputes_after_expiry(self, stampede_cache: KeyValueCache):
+    def test_get_or_set_recomputes_after_expiry(self, stampede_cache: RespCache):
         """get_or_set() should trigger recomputation after logical expiry."""
         stampede_cache.set("sp_gos", "old", timeout=300)
         assert stampede_cache.get("sp_gos") == "old"
@@ -221,7 +221,7 @@ class TestStampedeEarlyRecompute:
         result = stampede_cache.get_or_set("sp_gos", lambda: "recomputed", timeout=300)
         assert result == "recomputed"
 
-    def test_recompute_stores_with_buffer(self, stampede_cache: KeyValueCache):
+    def test_recompute_stores_with_buffer(self, stampede_cache: RespCache):
         """After recomputation, the new value should have buffered TTL."""
         stampede_cache.set("sp_recomp", "initial", timeout=300)
         stampede_cache.expire("sp_recomp", 50)
@@ -239,7 +239,7 @@ class TestStampedeEarlyRecompute:
 class TestStampedePipeline:
     """Test pipeline operations with stampede prevention."""
 
-    def test_pipeline_set_get(self, stampede_cache: KeyValueCache):
+    def test_pipeline_set_get(self, stampede_cache: RespCache):
         with stampede_cache.pipeline() as pipe:
             pipe.set("sp_pipe1", "value1", timeout=300)
             pipe.set("sp_pipe2", "value2", timeout=300)
@@ -251,7 +251,7 @@ class TestStampedePipeline:
         assert results[2] == "value1"
         assert results[3] == "value2"
 
-    def test_pipeline_serves_stale_data(self, stampede_cache: KeyValueCache):
+    def test_pipeline_serves_stale_data(self, stampede_cache: RespCache):
         """Pipeline should serve stale data (not return None) during buffer window."""
         stampede_cache.set("sp_pipe_stale", "stale_val", timeout=300)
         # Shrink TTL below buffer → logically expired, but pipeline should still serve
@@ -267,7 +267,7 @@ class TestStampedePipeline:
 class TestStampedeOverride:
     """Test per-method stampede_prevention=True/False override."""
 
-    def test_false_skips_ttl_check(self, stampede_cache: KeyValueCache):
+    def test_false_skips_ttl_check(self, stampede_cache: RespCache):
         """stampede_prevention=False on get() should return value even if logically expired."""
         stampede_cache.set("sp_ovr_get", "val", timeout=300)
         stampede_cache.expire("sp_ovr_get", 50)  # logically expired
@@ -277,14 +277,14 @@ class TestStampedeOverride:
         # Override: skip stampede check → returns value
         assert stampede_cache.get("sp_ovr_get", stampede_prevention=False) == "val"
 
-    def test_false_skips_buffer_on_set(self, stampede_cache: KeyValueCache):
+    def test_false_skips_buffer_on_set(self, stampede_cache: RespCache):
         """stampede_prevention=False on set() should not add buffer to TTL."""
         stampede_cache.set("sp_ovr_set", "val", timeout=300, stampede_prevention=False)
         ttl = stampede_cache.ttl("sp_ovr_set")
         assert ttl is not None
         assert ttl <= 300  # No buffer added
 
-    def test_false_on_get_many(self, stampede_cache: KeyValueCache):
+    def test_false_on_get_many(self, stampede_cache: RespCache):
         """stampede_prevention=False on get_many() should return logically expired values."""
         stampede_cache.set("sp_ovr_gm", "val", timeout=300)
         stampede_cache.expire("sp_ovr_gm", 50)  # logically expired
@@ -295,14 +295,14 @@ class TestStampedeOverride:
         result = stampede_cache.get_many(["sp_ovr_gm"], stampede_prevention=False)
         assert result.get("sp_ovr_gm") == "val"
 
-    def test_true_on_non_stampede_cache(self, cache: KeyValueCache):
+    def test_true_on_non_stampede_cache(self, cache: RespCache):
         """stampede_prevention=True on a cache without global stampede should still add buffer."""
         cache.set("sp_ovr_force", "val", timeout=300, stampede_prevention=True)
         ttl = cache.ttl("sp_ovr_force")
         assert ttl is not None
         assert ttl > 300  # Buffer was added
 
-    def test_dict_override_buffer(self, cache: KeyValueCache):
+    def test_dict_override_buffer(self, cache: RespCache):
         """stampede_prevention=dict should override specific config values."""
         # Non-stampede cache with per-call dict override: buffer=120
         cache.set("sp_ovr_dict", "val", timeout=300, stampede_prevention={"buffer": 120})
@@ -310,7 +310,7 @@ class TestStampedeOverride:
         assert ttl is not None
         assert 300 < ttl <= 420  # 300 + 120 buffer
 
-    def test_dict_override_merges_with_instance(self, stampede_cache: KeyValueCache):
+    def test_dict_override_merges_with_instance(self, stampede_cache: RespCache):
         """Dict override merges with instance config (buffer=60 default)."""
         # Instance has buffer=60, override only changes delta — buffer stays 60
         stampede_cache.set("sp_ovr_merge", "val", timeout=300, stampede_prevention={"delta": 5.0})
@@ -355,7 +355,7 @@ class TestShouldRecomputeEdgeCases:
 class TestStampedeGetOrSetRecompute:
     """Test that get_or_set correctly overwrites stale values during stampede."""
 
-    def test_get_or_set_overwrites_stale_key(self, stampede_cache: KeyValueCache):
+    def test_get_or_set_overwrites_stale_key(self, stampede_cache: RespCache):
         """get_or_set must use set() (not add/NX) when stampede triggers, so
         the recomputed value actually replaces the stale one."""
         stampede_cache.set("sp_gos_overwrite", "stale", timeout=300)
@@ -371,7 +371,7 @@ class TestStampedeGetOrSetRecompute:
         # Verify the new value is actually stored (not just returned once)
         assert stampede_cache.get("sp_gos_overwrite") == "fresh"
 
-    def test_get_or_set_returns_fresh_not_retrigger(self, stampede_cache: KeyValueCache):
+    def test_get_or_set_returns_fresh_not_retrigger(self, stampede_cache: RespCache):
         """After recomputation, get_or_set should return the fresh value, not
         re-trigger stampede on the confirmation get()."""
         stampede_cache.set("sp_gos_retrig", "stale", timeout=300)
@@ -390,7 +390,7 @@ class TestStampedeGetOrSetRecompute:
 class TestStampedeGetManyConsistency:
     """get_many() stampede behavior should match get() for various value types."""
 
-    def test_get_many_filters_logically_expired_consistently(self, stampede_cache: KeyValueCache):
+    def test_get_many_filters_logically_expired_consistently(self, stampede_cache: RespCache):
         stampede_cache.set("sp_gmc_str", "hello", timeout=300)
         stampede_cache.set("sp_gmc_int", 42, timeout=300)
         # Shrink TTL below buffer → logically expired
@@ -403,7 +403,7 @@ class TestStampedeGetManyConsistency:
         result = stampede_cache.get_many(["sp_gmc_str", "sp_gmc_int"])
         assert len(result) == 0
 
-    def test_get_many_preserves_fresh_values(self, stampede_cache: KeyValueCache):
+    def test_get_many_preserves_fresh_values(self, stampede_cache: RespCache):
         stampede_cache.set("sp_gmc_fresh1", "val", timeout=300)
         stampede_cache.set("sp_gmc_fresh2", 99, timeout=300)
 
@@ -416,17 +416,17 @@ class TestAsyncStampedeBasicOperations:
     """Basic aset/aget/adelete with stampede prevention enabled."""
 
     @pytest.mark.asyncio
-    async def test_aset_and_aget(self, stampede_cache: KeyValueCache):
+    async def test_aset_and_aget(self, stampede_cache: RespCache):
         await stampede_cache.aset("asp_basic", "hello", timeout=300)
         assert await stampede_cache.aget("asp_basic") == "hello"
 
     @pytest.mark.asyncio
-    async def test_aget_missing_key(self, stampede_cache: KeyValueCache):
+    async def test_aget_missing_key(self, stampede_cache: RespCache):
         await stampede_cache.adelete("asp_missing")
         assert await stampede_cache.aget("asp_missing") is None
 
     @pytest.mark.asyncio
-    async def test_adelete(self, stampede_cache: KeyValueCache):
+    async def test_adelete(self, stampede_cache: RespCache):
         await stampede_cache.aset("asp_del", "val", timeout=300)
         assert await stampede_cache.adelete("asp_del") is True
         assert await stampede_cache.aget("asp_del") is None
@@ -436,7 +436,7 @@ class TestAsyncStampedeGetMany:
     """aget_many() stampede behavior."""
 
     @pytest.mark.asyncio
-    async def test_aget_many(self, stampede_cache: KeyValueCache):
+    async def test_aget_many(self, stampede_cache: RespCache):
         await stampede_cache.aset("asp_m1", "v1", timeout=300)
         await stampede_cache.aset("asp_m2", "v2", timeout=300)
         await stampede_cache.adelete("asp_m3")
@@ -447,7 +447,7 @@ class TestAsyncStampedeGetMany:
         assert len(result) == 2
 
     @pytest.mark.asyncio
-    async def test_aget_many_filters_expired(self, stampede_cache: KeyValueCache):
+    async def test_aget_many_filters_expired(self, stampede_cache: RespCache):
         await stampede_cache.aset("asp_gm_exp", "val", timeout=300)
         # Shrink TTL below buffer → logically expired
         await stampede_cache.aexpire("asp_gm_exp", 50)
@@ -460,7 +460,7 @@ class TestAsyncStampedeSetMany:
     """aset_many() stampede behavior."""
 
     @pytest.mark.asyncio
-    async def test_aset_many(self, stampede_cache: KeyValueCache):
+    async def test_aset_many(self, stampede_cache: RespCache):
         await stampede_cache.aset_many({"asp_sm1": "a", "asp_sm2": "b"}, timeout=300)
         assert await stampede_cache.aget("asp_sm1") == "a"
         assert await stampede_cache.aget("asp_sm2") == "b"
@@ -474,7 +474,7 @@ class TestAsyncStampedeEarlyRecompute:
     """
 
     @pytest.mark.asyncio
-    async def test_areturns_none_after_logical_expiry(self, stampede_cache: KeyValueCache):
+    async def test_areturns_none_after_logical_expiry(self, stampede_cache: RespCache):
         await stampede_cache.aset("asp_expire", "val", timeout=300)
         assert await stampede_cache.aget("asp_expire") == "val"
 
@@ -482,7 +482,7 @@ class TestAsyncStampedeEarlyRecompute:
         assert await stampede_cache.aget("asp_expire") is None
 
     @pytest.mark.asyncio
-    async def test_aget_or_set_recomputes_after_expiry(self, stampede_cache: KeyValueCache):
+    async def test_aget_or_set_recomputes_after_expiry(self, stampede_cache: RespCache):
         """aget_or_set() should trigger recomputation after logical expiry."""
         await stampede_cache.aset("asp_gos", "old", timeout=300)
         assert await stampede_cache.aget("asp_gos") == "old"
@@ -497,7 +497,7 @@ class TestAsyncStampedeGetOrSetRecompute:
     """aget_or_set must overwrite stale keys (not behave like aadd/NX)."""
 
     @pytest.mark.asyncio
-    async def test_aget_or_set_overwrites_stale_key(self, stampede_cache: KeyValueCache):
+    async def test_aget_or_set_overwrites_stale_key(self, stampede_cache: RespCache):
         await stampede_cache.aset("asp_gos_overwrite", "stale", timeout=300)
         await stampede_cache.aexpire("asp_gos_overwrite", 50)
 
@@ -511,7 +511,7 @@ class TestAsyncStampedeGetOrSetRecompute:
         assert await stampede_cache.aget("asp_gos_overwrite") == "fresh_async"
 
     @pytest.mark.asyncio
-    async def test_aget_or_set_returns_fresh_not_retrigger(self, stampede_cache: KeyValueCache):
+    async def test_aget_or_set_returns_fresh_not_retrigger(self, stampede_cache: RespCache):
         """After recomputation, aget_or_set should return the fresh value, not
         re-trigger stampede on the confirmation aget()."""
         await stampede_cache.aset("asp_gos_retrig", "stale", timeout=300)

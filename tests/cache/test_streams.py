@@ -7,13 +7,13 @@ from typing import TYPE_CHECKING
 import pytest
 
 if TYPE_CHECKING:
-    from django_cachex.cache import KeyValueCache
+    from django_cachex.cache import RespCache
 
 
 class TestStreamBasicOps:
     """Tests for xadd, xlen, xrange, xrevrange, xdel."""
 
-    def test_xadd_and_xlen(self, cache: KeyValueCache):
+    def test_xadd_and_xlen(self, cache: RespCache):
         entry_id = cache.xadd("stream1", {"name": "Alice", "score": 100})
         assert isinstance(entry_id, str)
         assert "-" in entry_id
@@ -22,12 +22,12 @@ class TestStreamBasicOps:
         cache.xadd("stream1", {"name": "Bob", "score": 200})
         assert cache.xlen("stream1") == 2
 
-    def test_xadd_with_maxlen(self, cache: KeyValueCache):
+    def test_xadd_with_maxlen(self, cache: RespCache):
         for i in range(10):
             cache.xadd("stream_maxlen", {"i": i}, maxlen=5, approximate=False)
         assert cache.xlen("stream_maxlen") == 5
 
-    def test_xrange(self, cache: KeyValueCache):
+    def test_xrange(self, cache: RespCache):
         cache.xadd("stream_range", {"a": 1})
         cache.xadd("stream_range", {"b": 2})
         cache.xadd("stream_range", {"c": 3})
@@ -39,14 +39,14 @@ class TestStreamBasicOps:
         assert entries[1][1]["b"] == 2
         assert entries[2][1]["c"] == 3
 
-    def test_xrange_with_count(self, cache: KeyValueCache):
+    def test_xrange_with_count(self, cache: RespCache):
         for i in range(5):
             cache.xadd("stream_range_cnt", {"i": i})
 
         entries = cache.xrange("stream_range_cnt", count=2)
         assert len(entries) == 2
 
-    def test_xrevrange(self, cache: KeyValueCache):
+    def test_xrevrange(self, cache: RespCache):
         cache.xadd("stream_revrange", {"a": 1})
         cache.xadd("stream_revrange", {"b": 2})
         cache.xadd("stream_revrange", {"c": 3})
@@ -56,13 +56,13 @@ class TestStreamBasicOps:
         assert entries[0][1]["c"] == 3
         assert entries[2][1]["a"] == 1
 
-    def test_xdel(self, cache: KeyValueCache):
+    def test_xdel(self, cache: RespCache):
         eid = cache.xadd("stream_del", {"data": "test"})
         assert cache.xlen("stream_del") == 1
         deleted = cache.xdel("stream_del", eid)
         assert deleted == 1
 
-    def test_xtrim(self, cache: KeyValueCache):
+    def test_xtrim(self, cache: RespCache):
         for i in range(10):
             cache.xadd("stream_trim", {"i": i})
         trimmed = cache.xtrim("stream_trim", maxlen=3, approximate=False)
@@ -73,7 +73,7 @@ class TestStreamBasicOps:
 class TestStreamRead:
     """Tests for xread."""
 
-    def test_xread(self, cache: KeyValueCache):
+    def test_xread(self, cache: RespCache):
         cache.xadd("stream_read", {"a": 1})
         cache.xadd("stream_read", {"b": 2})
 
@@ -87,13 +87,13 @@ class TestStreamRead:
 class TestStreamInfo:
     """Tests for xinfo_stream, xinfo_groups."""
 
-    def test_xinfo_stream(self, cache: KeyValueCache):
+    def test_xinfo_stream(self, cache: RespCache):
         cache.xadd("stream_info", {"data": "test"})
 
         info = cache.xinfo_stream("stream_info")
         assert isinstance(info, dict)
 
-    def test_xinfo_groups_empty(self, cache: KeyValueCache):
+    def test_xinfo_groups_empty(self, cache: RespCache):
         cache.xadd("stream_info_groups", {"data": "test"})
 
         groups = cache.xinfo_groups("stream_info_groups")
@@ -103,7 +103,7 @@ class TestStreamInfo:
 class TestStreamConsumerGroups:
     """Tests for xgroup_create, xgroup_destroy, xreadgroup, xack, xpending."""
 
-    def test_xgroup_create_and_destroy(self, cache: KeyValueCache):
+    def test_xgroup_create_and_destroy(self, cache: RespCache):
         cache.xadd("stream_grp", {"data": "test"})
 
         result = cache.xgroup_create("stream_grp", "mygroup", entry_id="0")
@@ -115,12 +115,12 @@ class TestStreamConsumerGroups:
         destroyed = cache.xgroup_destroy("stream_grp", "mygroup")
         assert destroyed == 1
 
-    def test_xgroup_create_mkstream(self, cache: KeyValueCache):
+    def test_xgroup_create_mkstream(self, cache: RespCache):
         result = cache.xgroup_create("stream_grp_mk", "mygroup", entry_id="$", mkstream=True)
         assert result is True
         assert cache.xlen("stream_grp_mk") == 0
 
-    def test_xreadgroup(self, cache: KeyValueCache):
+    def test_xreadgroup(self, cache: RespCache):
         cache.xadd("stream_rg", {"msg": "hello"})
         cache.xadd("stream_rg", {"msg": "world"})
         cache.xgroup_create("stream_rg", "readers", entry_id="0")
@@ -131,7 +131,7 @@ class TestStreamConsumerGroups:
         assert "stream_rg" in result
         assert len(result["stream_rg"]) == 2
 
-    def test_xack(self, cache: KeyValueCache):
+    def test_xack(self, cache: RespCache):
         eid = cache.xadd("stream_ack", {"msg": "test"})
         cache.xgroup_create("stream_ack", "ack_grp", entry_id="0")
         cache.xreadgroup("ack_grp", "consumer1", {"stream_ack": ">"})
@@ -139,7 +139,7 @@ class TestStreamConsumerGroups:
         acked = cache.xack("stream_ack", "ack_grp", eid)
         assert acked == 1
 
-    def test_xpending_summary(self, cache: KeyValueCache):
+    def test_xpending_summary(self, cache: RespCache):
         cache.xadd("stream_pend", {"msg": "test"})
         cache.xgroup_create("stream_pend", "pend_grp", entry_id="0")
         cache.xreadgroup("pend_grp", "consumer1", {"stream_pend": ">"})
@@ -147,13 +147,13 @@ class TestStreamConsumerGroups:
         pending = cache.xpending("stream_pend", "pend_grp")
         assert isinstance(pending, dict)
 
-    def test_xgroup_setid(self, cache: KeyValueCache):
+    def test_xgroup_setid(self, cache: RespCache):
         cache.xadd("stream_setid", {"data": "test"})
         cache.xgroup_create("stream_setid", "setid_grp", entry_id="0")
         result = cache.xgroup_setid("stream_setid", "setid_grp", "$")
         assert result is True
 
-    def test_xgroup_delconsumer(self, cache: KeyValueCache):
+    def test_xgroup_delconsumer(self, cache: RespCache):
         cache.xadd("stream_delc", {"data": "test"})
         cache.xgroup_create("stream_delc", "delc_grp", entry_id="0")
         cache.xreadgroup("delc_grp", "consumer1", {"stream_delc": ">"})
@@ -161,7 +161,7 @@ class TestStreamConsumerGroups:
         result = cache.xgroup_delconsumer("stream_delc", "delc_grp", "consumer1")
         assert isinstance(result, int)
 
-    def test_xinfo_consumers(self, cache: KeyValueCache):
+    def test_xinfo_consumers(self, cache: RespCache):
         cache.xadd("stream_infoc", {"data": "test"})
         cache.xgroup_create("stream_infoc", "infoc_grp", entry_id="0")
         cache.xreadgroup("infoc_grp", "consumer1", {"stream_infoc": ">"})
@@ -169,7 +169,7 @@ class TestStreamConsumerGroups:
         consumers = cache.xinfo_consumers("stream_infoc", "infoc_grp")
         assert len(consumers) == 1
 
-    def test_xclaim(self, cache: KeyValueCache):
+    def test_xclaim(self, cache: RespCache):
         eid = cache.xadd("stream_claim", {"msg": "claimable"})
         cache.xgroup_create("stream_claim", "claim_grp", entry_id="0")
         cache.xreadgroup("claim_grp", "consumer1", {"stream_claim": ">"})
@@ -180,7 +180,7 @@ class TestStreamConsumerGroups:
         assert len(claimed) == 1
         assert claimed[0][0] == eid
 
-    def test_xclaim_justid(self, cache: KeyValueCache):
+    def test_xclaim_justid(self, cache: RespCache):
         eid = cache.xadd("stream_claim_jid", {"msg": "claimable"})
         cache.xgroup_create("stream_claim_jid", "claim_jid_grp", entry_id="0")
         cache.xreadgroup("claim_jid_grp", "consumer1", {"stream_claim_jid": ">"})
@@ -189,7 +189,7 @@ class TestStreamConsumerGroups:
         claimed = cache.xclaim("stream_claim_jid", "claim_jid_grp", "consumer2", 0, [eid], justid=True)
         assert eid in claimed
 
-    def test_xautoclaim(self, cache: KeyValueCache):
+    def test_xautoclaim(self, cache: RespCache):
         cache.xadd("stream_autoclaim", {"msg": "auto"})
         cache.xgroup_create("stream_autoclaim", "auto_grp", entry_id="0")
         cache.xreadgroup("auto_grp", "consumer1", {"stream_autoclaim": ">"})
@@ -199,7 +199,7 @@ class TestStreamConsumerGroups:
         assert isinstance(next_id, str)
         assert len(claimed) >= 1
 
-    def test_xautoclaim_justid(self, cache: KeyValueCache):
+    def test_xautoclaim_justid(self, cache: RespCache):
         eid = cache.xadd("stream_autoclaim_jid", {"msg": "auto"})
         cache.xgroup_create("stream_autoclaim_jid", "ac_jid_grp", entry_id="0")
         cache.xreadgroup("ac_jid_grp", "consumer1", {"stream_autoclaim_jid": ">"})
@@ -215,7 +215,7 @@ class TestStreamConsumerGroups:
         assert isinstance(claimed, list)
         assert eid in claimed
 
-    def test_xpending_range(self, cache: KeyValueCache):
+    def test_xpending_range(self, cache: RespCache):
         cache.xadd("stream_pend_range", {"msg": "test"})
         cache.xgroup_create("stream_pend_range", "pr_grp", entry_id="0")
         cache.xreadgroup("pr_grp", "consumer1", {"stream_pend_range": ">"})
@@ -229,7 +229,7 @@ class TestAsyncStreamBasicOps:
     """Tests for axadd, axlen, axrange, axrevrange, axdel."""
 
     @pytest.mark.asyncio
-    async def test_axadd_and_axlen(self, cache: KeyValueCache):
+    async def test_axadd_and_axlen(self, cache: RespCache):
         entry_id = await cache.axadd("astream1", {"name": "Alice", "score": 100})
         assert isinstance(entry_id, str)
         assert "-" in entry_id
@@ -239,13 +239,13 @@ class TestAsyncStreamBasicOps:
         assert await cache.axlen("astream1") == 2
 
     @pytest.mark.asyncio
-    async def test_axadd_with_maxlen(self, cache: KeyValueCache):
+    async def test_axadd_with_maxlen(self, cache: RespCache):
         for i in range(10):
             await cache.axadd("astream_maxlen", {"i": i}, maxlen=5, approximate=False)
         assert await cache.axlen("astream_maxlen") == 5
 
     @pytest.mark.asyncio
-    async def test_axrange(self, cache: KeyValueCache):
+    async def test_axrange(self, cache: RespCache):
         await cache.axadd("astream_range", {"a": 1})
         await cache.axadd("astream_range", {"b": 2})
         await cache.axadd("astream_range", {"c": 3})
@@ -257,7 +257,7 @@ class TestAsyncStreamBasicOps:
         assert entries[2][1]["c"] == 3
 
     @pytest.mark.asyncio
-    async def test_axrange_with_count(self, cache: KeyValueCache):
+    async def test_axrange_with_count(self, cache: RespCache):
         for i in range(5):
             await cache.axadd("astream_range_cnt", {"i": i})
 
@@ -265,7 +265,7 @@ class TestAsyncStreamBasicOps:
         assert len(entries) == 2
 
     @pytest.mark.asyncio
-    async def test_axrevrange(self, cache: KeyValueCache):
+    async def test_axrevrange(self, cache: RespCache):
         await cache.axadd("astream_revrange", {"a": 1})
         await cache.axadd("astream_revrange", {"b": 2})
         await cache.axadd("astream_revrange", {"c": 3})
@@ -276,14 +276,14 @@ class TestAsyncStreamBasicOps:
         assert entries[2][1]["a"] == 1
 
     @pytest.mark.asyncio
-    async def test_axdel(self, cache: KeyValueCache):
+    async def test_axdel(self, cache: RespCache):
         eid = await cache.axadd("astream_del", {"data": "test"})
         assert await cache.axlen("astream_del") == 1
         deleted = await cache.axdel("astream_del", eid)
         assert deleted == 1
 
     @pytest.mark.asyncio
-    async def test_axtrim(self, cache: KeyValueCache):
+    async def test_axtrim(self, cache: RespCache):
         for i in range(10):
             await cache.axadd("astream_trim", {"i": i})
         trimmed = await cache.axtrim("astream_trim", maxlen=3, approximate=False)
@@ -295,7 +295,7 @@ class TestAsyncStreamRead:
     """Tests for axread."""
 
     @pytest.mark.asyncio
-    async def test_axread(self, cache: KeyValueCache):
+    async def test_axread(self, cache: RespCache):
         await cache.axadd("astream_read", {"a": 1})
         await cache.axadd("astream_read", {"b": 2})
 
@@ -310,14 +310,14 @@ class TestAsyncStreamInfo:
     """Tests for axinfo_stream, axinfo_groups."""
 
     @pytest.mark.asyncio
-    async def test_axinfo_stream(self, cache: KeyValueCache):
+    async def test_axinfo_stream(self, cache: RespCache):
         await cache.axadd("astream_info", {"data": "test"})
 
         info = await cache.axinfo_stream("astream_info")
         assert isinstance(info, dict)
 
     @pytest.mark.asyncio
-    async def test_axinfo_groups_empty(self, cache: KeyValueCache):
+    async def test_axinfo_groups_empty(self, cache: RespCache):
         await cache.axadd("astream_info_groups", {"data": "test"})
 
         groups = await cache.axinfo_groups("astream_info_groups")
@@ -328,7 +328,7 @@ class TestAsyncStreamConsumerGroups:
     """Tests for axgroup_create, axgroup_destroy, axreadgroup, axack, axpending."""
 
     @pytest.mark.asyncio
-    async def test_axgroup_create_and_destroy(self, cache: KeyValueCache):
+    async def test_axgroup_create_and_destroy(self, cache: RespCache):
         await cache.axadd("astream_grp", {"data": "test"})
 
         result = await cache.axgroup_create("astream_grp", "mygroup", entry_id="0")
@@ -341,13 +341,13 @@ class TestAsyncStreamConsumerGroups:
         assert destroyed == 1
 
     @pytest.mark.asyncio
-    async def test_axgroup_create_mkstream(self, cache: KeyValueCache):
+    async def test_axgroup_create_mkstream(self, cache: RespCache):
         result = await cache.axgroup_create("astream_grp_mk", "mygroup", entry_id="$", mkstream=True)
         assert result is True
         assert await cache.axlen("astream_grp_mk") == 0
 
     @pytest.mark.asyncio
-    async def test_axreadgroup(self, cache: KeyValueCache):
+    async def test_axreadgroup(self, cache: RespCache):
         await cache.axadd("astream_rg", {"msg": "hello"})
         await cache.axadd("astream_rg", {"msg": "world"})
         await cache.axgroup_create("astream_rg", "readers", entry_id="0")
@@ -359,7 +359,7 @@ class TestAsyncStreamConsumerGroups:
         assert len(result["astream_rg"]) == 2
 
     @pytest.mark.asyncio
-    async def test_axack(self, cache: KeyValueCache):
+    async def test_axack(self, cache: RespCache):
         eid = await cache.axadd("astream_ack", {"msg": "test"})
         await cache.axgroup_create("astream_ack", "ack_grp", entry_id="0")
         await cache.axreadgroup("ack_grp", "consumer1", {"astream_ack": ">"})
@@ -368,7 +368,7 @@ class TestAsyncStreamConsumerGroups:
         assert acked == 1
 
     @pytest.mark.asyncio
-    async def test_axpending_summary(self, cache: KeyValueCache):
+    async def test_axpending_summary(self, cache: RespCache):
         await cache.axadd("astream_pend", {"msg": "test"})
         await cache.axgroup_create("astream_pend", "pend_grp", entry_id="0")
         await cache.axreadgroup("pend_grp", "consumer1", {"astream_pend": ">"})
@@ -377,7 +377,7 @@ class TestAsyncStreamConsumerGroups:
         assert isinstance(pending, dict)
 
     @pytest.mark.asyncio
-    async def test_axpending_range(self, cache: KeyValueCache):
+    async def test_axpending_range(self, cache: RespCache):
         await cache.axadd("astream_pend_range", {"msg": "test"})
         await cache.axgroup_create("astream_pend_range", "pr_grp", entry_id="0")
         await cache.axreadgroup("pr_grp", "consumer1", {"astream_pend_range": ">"})
@@ -387,14 +387,14 @@ class TestAsyncStreamConsumerGroups:
         assert len(result) == 1
 
     @pytest.mark.asyncio
-    async def test_axgroup_setid(self, cache: KeyValueCache):
+    async def test_axgroup_setid(self, cache: RespCache):
         await cache.axadd("astream_setid", {"data": "test"})
         await cache.axgroup_create("astream_setid", "setid_grp", entry_id="0")
         result = await cache.axgroup_setid("astream_setid", "setid_grp", "$")
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_axgroup_delconsumer(self, cache: KeyValueCache):
+    async def test_axgroup_delconsumer(self, cache: RespCache):
         await cache.axadd("astream_delc", {"data": "test"})
         await cache.axgroup_create("astream_delc", "delc_grp", entry_id="0")
         await cache.axreadgroup("delc_grp", "consumer1", {"astream_delc": ">"})
@@ -403,7 +403,7 @@ class TestAsyncStreamConsumerGroups:
         assert isinstance(result, int)
 
     @pytest.mark.asyncio
-    async def test_axinfo_consumers(self, cache: KeyValueCache):
+    async def test_axinfo_consumers(self, cache: RespCache):
         await cache.axadd("astream_infoc", {"data": "test"})
         await cache.axgroup_create("astream_infoc", "infoc_grp", entry_id="0")
         await cache.axreadgroup("infoc_grp", "consumer1", {"astream_infoc": ">"})
@@ -412,7 +412,7 @@ class TestAsyncStreamConsumerGroups:
         assert len(consumers) == 1
 
     @pytest.mark.asyncio
-    async def test_axclaim(self, cache: KeyValueCache):
+    async def test_axclaim(self, cache: RespCache):
         eid = await cache.axadd("astream_claim", {"msg": "claimable"})
         await cache.axgroup_create("astream_claim", "claim_grp", entry_id="0")
         await cache.axreadgroup("claim_grp", "consumer1", {"astream_claim": ">"})
@@ -423,7 +423,7 @@ class TestAsyncStreamConsumerGroups:
         assert claimed[0][0] == eid
 
     @pytest.mark.asyncio
-    async def test_axclaim_justid(self, cache: KeyValueCache):
+    async def test_axclaim_justid(self, cache: RespCache):
         eid = await cache.axadd("astream_claim_jid", {"msg": "claimable"})
         await cache.axgroup_create("astream_claim_jid", "claim_jid_grp", entry_id="0")
         await cache.axreadgroup("claim_jid_grp", "consumer1", {"astream_claim_jid": ">"})
@@ -433,7 +433,7 @@ class TestAsyncStreamConsumerGroups:
         assert eid in claimed
 
     @pytest.mark.asyncio
-    async def test_axautoclaim(self, cache: KeyValueCache):
+    async def test_axautoclaim(self, cache: RespCache):
         await cache.axadd("astream_autoclaim", {"msg": "auto"})
         await cache.axgroup_create("astream_autoclaim", "auto_grp", entry_id="0")
         await cache.axreadgroup("auto_grp", "consumer1", {"astream_autoclaim": ">"})
@@ -444,7 +444,7 @@ class TestAsyncStreamConsumerGroups:
         assert len(claimed) >= 1
 
     @pytest.mark.asyncio
-    async def test_axautoclaim_justid(self, cache: KeyValueCache):
+    async def test_axautoclaim_justid(self, cache: RespCache):
         eid = await cache.axadd("astream_autoclaim_jid", {"msg": "auto"})
         await cache.axgroup_create("astream_autoclaim_jid", "ac_jid_grp", entry_id="0")
         await cache.axreadgroup("ac_jid_grp", "consumer1", {"astream_autoclaim_jid": ">"})

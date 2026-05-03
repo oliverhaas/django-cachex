@@ -6,19 +6,19 @@ from typing import TYPE_CHECKING
 import pytest
 
 if TYPE_CHECKING:
-    from django_cachex.cache import KeyValueCache
+    from django_cachex.cache import RespCache
 
 
 class TestPipelineBasic:
     """Test basic pipeline functionality."""
 
-    def test_pipeline_returns_pipeline_object(self, cache: KeyValueCache):
+    def test_pipeline_returns_pipeline_object(self, cache: RespCache):
         from django_cachex.adapters.pipeline import Pipeline
 
         pipe = cache.pipeline()
         assert isinstance(pipe, Pipeline)
 
-    def test_pipeline_manual_execute(self, cache: KeyValueCache):
+    def test_pipeline_manual_execute(self, cache: RespCache):
         cache.set("manual_key", "manual_value")
 
         pipe = cache.pipeline()
@@ -31,12 +31,12 @@ class TestPipelineBasic:
         assert results[1] is True
         assert results[2] == "new_value"
 
-    def test_pipeline_empty_execute(self, cache: KeyValueCache):
+    def test_pipeline_empty_execute(self, cache: RespCache):
         pipe = cache.pipeline()
         results = pipe.execute()
         assert results == []
 
-    def test_pipeline_chaining(self, cache: KeyValueCache):
+    def test_pipeline_chaining(self, cache: RespCache):
         pipe = cache.pipeline()
         result = pipe.set("chain1", "a").set("chain2", "b").get("chain1").get("chain2")
         assert result is pipe
@@ -44,14 +44,14 @@ class TestPipelineBasic:
         results = pipe.execute()
         assert results == [True, True, "a", "b"]
 
-    def test_pipeline_transaction(self, cache: KeyValueCache):
+    def test_pipeline_transaction(self, cache: RespCache):
         pipe = cache.pipeline(transaction=True)
         pipe.set("tx_key", "tx_value")
         pipe.get("tx_key")
         results = pipe.execute()
         assert results == [True, "tx_value"]
 
-    def test_pipeline_no_transaction(self, cache: KeyValueCache):
+    def test_pipeline_no_transaction(self, cache: RespCache):
         pipe = cache.pipeline(transaction=False)
         pipe.set("notx_key", "notx_value")
         pipe.get("notx_key")
@@ -62,7 +62,7 @@ class TestPipelineBasic:
 class TestPipelineCacheOperations:
     """Test standard cache operations in pipeline."""
 
-    def test_pipeline_get_set(self, cache: KeyValueCache):
+    def test_pipeline_get_set(self, cache: RespCache):
         pipe = cache.pipeline()
         pipe.set("key1", "value1")
         pipe.set("key2", {"nested": "dict"})
@@ -77,7 +77,7 @@ class TestPipelineCacheOperations:
         assert results[3] == {"nested": "dict"}
         assert results[4] is None
 
-    def test_pipeline_delete(self, cache: KeyValueCache):
+    def test_pipeline_delete(self, cache: RespCache):
         cache.set("{pipe_del}key1", "a")
         cache.set("{pipe_del}key2", "b")
 
@@ -91,7 +91,7 @@ class TestPipelineCacheOperations:
         assert results[1] is True
         assert results[2] is False
 
-    def test_pipeline_exists(self, cache: KeyValueCache):
+    def test_pipeline_exists(self, cache: RespCache):
         cache.set("{pipe_ex}key", "value")
 
         pipe = cache.pipeline()
@@ -102,7 +102,7 @@ class TestPipelineCacheOperations:
         assert results[0] is True
         assert results[1] is False
 
-    def test_pipeline_expire_ttl(self, cache: KeyValueCache):
+    def test_pipeline_expire_ttl(self, cache: RespCache):
         cache.set("expire_key", "value")
 
         pipe = cache.pipeline()
@@ -113,7 +113,7 @@ class TestPipelineCacheOperations:
         assert results[0] is True
         assert 0 < results[1] <= 100
 
-    def test_pipeline_incr_decr(self, cache: KeyValueCache):
+    def test_pipeline_incr_decr(self, cache: RespCache):
         cache.set("counter", 10)
 
         pipe = cache.pipeline()
@@ -134,7 +134,7 @@ class TestPipelineCacheOperations:
 class TestPipelineListOperations:
     """Test list operations in pipeline."""
 
-    def test_pipeline_lpush_rpush(self, cache: KeyValueCache):
+    def test_pipeline_lpush_rpush(self, cache: RespCache):
         pipe = cache.pipeline()
         pipe.rpush("pipe_list", "a", "b", "c")
         pipe.lpush("pipe_list", "x", "y")
@@ -145,7 +145,7 @@ class TestPipelineListOperations:
         assert results[1] == 5  # lpush returns new length
         assert results[2] == ["y", "x", "a", "b", "c"]
 
-    def test_pipeline_lpop_rpop(self, cache: KeyValueCache):
+    def test_pipeline_lpop_rpop(self, cache: RespCache):
         cache.rpush("pipe_list2", "a", "b", "c", "d")
 
         pipe = cache.pipeline()
@@ -158,7 +158,7 @@ class TestPipelineListOperations:
         assert results[1] == "d"
         assert results[2] == ["b", "c"]
 
-    def test_pipeline_llen_lindex(self, cache: KeyValueCache):
+    def test_pipeline_llen_lindex(self, cache: RespCache):
         cache.rpush("pipe_list3", "a", "b", "c")
 
         pipe = cache.pipeline()
@@ -171,7 +171,7 @@ class TestPipelineListOperations:
         assert results[1] == "a"
         assert results[2] == "c"
 
-    def test_pipeline_lset_lrem(self, cache: KeyValueCache):
+    def test_pipeline_lset_lrem(self, cache: RespCache):
         cache.rpush("pipe_list4", "a", "b", "a", "c")
 
         pipe = cache.pipeline()
@@ -184,7 +184,7 @@ class TestPipelineListOperations:
         assert results[1] == 1
         assert results[2] == ["B", "a", "c"]
 
-    def test_pipeline_ltrim(self, cache: KeyValueCache):
+    def test_pipeline_ltrim(self, cache: RespCache):
         cache.rpush("pipe_list5", "a", "b", "c", "d", "e")
 
         pipe = cache.pipeline()
@@ -195,7 +195,7 @@ class TestPipelineListOperations:
         assert results[0] is True
         assert results[1] == ["b", "c", "d"]
 
-    def test_pipeline_linsert(self, cache: KeyValueCache):
+    def test_pipeline_linsert(self, cache: RespCache):
         cache.rpush("pipe_list6", "a", "c")
 
         pipe = cache.pipeline()
@@ -208,7 +208,7 @@ class TestPipelineListOperations:
         assert results[1] == 4
         assert results[2] == ["a", "b", "c", "d"]
 
-    def test_pipeline_lpos(self, cache: KeyValueCache):
+    def test_pipeline_lpos(self, cache: RespCache):
         cache.rpush("pipe_list7", "a", "b", "c", "b", "d")
 
         pipe = cache.pipeline()
@@ -221,7 +221,7 @@ class TestPipelineListOperations:
         assert results[1] == 3
         assert results[2] is None
 
-    def test_pipeline_lmove(self, cache: KeyValueCache):
+    def test_pipeline_lmove(self, cache: RespCache):
         # Use hash tags to ensure keys are on same cluster slot
         cache.rpush("{pipe}src", "a", "b", "c")
         cache.rpush("{pipe}dst", "x")
@@ -240,7 +240,7 @@ class TestPipelineListOperations:
 class TestPipelineSetOperations:
     """Test set operations in pipeline."""
 
-    def test_pipeline_sadd_smembers(self, cache: KeyValueCache):
+    def test_pipeline_sadd_smembers(self, cache: RespCache):
         pipe = cache.pipeline()
         pipe.sadd("pipe_set", "a", "b", "c")
         pipe.smembers("pipe_set")
@@ -249,7 +249,7 @@ class TestPipelineSetOperations:
         assert results[0] == 3
         assert results[1] == {"a", "b", "c"}
 
-    def test_pipeline_scard_sismember(self, cache: KeyValueCache):
+    def test_pipeline_scard_sismember(self, cache: RespCache):
         cache.sadd("pipe_set2", "a", "b", "c")
 
         pipe = cache.pipeline()
@@ -262,7 +262,7 @@ class TestPipelineSetOperations:
         assert results[1] is True
         assert results[2] is False
 
-    def test_pipeline_srem(self, cache: KeyValueCache):
+    def test_pipeline_srem(self, cache: RespCache):
         cache.sadd("pipe_set3", "a", "b", "c")
 
         pipe = cache.pipeline()
@@ -273,7 +273,7 @@ class TestPipelineSetOperations:
         assert results[0] == 2
         assert results[1] == {"a"}
 
-    def test_pipeline_sdiff_sinter_sunion(self, cache: KeyValueCache, client_class: str):
+    def test_pipeline_sdiff_sinter_sunion(self, cache: RespCache, client_class: str):
         # Redis Cluster doesn't support sdiff/sinter/sunion in pipeline mode
         if client_class == "cluster":
             pytest.skip("sdiff/sinter/sunion blocked in cluster pipeline mode")
@@ -292,7 +292,7 @@ class TestPipelineSetOperations:
         assert results[1] == {"b", "c"}
         assert results[2] == {"a", "b", "c", "d"}
 
-    def test_pipeline_spop(self, cache: KeyValueCache):
+    def test_pipeline_spop(self, cache: RespCache):
         cache.sadd("pipe_set4", "a", "b", "c")
 
         pipe = cache.pipeline()
@@ -303,7 +303,7 @@ class TestPipelineSetOperations:
         assert results[0] in {"a", "b", "c"}
         assert results[1] == 2
 
-    def test_pipeline_smismember(self, cache: KeyValueCache):
+    def test_pipeline_smismember(self, cache: RespCache):
         cache.sadd("pipe_set5", "a", "b", "c")
 
         pipe = cache.pipeline()
@@ -312,7 +312,7 @@ class TestPipelineSetOperations:
 
         assert results[0] == [True, False, True]
 
-    def test_pipeline_smove(self, cache: KeyValueCache, client_class: str):
+    def test_pipeline_smove(self, cache: RespCache, client_class: str):
         # Redis Cluster doesn't support smove in pipeline mode
         if client_class == "cluster":
             pytest.skip("smove blocked in cluster pipeline mode")
@@ -335,7 +335,7 @@ class TestPipelineSetOperations:
 class TestPipelineHashOperations:
     """Test hash operations in pipeline."""
 
-    def test_pipeline_hset_hget(self, cache: KeyValueCache):
+    def test_pipeline_hset_hget(self, cache: RespCache):
         pipe = cache.pipeline()
         pipe.hset("pipe_hash", "field1", "value1")
         pipe.hset("pipe_hash", "field2", {"nested": "value"})
@@ -348,7 +348,7 @@ class TestPipelineHashOperations:
         assert results[2] == "value1"
         assert results[3] == {"nested": "value"}
 
-    def test_pipeline_hset_mapping_hmget(self, cache: KeyValueCache):
+    def test_pipeline_hset_mapping_hmget(self, cache: RespCache):
         pipe = cache.pipeline()
         pipe.hset("pipe_hash2", mapping={"f1": "v1", "f2": "v2", "f3": "v3"})
         pipe.hmget("pipe_hash2", "f1", "f3", "nonexistent")
@@ -357,7 +357,7 @@ class TestPipelineHashOperations:
         assert results[0] == 3  # fields added
         assert results[1] == ["v1", "v3", None]
 
-    def test_pipeline_hgetall(self, cache: KeyValueCache):
+    def test_pipeline_hgetall(self, cache: RespCache):
         cache.hset("pipe_hash3", mapping={"a": "1", "b": "2"})
 
         pipe = cache.pipeline()
@@ -366,7 +366,7 @@ class TestPipelineHashOperations:
 
         assert results[0] == {"a": "1", "b": "2"}
 
-    def test_pipeline_hdel_hlen(self, cache: KeyValueCache):
+    def test_pipeline_hdel_hlen(self, cache: RespCache):
         cache.hset("pipe_hash4", mapping={"a": "1", "b": "2", "c": "3"})
 
         pipe = cache.pipeline()
@@ -377,7 +377,7 @@ class TestPipelineHashOperations:
         assert results[0] == 1
         assert results[1] == 2
 
-    def test_pipeline_hkeys_hvals(self, cache: KeyValueCache):
+    def test_pipeline_hkeys_hvals(self, cache: RespCache):
         cache.hset("pipe_hash5", mapping={"a": "1", "b": "2"})
 
         pipe = cache.pipeline()
@@ -388,7 +388,7 @@ class TestPipelineHashOperations:
         assert set(results[0]) == {"a", "b"}
         assert set(results[1]) == {"1", "2"}
 
-    def test_pipeline_hexists(self, cache: KeyValueCache):
+    def test_pipeline_hexists(self, cache: RespCache):
         cache.hset("pipe_hash6", "field", "value")
 
         pipe = cache.pipeline()
@@ -399,7 +399,7 @@ class TestPipelineHashOperations:
         assert results[0] is True
         assert results[1] is False
 
-    def test_pipeline_hincrby(self, cache: KeyValueCache):
+    def test_pipeline_hincrby(self, cache: RespCache):
         cache.hset("pipe_hash7", "count", 10)
 
         pipe = cache.pipeline()
@@ -412,7 +412,7 @@ class TestPipelineHashOperations:
         assert results[1] == 12
         assert results[2] == 1.5
 
-    def test_pipeline_hsetnx(self, cache: KeyValueCache):
+    def test_pipeline_hsetnx(self, cache: RespCache):
         cache.hset("pipe_hash8", "existing", "value")
 
         pipe = cache.pipeline()
@@ -431,7 +431,7 @@ class TestPipelineHashOperations:
 class TestPipelineSortedSetOperations:
     """Test sorted set operations in pipeline."""
 
-    def test_pipeline_zadd_zrange(self, cache: KeyValueCache):
+    def test_pipeline_zadd_zrange(self, cache: RespCache):
         pipe = cache.pipeline()
         pipe.zadd("pipe_zset", {"a": 1, "b": 2, "c": 3})
         pipe.zrange("pipe_zset", 0, -1)
@@ -442,7 +442,7 @@ class TestPipelineSortedSetOperations:
         assert results[1] == ["a", "b", "c"]
         assert results[2] == [("a", 1.0), ("b", 2.0), ("c", 3.0)]
 
-    def test_pipeline_zcard_zcount(self, cache: KeyValueCache):
+    def test_pipeline_zcard_zcount(self, cache: RespCache):
         cache.zadd("pipe_zset2", {"a": 1, "b": 2, "c": 3, "d": 4})
 
         pipe = cache.pipeline()
@@ -453,7 +453,7 @@ class TestPipelineSortedSetOperations:
         assert results[0] == 4
         assert results[1] == 2  # b and c
 
-    def test_pipeline_zincrby(self, cache: KeyValueCache):
+    def test_pipeline_zincrby(self, cache: RespCache):
         cache.zadd("pipe_zset3", {"item": 10})
 
         pipe = cache.pipeline()
@@ -466,7 +466,7 @@ class TestPipelineSortedSetOperations:
         assert results[1] == 12.0
         assert results[2] == 12.0
 
-    def test_pipeline_zrank_zrevrank(self, cache: KeyValueCache):
+    def test_pipeline_zrank_zrevrank(self, cache: RespCache):
         cache.zadd("pipe_zset4", {"a": 1, "b": 2, "c": 3})
 
         pipe = cache.pipeline()
@@ -479,7 +479,7 @@ class TestPipelineSortedSetOperations:
         assert results[1] == 1  # reversed: c=0, b=1, a=2
         assert results[2] is None
 
-    def test_pipeline_zrem(self, cache: KeyValueCache):
+    def test_pipeline_zrem(self, cache: RespCache):
         cache.zadd("pipe_zset5", {"a": 1, "b": 2, "c": 3})
 
         pipe = cache.pipeline()
@@ -490,7 +490,7 @@ class TestPipelineSortedSetOperations:
         assert results[0] == 1
         assert results[1] == ["a", "c"]
 
-    def test_pipeline_zpopmin_zpopmax(self, cache: KeyValueCache):
+    def test_pipeline_zpopmin_zpopmax(self, cache: RespCache):
         cache.zadd("pipe_zset6", {"a": 1, "b": 2, "c": 3})
 
         pipe = cache.pipeline()
@@ -503,7 +503,7 @@ class TestPipelineSortedSetOperations:
         assert results[1] == [("c", 3.0)]
         assert results[2] == ["b"]
 
-    def test_pipeline_zrangebyscore(self, cache: KeyValueCache):
+    def test_pipeline_zrangebyscore(self, cache: RespCache):
         cache.zadd("pipe_zset7", {"a": 1, "b": 2, "c": 3, "d": 4})
 
         pipe = cache.pipeline()
@@ -514,7 +514,7 @@ class TestPipelineSortedSetOperations:
         assert results[0] == ["b", "c"]
         assert results[1] == ["c", "b"]
 
-    def test_pipeline_zremrangebyscore(self, cache: KeyValueCache):
+    def test_pipeline_zremrangebyscore(self, cache: RespCache):
         cache.zadd("pipe_zset8", {"a": 1, "b": 2, "c": 3, "d": 4})
 
         pipe = cache.pipeline()
@@ -525,7 +525,7 @@ class TestPipelineSortedSetOperations:
         assert results[0] == 2  # removed b and c
         assert results[1] == ["a", "d"]
 
-    def test_pipeline_zremrangebyrank(self, cache: KeyValueCache):
+    def test_pipeline_zremrangebyrank(self, cache: RespCache):
         cache.zadd("pipe_zset9", {"a": 1, "b": 2, "c": 3, "d": 4})
 
         pipe = cache.pipeline()
@@ -536,7 +536,7 @@ class TestPipelineSortedSetOperations:
         assert results[0] == 2  # removed b and c (indexes 1 and 2)
         assert results[1] == ["a", "d"]
 
-    def test_pipeline_zmscore(self, cache: KeyValueCache):
+    def test_pipeline_zmscore(self, cache: RespCache):
         cache.zadd("pipe_zset10", {"a": 1, "b": 2, "c": 3})
 
         pipe = cache.pipeline()
@@ -549,7 +549,7 @@ class TestPipelineSortedSetOperations:
 class TestPipelineVersionSupport:
     """Test version parameter support in pipeline."""
 
-    def test_pipeline_with_version(self, cache: KeyValueCache):
+    def test_pipeline_with_version(self, cache: RespCache):
         pipe = cache.pipeline(version=1)
         pipe.set("versioned_key", "v1_value")
         pipe.get("versioned_key")
@@ -563,7 +563,7 @@ class TestPipelineVersionSupport:
         # Same version should see it
         assert cache.get("versioned_key", version=1) == "v1_value"
 
-    def test_pipeline_version_override(self, cache: KeyValueCache):
+    def test_pipeline_version_override(self, cache: RespCache):
         pipe = cache.pipeline(version=1)
         pipe.set("key_v1", "value1")
         pipe.set("key_v2", "value2", version=2)  # Override version
@@ -586,7 +586,7 @@ class TestPipelineVersionSupport:
 class TestPipelineMixedOperations:
     """Test mixing different operation types in a single pipeline."""
 
-    def test_mixed_data_structures(self, cache: KeyValueCache):
+    def test_mixed_data_structures(self, cache: RespCache):
         pipe = cache.pipeline()
         # Cache operations
         pipe.set("string_key", "string_value")
@@ -626,7 +626,7 @@ class TestPipelineMixedOperations:
 class TestPipelineMissingOperations:
     """Test operations that were missing from initial coverage."""
 
-    def test_pipeline_set_with_timeout(self, cache: KeyValueCache):
+    def test_pipeline_set_with_timeout(self, cache: RespCache):
         pipe = cache.pipeline()
         pipe.set("timeout_key", "value", timeout=100)
         pipe.ttl("timeout_key")
@@ -635,7 +635,7 @@ class TestPipelineMissingOperations:
         assert results[0] is True
         assert 0 < results[1] <= 100
 
-    def test_pipeline_set_nx(self, cache: KeyValueCache):
+    def test_pipeline_set_nx(self, cache: RespCache):
         """Test set with nx (only if not exists)."""
         cache.set("nx_existing", "original")
 
@@ -651,7 +651,7 @@ class TestPipelineMissingOperations:
         assert results[2] == "original"  # unchanged
         assert results[3] == "new_value"
 
-    def test_pipeline_set_xx(self, cache: KeyValueCache):
+    def test_pipeline_set_xx(self, cache: RespCache):
         """Test set with xx (only if exists)."""
         cache.set("xx_existing", "original")
 
@@ -667,7 +667,7 @@ class TestPipelineMissingOperations:
         assert results[2] == "updated"
         assert results[3] is False  # key wasn't created
 
-    def test_pipeline_srandmember(self, cache: KeyValueCache):
+    def test_pipeline_srandmember(self, cache: RespCache):
         cache.sadd("srand_set", "a", "b", "c")
 
         pipe = cache.pipeline()
@@ -679,7 +679,7 @@ class TestPipelineMissingOperations:
         assert len(results[1]) == 2
         assert all(m in {"a", "b", "c"} for m in results[1])
 
-    def test_pipeline_sdiffstore(self, cache: KeyValueCache, client_class: str):
+    def test_pipeline_sdiffstore(self, cache: RespCache, client_class: str):
         # Redis Cluster doesn't support sdiffstore in pipeline mode
         if client_class == "cluster":
             pytest.skip("sdiffstore blocked in cluster pipeline mode")
@@ -696,7 +696,7 @@ class TestPipelineMissingOperations:
         assert results[0] == 1  # Count of elements in result
         assert results[1] == {"a"}
 
-    def test_pipeline_sinterstore(self, cache: KeyValueCache, client_class: str):
+    def test_pipeline_sinterstore(self, cache: RespCache, client_class: str):
         # Redis Cluster doesn't support sinterstore in pipeline mode
         if client_class == "cluster":
             pytest.skip("sinterstore blocked in cluster pipeline mode")
@@ -713,7 +713,7 @@ class TestPipelineMissingOperations:
         assert results[0] == 2  # Count of elements in result
         assert results[1] == {"b", "c"}
 
-    def test_pipeline_sunionstore(self, cache: KeyValueCache, client_class: str):
+    def test_pipeline_sunionstore(self, cache: RespCache, client_class: str):
         # Redis Cluster doesn't support sunionstore in pipeline mode
         if client_class == "cluster":
             pytest.skip("sunionstore blocked in cluster pipeline mode")
@@ -730,7 +730,7 @@ class TestPipelineMissingOperations:
         assert results[0] == 4  # Count of elements in result
         assert results[1] == {"a", "b", "c", "d"}
 
-    def test_pipeline_zrevrange(self, cache: KeyValueCache):
+    def test_pipeline_zrevrange(self, cache: RespCache):
         cache.zadd("zrev_set", {"a": 1, "b": 2, "c": 3, "d": 4})
 
         pipe = cache.pipeline()
@@ -747,7 +747,7 @@ class TestPipelineMissingOperations:
 class TestPipelineCommandCombinations:
     """Test various combinations of commands to verify chaining works correctly."""
 
-    def test_combination_counter_pattern(self, cache: KeyValueCache):
+    def test_combination_counter_pattern(self, cache: RespCache):
         """Test counter pattern: set initial, incr multiple times, get final."""
         pipe = cache.pipeline()
         pipe.set("{combo1}counter", 0)
@@ -765,7 +765,7 @@ class TestPipelineCommandCombinations:
         assert results[4] == 13  # 16 - 3
         assert results[5] == 13  # final value
 
-    def test_combination_list_queue_pattern(self, cache: KeyValueCache):
+    def test_combination_list_queue_pattern(self, cache: RespCache):
         pipe = cache.pipeline()
         pipe.rpush("{combo2}queue", "task1", "task2", "task3")
         pipe.llen("{combo2}queue")
@@ -782,7 +782,7 @@ class TestPipelineCommandCombinations:
         assert results[4] == "task2"  # second pop
         assert results[5] == ["task3"]  # remaining
 
-    def test_combination_hash_user_profile(self, cache: KeyValueCache):
+    def test_combination_hash_user_profile(self, cache: RespCache):
         pipe = cache.pipeline()
         pipe.hset("{combo3}user:1", "name", "Alice")
         pipe.hset("{combo3}user:1", "email", "alice@example.com")
@@ -801,7 +801,7 @@ class TestPipelineCommandCombinations:
         assert results[5]["email"] == "alice@example.com"
         assert results[5]["login_count"] == 1
 
-    def test_combination_sorted_set_leaderboard(self, cache: KeyValueCache):
+    def test_combination_sorted_set_leaderboard(self, cache: RespCache):
         pipe = cache.pipeline()
         pipe.zadd("{combo4}leaderboard", {"alice": 100, "bob": 85, "charlie": 92})
         pipe.zrevrange("{combo4}leaderboard", 0, 2, withscores=True)  # Top 3
@@ -820,7 +820,7 @@ class TestPipelineCommandCombinations:
 class TestPipelineStreamOps:
     """Test pipeline stream operations."""
 
-    def test_pipeline_xpending_range(self, cache: KeyValueCache):
+    def test_pipeline_xpending_range(self, cache: RespCache):
         """Pipeline xpending with range params must use xpending_range."""
         cache.xadd("pipe_pend", {"msg": "test"})
         cache.xgroup_create("pipe_pend", "grp", entry_id="0")
@@ -837,7 +837,7 @@ class TestPipelineStreamOps:
 class TestPipelineReuse:
     """Test that pipelines can be reused after execute() and context manager exit."""
 
-    def test_multiple_execute_calls(self, cache: KeyValueCache):
+    def test_multiple_execute_calls(self, cache: RespCache):
         """Pipeline can be executed multiple times without decoder misalignment."""
         pipe = cache.pipeline()
 
@@ -853,7 +853,7 @@ class TestPipelineReuse:
         results2 = pipe.execute()
         assert results2 == [True, "val2"]
 
-    def test_context_manager_resets_decoders(self, cache: KeyValueCache):
+    def test_context_manager_resets_decoders(self, cache: RespCache):
         """After context manager exit, pipeline decoders are cleared."""
         pipe = cache.pipeline()
 
@@ -870,7 +870,7 @@ class TestPipelineReuse:
         results2 = pipe.execute()
         assert results2 == [True, "ctx_val2"]
 
-    def test_execute_empty_after_previous(self, cache: KeyValueCache):
+    def test_execute_empty_after_previous(self, cache: RespCache):
         """Executing with no commands after a previous execute returns empty list."""
         pipe = cache.pipeline()
         pipe.set("empty_test", "val")
@@ -882,7 +882,7 @@ class TestPipelineReuse:
 class TestPipelineXreadKeyUnprefixing:
     """Test that pipeline xread/xreadgroup return user-facing keys, not prefixed ones."""
 
-    def test_pipeline_xread_returns_original_keys(self, cache: KeyValueCache):
+    def test_pipeline_xread_returns_original_keys(self, cache: RespCache):
         """xread in pipeline should return unprefixed stream names."""
         cache.xadd("pipe_xread_stream", {"msg": "hello"})
 
@@ -895,7 +895,7 @@ class TestPipelineXreadKeyUnprefixing:
         assert "pipe_xread_stream" in results[0]
         assert len(results[0]["pipe_xread_stream"]) == 1
 
-    def test_pipeline_xreadgroup_returns_original_keys(self, cache: KeyValueCache):
+    def test_pipeline_xreadgroup_returns_original_keys(self, cache: RespCache):
         """xreadgroup in pipeline should return unprefixed stream names."""
         cache.xadd("pipe_xrg_stream", {"msg": "world"})
         cache.xgroup_create("pipe_xrg_stream", "pipe_grp", entry_id="0")
@@ -912,7 +912,7 @@ class TestPipelineXreadKeyUnprefixing:
 class TestPipelineNoSpuriousWarnings:
     """Ensure pipeline() does not emit unexpected warnings."""
 
-    def test_default_pipeline_no_warnings(self, cache: KeyValueCache):
+    def test_default_pipeline_no_warnings(self, cache: RespCache):
         """Creating a pipeline with default args should not emit warnings.
 
         Regression: cluster pipelines warned about transactions on every call,

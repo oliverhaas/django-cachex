@@ -8,7 +8,7 @@ from django.test import override_settings
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from django_cachex.cache import KeyValueCache
+    from django_cachex.cache import RespCache
     from tests.fixtures.containers import RedisContainerInfo, SentinelContainerInfo
 
 # Available compressors (None means no compression)
@@ -320,7 +320,7 @@ def _make_cache(
     serializer_val: str | None,
     native_parser_val: bool = False,
     driver_val: str = "py",
-) -> Iterator[KeyValueCache]:
+) -> Iterator[RespCache]:
     """Core cache creation logic shared by all cache fixtures."""
     redis_host = redis_container.host
     redis_port = redis_container.port
@@ -343,7 +343,7 @@ def _make_cache(
             from django.core.cache import cache as default_cache
 
             default_cache.flush_db()  # Flush DB before test
-            yield cast("KeyValueCache", default_cache)
+            yield cast("RespCache", default_cache)
             default_cache.flush_db()  # Flush DB after test
         return
 
@@ -363,7 +363,7 @@ def _make_cache(
             from django.core.cache import cache as default_cache
 
             default_cache.flush_db()  # Flush DB before test
-            yield cast("KeyValueCache", default_cache)
+            yield cast("RespCache", default_cache)
             default_cache.flush_db()  # Flush DB after test
         return
 
@@ -385,7 +385,7 @@ def _make_cache(
         from django.core.cache import cache as default_cache
 
         default_cache.flush_db()  # Flush DB before test
-        yield cast("KeyValueCache", default_cache)
+        yield cast("RespCache", default_cache)
         default_cache.flush_db()  # Flush DB after test
 
 
@@ -396,7 +396,7 @@ def cache(
     driver: str,
     redis_container: RedisContainerInfo,
     request: pytest.FixtureRequest,
-) -> Iterator[KeyValueCache]:
+) -> Iterator[RespCache]:
     """Django cache fixture parametrized by client_class × sentinel_mode × driver.
 
     If the test also requests `compressor`, `serializer`, or `native_parser` fixtures,
@@ -436,7 +436,7 @@ def _make_stampede_cache(
     request: pytest.FixtureRequest,
     backend_val: str,
     driver_val: str = "py",
-) -> Iterator[KeyValueCache]:
+) -> Iterator[RespCache]:
     """Create a cache with stampede prevention enabled."""
     redis_host = redis_container.host
     redis_port = redis_container.port
@@ -468,7 +468,7 @@ def _make_stampede_cache(
         from django.core.cache import cache as default_cache
 
         default_cache.flush_db()
-        yield cast("KeyValueCache", default_cache)
+        yield cast("RespCache", default_cache)
         default_cache.flush_db()
 
 
@@ -478,7 +478,7 @@ def stampede_cache(
     driver: str,
     redis_container: RedisContainerInfo,
     request: pytest.FixtureRequest,
-) -> Iterator[KeyValueCache]:
+) -> Iterator[RespCache]:
     """Django cache fixture with stampede prevention enabled.
 
     Parametrized by client_class × driver.

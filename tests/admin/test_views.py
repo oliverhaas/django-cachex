@@ -12,7 +12,7 @@ from django.urls import reverse
 from django_cachex.admin.models import Key
 
 if TYPE_CHECKING:
-    from django_cachex.cache import KeyValueCache
+    from django_cachex.cache import RespCache
 
 
 def _cache_list_url() -> str:
@@ -219,7 +219,7 @@ class TestKeyListView:
     def test_key_list_bulk_delete(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("bulk:delete:1", "value1")
         test_cache.set("bulk:delete:2", "value2")
@@ -247,7 +247,7 @@ class TestKeyListView:
     def test_key_list_shows_string_keys(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("test:key1", "value1")
         test_cache.set("test:key2", "value2")
@@ -261,7 +261,7 @@ class TestKeyListView:
     def test_key_list_empty_pattern(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("mykey", "myvalue")
 
@@ -272,7 +272,7 @@ class TestKeyListView:
     def test_key_list_shows_type_column(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """Key search should show type column with actual type values in table cells."""
         from bs4 import BeautifulSoup
@@ -305,7 +305,7 @@ class TestKeyListView:
     def test_key_list_shows_ttl_column(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("ttl:column:test", "value", timeout=300)
 
@@ -319,7 +319,7 @@ class TestKeyListView:
     def test_key_list_shows_size_column(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """Key search should show size column with actual size values in table cells."""
         from bs4 import BeautifulSoup
@@ -350,7 +350,7 @@ class TestKeyListView:
     def test_key_list_wildcard_pattern(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("wild:card:one", "value1")
         test_cache.set("wild:card:two", "value2")
@@ -369,7 +369,7 @@ class TestKeyListView:
     def test_key_list_contains_pattern(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """Key search without wildcards should do contains search (Django-style)."""
         test_cache.set("session:123", "value1")
@@ -392,7 +392,7 @@ class TestKeyListView:
     def test_key_list_pagination(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         # Create enough keys to trigger pagination (default is usually 100)
         for i in range(150):
@@ -408,7 +408,7 @@ class TestKeyListView:
     def test_key_list_results_count(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("count:key:1", "value1")
         test_cache.set("count:key:2", "value2")
@@ -424,7 +424,7 @@ class TestKeyListView:
     def test_key_list_type_filter(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """Type filter should only show keys of the selected type."""
         test_cache.set("typefilter:str", "value")
@@ -442,7 +442,7 @@ class TestKeyListView:
     def test_key_list_cache_filter_shown(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         url = _key_list_url("default")
         response = admin_client.get(url)
@@ -455,7 +455,7 @@ class TestKeyListView:
     def test_key_list_cache_filter_switches_cache(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         from django.core.cache import caches
 
@@ -470,7 +470,7 @@ class TestKeyListView:
     def test_key_list_no_cache_param_defaults_to_first(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """Key list without ?cache= should default to the first configured cache."""
         url = reverse("admin:django_cachex_key_changelist")
@@ -487,7 +487,7 @@ class TestKeyDetailView:
     def test_string_key_detail(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("string:test", "hello world")
 
@@ -499,7 +499,7 @@ class TestKeyDetailView:
     def test_dict_key_detail(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """Detail view should work for dict/JSON keys (stored as string)."""
         test_cache.set("dict:test", {"name": "Alice", "age": 30})
@@ -512,7 +512,7 @@ class TestKeyDetailView:
     def test_list_key_detail(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.lpush("list:test", "item1", "item2", "item3")
 
@@ -525,7 +525,7 @@ class TestKeyDetailView:
     def test_set_key_detail(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.sadd("set:test", "member1", "member2", "member3")
 
@@ -537,7 +537,7 @@ class TestKeyDetailView:
     def test_hash_key_detail(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.hset("hash:test", "field1", "value1")
         test_cache.hset("hash:test", "field2", "value2")
@@ -550,7 +550,7 @@ class TestKeyDetailView:
     def test_zset_key_detail(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.zadd("zset:test", {"member1": 1.0, "member2": 2.0})
 
@@ -570,7 +570,7 @@ class TestKeyDetailView:
     def test_stream_key_detail(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.xadd("stream:detail:test", {"field1": "value1"})
         test_cache.xadd("stream:detail:test", {"field2": "value2"})
@@ -592,7 +592,7 @@ class TestKeyDetailView:
     def test_key_detail_page_title(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("title:test", "value")
 
@@ -606,7 +606,7 @@ class TestKeyDetailView:
     def test_key_detail_help_button(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """Help button on key detail should return 200."""
         test_cache.set("help:test", "value")
@@ -618,7 +618,7 @@ class TestKeyDetailView:
     def test_key_detail_shows_raw_key(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("rawkey:test", "value")
 
@@ -632,7 +632,7 @@ class TestKeyDetailView:
     def test_key_detail_shows_cache_name(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("cache:name:test", "value")
 
@@ -646,7 +646,7 @@ class TestKeyDetailView:
     def test_key_detail_shows_type_badge(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.rpush("type:badge:test", "item1", "item2", "item3")
 
@@ -662,7 +662,7 @@ class TestKeyDetailView:
     def test_key_detail_shows_ttl(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("ttl:detail:test", "value", timeout=300)
 
@@ -676,7 +676,7 @@ class TestKeyDetailView:
     def test_key_detail_shows_no_expiry(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("noexpiry:test", "value", timeout=None)
 
@@ -691,7 +691,7 @@ class TestKeyDetailView:
     def test_string_value_save_form_structure(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("form:structure:test", "original value")
 
@@ -709,7 +709,7 @@ class TestKeyDetailView:
     def test_string_value_save_button_updates_value(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("save:button:test", "original value")
 
@@ -729,7 +729,7 @@ class TestKeyDetailView:
     def test_string_ttl_input_has_its_own_form(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("ttl:form:test", "value", timeout=300)
 
@@ -746,7 +746,7 @@ class TestKeyDetailView:
     def test_string_set_ttl_action_sets_ttl(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """Setting TTL via set_ttl action should set the expiry."""
         test_cache.set("ttl:save:test", "value", timeout=None)
@@ -768,7 +768,7 @@ class TestKeyDetailView:
     def test_string_set_empty_ttl_persists(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """Setting empty TTL via set_ttl action should persist (no expiry)."""
         test_cache.set("ttl:persist:test", "original", timeout=300)
@@ -789,7 +789,7 @@ class TestKeyDetailView:
     def test_list_ttl_update_sets_ttl(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.rpush("list:ttl:test", "item1", "item2")
 
@@ -810,7 +810,7 @@ class TestKeyDetailView:
     def test_list_empty_ttl_persists(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.rpush("list:persist:test", "item1")
         # Set an initial TTL
@@ -832,7 +832,7 @@ class TestKeyDetailView:
     def test_json_serializable_string_is_editable(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("json:string:test", "hello world")
 
@@ -849,7 +849,7 @@ class TestKeyDetailView:
     def test_json_serializable_dict_is_editable(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("json:dict:test", {"name": "Alice", "age": 30})
 
@@ -868,7 +868,7 @@ class TestKeyDetailView:
     def test_json_serializable_list_value_is_editable(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("json:list:value:test", [1, 2, 3, "four"])
 
@@ -885,7 +885,7 @@ class TestKeyDetailView:
     def test_json_indicator_shown_for_dict(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("json:indicator:test", {"type": "example"})
 
@@ -930,7 +930,7 @@ class TestKeyAddView:
     def test_add_key_with_timeout(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         # Create string key via key_detail update action
         url = _key_detail_create_url("default", "timeout:test:key", "string")
@@ -964,7 +964,7 @@ class TestKeyAddView:
     def test_add_key_post_string(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """Add key view should create string keys via update action."""
         # Create string key via key_detail update action
@@ -985,7 +985,7 @@ class TestKeyAddView:
     def test_add_key_post_json(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         # Create string key via key_detail update action
         url = _key_detail_create_url("default", "new:json:key", "string")
@@ -1005,7 +1005,7 @@ class TestKeyAddView:
     def test_add_key_save_and_add_another(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """Key add form should redirect to key_detail in create mode."""
         # POST to key_add to get redirect to key_detail
@@ -1026,7 +1026,7 @@ class TestKeyAddView:
     def test_add_key_type_list(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """Add key should create list keys via list_rpush action."""
         # Create list key via key_detail list_rpush action
@@ -1050,7 +1050,7 @@ class TestKeyAddView:
     def test_add_key_type_set(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """Add key should create set keys via set_sadd action."""
         # Create set key via key_detail set_sadd action
@@ -1074,7 +1074,7 @@ class TestKeyAddView:
     def test_add_key_type_hash(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """Add key should create hash keys via hash_hset action."""
         # Create hash key via key_detail hash_hset action
@@ -1099,7 +1099,7 @@ class TestKeyAddView:
     def test_add_key_type_zset(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """Add key should create sorted set keys via zset_zadd action."""
         # Create sorted set key via key_detail zset_zadd action
@@ -1125,7 +1125,7 @@ class TestKeyAddView:
 class TestKeyOperations:
     """Tests for key operations (delete, edit, TTL)."""
 
-    def test_delete_key(self, admin_client: Client, test_cache: KeyValueCache):
+    def test_delete_key(self, admin_client: Client, test_cache: RespCache):
         test_cache.set("delete:me", "goodbye")
 
         url = _key_detail_url("default", "delete:me")
@@ -1138,7 +1138,7 @@ class TestKeyOperations:
     def test_edit_key_value(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("edit:me", "old value")
 
@@ -1155,7 +1155,7 @@ class TestKeyOperations:
     def test_list_lrem(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.rpush("lrem:test", "item1", "item2", "item3", "item2")
 
@@ -1173,7 +1173,7 @@ class TestKeyOperations:
     def test_list_ltrim(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.rpush("ltrim:test", "a", "b", "c", "d", "e")
 
@@ -1191,7 +1191,7 @@ class TestKeyOperations:
     def test_hash_field_inline_edit(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.hset("hash:edit", "name", "old_value")
 
@@ -1208,7 +1208,7 @@ class TestKeyOperations:
     def test_hash_hdel(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """HDEL action should delete a field from the hash."""
         test_cache.hset("hash:hdel", "field1", "value1")
@@ -1231,7 +1231,7 @@ class TestKeyOperations:
     def test_list_lpop(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.rpush("lpop:test", "a", "b", "c")
 
@@ -1246,7 +1246,7 @@ class TestKeyOperations:
     def test_list_lpop_with_count(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.rpush("lpop:count:test", "a", "b", "c", "d", "e")
 
@@ -1264,7 +1264,7 @@ class TestKeyOperations:
     def test_list_rpop(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.rpush("rpop:test", "a", "b", "c")
 
@@ -1279,7 +1279,7 @@ class TestKeyOperations:
     def test_list_rpop_with_count(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.rpush("rpop:count:test", "a", "b", "c", "d", "e")
 
@@ -1297,7 +1297,7 @@ class TestKeyOperations:
     def test_list_lpush(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.rpush("lpush:test", "b", "c")
 
@@ -1315,7 +1315,7 @@ class TestKeyOperations:
     def test_list_rpush(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.rpush("rpush:test", "a", "b")
 
@@ -1333,7 +1333,7 @@ class TestKeyOperations:
     def test_set_sadd(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.sadd("sadd:test", "a", "b")
 
@@ -1351,7 +1351,7 @@ class TestKeyOperations:
     def test_set_srem(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.sadd("srem:test", "a", "b", "c")
 
@@ -1369,7 +1369,7 @@ class TestKeyOperations:
     def test_set_spop(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.sadd("spop:test", "only_member")
 
@@ -1384,7 +1384,7 @@ class TestKeyOperations:
     def test_set_spop_with_count(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.sadd("spop:count:test", "a", "b", "c", "d", "e")
 
@@ -1402,7 +1402,7 @@ class TestKeyOperations:
     def test_zset_zadd(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """ZADD action should add member with score to sorted set."""
         test_cache.zadd("zadd:test", {"a": 1.0})
@@ -1421,7 +1421,7 @@ class TestKeyOperations:
     def test_zset_zadd_nx_flag(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """ZADD action with NX flag should only add new members, not update existing."""
         test_cache.zadd("zadd:nx:test", {"a": 1.0})
@@ -1452,7 +1452,7 @@ class TestKeyOperations:
     def test_zset_zadd_xx_flag(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """ZADD action with XX flag should only update existing members."""
         test_cache.zadd("zadd:xx:test", {"a": 1.0})
@@ -1483,7 +1483,7 @@ class TestKeyOperations:
     def test_zset_zadd_gt_flag(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """ZADD action with GT flag should only update if new score > current."""
         test_cache.zadd("zadd:gt:test", {"a": 10.0})
@@ -1514,7 +1514,7 @@ class TestKeyOperations:
     def test_zset_zadd_lt_flag(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """ZADD action with LT flag should only update if new score < current."""
         test_cache.zadd("zadd:lt:test", {"a": 10.0})
@@ -1545,7 +1545,7 @@ class TestKeyOperations:
     def test_zset_zrem(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.zadd("zrem:test", {"a": 1.0, "b": 2.0, "c": 3.0})
 
@@ -1563,7 +1563,7 @@ class TestKeyOperations:
     def test_zset_zpopmin(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.zadd("zpopmin:test", {"a": 1.0, "b": 2.0, "c": 3.0})
 
@@ -1578,7 +1578,7 @@ class TestKeyOperations:
     def test_zset_zpopmax(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.zadd("zpopmax:test", {"a": 1.0, "b": 2.0, "c": 3.0})
 
@@ -1593,7 +1593,7 @@ class TestKeyOperations:
     def test_zset_score_inline_edit(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.zadd("zscore:test", {"a": 1.0, "b": 2.0})
 
@@ -1611,7 +1611,7 @@ class TestKeyOperations:
     def test_set_ttl(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("ttl:test", "value")
 
@@ -1629,7 +1629,7 @@ class TestKeyOperations:
     def test_persist(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("persist:test", "value", timeout=300)
 
@@ -1644,7 +1644,7 @@ class TestKeyOperations:
     def test_stream_xadd(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """XADD action should add an entry to the stream."""
         # Create a stream with initial entry via high-level API (key gets prefixed)
@@ -1667,7 +1667,7 @@ class TestKeyOperations:
     def test_stream_xdel(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """XDEL action should delete an entry from the stream."""
         # Create a stream with multiple entries via high-level API
@@ -1691,7 +1691,7 @@ class TestKeyOperations:
     def test_stream_xtrim(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """XTRIM action should execute successfully.
 
@@ -1725,7 +1725,7 @@ class TestFlushCache:
     def test_flush_cache(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         test_cache.set("flush:key1", "value1")
         test_cache.set("flush:key2", "value2")
@@ -1749,7 +1749,7 @@ class TestKeyDetailCreateMode:
     def test_create_mode_returns_200(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """Create mode should return 200, not redirect to key list."""
         # Request key_detail for non-existing key WITH type param
@@ -1762,7 +1762,7 @@ class TestKeyDetailCreateMode:
     def test_create_mode_shows_message(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         url = _key_detail_create_url("default", "newkey:message", "list")
         response = admin_client.get(url)
@@ -1775,7 +1775,7 @@ class TestKeyDetailCreateMode:
     def test_create_mode_shows_operations(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         url = _key_detail_create_url("default", "newkey:ops", "list")
         response = admin_client.get(url)
@@ -1788,7 +1788,7 @@ class TestKeyDetailCreateMode:
     def test_create_mode_list_shows_push_form(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         url = _key_detail_create_url("default", "newkey:list:push", "list")
         response = admin_client.get(url)
@@ -1802,7 +1802,7 @@ class TestKeyDetailCreateMode:
     def test_create_mode_set_shows_add_form(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         url = _key_detail_create_url("default", "newkey:set:add", "set")
         response = admin_client.get(url)
@@ -1814,7 +1814,7 @@ class TestKeyDetailCreateMode:
     def test_create_mode_hash_shows_set_form(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         url = _key_detail_create_url("default", "newkey:hash:set", "hash")
         response = admin_client.get(url)
@@ -1826,7 +1826,7 @@ class TestKeyDetailCreateMode:
     def test_create_mode_zset_shows_add_form(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         url = _key_detail_create_url("default", "newkey:zset:add", "zset")
         response = admin_client.get(url)
@@ -1838,7 +1838,7 @@ class TestKeyDetailCreateMode:
     def test_create_mode_string_shows_value_form(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         url = _key_detail_create_url("default", "newkey:string:edit", "string")
         response = admin_client.get(url)
@@ -1851,7 +1851,7 @@ class TestKeyDetailCreateMode:
     def test_create_mode_operation_creates_key(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         # Make sure key doesn't exist
         assert test_cache.get("createkey:list") is None
@@ -1875,7 +1875,7 @@ class TestKeyDetailCreateMode:
     def test_create_mode_operation_redirects_to_key_detail(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """After creating key via operation, should redirect to key detail (not key list)."""
         url = _key_detail_create_url("default", "createkey:redirect", "list")
@@ -1897,7 +1897,7 @@ class TestKeyDetailCreateMode:
     def test_create_mode_without_type_redirects(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         """Non-existing key without type param should redirect to key list."""
         # Use the regular key_detail URL (without type param)
@@ -1934,7 +1934,7 @@ class TestCacheDetailView:
     def test_cache_detail_displays_configuration(
         self,
         admin_client: Client,
-        test_cache: KeyValueCache,
+        test_cache: RespCache,
     ):
         url = _cache_detail_url("default")
         response = admin_client.get(url)
@@ -2387,7 +2387,7 @@ class TestUndecodableValueResilience:
     BROKEN_KEY = "broken:undecodable"
 
     @staticmethod
-    def _inject_broken_value(test_cache: KeyValueCache) -> None:
+    def _inject_broken_value(test_cache: RespCache) -> None:
         """Write garbage bytes directly to Redis under the cache's key prefix.
 
         Bypasses the cache's serializer/compressor pipeline so reading via

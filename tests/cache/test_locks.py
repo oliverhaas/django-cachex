@@ -6,20 +6,20 @@ from typing import TYPE_CHECKING
 import pytest
 
 if TYPE_CHECKING:
-    from django_cachex.cache import KeyValueCache
+    from django_cachex.cache import RespCache
 
 
 class TestBasicLockOperations:
     """Tests for basic lock acquisition and release."""
 
-    def test_acquire_and_release_blocking_lock(self, cache: KeyValueCache):
+    def test_acquire_and_release_blocking_lock(self, cache: RespCache):
         resource_lock = cache.lock("resource_a")
         assert resource_lock.acquire(blocking=True) is True
         assert cache.has_key("resource_a") is True
         resource_lock.release()
         assert cache.has_key("resource_a") is False
 
-    def test_nonblocking_lock_prevents_double_acquire(self, cache: KeyValueCache):
+    def test_nonblocking_lock_prevents_double_acquire(self, cache: RespCache):
         first_lock = cache.lock("resource_b")
         assert first_lock.acquire(blocking=False) is True
 
@@ -30,7 +30,7 @@ class TestBasicLockOperations:
         first_lock.release()
         assert cache.has_key("resource_b") is False
 
-    def test_lock_context_manager(self, cache: KeyValueCache):
+    def test_lock_context_manager(self, cache: RespCache):
         lock = cache.lock("ctx_resource", timeout=5)
         with lock:
             assert cache.has_key("ctx_resource") is True
@@ -40,7 +40,7 @@ class TestBasicLockOperations:
 class TestLockExtend:
     """Tests for extending the TTL of a held lock."""
 
-    def test_extend_increases_ttl(self, cache: KeyValueCache):
+    def test_extend_increases_ttl(self, cache: RespCache):
         lock = cache.lock("extend_resource", timeout=2)
         assert lock.acquire() is True
         try:
@@ -59,7 +59,7 @@ class TestLockExtend:
 class TestLockRelease:
     """Tests for the release contract."""
 
-    def test_double_release_raises(self, cache: KeyValueCache):
+    def test_double_release_raises(self, cache: RespCache):
         from redis.exceptions import LockError as RedisLockError
 
         from django_cachex.lock import LockError
@@ -77,7 +77,7 @@ class TestLockRelease:
 class TestCrossThreadLockRelease:
     """Tests for releasing locks from different threads."""
 
-    def test_release_lock_from_different_thread(self, cache: KeyValueCache):
+    def test_release_lock_from_different_thread(self, cache: RespCache):
         shared_lock = cache.lock("shared_resource", thread_local=False)
         assert shared_lock.acquire(blocking=True) is True
 

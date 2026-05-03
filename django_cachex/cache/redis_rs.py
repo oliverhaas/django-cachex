@@ -10,24 +10,24 @@ from django_cachex.adapters.redis_rs import (
     RedisRsClusterAdapter,
     RedisRsSentinelAdapter,
 )
-from django_cachex.cache.key_value import KeyValueCache
+from django_cachex.cache.resp import RespCache
 
 
-class RedisRsCache(KeyValueCache):
+class RedisRsCache(RespCache):
     """Django cache backend using the Rust driver against a single node."""
 
     _cachex_support = "cachex"
     _adapter_class = RedisRsAdapter
 
 
-class RedisRsClusterCache(KeyValueCache):
+class RedisRsClusterCache(RespCache):
     """Rust-driven Valkey/Redis cluster backend."""
 
     _cachex_support = "cachex"
     _adapter_class = RedisRsClusterAdapter
 
 
-class RedisRsSentinelCache(KeyValueCache):
+class RedisRsSentinelCache(RespCache):
     """Rust-driven sentinel-managed Valkey/Redis backend."""
 
     _cachex_support = "cachex"

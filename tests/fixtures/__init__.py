@@ -1,6 +1,6 @@
 """Test fixtures for django-cachex."""
 
-from django_cachex.cache import KeyValueCache
+from django_cachex.cache import RespCache
 from tests.fixtures.cache import (
     cache,
     client_class,
@@ -28,9 +28,9 @@ from tests.fixtures.containers import (
 from tests.fixtures.settings import settings
 
 __all__ = [
-    "KeyValueCache",
     "RedisContainerInfo",
     "ReplicaSetContainerInfo",
+    "RespCache",
     "SentinelContainerInfo",
     "cache",
     "client_class",

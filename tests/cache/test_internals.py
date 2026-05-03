@@ -19,7 +19,7 @@ from django.test import override_settings
 from django_cachex.adapters import RedisPyAdapter
 
 if TYPE_CHECKING:
-    from django_cachex.cache import KeyValueCache
+    from django_cachex.cache import RespCache
     from tests.fixtures.containers import RedisContainerInfo
 
 
@@ -30,14 +30,14 @@ class TestRedisCacheInternals:
     redis cache backend (django.core.cache.backends.redis.RedisCache).
     """
 
-    def test_incr_write_connection(self, cache: KeyValueCache):
+    def test_incr_write_connection(self, cache: RespCache):
         cache.set("number", 42)
         with mock.patch.object(cache.adapter, "get_client", wraps=cache.adapter.get_client) as mocked_get_client:
             cache.incr("number")
             # incr should use write=True
             assert mocked_get_client.call_args.kwargs.get("write") is True
 
-    def test_adapter_class(self, cache: KeyValueCache):
+    def test_adapter_class(self, cache: RespCache):
         # Check _adapter_class attribute points to a redis-py adapter (any topology)
         from django_cachex.adapters import RedisPyClusterAdapter, RedisPySentinelAdapter
         from django_cachex.adapters.redis_py import _RedisDriverMixin
@@ -49,7 +49,7 @@ class TestRedisCacheInternals:
         # Check adapter is an instance of the configured class
         assert isinstance(cache.adapter, cache._adapter_class)
 
-    def test_get_backend_timeout_method(self, cache: KeyValueCache):
+    def test_get_backend_timeout_method(self, cache: RespCache):
         # Positive timeout returns as-is
         positive_timeout = 10
         positive_backend_timeout = cache.get_backend_timeout(positive_timeout)
@@ -65,7 +65,7 @@ class TestRedisCacheInternals:
         none_backend_timeout = cache.get_backend_timeout(none_timeout)
         assert none_backend_timeout is None
 
-    def test_get_connection_pool_index(self, cache: KeyValueCache):
+    def test_get_connection_pool_index(self, cache: RespCache):
         # Write always returns index 0 (primary)
         pool_index = cache.adapter._get_connection_pool_index(write=True)
         assert pool_index == 0
@@ -78,7 +78,7 @@ class TestRedisCacheInternals:
             assert pool_index >= 0
             assert pool_index < len(cache.adapter._servers)
 
-    def test_get_connection_pool(self, cache: KeyValueCache):
+    def test_get_connection_pool(self, cache: RespCache):
         import redis
 
         # Write pool
@@ -89,7 +89,7 @@ class TestRedisCacheInternals:
         pool = cache.adapter._get_connection_pool(write=False)
         assert isinstance(pool, redis.ConnectionPool)
 
-    def test_get_client(self, cache: KeyValueCache):
+    def test_get_client(self, cache: RespCache):
         """Test Redis client creation returns redis.Redis or redis.RedisCluster instance."""
         import redis
 
@@ -97,7 +97,7 @@ class TestRedisCacheInternals:
         # Can be Redis (standalone/sentinel) or RedisCluster (cluster mode)
         assert isinstance(client, (redis.Redis, redis.RedisCluster))
 
-    def test_serializer_dumps(self, cache: KeyValueCache):
+    def test_serializer_dumps(self, cache: RespCache):
         """Test serialization: integers stay as-is, bools/strings become bytes.
 
         Note: We test via the encode() method which handles the integer optimization.
@@ -151,7 +151,7 @@ class TestRedisCacheInternals:
 class TestRedisAdapterMethods:
     """Additional tests for CacheClient method behavior."""
 
-    def test_get_client_write_vs_read(self, cache: KeyValueCache):
+    def test_get_client_write_vs_read(self, cache: RespCache):
         # Both should return valid Redis clients
         write_client = cache.adapter.get_client(write=True)
         read_client = cache.adapter.get_client(write=False)
@@ -159,7 +159,7 @@ class TestRedisAdapterMethods:
         assert write_client is not None
         assert read_client is not None
 
-    def test_connection_pool_caching(self, cache: KeyValueCache):
+    def test_connection_pool_caching(self, cache: RespCache):
         pool1 = cache.adapter._get_connection_pool(write=True)
         pool2 = cache.adapter._get_connection_pool(write=True)
 
@@ -203,7 +203,7 @@ class TestRedisAdapterMethods:
 class TestConnectionCleanup:
     """Tests for connection pool cleanup behavior."""
 
-    def test_sync_pool_is_cached_per_instance(self, cache: KeyValueCache):
+    def test_sync_pool_is_cached_per_instance(self, cache: RespCache):
         # Get pool twice - should be same object
         pool1 = cache.adapter._get_connection_pool(write=True)
         pool2 = cache.adapter._get_connection_pool(write=True)
@@ -214,7 +214,7 @@ class TestConnectionCleanup:
         assert cache.adapter._pools[0] is pool1
 
     @pytest.mark.asyncio
-    async def test_async_pool_is_cached_per_event_loop(self, cache: KeyValueCache):
+    async def test_async_pool_is_cached_per_event_loop(self, cache: RespCache):
         """Test that async pools are cached per event loop."""
         # Skip if async not supported (cluster/sentinel don't have async yet)
         if cache.adapter._async_pool_class is None:
@@ -285,7 +285,7 @@ class TestConnectionCleanup:
         with suppress(KeyError, AttributeError):
             del caches["default"]
 
-    def test_close_is_noop(self, cache: KeyValueCache):
+    def test_close_is_noop(self, cache: RespCache):
         """Test close() is a no-op — pools persist after close."""
         # Create a pool first
         pool = cache.adapter._get_connection_pool(write=True)
@@ -297,7 +297,7 @@ class TestConnectionCleanup:
         assert cache.adapter._pools[0] is pool
 
     @pytest.mark.asyncio
-    async def test_aclose_is_noop(self, cache: KeyValueCache):
+    async def test_aclose_is_noop(self, cache: RespCache):
         """Test aclose() is a no-op — async pools persist after aclose."""
         if cache.adapter._async_pool_class is None:
             pytest.skip("Async not supported for this client type")
@@ -318,7 +318,7 @@ class TestConnectionCleanup:
     @pytest.mark.asyncio
     async def test_async_pool_shared_across_per_task_client_instances(
         self,
-        cache: KeyValueCache,
+        cache: RespCache,
     ) -> None:
         """Regression: a fresh the adapter reuses the existing pool.
 
@@ -408,7 +408,7 @@ class TestConnectionCleanup:
             del caches["default"]
 
     @pytest.mark.asyncio
-    async def test_async_pool_reuse_after_operations(self, cache: KeyValueCache):
+    async def test_async_pool_reuse_after_operations(self, cache: RespCache):
         # Skip if async not supported (cluster/sentinel don't have async yet)
         if cache.adapter._async_pool_class is None:
             pytest.skip("Async not supported for this client type")
@@ -433,7 +433,7 @@ class TestConnectionCleanup:
         await cache.adelete("test_reuse_2")
 
     @pytest.mark.asyncio
-    async def test_mixed_sync_async_operations(self, cache: KeyValueCache):
+    async def test_mixed_sync_async_operations(self, cache: RespCache):
         # Skip if async not supported (cluster/sentinel don't have async yet)
         if cache.adapter._async_pool_class is None:
             pytest.skip("Async not supported for this client type")

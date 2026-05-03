@@ -7,7 +7,7 @@ from django.core.cache import caches
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from django_cachex.cache import KeyValueCache
+    from django_cachex.cache import RespCache
 
 
 def make_key(key: str, prefix: str, version: str) -> str:
@@ -19,7 +19,7 @@ def reverse_key(key: str) -> str:
 
 
 @pytest.fixture
-def key_prefix_cache(cache: KeyValueCache, settings) -> KeyValueCache:
+def key_prefix_cache(cache: RespCache, settings) -> RespCache:
     caches_setting = copy.deepcopy(settings.CACHES)
     caches_setting["default"]["KEY_PREFIX"] = "*"
     settings.CACHES = caches_setting
@@ -27,17 +27,17 @@ def key_prefix_cache(cache: KeyValueCache, settings) -> KeyValueCache:
 
 
 @pytest.fixture
-def with_prefix_cache() -> Iterable[KeyValueCache]:
-    with_prefix = cast("KeyValueCache", caches["with_prefix"])
+def with_prefix_cache() -> Iterable[RespCache]:
+    with_prefix = cast("RespCache", caches["with_prefix"])
     yield with_prefix
     with_prefix.clear()
 
 
-class TestDjangoKeyValueCacheEscapePrefix:
+class TestDjangoRespCacheEscapePrefix:
     def test_delete_pattern(
         self,
-        key_prefix_cache: KeyValueCache,
-        with_prefix_cache: KeyValueCache,
+        key_prefix_cache: RespCache,
+        with_prefix_cache: RespCache,
     ):
         key_prefix_cache.set("a", "1")
         with_prefix_cache.set("b", "2")
@@ -47,14 +47,14 @@ class TestDjangoKeyValueCacheEscapePrefix:
 
     def test_iter_keys(
         self,
-        key_prefix_cache: KeyValueCache,
-        with_prefix_cache: KeyValueCache,
+        key_prefix_cache: RespCache,
+        with_prefix_cache: RespCache,
     ):
         key_prefix_cache.set("a", "1")
         with_prefix_cache.set("b", "2")
         assert list(key_prefix_cache.iter_keys("*")) == ["a"]
 
-    def test_keys(self, key_prefix_cache: KeyValueCache, with_prefix_cache: KeyValueCache):
+    def test_keys(self, key_prefix_cache: RespCache, with_prefix_cache: RespCache):
         key_prefix_cache.set("a", "1")
         with_prefix_cache.set("b", "2")
         keys = key_prefix_cache.keys("*")
@@ -62,7 +62,7 @@ class TestDjangoKeyValueCacheEscapePrefix:
         assert "b" not in keys
 
 
-def test_custom_key_function(cache: KeyValueCache, settings):
+def test_custom_key_function(cache: RespCache, settings):
     from redis.cluster import RedisCluster
 
     caches_setting = copy.deepcopy(settings.CACHES)

@@ -37,7 +37,7 @@ CACHES = {
 - Cache stampede prevention (TTL-based XFetch).
 - Two composite backends: `StreamCache` (cross-pod stream-synchronized in-memory cache) and `TieredCache` (L1/L2 with TTL propagation).
 - Django `LocMemCache` and `DatabaseCache` extensions with the same data-structure ops and admin support.
-- Optional Rust I/O driver (PyO3 + tokio + redis-rs) under the same `KeyValueCache` API. Free-threaded CPython (3.14t) supported.
+- Optional Rust I/O driver (PyO3 + tokio + redis-rs) under the same `RespCache` API. Free-threaded CPython (3.14t) supported.
 - Django admin UI for browsing keys, inspecting values, editing, and flushing — see below.
 
 ## Cache Admin

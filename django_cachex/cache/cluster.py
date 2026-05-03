@@ -7,16 +7,16 @@ Driver-agnostic cluster behavior; per-driver concrete subclasses live in
 
 from typing import TYPE_CHECKING
 
-from django_cachex.cache.key_value import KeyValueCache
+from django_cachex.cache.resp import RespCache
 
 if TYPE_CHECKING:
     from django_cachex.adapters.pipeline import Pipeline
 
 
-class KeyValueClusterCache(KeyValueCache):
+class KeyValueClusterCache(RespCache):
     """Cluster cache backend base class.
 
-    Extends ``KeyValueCache`` with cluster-specific behaviour (no
+    Extends ``RespCache`` with cluster-specific behaviour (no
     transactions on pipelines). Subclasses set ``_adapter_class`` to
     their specific cluster adapter.
     """

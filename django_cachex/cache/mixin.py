@@ -16,7 +16,7 @@ Sanctioned users:
 
 For multi-process or production-throughput cachex usage, prefer a
 backend that implements ops natively against an atomic primitive:
-``KeyValueCache`` (Redis/Valkey via adapter; native ops + EVAL),
+``RespCache`` (Redis/Valkey via adapter; native ops + EVAL),
 or ``DatabaseCache`` (compound ops in a transaction).
 """
 

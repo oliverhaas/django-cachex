@@ -1,7 +1,7 @@
 """Adapters for the ``valkey-py`` driver.
 
 Three topologies live here, each a self-contained subclass of
-:class:`~django_cachex.adapters.protocols.KeyValueAdapterProtocol`:
+:class:`~django_cachex.adapters.protocols.RespAdapterProtocol`:
 
 - :class:`ValkeyPyAdapter` — single-node / replicated. Carries the full
   command surface against a redis-py-API-compatible client and the
@@ -31,7 +31,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
 
-from django_cachex.adapters.protocols import KeyValueAdapterProtocol, KeyValuePipelineProtocol
+from django_cachex.adapters.protocols import RespAdapterProtocol, RespPipelineProtocol
 from django_cachex.exceptions import NotSupportedError, _main_exceptions
 from django_cachex.stampede import (
     StampedeConfig,
@@ -127,7 +127,7 @@ def _missing_valkey() -> ImportError:
     )
 
 
-class ValkeyPyAdapter(KeyValueAdapterProtocol):
+class ValkeyPyAdapter(RespAdapterProtocol):
     """Cache adapter implementation for redis-py-shaped clients.
 
     Implements the full command surface against a redis-py-API-compatible
@@ -191,7 +191,7 @@ class ValkeyPyAdapter(KeyValueAdapterProtocol):
         """Initialize the wire-level adapter.
 
         Encoding (serializer + compressor) is owned by the cache layer
-        (``KeyValueCache``); adapter methods take and return raw bytes.
+        (``RespCache``); adapter methods take and return raw bytes.
         ``serializer`` / ``compressor`` keys in ``options`` are silently
         ignored here — the cache reads them directly from its own options.
         """
@@ -1017,7 +1017,7 @@ class ValkeyPyAdapter(KeyValueAdapterProtocol):
     def pipeline(self, *, transaction: bool = True) -> ValkeyPyPipelineAdapter:
         """Construct a pipeline adapter (raw command queue) for this driver.
 
-        Returns a :class:`ValkeyPyPipelineAdapter`. ``KeyValueCache.pipeline()``
+        Returns a :class:`ValkeyPyPipelineAdapter`. ``RespCache.pipeline()``
         wraps the result in a :class:`Pipeline` that adds key-prefixing, value
         encoding, and result decoding.
         """
@@ -3538,7 +3538,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         return ValkeyPyPipelineAdapter(client.pipeline(transaction=False))
 
 
-class ValkeyPyPipelineAdapter(KeyValuePipelineProtocol):
+class ValkeyPyPipelineAdapter(RespPipelineProtocol):
     """Pipeline adapter for the redis-py / valkey-py / cluster driver.
 
     Forwards each cachex pipeline op to ``self._raw`` — a redis-py-shaped

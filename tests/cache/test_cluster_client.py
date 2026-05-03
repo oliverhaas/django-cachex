@@ -178,7 +178,7 @@ class TestRedisClusterAdapter:
 
         client = setup_cluster_client(mock_cluster_cls)
 
-        # Low-level clear() still calls flushdb (used by KeyValueCache.flush_db())
+        # Low-level clear() still calls flushdb (used by RespCache.flush_db())
         client.clear()
 
         # Should call flushdb with target_nodes=PRIMARIES

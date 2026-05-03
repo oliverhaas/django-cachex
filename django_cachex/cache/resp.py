@@ -1,6 +1,6 @@
 """Library-agnostic cache backend base class.
 
-:class:`KeyValueCache` extends Django's ``BaseCache`` with Redis/Valkey
+:class:`RespCache` extends Django's ``BaseCache`` with Redis/Valkey
 features (data structures, TTL operations, pattern matching, distributed
 locking, pipelines, and multi-serializer/compressor support). Per-driver
 concrete subclasses live in:
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 
     from django_cachex.adapters.pipeline import Pipeline
-    from django_cachex.adapters.protocols import KeyValueAdapterProtocol
+    from django_cachex.adapters.protocols import RespAdapterProtocol
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, KeyType
 
 from django_cachex.cache.base import BaseCachex
@@ -57,11 +57,11 @@ def _load_codec(config: str | type | Any) -> Any:
 
 
 # =============================================================================
-# KeyValueCache - base class extending Django's BaseCache
+# RespCache - base class extending Django's BaseCache
 # =============================================================================
 
 
-class KeyValueCache(BaseCachex):
+class RespCache(BaseCachex):
     """Django cache backend for Redis/Valkey with extended features.
 
     Base class for all django-cachex Redis/Valkey backends. Inherits the
@@ -75,7 +75,7 @@ class KeyValueCache(BaseCachex):
     _cachex_support: str = "cachex"
 
     # Class attribute - subclasses override this
-    _adapter_class: builtins.type[KeyValueAdapterProtocol]
+    _adapter_class: builtins.type[RespAdapterProtocol]
 
     def __init__(self, server: str, params: dict[str, Any]) -> None:
         super().__init__(params)
@@ -108,7 +108,7 @@ class KeyValueCache(BaseCachex):
         self._compressors: list[Any] = self._create_compressors(self._options.get("compressor"))
 
     @cached_property
-    def adapter(self) -> KeyValueAdapterProtocol:
+    def adapter(self) -> RespAdapterProtocol:
         """Get the adapter instance (matches Django's pattern)."""
         return self._adapter_class(self._servers, **self._options)
 
@@ -3091,4 +3091,4 @@ class KeyValueCache(BaseCachex):
         return result
 
 
-__all__ = ["KeyValueCache"]
+__all__ = ["RespCache"]

@@ -7,7 +7,7 @@ no redis-py-shaped intermediary for the operation surface — only
 ``encode``/``decode``/``_resolve_stampede`` are shared from the base.
 
 The pipeline adapter (``ValkeyGlidePipelineAdapter`` / ``_AsyncGlidePipeline``)
-implements ``KeyValuePipelineProtocol`` natively against glide's ``Batch``
+implements ``RespPipelineProtocol`` natively against glide's ``Batch``
 — no redis-py-shaped intermediary on the queueing surface either.
 
 Standalone only; no cluster, no sentinel. Spike-quality — many
@@ -19,7 +19,7 @@ import asyncio
 from typing import TYPE_CHECKING, Any, Self
 from urllib.parse import urlparse
 
-from django_cachex.adapters.protocols import KeyValueAdapterProtocol, KeyValuePipelineProtocol
+from django_cachex.adapters.protocols import RespAdapterProtocol, RespPipelineProtocol
 from django_cachex.stampede import (
     StampedeConfig,
     get_timeout_with_buffer,
@@ -129,7 +129,7 @@ def _normalize_ttl(result: int) -> int | None:
 # =============================================================================
 
 
-class ValkeyGlidePipelineAdapter(KeyValuePipelineProtocol):
+class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
     """Pipeline adapter that buffers cachex ops into glide's ``Batch``."""
 
     def __init__(self, client: GlideClient, *, transaction: bool = False) -> None:
@@ -645,7 +645,7 @@ class _AsyncGlidePipeline:
 # =============================================================================
 
 
-class ValkeyGlideAdapter(KeyValueAdapterProtocol):
+class ValkeyGlideAdapter(RespAdapterProtocol):
     """Design B backend: each operation method calls glide natively.
 
     Implements the cachex adapter surface against ``valkey-glide-sync``.

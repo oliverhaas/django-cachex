@@ -2,7 +2,7 @@
 
 :class:`Pipeline` is the user-facing wrapper that handles key prefixing,
 value serialization, and result decoding. It delegates all queueing to a
-concrete :class:`~django_cachex.adapters.protocols.KeyValuePipelineProtocol`
+concrete :class:`~django_cachex.adapters.protocols.RespPipelineProtocol`
 implementation — one per driver:
 
 - :class:`~django_cachex.adapters.valkey_py.ValkeyPyPipelineAdapter` /
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from datetime import datetime, timedelta
 
-    from django_cachex.adapters.protocols import KeyValuePipelineProtocol
+    from django_cachex.adapters.protocols import RespPipelineProtocol
     from django_cachex.types import KeyT
 
 from django_cachex.script import ScriptHelpers
@@ -41,14 +41,14 @@ type AbsExpiryT = int | datetime
 class Pipeline:
     """Pipeline wrapper that handles key prefixing and value serialization.
 
-    Queues cachex ops on a :class:`KeyValuePipelineProtocol` implementation,
+    Queues cachex ops on a :class:`RespPipelineProtocol` implementation,
     then decodes the raw results when ``execute()`` is called.
     """
 
     def __init__(
         self,
         cache: Any,
-        pipeline_adapter: KeyValuePipelineProtocol,
+        pipeline_adapter: RespPipelineProtocol,
         version: int | None = None,
     ) -> None:
         """Initialize the wrapped pipeline."""

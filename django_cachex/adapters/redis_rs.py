@@ -17,7 +17,7 @@ from django_cachex._redis_rs_clients import (
     get_driver_sentinel,
     get_driver_standard,
 )
-from django_cachex.adapters.protocols import KeyValueAdapterProtocol, KeyValuePipelineProtocol
+from django_cachex.adapters.protocols import RespAdapterProtocol, RespPipelineProtocol
 from django_cachex.lock import AsyncValkeyLock, ValkeyLock
 from django_cachex.stampede import (
     StampedeConfig,
@@ -280,7 +280,7 @@ def _decode_xautoclaim(
     return (next_id, _decode_xrange(entries), deleted)
 
 
-class RedisRsAdapter(KeyValueAdapterProtocol):
+class RedisRsAdapter(RespAdapterProtocol):
     """Base Rust-driver client. Subclasses choose the topology.
 
     Implements the cachex adapter surface against ``RedisRsDriver``. We
@@ -2598,7 +2598,7 @@ class RedisRsClusterAdapter(RedisRsAdapter):
     @override
     def _connect(self) -> RedisRsDriver:
         # Cluster URLs may be a comma-joined string in Django LOCATION; the
-        # base ``KeyValueCache`` already splits them into ``self._servers``.
+        # base ``RespCache`` already splits them into ``self._servers``.
         return get_driver_cluster(list(self._servers), **self._driver_kwargs())
 
     # Inherit ``lock``/``alock`` from the parent. The lock script keys to a
@@ -2801,7 +2801,7 @@ def _xautoclaim(v: Any) -> list[Any]:
 # =============================================================================
 
 
-class RedisRsPipelineAdapter(KeyValuePipelineProtocol):
+class RedisRsPipelineAdapter(RespPipelineProtocol):
     """Pipeline adapter that buffers ops for the Rust driver's ``pipeline_exec``.
 
     Implements the cachex pipeline method surface natively against

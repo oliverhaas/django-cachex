@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 from django_cachex.script import keys_only_pre
 
 if TYPE_CHECKING:
-    from django_cachex.cache.key_value import KeyValueCache
+    from django_cachex.cache.resp import RespCache
 
 # =============================================================================
 # SHA1 reader scripts (used at page load to fingerprint current values)
@@ -117,7 +117,7 @@ return 0
 # =============================================================================
 
 
-def get_string_sha1(cache: KeyValueCache, key: str) -> str | None:
+def get_string_sha1(cache: RespCache, key: str) -> str | None:
     """Get SHA1 fingerprint of the raw encoded string value."""
     result = cache.eval_script(_GET_STRING_SHA1, keys=[key], pre_hook=keys_only_pre)
     if result is None:
@@ -125,7 +125,7 @@ def get_string_sha1(cache: KeyValueCache, key: str) -> str | None:
     return result.decode() if isinstance(result, bytes) else str(result)
 
 
-def get_hash_field_sha1s(cache: KeyValueCache, key: str) -> dict[str, str]:
+def get_hash_field_sha1s(cache: RespCache, key: str) -> dict[str, str]:
     """Get SHA1 fingerprints of all hash field values.
 
     Returns:
@@ -142,7 +142,7 @@ def get_hash_field_sha1s(cache: KeyValueCache, key: str) -> dict[str, str]:
     return sha1s
 
 
-def get_list_sha1s(cache: KeyValueCache, key: str) -> list[str]:
+def get_list_sha1s(cache: RespCache, key: str) -> list[str]:
     """Get SHA1 fingerprints of all list elements."""
     result = cache.eval_script(_GET_LIST_SHA1S, keys=[key], pre_hook=keys_only_pre)
     if not result:
@@ -150,7 +150,7 @@ def get_list_sha1s(cache: KeyValueCache, key: str) -> list[str]:
     return [r.decode() if isinstance(r, bytes) else str(r) for r in result]
 
 
-def get_list_sha1s_range(cache: KeyValueCache, key: str, start: int, stop: int) -> list[str]:
+def get_list_sha1s_range(cache: RespCache, key: str, start: int, stop: int) -> list[str]:
     """Get SHA1 fingerprints for a range of list elements.
 
     Args:
@@ -168,7 +168,7 @@ def get_list_sha1s_range(cache: KeyValueCache, key: str, start: int, stop: int) 
     return [r.decode() if isinstance(r, bytes) else str(r) for r in result]
 
 
-def get_hash_field_sha1s_for(cache: KeyValueCache, key: str, fields: list[str]) -> dict[str, str]:
+def get_hash_field_sha1s_for(cache: RespCache, key: str, fields: list[str]) -> dict[str, str]:
     """Get SHA1 fingerprints for specific hash fields.
 
     Args:
@@ -198,7 +198,7 @@ def get_hash_field_sha1s_for(cache: KeyValueCache, key: str, fields: list[str]) 
 
 
 def cas_update_string(
-    cache: KeyValueCache,
+    cache: RespCache,
     key: str,
     expected_sha1: str,
     new_value: Any,
@@ -218,7 +218,7 @@ def cas_update_string(
 
 
 def cas_update_hash_field(
-    cache: KeyValueCache,
+    cache: RespCache,
     key: str,
     field: str,
     expected_sha1: str,
@@ -239,7 +239,7 @@ def cas_update_hash_field(
 
 
 def cas_update_zset_score(
-    cache: KeyValueCache,
+    cache: RespCache,
     key: str,
     member: Any,
     expected_score: str,
@@ -260,7 +260,7 @@ def cas_update_zset_score(
 
 
 def cas_update_list_element(
-    cache: KeyValueCache,
+    cache: RespCache,
     key: str,
     index: int,
     expected_sha1: str,

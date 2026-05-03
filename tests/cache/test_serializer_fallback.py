@@ -27,7 +27,7 @@ def _make_cache(*, serializer: Any) -> Any:
 
 
 class TestDefaultClientSerializerConfig:
-    """Tests for KeyValueCache serializer configuration handling."""
+    """Tests for RespCache serializer configuration handling."""
 
     def test_single_string_config_backwards_compatible(self, redis_container):
         """Test that a single string config still works (backwards compatibility)."""

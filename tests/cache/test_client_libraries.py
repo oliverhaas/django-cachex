@@ -3,13 +3,13 @@
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from django_cachex.cache import KeyValueCache
+    from django_cachex.cache import RespCache
 
 
 class TestClientLibraries:
     """Test that different client libraries work correctly."""
 
-    def test_basic_set_get_with_all_images(self, cache: KeyValueCache, redis_images: tuple[str, str]):
+    def test_basic_set_get_with_all_images(self, cache: RespCache, redis_images: tuple[str, str]):
         """Verify basic operations work with all Redis images and their coupled client libraries.
 
         By including `redis_images` as a direct parameter, pytest will parametrize
@@ -29,7 +29,7 @@ class TestClientLibraries:
 
     def test_with_native_parser(
         self,
-        cache: KeyValueCache,
+        cache: RespCache,
         redis_images: tuple[str, str],
         native_parser: bool,
     ):

@@ -6,7 +6,7 @@ locks, pipelines, …). Every cachex cache class inherits from it so the
 contract is declared and enforced in one place. Native backends
 (:class:`~django_cachex.cache.locmem.LocMemCache`,
 :class:`~django_cachex.cache.database.DatabaseCache`,
-:class:`~django_cachex.cache.default.KeyValueCache`) override the methods
+:class:`~django_cachex.cache.resp.RespCache`) override the methods
 with real implementations; :class:`~django_cachex.cache.mixin.CachexCompat`
 provides emulated impls. Methods left at the default raise
 :class:`~django_cachex.exceptions.NotSupportedError`; the admin uses

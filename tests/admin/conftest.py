@@ -13,7 +13,7 @@ from django.contrib.auth.models import User
 from django.test import Client, override_settings
 
 if TYPE_CHECKING:
-    from django_cachex.cache import KeyValueCache
+    from django_cachex.cache import RespCache
 
 
 def get_cache_config(host: str, port: int) -> dict:
@@ -79,7 +79,7 @@ def test_cache(db, redis_container):
         # Close all caches to force recreation with new settings
         caches.close_all()
 
-        cache = cast("KeyValueCache", caches["default"])
+        cache = cast("RespCache", caches["default"])
         cache.flush_db()
         yield cache
         cache.flush_db()

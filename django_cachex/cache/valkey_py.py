@@ -17,11 +17,11 @@ from django_cachex.adapters.valkey_py import (
     ValkeyPySentinelAdapter,
 )
 from django_cachex.cache.cluster import KeyValueClusterCache
-from django_cachex.cache.key_value import KeyValueCache
+from django_cachex.cache.resp import RespCache
 from django_cachex.cache.sentinel import KeyValueSentinelCache
 
 
-class ValkeyCache(KeyValueCache):
+class ValkeyCache(RespCache):
     """Django cache backend using the ``valkey-py`` library."""
 
     _adapter_class = ValkeyPyAdapter

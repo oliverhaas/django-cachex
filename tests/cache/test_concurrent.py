@@ -28,7 +28,7 @@ from django_cachex.cache.locmem import LocMemCache
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
-    from django_cachex.cache import KeyValueCache
+    from django_cachex.cache import RespCache
 
 
 N_THREADS = 8
@@ -157,7 +157,7 @@ def test_locmem_zincrby_concurrent_conservation(
 
 
 def test_redis_lpush_concurrent_no_data_loss(
-    cache: KeyValueCache,
+    cache: RespCache,
     fast_thread_switching: None,
 ) -> None:
     key = "concurrent-lpush"
@@ -175,7 +175,7 @@ def test_redis_lpush_concurrent_no_data_loss(
 
 
 def test_redis_hincrby_concurrent_conservation(
-    cache: KeyValueCache,
+    cache: RespCache,
     fast_thread_switching: None,
 ) -> None:
     key = "concurrent-hincrby"

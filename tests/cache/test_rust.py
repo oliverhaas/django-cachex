@@ -18,7 +18,7 @@ from django_cachex._redis_rs_clients import _reset_for_tests
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from django_cachex.cache import KeyValueCache
+    from django_cachex.cache import RespCache
     from tests.fixtures.containers import RedisContainerInfo
 
 
@@ -31,7 +31,7 @@ def _clear_rust_registry() -> Iterator[None]:
 
 
 @pytest.fixture
-def rust_cache(redis_container: RedisContainerInfo) -> Iterator[KeyValueCache]:
+def rust_cache(redis_container: RedisContainerInfo) -> Iterator[RespCache]:
     location = f"redis://{redis_container.host}:{redis_container.port}/0"
     caches = {
         "default": {

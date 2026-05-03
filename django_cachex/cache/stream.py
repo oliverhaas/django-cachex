@@ -26,7 +26,7 @@ Configuration::
         },
     }
 
-``TRANSPORT`` is the alias of any cachex ``KeyValueCache`` subclass (pure-Python
+``TRANSPORT`` is the alias of any cachex ``RespCache`` subclass (pure-Python
 or Rust-driver-backed) used for stream I/O.
 ``STREAM_KEY`` is the Redis Stream key shared by all pods (default ``cache:sync``).
 ``MAXLEN`` caps stream length via approximate trimming (default 10000).

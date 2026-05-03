@@ -3,14 +3,14 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from django_cachex.adapters import KeyValueAdapterProtocol, RedisPyAdapter
+from django_cachex.adapters import RedisPyAdapter, RespAdapterProtocol
 
 if TYPE_CHECKING:
-    from django_cachex.cache import KeyValueCache
+    from django_cachex.cache import RespCache
 
 
 @pytest.fixture
-def cache_client(cache: KeyValueCache):
+def cache_client(cache: RespCache):
     """Fixture that returns the internal cache client for testing client-level behavior."""
     cache.set("TestClientClose", 0)
     yield cache.adapter  # Return the internal client
@@ -18,7 +18,7 @@ def cache_client(cache: KeyValueCache):
 
 
 class TestClientClose:
-    def test_close_is_noop(self, cache_client: KeyValueAdapterProtocol):
+    def test_close_is_noop(self, cache_client: RespAdapterProtocol):
         """Test close() is a no-op — pools persist after close."""
         # Create a pool first by accessing it
         pool = cache_client._get_connection_pool(write=True)

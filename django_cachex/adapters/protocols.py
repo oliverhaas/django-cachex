@@ -3,9 +3,9 @@
 These ``typing.Protocol`` classes formalize the contracts the cache and
 pipeline layers rely on.
 
-- :class:`KeyValuePipelineProtocol` — pipeline-adapter contract.
-- :class:`KeyValueAdapterProtocol` — adapter contract; what
-  :class:`~django_cachex.cache.default.KeyValueCache` calls on its
+- :class:`RespPipelineProtocol` — pipeline-adapter contract.
+- :class:`RespAdapterProtocol` — adapter contract; what
+  :class:`~django_cachex.cache.resp.RespCache` calls on its
   underlying adapter. Concrete adapters
   (:class:`~django_cachex.adapters.valkey_py.ValkeyPyAdapter`,
   :class:`~django_cachex.adapters.redis_rs.RedisRsAdapter`,
@@ -32,7 +32,7 @@ _set = set
 
 
 @runtime_checkable
-class KeyValuePipelineProtocol(Protocol):
+class RespPipelineProtocol(Protocol):
     """Pipeline-adapter contract — every command the cachex ``Pipeline`` wrapper queues.
 
     Concrete adapters (one per driver) inherit from this Protocol and
@@ -320,7 +320,7 @@ class KeyValuePipelineProtocol(Protocol):
 
 
 @runtime_checkable
-class KeyValueAdapterProtocol(Protocol):
+class RespAdapterProtocol(Protocol):
     """Wire-level adapter contract — every command + topology hook the cache calls.
 
     Concrete adapters inherit from this Protocol so the full ~200-method
@@ -331,7 +331,7 @@ class KeyValueAdapterProtocol(Protocol):
 
     def __init__(self, servers: list[str], **options: Any) -> None: ...
 
-    # Private-ish stampede helpers — called by ``KeyValueCache`` to resolve
+    # Private-ish stampede helpers — called by ``RespCache`` to resolve
     # per-call overrides against the adapter's instance config.
     def _resolve_stampede(self, stampede_prevention: bool | dict | None = None) -> Any: ...
     def _get_timeout_with_buffer(
@@ -498,7 +498,7 @@ class KeyValueAdapterProtocol(Protocol):
         blocking_timeout: float | None = None,
         thread_local: bool = True,
     ) -> Any: ...
-    def pipeline(self, *, transaction: bool = True) -> KeyValuePipelineProtocol: ...
+    def pipeline(self, *, transaction: bool = True) -> RespPipelineProtocol: ...
     def info(self, section: str | None = None) -> dict[str, Any]: ...
     def slowlog_get(self, count: int = 10) -> list[dict[str, Any]]: ...
     def slowlog_len(self) -> int: ...
@@ -975,6 +975,6 @@ class KeyValueAdapterProtocol(Protocol):
 
 
 __all__ = [
-    "KeyValueAdapterProtocol",
-    "KeyValuePipelineProtocol",
+    "RespAdapterProtocol",
+    "RespPipelineProtocol",
 ]
