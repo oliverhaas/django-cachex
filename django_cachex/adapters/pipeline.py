@@ -1637,6 +1637,12 @@ class AsyncPipeline(Pipeline):
     the lifecycle (``__aenter__/__aexit__``) and ``execute()`` to be async.
     """
 
+    if TYPE_CHECKING:
+        # Narrow the parent's ``_pipeline_adapter`` to the async protocol so
+        # type checkers know ``await adapter.execute()`` / ``adapter.reset()``
+        # are valid. The runtime attribute is set by the parent ``__init__``.
+        _pipeline_adapter: RespAsyncPipelineProtocol  # type: ignore[assignment]
+
     def __init__(
         self,
         cache: Any,
@@ -1644,7 +1650,7 @@ class AsyncPipeline(Pipeline):
         version: int | None = None,
     ) -> None:
         """Initialize the wrapped async pipeline."""
-        super().__init__(cache, pipeline_adapter, version=version)  # type: ignore[arg-type]
+        super().__init__(cache, pipeline_adapter, version=version)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
     async def __aenter__(self) -> Self:
         """Enter async context manager."""
@@ -1652,12 +1658,12 @@ class AsyncPipeline(Pipeline):
 
     async def __aexit__(self, *args: object) -> None:
         """Exit async context manager, resetting the underlying pipeline."""
-        await self._pipeline_adapter.reset()  # type: ignore[misc]
+        await self._pipeline_adapter.reset()
         self._decoders.clear()
 
     async def execute(self) -> list[Any]:  # type: ignore[override]
         """Execute all queued commands asynchronously and decode the results."""
-        results = await self._pipeline_adapter.execute()  # type: ignore[misc]
+        results = await self._pipeline_adapter.execute()
         decoders = self._decoders
         self._decoders = []
         return [decoder(result) for result, decoder in zip(results, decoders, strict=True)]

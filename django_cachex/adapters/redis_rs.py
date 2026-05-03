@@ -3584,7 +3584,7 @@ class RedisRsAsyncPipelineAdapter(RedisRsPipelineAdapter, RespAsyncPipelineProto
     """
 
     @override
-    async def execute(self) -> list[Any]:
+    async def execute(self) -> list[Any]:  # type: ignore[override]
         if not self._commands:
             self._parsers.clear()
             return []
