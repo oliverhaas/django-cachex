@@ -20,16 +20,19 @@ from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.utils.module_loading import import_string
 
 if TYPE_CHECKING:
-    import builtins
     from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 
     from django_cachex.adapters.pipeline import Pipeline
     from django_cachex.adapters.protocols import KeyValueAdapterProtocol
-    from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, KeyType, _Set
+    from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, KeyType
 
 from django_cachex.cache.base import BaseCachex
 from django_cachex.exceptions import CompressorError, SerializerError
 from django_cachex.script import ScriptHelpers
+
+# Alias for the `set` builtin shadowed by the `set` method (PEP 649 defers
+# annotations at runtime, but type checkers still resolve them in class scope).
+_set = set
 
 # Regex for escaping glob special characters
 _special_re = re.compile("([*?[])")
@@ -68,7 +71,7 @@ class KeyValueCache(BaseCachex):
     _cachex_support: str = "cachex"
 
     # Class attribute - subclasses override this
-    _adapter_class: builtins.type[KeyValueAdapterProtocol]
+    _adapter_class: type[KeyValueAdapterProtocol]
 
     def __init__(self, server: str, params: dict[str, Any]) -> None:
         super().__init__(params)
@@ -1583,7 +1586,7 @@ class KeyValueCache(BaseCachex):
         self,
         keys: KeyT | Sequence[KeyT],
         version: int | None = None,
-    ) -> _Set[Any]:
+    ) -> _set[Any]:
         """Return the difference between the first set and all successive sets."""
         keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
@@ -1610,7 +1613,7 @@ class KeyValueCache(BaseCachex):
         self,
         keys: KeyT | Sequence[KeyT],
         version: int | None = None,
-    ) -> _Set[Any]:
+    ) -> _set[Any]:
         """Return the intersection of all sets."""
         keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
@@ -1647,7 +1650,7 @@ class KeyValueCache(BaseCachex):
         self,
         key: KeyT,
         version: int | None = None,
-    ) -> _Set[Any]:
+    ) -> _set[Any]:
         """Get all members of a set."""
         key = self.make_and_validate_key(key, version=version)
         return {self.decode(m) for m in self.adapter.smembers(key)}
@@ -1712,7 +1715,7 @@ class KeyValueCache(BaseCachex):
         self,
         keys: KeyT | Sequence[KeyT],
         version: int | None = None,
-    ) -> _Set[Any]:
+    ) -> _set[Any]:
         """Return the union of all sets."""
         keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
@@ -1752,7 +1755,7 @@ class KeyValueCache(BaseCachex):
         match: str | None = None,
         count: int | None = None,
         version: int | None = None,
-    ) -> tuple[int, _Set[Any]]:
+    ) -> tuple[int, _set[Any]]:
         """Incrementally iterate over set members."""
         key = self.make_and_validate_key(key, version=version)
         new_cursor, members = self.adapter.sscan(key, cursor=cursor, match=match, count=count)
@@ -1789,7 +1792,7 @@ class KeyValueCache(BaseCachex):
         self,
         keys: KeyT | Sequence[KeyT],
         version: int | None = None,
-    ) -> _Set[Any]:
+    ) -> _set[Any]:
         """Return the difference between the first set and all successive sets asynchronously."""
         keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
@@ -1815,7 +1818,7 @@ class KeyValueCache(BaseCachex):
         self,
         keys: KeyT | Sequence[KeyT],
         version: int | None = None,
-    ) -> _Set[Any]:
+    ) -> _set[Any]:
         """Return the intersection of all sets asynchronously."""
         keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
@@ -1851,7 +1854,7 @@ class KeyValueCache(BaseCachex):
         self,
         key: KeyT,
         version: int | None = None,
-    ) -> _Set[Any]:
+    ) -> _set[Any]:
         """Get all members of a set asynchronously."""
         key = self.make_and_validate_key(key, version=version)
         return {self.decode(m) for m in await self.adapter.asmembers(key)}
@@ -1916,7 +1919,7 @@ class KeyValueCache(BaseCachex):
         self,
         keys: KeyT | Sequence[KeyT],
         version: int | None = None,
-    ) -> _Set[Any]:
+    ) -> _set[Any]:
         """Return the union of all sets asynchronously."""
         keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
         nkeys = [self.make_and_validate_key(k, version=version) for k in keys]
@@ -1955,7 +1958,7 @@ class KeyValueCache(BaseCachex):
         match: str | None = None,
         count: int | None = None,
         version: int | None = None,
-    ) -> tuple[int, _Set[Any]]:
+    ) -> tuple[int, _set[Any]]:
         """Incrementally iterate over set members asynchronously."""
         key = self.make_and_validate_key(key, version=version)
         new_cursor, members = await self.adapter.asscan(key, cursor=cursor, match=match, count=count)

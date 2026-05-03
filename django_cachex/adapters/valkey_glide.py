@@ -60,13 +60,6 @@ else:
     _GLIDE_IMPORT_ERROR = None
 
 
-# `set` is shadowed inside the cache-client class scope by the cache `set`
-# method, so a bare ``-> set[Any]`` return annotation resolves to that
-# method instead of the builtin. Alias here so annotations can refer to
-# the type unambiguously.
-_BuiltinSet = set
-
-
 def _check_installed() -> None:
     if _GLIDE_IMPORT_ERROR is not None:
         msg = (
@@ -1024,7 +1017,7 @@ class ValkeyGlideAdapter(KeyValueAdapterProtocol):
     def srem(self, key: KeyT, *members: Any) -> int:
         return self._client().srem(key, [_enc(m) for m in members])
 
-    def smembers(self, key: KeyT) -> _BuiltinSet[Any]:
+    def smembers(self, key: KeyT) -> set[Any]:
         return set(self._client().smembers(key))
 
     def sismember(self, key: KeyT, member: Any) -> bool:
@@ -1053,13 +1046,13 @@ class ValkeyGlideAdapter(KeyValueAdapterProtocol):
     def smove(self, src: KeyT, dst: KeyT, member: Any) -> bool:
         return bool(self._client().smove(src, dst, _enc(member)))
 
-    def sinter(self, *keys: KeyT) -> _BuiltinSet[Any]:
+    def sinter(self, *keys: KeyT) -> set[Any]:
         return set(self._client().sinter(list(keys)))
 
-    def sunion(self, *keys: KeyT) -> _BuiltinSet[Any]:
+    def sunion(self, *keys: KeyT) -> set[Any]:
         return set(self._client().sunion(list(keys)))
 
-    def sdiff(self, *keys: KeyT) -> _BuiltinSet[Any]:
+    def sdiff(self, *keys: KeyT) -> set[Any]:
         return set(self._client().sdiff(list(keys)))
 
     def sinterstore(self, dst: KeyT, *keys: KeyT) -> int:
@@ -1735,7 +1728,7 @@ class ValkeyGlideAdapter(KeyValueAdapterProtocol):
     async def asrem(self, key: KeyT, *members: Any) -> int:
         return await (await self._aclient()).srem(key, [_enc(m) for m in members])
 
-    async def asmembers(self, key: KeyT) -> _BuiltinSet[Any]:
+    async def asmembers(self, key: KeyT) -> set[Any]:
         return set(await (await self._aclient()).smembers(key))
 
     async def asismember(self, key: KeyT, member: Any) -> bool:
@@ -1764,13 +1757,13 @@ class ValkeyGlideAdapter(KeyValueAdapterProtocol):
     async def asmove(self, src: KeyT, dst: KeyT, member: Any) -> bool:
         return bool(await (await self._aclient()).smove(src, dst, _enc(member)))
 
-    async def asinter(self, *keys: KeyT) -> _BuiltinSet[Any]:
+    async def asinter(self, *keys: KeyT) -> set[Any]:
         return set(await (await self._aclient()).sinter(list(keys)))
 
-    async def asunion(self, *keys: KeyT) -> _BuiltinSet[Any]:
+    async def asunion(self, *keys: KeyT) -> set[Any]:
         return set(await (await self._aclient()).sunion(list(keys)))
 
-    async def asdiff(self, *keys: KeyT) -> _BuiltinSet[Any]:
+    async def asdiff(self, *keys: KeyT) -> set[Any]:
         return set(await (await self._aclient()).sdiff(list(keys)))
 
     async def asinterstore(self, dst: KeyT, *keys: KeyT) -> int:

@@ -45,11 +45,6 @@ if TYPE_CHECKING:
 
     from django_cachex.types import ExpiryT, KeyT
 
-# Alias to avoid shadowing the ``set`` builtin by methods named ``sadd``,
-# ``smembers``, etc. (and to keep ``_set`` reserved for Django's internal
-# pickled-bytes writer).
-_BuiltinSet = set
-
 # Sentinel for "key not found" vs "key holds None".
 _MISSING = object()
 
@@ -77,10 +72,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
         def _has_expired(self, key: str) -> bool: ...
         def _delete(self, key: str) -> bool: ...
-        # Note: this is Django's `_set` method (the lower-level pickled-bytes
-        # writer), not the public ``set``. We only ever call it via
-        # ``self._set(...)`` so the local alias collision (``_set = set``) is
-        # avoided by aliasing the builtin to ``_BuiltinSet`` instead.
+        # Django's lower-level pickled-bytes writer; the public API is ``set``.
         def _set(self, key: str, value: bytes, timeout: float | None = ...) -> None: ...
 
     # =========================================================================
@@ -180,7 +172,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             return None
         if isinstance(value, list):
             return KeyType.LIST
-        if isinstance(value, _BuiltinSet):
+        if isinstance(value, set):
             return KeyType.SET
         if isinstance(value, dict) and all(isinstance(k, str) for k in value):
             return KeyType.HASH
@@ -496,12 +488,12 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     # Set Operations
     # =========================================================================
 
-    def _typed_get_set(self, internal_key: str) -> _BuiltinSet[Any] | None:
+    def _typed_get_set(self, internal_key: str) -> set[Any] | None:
         """Caller holds ``self._lock``. Returns the stored set or None."""
         value = self._native_get(internal_key)
         if value is _MISSING:
             return None
-        if not isinstance(value, _BuiltinSet):
+        if not isinstance(value, set):
             msg = f"Key {internal_key!r} does not hold a set value."
             raise TypeError(msg)
         return value
@@ -512,7 +504,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         with self._lock:
             current = self._typed_get_set(internal_key)
             if current is None:
-                current = _BuiltinSet()
+                current = set()
             before = len(current)
             current.update(members)
             self._native_write(internal_key, current)
@@ -547,20 +539,20 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             current = self._typed_get_set(internal_key)
         return False if current is None else member in current
 
-    def smembers(self, key: KeyT, version: int | None = None) -> _BuiltinSet[Any]:
+    def smembers(self, key: KeyT, version: int | None = None) -> set[Any]:
         """Get all members of a set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_set(internal_key)
-        return _BuiltinSet() if current is None else _BuiltinSet(current)
+        return set() if current is None else set(current)
 
-    def spop(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | _BuiltinSet[Any]:
+    def spop(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | set[Any]:
         """Remove and return random member(s) from set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_set(internal_key)
             if not current:
-                return _BuiltinSet() if count is not None else None
+                return set() if count is not None else None
             if count is None:
                 member = random.choice(list(current))  # noqa: S311
                 current.discard(member)
@@ -570,7 +562,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                     self._delete(internal_key)
                 return member
             pop_count = min(count, len(current))
-            popped = _BuiltinSet(random.sample(list(current), pop_count))
+            popped = set(random.sample(list(current), pop_count))
             current.difference_update(popped)
             if current:
                 self._native_write(internal_key, current)
@@ -598,37 +590,37 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             return [False] * len(members)
         return [m in current for m in members]
 
-    def _collect_sets(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> list[_BuiltinSet[Any]]:
+    def _collect_sets(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> list[set[Any]]:
         """Read multiple keys' sets under a single lock acquire."""
         if isinstance(keys, (str, bytes, memoryview)):
             keys = [keys]
         internal_keys = [self._internal_key(k, version=version) for k in keys]
         with self._lock:
-            return [self._typed_get_set(ik) or _BuiltinSet() for ik in internal_keys]
+            return [self._typed_get_set(ik) or set() for ik in internal_keys]
 
-    def sdiff(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _BuiltinSet[Any]:
+    def sdiff(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
         """Return the difference between sets."""
         sets = self._collect_sets(keys, version=version)
         if not sets:
-            return _BuiltinSet()
+            return set()
         result = sets[0]
         for s in sets[1:]:
             result = result - s
         return result
 
-    def sinter(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _BuiltinSet[Any]:
+    def sinter(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
         """Return the intersection of sets."""
         sets = self._collect_sets(keys, version=version)
         if not sets:
-            return _BuiltinSet()
+            return set()
         result = sets[0]
         for s in sets[1:]:
             result = result & s
         return result
 
-    def sunion(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _BuiltinSet[Any]:
+    def sunion(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
         """Return the union of sets."""
-        result: _BuiltinSet[Any] = _BuiltinSet()
+        result: set[Any] = set()
         for s in self._collect_sets(keys, version=version):
             result |= s
         return result

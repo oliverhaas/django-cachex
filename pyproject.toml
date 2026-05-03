@@ -116,6 +116,7 @@ fix = true
 select = ["ALL"]
 ignore = [
   "A002",     # min/max params match Redis API naming (ZCOUNT key min max, etc.)
+  "A003",     # Cache methods named `set`/`type` mirror Redis API; `self.set(...)` is unambiguous.
   "ANN401",   # Any is correct for cache values (arbitrary Python objects)
   "ARG002",   # Unused args: API compat (key in get_client), stub classes (*args, **kwargs)
   "ASYNC109", # timeout param is cache TTL, not asyncio.timeout

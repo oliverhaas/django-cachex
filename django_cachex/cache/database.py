@@ -50,9 +50,6 @@ if TYPE_CHECKING:
 
     from django_cachex.types import ExpiryT, KeyT
 
-# Aliases so that methods named ``set`` and ``type`` don't shadow the builtins.
-_BuiltinSet = set
-
 # Sentinels for compound-op transforms.
 _MISSING = object()  # current value: row absent (or expired)
 _DELETE = object()  # transform output: drop the row
@@ -296,7 +293,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             return None
         if isinstance(value, list):
             return KeyType.LIST
-        if isinstance(value, _BuiltinSet):
+        if isinstance(value, set):
             return KeyType.SET
         if isinstance(value, dict) and all(isinstance(k, str) for k in value):
             return KeyType.HASH
@@ -585,17 +582,17 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
     # =========================================================================
 
     @staticmethod
-    def _coerce_set(current: Any) -> _BuiltinSet[Any] | None:
+    def _coerce_set(current: Any) -> set[Any] | None:
         if current is _MISSING:
             return None
-        if not isinstance(current, _BuiltinSet):
+        if not isinstance(current, set):
             msg = "Key does not hold a set value."
             raise TypeError(msg)
         return current
 
     def sadd(self, key: KeyT, *members: Any, version: int | None = None) -> int:
         def transform(current: Any) -> tuple[Any, int]:
-            existing = self._coerce_set(current) or _BuiltinSet()
+            existing = self._coerce_set(current) or set()
             before = len(existing)
             existing.update(members)
             return existing, len(existing) - before
@@ -621,21 +618,21 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         existing = self._coerce_set(self._read(self._internal_key(key, version=version)))
         return False if existing is None else member in existing
 
-    def smembers(self, key: KeyT, version: int | None = None) -> _BuiltinSet[Any]:
+    def smembers(self, key: KeyT, version: int | None = None) -> set[Any]:
         existing = self._coerce_set(self._read(self._internal_key(key, version=version)))
-        return _BuiltinSet() if existing is None else _BuiltinSet(existing)
+        return set() if existing is None else set(existing)
 
-    def spop(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | _BuiltinSet[Any]:
+    def spop(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | set[Any]:
         def transform(current: Any) -> tuple[Any, Any]:
             existing = self._coerce_set(current)
             if not existing:
-                return _MISSING, (_BuiltinSet() if count is not None else None)
+                return _MISSING, (set() if count is not None else None)
             if count is None:
                 member = random.choice(list(existing))  # noqa: S311
                 existing.discard(member)
                 return (existing or _DELETE), member
             n = min(count, len(existing))
-            popped = _BuiltinSet(random.sample(list(existing), n))
+            popped = set(random.sample(list(existing), n))
             existing.difference_update(popped)
             return (existing or _DELETE), popped
 
@@ -655,31 +652,31 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             return [False] * len(members)
         return [m in existing for m in members]
 
-    def _collect_sets(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> list[_BuiltinSet[Any]]:
+    def _collect_sets(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> list[set[Any]]:
         if isinstance(keys, (str, bytes, memoryview)):
             keys = [keys]
-        return [self._coerce_set(self._read(self._internal_key(k, version=version))) or _BuiltinSet() for k in keys]
+        return [self._coerce_set(self._read(self._internal_key(k, version=version))) or set() for k in keys]
 
-    def sdiff(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _BuiltinSet[Any]:
+    def sdiff(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
         sets = self._collect_sets(keys, version=version)
         if not sets:
-            return _BuiltinSet()
+            return set()
         result = sets[0]
         for s in sets[1:]:
             result = result - s
         return result
 
-    def sinter(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _BuiltinSet[Any]:
+    def sinter(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
         sets = self._collect_sets(keys, version=version)
         if not sets:
-            return _BuiltinSet()
+            return set()
         result = sets[0]
         for s in sets[1:]:
             result = result & s
         return result
 
-    def sunion(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _BuiltinSet[Any]:
-        result: _BuiltinSet[Any] = _BuiltinSet()
+    def sunion(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
+        result: set[Any] = set()
         for s in self._collect_sets(keys, version=version):
             result |= s
         return result

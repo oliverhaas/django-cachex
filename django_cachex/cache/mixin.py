@@ -33,9 +33,6 @@ if TYPE_CHECKING:
 
     from django_cachex.types import KeyT
 
-# Alias to avoid shadowing by method names
-_set = set
-
 # Sentinel for distinguishing "key not found" from "key holds None"
 _MISSING = object()
 
@@ -107,7 +104,7 @@ class CachexCompat(BaseCachex):
             return None
         if isinstance(value, list):
             return KeyType.LIST
-        if isinstance(value, _set):
+        if isinstance(value, set):
             return KeyType.SET
         if isinstance(value, dict) and all(isinstance(k, str) for k in value):
             return KeyType.HASH
@@ -365,12 +362,12 @@ class CachexCompat(BaseCachex):
     # Set Helpers
     # =========================================================================
 
-    def _get_set(self, key: KeyT, version: int | None = None) -> _set[Any] | None:
+    def _get_set(self, key: KeyT, version: int | None = None) -> set[Any] | None:
         """Get the stored set value, or None if key doesn't exist."""
         value = self.get(key, default=_MISSING, version=version)
         if value is _MISSING:
             return None
-        if not isinstance(value, _set):
+        if not isinstance(value, set):
             msg = f"Key {key!r} does not hold a set value."
             raise TypeError(msg)
         return value
@@ -385,7 +382,7 @@ class CachexCompat(BaseCachex):
             current = self._get_set(key, version=version)
             timeout = self._get_ttl_timeout(key, version=version)
             if current is None:
-                current = _set()
+                current = set()
             before = len(current)
             current.update(members)
             self.set(key, current, timeout=timeout, version=version)
@@ -416,17 +413,17 @@ class CachexCompat(BaseCachex):
         current = self._get_set(key, version=version)
         return False if current is None else member in current
 
-    def smembers(self, key: KeyT, version: int | None = None) -> _set[Any]:
+    def smembers(self, key: KeyT, version: int | None = None) -> set[Any]:
         """Get all members of a set."""
         current = self._get_set(key, version=version)
-        return _set() if current is None else _set(current)
+        return set() if current is None else set(current)
 
-    def spop(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | _set[Any]:
+    def spop(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | set[Any]:
         """Remove and return random member(s) from set."""
         with self._compound_op_lock():
             current = self._get_set(key, version=version)
             if not current:
-                return _set() if count is not None else None
+                return set() if count is not None else None
             timeout = self._get_ttl_timeout(key, version=version)
             if count is None:
                 member = random.choice(list(current))  # noqa: S311
@@ -437,7 +434,7 @@ class CachexCompat(BaseCachex):
                     self.delete(key, version=version)
                 return member
             pop_count = min(count, len(current))
-            popped = _set(random.sample(list(current), pop_count))
+            popped = set(random.sample(list(current), pop_count))
             current.difference_update(popped)
             if current:
                 self.set(key, current, timeout=timeout, version=version)
@@ -461,33 +458,33 @@ class CachexCompat(BaseCachex):
             return [False] * len(members)
         return [m in current for m in members]
 
-    def sdiff(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _set[Any]:
+    def sdiff(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
         """Return the difference between sets."""
         if isinstance(keys, (str, bytes, memoryview)):
             keys = [keys]
-        result: _set[Any] | None = None
+        result: set[Any] | None = None
         for k in keys:
-            s = self._get_set(k, version=version) or _set()
+            s = self._get_set(k, version=version) or set()
             result = s if result is None else result - s
-        return result or _set()
+        return result or set()
 
-    def sinter(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _set[Any]:
+    def sinter(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
         """Return the intersection of sets."""
         if isinstance(keys, (str, bytes, memoryview)):
             keys = [keys]
-        result: _set[Any] | None = None
+        result: set[Any] | None = None
         for k in keys:
-            s = self._get_set(k, version=version) or _set()
+            s = self._get_set(k, version=version) or set()
             result = s if result is None else result & s
-        return result or _set()
+        return result or set()
 
-    def sunion(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _set[Any]:
+    def sunion(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
         """Return the union of sets."""
         if isinstance(keys, (str, bytes, memoryview)):
             keys = [keys]
-        result: _set[Any] = _set()
+        result: set[Any] = set()
         for k in keys:
-            s = self._get_set(k, version=version) or _set()
+            s = self._get_set(k, version=version) or set()
             result |= s
         return result
 

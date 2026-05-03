@@ -43,13 +43,16 @@ from django_cachex.stampede import (
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
-    import builtins
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
 
     from redis.connection import ConnectionPool
 
     from django_cachex.adapters.pipeline import BaseKeyValuePipelineAdapter
-    from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, _Set
+    from django_cachex.types import AbsExpiryT, ExpiryT, KeyT
+
+# Alias for the `set` builtin shadowed by the `set` method (PEP 649 defers
+# annotations at runtime, but type checkers still resolve them in class scope).
+_set = set
 
 
 # =============================================================================
@@ -135,10 +138,10 @@ class ValkeyPyAdapter(KeyValueAdapterProtocol):
 
     # Class slots — concrete drivers override under their availability flag.
     _lib: Any = None
-    _client_class: builtins.type[Any] | None = None
-    _pool_class: builtins.type[Any] | None = None
-    _async_client_class: builtins.type[Any] | None = None
-    _async_pool_class: builtins.type[Any] | None = None
+    _client_class: type[Any] | None = None
+    _pool_class: type[Any] | None = None
+    _async_client_class: type[Any] | None = None
+    _async_pool_class: type[Any] | None = None
 
     # Polymorphic availability check — redis-py subclasses override
     # ``_LIB_AVAILABLE`` and ``_missing_lib_error`` (via mixin) to redirect
@@ -177,9 +180,9 @@ class ValkeyPyAdapter(KeyValueAdapterProtocol):
     def __init__(
         self,
         servers: list[str],
-        pool_class: str | builtins.type[Any] | None = None,
-        parser_class: str | builtins.type[Any] | None = None,
-        async_pool_class: str | builtins.type[Any] | None = None,
+        pool_class: str | type[Any] | None = None,
+        parser_class: str | type[Any] | None = None,
+        async_pool_class: str | type[Any] | None = None,
         **options: Any,
     ) -> None:
         """Initialize the wire-level adapter.
@@ -1626,7 +1629,7 @@ class ValkeyPyAdapter(KeyValueAdapterProtocol):
 
         return cast("int", client.srem(key, *nmembers))
 
-    def smembers(self, key: KeyT) -> _Set[Any]:
+    def smembers(self, key: KeyT) -> _set[Any]:
         """Get all members of a set."""
         client = self.get_client(key, write=False)
 
@@ -1673,7 +1676,7 @@ class ValkeyPyAdapter(KeyValueAdapterProtocol):
 
         return bool(client.smove(src, dst, nmember))
 
-    def sdiff(self, keys: KeyT | Sequence[KeyT]) -> _Set[Any]:
+    def sdiff(self, keys: KeyT | Sequence[KeyT]) -> _set[Any]:
         """Return the difference of sets."""
         client = self.get_client(write=False)
 
@@ -1686,7 +1689,7 @@ class ValkeyPyAdapter(KeyValueAdapterProtocol):
 
         return cast("int", client.sdiffstore(dest, keys))
 
-    def sinter(self, keys: KeyT | Sequence[KeyT]) -> _Set[Any]:
+    def sinter(self, keys: KeyT | Sequence[KeyT]) -> _set[Any]:
         """Return the intersection of sets."""
         client = self.get_client(write=False)
 
@@ -1699,7 +1702,7 @@ class ValkeyPyAdapter(KeyValueAdapterProtocol):
 
         return cast("int", client.sinterstore(dest, keys))
 
-    def sunion(self, keys: KeyT | Sequence[KeyT]) -> _Set[Any]:
+    def sunion(self, keys: KeyT | Sequence[KeyT]) -> _set[Any]:
         """Return the union of sets."""
         client = self.get_client(write=False)
 
@@ -1726,7 +1729,7 @@ class ValkeyPyAdapter(KeyValueAdapterProtocol):
         cursor: int = 0,
         match: str | None = None,
         count: int | None = None,
-    ) -> tuple[int, _Set[Any]]:
+    ) -> tuple[int, _set[Any]]:
         """Incrementally iterate over set members."""
         client = self.get_client(key, write=False)
 
@@ -1758,7 +1761,7 @@ class ValkeyPyAdapter(KeyValueAdapterProtocol):
 
         return cast("int", await client.srem(key, *nmembers))
 
-    async def asmembers(self, key: KeyT) -> _Set[Any]:
+    async def asmembers(self, key: KeyT) -> _set[Any]:
         """Get all members of a set asynchronously."""
         client = self.get_async_client(key, write=False)
 
@@ -1805,7 +1808,7 @@ class ValkeyPyAdapter(KeyValueAdapterProtocol):
 
         return bool(await client.smove(src, dst, nmember))
 
-    async def asdiff(self, keys: KeyT | Sequence[KeyT]) -> _Set[Any]:
+    async def asdiff(self, keys: KeyT | Sequence[KeyT]) -> _set[Any]:
         """Return the difference of sets asynchronously."""
         client = self.get_async_client(write=False)
 
@@ -1818,7 +1821,7 @@ class ValkeyPyAdapter(KeyValueAdapterProtocol):
 
         return cast("int", await client.sdiffstore(dest, keys))
 
-    async def asinter(self, keys: KeyT | Sequence[KeyT]) -> _Set[Any]:
+    async def asinter(self, keys: KeyT | Sequence[KeyT]) -> _set[Any]:
         """Return the intersection of sets asynchronously."""
         client = self.get_async_client(write=False)
 
@@ -1831,7 +1834,7 @@ class ValkeyPyAdapter(KeyValueAdapterProtocol):
 
         return cast("int", await client.sinterstore(dest, keys))
 
-    async def asunion(self, keys: KeyT | Sequence[KeyT]) -> _Set[Any]:
+    async def asunion(self, keys: KeyT | Sequence[KeyT]) -> _set[Any]:
         """Return the union of sets asynchronously."""
         client = self.get_async_client(write=False)
 
@@ -1858,7 +1861,7 @@ class ValkeyPyAdapter(KeyValueAdapterProtocol):
         cursor: int = 0,
         match: str | None = None,
         count: int | None = None,
-    ) -> tuple[int, _Set[Any]]:
+    ) -> tuple[int, _set[Any]]:
         """Incrementally iterate over set members asynchronously."""
         client = self.get_async_client(key, write=False)
 
@@ -2857,17 +2860,17 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
     # Annotations widen the inferred narrow types so the redis-py thin layer
     # in ``redis_py.py`` can override class slots without tripping mypy's
     # ``incompatible-override`` check.
-    _pool_class: builtins.type[Any] | None
-    _sentinel_class: builtins.type[Any] | None = None
-    _sentinel_pool_class: builtins.type[Any] | None = None
-    _async_sentinel_class: builtins.type[Any] | None = None
-    _async_sentinel_pool_class: builtins.type[Any] | None = None
+    _pool_class: type[Any] | None
+    _sentinel_class: type[Any] | None = None
+    _sentinel_pool_class: type[Any] | None = None
+    _async_sentinel_class: type[Any] | None = None
+    _async_sentinel_pool_class: type[Any] | None = None
 
     # Sentinel-managed pools live on ``_async_sentinel_pool_class``; clear the
     # generic ``_async_pool_class`` inherited from ``ValkeyPyAdapter`` so callers
     # that probe it (e.g. tests gating on ``_async_pool_class is None``)
     # correctly identify this adapter as sentinel-shaped.
-    _async_pool_class: builtins.type[Any] | None = None
+    _async_pool_class: type[Any] | None = None
 
     # Async sentinels: WeakKeyDictionary keyed by event loop
     _async_sentinels: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, Any]
@@ -3086,11 +3089,11 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
     # Cluster manages its own pool; clear the generic pool slots inherited
     # from ``ValkeyAdapter`` so callers probing ``_async_pool_class``
     # correctly identify this adapter as cluster-shaped.
-    _async_pool_class: builtins.type[Any] | None = None
+    _async_pool_class: type[Any] | None = None
 
     # Subclasses must set these
-    _cluster_class: builtins.type[Any] | None = None
-    _async_cluster_class: builtins.type[Any] | None = None
+    _cluster_class: type[Any] | None = None
+    _async_cluster_class: type[Any] | None = None
     _key_slot_func: Any = None  # Function to calculate key slot
 
     if _VALKEY_AVAILABLE:

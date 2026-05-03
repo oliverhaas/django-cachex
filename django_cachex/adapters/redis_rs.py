@@ -32,7 +32,11 @@ if TYPE_CHECKING:
 
     from django_cachex._driver import RedisRsDriver
     from django_cachex.adapters.pipeline import BaseKeyValuePipelineAdapter
-    from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, _Set
+    from django_cachex.types import AbsExpiryT, ExpiryT, KeyT
+
+# Alias for the `set` builtin shadowed by the `set` method (PEP 649 defers
+# annotations at runtime, but type checkers still resolve them in class scope).
+_set = set
 
 
 # Subset of options that map onto driver-construction kwargs.
@@ -2478,7 +2482,7 @@ class RedisRsValkeyAdapter(KeyValueAdapterProtocol):
         cursor: int = 0,
         match: str | None = None,
         count: int | None = None,
-    ) -> tuple[int, _Set[Any]]:
+    ) -> tuple[int, _set[Any]]:
         argv: list[Any] = [cursor]
         if match is not None:
             argv.extend([b"MATCH", match])
@@ -2495,7 +2499,7 @@ class RedisRsValkeyAdapter(KeyValueAdapterProtocol):
         cursor: int = 0,
         match: str | None = None,
         count: int | None = None,
-    ) -> tuple[int, _Set[Any]]:
+    ) -> tuple[int, _set[Any]]:
         argv: list[Any] = [cursor]
         if match is not None:
             argv.extend([b"MATCH", match])

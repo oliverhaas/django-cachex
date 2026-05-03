@@ -27,9 +27,6 @@ if TYPE_CHECKING:
     from django_cachex.script import ScriptHelpers
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT
 
-# Alias to avoid shadowing by method names
-_set = set
-
 
 # =============================================================================
 # Base Extensions Interface
@@ -366,7 +363,7 @@ class BaseCachex(BaseCache):
         """Get the number of members in a set."""
         raise NotSupportedError("scard", self.__class__.__name__)
 
-    def sdiff(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _set[Any]:
+    def sdiff(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
         """Return the difference between sets."""
         raise NotSupportedError("sdiff", self.__class__.__name__)
 
@@ -381,7 +378,7 @@ class BaseCachex(BaseCache):
         """Store the difference of sets."""
         raise NotSupportedError("sdiffstore", self.__class__.__name__)
 
-    def sinter(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _set[Any]:
+    def sinter(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
         """Return the intersection of sets."""
         raise NotSupportedError("sinter", self.__class__.__name__)
 
@@ -400,7 +397,7 @@ class BaseCachex(BaseCache):
         """Check if member is in set."""
         raise NotSupportedError("sismember", self.__class__.__name__)
 
-    def smembers(self, key: KeyT, version: int | None = None) -> _set[Any]:
+    def smembers(self, key: KeyT, version: int | None = None) -> set[Any]:
         """Get all members of a set."""
         raise NotSupportedError("smembers", self.__class__.__name__)
 
@@ -408,7 +405,7 @@ class BaseCachex(BaseCache):
         """Move member from one set to another."""
         raise NotSupportedError("smove", self.__class__.__name__)
 
-    def spop(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | _set[Any]:
+    def spop(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | set[Any]:
         """Remove and return random member(s) from set."""
         raise NotSupportedError("spop", self.__class__.__name__)
 
@@ -420,7 +417,7 @@ class BaseCachex(BaseCache):
         """Remove members from a set."""
         raise NotSupportedError("srem", self.__class__.__name__)
 
-    def sunion(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> _set[Any]:
+    def sunion(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
         """Return the union of sets."""
         raise NotSupportedError("sunion", self.__class__.__name__)
 
@@ -446,7 +443,7 @@ class BaseCachex(BaseCache):
         match: str | None = None,
         count: int | None = None,
         version: int | None = None,
-    ) -> tuple[int, _set[Any]]:
+    ) -> tuple[int, set[Any]]:
         """Incrementally iterate over set members."""
         raise NotSupportedError("sscan", self.__class__.__name__)
 

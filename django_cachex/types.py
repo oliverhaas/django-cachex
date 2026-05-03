@@ -26,7 +26,3 @@ class KeyType(StrEnum):
     HASH = "hash"
     ZSET = "zset"
     STREAM = "stream"
-
-
-# Alias to avoid shadowing by .set() methods
-_Set = set

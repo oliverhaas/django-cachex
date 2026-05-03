@@ -24,13 +24,17 @@ concrete :class:`BaseKeyValuePipelineAdapter` subclass and wraps it in a
 from typing import TYPE_CHECKING, Any, Self, cast
 
 if TYPE_CHECKING:
-    import builtins
     from collections.abc import Callable, Mapping, Sequence
     from datetime import datetime, timedelta
 
-    from django_cachex.types import KeyT, _Set
+    from django_cachex.types import KeyT
 
 from django_cachex.script import ScriptHelpers
+
+# Aliases for builtins shadowed by `set`/`type` methods (PEP 649 defers
+# annotations at runtime, but type checkers still resolve them in class scope).
+_set = set
+_type = type
 
 # Type aliases matching django_cachex.types for convenience
 type ExpiryT = int | timedelta
@@ -692,11 +696,11 @@ class Pipeline:
             return [self._cache.decode(item) if item is not None else None for item in value]
         return self._cache.decode(value)
 
-    def _decode_set(self, value: _Set[bytes]) -> _Set[Any]:
+    def _decode_set(self, value: _set[bytes]) -> _set[Any]:
         """Decode a set of values."""
         return {self._cache.decode(item) for item in value}
 
-    def _decode_set_or_single(self, value: _Set[bytes] | bytes | None) -> _Set[Any] | Any:
+    def _decode_set_or_single(self, value: _set[bytes] | bytes | None) -> _set[Any] | Any:
         """Decode spop/srandmember result (set, single value, or None)."""
         if value is None:
             return None
@@ -1665,7 +1669,7 @@ class Pipeline:
         *,
         desc: bool = False,
         withscores: bool = False,
-        score_cast_func: builtins.type = float,
+        score_cast_func: _type = float,
         version: int | None = None,
     ) -> Self:
         """Queue ZRANGE command (get members by index range)."""
@@ -1690,7 +1694,7 @@ class Pipeline:
         num: int | None = None,
         *,
         withscores: bool = False,
-        score_cast_func: builtins.type = float,
+        score_cast_func: _type = float,
         version: int | None = None,
     ) -> Self:
         """Queue ZRANGEBYSCORE command (get members by score range)."""
@@ -1766,7 +1770,7 @@ class Pipeline:
         end: int,
         *,
         withscores: bool = False,
-        score_cast_func: builtins.type = float,
+        score_cast_func: _type = float,
         version: int | None = None,
     ) -> Self:
         """Queue ZREVRANGE command (get members by index, high to low)."""
@@ -1790,7 +1794,7 @@ class Pipeline:
         num: int | None = None,
         *,
         withscores: bool = False,
-        score_cast_func: builtins.type = float,
+        score_cast_func: _type = float,
         version: int | None = None,
     ) -> Self:
         """Queue ZREVRANGEBYSCORE command (get by score, high to low)."""
