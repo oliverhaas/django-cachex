@@ -16,9 +16,9 @@ from django_cachex.adapters.redis_py import (
     RedisPyClusterAdapter,
     RedisPySentinelAdapter,
 )
-from django_cachex.cache.cluster import KeyValueClusterCache
+from django_cachex.cache.cluster import RespClusterCache
 from django_cachex.cache.resp import RespCache
-from django_cachex.cache.sentinel import KeyValueSentinelCache
+from django_cachex.cache.sentinel import RespSentinelCache
 
 
 class RedisCache(RespCache):
@@ -27,7 +27,7 @@ class RedisCache(RespCache):
     _adapter_class = RedisPyAdapter
 
 
-class RedisSentinelCache(KeyValueSentinelCache):
+class RedisSentinelCache(RespSentinelCache):
     """Django cache backend for Redis Sentinel high availability (redis-py).
 
     Failover and service discovery happen through Redis Sentinel; the
@@ -38,7 +38,7 @@ class RedisSentinelCache(KeyValueSentinelCache):
     _adapter_class = RedisPySentinelAdapter
 
 
-class RedisClusterCache(KeyValueClusterCache):
+class RedisClusterCache(RespClusterCache):
     """Django cache backend for Redis Cluster mode (redis-py).
 
     Keys are sharded across nodes by hash slot. Raises :class:`ImportError`

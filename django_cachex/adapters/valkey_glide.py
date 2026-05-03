@@ -1,7 +1,7 @@
 # ruff: noqa: ERA001, PERF401, PLW2901
 """Design B: ``valkey-glide``-backed cache client (sync + async).
 
-Each operation method overrides ``BaseKeyValueAdapter`` and calls
+Each operation method overrides ``RespAdapterProtocol`` and calls
 ``glide_sync.GlideClient`` / ``glide.GlideClient`` natively. There is
 no redis-py-shaped intermediary for the operation surface — only
 ``encode``/``decode``/``_resolve_stampede`` are shared from the base.
@@ -700,7 +700,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     def get_async_client(self, key: Any = None, *, write: bool = False) -> AsyncGlideClient:
         # Awaiting must happen at call sites; this method is sync-only by
-        # BaseKeyValueAdapter's contract. Only here for completeness; the
+        # RespAdapterProtocol's contract. Only here for completeness; the
         # aXXX methods below do not call this.
         msg = "Use the a* methods on this client; get_async_client is not supported"
         raise NotImplementedError(msg)

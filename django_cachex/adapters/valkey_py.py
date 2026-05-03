@@ -3029,7 +3029,7 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
         Uses the same ``_async_pools`` registry (driver-specific class
         attribute) as the non-sentinel client so per-task adapter instances
         share a single pool. See
-        ``BaseKeyValueAdapter._get_async_connection_pool`` for the rationale.
+        ``RespAdapterProtocol._get_async_connection_pool`` for the rationale.
         """
         loop = asyncio.get_running_loop()
         index = self._get_connection_pool_index(write=write)

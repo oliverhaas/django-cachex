@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from django_cachex.adapters.pipeline import Pipeline
 
 
-class KeyValueClusterCache(RespCache):
+class RespClusterCache(RespCache):
     """Cluster cache backend base class.
 
     Extends ``RespCache`` with cluster-specific behaviour (no
@@ -31,4 +31,4 @@ class KeyValueClusterCache(RespCache):
         return super().pipeline(transaction=False, version=version)
 
 
-__all__ = ["KeyValueClusterCache"]
+__all__ = ["RespClusterCache"]

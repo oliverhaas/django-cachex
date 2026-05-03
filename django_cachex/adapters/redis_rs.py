@@ -1,6 +1,6 @@
 """Cache client backed by the Rust ``RedisRsDriver``.
 
-Subclass of :class:`BaseKeyValueAdapter`. Reuses the serializer/compressor
+Subclass of :class:`RespAdapterProtocol`. Reuses the serializer/compressor
 stack and stampede prevention logic from the base, but routes every I/O
 call to the Rust driver from ``_redis_rs_clients`` instead of redis-py /
 valkey-py. Each driver is process-shared via the registry; per-cache state
@@ -54,7 +54,7 @@ _DRIVER_KWARGS = frozenset(
 def _value_to_bytes(value: bytes | int) -> bytes:
     """Coerce an encoded value to bytes for the Rust driver.
 
-    ``BaseKeyValueAdapter.encode()`` returns ``int`` for plain integers (so
+    ``RespAdapterProtocol.encode()`` returns ``int`` for plain integers (so
     Redis can use them as counters); the driver only accepts ``&[u8]``, so
     we serialize integers to their decimal representation here. Decoding on
     the way out goes through ``decode()`` which already tries ``int()``

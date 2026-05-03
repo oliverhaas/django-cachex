@@ -13,7 +13,7 @@ implementation — one per driver:
 - :class:`~django_cachex.adapters.valkey_glide.ValkeyGlidePipelineAdapter` —
   drives ``valkey-glide``'s ``Batch``.
 
-Each adapter's ``KeyValueAdapter.pipeline()`` factory constructs the right
+Each adapter's ``RespAdapterProtocol.pipeline()`` factory constructs the right
 concrete pipeline adapter and the cache layer wraps it in a :class:`Pipeline`.
 """
 

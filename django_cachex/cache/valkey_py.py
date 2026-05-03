@@ -16,9 +16,9 @@ from django_cachex.adapters.valkey_py import (
     ValkeyPyClusterAdapter,
     ValkeyPySentinelAdapter,
 )
-from django_cachex.cache.cluster import KeyValueClusterCache
+from django_cachex.cache.cluster import RespClusterCache
 from django_cachex.cache.resp import RespCache
-from django_cachex.cache.sentinel import KeyValueSentinelCache
+from django_cachex.cache.sentinel import RespSentinelCache
 
 
 class ValkeyCache(RespCache):
@@ -27,7 +27,7 @@ class ValkeyCache(RespCache):
     _adapter_class = ValkeyPyAdapter
 
 
-class ValkeySentinelCache(KeyValueSentinelCache):
+class ValkeySentinelCache(RespSentinelCache):
     """Django cache backend for Valkey Sentinel high availability (valkey-py).
 
     Failover and service discovery happen through Valkey Sentinel; the
@@ -38,7 +38,7 @@ class ValkeySentinelCache(KeyValueSentinelCache):
     _adapter_class = ValkeyPySentinelAdapter
 
 
-class ValkeyClusterCache(KeyValueClusterCache):
+class ValkeyClusterCache(RespClusterCache):
     """Django cache backend for Valkey Cluster mode (valkey-py).
 
     Keys are sharded across nodes by hash slot. Raises :class:`ImportError`

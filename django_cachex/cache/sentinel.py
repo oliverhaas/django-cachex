@@ -8,11 +8,11 @@ Driver-agnostic sentinel behavior; per-driver concrete subclasses live in
 from django_cachex.cache.resp import RespCache
 
 
-class KeyValueSentinelCache(RespCache):
+class RespSentinelCache(RespCache):
     """Sentinel cache backend base class.
 
     Subclasses set ``_adapter_class`` to their specific sentinel adapter.
     """
 
 
-__all__ = ["KeyValueSentinelCache"]
+__all__ = ["RespSentinelCache"]
