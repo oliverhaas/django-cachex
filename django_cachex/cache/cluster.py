@@ -7,7 +7,7 @@ Driver-agnostic cluster behavior; per-driver concrete subclasses live in
 
 from typing import TYPE_CHECKING
 
-from django_cachex.cache.default import KeyValueCache
+from django_cachex.cache.key_value import KeyValueCache
 
 if TYPE_CHECKING:
     from django_cachex.adapters.pipeline import Pipeline

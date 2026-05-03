@@ -1,7 +1,7 @@
 """Spike: Django cache backend backed by ``valkey-glide-sync``."""
 
 from django_cachex.adapters.valkey_glide import ValkeyGlideAdapter
-from django_cachex.cache.default import KeyValueCache
+from django_cachex.cache.key_value import KeyValueCache
 
 
 class ValkeyGlideCache(KeyValueCache):

@@ -5,7 +5,7 @@ Driver-agnostic sentinel behavior; per-driver concrete subclasses live in
 :mod:`django_cachex.cache.redis_py` (``redis-py``).
 """
 
-from django_cachex.cache.default import KeyValueCache
+from django_cachex.cache.key_value import KeyValueCache
 
 
 class KeyValueSentinelCache(KeyValueCache):

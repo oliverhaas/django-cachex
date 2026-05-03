@@ -10,7 +10,7 @@ from django_cachex.adapters.redis_rs import (
     RedisRsValkeyClusterAdapter,
     RedisRsValkeySentinelAdapter,
 )
-from django_cachex.cache.default import KeyValueCache
+from django_cachex.cache.key_value import KeyValueCache
 
 
 class RedisRsValkeyCache(KeyValueCache):
