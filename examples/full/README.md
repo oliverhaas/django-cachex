@@ -42,6 +42,20 @@ Login: `admin` / `password`
 - `./run.sh stop` - Stop Docker containers
 - `./run.sh clean` - Stop containers and remove all data
 
+## Feature Demos
+
+Runnable HTTP endpoints that exercise specific cachex features. Hit them with
+curl after `./run.sh server`:
+
+```bash
+curl http://127.0.0.1:8000/demo/pipeline/    # sync pipeline batch
+curl http://127.0.0.1:8000/demo/async/       # async aget/aset
+curl http://127.0.0.1:8000/demo/apipeline/   # async pipeline batch
+curl 'http://127.0.0.1:8000/demo/lua/?by=5'  # eval_script atomic increment
+```
+
+Source: [`full/demo.py`](full/demo.py).
+
 ## Celery Integration
 
 This example includes [Celery](https://docs.celeryq.dev/) with Redis as broker
