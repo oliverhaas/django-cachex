@@ -22,7 +22,6 @@ or ``DatabaseCache`` (compound ops in a transaction).
 
 import contextlib
 import random
-from functools import wraps
 from typing import TYPE_CHECKING, Any
 
 from django_cachex.cache.base import BaseCachex
@@ -30,7 +29,7 @@ from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Mapping, Sequence
+    from collections.abc import Iterator, Mapping, Sequence
 
     from django_cachex.types import KeyT
 
@@ -39,23 +38,6 @@ _set = set
 
 # Sentinel for distinguishing "key not found" from "key holds None"
 _MISSING = object()
-
-
-def _compound_op(method: Callable[..., Any]) -> Callable[..., Any]:
-    """Wrap a read-modify-write op in the backend's compound-op lock.
-
-    ``CachexCompat._compound_op_lock`` is a no-op by default; subclasses with
-    real synchronization (e.g. ``LocMemCache``) override it. Reentrant locks
-    (Django's ``RLock``) make this safe even when ``self.set``/``self.delete``
-    re-acquire the same lock internally.
-    """
-
-    @wraps(method)
-    def wrapper(self: CachexCompat, *args: Any, **kwargs: Any) -> Any:
-        with self._compound_op_lock():
-            return method(self, *args, **kwargs)
-
-    return wrapper
 
 
 class CachexCompat(BaseCachex):
@@ -174,59 +156,59 @@ class CachexCompat(BaseCachex):
     # List Operations
     # =========================================================================
 
-    @_compound_op
     def lpush(self, key: KeyT, *values: Any, version: int | None = None) -> int:
         """Prepend values to the head of a list."""
-        current = self._get_list(key, version=version)
-        timeout = self._get_ttl_timeout(key, version=version)
-        if current is None:
-            current = []
-        new_list = list(reversed(values)) + current
-        self.set(key, new_list, timeout=timeout, version=version)
-        return len(new_list)
+        with self._compound_op_lock():
+            current = self._get_list(key, version=version)
+            timeout = self._get_ttl_timeout(key, version=version)
+            if current is None:
+                current = []
+            new_list = list(reversed(values)) + current
+            self.set(key, new_list, timeout=timeout, version=version)
+            return len(new_list)
 
-    @_compound_op
     def rpush(self, key: KeyT, *values: Any, version: int | None = None) -> int:
         """Append values to the tail of a list."""
-        current = self._get_list(key, version=version)
-        timeout = self._get_ttl_timeout(key, version=version)
-        if current is None:
-            current = []
-        new_list = current + list(values)
-        self.set(key, new_list, timeout=timeout, version=version)
-        return len(new_list)
+        with self._compound_op_lock():
+            current = self._get_list(key, version=version)
+            timeout = self._get_ttl_timeout(key, version=version)
+            if current is None:
+                current = []
+            new_list = current + list(values)
+            self.set(key, new_list, timeout=timeout, version=version)
+            return len(new_list)
 
-    @_compound_op
     def lpop(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[Any]:
         """Remove and return element(s) from the head of a list."""
-        current = self._get_list(key, version=version)
-        if not current:
-            return []
-        timeout = self._get_ttl_timeout(key, version=version)
-        pop_count = count if count is not None else 1
-        popped = current[:pop_count]
-        remaining = current[pop_count:]
-        if remaining:
-            self.set(key, remaining, timeout=timeout, version=version)
-        else:
-            self.delete(key, version=version)
-        return popped
+        with self._compound_op_lock():
+            current = self._get_list(key, version=version)
+            if not current:
+                return []
+            timeout = self._get_ttl_timeout(key, version=version)
+            pop_count = count if count is not None else 1
+            popped = current[:pop_count]
+            remaining = current[pop_count:]
+            if remaining:
+                self.set(key, remaining, timeout=timeout, version=version)
+            else:
+                self.delete(key, version=version)
+            return popped
 
-    @_compound_op
     def rpop(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[Any]:
         """Remove and return element(s) from the tail of a list."""
-        current = self._get_list(key, version=version)
-        if not current:
-            return []
-        timeout = self._get_ttl_timeout(key, version=version)
-        pop_count = count if count is not None else 1
-        popped = list(reversed(current[-pop_count:]))
-        remaining = current[:-pop_count] if pop_count < len(current) else []
-        if remaining:
-            self.set(key, remaining, timeout=timeout, version=version)
-        else:
-            self.delete(key, version=version)
-        return popped
+        with self._compound_op_lock():
+            current = self._get_list(key, version=version)
+            if not current:
+                return []
+            timeout = self._get_ttl_timeout(key, version=version)
+            pop_count = count if count is not None else 1
+            popped = list(reversed(current[-pop_count:]))
+            remaining = current[:-pop_count] if pop_count < len(current) else []
+            if remaining:
+                self.set(key, remaining, timeout=timeout, version=version)
+            else:
+                self.delete(key, version=version)
+            return popped
 
     def lrange(self, key: KeyT, start: int, end: int, version: int | None = None) -> list[Any]:
         """Return a range of elements from a list (inclusive end, Redis-style)."""
@@ -249,7 +231,6 @@ class CachexCompat(BaseCachex):
             return 0
         return len(current)
 
-    @_compound_op
     def lrem(  # noqa: PLR0912
         self,
         key: KeyT,
@@ -258,58 +239,59 @@ class CachexCompat(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Remove occurrences of value from a list."""
-        current = self._get_list(key, version=version)
-        if not current:
-            return 0
-        timeout = self._get_ttl_timeout(key, version=version)
-        removed = 0
-        if count == 0:
-            new_list = [item for item in current if item != value]
-            removed = len(current) - len(new_list)
-        elif count > 0:
-            new_list = []
-            for item in current:
-                if item == value and removed < count:
-                    removed += 1
-                else:
-                    new_list.append(item)
-        else:
-            abs_count = abs(count)
-            new_list = []
-            for item in reversed(current):
-                if item == value and removed < abs_count:
-                    removed += 1
-                else:
-                    new_list.append(item)
-            new_list.reverse()
-        if removed > 0:
-            if new_list:
-                self.set(key, new_list, timeout=timeout, version=version)
+        with self._compound_op_lock():
+            current = self._get_list(key, version=version)
+            if not current:
+                return 0
+            timeout = self._get_ttl_timeout(key, version=version)
+            removed = 0
+            if count == 0:
+                new_list = [item for item in current if item != value]
+                removed = len(current) - len(new_list)
+            elif count > 0:
+                new_list = []
+                for item in current:
+                    if item == value and removed < count:
+                        removed += 1
+                    else:
+                        new_list.append(item)
             else:
-                self.delete(key, version=version)
-        return removed
+                abs_count = abs(count)
+                new_list = []
+                for item in reversed(current):
+                    if item == value and removed < abs_count:
+                        removed += 1
+                    else:
+                        new_list.append(item)
+                new_list.reverse()
+            if removed > 0:
+                if new_list:
+                    self.set(key, new_list, timeout=timeout, version=version)
+                else:
+                    self.delete(key, version=version)
+            return removed
 
-    @_compound_op
     def ltrim(self, key: KeyT, start: int, end: int, version: int | None = None) -> bool:
         """Trim a list to the specified range (inclusive end, Redis-style)."""
-        current = self._get_list(key, version=version)
-        if current is None:
+        with self._compound_op_lock():
+            current = self._get_list(key, version=version)
+            if current is None:
+                return True
+            timeout = self._get_ttl_timeout(key, version=version)
+            length = len(current)
+            if start < 0:
+                start = max(length + start, 0)
+            if end < 0:
+                end = length + end
+            if start >= length or end < start:
+                self.delete(key, version=version)
+                return True
+            trimmed = current[start : end + 1]
+            if trimmed:
+                self.set(key, trimmed, timeout=timeout, version=version)
+            else:
+                self.delete(key, version=version)
             return True
-        timeout = self._get_ttl_timeout(key, version=version)
-        length = len(current)
-        if start < 0:
-            start = max(length + start, 0)
-        if end < 0:
-            end = length + end
-        if start >= length or end < start:
-            self.delete(key, version=version)
-            return True
-        trimmed = current[start : end + 1]
-        if trimmed:
-            self.set(key, trimmed, timeout=timeout, version=version)
-        else:
-            self.delete(key, version=version)
-        return True
 
     def lindex(self, key: KeyT, index: int, version: int | None = None) -> Any:
         """Get element at index in list."""
@@ -321,38 +303,38 @@ class CachexCompat(BaseCachex):
         except IndexError:
             return None
 
-    @_compound_op
     def lset(self, key: KeyT, index: int, value: Any, version: int | None = None) -> bool:
         """Set element at index in list."""
-        current = self._get_list(key, version=version)
-        if not current:
-            msg = "no such key"
-            raise ValueError(msg)
-        try:
-            current[index] = value
-        except IndexError:
-            msg = "index out of range"
-            raise ValueError(msg) from None
-        timeout = self._get_ttl_timeout(key, version=version)
-        self.set(key, current, timeout=timeout, version=version)
-        return True
+        with self._compound_op_lock():
+            current = self._get_list(key, version=version)
+            if not current:
+                msg = "no such key"
+                raise ValueError(msg)
+            try:
+                current[index] = value
+            except IndexError:
+                msg = "index out of range"
+                raise ValueError(msg) from None
+            timeout = self._get_ttl_timeout(key, version=version)
+            self.set(key, current, timeout=timeout, version=version)
+            return True
 
-    @_compound_op
     def linsert(self, key: KeyT, where: str, pivot: Any, value: Any, version: int | None = None) -> int:
         """Insert value before or after pivot in list."""
-        current = self._get_list(key, version=version)
-        if not current:
-            return 0
-        try:
-            idx = current.index(pivot)
-        except ValueError:
-            return -1
-        if where.upper() == "AFTER":
-            idx += 1
-        current.insert(idx, value)
-        timeout = self._get_ttl_timeout(key, version=version)
-        self.set(key, current, timeout=timeout, version=version)
-        return len(current)
+        with self._compound_op_lock():
+            current = self._get_list(key, version=version)
+            if not current:
+                return 0
+            try:
+                idx = current.index(pivot)
+            except ValueError:
+                return -1
+            if where.upper() == "AFTER":
+                idx += 1
+            current.insert(idx, value)
+            timeout = self._get_ttl_timeout(key, version=version)
+            self.set(key, current, timeout=timeout, version=version)
+            return len(current)
 
     def lpos(
         self,
@@ -397,32 +379,32 @@ class CachexCompat(BaseCachex):
     # Set Operations
     # =========================================================================
 
-    @_compound_op
     def sadd(self, key: KeyT, *members: Any, version: int | None = None) -> int:
         """Add members to a set."""
-        current = self._get_set(key, version=version)
-        timeout = self._get_ttl_timeout(key, version=version)
-        if current is None:
-            current = _set()
-        before = len(current)
-        current.update(members)
-        self.set(key, current, timeout=timeout, version=version)
-        return len(current) - before
+        with self._compound_op_lock():
+            current = self._get_set(key, version=version)
+            timeout = self._get_ttl_timeout(key, version=version)
+            if current is None:
+                current = _set()
+            before = len(current)
+            current.update(members)
+            self.set(key, current, timeout=timeout, version=version)
+            return len(current) - before
 
-    @_compound_op
     def srem(self, key: KeyT, *members: Any, version: int | None = None) -> int:
         """Remove members from a set."""
-        current = self._get_set(key, version=version)
-        if not current:
-            return 0
-        timeout = self._get_ttl_timeout(key, version=version)
-        removed = len(current.intersection(members))
-        current.difference_update(members)
-        if current:
-            self.set(key, current, timeout=timeout, version=version)
-        else:
-            self.delete(key, version=version)
-        return removed
+        with self._compound_op_lock():
+            current = self._get_set(key, version=version)
+            if not current:
+                return 0
+            timeout = self._get_ttl_timeout(key, version=version)
+            removed = len(current.intersection(members))
+            current.difference_update(members)
+            if current:
+                self.set(key, current, timeout=timeout, version=version)
+            else:
+                self.delete(key, version=version)
+            return removed
 
     def scard(self, key: KeyT, version: int | None = None) -> int:
         """Get the number of members in a set."""
@@ -439,29 +421,29 @@ class CachexCompat(BaseCachex):
         current = self._get_set(key, version=version)
         return _set() if current is None else _set(current)
 
-    @_compound_op
     def spop(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | _set[Any]:
         """Remove and return random member(s) from set."""
-        current = self._get_set(key, version=version)
-        if not current:
-            return _set() if count is not None else None
-        timeout = self._get_ttl_timeout(key, version=version)
-        if count is None:
-            member = random.choice(list(current))  # noqa: S311
-            current.discard(member)
+        with self._compound_op_lock():
+            current = self._get_set(key, version=version)
+            if not current:
+                return _set() if count is not None else None
+            timeout = self._get_ttl_timeout(key, version=version)
+            if count is None:
+                member = random.choice(list(current))  # noqa: S311
+                current.discard(member)
+                if current:
+                    self.set(key, current, timeout=timeout, version=version)
+                else:
+                    self.delete(key, version=version)
+                return member
+            pop_count = min(count, len(current))
+            popped = _set(random.sample(list(current), pop_count))
+            current.difference_update(popped)
             if current:
                 self.set(key, current, timeout=timeout, version=version)
             else:
                 self.delete(key, version=version)
-            return member
-        pop_count = min(count, len(current))
-        popped = _set(random.sample(list(current), pop_count))
-        current.difference_update(popped)
-        if current:
-            self.set(key, current, timeout=timeout, version=version)
-        else:
-            self.delete(key, version=version)
-        return popped
+            return popped
 
     def srandmember(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | list[Any]:
         """Get random member(s) from set without removing."""
@@ -527,7 +509,6 @@ class CachexCompat(BaseCachex):
     # Hash Operations
     # =========================================================================
 
-    @_compound_op
     def hset(  # noqa: C901
         self,
         key: KeyT,
@@ -538,48 +519,49 @@ class CachexCompat(BaseCachex):
         items: list[Any] | None = None,
     ) -> int:
         """Set hash field(s)."""
-        current = self._get_hash(key, version=version)
-        timeout = self._get_ttl_timeout(key, version=version)
-        if current is None:
-            current = {}
-        added = 0
-        if field is not None:
-            if field not in current:
-                added += 1
-            current[field] = value
-        if mapping:
-            for f, v in mapping.items():
-                if f not in current:
+        with self._compound_op_lock():
+            current = self._get_hash(key, version=version)
+            timeout = self._get_ttl_timeout(key, version=version)
+            if current is None:
+                current = {}
+            added = 0
+            if field is not None:
+                if field not in current:
                     added += 1
-                current[f] = v
-        if items:
-            if len(items) % 2 != 0:
-                msg = "items must contain an even number of elements (field/value pairs)"
-                raise ValueError(msg)
-            for i in range(0, len(items), 2):
-                f, v = items[i], items[i + 1]
-                if f not in current:
-                    added += 1
-                current[f] = v
-        self.set(key, current, timeout=timeout, version=version)
-        return added
+                current[field] = value
+            if mapping:
+                for f, v in mapping.items():
+                    if f not in current:
+                        added += 1
+                    current[f] = v
+            if items:
+                if len(items) % 2 != 0:
+                    msg = "items must contain an even number of elements (field/value pairs)"
+                    raise ValueError(msg)
+                for i in range(0, len(items), 2):
+                    f, v = items[i], items[i + 1]
+                    if f not in current:
+                        added += 1
+                    current[f] = v
+            self.set(key, current, timeout=timeout, version=version)
+            return added
 
-    @_compound_op
     def hdel(self, key: KeyT, *fields: str, version: int | None = None) -> int:
         """Delete hash fields."""
-        current = self._get_hash(key, version=version)
-        if not current:
-            return 0
-        timeout = self._get_ttl_timeout(key, version=version)
-        removed = sum(1 for f in fields if f in current)
-        for f in fields:
-            current.pop(f, None)
-        if removed > 0:
-            if current:
-                self.set(key, current, timeout=timeout, version=version)
-            else:
-                self.delete(key, version=version)
-        return removed
+        with self._compound_op_lock():
+            current = self._get_hash(key, version=version)
+            if not current:
+                return 0
+            timeout = self._get_ttl_timeout(key, version=version)
+            removed = sum(1 for f in fields if f in current)
+            for f in fields:
+                current.pop(f, None)
+            if removed > 0:
+                if current:
+                    self.set(key, current, timeout=timeout, version=version)
+                else:
+                    self.delete(key, version=version)
+            return removed
 
     def hget(self, key: KeyT, field: str, version: int | None = None) -> Any:
         """Get value of field in hash."""
@@ -618,40 +600,40 @@ class CachexCompat(BaseCachex):
             return [None] * len(fields)
         return [current.get(f) for f in fields]
 
-    @_compound_op
     def hsetnx(self, key: KeyT, field: str, value: Any, version: int | None = None) -> bool:
         """Set field in hash only if it doesn't exist."""
-        current = self._get_hash(key, version=version)
-        timeout = self._get_ttl_timeout(key, version=version)
-        if current is None:
-            current = {}
-        if field in current:
-            return False
-        current[field] = value
-        self.set(key, current, timeout=timeout, version=version)
-        return True
+        with self._compound_op_lock():
+            current = self._get_hash(key, version=version)
+            timeout = self._get_ttl_timeout(key, version=version)
+            if current is None:
+                current = {}
+            if field in current:
+                return False
+            current[field] = value
+            self.set(key, current, timeout=timeout, version=version)
+            return True
 
-    @_compound_op
     def hincrby(self, key: KeyT, field: str, amount: int = 1, version: int | None = None) -> int:
         """Increment integer value of field in hash."""
-        current = self._get_hash(key, version=version)
-        timeout = self._get_ttl_timeout(key, version=version)
-        if current is None:
-            current = {}
-        current[field] = int(current.get(field, 0)) + amount
-        self.set(key, current, timeout=timeout, version=version)
-        return current[field]
+        with self._compound_op_lock():
+            current = self._get_hash(key, version=version)
+            timeout = self._get_ttl_timeout(key, version=version)
+            if current is None:
+                current = {}
+            current[field] = int(current.get(field, 0)) + amount
+            self.set(key, current, timeout=timeout, version=version)
+            return current[field]
 
-    @_compound_op
     def hincrbyfloat(self, key: KeyT, field: str, amount: float = 1.0, version: int | None = None) -> float:
         """Increment float value of field in hash."""
-        current = self._get_hash(key, version=version)
-        timeout = self._get_ttl_timeout(key, version=version)
-        if current is None:
-            current = {}
-        current[field] = float(current.get(field, 0)) + amount
-        self.set(key, current, timeout=timeout, version=version)
-        return current[field]
+        with self._compound_op_lock():
+            current = self._get_hash(key, version=version)
+            timeout = self._get_ttl_timeout(key, version=version)
+            if current is None:
+                current = {}
+            current[field] = float(current.get(field, 0)) + amount
+            self.set(key, current, timeout=timeout, version=version)
+            return current[field]
 
     # =========================================================================
     # Sorted Set Helpers
@@ -675,7 +657,6 @@ class CachexCompat(BaseCachex):
     # Sorted Set Operations
     # =========================================================================
 
-    @_compound_op
     def zadd(
         self,
         key: KeyT,
@@ -689,28 +670,29 @@ class CachexCompat(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Add members to a sorted set."""
-        current = self._get_zset(key, version=version) or {}
-        timeout = self._get_ttl_timeout(key, version=version)
-        changed = 0
-        for member, score in mapping.items():
-            exists = member in current
-            if nx and exists:
-                continue
-            if xx and not exists:
-                continue
-            old_score = current.get(member)
-            if gt and old_score is not None and score <= old_score:
-                continue
-            if lt and old_score is not None and score >= old_score:
-                continue
-            if ch:
-                if old_score != score:
+        with self._compound_op_lock():
+            current = self._get_zset(key, version=version) or {}
+            timeout = self._get_ttl_timeout(key, version=version)
+            changed = 0
+            for member, score in mapping.items():
+                exists = member in current
+                if nx and exists:
+                    continue
+                if xx and not exists:
+                    continue
+                old_score = current.get(member)
+                if gt and old_score is not None and score <= old_score:
+                    continue
+                if lt and old_score is not None and score >= old_score:
+                    continue
+                if ch:
+                    if old_score != score:
+                        changed += 1
+                elif not exists:
                     changed += 1
-            elif not exists:
-                changed += 1
-            current[member] = score
-        self.set(key, current, timeout=timeout, version=version)
-        return changed
+                current[member] = score
+            self.set(key, current, timeout=timeout, version=version)
+            return changed
 
     def zcard(self, key: KeyT, version: int | None = None) -> int:
         """Get the number of members in a sorted set."""
@@ -820,31 +802,31 @@ class CachexCompat(BaseCachex):
             return filtered
         return [m for m, _ in filtered]
 
-    @_compound_op
     def zrem(self, key: KeyT, *members: Any, version: int | None = None) -> int:
         """Remove members from a sorted set."""
-        current = self._get_zset(key, version=version)
-        if not current:
-            return 0
-        timeout = self._get_ttl_timeout(key, version=version)
-        removed = sum(1 for m in members if m in current)
-        for m in members:
-            current.pop(m, None)
-        if removed > 0:
-            if current:
-                self.set(key, current, timeout=timeout, version=version)
-            else:
-                self.delete(key, version=version)
-        return removed
+        with self._compound_op_lock():
+            current = self._get_zset(key, version=version)
+            if not current:
+                return 0
+            timeout = self._get_ttl_timeout(key, version=version)
+            removed = sum(1 for m in members if m in current)
+            for m in members:
+                current.pop(m, None)
+            if removed > 0:
+                if current:
+                    self.set(key, current, timeout=timeout, version=version)
+                else:
+                    self.delete(key, version=version)
+            return removed
 
-    @_compound_op
     def zincrby(self, key: KeyT, amount: float, member: Any, version: int | None = None) -> float:
         """Increment the score of a member."""
-        current = self._get_zset(key, version=version) or {}
-        timeout = self._get_ttl_timeout(key, version=version)
-        current[member] = current.get(member, 0.0) + amount
-        self.set(key, current, timeout=timeout, version=version)
-        return current[member]
+        with self._compound_op_lock():
+            current = self._get_zset(key, version=version) or {}
+            timeout = self._get_ttl_timeout(key, version=version)
+            current[member] = current.get(member, 0.0) + amount
+            self.set(key, current, timeout=timeout, version=version)
+            return current[member]
 
     def zcount(
         self,
@@ -861,41 +843,41 @@ class CachexCompat(BaseCachex):
         hi = float("inf") if max_score == "+inf" else float(max_score)
         return sum(1 for s in current.values() if lo <= s <= hi)
 
-    @_compound_op
     def zpopmin(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with lowest scores."""
-        current = self._get_zset(key, version=version)
-        if not current:
-            return []
-        timeout = self._get_ttl_timeout(key, version=version)
-        sorted_members = self._sorted_members(current)
-        n = 1 if count is None else count
-        popped = sorted_members[:n]
-        for m, _ in popped:
-            del current[m]
-        if current:
-            self.set(key, current, timeout=timeout, version=version)
-        else:
-            self.delete(key, version=version)
-        return popped
+        with self._compound_op_lock():
+            current = self._get_zset(key, version=version)
+            if not current:
+                return []
+            timeout = self._get_ttl_timeout(key, version=version)
+            sorted_members = self._sorted_members(current)
+            n = 1 if count is None else count
+            popped = sorted_members[:n]
+            for m, _ in popped:
+                del current[m]
+            if current:
+                self.set(key, current, timeout=timeout, version=version)
+            else:
+                self.delete(key, version=version)
+            return popped
 
-    @_compound_op
     def zpopmax(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with highest scores."""
-        current = self._get_zset(key, version=version)
-        if not current:
-            return []
-        timeout = self._get_ttl_timeout(key, version=version)
-        sorted_members = list(reversed(self._sorted_members(current)))
-        n = 1 if count is None else count
-        popped = sorted_members[:n]
-        for m, _ in popped:
-            del current[m]
-        if current:
-            self.set(key, current, timeout=timeout, version=version)
-        else:
-            self.delete(key, version=version)
-        return popped
+        with self._compound_op_lock():
+            current = self._get_zset(key, version=version)
+            if not current:
+                return []
+            timeout = self._get_ttl_timeout(key, version=version)
+            sorted_members = list(reversed(self._sorted_members(current)))
+            n = 1 if count is None else count
+            popped = sorted_members[:n]
+            for m, _ in popped:
+                del current[m]
+            if current:
+                self.set(key, current, timeout=timeout, version=version)
+            else:
+                self.delete(key, version=version)
+            return popped
 
     def zmscore(self, key: KeyT, *members: Any, version: int | None = None) -> list[float | None]:
         """Get the scores of multiple members."""
@@ -904,7 +886,6 @@ class CachexCompat(BaseCachex):
             return [None] * len(members)
         return [current.get(m) for m in members]
 
-    @_compound_op
     def zremrangebyscore(
         self,
         key: KeyT,
@@ -913,42 +894,43 @@ class CachexCompat(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Remove members with scores between min and max."""
-        current = self._get_zset(key, version=version)
-        if not current:
-            return 0
-        lo = float("-inf") if min_score == "-inf" else float(min_score)
-        hi = float("inf") if max_score == "+inf" else float(max_score)
-        timeout = self._get_ttl_timeout(key, version=version)
-        to_remove = [m for m, s in current.items() if lo <= s <= hi]
-        for m in to_remove:
-            del current[m]
-        if to_remove:
+        with self._compound_op_lock():
+            current = self._get_zset(key, version=version)
+            if not current:
+                return 0
+            lo = float("-inf") if min_score == "-inf" else float(min_score)
+            hi = float("inf") if max_score == "+inf" else float(max_score)
+            timeout = self._get_ttl_timeout(key, version=version)
+            to_remove = [m for m, s in current.items() if lo <= s <= hi]
+            for m in to_remove:
+                del current[m]
+            if to_remove:
+                if current:
+                    self.set(key, current, timeout=timeout, version=version)
+                else:
+                    self.delete(key, version=version)
+            return len(to_remove)
+
+    def zremrangebyrank(self, key: KeyT, start: int, end: int, version: int | None = None) -> int:
+        """Remove members by rank range."""
+        with self._compound_op_lock():
+            current = self._get_zset(key, version=version)
+            if not current:
+                return 0
+            sorted_members = self._sorted_members(current)
+            length = len(sorted_members)
+            if start < 0:
+                start = max(length + start, 0)
+            if end < 0:
+                end = length + end
+            if start >= length or end < start:
+                return 0
+            timeout = self._get_ttl_timeout(key, version=version)
+            to_remove = sorted_members[start : end + 1]
+            for m, _ in to_remove:
+                del current[m]
             if current:
                 self.set(key, current, timeout=timeout, version=version)
             else:
                 self.delete(key, version=version)
-        return len(to_remove)
-
-    @_compound_op
-    def zremrangebyrank(self, key: KeyT, start: int, end: int, version: int | None = None) -> int:
-        """Remove members by rank range."""
-        current = self._get_zset(key, version=version)
-        if not current:
-            return 0
-        sorted_members = self._sorted_members(current)
-        length = len(sorted_members)
-        if start < 0:
-            start = max(length + start, 0)
-        if end < 0:
-            end = length + end
-        if start >= length or end < start:
-            return 0
-        timeout = self._get_ttl_timeout(key, version=version)
-        to_remove = sorted_members[start : end + 1]
-        for m, _ in to_remove:
-            del current[m]
-        if current:
-            self.set(key, current, timeout=timeout, version=version)
-        else:
-            self.delete(key, version=version)
-        return len(to_remove)
+            return len(to_remove)
