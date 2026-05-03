@@ -44,8 +44,6 @@ are msgpack-then-zstd. All pods sharing one ``STREAM_KEY`` must use the same
 transport ``BACKEND`` + ``OPTIONS`` so their serializers agree.
 """
 
-from __future__ import annotations
-
 import contextlib
 import fnmatch
 import logging

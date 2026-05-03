@@ -1,12 +1,12 @@
-"""Cluster cache backends for Redis-compatible backends."""
+"""Cluster cache backend base class.
 
-from __future__ import annotations
+Driver-agnostic cluster behavior; per-driver concrete subclasses live in
+:mod:`django_cachex.cache.valkey_py` (``valkey-py``) and
+:mod:`django_cachex.cache.redis_py` (``redis-py``).
+"""
 
 from typing import TYPE_CHECKING
 
-from django_cachex.adapters.cluster import BaseKeyValueClusterAdapter
-from django_cachex.adapters.redis_py import RedisClusterAdapter
-from django_cachex.adapters.valkey_py import ValkeyClusterAdapter
 from django_cachex.cache.default import KeyValueCache
 
 if TYPE_CHECKING:
@@ -16,11 +16,10 @@ if TYPE_CHECKING:
 class KeyValueClusterCache(KeyValueCache):
     """Cluster cache backend base class.
 
-    Extends KeyValueCache for cluster-specific behavior.
-    Subclasses set `_adapter_class` class attribute to their specific ClusterCacheClient.
+    Extends ``KeyValueCache`` with cluster-specific behaviour (no
+    transactions on pipelines). Subclasses set ``_adapter_class`` to
+    their specific cluster adapter.
     """
-
-    _adapter_class: type[BaseKeyValueClusterAdapter] = BaseKeyValueClusterAdapter
 
     def pipeline(
         self,
@@ -32,28 +31,4 @@ class KeyValueClusterCache(KeyValueCache):
         return super().pipeline(transaction=False, version=version)
 
 
-class RedisClusterCache(KeyValueClusterCache):
-    """Django cache backend for Redis Cluster mode (redis-py).
-
-    Keys are sharded across nodes by hash slot. Raises :class:`ImportError`
-    on instantiation if ``redis-py`` isn't installed.
-    """
-
-    _adapter_class = RedisClusterAdapter
-
-
-class ValkeyClusterCache(KeyValueClusterCache):
-    """Django cache backend for Valkey Cluster mode (valkey-py).
-
-    Keys are sharded across nodes by hash slot. Raises :class:`ImportError`
-    on instantiation if ``valkey-py`` isn't installed.
-    """
-
-    _adapter_class = ValkeyClusterAdapter
-
-
-__all__ = [
-    "KeyValueClusterCache",
-    "RedisClusterCache",
-    "ValkeyClusterCache",
-]
+__all__ = ["KeyValueClusterCache"]

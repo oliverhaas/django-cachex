@@ -15,14 +15,18 @@ ruff rules suppressed at the file level since this is intentionally
 rough until we decide whether to keep this approach.
 """
 
-from __future__ import annotations
-
 import asyncio
 from typing import TYPE_CHECKING, Any, Self
 from urllib.parse import urlparse
 
-from django_cachex.adapters.default import BaseKeyValueAdapter
 from django_cachex.adapters.pipeline import BaseKeyValuePipelineAdapter
+from django_cachex.adapters.protocols import KeyValueAdapterProtocol
+from django_cachex.stampede import (
+    StampedeConfig,
+    get_timeout_with_buffer,
+    make_stampede_config,
+    resolve_stampede,
+)
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
@@ -644,25 +648,32 @@ class _AsyncGlidePipeline:
 # =============================================================================
 
 
-class ValkeyGlideAdapter(BaseKeyValueAdapter):
+class ValkeyGlideAdapter(KeyValueAdapterProtocol):
     """Design B backend: each operation method calls glide natively.
 
-    Inherits ``encode``, ``decode``, ``_resolve_stampede``, and
-    ``_get_timeout_with_buffer`` from ``BaseKeyValueAdapter``. Everything
-    that touches the wire is overridden.
+    Implements the cachex adapter surface against ``valkey-glide-sync``.
+    Everything that touches the wire is overridden directly; the redis-py
+    pool/parser machinery in :class:`~django_cachex.adapters.valkey_py.ValkeyPyAdapter`
+    isn't used here.
     """
-
-    _lib: Any = None
-    _client_class: Any = None
-    _pool_class: Any = None
-    _async_client_class: Any = None
-    _async_pool_class: Any = None
 
     def __init__(self, servers: list[str], **options: Any) -> None:
         _check_installed()
-        super().__init__(servers, **options)
+        self._servers = servers
+        self._options = options
+        self._stampede_config: StampedeConfig | None = make_stampede_config(options.get("stampede_prevention"))
         self._sync_glide_client: GlideClient | None = None
         self._async_glide_clients: dict[int, AsyncGlideClient] = {}
+
+    def _resolve_stampede(self, stampede_prevention: bool | dict | None = None) -> StampedeConfig | None:
+        return resolve_stampede(self._stampede_config, stampede_prevention)
+
+    def _get_timeout_with_buffer(
+        self,
+        timeout: int | None,
+        stampede_prevention: bool | dict | None = None,
+    ) -> int | None:
+        return get_timeout_with_buffer(timeout, self._stampede_config, stampede_prevention)
 
     # ---- client lifecycle ----
     def _client(self) -> GlideClient:

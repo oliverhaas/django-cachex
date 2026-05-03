@@ -7,8 +7,6 @@ valkey-py. Each driver is process-shared via the registry; per-cache state
 lives on the subclass instance.
 """
 
-from __future__ import annotations
-
 from itertools import batched
 from typing import TYPE_CHECKING, Any, cast, override
 from urllib.parse import parse_qs, urlparse
@@ -18,9 +16,15 @@ from django_cachex._redis_rs_clients import (
     get_driver_sentinel,
     get_driver_standard,
 )
-from django_cachex.adapters.default import BaseKeyValueAdapter
+from django_cachex.adapters.protocols import KeyValueAdapterProtocol
 from django_cachex.lock import AsyncValkeyLock, ValkeyLock
-from django_cachex.stampede import should_recompute
+from django_cachex.stampede import (
+    StampedeConfig,
+    get_timeout_with_buffer,
+    make_stampede_config,
+    resolve_stampede,
+    should_recompute,
+)
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
@@ -272,18 +276,47 @@ def _decode_xautoclaim(
     return (next_id, _decode_xrange(entries), deleted)
 
 
-class RedisRsValkeyAdapter(BaseKeyValueAdapter):
+class RedisRsValkeyAdapter(KeyValueAdapterProtocol):
     """Base Rust-driver client. Subclasses choose the topology.
 
-    We don't run redis-py's pool/parser machinery — every I/O call routes
-    through the Rust driver instead — so the ``_lib``/``_client_class``/
-    ``_pool_class`` slots inherited from :class:`BaseKeyValueAdapter` stay
-    at their default ``None``.
+    Implements the cachex adapter surface against ``RedisRsDriver``. We
+    don't run redis-py's pool/parser machinery — every I/O call routes
+    through the Rust driver instead — so the redis-py-shaped class slots
+    on :class:`~django_cachex.adapters.valkey_py.ValkeyPyAdapter` aren't
+    relevant here.
     """
 
     # Option keys we recognize so the registry cache hits across cache
     # instances that share a driver but differ only in cosmetic options.
     _DRIVER_OPTION_KEYS = _DRIVER_KWARGS
+
+    # Default scan iteration batch size
+    _default_scan_itersize: int = 100
+
+    def __init__(self, servers: list[str], **options: Any) -> None:
+        self._servers = servers
+        self._options = options
+        self._stampede_config: StampedeConfig | None = make_stampede_config(options.get("stampede_prevention"))
+
+    def _resolve_stampede(self, stampede_prevention: bool | dict | None = None) -> StampedeConfig | None:
+        return resolve_stampede(self._stampede_config, stampede_prevention)
+
+    def _get_timeout_with_buffer(
+        self,
+        timeout: int | None,
+        stampede_prevention: bool | dict | None = None,
+    ) -> int | None:
+        return get_timeout_with_buffer(timeout, self._stampede_config, stampede_prevention)
+
+    @staticmethod
+    def _normalize_ttl(result: int) -> int | None:
+        """Normalize Redis TTL/PTTL/EXPIRETIME results.
+
+        -1 (no expiry) → None, -2 (key missing) → -2, positive → as-is.
+        """
+        if result == -1:
+            return None
+        return result
 
     # ------------------------------------------------------------------ hooks
 
@@ -904,6 +937,14 @@ class RedisRsValkeyAdapter(BaseKeyValueAdapter):
             blocking_timeout=blocking_timeout,
             thread_local=thread_local,
         )
+
+    # ----------------------------------------------------------------- lifecycle
+
+    def close(self, **kwargs: Any) -> None:
+        """No-op. The Rust driver lives in the shared registry, not this instance."""
+
+    async def aclose(self, **kwargs: Any) -> None:
+        """No-op. The Rust driver lives in the shared registry, not this instance."""
 
     # ----------------------------------------------------------------- admin
 

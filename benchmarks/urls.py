@@ -8,8 +8,6 @@ numbers reflect what a real Django request paying for the same cache work
 looks like, not just the cache call in isolation.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
 from django.core.cache import cache

@@ -5,8 +5,6 @@ Tests the multi-server read replica functionality where:
 - Reads distribute to replica servers
 """
 
-from __future__ import annotations
-
 import time
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any

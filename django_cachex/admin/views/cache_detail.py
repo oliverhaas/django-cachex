@@ -2,8 +2,6 @@
 Cache detail view for the django-cachex admin.
 """
 
-from __future__ import annotations
-
 import json
 from typing import TYPE_CHECKING
 

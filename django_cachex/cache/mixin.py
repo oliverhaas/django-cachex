@@ -20,14 +20,12 @@ backend that implements ops natively against an atomic primitive:
 or ``DatabaseCache`` (compound ops in a transaction).
 """
 
-from __future__ import annotations
-
 import contextlib
 import random
 from functools import wraps
 from typing import TYPE_CHECKING, Any
 
-from django_cachex.admin.wrappers import BaseCacheExtensions
+from django_cachex.cache.base import BaseCachex
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
@@ -60,7 +58,7 @@ def _compound_op(method: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
-class CachexCompat(BaseCacheExtensions):
+class CachexCompat(BaseCachex):
     """Cachex extension methods for any BaseCache subclass.
 
     Adds data structure ops (lists, sets, hashes, sorted sets), type
@@ -112,7 +110,7 @@ class CachexCompat(BaseCacheExtensions):
         matching = self.keys(pattern, version=version)
         deleted = 0
         for key in matching:
-            if self.delete(key, version=version):  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            if self.delete(key, version=version):
                 deleted += 1
         return deleted
 
@@ -122,7 +120,7 @@ class CachexCompat(BaseCacheExtensions):
 
     def type(self, key: KeyT, version: int | None = None) -> KeyType | None:
         """Get the data type of a key by inspecting the stored Python value."""
-        value = self.get(key, default=_MISSING, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        value = self.get(key, default=_MISSING, version=version)
         if value is _MISSING:
             return None
         if isinstance(value, list):
@@ -164,7 +162,7 @@ class CachexCompat(BaseCacheExtensions):
 
     def _get_list(self, key: KeyT, version: int | None = None) -> list[Any] | None:
         """Get the stored list value, or None if key doesn't exist."""
-        value = self.get(key, default=_MISSING, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        value = self.get(key, default=_MISSING, version=version)
         if value is _MISSING:
             return None
         if not isinstance(value, list):
@@ -184,7 +182,7 @@ class CachexCompat(BaseCacheExtensions):
         if current is None:
             current = []
         new_list = list(reversed(values)) + current
-        self.set(key, new_list, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        self.set(key, new_list, timeout=timeout, version=version)
         return len(new_list)
 
     @_compound_op
@@ -195,7 +193,7 @@ class CachexCompat(BaseCacheExtensions):
         if current is None:
             current = []
         new_list = current + list(values)
-        self.set(key, new_list, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        self.set(key, new_list, timeout=timeout, version=version)
         return len(new_list)
 
     @_compound_op
@@ -209,9 +207,9 @@ class CachexCompat(BaseCacheExtensions):
         popped = current[:pop_count]
         remaining = current[pop_count:]
         if remaining:
-            self.set(key, remaining, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self.set(key, remaining, timeout=timeout, version=version)
         else:
-            self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self.delete(key, version=version)
         return popped
 
     @_compound_op
@@ -225,9 +223,9 @@ class CachexCompat(BaseCacheExtensions):
         popped = list(reversed(current[-pop_count:]))
         remaining = current[:-pop_count] if pop_count < len(current) else []
         if remaining:
-            self.set(key, remaining, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self.set(key, remaining, timeout=timeout, version=version)
         else:
-            self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self.delete(key, version=version)
         return popped
 
     def lrange(self, key: KeyT, start: int, end: int, version: int | None = None) -> list[Any]:
@@ -286,9 +284,9 @@ class CachexCompat(BaseCacheExtensions):
             new_list.reverse()
         if removed > 0:
             if new_list:
-                self.set(key, new_list, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+                self.set(key, new_list, timeout=timeout, version=version)
             else:
-                self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+                self.delete(key, version=version)
         return removed
 
     @_compound_op
@@ -304,13 +302,13 @@ class CachexCompat(BaseCacheExtensions):
         if end < 0:
             end = length + end
         if start >= length or end < start:
-            self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self.delete(key, version=version)
             return True
         trimmed = current[start : end + 1]
         if trimmed:
-            self.set(key, trimmed, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self.set(key, trimmed, timeout=timeout, version=version)
         else:
-            self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self.delete(key, version=version)
         return True
 
     def lindex(self, key: KeyT, index: int, version: int | None = None) -> Any:
@@ -336,7 +334,7 @@ class CachexCompat(BaseCacheExtensions):
             msg = "index out of range"
             raise ValueError(msg) from None
         timeout = self._get_ttl_timeout(key, version=version)
-        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        self.set(key, current, timeout=timeout, version=version)
         return True
 
     @_compound_op
@@ -353,7 +351,7 @@ class CachexCompat(BaseCacheExtensions):
             idx += 1
         current.insert(idx, value)
         timeout = self._get_ttl_timeout(key, version=version)
-        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        self.set(key, current, timeout=timeout, version=version)
         return len(current)
 
     def lpos(
@@ -387,7 +385,7 @@ class CachexCompat(BaseCacheExtensions):
 
     def _get_set(self, key: KeyT, version: int | None = None) -> _set[Any] | None:
         """Get the stored set value, or None if key doesn't exist."""
-        value = self.get(key, default=_MISSING, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        value = self.get(key, default=_MISSING, version=version)
         if value is _MISSING:
             return None
         if not isinstance(value, _set):
@@ -408,7 +406,7 @@ class CachexCompat(BaseCacheExtensions):
             current = _set()
         before = len(current)
         current.update(members)
-        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        self.set(key, current, timeout=timeout, version=version)
         return len(current) - before
 
     @_compound_op
@@ -421,9 +419,9 @@ class CachexCompat(BaseCacheExtensions):
         removed = len(current.intersection(members))
         current.difference_update(members)
         if current:
-            self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self.set(key, current, timeout=timeout, version=version)
         else:
-            self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self.delete(key, version=version)
         return removed
 
     def scard(self, key: KeyT, version: int | None = None) -> int:
@@ -452,17 +450,17 @@ class CachexCompat(BaseCacheExtensions):
             member = random.choice(list(current))  # noqa: S311
             current.discard(member)
             if current:
-                self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+                self.set(key, current, timeout=timeout, version=version)
             else:
-                self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+                self.delete(key, version=version)
             return member
         pop_count = min(count, len(current))
         popped = _set(random.sample(list(current), pop_count))
         current.difference_update(popped)
         if current:
-            self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self.set(key, current, timeout=timeout, version=version)
         else:
-            self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self.delete(key, version=version)
         return popped
 
     def srandmember(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | list[Any]:
@@ -517,7 +515,7 @@ class CachexCompat(BaseCacheExtensions):
 
     def _get_hash(self, key: KeyT, version: int | None = None) -> dict[str, Any] | None:
         """Get the stored hash value, or None if key doesn't exist."""
-        value = self.get(key, default=_MISSING, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        value = self.get(key, default=_MISSING, version=version)
         if value is _MISSING:
             return None
         if not isinstance(value, dict) or not all(isinstance(k, str) for k in value):
@@ -563,7 +561,7 @@ class CachexCompat(BaseCacheExtensions):
                 if f not in current:
                     added += 1
                 current[f] = v
-        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        self.set(key, current, timeout=timeout, version=version)
         return added
 
     @_compound_op
@@ -578,9 +576,9 @@ class CachexCompat(BaseCacheExtensions):
             current.pop(f, None)
         if removed > 0:
             if current:
-                self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+                self.set(key, current, timeout=timeout, version=version)
             else:
-                self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+                self.delete(key, version=version)
         return removed
 
     def hget(self, key: KeyT, field: str, version: int | None = None) -> Any:
@@ -630,7 +628,7 @@ class CachexCompat(BaseCacheExtensions):
         if field in current:
             return False
         current[field] = value
-        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        self.set(key, current, timeout=timeout, version=version)
         return True
 
     @_compound_op
@@ -641,7 +639,7 @@ class CachexCompat(BaseCacheExtensions):
         if current is None:
             current = {}
         current[field] = int(current.get(field, 0)) + amount
-        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        self.set(key, current, timeout=timeout, version=version)
         return current[field]
 
     @_compound_op
@@ -652,7 +650,7 @@ class CachexCompat(BaseCacheExtensions):
         if current is None:
             current = {}
         current[field] = float(current.get(field, 0)) + amount
-        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        self.set(key, current, timeout=timeout, version=version)
         return current[field]
 
     # =========================================================================
@@ -661,7 +659,7 @@ class CachexCompat(BaseCacheExtensions):
 
     def _get_zset(self, key: KeyT, version: int | None = None) -> dict[Any, float] | None:
         """Get the stored sorted set as a {member: score} dict, or None."""
-        value = self.get(key, default=_MISSING, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        value = self.get(key, default=_MISSING, version=version)
         if value is _MISSING:
             return None
         if not isinstance(value, dict):
@@ -711,7 +709,7 @@ class CachexCompat(BaseCacheExtensions):
             elif not exists:
                 changed += 1
             current[member] = score
-        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        self.set(key, current, timeout=timeout, version=version)
         return changed
 
     def zcard(self, key: KeyT, version: int | None = None) -> int:
@@ -834,9 +832,9 @@ class CachexCompat(BaseCacheExtensions):
             current.pop(m, None)
         if removed > 0:
             if current:
-                self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+                self.set(key, current, timeout=timeout, version=version)
             else:
-                self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+                self.delete(key, version=version)
         return removed
 
     @_compound_op
@@ -845,7 +843,7 @@ class CachexCompat(BaseCacheExtensions):
         current = self._get_zset(key, version=version) or {}
         timeout = self._get_ttl_timeout(key, version=version)
         current[member] = current.get(member, 0.0) + amount
-        self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        self.set(key, current, timeout=timeout, version=version)
         return current[member]
 
     def zcount(
@@ -876,9 +874,9 @@ class CachexCompat(BaseCacheExtensions):
         for m, _ in popped:
             del current[m]
         if current:
-            self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self.set(key, current, timeout=timeout, version=version)
         else:
-            self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self.delete(key, version=version)
         return popped
 
     @_compound_op
@@ -894,9 +892,9 @@ class CachexCompat(BaseCacheExtensions):
         for m, _ in popped:
             del current[m]
         if current:
-            self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self.set(key, current, timeout=timeout, version=version)
         else:
-            self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self.delete(key, version=version)
         return popped
 
     def zmscore(self, key: KeyT, *members: Any, version: int | None = None) -> list[float | None]:
@@ -926,9 +924,9 @@ class CachexCompat(BaseCacheExtensions):
             del current[m]
         if to_remove:
             if current:
-                self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+                self.set(key, current, timeout=timeout, version=version)
             else:
-                self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+                self.delete(key, version=version)
         return len(to_remove)
 
     @_compound_op
@@ -950,7 +948,7 @@ class CachexCompat(BaseCacheExtensions):
         for m, _ in to_remove:
             del current[m]
         if current:
-            self.set(key, current, timeout=timeout, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self.set(key, current, timeout=timeout, version=version)
         else:
-            self.delete(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            self.delete(key, version=version)
         return len(to_remove)

@@ -2,8 +2,6 @@
 Key add view for the django-cachex admin.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 

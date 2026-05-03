@@ -1,47 +1,18 @@
-"""Sentinel cache backends for Redis-compatible backends."""
+"""Sentinel cache backend base class.
 
-from __future__ import annotations
+Driver-agnostic sentinel behavior; per-driver concrete subclasses live in
+:mod:`django_cachex.cache.valkey_py` (``valkey-py``) and
+:mod:`django_cachex.cache.redis_py` (``redis-py``).
+"""
 
-from django_cachex.adapters.redis_py import RedisSentinelAdapter
-from django_cachex.adapters.sentinel import BaseKeyValueSentinelAdapter
-from django_cachex.adapters.valkey_py import ValkeySentinelAdapter
 from django_cachex.cache.default import KeyValueCache
 
 
 class KeyValueSentinelCache(KeyValueCache):
     """Sentinel cache backend base class.
 
-    Extends KeyValueCache for sentinel-specific behavior.
-    Subclasses set `_adapter_class` class attribute to their specific SentinelCacheClient.
+    Subclasses set ``_adapter_class`` to their specific sentinel adapter.
     """
 
-    _adapter_class: type[BaseKeyValueSentinelAdapter] = BaseKeyValueSentinelAdapter
 
-
-class RedisSentinelCache(KeyValueSentinelCache):
-    """Django cache backend for Redis Sentinel high availability (redis-py).
-
-    Failover and service discovery happen through Redis Sentinel; the
-    ``LOCATION`` hostname is the Sentinel service name. Raises
-    :class:`ImportError` on instantiation if ``redis-py`` isn't installed.
-    """
-
-    _adapter_class = RedisSentinelAdapter
-
-
-class ValkeySentinelCache(KeyValueSentinelCache):
-    """Django cache backend for Valkey Sentinel high availability (valkey-py).
-
-    Failover and service discovery happen through Valkey Sentinel; the
-    ``LOCATION`` hostname is the Sentinel service name. Raises
-    :class:`ImportError` on instantiation if ``valkey-py`` isn't installed.
-    """
-
-    _adapter_class = ValkeySentinelAdapter
-
-
-__all__ = [
-    "KeyValueSentinelCache",
-    "RedisSentinelCache",
-    "ValkeySentinelCache",
-]
+__all__ = ["KeyValueSentinelCache"]

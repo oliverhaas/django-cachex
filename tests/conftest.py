@@ -1,7 +1,5 @@
 """Pytest configuration for django-cachex tests."""
 
-from __future__ import annotations
-
 import pytest
 
 from tests.fixtures import (

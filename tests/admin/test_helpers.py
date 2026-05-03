@@ -1,7 +1,5 @@
 """Tests for admin helper functions."""
 
-from __future__ import annotations
-
 import pytest
 
 from django_cachex.admin.helpers import PAGE_SIZE, _paginate

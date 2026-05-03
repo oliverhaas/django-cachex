@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from django_cachex.adapters import BaseKeyValueAdapter, RedisAdapter
+from django_cachex.adapters import KeyValueAdapterProtocol, RedisPyAdapter
 
 if TYPE_CHECKING:
     from django_cachex.cache import KeyValueCache
@@ -18,7 +18,7 @@ def cache_client(cache: KeyValueCache):
 
 
 class TestClientClose:
-    def test_close_is_noop(self, cache_client: BaseKeyValueAdapter):
+    def test_close_is_noop(self, cache_client: KeyValueAdapterProtocol):
         """Test close() is a no-op — pools persist after close."""
         # Create a pool first by accessing it
         pool = cache_client._get_connection_pool(write=True)
@@ -30,9 +30,9 @@ class TestClientClose:
         assert cache_client._pools[0] is pool
 
 
-class TestRedisAdapter:
-    @patch("tests.cache.test_client.RedisAdapter.get_client")
-    @patch("tests.cache.test_client.RedisAdapter.__init__", return_value=None)
+class TestRedisPyAdapter:
+    @patch("tests.cache.test_client.RedisPyAdapter.get_client")
+    @patch("tests.cache.test_client.RedisPyAdapter.__init__", return_value=None)
     def test_delete_pattern_calls_get_client_given_no_client(
         self,
         init_mock,
@@ -42,14 +42,14 @@ class TestRedisAdapter:
         mock_client.scan_iter.return_value = []
         get_client_mock.return_value = mock_client
 
-        client = RedisAdapter.__new__(RedisAdapter)
+        client = RedisPyAdapter.__new__(RedisPyAdapter)
         client._default_scan_itersize = 10
 
         client.delete_pattern(pattern="foo*")
         get_client_mock.assert_called_once_with(write=True)
 
-    @patch("tests.cache.test_client.RedisAdapter.get_client")
-    @patch("tests.cache.test_client.RedisAdapter.__init__", return_value=None)
+    @patch("tests.cache.test_client.RedisPyAdapter.get_client")
+    @patch("tests.cache.test_client.RedisPyAdapter.__init__", return_value=None)
     def test_delete_pattern_calls_scan_iter_with_pattern(
         self,
         init_mock,
@@ -59,7 +59,7 @@ class TestRedisAdapter:
         mock_client.scan_iter.return_value = []
         get_client_mock.return_value = mock_client
 
-        client = RedisAdapter.__new__(RedisAdapter)
+        client = RedisPyAdapter.__new__(RedisPyAdapter)
         client._default_scan_itersize = 10
 
         client.delete_pattern(pattern="prefix:1:foo*")
@@ -69,8 +69,8 @@ class TestRedisAdapter:
             match="prefix:1:foo*",
         )
 
-    @patch("tests.cache.test_client.RedisAdapter.get_client")
-    @patch("tests.cache.test_client.RedisAdapter.__init__", return_value=None)
+    @patch("tests.cache.test_client.RedisPyAdapter.get_client")
+    @patch("tests.cache.test_client.RedisPyAdapter.__init__", return_value=None)
     def test_delete_pattern_calls_scan_iter_with_count_if_itersize_given(
         self,
         init_mock,
@@ -80,7 +80,7 @@ class TestRedisAdapter:
         mock_client.scan_iter.return_value = []
         get_client_mock.return_value = mock_client
 
-        client = RedisAdapter.__new__(RedisAdapter)
+        client = RedisPyAdapter.__new__(RedisPyAdapter)
         client._default_scan_itersize = 10
 
         client.delete_pattern(pattern="prefix:1:foo*", itersize=90210)
@@ -90,8 +90,8 @@ class TestRedisAdapter:
             match="prefix:1:foo*",
         )
 
-    @patch("tests.cache.test_client.RedisAdapter.get_client")
-    @patch("tests.cache.test_client.RedisAdapter.__init__", return_value=None)
+    @patch("tests.cache.test_client.RedisPyAdapter.get_client")
+    @patch("tests.cache.test_client.RedisPyAdapter.__init__", return_value=None)
     def test_delete_pattern_deletes_found_keys(
         self,
         init_mock,
@@ -102,7 +102,7 @@ class TestRedisAdapter:
         mock_client.delete.return_value = 2
         get_client_mock.return_value = mock_client
 
-        client = RedisAdapter.__new__(RedisAdapter)
+        client = RedisPyAdapter.__new__(RedisPyAdapter)
         client._default_scan_itersize = 10
 
         result = client.delete_pattern(pattern="prefix:1:foo*")

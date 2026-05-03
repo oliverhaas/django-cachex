@@ -4,8 +4,6 @@ These tests use simple fixtures from the local conftest that don't
 have the parametrization of the main test suite.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from django.test import Client

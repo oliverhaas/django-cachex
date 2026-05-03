@@ -5,8 +5,6 @@ Each subclass differs from the corresponding pure-Python backend only in its
 Users opt in via ``CACHES["default"]["BACKEND"]``.
 """
 
-from __future__ import annotations
-
 from django_cachex.adapters.redis_rs import (
     RedisRsValkeyAdapter,
     RedisRsValkeyClusterAdapter,

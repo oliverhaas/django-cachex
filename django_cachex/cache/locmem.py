@@ -25,8 +25,6 @@ Usage::
     }
 """
 
-from __future__ import annotations
-
 import fnmatch
 import pickle
 import random
@@ -36,7 +34,7 @@ from typing import TYPE_CHECKING, Any
 
 from django.core.cache.backends.locmem import LocMemCache as DjangoLocMemCache
 
-from django_cachex.admin.wrappers import BaseCacheExtensions
+from django_cachex.cache.base import BaseCachex
 from django_cachex.types import KeyType
 from django_cachex.utils import _deep_getsizeof, _format_bytes
 
@@ -56,7 +54,7 @@ _BuiltinSet = set
 _MISSING = object()
 
 
-class LocMemCache(BaseCacheExtensions, DjangoLocMemCache):
+class LocMemCache(BaseCachex, DjangoLocMemCache):
     """LocMemCache with cachex extensions, implemented natively.
 
     Drop-in replacement for ``django.core.cache.backends.locmem.LocMemCache``.

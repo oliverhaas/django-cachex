@@ -10,8 +10,6 @@ Each CAS function returns:
    -1  — gone (key/field/index no longer exists)
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
 
 from django_cachex.script import keys_only_pre

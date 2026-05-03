@@ -5,8 +5,6 @@ goal is explicit and readable, not generic — adjust the workload phases here
 when the questions you care about change.
 """
 
-from __future__ import annotations
-
 import asyncio
 import gc
 import time

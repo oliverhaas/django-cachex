@@ -20,8 +20,6 @@ Each test runs the workload K_RUNS times and feeds aggregated metrics into a
 session-scoped ``results`` sink that prints a final table at session end.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from benchmarks.configs import (

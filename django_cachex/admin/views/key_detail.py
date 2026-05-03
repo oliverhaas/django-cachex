@@ -2,8 +2,6 @@
 Key detail view for the django-cachex admin.
 """
 
-from __future__ import annotations
-
 import contextlib
 import json
 from datetime import timedelta

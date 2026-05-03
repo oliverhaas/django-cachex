@@ -4,8 +4,6 @@ Provides fake queryset objects that satisfy Django's ChangeList and Paginator
 interfaces, backed by settings.CACHES (for caches) and Redis SCAN (for keys).
 """
 
-from __future__ import annotations
-
 import contextlib
 import logging
 from datetime import timedelta

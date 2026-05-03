@@ -4,7 +4,7 @@ import pytest
 from django.core.cache import caches
 from django.test import override_settings
 
-from django_cachex.admin.wrappers import BaseCacheExtensions
+from django_cachex.cache.base import BaseCachex
 from django_cachex.cache.locmem import LocMemCache
 from django_cachex.exceptions import NotSupportedError
 
@@ -823,7 +823,7 @@ class TestDatabaseCacheExtensions:
 
 
 # =============================================================================
-# BaseCacheExtensions unsupported operations
+# BaseCachex unsupported operations
 # =============================================================================
 
 
@@ -859,16 +859,15 @@ UNSUPPORTED_OPERATIONS = [
 ]
 
 
-class TestBaseCacheExtensionsUnsupported:
-    """Test that BaseCacheExtensions raises NotSupportedError for extended operations."""
+class TestBaseCachexUnsupported:
+    """Test that BaseCachex raises NotSupportedError for extended operations."""
 
     @pytest.fixture(autouse=True)
     def _setup_extensions(self):
-        # Create a mock class that combines BaseCache with BaseCacheExtensions
+        # Create a mock class that combines BaseCache with BaseCachex
         # to test that base extensions raise NotSupportedError
-        from django.core.cache.backends.base import BaseCache
 
-        class MockExtendedCache(BaseCache, BaseCacheExtensions):
+        class MockExtendedCache(BaseCachex):
             def __init__(self):
                 super().__init__(params={})
 

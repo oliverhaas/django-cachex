@@ -1,32 +1,28 @@
 """Concrete adapters for the ``redis-py`` driver.
 
 ``redis-py`` and ``valkey-py`` share an API surface (``valkey-py`` is a fork);
-each class here is a thin subclass of its
-:mod:`django_cachex.adapters.valkey_py` counterpart that swaps in the
-``redis-py`` lib + client/pool/sentinel/cluster classes. All behaviour comes
-from the base classes in
-:mod:`~django_cachex.adapters.default`,
-:mod:`~django_cachex.adapters.sentinel`, and
-:mod:`~django_cachex.adapters.cluster`.
-
-If ``redis-py`` isn't installed, ``__init__`` raises a clean
-:class:`ImportError`. ``valkey-py`` doesn't need to be installed for these to
-work — :func:`__init__` jumps straight to ``BaseKeyValueAdapter.__init__``,
-skipping the ``valkey-py`` availability check on the parent class.
+the redis-py adapters here are thin subclasses that swap in the redis-py
+classes via class slots and redirect the lib-availability check from
+valkey-py to redis-py via :class:`_RedisDriverMixin`. All command logic is
+inherited from :class:`~django_cachex.adapters.valkey_py.ValkeyPyAdapter`
+and friends.
 """
 
-from __future__ import annotations
+import weakref
 
-from typing import Any
-
-from django_cachex.adapters.cluster import BaseKeyValueClusterAdapter
-from django_cachex.adapters.default import BaseKeyValueAdapter
-from django_cachex.adapters.sentinel import BaseKeyValueSentinelAdapter
 from django_cachex.adapters.valkey_py import (
-    ValkeyAdapter,
-    ValkeyClusterAdapter,
-    ValkeySentinelAdapter,
+    AsyncPoolsRegistry,
+    ValkeyPyAdapter,
+    ValkeyPyClusterAdapter,
+    ValkeyPySentinelAdapter,
 )
+
+# Process-wide async pool registry for the redis-py driver. Distinct from
+# the valkey-py one in :mod:`~django_cachex.adapters.valkey_py` so each
+# driver owns its own state — the two are never used together in practice,
+# but keeping them isolated makes ownership obvious. Shared across all
+# three redis-py topologies (single, sentinel, cluster).
+_REDIS_ASYNC_POOLS: AsyncPoolsRegistry = weakref.WeakKeyDictionary()
 
 _REDIS_AVAILABLE = False
 try:
@@ -48,11 +44,29 @@ except ImportError:
 
 def _missing_redis() -> ImportError:
     return ImportError(
-        "redis-py is required for RedisAdapter (and friends). Install it with: pip install django-cachex[redis-py]",
+        "redis-py is required for RedisPyAdapter (and friends). Install it with: pip install django-cachex[redis-py]",
     )
 
 
-class RedisAdapter(ValkeyAdapter):
+class _RedisDriverMixin:
+    """Redirects ValkeyPyAdapter's lib-availability check from valkey-py to redis-py.
+
+    Mixed in (first) to every redis-py concrete class — ``RedisPyAdapter``,
+    ``RedisPySentinelAdapter``, ``RedisPyClusterAdapter`` — so they raise
+    an ImportError naming redis-py rather than valkey-py when their
+    dependency is missing. Also points ``_async_pools`` at the redis-py
+    registry so redis-py and valkey-py don't share pool state.
+    """
+
+    _LIB_AVAILABLE: bool = _REDIS_AVAILABLE
+    _async_pools = _REDIS_ASYNC_POOLS
+
+    @staticmethod
+    def _missing_lib_error() -> ImportError:
+        return _missing_redis()
+
+
+class RedisPyAdapter(_RedisDriverMixin, ValkeyPyAdapter):
     """Single-node / replicated cache adapter using ``redis-py``."""
 
     if _REDIS_AVAILABLE:
@@ -62,14 +76,8 @@ class RedisAdapter(ValkeyAdapter):
         _async_client_class = RedisAsyncClient
         _async_pool_class = RedisAsyncConnectionPool
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        if not _REDIS_AVAILABLE:
-            raise _missing_redis()
-        # Skip ValkeyAdapter.__init__ (which would re-check valkey-py).
-        BaseKeyValueAdapter.__init__(self, *args, **kwargs)
 
-
-class RedisSentinelAdapter(ValkeySentinelAdapter):
+class RedisPySentinelAdapter(_RedisDriverMixin, ValkeyPySentinelAdapter):
     """Sentinel-managed cache adapter using ``redis-py``."""
 
     if _REDIS_AVAILABLE:
@@ -82,13 +90,8 @@ class RedisSentinelAdapter(ValkeySentinelAdapter):
         _async_sentinel_class = AsyncRedisSentinel
         _async_sentinel_pool_class = AsyncRedisSentinelConnectionPool
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        if not _REDIS_AVAILABLE:
-            raise _missing_redis()
-        BaseKeyValueSentinelAdapter.__init__(self, *args, **kwargs)
 
-
-class RedisClusterAdapter(ValkeyClusterAdapter):
+class RedisPyClusterAdapter(_RedisDriverMixin, ValkeyPyClusterAdapter):
     """Cluster cache adapter using ``redis-py``."""
 
     if _REDIS_AVAILABLE:
@@ -99,15 +102,10 @@ class RedisClusterAdapter(ValkeyClusterAdapter):
         _async_cluster_class = AsyncRedisCluster
         _key_slot_func = staticmethod(redis_key_slot)
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        if not _REDIS_AVAILABLE:
-            raise _missing_redis()
-        BaseKeyValueClusterAdapter.__init__(self, *args, **kwargs)
-
 
 __all__ = [
     "_REDIS_AVAILABLE",
-    "RedisAdapter",
-    "RedisClusterAdapter",
-    "RedisSentinelAdapter",
+    "RedisPyAdapter",
+    "RedisPyClusterAdapter",
+    "RedisPySentinelAdapter",
 ]

@@ -5,8 +5,6 @@ that compare the stored token before mutating. Cluster mode is rejected
 because the underlying Lua scripts route to a single hash slot.
 """
 
-from __future__ import annotations
-
 import asyncio
 import threading
 import time

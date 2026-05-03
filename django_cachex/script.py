@@ -1,7 +1,5 @@
 """Lua script support: pre/post hooks for key prefixing and value coding."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 

@@ -1,7 +1,5 @@
 """Django admin classes for cache management."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from django.conf import settings

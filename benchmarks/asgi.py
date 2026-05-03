@@ -1,7 +1,5 @@
 """ASGI entrypoint for the ASGI benchmark — granian imports this."""
 
-from __future__ import annotations
-
 import os
 
 import django

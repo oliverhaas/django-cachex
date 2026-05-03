@@ -1,18 +1,22 @@
-"""Cache backend classes for key-value backends like Valkey or Redis.
+"""Library-agnostic cache backend base class.
 
-Extends Django's BaseCache with Redis/Valkey features: data structures,
-TTL operations, pattern matching, distributed locking, pipelines, and
-multi-serializer/compressor support.
+:class:`KeyValueCache` extends Django's ``BaseCache`` with Redis/Valkey
+features (data structures, TTL operations, pattern matching, distributed
+locking, pipelines, and multi-serializer/compressor support). Per-driver
+concrete subclasses live in:
+
+- :mod:`django_cachex.cache.valkey_py` — ``valkey-py``
+- :mod:`django_cachex.cache.redis_py` — ``redis-py``
+- :mod:`django_cachex.cache.redis_rs` — Rust ``redis-rs`` driver
+- :mod:`django_cachex.cache.valkey_glide` — ``valkey-glide``
 """
-
-from __future__ import annotations
 
 import inspect
 import re
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, cast, override
 
-from django.core.cache.backends.base import DEFAULT_TIMEOUT, BaseCache
+from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.utils.module_loading import import_string
 
 if TYPE_CHECKING:
@@ -20,11 +24,10 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 
     from django_cachex.adapters.pipeline import Pipeline
+    from django_cachex.adapters.protocols import KeyValueAdapterProtocol
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, KeyType, _Set
 
-from django_cachex.adapters.default import BaseKeyValueAdapter
-from django_cachex.adapters.redis_py import RedisAdapter
-from django_cachex.adapters.valkey_py import ValkeyAdapter
+from django_cachex.cache.base import BaseCachex
 from django_cachex.exceptions import CompressorError, SerializerError
 from django_cachex.script import ScriptHelpers
 
@@ -51,18 +54,21 @@ def _load_codec(config: str | type | Any) -> Any:
 # =============================================================================
 
 
-class KeyValueCache(BaseCache):
+class KeyValueCache(BaseCachex):
     """Django cache backend for Redis/Valkey with extended features.
 
-    Base class for all django-cachex backends. Extends Django's ``BaseCache``
-    with data structures, TTL ops, pattern matching, locking, and pipelines.
+    Base class for all django-cachex Redis/Valkey backends. Inherits the
+    cachex contract from :class:`~django_cachex.cache.base.BaseCachex`
+    (which itself extends Django's ``BaseCache``) and overrides the
+    extension surface with real implementations backed by an adapter.
+    Concrete cache classes pick a specific adapter via ``_adapter_class``.
     """
 
     # Support level marker for admin interface
     _cachex_support: str = "cachex"
 
     # Class attribute - subclasses override this
-    _adapter_class: builtins.type[BaseKeyValueAdapter] = BaseKeyValueAdapter
+    _adapter_class: builtins.type[KeyValueAdapterProtocol]
 
     def __init__(self, server: str, params: dict[str, Any]) -> None:
         super().__init__(params)
@@ -95,8 +101,8 @@ class KeyValueCache(BaseCache):
         self._compressors: list[Any] = self._create_compressors(self._options.get("compressor"))
 
     @cached_property
-    def adapter(self) -> BaseKeyValueAdapter:
-        """Get the BaseKeyValueAdapter instance (matches Django's pattern)."""
+    def adapter(self) -> KeyValueAdapterProtocol:
+        """Get the adapter instance (matches Django's pattern)."""
         return self._adapter_class(self._servers, **self._options)
 
     # =========================================================================
@@ -3078,34 +3084,4 @@ class KeyValueCache(BaseCache):
         return result
 
 
-# =============================================================================
-# RedisCache - concrete implementation for redis-py
-# =============================================================================
-
-
-class RedisCache(KeyValueCache):
-    """Django cache backend using the redis-py library."""
-
-    _adapter_class = RedisAdapter
-
-
-# =============================================================================
-# ValkeyCache - concrete implementation for valkey-py
-# =============================================================================
-
-
-class ValkeyCache(KeyValueCache):
-    """Django cache backend using the valkey-py library."""
-
-    _adapter_class = ValkeyAdapter
-
-
-# =============================================================================
-# Exports
-# =============================================================================
-
-__all__ = [
-    "KeyValueCache",
-    "RedisCache",
-    "ValkeyCache",
-]
+__all__ = ["KeyValueCache"]

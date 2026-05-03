@@ -8,8 +8,6 @@ parametrize the backend without writing per-driver settings modules:
 - ``BENCH_CACHE_OPTIONS_JSON`` — optional, JSON-encoded ``OPTIONS`` dict.
 """
 
-from __future__ import annotations
-
 import json
 import os
 

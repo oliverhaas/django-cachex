@@ -6,8 +6,6 @@ Tests the Sentinel functionality where:
 - Reads can be distributed to replicas
 """
 
-from __future__ import annotations
-
 from contextlib import suppress
 from typing import TYPE_CHECKING
 

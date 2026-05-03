@@ -1,7 +1,5 @@
 """Shared fixtures for rust driver tests."""
 
-from __future__ import annotations
-
 import pytest
 
 # Skip the whole directory when the optional django-cachex-redis-rs package

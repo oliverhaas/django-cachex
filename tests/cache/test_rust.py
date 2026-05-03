@@ -8,8 +8,6 @@ the ``RedisRsDriver`` raw client object, and regression tests for bugs
 that only surfaced in the Rust path.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 import pytest

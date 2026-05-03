@@ -1,7 +1,5 @@
 """Benchmark fixtures: session-scoped Redis + Valkey containers, results sink."""
 
-from __future__ import annotations
-
 from collections.abc import Iterator
 
 import pytest

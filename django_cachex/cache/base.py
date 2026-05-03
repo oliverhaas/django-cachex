@@ -1,13 +1,21 @@
-"""Base extensions interface for cache backends in the admin.
+"""Cache-layer base class — the contract every cachex cache satisfies.
 
-Provides ``BaseCacheExtensions`` — the abstract interface that cachex backends
-implement. For non-cachex backends the admin uses this to detect which
-operations are available (most raise ``NotSupportedError``).
+:class:`BaseCachex` extends Django's ``BaseCache`` with the cachex
+extension surface (TTL ops, hashes, sets, sorted sets, lists, streams,
+locks, pipelines, …). Every cachex cache class inherits from it so the
+contract is declared and enforced in one place. Native backends
+(:class:`~django_cachex.cache.locmem.LocMemCache`,
+:class:`~django_cachex.cache.database.DatabaseCache`,
+:class:`~django_cachex.cache.default.KeyValueCache`) override the methods
+with real implementations; :class:`~django_cachex.cache.mixin.CachexCompat`
+provides emulated impls. Methods left at the default raise
+:class:`~django_cachex.exceptions.NotSupportedError`; the admin uses
+``hasattr`` / ``try-except NotSupportedError`` to detect support.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
+
+from django.core.cache.backends.base import BaseCache
 
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
@@ -28,14 +36,14 @@ _set = set
 # =============================================================================
 
 
-class BaseCacheExtensions:
-    """Interface declaring all cachex extension methods.
+class BaseCachex(BaseCache):
+    """Cache contract — declares the full cachex extension surface on top of ``BaseCache``.
 
-    Most methods raise ``NotSupportedError`` by default. Native cachex backends
-    and the ``CachexCompat`` override them with real implementations.
-
-    The admin uses ``hasattr`` / ``try-except NotSupportedError`` to detect
-    which operations a given cache supports.
+    Methods default to :class:`~django_cachex.exceptions.NotSupportedError`;
+    native cachex backends and :class:`~django_cachex.cache.mixin.CachexCompat`
+    override them with real implementations. Subclasses can pick which
+    operations they support — the admin discovers support via
+    ``hasattr`` / ``try-except NotSupportedError``.
     """
 
     _cachex_support: str = "limited"
@@ -247,11 +255,21 @@ class BaseCacheExtensions:
         """Push values onto tail of list."""
         raise NotSupportedError("rpush", self.__class__.__name__)
 
-    def lpop(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[Any]:
+    def lpop(
+        self,
+        key: KeyT,
+        count: int | None = None,
+        version: int | None = None,
+    ) -> Any | list[Any] | None:
         """Remove and return element(s) from head of list."""
         raise NotSupportedError("lpop", self.__class__.__name__)
 
-    def rpop(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[Any]:
+    def rpop(
+        self,
+        key: KeyT,
+        count: int | None = None,
+        version: int | None = None,
+    ) -> Any | list[Any] | None:
         """Remove and return element(s) from tail of list."""
         raise NotSupportedError("rpop", self.__class__.__name__)
 

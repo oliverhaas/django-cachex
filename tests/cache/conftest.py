@@ -6,8 +6,6 @@ across files. The general-purpose ``cache`` fixture lives in
 ``tests/conftest.py``.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 import pytest

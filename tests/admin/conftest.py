@@ -5,8 +5,6 @@ We override the parametrized fixtures from the parent conftest to avoid
 running admin tests with every cache backend combination.
 """
 
-from __future__ import annotations
-
 import os
 from typing import TYPE_CHECKING, cast
 

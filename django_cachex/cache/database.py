@@ -30,8 +30,6 @@ Usage::
 Then run ``manage.py createcachetable``.
 """
 
-from __future__ import annotations
-
 import base64
 import pickle
 import random
@@ -42,7 +40,7 @@ from django.conf import settings
 from django.core.cache.backends.db import DatabaseCache as DjangoDatabaseCache
 from django.db import connections, models, router, transaction
 
-from django_cachex.admin.wrappers import BaseCacheExtensions
+from django_cachex.cache.base import BaseCachex
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
@@ -102,7 +100,7 @@ def _normalize_expires(raw: Any, conn: BaseDatabaseWrapper) -> datetime | None:
     return dt
 
 
-class DatabaseCache(BaseCacheExtensions, DjangoDatabaseCache):
+class DatabaseCache(BaseCachex, DjangoDatabaseCache):
     """DatabaseCache with native cachex extensions.
 
     Drop-in replacement for ``django.core.cache.backends.db.DatabaseCache``.

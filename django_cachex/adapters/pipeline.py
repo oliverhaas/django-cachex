@@ -21,8 +21,6 @@ concrete :class:`BaseKeyValuePipelineAdapter` subclass and wraps it in a
 :class:`Pipeline`.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any, Self, cast
 
 if TYPE_CHECKING:
@@ -616,8 +614,8 @@ class RedisPipelineAdapter(BaseKeyValuePipelineAdapter):
     cachex method surface one-for-one (because the cachex method names
     mirror redis-py's command methods), so we inherit ``BaseKeyValuePipelineAdapter``
     unchanged. Exists as a named subclass for symmetry with
-    :class:`~django_cachex.adapters.default.RedisAdapter` /
-    :class:`~django_cachex.adapters.default.ValkeyAdapter`.
+    :class:`~django_cachex.adapters.redis_py.RedisAdapter` /
+    :class:`~django_cachex.adapters.valkey_py.ValkeyAdapter`.
     """
 
 

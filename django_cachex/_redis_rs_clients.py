@@ -10,8 +10,6 @@ first attempt to construct a driver raises ``ImportError`` with an
 install hint.
 """
 
-from __future__ import annotations
-
 import os
 import threading
 from typing import TYPE_CHECKING, Any

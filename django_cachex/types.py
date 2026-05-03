@@ -4,8 +4,6 @@ Compatible with redis-py and valkey-py type systems, defined locally
 to avoid a runtime dependency on either library for type annotations.
 """
 
-from __future__ import annotations
-
 from datetime import datetime, timedelta
 from enum import StrEnum
 

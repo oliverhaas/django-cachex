@@ -15,8 +15,6 @@ Backends covered:
   Redis commands, so these tests serve as cross-backend smoke coverage.
 """
 
-from __future__ import annotations
-
 import sys
 import threading
 import uuid

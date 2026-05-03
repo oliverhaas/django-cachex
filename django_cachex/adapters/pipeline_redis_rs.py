@@ -13,8 +13,6 @@ ZRANGE WITHSCORES returns nested arrays, sets come back as lists — see the
 parsers below for the per-command normalizers.
 """
 
-from __future__ import annotations
-
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
