@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from datetime import datetime, timedelta
 
-    from django_cachex.adapters.protocols import RespPipelineProtocol
+    from django_cachex.adapters.protocols import RespAsyncPipelineProtocol, RespPipelineProtocol
     from django_cachex.types import KeyT
 
 from django_cachex.script import ScriptHelpers
@@ -1625,6 +1625,42 @@ class Pipeline:
             self._decoders.append(self._noop)
 
         return self
+
+
+class AsyncPipeline(Pipeline):
+    """Async sibling of :class:`Pipeline` — same chainable API, awaitable ``execute()``.
+
+    Driver async pipelines (``redis.asyncio`` ``Pipeline``, glide async ``Batch``,
+    redis-rs ``apipeline_exec``) all expose the same chainable command surface
+    as their sync counterparts; only execution does I/O. So this subclass
+    inherits every queueing method from :class:`Pipeline` and only overrides
+    the lifecycle (``__aenter__/__aexit__``) and ``execute()`` to be async.
+    """
+
+    def __init__(
+        self,
+        cache: Any,
+        pipeline_adapter: RespAsyncPipelineProtocol,
+        version: int | None = None,
+    ) -> None:
+        """Initialize the wrapped async pipeline."""
+        super().__init__(cache, pipeline_adapter, version=version)  # type: ignore[arg-type]
+
+    async def __aenter__(self) -> Self:
+        """Enter async context manager."""
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        """Exit async context manager, resetting the underlying pipeline."""
+        await self._pipeline_adapter.reset()  # type: ignore[misc]
+        self._decoders.clear()
+
+    async def execute(self) -> list[Any]:  # type: ignore[override]
+        """Execute all queued commands asynchronously and decode the results."""
+        results = await self._pipeline_adapter.execute()  # type: ignore[misc]
+        decoders = self._decoders
+        self._decoders = []
+        return [decoder(result) for result, decoder in zip(results, decoders, strict=True)]
 
 
 __all__ = ["Pipeline"]

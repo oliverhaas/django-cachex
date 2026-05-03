@@ -3,7 +3,10 @@
 These ``typing.Protocol`` classes formalize the contracts the cache and
 pipeline layers rely on.
 
-- :class:`RespPipelineProtocol` — pipeline-adapter contract.
+- :class:`RespPipelineProtocol` — sync pipeline-adapter contract.
+- :class:`RespAsyncPipelineProtocol` — async pipeline-adapter contract.
+  Identical to the sync one except ``execute()`` is awaitable; chainable
+  methods stay sync because queueing never performs I/O.
 - :class:`RespAdapterProtocol` — adapter contract; what
   :class:`~django_cachex.cache.resp.RespCache` calls on its
   underlying adapter. Concrete adapters
@@ -13,9 +16,6 @@ pipeline layers rely on.
   inherit from this Protocol so the contract is explicit at the class
   declaration; the inherited method bodies (``...``) are shadowed by each
   driver's real implementations.
-
-The cache-layer surface lives in
-:mod:`django_cachex.cache.protocols` (:class:`~django_cachex.cache.protocols.CachexProtocol`).
 """
 
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -31,21 +31,21 @@ if TYPE_CHECKING:
 _set = set
 
 
-@runtime_checkable
-class RespPipelineProtocol(Protocol):
-    """Pipeline-adapter contract — every command the cachex ``Pipeline`` wrapper queues.
+class _RespPipelineCommandsProtocol(Protocol):
+    """Shared chainable-command surface for sync/async pipeline protocols.
 
-    Concrete adapters (one per driver) inherit from this Protocol and
-    spell out the full ~95-method surface against their underlying
-    pipeline / batch object. The :class:`Pipeline` wrapper queues ops on
-    a concrete instance and decodes the raw results in ``execute()``.
+    Internal — concrete adapters inherit from :class:`RespPipelineProtocol`
+    or :class:`RespAsyncPipelineProtocol` (both extend this base) and
+    implement the chainable methods against their underlying pipeline /
+    batch object. Queueing is sync regardless of whether ``execute()`` is
+    sync or async, so both protocols share the chainable surface here and
+    differ only in ``execute()``'s return type.
     """
 
     # -------------------------------------------------------------------------
-    # Core lifecycle
+    # Core lifecycle (excluding ``execute()`` — declared on the sub-protocols)
     # -------------------------------------------------------------------------
 
-    def execute(self) -> list[Any]: ...
     def reset(self) -> None: ...
     def execute_command(self, *args: Any) -> Any: ...
 
@@ -320,6 +320,33 @@ class RespPipelineProtocol(Protocol):
 
 
 @runtime_checkable
+class RespPipelineProtocol(_RespPipelineCommandsProtocol, Protocol):
+    """Sync pipeline-adapter contract — every command the sync ``Pipeline`` wrapper queues.
+
+    Concrete adapters (one per driver) inherit from this Protocol and
+    spell out the chainable surface (via :class:`_RespPipelineCommandsProtocol`)
+    against their underlying pipeline / batch object. The :class:`Pipeline`
+    wrapper queues ops on a concrete instance and decodes the raw results
+    in ``execute()``.
+    """
+
+    def execute(self) -> list[Any]: ...
+
+
+@runtime_checkable
+class RespAsyncPipelineProtocol(_RespPipelineCommandsProtocol, Protocol):
+    """Async pipeline-adapter contract — async sibling of :class:`RespPipelineProtocol`.
+
+    Identical chainable surface; ``execute()`` and ``reset()`` are awaitable
+    because some async drivers (``redis.asyncio.Pipeline``) implement them as
+    coroutines. Chainable methods stay sync because queueing never performs I/O.
+    """
+
+    async def execute(self) -> list[Any]: ...
+    async def reset(self) -> None: ...  # type: ignore[override]
+
+
+@runtime_checkable
 class RespAdapterProtocol(Protocol):
     """Wire-level adapter contract — every command + topology hook the cache calls.
 
@@ -499,6 +526,7 @@ class RespAdapterProtocol(Protocol):
         thread_local: bool = True,
     ) -> Any: ...
     def pipeline(self, *, transaction: bool = True) -> RespPipelineProtocol: ...
+    def apipeline(self, *, transaction: bool = True) -> RespAsyncPipelineProtocol: ...
     def info(self, section: str | None = None) -> dict[str, Any]: ...
     def slowlog_get(self, count: int = 10) -> list[dict[str, Any]]: ...
     def slowlog_len(self) -> int: ...
@@ -976,5 +1004,6 @@ class RespAdapterProtocol(Protocol):
 
 __all__ = [
     "RespAdapterProtocol",
+    "RespAsyncPipelineProtocol",
     "RespPipelineProtocol",
 ]

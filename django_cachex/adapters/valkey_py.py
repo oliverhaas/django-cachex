@@ -31,7 +31,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
 
-from django_cachex.adapters.protocols import RespAdapterProtocol, RespPipelineProtocol
+from django_cachex.adapters.protocols import RespAdapterProtocol, RespAsyncPipelineProtocol, RespPipelineProtocol
 from django_cachex.exceptions import NotSupportedError, _main_exceptions
 from django_cachex.stampede import (
     StampedeConfig,
@@ -1023,6 +1023,16 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """
         client = self.get_client(write=True)
         return ValkeyPyPipelineAdapter(client.pipeline(transaction=transaction))
+
+    def apipeline(self, *, transaction: bool = True) -> ValkeyPyAsyncPipelineAdapter:
+        """Construct an async pipeline adapter for this driver.
+
+        Returns a :class:`ValkeyPyAsyncPipelineAdapter` wrapping the underlying
+        ``redis.asyncio`` / ``valkey.asyncio`` async pipeline. ``RespCache.apipeline()``
+        wraps the result in an :class:`AsyncPipeline`.
+        """
+        client = self.get_async_client(write=True)
+        return ValkeyPyAsyncPipelineAdapter(client.pipeline(transaction=transaction))
 
     # =========================================================================
     # Server Operations
@@ -3534,6 +3544,12 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         client = self.get_client(write=True)
         return ValkeyPyPipelineAdapter(client.pipeline(transaction=False))
 
+    @override
+    def apipeline(self, *, transaction: bool = True) -> ValkeyPyAsyncPipelineAdapter:
+        """Construct an async cluster pipeline adapter. ``ClusterPipeline`` doesn't use MULTI/EXEC."""
+        client = self.get_async_client(write=True)
+        return ValkeyPyAsyncPipelineAdapter(client.pipeline(transaction=False))
+
 
 class ValkeyPyPipelineAdapter(RespPipelineProtocol):
     """Pipeline adapter for the redis-py / valkey-py / cluster driver.
@@ -4096,10 +4112,33 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
         )
 
 
+class ValkeyPyAsyncPipelineAdapter(ValkeyPyPipelineAdapter, RespAsyncPipelineProtocol):
+    """Async sibling of :class:`ValkeyPyPipelineAdapter` — wraps an async ``Pipeline``.
+
+    The chainable surface inherited from :class:`ValkeyPyPipelineAdapter` is
+    purely sync (queueing only); the underlying ``redis.asyncio`` /
+    ``valkey.asyncio`` ``Pipeline`` accepts the same chainable calls and only
+    awaits at execution time. We override ``execute()`` and ``reset()`` to
+    await the underlying pipeline, since redis-py's async ``Pipeline`` declares
+    both as coroutines.
+    """
+
+    @override
+    async def execute(self) -> list[Any]:  # type: ignore[override]
+        """Run all buffered commands asynchronously and return their raw results."""
+        return cast("list[Any]", await self._raw.execute())
+
+    @override
+    async def reset(self) -> None:  # type: ignore[override]
+        """Discard buffered commands. ``redis.asyncio.Pipeline.reset()`` is awaitable."""
+        await self._raw.reset()
+
+
 __all__ = [
     "_VALKEY_AVAILABLE",
     "AsyncPoolsRegistry",
     "ValkeyPyAdapter",
+    "ValkeyPyAsyncPipelineAdapter",
     "ValkeyPyClusterAdapter",
     "ValkeyPyPipelineAdapter",
     "ValkeyPySentinelAdapter",

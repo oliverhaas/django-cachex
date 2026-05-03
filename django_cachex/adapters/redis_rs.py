@@ -17,7 +17,7 @@ from django_cachex._redis_rs_clients import (
     get_driver_sentinel,
     get_driver_standard,
 )
-from django_cachex.adapters.protocols import RespAdapterProtocol, RespPipelineProtocol
+from django_cachex.adapters.protocols import RespAdapterProtocol, RespAsyncPipelineProtocol, RespPipelineProtocol
 from django_cachex.lock import AsyncValkeyLock, ValkeyLock
 from django_cachex.stampede import (
     StampedeConfig,
@@ -970,6 +970,10 @@ class RedisRsAdapter(RespAdapterProtocol):
     @override
     def pipeline(self, *, transaction: bool = True) -> RedisRsPipelineAdapter:
         return RedisRsPipelineAdapter(self._driver, transaction=transaction)
+
+    @override
+    def apipeline(self, *, transaction: bool = True) -> RedisRsAsyncPipelineAdapter:
+        return RedisRsAsyncPipelineAdapter(self._driver, transaction=transaction)
 
     # =========================================================================
     # Hashes
@@ -3569,8 +3573,40 @@ class RedisRsPipelineAdapter(RespPipelineProtocol):
         return self._queue("XAUTOCLAIM", *args, parser=_xautoclaim)
 
 
+class RedisRsAsyncPipelineAdapter(RedisRsPipelineAdapter, RespAsyncPipelineProtocol):
+    """Async sibling of :class:`RedisRsPipelineAdapter` — same buffering, awaitable ``execute()``.
+
+    Inherits every chainable command (queueing is sync regardless of execution
+    mode); only ``execute()`` differs, dispatching the buffered batch through
+    the Rust driver's awaitable ``apipeline_exec``. ``reset()`` is awaitable to
+    conform to :class:`RespAsyncPipelineProtocol`, even though buffer clearing
+    is sync.
+    """
+
+    @override
+    async def execute(self) -> list[Any]:
+        if not self._commands:
+            self._parsers.clear()
+            return []
+        commands = self._commands
+        parsers = self._parsers
+        self._commands = []
+        self._parsers = []
+        raw = await self._driver.apipeline_exec(commands, transaction=self._transaction)
+        out: list[Any] = []
+        for value, parser in zip(raw, parsers, strict=True):
+            out.append(parser(value) if parser is not None else value)
+        return out
+
+    @override
+    async def reset(self) -> None:  # type: ignore[override]
+        self._commands.clear()
+        self._parsers.clear()
+
+
 __all__ = [
     "RedisRsAdapter",
+    "RedisRsAsyncPipelineAdapter",
     "RedisRsClusterAdapter",
     "RedisRsPipelineAdapter",
     "RedisRsSentinelAdapter",

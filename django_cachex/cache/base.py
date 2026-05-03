@@ -21,9 +21,9 @@ from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Mapping, Sequence
+    from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 
-    from django_cachex.adapters.pipeline import Pipeline
+    from django_cachex.adapters.pipeline import AsyncPipeline, Pipeline
     from django_cachex.script import ScriptHelpers
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT
 
@@ -80,6 +80,38 @@ class BaseCachex(BaseCache):
     def pexpireat(self, key: KeyT, when: AbsExpiryT, version: int | None = None) -> bool:
         """Set expiry to an absolute time in milliseconds."""
         raise NotSupportedError("pexpireat", self.__class__.__name__)
+
+    async def attl(self, key: KeyT, version: int | None = None) -> int | None:
+        """Async: get the TTL of a key in seconds."""
+        raise NotSupportedError("attl", self.__class__.__name__)
+
+    async def apttl(self, key: KeyT, version: int | None = None) -> int | None:
+        """Async: get the TTL of a key in milliseconds."""
+        raise NotSupportedError("apttl", self.__class__.__name__)
+
+    async def atype(self, key: KeyT, version: int | None = None) -> KeyType | None:
+        """Async: get the data type of a key."""
+        raise NotSupportedError("atype", self.__class__.__name__)
+
+    async def apersist(self, key: KeyT, version: int | None = None) -> bool:
+        """Async: remove the TTL from a key."""
+        raise NotSupportedError("apersist", self.__class__.__name__)
+
+    async def aexpire(self, key: KeyT, timeout: ExpiryT, version: int | None = None) -> bool:
+        """Async: set expiry time on a key."""
+        raise NotSupportedError("aexpire", self.__class__.__name__)
+
+    async def aexpireat(self, key: KeyT, when: AbsExpiryT, version: int | None = None) -> bool:
+        """Async: set expiry to an absolute time."""
+        raise NotSupportedError("aexpireat", self.__class__.__name__)
+
+    async def apexpire(self, key: KeyT, timeout: ExpiryT, version: int | None = None) -> bool:
+        """Async: set expiry time in milliseconds."""
+        raise NotSupportedError("apexpire", self.__class__.__name__)
+
+    async def apexpireat(self, key: KeyT, when: AbsExpiryT, version: int | None = None) -> bool:
+        """Async: set expiry to an absolute time in milliseconds."""
+        raise NotSupportedError("apexpireat", self.__class__.__name__)
 
     # =========================================================================
     # Key Operations
@@ -158,6 +190,61 @@ class BaseCachex(BaseCache):
         """Reverse a made key back to original."""
         raise NotSupportedError("reverse_key", self.__class__.__name__)
 
+    async def akeys(self, pattern: str = "*", version: int | None = None) -> list[str]:
+        """Async: list keys matching the pattern."""
+        raise NotSupportedError("akeys", self.__class__.__name__)
+
+    def aiter_keys(  # async generator: see note on ``RespAdapterProtocol.aiter_keys`` for ``def`` (not ``async def``)
+        self,
+        pattern: str = "*",
+        version: int | None = None,
+        itersize: int | None = None,
+    ) -> AsyncIterator[str]:
+        """Async: iterate over keys matching pattern."""
+        raise NotSupportedError("aiter_keys", self.__class__.__name__)
+
+    async def ascan(
+        self,
+        cursor: int = 0,
+        pattern: str = "*",
+        count: int | None = None,
+        version: int | None = None,
+        key_type: str | None = None,
+    ) -> tuple[int, list[str]]:
+        """Async: perform a single SCAN iteration using cursor-based pagination."""
+        raise NotSupportedError("ascan", self.__class__.__name__)
+
+    async def adelete_pattern(
+        self,
+        pattern: str,
+        version: int | None = None,
+        itersize: int | None = None,
+    ) -> int:
+        """Async: delete all keys matching pattern."""
+        raise NotSupportedError("adelete_pattern", self.__class__.__name__)
+
+    async def arename(
+        self,
+        src: KeyT,
+        dst: KeyT,
+        version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
+    ) -> bool:
+        """Async: rename a key atomically."""
+        raise NotSupportedError("arename", self.__class__.__name__)
+
+    async def arenamenx(
+        self,
+        src: KeyT,
+        dst: KeyT,
+        version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
+    ) -> bool:
+        """Async: rename a key only if the destination does not exist."""
+        raise NotSupportedError("arenamenx", self.__class__.__name__)
+
     # =========================================================================
     # Lock & Pipeline
     # =========================================================================
@@ -179,6 +266,24 @@ class BaseCachex(BaseCache):
     def pipeline(self, *, transaction: bool = True, version: int | None = None) -> Pipeline:
         """Create a pipeline for batched operations."""
         raise NotSupportedError("pipeline", self.__class__.__name__)
+
+    def alock(
+        self,
+        key: str,
+        version: int | None = None,
+        timeout: float | None = None,
+        sleep: float = 0.1,
+        *,
+        blocking: bool = True,
+        blocking_timeout: float | None = None,
+        thread_local: bool = True,
+    ) -> Any:
+        """Async: return an async Lock object for distributed locking."""
+        raise NotSupportedError("alock", self.__class__.__name__)
+
+    def apipeline(self, *, transaction: bool = True, version: int | None = None) -> AsyncPipeline:
+        """Create an async pipeline for batched operations."""
+        raise NotSupportedError("apipeline", self.__class__.__name__)
 
     # =========================================================================
     # Hash Operations
@@ -239,6 +344,62 @@ class BaseCachex(BaseCache):
     def hvals(self, key: KeyT, version: int | None = None) -> list[Any]:
         """Get all values in hash."""
         raise NotSupportedError("hvals", self.__class__.__name__)
+
+    async def ahset(
+        self,
+        key: KeyT,
+        field: str | None = None,
+        value: Any = None,
+        version: int | None = None,
+        mapping: Mapping[str, Any] | None = None,
+        items: list[Any] | None = None,
+    ) -> int:
+        """Async: set field in hash."""
+        raise NotSupportedError("ahset", self.__class__.__name__)
+
+    async def ahdel(self, key: KeyT, *fields: str, version: int | None = None) -> int:
+        """Async: delete hash fields."""
+        raise NotSupportedError("ahdel", self.__class__.__name__)
+
+    async def ahlen(self, key: KeyT, version: int | None = None) -> int:
+        """Async: get number of fields in hash."""
+        raise NotSupportedError("ahlen", self.__class__.__name__)
+
+    async def ahkeys(self, key: KeyT, version: int | None = None) -> list[str]:
+        """Async: get all field names in hash."""
+        raise NotSupportedError("ahkeys", self.__class__.__name__)
+
+    async def ahexists(self, key: KeyT, field: str, version: int | None = None) -> bool:
+        """Async: check if field exists in hash."""
+        raise NotSupportedError("ahexists", self.__class__.__name__)
+
+    async def ahget(self, key: KeyT, field: str, version: int | None = None) -> Any:
+        """Async: get value of field in hash."""
+        raise NotSupportedError("ahget", self.__class__.__name__)
+
+    async def ahgetall(self, key: KeyT, version: int | None = None) -> dict[str, Any]:
+        """Async: get all fields and values in hash."""
+        raise NotSupportedError("ahgetall", self.__class__.__name__)
+
+    async def ahmget(self, key: KeyT, *fields: str, version: int | None = None) -> list[Any]:
+        """Async: get values of multiple fields."""
+        raise NotSupportedError("ahmget", self.__class__.__name__)
+
+    async def ahincrby(self, key: KeyT, field: str, amount: int = 1, version: int | None = None) -> int:
+        """Async: increment value of field in hash."""
+        raise NotSupportedError("ahincrby", self.__class__.__name__)
+
+    async def ahincrbyfloat(self, key: KeyT, field: str, amount: float = 1.0, version: int | None = None) -> float:
+        """Async: increment float value of field in hash."""
+        raise NotSupportedError("ahincrbyfloat", self.__class__.__name__)
+
+    async def ahsetnx(self, key: KeyT, field: str, value: Any, version: int | None = None) -> bool:
+        """Async: set field in hash only if it doesn't exist."""
+        raise NotSupportedError("ahsetnx", self.__class__.__name__)
+
+    async def ahvals(self, key: KeyT, version: int | None = None) -> list[Any]:
+        """Async: get all values in hash."""
+        raise NotSupportedError("ahvals", self.__class__.__name__)
 
     # =========================================================================
     # List Operations
@@ -351,6 +512,113 @@ class BaseCachex(BaseCache):
         """Blocking atomically move element from one list to another."""
         raise NotSupportedError("blmove", self.__class__.__name__)
 
+    async def alpush(self, key: KeyT, *values: Any, version: int | None = None) -> int:
+        """Async: push values onto head of list."""
+        raise NotSupportedError("alpush", self.__class__.__name__)
+
+    async def arpush(self, key: KeyT, *values: Any, version: int | None = None) -> int:
+        """Async: push values onto tail of list."""
+        raise NotSupportedError("arpush", self.__class__.__name__)
+
+    async def alpop(
+        self,
+        key: KeyT,
+        count: int | None = None,
+        version: int | None = None,
+    ) -> Any | list[Any] | None:
+        """Async: remove and return element(s) from head of list."""
+        raise NotSupportedError("alpop", self.__class__.__name__)
+
+    async def arpop(
+        self,
+        key: KeyT,
+        count: int | None = None,
+        version: int | None = None,
+    ) -> Any | list[Any] | None:
+        """Async: remove and return element(s) from tail of list."""
+        raise NotSupportedError("arpop", self.__class__.__name__)
+
+    async def alrange(self, key: KeyT, start: int, end: int, version: int | None = None) -> list[Any]:
+        """Async: get a range of elements from list."""
+        raise NotSupportedError("alrange", self.__class__.__name__)
+
+    async def alindex(self, key: KeyT, index: int, version: int | None = None) -> Any:
+        """Async: get element at index in list."""
+        raise NotSupportedError("alindex", self.__class__.__name__)
+
+    async def allen(self, key: KeyT, version: int | None = None) -> int:
+        """Async: get length of list."""
+        raise NotSupportedError("allen", self.__class__.__name__)
+
+    async def alpos(
+        self,
+        key: KeyT,
+        value: Any,
+        rank: int | None = None,
+        count: int | None = None,
+        maxlen: int | None = None,
+        version: int | None = None,
+    ) -> int | list[int] | None:
+        """Async: find position(s) of element in list."""
+        raise NotSupportedError("alpos", self.__class__.__name__)
+
+    async def almove(
+        self,
+        src: KeyT,
+        dst: KeyT,
+        wherefrom: str,
+        whereto: str,
+        version: int | None = None,
+    ) -> Any | None:
+        """Async: atomically move an element from one list to another."""
+        raise NotSupportedError("almove", self.__class__.__name__)
+
+    async def alrem(self, key: KeyT, count: int, value: Any, version: int | None = None) -> int:
+        """Async: remove elements from a list."""
+        raise NotSupportedError("alrem", self.__class__.__name__)
+
+    async def altrim(self, key: KeyT, start: int, end: int, version: int | None = None) -> bool:
+        """Async: trim list to specified range."""
+        raise NotSupportedError("altrim", self.__class__.__name__)
+
+    async def alset(self, key: KeyT, index: int, value: Any, version: int | None = None) -> bool:
+        """Async: set element at index in list."""
+        raise NotSupportedError("alset", self.__class__.__name__)
+
+    async def alinsert(self, key: KeyT, where: str, pivot: Any, value: Any, version: int | None = None) -> int:
+        """Async: insert value before or after pivot in list."""
+        raise NotSupportedError("alinsert", self.__class__.__name__)
+
+    async def ablpop(
+        self,
+        keys: KeyT | Sequence[KeyT],
+        timeout: float = 0,
+        version: int | None = None,
+    ) -> tuple[str, Any] | None:
+        """Async: blocking pop from head of list."""
+        raise NotSupportedError("ablpop", self.__class__.__name__)
+
+    async def abrpop(
+        self,
+        keys: KeyT | Sequence[KeyT],
+        timeout: float = 0,
+        version: int | None = None,
+    ) -> tuple[str, Any] | None:
+        """Async: blocking pop from tail of list."""
+        raise NotSupportedError("abrpop", self.__class__.__name__)
+
+    async def ablmove(
+        self,
+        src: KeyT,
+        dst: KeyT,
+        timeout: float,
+        wherefrom: str = "LEFT",
+        whereto: str = "RIGHT",
+        version: int | None = None,
+    ) -> Any | None:
+        """Async: blocking atomically move element from one list to another."""
+        raise NotSupportedError("ablmove", self.__class__.__name__)
+
     # =========================================================================
     # Set Operations
     # =========================================================================
@@ -456,6 +724,108 @@ class BaseCachex(BaseCache):
     ) -> Iterator[Any]:
         """Iterate over set members."""
         raise NotSupportedError("sscan_iter", self.__class__.__name__)
+
+    async def asadd(self, key: KeyT, *members: Any, version: int | None = None) -> int:
+        """Async: add members to a set."""
+        raise NotSupportedError("asadd", self.__class__.__name__)
+
+    async def ascard(self, key: KeyT, version: int | None = None) -> int:
+        """Async: get the number of members in a set."""
+        raise NotSupportedError("ascard", self.__class__.__name__)
+
+    async def asdiff(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
+        """Async: return the difference between sets."""
+        raise NotSupportedError("asdiff", self.__class__.__name__)
+
+    async def asdiffstore(
+        self,
+        dest: KeyT,
+        keys: KeyT | Sequence[KeyT],
+        version: int | None = None,
+        version_dest: int | None = None,
+        version_keys: int | None = None,
+    ) -> int:
+        """Async: store the difference of sets."""
+        raise NotSupportedError("asdiffstore", self.__class__.__name__)
+
+    async def asinter(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
+        """Async: return the intersection of sets."""
+        raise NotSupportedError("asinter", self.__class__.__name__)
+
+    async def asinterstore(
+        self,
+        dest: KeyT,
+        keys: KeyT | Sequence[KeyT],
+        version: int | None = None,
+        version_dest: int | None = None,
+        version_keys: int | None = None,
+    ) -> int:
+        """Async: store the intersection of sets."""
+        raise NotSupportedError("asinterstore", self.__class__.__name__)
+
+    async def asismember(self, key: KeyT, member: Any, version: int | None = None) -> bool:
+        """Async: check if member is in set."""
+        raise NotSupportedError("asismember", self.__class__.__name__)
+
+    async def asmembers(self, key: KeyT, version: int | None = None) -> set[Any]:
+        """Async: get all members of a set."""
+        raise NotSupportedError("asmembers", self.__class__.__name__)
+
+    async def asmove(self, src: KeyT, dst: KeyT, member: Any, version: int | None = None) -> bool:
+        """Async: move member from one set to another."""
+        raise NotSupportedError("asmove", self.__class__.__name__)
+
+    async def aspop(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | set[Any]:
+        """Async: remove and return random member(s) from set."""
+        raise NotSupportedError("aspop", self.__class__.__name__)
+
+    async def asrandmember(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | list[Any]:
+        """Async: get random member(s) from set without removing."""
+        raise NotSupportedError("asrandmember", self.__class__.__name__)
+
+    async def asrem(self, key: KeyT, *members: Any, version: int | None = None) -> int:
+        """Async: remove members from a set."""
+        raise NotSupportedError("asrem", self.__class__.__name__)
+
+    async def asunion(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
+        """Async: return the union of sets."""
+        raise NotSupportedError("asunion", self.__class__.__name__)
+
+    async def asunionstore(
+        self,
+        dest: KeyT,
+        keys: KeyT | Sequence[KeyT],
+        version: int | None = None,
+        version_dest: int | None = None,
+        version_keys: int | None = None,
+    ) -> int:
+        """Async: store the union of sets."""
+        raise NotSupportedError("asunionstore", self.__class__.__name__)
+
+    async def asmismember(self, key: KeyT, *members: Any, version: int | None = None) -> list[bool]:
+        """Async: check if multiple values are members of a set."""
+        raise NotSupportedError("asmismember", self.__class__.__name__)
+
+    async def asscan(
+        self,
+        key: KeyT,
+        cursor: int = 0,
+        match: str | None = None,
+        count: int | None = None,
+        version: int | None = None,
+    ) -> tuple[int, set[Any]]:
+        """Async: incrementally iterate over set members."""
+        raise NotSupportedError("asscan", self.__class__.__name__)
+
+    def asscan_iter(  # async generator: see note on ``RespAdapterProtocol.aiter_keys`` for ``def`` (not ``async def``)
+        self,
+        key: KeyT,
+        match: str | None = None,
+        count: int | None = None,
+        version: int | None = None,
+    ) -> AsyncIterator[Any]:
+        """Async: iterate over set members."""
+        raise NotSupportedError("asscan_iter", self.__class__.__name__)
 
     # =========================================================================
     # Sorted Set Operations
@@ -588,6 +958,143 @@ class BaseCachex(BaseCache):
         """Get the scores of multiple members."""
         raise NotSupportedError("zmscore", self.__class__.__name__)
 
+    async def azadd(
+        self,
+        key: KeyT,
+        mapping: Mapping[Any, float],
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        ch: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+        version: int | None = None,
+    ) -> int:
+        """Async: add members to a sorted set."""
+        raise NotSupportedError("azadd", self.__class__.__name__)
+
+    async def azcard(self, key: KeyT, version: int | None = None) -> int:
+        """Async: get the number of members in a sorted set."""
+        raise NotSupportedError("azcard", self.__class__.__name__)
+
+    async def azcount(
+        self,
+        key: KeyT,
+        min_score: float | str,
+        max_score: float | str,
+        version: int | None = None,
+    ) -> int:
+        """Async: count members with scores between min and max."""
+        raise NotSupportedError("azcount", self.__class__.__name__)
+
+    async def azincrby(self, key: KeyT, amount: float, member: Any, version: int | None = None) -> float:
+        """Async: increment the score of a member."""
+        raise NotSupportedError("azincrby", self.__class__.__name__)
+
+    async def azpopmax(
+        self,
+        key: KeyT,
+        count: int | None = None,
+        version: int | None = None,
+    ) -> list[tuple[Any, float]]:
+        """Async: remove and return members with highest scores."""
+        raise NotSupportedError("azpopmax", self.__class__.__name__)
+
+    async def azpopmin(
+        self,
+        key: KeyT,
+        count: int | None = None,
+        version: int | None = None,
+    ) -> list[tuple[Any, float]]:
+        """Async: remove and return members with lowest scores."""
+        raise NotSupportedError("azpopmin", self.__class__.__name__)
+
+    async def azrange(
+        self,
+        key: KeyT,
+        start: int,
+        end: int,
+        *,
+        withscores: bool = False,
+        version: int | None = None,
+    ) -> list[Any] | list[tuple[Any, float]]:
+        """Async: return a range of members by index."""
+        raise NotSupportedError("azrange", self.__class__.__name__)
+
+    async def azrangebyscore(
+        self,
+        key: KeyT,
+        min_score: float | str,
+        max_score: float | str,
+        *,
+        withscores: bool = False,
+        start: int | None = None,
+        num: int | None = None,
+        version: int | None = None,
+    ) -> list[Any] | list[tuple[Any, float]]:
+        """Async: return members with scores between min and max."""
+        raise NotSupportedError("azrangebyscore", self.__class__.__name__)
+
+    async def azrank(self, key: KeyT, member: Any, version: int | None = None) -> int | None:
+        """Async: get the rank of a member."""
+        raise NotSupportedError("azrank", self.__class__.__name__)
+
+    async def azrem(self, key: KeyT, *members: Any, version: int | None = None) -> int:
+        """Async: remove members from a sorted set."""
+        raise NotSupportedError("azrem", self.__class__.__name__)
+
+    async def azremrangebyscore(
+        self,
+        key: KeyT,
+        min_score: float | str,
+        max_score: float | str,
+        version: int | None = None,
+    ) -> int:
+        """Async: remove members with scores between min and max."""
+        raise NotSupportedError("azremrangebyscore", self.__class__.__name__)
+
+    async def azremrangebyrank(self, key: KeyT, start: int, end: int, version: int | None = None) -> int:
+        """Async: remove members by rank range."""
+        raise NotSupportedError("azremrangebyrank", self.__class__.__name__)
+
+    async def azrevrange(
+        self,
+        key: KeyT,
+        start: int,
+        end: int,
+        *,
+        withscores: bool = False,
+        version: int | None = None,
+    ) -> list[Any] | list[tuple[Any, float]]:
+        """Async: return a range of members by index, highest to lowest."""
+        raise NotSupportedError("azrevrange", self.__class__.__name__)
+
+    async def azrevrangebyscore(
+        self,
+        key: KeyT,
+        max_score: float | str,
+        min_score: float | str,
+        *,
+        withscores: bool = False,
+        start: int | None = None,
+        num: int | None = None,
+        version: int | None = None,
+    ) -> list[Any] | list[tuple[Any, float]]:
+        """Async: return members with scores between max and min, highest first."""
+        raise NotSupportedError("azrevrangebyscore", self.__class__.__name__)
+
+    async def azscore(self, key: KeyT, member: Any, version: int | None = None) -> float | None:
+        """Async: get the score of a member."""
+        raise NotSupportedError("azscore", self.__class__.__name__)
+
+    async def azrevrank(self, key: KeyT, member: Any, version: int | None = None) -> int | None:
+        """Async: get the rank of a member (highest score first)."""
+        raise NotSupportedError("azrevrank", self.__class__.__name__)
+
+    async def azmscore(self, key: KeyT, *members: Any, version: int | None = None) -> list[float | None]:
+        """Async: get the scores of multiple members."""
+        raise NotSupportedError("azmscore", self.__class__.__name__)
+
     # =========================================================================
     # Stream Operations
     # =========================================================================
@@ -595,6 +1102,10 @@ class BaseCachex(BaseCache):
     def xlen(self, key: KeyT, version: int | None = None) -> int:
         """Get the number of entries in a stream."""
         raise NotSupportedError("xlen", self.__class__.__name__)
+
+    async def axlen(self, key: KeyT, version: int | None = None) -> int:
+        """Async: get the number of entries in a stream."""
+        raise NotSupportedError("axlen", self.__class__.__name__)
 
     # =========================================================================
     # Client Access & Info

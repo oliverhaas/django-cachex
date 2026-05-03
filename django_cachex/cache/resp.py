@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     import builtins
     from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 
-    from django_cachex.adapters.pipeline import Pipeline
+    from django_cachex.adapters.pipeline import AsyncPipeline, Pipeline
     from django_cachex.adapters.protocols import RespAdapterProtocol
     from django_cachex.types import AbsExpiryT, ExpiryT, KeyT, KeyType
 
@@ -881,6 +881,27 @@ class RespCache(BaseCachex):
         pipeline_adapter = self.adapter.pipeline(transaction=transaction)
         pipe = Pipeline(cache=self, pipeline_adapter=pipeline_adapter, version=v)
         # Set key_func for proper key prefixing
+        pipe._key_func = self.make_and_validate_key
+        pipe._cache_version = v
+        return pipe
+
+    def apipeline(
+        self,
+        *,
+        transaction: bool = True,
+        version: int | None = None,
+    ) -> AsyncPipeline:
+        """Create an async pipeline for batched operations.
+
+        ``apipeline()`` itself is sync — it just constructs the wrapper.
+        Only ``await pipeline.execute()`` performs I/O. Mirrors how
+        ``redis.asyncio.Redis().pipeline()`` works.
+        """
+        from django_cachex.adapters.pipeline import AsyncPipeline
+
+        v = version if version is not None else self.version
+        pipeline_adapter = self.adapter.apipeline(transaction=transaction)
+        pipe = AsyncPipeline(cache=self, pipeline_adapter=pipeline_adapter, version=v)
         pipe._key_func = self.make_and_validate_key
         pipe._cache_version = v
         return pipe
@@ -3107,6 +3128,15 @@ class RespClusterCache(RespCache):
     ) -> Pipeline:
         """Create a pipeline. Cluster pipelines never use transactions."""
         return super().pipeline(transaction=False, version=version)
+
+    def apipeline(
+        self,
+        *,
+        transaction: bool = True,
+        version: int | None = None,
+    ) -> AsyncPipeline:
+        """Create an async pipeline. Cluster pipelines never use transactions."""
+        return super().apipeline(transaction=False, version=version)
 
 
 class RespSentinelCache(RespCache):

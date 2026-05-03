@@ -923,3 +923,44 @@ class TestPipelineNoSpuriousWarnings:
             pipe = cache.pipeline()
             pipe.set("nowarn_key", "val")
             pipe.execute()
+
+
+class TestAsyncPipeline:
+    """End-to-end checks for the async pipeline factory and wrapper."""
+
+    @pytest.mark.asyncio
+    async def test_apipeline_returns_async_pipeline(self, cache: RespCache):
+        from django_cachex.adapters.pipeline import AsyncPipeline
+
+        pipe = cache.apipeline()
+        assert isinstance(pipe, AsyncPipeline)
+
+    @pytest.mark.asyncio
+    async def test_apipeline_basic_set_get(self, cache: RespCache):
+        pipe = cache.apipeline()
+        pipe.set("apipe_key", "hello")
+        pipe.get("apipe_key")
+        results = await pipe.execute()
+        assert results[0] is True
+        assert results[1] == "hello"
+
+    @pytest.mark.asyncio
+    async def test_apipeline_chaining(self, cache: RespCache):
+        pipe = cache.apipeline()
+        result = pipe.set("apipe_chain1", "a").set("apipe_chain2", "b").get("apipe_chain1")
+        assert result is pipe
+        results = await pipe.execute()
+        assert results == [True, True, "a"]
+
+    @pytest.mark.asyncio
+    async def test_apipeline_empty_execute(self, cache: RespCache):
+        pipe = cache.apipeline()
+        results = await pipe.execute()
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_apipeline_async_context_manager(self, cache: RespCache):
+        async with cache.apipeline() as pipe:
+            pipe.set("apipe_ctx", "v")
+            results = await pipe.execute()
+        assert results == [True]

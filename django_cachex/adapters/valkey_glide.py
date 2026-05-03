@@ -6,7 +6,7 @@ Each operation method overrides ``RespAdapterProtocol`` and calls
 no redis-py-shaped intermediary for the operation surface — only
 ``encode``/``decode``/``_resolve_stampede`` are shared from the base.
 
-The pipeline adapter (``ValkeyGlidePipelineAdapter`` / ``_AsyncGlidePipeline``)
+The pipeline adapter (``ValkeyGlidePipelineAdapter`` / ``ValkeyGlideAsyncPipelineAdapter``)
 implements ``RespPipelineProtocol`` natively against glide's ``Batch``
 — no redis-py-shaped intermediary on the queueing surface either.
 
@@ -32,7 +32,7 @@ from django_cachex.stampede import (
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 
     from django_cachex.types import KeyT
 
@@ -577,11 +577,22 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         return None
 
 
-class _AsyncGlidePipeline:
-    """Async parallel of ``ValkeyGlidePipelineAdapter``."""
+class ValkeyGlideAsyncPipelineAdapter:
+    """Async parallel of ``ValkeyGlidePipelineAdapter``.
 
-    def __init__(self, client: AsyncGlideClient, *, transaction: bool = False) -> None:
-        self._client = client
+    Conforms to :class:`RespAsyncPipelineProtocol`. Accepts a callable that
+    returns the awaitable async client (rather than a resolved client) so the
+    factory can stay sync — the underlying glide client is acquired lazily
+    inside ``execute()``.
+    """
+
+    def __init__(
+        self,
+        client_factory: Callable[[], Awaitable[AsyncGlideClient]],
+        *,
+        transaction: bool = False,
+    ) -> None:
+        self._client_factory = client_factory
         self._batch = Batch(is_atomic=transaction)
 
     def set(self, key: Any, value: Any, **kw: Any) -> Self:
@@ -630,11 +641,20 @@ class _AsyncGlidePipeline:
         return call
 
     async def execute(self) -> list[Any]:
-        result = await self._client.exec(self._batch, raise_on_error=True)
+        client = await self._client_factory()
+        result = await client.exec(self._batch, raise_on_error=True)
         return result or []
 
-    def reset(self) -> None:
+    async def reset(self) -> None:
         self._batch = Batch(is_atomic=False)
+
+    def execute_command(self, *args: Any) -> Self:
+        if not args:
+            msg = "execute_command requires at least the command name"
+            raise ValueError(msg)
+        cmd_name = args[0] if isinstance(args[0], str) else args[0].decode()
+        self._batch.custom_command([cmd_name, *_enc_list(args[1:])])
+        return self
 
     async def __aenter__(self) -> Self:
         return self
@@ -1398,6 +1418,15 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     def pipeline(self, *, transaction: bool = True) -> ValkeyGlidePipelineAdapter:
         return self._pipeline(transaction=transaction)
+
+    def apipeline(self, *, transaction: bool = True) -> ValkeyGlideAsyncPipelineAdapter:
+        """Construct an async pipeline adapter wrapping glide's async ``Batch``.
+
+        The async client is acquired lazily inside ``execute()`` because
+        ``_aclient()`` is itself awaitable; chainable methods only buffer
+        commands on the ``Batch`` object so they don't need a client yet.
+        """
+        return ValkeyGlideAsyncPipelineAdapter(self._aclient, transaction=transaction)
 
     # =========================================================================
     # Async core ops
@@ -2284,4 +2313,4 @@ class _AsyncGlideLock:
             await self.release()
 
 
-__all__ = ["ValkeyGlideAdapter"]
+__all__ = ["ValkeyGlideAdapter", "ValkeyGlideAsyncPipelineAdapter", "ValkeyGlidePipelineAdapter"]

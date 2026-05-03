@@ -13,6 +13,7 @@ import weakref
 from django_cachex.adapters.valkey_py import (
     AsyncPoolsRegistry,
     ValkeyPyAdapter,
+    ValkeyPyAsyncPipelineAdapter,
     ValkeyPyClusterAdapter,
     ValkeyPyPipelineAdapter,
     ValkeyPySentinelAdapter,
@@ -78,6 +79,13 @@ class RedisPyPipelineAdapter(ValkeyPyPipelineAdapter):
     """
 
 
+class RedisPyAsyncPipelineAdapter(ValkeyPyAsyncPipelineAdapter):
+    """Async pipeline adapter for the redis-py driver.
+
+    Empty subclass — same rationale as :class:`RedisPyPipelineAdapter`.
+    """
+
+
 class RedisPyAdapter(_RedisDriverMixin, ValkeyPyAdapter):
     """Single-node / replicated cache adapter using ``redis-py``."""
 
@@ -91,6 +99,10 @@ class RedisPyAdapter(_RedisDriverMixin, ValkeyPyAdapter):
     def pipeline(self, *, transaction: bool = True) -> RedisPyPipelineAdapter:
         client = self.get_client(write=True)
         return RedisPyPipelineAdapter(client.pipeline(transaction=transaction))
+
+    def apipeline(self, *, transaction: bool = True) -> RedisPyAsyncPipelineAdapter:
+        client = self.get_async_client(write=True)
+        return RedisPyAsyncPipelineAdapter(client.pipeline(transaction=transaction))
 
 
 class RedisPySentinelAdapter(_RedisDriverMixin, ValkeyPySentinelAdapter):
@@ -110,6 +122,10 @@ class RedisPySentinelAdapter(_RedisDriverMixin, ValkeyPySentinelAdapter):
         client = self.get_client(write=True)
         return RedisPyPipelineAdapter(client.pipeline(transaction=transaction))
 
+    def apipeline(self, *, transaction: bool = True) -> RedisPyAsyncPipelineAdapter:
+        client = self.get_async_client(write=True)
+        return RedisPyAsyncPipelineAdapter(client.pipeline(transaction=transaction))
+
 
 class RedisPyClusterAdapter(_RedisDriverMixin, ValkeyPyClusterAdapter):
     """Cluster cache adapter using ``redis-py``."""
@@ -126,10 +142,15 @@ class RedisPyClusterAdapter(_RedisDriverMixin, ValkeyPyClusterAdapter):
         client = self.get_client(write=True)
         return RedisPyPipelineAdapter(client.pipeline(transaction=False))
 
+    def apipeline(self, *, transaction: bool = True) -> RedisPyAsyncPipelineAdapter:
+        client = self.get_async_client(write=True)
+        return RedisPyAsyncPipelineAdapter(client.pipeline(transaction=False))
+
 
 __all__ = [
     "_REDIS_AVAILABLE",
     "RedisPyAdapter",
+    "RedisPyAsyncPipelineAdapter",
     "RedisPyClusterAdapter",
     "RedisPyPipelineAdapter",
     "RedisPySentinelAdapter",
