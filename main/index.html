@@ -1076,7 +1076,7 @@
 <li>Cache stampede prevention (TTL-based XFetch).</li>
 <li>Two composite backends: <code>StreamCache</code> (cross-pod stream-synchronized in-memory cache) and <code>TieredCache</code> (L1/L2 with TTL propagation).</li>
 <li>Django <code>LocMemCache</code> and <code>DatabaseCache</code> extensions with the same data-structure ops and admin support.</li>
-<li>Optional Rust I/O driver (PyO3 + tokio + redis-rs) behind the same <code>KeyValueCache</code> API. Free-threaded CPython (3.14t) supported.</li>
+<li>Optional Rust I/O driver (PyO3 + tokio + redis-rs) behind the same <code>RespCache</code> API. Free-threaded CPython (3.14t) supported.</li>
 <li>Django admin UI for browsing keys, inspecting values, editing, and flushing.</li>
 </ul>
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>

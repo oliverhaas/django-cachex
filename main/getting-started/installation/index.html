@@ -1059,7 +1059,7 @@
 </span></code></pre></div>
 <p>These provide C-based parsers that improve protocol parsing throughput on the hot read path.</p>
 <h2 id="rust-io-driver-optional">Rust I/O driver (optional)<a class="headerlink" href="#rust-io-driver-optional" title="Permanent link">&para;</a></h2>
-<p>The <code>RedisRsValkeyCache</code> backends are powered by an
+<p>The <code>RedisRsCache</code> backends are powered by an
 opt-in native extension built on PyO3 + tokio + <a href="https://github.com/redis-rs/redis-rs">redis-rs</a>. It ships as
 a separate package, <code>django-cachex-redis-rs</code>, so users who only want the
 pure-Python backends never carry the binary.</p>
@@ -1073,7 +1073,7 @@ pure-Python backends never carry the binary.</p>
 Linux aarch64, macOS arm64, and Windows amd64 on both cp314 and cp314t.
 On other platforms pip will try to build from source, which needs the
 Rust toolchain. Drop the <code>redis-rs</code> extra to avoid that.</p>
-<p>When the binary isn't installed, <code>RedisRsValkeyCache</code>
+<p>When the binary isn't installed, <code>RedisRsCache</code>
 classes are still importable but raise a clean <code>ImportError</code> on first
 use, naming the extra you need.</p>
 
