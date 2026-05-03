@@ -418,7 +418,7 @@ class TestTieredCacheConfig:
         assert LocMemCache._cachex_support == "cachex"
 
     def test_mixin_support_level(self):
-        from django_cachex.cache.mixin import CachexCompat
+        from django_cachex.cache.compat import CachexCompat
 
         assert CachexCompat._cachex_support == "wrapped"
 

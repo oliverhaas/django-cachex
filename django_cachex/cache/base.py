@@ -7,7 +7,7 @@ contract is declared and enforced in one place. Native backends
 (:class:`~django_cachex.cache.locmem.LocMemCache`,
 :class:`~django_cachex.cache.database.DatabaseCache`,
 :class:`~django_cachex.cache.resp.RespCache`) override the methods
-with real implementations; :class:`~django_cachex.cache.mixin.CachexCompat`
+with real implementations; :class:`~django_cachex.cache.compat.CachexCompat`
 provides emulated impls. Methods left at the default raise
 :class:`~django_cachex.exceptions.NotSupportedError`; the admin uses
 ``hasattr`` / ``try-except NotSupportedError`` to detect support.
@@ -37,7 +37,7 @@ class BaseCachex(BaseCache):
     """Cache contract — declares the full cachex extension surface on top of ``BaseCache``.
 
     Methods default to :class:`~django_cachex.exceptions.NotSupportedError`;
-    native cachex backends and :class:`~django_cachex.cache.mixin.CachexCompat`
+    native cachex backends and :class:`~django_cachex.cache.compat.CachexCompat`
     override them with real implementations. Subclasses can pick which
     operations they support — the admin discovers support via
     ``hasattr`` / ``try-except NotSupportedError``.
