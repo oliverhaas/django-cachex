@@ -5,6 +5,14 @@ valkey-py, our Rust ``redis-rs`` driver, valkey-glide) and exposes the
 operation surface that ``RespCache`` delegates to.
 """
 
+from pkgutil import extend_path
+
+# Extend the sub-package path so the optional ``django-cachex-redis-rs``
+# binary package (which ships ``_redis_rs*`` files into this namespace)
+# is discovered when the two packages are installed under different
+# prefixes.
+__path__ = extend_path(__path__, __name__)
+
 from django_cachex.adapters.pipeline import AsyncPipeline, Pipeline
 from django_cachex.adapters.protocols import (
     RespAdapterProtocol,

@@ -48,8 +48,6 @@ if TYPE_CHECKING:
 
     from django.db.backends.base.base import BaseDatabaseWrapper
 
-    from django_cachex.types import ExpiryT, KeyT
-
 # Sentinels for compound-op transforms.
 _MISSING = object()  # current value: row absent (or expired)
 _DELETE = object()  # transform output: drop the row
@@ -139,7 +137,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         pickled = pickle.dumps(value, self.pickle_protocol)
         return base64.b64encode(pickled).decode("latin1")
 
-    def _internal_key(self, key: KeyT, version: int | None = None) -> str:
+    def _internal_key(self, key: str, version: int | None = None) -> str:
         """Resolve a user key (with version) to the internal cache-table key."""
         return self.make_key(str(key), version=version)
 
@@ -226,7 +224,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
     # TTL Operations
     # =========================================================================
 
-    def ttl(self, key: KeyT, version: int | None = None) -> int | None:
+    def ttl(self, key: str, version: int | None = None) -> int | None:
         """Return seconds remaining; ``-2`` if missing/expired, ``-1`` if no expiry."""
         conn = self._get_connection()
         quote = conn.ops.quote_name
@@ -251,7 +249,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             return -1
         return int((expires_dt - now).total_seconds())
 
-    def expire(self, key: KeyT, timeout: ExpiryT, version: int | None = None) -> bool:
+    def expire(self, key: str, timeout: int | timedelta, version: int | None = None) -> bool:
         """Set the TTL of a key. Returns ``True`` if the key existed."""
         if isinstance(timeout, timedelta):
             timeout_secs = timeout.total_seconds()
@@ -269,7 +267,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             )
             return cursor.rowcount > 0
 
-    def persist(self, key: KeyT, version: int | None = None) -> bool:
+    def persist(self, key: str, version: int | None = None) -> bool:
         """Remove the TTL by setting expires to ``datetime.max``."""
         conn = self._get_connection(write=True)
         quote = conn.ops.quote_name
@@ -286,7 +284,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
     # Type Detection
     # =========================================================================
 
-    def type(self, key: KeyT, version: int | None = None) -> KeyType | None:
+    def type(self, key: str, version: int | None = None) -> KeyType | None:
         """Get the data type of a key by inspecting the stored Python value."""
         value = self._read(self._internal_key(key, version=version))
         if value is _MISSING:
@@ -410,7 +408,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             raise TypeError(msg)
         return current
 
-    def lpush(self, key: KeyT, *values: Any, version: int | None = None) -> int:
+    def lpush(self, key: str, *values: Any, version: int | None = None) -> int:
         def transform(current: Any) -> tuple[Any, int]:
             existing = self._coerce_list(current) or []
             new_list = list(reversed(values)) + existing
@@ -418,7 +416,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
 
-    def rpush(self, key: KeyT, *values: Any, version: int | None = None) -> int:
+    def rpush(self, key: str, *values: Any, version: int | None = None) -> int:
         def transform(current: Any) -> tuple[Any, int]:
             existing = self._coerce_list(current) or []
             new_list = existing + list(values)
@@ -426,7 +424,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
 
-    def lpop(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[Any]:
+    def lpop(self, key: str, count: int | None = None, version: int | None = None) -> list[Any]:
         def transform(current: Any) -> tuple[Any, list[Any]]:
             existing = self._coerce_list(current)
             if not existing:
@@ -438,7 +436,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return cast("list[Any]", self._atomic_compound(self._internal_key(key, version=version), transform))
 
-    def rpop(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[Any]:
+    def rpop(self, key: str, count: int | None = None, version: int | None = None) -> list[Any]:
         def transform(current: Any) -> tuple[Any, list[Any]]:
             existing = self._coerce_list(current)
             if not existing:
@@ -450,7 +448,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return cast("list[Any]", self._atomic_compound(self._internal_key(key, version=version), transform))
 
-    def lrange(self, key: KeyT, start: int, end: int, version: int | None = None) -> list[Any]:
+    def lrange(self, key: str, start: int, end: int, version: int | None = None) -> list[Any]:
         current = self._read(self._internal_key(key, version=version))
         existing = self._coerce_list(current)
         if not existing:
@@ -464,11 +462,11 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             return []
         return existing[start : end + 1]
 
-    def llen(self, key: KeyT, version: int | None = None) -> int:
+    def llen(self, key: str, version: int | None = None) -> int:
         existing = self._coerce_list(self._read(self._internal_key(key, version=version)))
         return 0 if existing is None else len(existing)
 
-    def lrem(self, key: KeyT, count: int, value: Any, version: int | None = None) -> int:
+    def lrem(self, key: str, count: int, value: Any, version: int | None = None) -> int:
         def transform(current: Any) -> tuple[Any, int]:
             existing = self._coerce_list(current)
             if not existing:
@@ -499,7 +497,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
 
-    def ltrim(self, key: KeyT, start: int, end: int, version: int | None = None) -> bool:
+    def ltrim(self, key: str, start: int, end: int, version: int | None = None) -> bool:
         def transform(current: Any) -> tuple[Any, bool]:
             existing = self._coerce_list(current)
             if existing is None:
@@ -514,7 +512,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return cast("bool", self._atomic_compound(self._internal_key(key, version=version), transform))
 
-    def lindex(self, key: KeyT, index: int, version: int | None = None) -> Any:
+    def lindex(self, key: str, index: int, version: int | None = None) -> Any:
         existing = self._coerce_list(self._read(self._internal_key(key, version=version)))
         if not existing:
             return None
@@ -523,7 +521,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         except IndexError:
             return None
 
-    def lset(self, key: KeyT, index: int, value: Any, version: int | None = None) -> bool:
+    def lset(self, key: str, index: int, value: Any, version: int | None = None) -> bool:
         def transform(current: Any) -> tuple[Any, bool]:
             existing = self._coerce_list(current)
             if not existing:
@@ -538,7 +536,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return cast("bool", self._atomic_compound(self._internal_key(key, version=version), transform))
 
-    def linsert(self, key: KeyT, where: str, pivot: Any, value: Any, version: int | None = None) -> int:
+    def linsert(self, key: str, where: str, pivot: Any, value: Any, version: int | None = None) -> int:
         def transform(current: Any) -> tuple[Any, int]:
             existing = self._coerce_list(current)
             if not existing:
@@ -556,7 +554,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
     def lpos(
         self,
-        key: KeyT,
+        key: str,
         value: Any,
         rank: int | None = None,
         count: int | None = None,
@@ -590,7 +588,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             raise TypeError(msg)
         return current
 
-    def sadd(self, key: KeyT, *members: Any, version: int | None = None) -> int:
+    def sadd(self, key: str, *members: Any, version: int | None = None) -> int:
         def transform(current: Any) -> tuple[Any, int]:
             existing = self._coerce_set(current) or set()
             before = len(existing)
@@ -599,7 +597,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
 
-    def srem(self, key: KeyT, *members: Any, version: int | None = None) -> int:
+    def srem(self, key: str, *members: Any, version: int | None = None) -> int:
         def transform(current: Any) -> tuple[Any, int]:
             existing = self._coerce_set(current)
             if not existing:
@@ -610,19 +608,19 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
 
-    def scard(self, key: KeyT, version: int | None = None) -> int:
+    def scard(self, key: str, version: int | None = None) -> int:
         existing = self._coerce_set(self._read(self._internal_key(key, version=version)))
         return 0 if existing is None else len(existing)
 
-    def sismember(self, key: KeyT, member: Any, version: int | None = None) -> bool:
+    def sismember(self, key: str, member: Any, version: int | None = None) -> bool:
         existing = self._coerce_set(self._read(self._internal_key(key, version=version)))
         return False if existing is None else member in existing
 
-    def smembers(self, key: KeyT, version: int | None = None) -> set[Any]:
+    def smembers(self, key: str, version: int | None = None) -> set[Any]:
         existing = self._coerce_set(self._read(self._internal_key(key, version=version)))
         return set() if existing is None else set(existing)
 
-    def spop(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | set[Any]:
+    def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | set[Any]:
         def transform(current: Any) -> tuple[Any, Any]:
             existing = self._coerce_set(current)
             if not existing:
@@ -638,7 +636,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return self._atomic_compound(self._internal_key(key, version=version), transform)
 
-    def srandmember(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | list[Any]:
+    def srandmember(self, key: str, count: int | None = None, version: int | None = None) -> Any | list[Any]:
         existing = self._coerce_set(self._read(self._internal_key(key, version=version)))
         if not existing:
             return [] if count is not None else None
@@ -646,18 +644,18 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             return random.choice(list(existing))  # noqa: S311
         return random.sample(list(existing), min(count, len(existing)))
 
-    def smismember(self, key: KeyT, *members: Any, version: int | None = None) -> list[bool]:
+    def smismember(self, key: str, *members: Any, version: int | None = None) -> list[bool]:
         existing = self._coerce_set(self._read(self._internal_key(key, version=version)))
         if existing is None:
             return [False] * len(members)
         return [m in existing for m in members]
 
-    def _collect_sets(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> list[set[Any]]:
-        if isinstance(keys, (str, bytes, memoryview)):
+    def _collect_sets(self, keys: str | Sequence[str], version: int | None = None) -> list[set[Any]]:
+        if isinstance(keys, str):
             keys = [keys]
         return [self._coerce_set(self._read(self._internal_key(k, version=version))) or set() for k in keys]
 
-    def sdiff(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
+    def sdiff(self, keys: str | Sequence[str], version: int | None = None) -> set[Any]:
         sets = self._collect_sets(keys, version=version)
         if not sets:
             return set()
@@ -666,7 +664,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             result = result - s
         return result
 
-    def sinter(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
+    def sinter(self, keys: str | Sequence[str], version: int | None = None) -> set[Any]:
         sets = self._collect_sets(keys, version=version)
         if not sets:
             return set()
@@ -675,7 +673,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             result = result & s
         return result
 
-    def sunion(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
+    def sunion(self, keys: str | Sequence[str], version: int | None = None) -> set[Any]:
         result: set[Any] = set()
         for s in self._collect_sets(keys, version=version):
             result |= s
@@ -696,7 +694,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
     def hset(  # noqa: C901
         self,
-        key: KeyT,
+        key: str,
         field: str | None = None,
         value: Any = None,
         version: int | None = None,
@@ -728,7 +726,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
 
-    def hdel(self, key: KeyT, *fields: str, version: int | None = None) -> int:
+    def hdel(self, key: str, *fields: str, version: int | None = None) -> int:
         def transform(current: Any) -> tuple[Any, int]:
             existing = self._coerce_hash(current)
             if not existing:
@@ -742,37 +740,37 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
 
-    def hget(self, key: KeyT, field: str, version: int | None = None) -> Any:
+    def hget(self, key: str, field: str, version: int | None = None) -> Any:
         existing = self._coerce_hash(self._read(self._internal_key(key, version=version)))
         return None if existing is None else existing.get(field)
 
-    def hgetall(self, key: KeyT, version: int | None = None) -> dict[str, Any]:
+    def hgetall(self, key: str, version: int | None = None) -> dict[str, Any]:
         existing = self._coerce_hash(self._read(self._internal_key(key, version=version)))
         return {} if existing is None else dict(existing)
 
-    def hlen(self, key: KeyT, version: int | None = None) -> int:
+    def hlen(self, key: str, version: int | None = None) -> int:
         existing = self._coerce_hash(self._read(self._internal_key(key, version=version)))
         return 0 if existing is None else len(existing)
 
-    def hkeys(self, key: KeyT, version: int | None = None) -> list[str]:
+    def hkeys(self, key: str, version: int | None = None) -> list[str]:
         existing = self._coerce_hash(self._read(self._internal_key(key, version=version)))
         return [] if existing is None else list(existing.keys())
 
-    def hvals(self, key: KeyT, version: int | None = None) -> list[Any]:
+    def hvals(self, key: str, version: int | None = None) -> list[Any]:
         existing = self._coerce_hash(self._read(self._internal_key(key, version=version)))
         return [] if existing is None else list(existing.values())
 
-    def hexists(self, key: KeyT, field: str, version: int | None = None) -> bool:
+    def hexists(self, key: str, field: str, version: int | None = None) -> bool:
         existing = self._coerce_hash(self._read(self._internal_key(key, version=version)))
         return False if existing is None else field in existing
 
-    def hmget(self, key: KeyT, *fields: str, version: int | None = None) -> list[Any]:
+    def hmget(self, key: str, *fields: str, version: int | None = None) -> list[Any]:
         existing = self._coerce_hash(self._read(self._internal_key(key, version=version)))
         if existing is None:
             return [None] * len(fields)
         return [existing.get(f) for f in fields]
 
-    def hsetnx(self, key: KeyT, field: str, value: Any, version: int | None = None) -> bool:
+    def hsetnx(self, key: str, field: str, value: Any, version: int | None = None) -> bool:
         def transform(current: Any) -> tuple[Any, bool]:
             existing = self._coerce_hash(current) or {}
             if field in existing:
@@ -782,7 +780,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return cast("bool", self._atomic_compound(self._internal_key(key, version=version), transform))
 
-    def hincrby(self, key: KeyT, field: str, amount: int = 1, version: int | None = None) -> int:
+    def hincrby(self, key: str, field: str, amount: int = 1, version: int | None = None) -> int:
         def transform(current: Any) -> tuple[Any, int]:
             existing = self._coerce_hash(current) or {}
             existing[field] = int(existing.get(field, 0)) + amount
@@ -790,7 +788,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
 
-    def hincrbyfloat(self, key: KeyT, field: str, amount: float = 1.0, version: int | None = None) -> float:
+    def hincrbyfloat(self, key: str, field: str, amount: float = 1.0, version: int | None = None) -> float:
         def transform(current: Any) -> tuple[Any, float]:
             existing = self._coerce_hash(current) or {}
             existing[field] = float(existing.get(field, 0)) + amount
@@ -817,7 +815,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
     def zadd(
         self,
-        key: KeyT,
+        key: str,
         mapping: Mapping[Any, float],
         *,
         nx: bool = False,
@@ -851,15 +849,15 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
 
-    def zcard(self, key: KeyT, version: int | None = None) -> int:
+    def zcard(self, key: str, version: int | None = None) -> int:
         existing = self._coerce_zset(self._read(self._internal_key(key, version=version)))
         return 0 if existing is None else len(existing)
 
-    def zscore(self, key: KeyT, member: Any, version: int | None = None) -> float | None:
+    def zscore(self, key: str, member: Any, version: int | None = None) -> float | None:
         existing = self._coerce_zset(self._read(self._internal_key(key, version=version)))
         return None if existing is None else existing.get(member)
 
-    def zrank(self, key: KeyT, member: Any, version: int | None = None) -> int | None:
+    def zrank(self, key: str, member: Any, version: int | None = None) -> int | None:
         existing = self._coerce_zset(self._read(self._internal_key(key, version=version)))
         if existing is None or member not in existing:
             return None
@@ -868,7 +866,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
                 return i
         return None
 
-    def zrevrank(self, key: KeyT, member: Any, version: int | None = None) -> int | None:
+    def zrevrank(self, key: str, member: Any, version: int | None = None) -> int | None:
         existing = self._coerce_zset(self._read(self._internal_key(key, version=version)))
         if existing is None or member not in existing:
             return None
@@ -879,7 +877,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
     def zrange(
         self,
-        key: KeyT,
+        key: str,
         start: int,
         end: int,
         *,
@@ -900,7 +898,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
     def zrevrange(
         self,
-        key: KeyT,
+        key: str,
         start: int,
         end: int,
         *,
@@ -921,7 +919,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
     def zrangebyscore(
         self,
-        key: KeyT,
+        key: str,
         min_score: float | str,
         max_score: float | str,
         *,
@@ -940,7 +938,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             filtered = filtered[start : start + num]
         return filtered if withscores else [m for m, _ in filtered]
 
-    def zrem(self, key: KeyT, *members: Any, version: int | None = None) -> int:
+    def zrem(self, key: str, *members: Any, version: int | None = None) -> int:
         def transform(current: Any) -> tuple[Any, int]:
             existing = self._coerce_zset(current)
             if not existing:
@@ -954,7 +952,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
 
-    def zincrby(self, key: KeyT, amount: float, member: Any, version: int | None = None) -> float:
+    def zincrby(self, key: str, amount: float, member: Any, version: int | None = None) -> float:
         def transform(current: Any) -> tuple[Any, float]:
             existing = self._coerce_zset(current) or {}
             existing[member] = existing.get(member, 0.0) + amount
@@ -964,7 +962,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
     def zcount(
         self,
-        key: KeyT,
+        key: str,
         min_score: float | str,
         max_score: float | str,
         version: int | None = None,
@@ -976,7 +974,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         hi = float("inf") if max_score == "+inf" else float(max_score)
         return sum(1 for s in existing.values() if lo <= s <= hi)
 
-    def zpopmin(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
+    def zpopmin(self, key: str, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
         def transform(current: Any) -> tuple[Any, list[tuple[Any, float]]]:
             existing = self._coerce_zset(current)
             if not existing:
@@ -993,7 +991,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             self._atomic_compound(self._internal_key(key, version=version), transform),
         )
 
-    def zpopmax(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
+    def zpopmax(self, key: str, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
         def transform(current: Any) -> tuple[Any, list[tuple[Any, float]]]:
             existing = self._coerce_zset(current)
             if not existing:
@@ -1010,7 +1008,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             self._atomic_compound(self._internal_key(key, version=version), transform),
         )
 
-    def zmscore(self, key: KeyT, *members: Any, version: int | None = None) -> list[float | None]:
+    def zmscore(self, key: str, *members: Any, version: int | None = None) -> list[float | None]:
         existing = self._coerce_zset(self._read(self._internal_key(key, version=version)))
         if existing is None:
             return [None] * len(members)
@@ -1018,7 +1016,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
     def zremrangebyscore(
         self,
-        key: KeyT,
+        key: str,
         min_score: float | str,
         max_score: float | str,
         version: int | None = None,
@@ -1039,7 +1037,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
 
-    def zremrangebyrank(self, key: KeyT, start: int, end: int, version: int | None = None) -> int:
+    def zremrangebyrank(self, key: str, start: int, end: int, version: int | None = None) -> int:
         def transform(current: Any) -> tuple[Any, int]:
             existing = self._coerce_zset(current)
             if not existing:

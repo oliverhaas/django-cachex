@@ -1,4 +1,4 @@
-// Connection layer for the Rust I/O driver.
+// Connection layer for the Rust adapter.
 //
 // Original (lines through `connect_sentinel`): verbatim port from django-vcache
 // (MIT, by David Burke / GlitchTip):
@@ -179,12 +179,12 @@ impl SentinelConn {
 /// Inner connection enum — one per connection type.
 /// All methods for individual Redis commands live here.
 ///
-/// Public so [`ValkeyConn`] can expose it as the target of its [`Deref`]
+/// Public so [`Conn`] can expose it as the target of its [`Deref`]
 /// impls — non-blocking commands resolve straight to the inner without
 /// per-method passthroughs. Crate is a `cdylib`, so the "public" boundary
 /// is just the PyO3 surface; this type is still effectively internal.
 #[derive(Clone)]
-pub enum ValkeyConnInner {
+pub enum ConnInner {
     Standard(ConnectionManager),
     Cluster(ClusterConnection),
     Sentinel(SentinelConn),
@@ -195,9 +195,9 @@ pub enum ValkeyConnInner {
 macro_rules! dispatch_cmd {
     ($self:expr, $cmd:expr) => {
         match $self {
-            ValkeyConnInner::Standard(c) => $cmd.query_async(c).await,
-            ValkeyConnInner::Cluster(c) => $cmd.query_async(c).await,
-            ValkeyConnInner::Sentinel(s) => {
+            ConnInner::Standard(c) => $cmd.query_async(c).await,
+            ConnInner::Cluster(c) => $cmd.query_async(c).await,
+            ConnInner::Sentinel(s) => {
                 let cmd_retry = $cmd.clone();
                 let mut c = s.get_conn().await;
                 match $cmd.query_async(&mut c).await {
@@ -234,14 +234,14 @@ macro_rules! sentinel_retry {
 macro_rules! conn_method {
     ($self:expr, $c:ident, $op:expr) => {
         match $self {
-            ValkeyConnInner::Standard($c) => $op,
-            ValkeyConnInner::Cluster($c) => $op,
-            ValkeyConnInner::Sentinel(s) => sentinel_retry!(s, $c, $op),
+            ConnInner::Standard($c) => $op,
+            ConnInner::Cluster($c) => $op,
+            ConnInner::Sentinel(s) => sentinel_retry!(s, $c, $op),
         }
     };
 }
 
-impl ValkeyConnInner {
+impl ConnInner {
     pub async fn get_bytes(&mut self, key: &str) -> RedisResult<Option<Vec<u8>>> {
         conn_method!(self, c, c.get(key).await)
     }
@@ -271,6 +271,32 @@ impl ValkeyConnInner {
         }
         let result: Option<String> = dispatch_cmd!(self, cmd)?;
         Ok(result.is_some())
+    }
+
+    pub async fn set_with_flags(
+        &mut self,
+        key: &str,
+        value: Vec<u8>,
+        ttl: Option<u64>,
+        nx: bool,
+        xx: bool,
+        get: bool,
+    ) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("SET");
+        cmd.arg(key).arg(value);
+        if let Some(t) = ttl {
+            cmd.arg("EX").arg(t);
+        }
+        if nx {
+            cmd.arg("NX");
+        }
+        if xx {
+            cmd.arg("XX");
+        }
+        if get {
+            cmd.arg("GET");
+        }
+        dispatch_cmd!(self, cmd)
     }
 
     pub async fn del(&mut self, key: &str) -> RedisResult<i64> {
@@ -305,8 +331,45 @@ impl ValkeyConnInner {
         conn_method!(self, c, c.expire(key, seconds as i64).await)
     }
 
+    pub async fn pexpire(&mut self, key: &str, milliseconds: i64) -> RedisResult<bool> {
+        let mut cmd = redis::cmd("PEXPIRE");
+        cmd.arg(key).arg(milliseconds);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn expireat(&mut self, key: &str, ts_seconds: i64) -> RedisResult<bool> {
+        let mut cmd = redis::cmd("EXPIREAT");
+        cmd.arg(key).arg(ts_seconds);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn pexpireat(&mut self, key: &str, ts_milliseconds: i64) -> RedisResult<bool> {
+        let mut cmd = redis::cmd("PEXPIREAT");
+        cmd.arg(key).arg(ts_milliseconds);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn expiretime(&mut self, key: &str) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("EXPIRETIME");
+        cmd.arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
     pub async fn persist(&mut self, key: &str) -> RedisResult<bool> {
         conn_method!(self, c, c.persist(key).await)
+    }
+
+    pub async fn rename(&mut self, src: &str, dst: &str) -> RedisResult<()> {
+        let mut cmd = redis::cmd("RENAME");
+        cmd.arg(src).arg(dst);
+        let _: redis::Value = dispatch_cmd!(self, cmd)?;
+        Ok(())
+    }
+
+    pub async fn renamenx(&mut self, src: &str, dst: &str) -> RedisResult<bool> {
+        let mut cmd = redis::cmd("RENAMENX");
+        cmd.arg(src).arg(dst);
+        dispatch_cmd!(self, cmd)
     }
 
     pub async fn mget_bytes(&mut self, keys: &[String]) -> RedisResult<Vec<Option<Vec<u8>>>> {
@@ -469,29 +532,6 @@ impl ValkeyConnInner {
         dispatch_cmd!(self, cmd)
     }
 
-    pub async fn evalsha(
-        &mut self,
-        sha: &str,
-        keys: &[String],
-        args: &[Vec<u8>],
-    ) -> RedisResult<redis::Value> {
-        let mut cmd = redis::cmd("EVALSHA");
-        cmd.arg(sha).arg(keys.len());
-        for k in keys {
-            cmd.arg(k.as_str());
-        }
-        for a in args {
-            cmd.arg(a.as_slice());
-        }
-        dispatch_cmd!(self, cmd)
-    }
-
-    pub async fn script_load(&mut self, script: &str) -> RedisResult<String> {
-        let mut cmd = redis::cmd("SCRIPT");
-        cmd.arg("LOAD").arg(script);
-        dispatch_cmd!(self, cmd)
-    }
-
     /// Execute a pipeline of arbitrary commands.
     ///
     /// When `transaction` is true, wraps the batch in MULTI/EXEC for atomicity.
@@ -626,33 +666,6 @@ impl ValkeyConnInner {
         dispatch_cmd!(self, cmd)
     }
 
-    pub async fn blmpop(
-        &mut self,
-        timeout: f64,
-        keys: &[String],
-        direction: &str,
-        count: i64,
-    ) -> RedisResult<Option<(String, Vec<Vec<u8>>)>> {
-        let mut cmd = redis::cmd("BLMPOP");
-        cmd.arg(timeout).arg(keys.len());
-        for k in keys {
-            cmd.arg(k.as_str());
-        }
-        cmd.arg(direction);
-        cmd.arg("COUNT").arg(count);
-        let val: redis::Value = dispatch_cmd!(self, cmd)?;
-        match val {
-            redis::Value::Nil => Ok(None),
-            redis::Value::Array(mut items) if items.len() == 2 => {
-                let elems_val = items.pop().unwrap();
-                let key_val = items.pop().unwrap();
-                let key: String = redis::from_redis_value(key_val)?;
-                let elements: Vec<Vec<u8>> = redis::from_redis_value(elems_val)?;
-                Ok(Some((key, elements)))
-            }
-            _ => Ok(None),
-        }
-    }
 
     pub async fn blpop(
         &mut self,
@@ -697,66 +710,6 @@ impl ValkeyConnInner {
 
     // Scan
 
-    pub async fn scan_all(&mut self, pattern: &str, count: i64) -> RedisResult<Vec<String>> {
-        match self {
-            Self::Cluster(_) => {
-                let mut cmd = redis::cmd("KEYS");
-                cmd.arg(pattern);
-                dispatch_cmd!(self, cmd)
-            }
-            Self::Standard(c) => {
-                let mut all_keys = Vec::new();
-                let mut cursor: u64 = 0;
-                loop {
-                    let (new_cursor, keys): (u64, Vec<String>) = redis::cmd("SCAN")
-                        .arg(cursor)
-                        .arg("MATCH")
-                        .arg(pattern)
-                        .arg("COUNT")
-                        .arg(count)
-                        .query_async(c)
-                        .await?;
-                    all_keys.extend(keys);
-                    if new_cursor == 0 {
-                        break;
-                    }
-                    cursor = new_cursor;
-                }
-                Ok(all_keys)
-            }
-            Self::Sentinel(s) => {
-                let mut all_keys = Vec::new();
-                let mut cursor: u64 = 0;
-                let mut c = s.get_conn().await;
-                loop {
-                    let result: RedisResult<(u64, Vec<String>)> = redis::cmd("SCAN")
-                        .arg(cursor)
-                        .arg("MATCH")
-                        .arg(pattern)
-                        .arg("COUNT")
-                        .arg(count)
-                        .query_async(&mut c)
-                        .await;
-                    match result {
-                        Ok((new_cursor, keys)) => {
-                            all_keys.extend(keys);
-                            if new_cursor == 0 {
-                                break;
-                            }
-                            cursor = new_cursor;
-                        }
-                        Err(e) if cursor == 0 && SentinelConn::is_failover_error(&e) => {
-                            s.rediscover().await?;
-                            c = s.get_conn().await;
-                            all_keys.clear();
-                        }
-                        Err(e) => return Err(e),
-                    }
-                }
-                Ok(all_keys)
-            }
-        }
-    }
 
     /// One SCAN iteration. Returns `(next_cursor, keys)`; caller drives
     /// the loop. ``next_cursor == 0`` signals end of iteration.
@@ -769,48 +722,68 @@ impl ValkeyConnInner {
         cursor: u64,
         pattern: &str,
         count: i64,
+        type_filter: Option<&str>,
     ) -> RedisResult<(u64, Vec<String>)> {
         match self {
             Self::Cluster(_) => {
+                // KEYS has no TYPE option; emulate by calling TYPE per key when
+                // a type filter is supplied. Bounded by KEYS's existing scan,
+                // so the cost is the same order of magnitude.
                 let mut cmd = redis::cmd("KEYS");
                 cmd.arg(pattern);
-                let keys: Vec<String> = dispatch_cmd!(self, cmd)?;
+                let mut keys: Vec<String> = dispatch_cmd!(self, cmd)?;
+                if let Some(t) = type_filter {
+                    let want = t.to_ascii_lowercase();
+                    let mut filtered = Vec::with_capacity(keys.len());
+                    for key in keys.drain(..) {
+                        let ty: String = {
+                            let mut tcmd = redis::cmd("TYPE");
+                            tcmd.arg(key.as_str());
+                            dispatch_cmd!(self, tcmd)?
+                        };
+                        if ty.eq_ignore_ascii_case(&want) {
+                            filtered.push(key);
+                        }
+                    }
+                    keys = filtered;
+                }
                 Ok((0, keys))
             }
             Self::Standard(c) => {
-                let (next_cursor, keys): (u64, Vec<String>) = redis::cmd("SCAN")
-                    .arg(cursor)
+                let mut cmd = redis::cmd("SCAN");
+                cmd.arg(cursor)
                     .arg("MATCH")
                     .arg(pattern)
                     .arg("COUNT")
-                    .arg(count)
-                    .query_async(c)
-                    .await?;
+                    .arg(count);
+                if let Some(t) = type_filter {
+                    cmd.arg("TYPE").arg(t);
+                }
+                let (next_cursor, keys): (u64, Vec<String>) = cmd.query_async(c).await?;
                 Ok((next_cursor, keys))
             }
             Self::Sentinel(s) => {
+                let build_cmd = || {
+                    let mut cmd = redis::cmd("SCAN");
+                    cmd.arg(cursor)
+                        .arg("MATCH")
+                        .arg(pattern)
+                        .arg("COUNT")
+                        .arg(count);
+                    if let Some(t) = type_filter {
+                        cmd.arg("TYPE").arg(t);
+                    }
+                    cmd
+                };
                 let mut c = s.get_conn().await;
-                let result: RedisResult<(u64, Vec<String>)> = redis::cmd("SCAN")
-                    .arg(cursor)
-                    .arg("MATCH")
-                    .arg(pattern)
-                    .arg("COUNT")
-                    .arg(count)
-                    .query_async(&mut c)
-                    .await;
+                let result: RedisResult<(u64, Vec<String>)> =
+                    build_cmd().query_async(&mut c).await;
                 match result {
                     Ok(pair) => Ok(pair),
                     Err(e) if cursor == 0 && SentinelConn::is_failover_error(&e) => {
                         s.rediscover().await?;
                         let mut c = s.get_conn().await;
-                        let pair: (u64, Vec<String>) = redis::cmd("SCAN")
-                            .arg(cursor)
-                            .arg("MATCH")
-                            .arg(pattern)
-                            .arg("COUNT")
-                            .arg(count)
-                            .query_async(&mut c)
-                            .await?;
+                        let pair: (u64, Vec<String>) = build_cmd().query_async(&mut c).await?;
                         Ok(pair)
                     }
                     Err(e) => Err(e),
@@ -842,7 +815,7 @@ enum ConnConfig {
     },
 }
 
-impl ValkeyConnInner {
+impl ConnInner {
     fn cache_statistics(&self) -> Option<CacheStatistics> {
         match self {
             Self::Standard(c) => c.get_cache_statistics(),
@@ -856,7 +829,7 @@ impl ValkeyConnInner {
 }
 
 // =========================================================================
-// ValkeyConn — public wrapper with separate regular + blocking connections
+// Conn — public wrapper with separate regular + blocking connections
 // =========================================================================
 
 /// Public connection handle. Uses one connection for regular (fast) ops and
@@ -866,9 +839,9 @@ impl ValkeyConnInner {
 /// 1-second timeout blocks ALL other commands multiplexed on that connection.
 /// The separate blocking connection prevents this head-of-line blocking.
 #[derive(Clone)]
-pub struct ValkeyConn {
-    regular: ValkeyConnInner,
-    blocking: Arc<tokio::sync::OnceCell<ValkeyConnInner>>,
+pub struct Conn {
+    regular: ConnInner,
+    blocking: Arc<tokio::sync::OnceCell<ConnInner>>,
     config: ConnConfig,
 }
 
@@ -876,24 +849,24 @@ pub struct ValkeyConn {
 // `conn.X(args).await` auto-resolve to `conn.regular.X(args).await` without
 // hand-written passthroughs for every command. Blocking commands (BLMOVE,
 // BL{POP,RPOP,MPOP}) bypass this by being defined as inherent methods on
-// `ValkeyConn` — inherent methods take precedence over `Deref`-resolved
+// `Conn` — inherent methods take precedence over `Deref`-resolved
 // ones.
-impl std::ops::Deref for ValkeyConn {
-    type Target = ValkeyConnInner;
+impl std::ops::Deref for Conn {
+    type Target = ConnInner;
     fn deref(&self) -> &Self::Target {
         &self.regular
     }
 }
 
-impl std::ops::DerefMut for ValkeyConn {
+impl std::ops::DerefMut for Conn {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.regular
     }
 }
 
-impl ValkeyConn {
+impl Conn {
     /// Get or lazily create the blocking connection.
-    async fn get_blocking(&self) -> RedisResult<ValkeyConnInner> {
+    async fn get_blocking(&self) -> RedisResult<ConnInner> {
         self.blocking
             .get_or_try_init(|| async {
                 match &self.config {
@@ -906,7 +879,7 @@ impl ValkeyConn {
                             blocking_conn_manager_config(),
                         )
                         .await?;
-                        Ok(ValkeyConnInner::Standard(mgr))
+                        Ok(ConnInner::Standard(mgr))
                     }
                     ConnConfig::Cluster { urls, tls_opts } => {
                         let url_refs: Vec<&str> =
@@ -918,7 +891,7 @@ impl ValkeyConn {
                             None => ClusterClient::new(url_refs)?,
                         };
                         let conn = client.get_async_connection().await?;
-                        Ok(ValkeyConnInner::Cluster(conn))
+                        Ok(ConnInner::Cluster(conn))
                     }
                     ConnConfig::Sentinel {
                         sentinel_urls,
@@ -982,6 +955,22 @@ impl ValkeyConn {
         self.regular.expire(key, seconds).await
     }
 
+    pub async fn pexpire(&mut self, key: &str, milliseconds: i64) -> RedisResult<bool> {
+        self.regular.pexpire(key, milliseconds).await
+    }
+
+    pub async fn expireat(&mut self, key: &str, ts_seconds: i64) -> RedisResult<bool> {
+        self.regular.expireat(key, ts_seconds).await
+    }
+
+    pub async fn pexpireat(&mut self, key: &str, ts_milliseconds: i64) -> RedisResult<bool> {
+        self.regular.pexpireat(key, ts_milliseconds).await
+    }
+
+    pub async fn expiretime(&mut self, key: &str) -> RedisResult<i64> {
+        self.regular.expiretime(key).await
+    }
+
     pub async fn persist(&mut self, key: &str) -> RedisResult<bool> {
         self.regular.persist(key).await
     }
@@ -1037,19 +1026,6 @@ impl ValkeyConn {
         self.regular.eval(script, keys, args).await
     }
 
-    pub async fn evalsha(
-        &mut self,
-        sha: &str,
-        keys: &[String],
-        args: &[Vec<u8>],
-    ) -> RedisResult<redis::Value> {
-        self.regular.evalsha(sha, keys, args).await
-    }
-
-    pub async fn script_load(&mut self, script: &str) -> RedisResult<String> {
-        self.regular.script_load(script).await
-    }
-
     pub async fn pipeline_exec(
         &mut self,
         commands: Vec<(String, Vec<Vec<u8>>)>,
@@ -1091,19 +1067,6 @@ impl ValkeyConn {
         self.regular.llen(key).await
     }
 
-    pub async fn scan_all(&mut self, pattern: &str, count: i64) -> RedisResult<Vec<String>> {
-        self.regular.scan_all(pattern, count).await
-    }
-
-    pub async fn scan_one(
-        &mut self,
-        cursor: u64,
-        pattern: &str,
-        count: i64,
-    ) -> RedisResult<(u64, Vec<String>)> {
-        self.regular.scan_one(cursor, pattern, count).await
-    }
-
     pub fn cache_statistics(&self) -> Option<CacheStatistics> {
         self.regular.cache_statistics()
     }
@@ -1123,17 +1086,6 @@ impl ValkeyConn {
             .await
     }
 
-    pub async fn blmpop(
-        &mut self,
-        timeout: f64,
-        keys: &[String],
-        direction: &str,
-        count: i64,
-    ) -> RedisResult<Option<(String, Vec<Vec<u8>>)>> {
-        let mut conn = self.get_blocking().await?;
-        conn.blmpop(timeout, keys, direction, count).await
-    }
-
     pub async fn blpop(
         &mut self,
         keys: &[String],
@@ -1151,6 +1103,46 @@ impl ValkeyConn {
         let mut conn = self.get_blocking().await?;
         conn.brpop(keys, timeout).await
     }
+
+    /// XREAD: when `block_ms` is set, route to the blocking connection so a
+    /// long BLOCK doesn't stall the multiplexed regular connection. Without
+    /// `block_ms` the Deref-resolved `regular.xread` is used (faster path).
+    pub async fn xread(
+        &mut self,
+        keys: &[String],
+        ids: &[String],
+        count: Option<i64>,
+        block_ms: Option<i64>,
+    ) -> RedisResult<redis::Value> {
+        if block_ms.is_some() {
+            let mut conn = self.get_blocking().await?;
+            conn.xread(keys, ids, count, block_ms).await
+        } else {
+            self.regular.xread(keys, ids, count, None).await
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn xreadgroup(
+        &mut self,
+        group: &str,
+        consumer: &str,
+        keys: &[String],
+        ids: &[String],
+        count: Option<i64>,
+        block_ms: Option<i64>,
+        noack: bool,
+    ) -> RedisResult<redis::Value> {
+        if block_ms.is_some() {
+            let mut conn = self.get_blocking().await?;
+            conn.xreadgroup(group, consumer, keys, ids, count, block_ms, noack)
+                .await
+        } else {
+            self.regular
+                .xreadgroup(group, consumer, keys, ids, count, None, noack)
+                .await
+        }
+    }
 }
 
 // =========================================================================
@@ -1165,7 +1157,7 @@ async fn create_sentinel_inner(
     is_blocking: bool,
     cache_opts: Option<ClientCacheOpts>,
     tls_opts: Option<TlsOpts>,
-) -> RedisResult<ValkeyConnInner> {
+) -> RedisResult<ConnInner> {
     let config = if is_blocking {
         blocking_conn_manager_config()
     } else {
@@ -1206,7 +1198,7 @@ async fn create_sentinel_inner(
                 let master_client =
                     create_client(master_url.as_str(), tls_opts.as_ref())?;
                 let mgr = ConnectionManager::new_with_config(master_client, config).await?;
-                return Ok(ValkeyConnInner::Sentinel(SentinelConn {
+                return Ok(ConnInner::Sentinel(SentinelConn {
                     inner: Arc::new(RwLock::new(mgr)),
                     sentinel_urls: Arc::from(sentinel_urls),
                     service_name: Arc::from(service_name),
@@ -1237,7 +1229,7 @@ pub async fn connect_standard(
     url: &str,
     cache_opts: Option<ClientCacheOpts>,
     tls_opts: Option<TlsOpts>,
-) -> Result<ValkeyConn, String> {
+) -> Result<Conn, String> {
     let conn_url = url_with_resp3(url);
     let client = create_client(conn_url.as_str(), tls_opts.as_ref())
         .map_err(|e| format!("Invalid URL: {e}"))?;
@@ -1245,8 +1237,8 @@ pub async fn connect_standard(
         ConnectionManager::new_with_config(client, conn_manager_config(cache_opts.as_ref()))
             .await
             .map_err(|e| format!("Connection failed: {e}"))?;
-    Ok(ValkeyConn {
-        regular: ValkeyConnInner::Standard(mgr),
+    Ok(Conn {
+        regular: ConnInner::Standard(mgr),
         blocking: Arc::new(tokio::sync::OnceCell::new()),
         config: ConnConfig::Standard {
             url: Arc::from(url),
@@ -1259,7 +1251,7 @@ pub async fn connect_standard(
 pub async fn connect_cluster(
     urls: Vec<String>,
     tls_opts: Option<TlsOpts>,
-) -> Result<ValkeyConn, String> {
+) -> Result<Conn, String> {
     // Client-side caching not yet supported for cluster mode in redis-rs.
     let url_refs: Vec<&str> = urls.iter().map(|s| s.as_str()).collect();
     let client = match &tls_opts {
@@ -1273,8 +1265,8 @@ pub async fn connect_cluster(
         .get_async_connection()
         .await
         .map_err(|e| format!("Cluster connection failed: {e}"))?;
-    Ok(ValkeyConn {
-        regular: ValkeyConnInner::Cluster(conn),
+    Ok(Conn {
+        regular: ConnInner::Cluster(conn),
         blocking: Arc::new(tokio::sync::OnceCell::new()),
         config: ConnConfig::Cluster {
             urls: Arc::from(urls),
@@ -1290,7 +1282,7 @@ pub async fn connect_sentinel(
     db: i64,
     cache_opts: Option<ClientCacheOpts>,
     tls_opts: Option<TlsOpts>,
-) -> Result<ValkeyConn, String> {
+) -> Result<Conn, String> {
     let inner = create_sentinel_inner(
         &sentinel_urls,
         service_name,
@@ -1301,7 +1293,7 @@ pub async fn connect_sentinel(
     )
     .await
     .map_err(|e| e.to_string())?;
-    Ok(ValkeyConn {
+    Ok(Conn {
         regular: inner,
         blocking: Arc::new(tokio::sync::OnceCell::new()),
         config: ConnConfig::Sentinel {
@@ -1322,7 +1314,7 @@ pub async fn connect_sentinel(
 // `dispatch_cmd!`, `conn_method!`, and `sentinel_retry!` defined above.
 // =========================================================================
 
-impl ValkeyConnInner {
+impl ConnInner {
     // ----- Strings / TTL / type / admin gap commands -----
 
     pub async fn ttl(&mut self, key: &str) -> RedisResult<i64> {
@@ -1353,16 +1345,55 @@ impl ValkeyConnInner {
         dispatch_cmd!(self, cmd)
     }
 
-    pub async fn script_exists(&mut self, sha: &str) -> RedisResult<bool> {
-        let mut cmd = redis::cmd("SCRIPT");
-        cmd.arg("EXISTS").arg(sha);
-        let result: Vec<bool> = dispatch_cmd!(self, cmd)?;
-        Ok(result.into_iter().next().unwrap_or(false))
-    }
-
     pub async fn lpop(&mut self, key: &str) -> RedisResult<Option<Vec<u8>>> {
         let mut cmd = redis::cmd("LPOP");
         cmd.arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn lpop_count(&mut self, key: &str, count: i64) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("LPOP");
+        cmd.arg(key).arg(count);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn rpop_count(&mut self, key: &str, count: i64) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("RPOP");
+        cmd.arg(key).arg(count);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn lmove(
+        &mut self,
+        source: &str,
+        destination: &str,
+        wherefrom: &str,
+        whereto: &str,
+    ) -> RedisResult<Option<Vec<u8>>> {
+        let mut cmd = redis::cmd("LMOVE");
+        cmd.arg(source).arg(destination).arg(wherefrom).arg(whereto);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn lpos(
+        &mut self,
+        key: &str,
+        value: &[u8],
+        rank: Option<i64>,
+        count: Option<i64>,
+        maxlen: Option<i64>,
+    ) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("LPOS");
+        cmd.arg(key).arg(value);
+        if let Some(r) = rank {
+            cmd.arg("RANK").arg(r);
+        }
+        if let Some(c) = count {
+            cmd.arg("COUNT").arg(c);
+        }
+        if let Some(m) = maxlen {
+            cmd.arg("MAXLEN").arg(m);
+        }
         dispatch_cmd!(self, cmd)
     }
 
@@ -1393,42 +1424,8 @@ impl ValkeyConnInner {
         dispatch_cmd!(self, cmd)
     }
 
-    pub async fn dbsize(&mut self) -> RedisResult<i64> {
-        dispatch_cmd!(self, redis::cmd("DBSIZE"))
-    }
-
     pub async fn info(&mut self) -> RedisResult<redis::Value> {
         dispatch_cmd!(self, redis::cmd("INFO"))
-    }
-
-    pub async fn client_list(&mut self) -> RedisResult<redis::Value> {
-        let mut cmd = redis::cmd("CLIENT");
-        cmd.arg("LIST");
-        dispatch_cmd!(self, cmd)
-    }
-
-    pub async fn config_get(&mut self, parameter: &str) -> RedisResult<redis::Value> {
-        let mut cmd = redis::cmd("CONFIG");
-        cmd.arg("GET").arg(parameter);
-        dispatch_cmd!(self, cmd)
-    }
-
-    pub async fn object_encoding(&mut self, key: &str) -> RedisResult<Option<String>> {
-        let mut cmd = redis::cmd("OBJECT");
-        cmd.arg("ENCODING").arg(key);
-        dispatch_cmd!(self, cmd)
-    }
-
-    pub async fn object_idletime(&mut self, key: &str) -> RedisResult<Option<i64>> {
-        let mut cmd = redis::cmd("OBJECT");
-        cmd.arg("IDLETIME").arg(key);
-        dispatch_cmd!(self, cmd)
-    }
-
-    pub async fn memory_usage(&mut self, key: &str) -> RedisResult<Option<i64>> {
-        let mut cmd = redis::cmd("MEMORY");
-        cmd.arg("USAGE").arg(key);
-        dispatch_cmd!(self, cmd)
     }
 
     // ----- Hashes -----
@@ -1441,6 +1438,12 @@ impl ValkeyConnInner {
 
     pub async fn hset(&mut self, key: &str, field: &str, value: &[u8]) -> RedisResult<i64> {
         let mut cmd = redis::cmd("HSET");
+        cmd.arg(key).arg(field).arg(value);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn hsetnx(&mut self, key: &str, field: &str, value: &[u8]) -> RedisResult<bool> {
+        let mut cmd = redis::cmd("HSETNX");
         cmd.arg(key).arg(field).arg(value);
         dispatch_cmd!(self, cmd)
     }
@@ -1462,6 +1465,17 @@ impl ValkeyConnInner {
 
     pub async fn hincrby(&mut self, key: &str, field: &str, delta: i64) -> RedisResult<i64> {
         let mut cmd = redis::cmd("HINCRBY");
+        cmd.arg(key).arg(field).arg(delta);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn hincrbyfloat(
+        &mut self,
+        key: &str,
+        field: &str,
+        delta: f64,
+    ) -> RedisResult<f64> {
+        let mut cmd = redis::cmd("HINCRBYFLOAT");
         cmd.arg(key).arg(field).arg(delta);
         dispatch_cmd!(self, cmd)
     }
@@ -1544,6 +1558,25 @@ impl ValkeyConnInner {
         dispatch_cmd!(self, cmd)
     }
 
+    /// Single SSCAN iteration. Caller drives the cursor loop.
+    pub async fn sscan_step(
+        &mut self,
+        key: &str,
+        cursor: u64,
+        match_pattern: Option<&str>,
+        count: Option<i64>,
+    ) -> RedisResult<(u64, Vec<Vec<u8>>)> {
+        let mut cmd = redis::cmd("SSCAN");
+        cmd.arg(key).arg(cursor);
+        if let Some(p) = match_pattern {
+            cmd.arg("MATCH").arg(p);
+        }
+        if let Some(c) = count {
+            cmd.arg("COUNT").arg(c);
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
     pub async fn sismember(&mut self, key: &str, member: &[u8]) -> RedisResult<bool> {
         let mut cmd = redis::cmd("SISMEMBER");
         cmd.arg(key).arg(member);
@@ -1582,11 +1615,138 @@ impl ValkeyConnInner {
         dispatch_cmd!(self, cmd)
     }
 
+    pub async fn smove(
+        &mut self,
+        source: &str,
+        destination: &str,
+        member: &[u8],
+    ) -> RedisResult<bool> {
+        let mut cmd = redis::cmd("SMOVE");
+        cmd.arg(source).arg(destination).arg(member);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn smismember(
+        &mut self,
+        key: &str,
+        members: Vec<Vec<u8>>,
+    ) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("SMISMEMBER");
+        cmd.arg(key);
+        for m in &members {
+            cmd.arg(m.as_slice());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn spop(&mut self, key: &str) -> RedisResult<Option<Vec<u8>>> {
+        let mut cmd = redis::cmd("SPOP");
+        cmd.arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn spop_count(&mut self, key: &str, count: i64) -> RedisResult<Vec<Vec<u8>>> {
+        let mut cmd = redis::cmd("SPOP");
+        cmd.arg(key).arg(count);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn srandmember(&mut self, key: &str) -> RedisResult<Option<Vec<u8>>> {
+        let mut cmd = redis::cmd("SRANDMEMBER");
+        cmd.arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn srandmember_count(
+        &mut self,
+        key: &str,
+        count: i64,
+    ) -> RedisResult<Vec<Vec<u8>>> {
+        let mut cmd = redis::cmd("SRANDMEMBER");
+        cmd.arg(key).arg(count);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn sdiffstore(
+        &mut self,
+        destination: &str,
+        keys: &[String],
+    ) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("SDIFFSTORE");
+        cmd.arg(destination);
+        for k in keys {
+            cmd.arg(k.as_str());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn sinterstore(
+        &mut self,
+        destination: &str,
+        keys: &[String],
+    ) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("SINTERSTORE");
+        cmd.arg(destination);
+        for k in keys {
+            cmd.arg(k.as_str());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn sunionstore(
+        &mut self,
+        destination: &str,
+        keys: &[String],
+    ) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("SUNIONSTORE");
+        cmd.arg(destination);
+        for k in keys {
+            cmd.arg(k.as_str());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
     // ----- Sorted sets -----
 
     pub async fn zadd(&mut self, key: &str, members: Vec<(Vec<u8>, f64)>) -> RedisResult<i64> {
         let mut cmd = redis::cmd("ZADD");
         cmd.arg(key);
+        for (member, score) in &members {
+            cmd.arg(*score).arg(member.as_slice());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    /// ZADD with NX/XX/GT/LT/CH flags. Mutually exclusive flag pairs (e.g.
+    /// NX+XX) are rejected by Redis with a server error.
+    #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
+    pub async fn zadd_with_flags(
+        &mut self,
+        key: &str,
+        members: Vec<(Vec<u8>, f64)>,
+        nx: bool,
+        xx: bool,
+        gt: bool,
+        lt: bool,
+        ch: bool,
+    ) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("ZADD");
+        cmd.arg(key);
+        if nx {
+            cmd.arg("NX");
+        }
+        if xx {
+            cmd.arg("XX");
+        }
+        if gt {
+            cmd.arg("GT");
+        }
+        if lt {
+            cmd.arg("LT");
+        }
+        if ch {
+            cmd.arg("CH");
+        }
         for (member, score) in &members {
             cmd.arg(*score).arg(member.as_slice());
         }
@@ -1623,11 +1783,20 @@ impl ValkeyConnInner {
         min: &str,
         max: &str,
         with_scores: bool,
+        offset: Option<i64>,
+        count: Option<i64>,
     ) -> RedisResult<redis::Value> {
         let mut cmd = redis::cmd("ZRANGEBYSCORE");
         cmd.arg(key).arg(min).arg(max);
         if with_scores {
             cmd.arg("WITHSCORES");
+        }
+        if offset.is_some() || count.is_some() {
+            // ``LIMIT`` requires both arguments; default the missing one to
+            // the natural extreme (no offset / no count).
+            cmd.arg("LIMIT")
+                .arg(offset.unwrap_or(0))
+                .arg(count.unwrap_or(-1));
         }
         dispatch_cmd!(self, cmd)
     }
@@ -1668,6 +1837,66 @@ impl ValkeyConnInner {
     pub async fn zrank(&mut self, key: &str, member: &[u8]) -> RedisResult<Option<i64>> {
         let mut cmd = redis::cmd("ZRANK");
         cmd.arg(key).arg(member);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn zrevrank(&mut self, key: &str, member: &[u8]) -> RedisResult<Option<i64>> {
+        let mut cmd = redis::cmd("ZREVRANK");
+        cmd.arg(key).arg(member);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn zmscore(
+        &mut self,
+        key: &str,
+        members: Vec<Vec<u8>>,
+    ) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("ZMSCORE");
+        cmd.arg(key);
+        for m in &members {
+            cmd.arg(m.as_slice());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn zremrangebyrank(
+        &mut self,
+        key: &str,
+        start: i64,
+        stop: i64,
+    ) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("ZREMRANGEBYRANK");
+        cmd.arg(key).arg(start).arg(stop);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn zremrangebyscore(
+        &mut self,
+        key: &str,
+        min: &str,
+        max: &str,
+    ) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("ZREMRANGEBYSCORE");
+        cmd.arg(key).arg(min).arg(max);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn zrevrangebyscore(
+        &mut self,
+        key: &str,
+        max: &str,
+        min: &str,
+        with_scores: bool,
+        offset_count: Option<(i64, i64)>,
+    ) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("ZREVRANGEBYSCORE");
+        cmd.arg(key).arg(max).arg(min);
+        if with_scores {
+            cmd.arg("WITHSCORES");
+        }
+        if let Some((offset, count)) = offset_count {
+            cmd.arg("LIMIT").arg(offset).arg(count);
+        }
         dispatch_cmd!(self, cmd)
     }
 
@@ -1713,6 +1942,51 @@ impl ValkeyConnInner {
         dispatch_cmd!(self, cmd)
     }
 
+    /// XADD with MAXLEN/MINID/NOMKSTREAM/LIMIT options. Returns
+    /// ``None`` when ``NOMKSTREAM`` is set and the stream doesn't exist.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn xadd_with_options(
+        &mut self,
+        key: &str,
+        id: &str,
+        fields: &[(String, Vec<u8>)],
+        maxlen: Option<i64>,
+        approximate: bool,
+        nomkstream: bool,
+        minid: Option<&str>,
+        limit: Option<i64>,
+    ) -> RedisResult<Option<String>> {
+        let mut cmd = redis::cmd("XADD");
+        cmd.arg(key);
+        if nomkstream {
+            cmd.arg("NOMKSTREAM");
+        }
+        if let Some(m) = maxlen {
+            cmd.arg("MAXLEN");
+            if approximate {
+                cmd.arg("~");
+            }
+            cmd.arg(m);
+            if let Some(l) = limit {
+                cmd.arg("LIMIT").arg(l);
+            }
+        } else if let Some(mi) = minid {
+            cmd.arg("MINID");
+            if approximate {
+                cmd.arg("~");
+            }
+            cmd.arg(mi);
+            if let Some(l) = limit {
+                cmd.arg("LIMIT").arg(l);
+            }
+        }
+        cmd.arg(id);
+        for (f, v) in fields {
+            cmd.arg(f.as_str()).arg(v.as_slice());
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
     pub async fn xlen(&mut self, key: &str) -> RedisResult<i64> {
         let mut cmd = redis::cmd("XLEN");
         cmd.arg(key);
@@ -1734,17 +2008,41 @@ impl ValkeyConnInner {
         dispatch_cmd!(self, cmd)
     }
 
+    pub async fn xrevrange(
+        &mut self,
+        key: &str,
+        end: &str,
+        start: &str,
+        count: Option<i64>,
+    ) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("XREVRANGE");
+        cmd.arg(key).arg(end).arg(start);
+        if let Some(c) = count {
+            cmd.arg("COUNT").arg(c);
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
     /// Multi-stream. On Cluster all stream keys must hash to the same slot
     /// (CROSSSLOT otherwise). Same applies to `xreadgroup`.
+    ///
+    /// `block_ms` adds the BLOCK option. The caller is responsible for routing
+    /// blocking variants through the dedicated blocking connection (see
+    /// `Conn::xread`) — head-of-line blocking on the multiplexed
+    /// connection would otherwise stall every other command.
     pub async fn xread(
         &mut self,
         keys: &[String],
         ids: &[String],
         count: Option<i64>,
+        block_ms: Option<i64>,
     ) -> RedisResult<redis::Value> {
         let mut cmd = redis::cmd("XREAD");
         if let Some(c) = count {
             cmd.arg("COUNT").arg(c);
+        }
+        if let Some(b) = block_ms {
+            cmd.arg("BLOCK").arg(b);
         }
         cmd.arg("STREAMS");
         for k in keys {
@@ -1763,11 +2061,19 @@ impl ValkeyConnInner {
         keys: &[String],
         ids: &[String],
         count: Option<i64>,
+        block_ms: Option<i64>,
+        noack: bool,
     ) -> RedisResult<redis::Value> {
         let mut cmd = redis::cmd("XREADGROUP");
         cmd.arg("GROUP").arg(group).arg(consumer);
         if let Some(c) = count {
             cmd.arg("COUNT").arg(c);
+        }
+        if let Some(b) = block_ms {
+            cmd.arg("BLOCK").arg(b);
+        }
+        if noack {
+            cmd.arg("NOACK");
         }
         cmd.arg("STREAMS");
         for k in keys {
@@ -1788,13 +2094,100 @@ impl ValkeyConnInner {
         dispatch_cmd!(self, cmd)
     }
 
-    pub async fn xtrim(&mut self, key: &str, max_len: i64, approximate: bool) -> RedisResult<i64> {
-        let mut cmd = redis::cmd("XTRIM");
-        cmd.arg(key).arg("MAXLEN");
-        if approximate {
-            cmd.arg("~");
+    pub async fn xdel(&mut self, key: &str, ids: &[String]) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("XDEL");
+        cmd.arg(key);
+        for i in ids {
+            cmd.arg(i.as_str());
         }
-        cmd.arg(max_len);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn xgroup_destroy(&mut self, key: &str, group: &str) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("XGROUP");
+        cmd.arg("DESTROY").arg(key).arg(group);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn xgroup_setid(
+        &mut self,
+        key: &str,
+        group: &str,
+        id: &str,
+        entries_read: Option<i64>,
+    ) -> RedisResult<()> {
+        let mut cmd = redis::cmd("XGROUP");
+        cmd.arg("SETID").arg(key).arg(group).arg(id);
+        if let Some(n) = entries_read {
+            cmd.arg("ENTRIESREAD").arg(n);
+        }
+        let _: redis::Value = dispatch_cmd!(self, cmd)?;
+        Ok(())
+    }
+
+    pub async fn xgroup_delconsumer(
+        &mut self,
+        key: &str,
+        group: &str,
+        consumer: &str,
+    ) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("XGROUP");
+        cmd.arg("DELCONSUMER").arg(key).arg(group).arg(consumer);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn xinfo_stream(&mut self, key: &str, full: bool) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("XINFO");
+        cmd.arg("STREAM").arg(key);
+        if full {
+            cmd.arg("FULL");
+        }
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn xinfo_groups(&mut self, key: &str) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("XINFO");
+        cmd.arg("GROUPS").arg(key);
+        dispatch_cmd!(self, cmd)
+    }
+
+    pub async fn xinfo_consumers(
+        &mut self,
+        key: &str,
+        group: &str,
+    ) -> RedisResult<redis::Value> {
+        let mut cmd = redis::cmd("XINFO");
+        cmd.arg("CONSUMERS").arg(key).arg(group);
+        dispatch_cmd!(self, cmd)
+    }
+
+    /// XTRIM with MAXLEN or MINID + optional LIMIT.
+    pub async fn xtrim_with_options(
+        &mut self,
+        key: &str,
+        maxlen: Option<i64>,
+        approximate: bool,
+        minid: Option<&str>,
+        limit: Option<i64>,
+    ) -> RedisResult<i64> {
+        let mut cmd = redis::cmd("XTRIM");
+        cmd.arg(key);
+        if let Some(m) = maxlen {
+            cmd.arg("MAXLEN");
+            if approximate {
+                cmd.arg("~");
+            }
+            cmd.arg(m);
+        } else if let Some(mi) = minid {
+            cmd.arg("MINID");
+            if approximate {
+                cmd.arg("~");
+            }
+            cmd.arg(mi);
+        }
+        if let Some(l) = limit {
+            cmd.arg("LIMIT").arg(l);
+        }
         dispatch_cmd!(self, cmd)
     }
 
@@ -1804,11 +2197,15 @@ impl ValkeyConnInner {
         group: &str,
         id: &str,
         mkstream: bool,
+        entries_read: Option<i64>,
     ) -> RedisResult<()> {
         let mut cmd = redis::cmd("XGROUP");
         cmd.arg("CREATE").arg(key).arg(group).arg(id);
         if mkstream {
             cmd.arg("MKSTREAM");
+        }
+        if let Some(n) = entries_read {
+            cmd.arg("ENTRIESREAD").arg(n);
         }
         let _: redis::Value = dispatch_cmd!(self, cmd)?;
         Ok(())

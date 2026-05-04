@@ -43,8 +43,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sequence
     from threading import Lock
 
-    from django_cachex.types import ExpiryT, KeyT
-
 # Sentinel for "key not found" vs "key holds None".
 _MISSING = object()
 
@@ -107,7 +105,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         else:
             self._set(internal_key, pickled, timeout=None)
 
-    def _internal_key(self, key: KeyT, version: int | None = None) -> str:
+    def _internal_key(self, key: str, version: int | None = None) -> str:
         """Resolve a user key (with version) to the internal cache-dict key."""
         return self.make_and_validate_key(str(key), version=version)
 
@@ -115,7 +113,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     # TTL Operations
     # =========================================================================
 
-    def ttl(self, key: KeyT, version: int | None = None) -> int | None:
+    def ttl(self, key: str, version: int | None = None) -> int | None:
         """Get the TTL of a key in seconds.
 
         Returns ``-2`` if the key is missing, ``-1`` if it has no expiry,
@@ -133,7 +131,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 return -1
             return max(0, int(exp_time - time.time()))
 
-    def expire(self, key: KeyT, timeout: ExpiryT, version: int | None = None) -> bool:
+    def expire(self, key: str, timeout: int | timedelta, version: int | None = None) -> bool:
         """Set the TTL of a key. Returns ``True`` if the key existed."""
         internal_key = self._internal_key(key, version=version)
         if isinstance(timeout, timedelta):
@@ -148,7 +146,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             self._expire_info[internal_key] = time.time() + timeout_secs
             return True
 
-    def persist(self, key: KeyT, version: int | None = None) -> bool:
+    def persist(self, key: str, version: int | None = None) -> bool:
         """Remove the TTL from a key. Returns ``True`` if the key existed."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -163,7 +161,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     # Type Detection
     # =========================================================================
 
-    def type(self, key: KeyT, version: int | None = None) -> KeyType | None:
+    def type(self, key: str, version: int | None = None) -> KeyType | None:
         """Get the data type of a key by inspecting the stored Python value."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -278,7 +276,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             raise TypeError(msg)
         return value
 
-    def lpush(self, key: KeyT, *values: Any, version: int | None = None) -> int:
+    def lpush(self, key: str, *values: Any, version: int | None = None) -> int:
         """Prepend values to the head of a list."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -287,7 +285,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             self._native_write(internal_key, new_list)
             return len(new_list)
 
-    def rpush(self, key: KeyT, *values: Any, version: int | None = None) -> int:
+    def rpush(self, key: str, *values: Any, version: int | None = None) -> int:
         """Append values to the tail of a list."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -296,7 +294,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             self._native_write(internal_key, new_list)
             return len(new_list)
 
-    def lpop(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[Any]:
+    def lpop(self, key: str, count: int | None = None, version: int | None = None) -> list[Any]:
         """Remove and return element(s) from the head of a list."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -312,7 +310,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 self._delete(internal_key)
             return popped
 
-    def rpop(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[Any]:
+    def rpop(self, key: str, count: int | None = None, version: int | None = None) -> list[Any]:
         """Remove and return element(s) from the tail of a list."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -328,7 +326,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 self._delete(internal_key)
             return popped
 
-    def lrange(self, key: KeyT, start: int, end: int, version: int | None = None) -> list[Any]:
+    def lrange(self, key: str, start: int, end: int, version: int | None = None) -> list[Any]:
         """Return a range of elements from a list (inclusive end, Redis-style)."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -344,7 +342,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             return []
         return current[start : end + 1]
 
-    def llen(self, key: KeyT, version: int | None = None) -> int:
+    def llen(self, key: str, version: int | None = None) -> int:
         """Return the length of a list."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -353,7 +351,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def lrem(  # noqa: PLR0912
         self,
-        key: KeyT,
+        key: str,
         count: int,
         value: Any,
         version: int | None = None,
@@ -391,7 +389,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                     self._delete(internal_key)
             return removed
 
-    def ltrim(self, key: KeyT, start: int, end: int, version: int | None = None) -> bool:
+    def ltrim(self, key: str, start: int, end: int, version: int | None = None) -> bool:
         """Trim a list to the specified range (inclusive end, Redis-style)."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -413,7 +411,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 self._delete(internal_key)
             return True
 
-    def lindex(self, key: KeyT, index: int, version: int | None = None) -> Any:
+    def lindex(self, key: str, index: int, version: int | None = None) -> Any:
         """Get element at index in list."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -425,7 +423,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         except IndexError:
             return None
 
-    def lset(self, key: KeyT, index: int, value: Any, version: int | None = None) -> bool:
+    def lset(self, key: str, index: int, value: Any, version: int | None = None) -> bool:
         """Set element at index in list."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -441,7 +439,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             self._native_write(internal_key, current)
             return True
 
-    def linsert(self, key: KeyT, where: str, pivot: Any, value: Any, version: int | None = None) -> int:
+    def linsert(self, key: str, where: str, pivot: Any, value: Any, version: int | None = None) -> int:
         """Insert value before or after pivot in list."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -460,7 +458,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def lpos(
         self,
-        key: KeyT,
+        key: str,
         value: Any,
         rank: int | None = None,
         count: int | None = None,
@@ -498,7 +496,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             raise TypeError(msg)
         return value
 
-    def sadd(self, key: KeyT, *members: Any, version: int | None = None) -> int:
+    def sadd(self, key: str, *members: Any, version: int | None = None) -> int:
         """Add members to a set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -510,7 +508,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             self._native_write(internal_key, current)
             return len(current) - before
 
-    def srem(self, key: KeyT, *members: Any, version: int | None = None) -> int:
+    def srem(self, key: str, *members: Any, version: int | None = None) -> int:
         """Remove members from a set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -525,28 +523,28 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 self._delete(internal_key)
             return removed
 
-    def scard(self, key: KeyT, version: int | None = None) -> int:
+    def scard(self, key: str, version: int | None = None) -> int:
         """Get the number of members in a set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_set(internal_key)
         return 0 if current is None else len(current)
 
-    def sismember(self, key: KeyT, member: Any, version: int | None = None) -> bool:
+    def sismember(self, key: str, member: Any, version: int | None = None) -> bool:
         """Check if member is in set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_set(internal_key)
         return False if current is None else member in current
 
-    def smembers(self, key: KeyT, version: int | None = None) -> set[Any]:
+    def smembers(self, key: str, version: int | None = None) -> set[Any]:
         """Get all members of a set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_set(internal_key)
         return set() if current is None else set(current)
 
-    def spop(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | set[Any]:
+    def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | set[Any]:
         """Remove and return random member(s) from set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -570,7 +568,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 self._delete(internal_key)
             return popped
 
-    def srandmember(self, key: KeyT, count: int | None = None, version: int | None = None) -> Any | list[Any]:
+    def srandmember(self, key: str, count: int | None = None, version: int | None = None) -> Any | list[Any]:
         """Get random member(s) from set without removing."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -581,7 +579,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             return random.choice(list(current))  # noqa: S311
         return random.sample(list(current), min(count, len(current)))
 
-    def smismember(self, key: KeyT, *members: Any, version: int | None = None) -> list[bool]:
+    def smismember(self, key: str, *members: Any, version: int | None = None) -> list[bool]:
         """Check if multiple values are members of a set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -590,15 +588,15 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             return [False] * len(members)
         return [m in current for m in members]
 
-    def _collect_sets(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> list[set[Any]]:
+    def _collect_sets(self, keys: str | Sequence[str], version: int | None = None) -> list[set[Any]]:
         """Read multiple keys' sets under a single lock acquire."""
-        if isinstance(keys, (str, bytes, memoryview)):
+        if isinstance(keys, str):
             keys = [keys]
         internal_keys = [self._internal_key(k, version=version) for k in keys]
         with self._lock:
             return [self._typed_get_set(ik) or set() for ik in internal_keys]
 
-    def sdiff(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
+    def sdiff(self, keys: str | Sequence[str], version: int | None = None) -> set[Any]:
         """Return the difference between sets."""
         sets = self._collect_sets(keys, version=version)
         if not sets:
@@ -608,7 +606,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             result = result - s
         return result
 
-    def sinter(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
+    def sinter(self, keys: str | Sequence[str], version: int | None = None) -> set[Any]:
         """Return the intersection of sets."""
         sets = self._collect_sets(keys, version=version)
         if not sets:
@@ -618,7 +616,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             result = result & s
         return result
 
-    def sunion(self, keys: KeyT | Sequence[KeyT], version: int | None = None) -> set[Any]:
+    def sunion(self, keys: str | Sequence[str], version: int | None = None) -> set[Any]:
         """Return the union of sets."""
         result: set[Any] = set()
         for s in self._collect_sets(keys, version=version):
@@ -641,7 +639,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def hset(  # noqa: C901
         self,
-        key: KeyT,
+        key: str,
         field: str | None = None,
         value: Any = None,
         version: int | None = None,
@@ -676,7 +674,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             self._native_write(internal_key, current)
             return added
 
-    def hdel(self, key: KeyT, *fields: str, version: int | None = None) -> int:
+    def hdel(self, key: str, *fields: str, version: int | None = None) -> int:
         """Delete hash fields."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -693,49 +691,49 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                     self._delete(internal_key)
             return removed
 
-    def hget(self, key: KeyT, field: str, version: int | None = None) -> Any:
+    def hget(self, key: str, field: str, version: int | None = None) -> Any:
         """Get value of field in hash."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_hash(internal_key)
         return None if current is None else current.get(field)
 
-    def hgetall(self, key: KeyT, version: int | None = None) -> dict[str, Any]:
+    def hgetall(self, key: str, version: int | None = None) -> dict[str, Any]:
         """Get all fields and values in hash."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_hash(internal_key)
         return {} if current is None else dict(current)
 
-    def hlen(self, key: KeyT, version: int | None = None) -> int:
+    def hlen(self, key: str, version: int | None = None) -> int:
         """Get number of fields in hash."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_hash(internal_key)
         return 0 if current is None else len(current)
 
-    def hkeys(self, key: KeyT, version: int | None = None) -> list[str]:
+    def hkeys(self, key: str, version: int | None = None) -> list[str]:
         """Get all field names in hash."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_hash(internal_key)
         return [] if current is None else list(current.keys())
 
-    def hvals(self, key: KeyT, version: int | None = None) -> list[Any]:
+    def hvals(self, key: str, version: int | None = None) -> list[Any]:
         """Get all values in hash."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_hash(internal_key)
         return [] if current is None else list(current.values())
 
-    def hexists(self, key: KeyT, field: str, version: int | None = None) -> bool:
+    def hexists(self, key: str, field: str, version: int | None = None) -> bool:
         """Check if field exists in hash."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_hash(internal_key)
         return False if current is None else field in current
 
-    def hmget(self, key: KeyT, *fields: str, version: int | None = None) -> list[Any]:
+    def hmget(self, key: str, *fields: str, version: int | None = None) -> list[Any]:
         """Get values of multiple fields."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -744,7 +742,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             return [None] * len(fields)
         return [current.get(f) for f in fields]
 
-    def hsetnx(self, key: KeyT, field: str, value: Any, version: int | None = None) -> bool:
+    def hsetnx(self, key: str, field: str, value: Any, version: int | None = None) -> bool:
         """Set field in hash only if it doesn't exist."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -757,7 +755,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             self._native_write(internal_key, current)
             return True
 
-    def hincrby(self, key: KeyT, field: str, amount: int = 1, version: int | None = None) -> int:
+    def hincrby(self, key: str, field: str, amount: int = 1, version: int | None = None) -> int:
         """Increment integer value of field in hash."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -768,7 +766,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             self._native_write(internal_key, current)
             return current[field]
 
-    def hincrbyfloat(self, key: KeyT, field: str, amount: float = 1.0, version: int | None = None) -> float:
+    def hincrbyfloat(self, key: str, field: str, amount: float = 1.0, version: int | None = None) -> float:
         """Increment float value of field in hash."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -800,7 +798,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def zadd(
         self,
-        key: KeyT,
+        key: str,
         mapping: Mapping[Any, float],
         *,
         nx: bool = False,
@@ -835,21 +833,21 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             self._native_write(internal_key, current)
             return changed
 
-    def zcard(self, key: KeyT, version: int | None = None) -> int:
+    def zcard(self, key: str, version: int | None = None) -> int:
         """Get the number of members in a sorted set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_zset(internal_key)
         return 0 if current is None else len(current)
 
-    def zscore(self, key: KeyT, member: Any, version: int | None = None) -> float | None:
+    def zscore(self, key: str, member: Any, version: int | None = None) -> float | None:
         """Get the score of a member."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_zset(internal_key)
         return None if current is None else current.get(member)
 
-    def zrank(self, key: KeyT, member: Any, version: int | None = None) -> int | None:
+    def zrank(self, key: str, member: Any, version: int | None = None) -> int | None:
         """Get the rank of a member (lowest score = 0)."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -861,7 +859,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 return i
         return None
 
-    def zrevrank(self, key: KeyT, member: Any, version: int | None = None) -> int | None:
+    def zrevrank(self, key: str, member: Any, version: int | None = None) -> int | None:
         """Get the rank of a member (highest score = 0)."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -875,7 +873,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def zrange(
         self,
-        key: KeyT,
+        key: str,
         start: int,
         end: int,
         *,
@@ -903,7 +901,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def zrevrange(
         self,
-        key: KeyT,
+        key: str,
         start: int,
         end: int,
         *,
@@ -931,7 +929,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def zrangebyscore(
         self,
-        key: KeyT,
+        key: str,
         min_score: float | str,
         max_score: float | str,
         *,
@@ -955,7 +953,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             return filtered
         return [m for m, _ in filtered]
 
-    def zrem(self, key: KeyT, *members: Any, version: int | None = None) -> int:
+    def zrem(self, key: str, *members: Any, version: int | None = None) -> int:
         """Remove members from a sorted set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -972,7 +970,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                     self._delete(internal_key)
             return removed
 
-    def zincrby(self, key: KeyT, amount: float, member: Any, version: int | None = None) -> float:
+    def zincrby(self, key: str, amount: float, member: Any, version: int | None = None) -> float:
         """Increment the score of a member."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -983,7 +981,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def zcount(
         self,
-        key: KeyT,
+        key: str,
         min_score: float | str,
         max_score: float | str,
         version: int | None = None,
@@ -998,7 +996,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         hi = float("inf") if max_score == "+inf" else float(max_score)
         return sum(1 for s in current.values() if lo <= s <= hi)
 
-    def zpopmin(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
+    def zpopmin(self, key: str, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with lowest scores."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -1016,7 +1014,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 self._delete(internal_key)
             return popped
 
-    def zpopmax(self, key: KeyT, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
+    def zpopmax(self, key: str, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with highest scores."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -1034,7 +1032,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 self._delete(internal_key)
             return popped
 
-    def zmscore(self, key: KeyT, *members: Any, version: int | None = None) -> list[float | None]:
+    def zmscore(self, key: str, *members: Any, version: int | None = None) -> list[float | None]:
         """Get the scores of multiple members."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -1045,7 +1043,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def zremrangebyscore(
         self,
-        key: KeyT,
+        key: str,
         min_score: float | str,
         max_score: float | str,
         version: int | None = None,
@@ -1068,7 +1066,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                     self._delete(internal_key)
             return len(to_remove)
 
-    def zremrangebyrank(self, key: KeyT, start: int, end: int, version: int | None = None) -> int:
+    def zremrangebyrank(self, key: str, start: int, end: int, version: int | None = None) -> int:
         """Remove members by rank range."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:

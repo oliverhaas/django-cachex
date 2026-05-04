@@ -30,11 +30,12 @@ coverage.xml
 cobertura.xml
 CLAUDE.md
 .worktrees/
+.claude/
 site/
 *.sqlite3
 docs/superpowers/
 
 # Rust build artifacts
 target/
-django_cachex/_driver*.so
-crates/django-cachex-redis-rs/python/django_cachex/_driver*.so
+django_cachex/adapters/_redis_rs*.so
+crates/django-cachex-redis-rs/python/django_cachex/adapters/_redis_rs*.so

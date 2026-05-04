@@ -30,7 +30,7 @@ SERIALIZERS = {
 
 # Available cache backends - keyed by (backend_type, client_library, driver)
 # - driver="py": pure-Python clients (redis-py / valkey-py)
-# - driver="redis-rs": Rust extension driver shared via _redis_rs_clients registry
+# - driver="redis-rs": Rust extension adapter (django-cachex-redis-rs)
 BACKENDS = {
     # Pure-Python — Valkey
     ("default", "valkey", "py"): "django_cachex.cache.ValkeyCache",

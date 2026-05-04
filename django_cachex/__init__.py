@@ -2,8 +2,8 @@ from importlib.metadata import PackageNotFoundError, version
 from pkgutil import extend_path
 
 # Extend the package path so the optional django-cachex-redis-rs binary package
-# (which ships only `_driver*` files into this namespace) is discovered when
-# both packages are installed side by side.
+# (which ships ``adapters/_redis_rs*`` files into this namespace) is
+# discovered when both packages are installed side by side.
 __path__ = extend_path(__path__, __name__)
 
 try:

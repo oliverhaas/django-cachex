@@ -1,4 +1,4 @@
-"""Django cache backends backed by the Rust ``RedisRsDriver``.
+"""Django cache backends backed by the Rust adapter.
 
 Each subclass differs from the corresponding pure-Python backend only in its
 ``_adapter_class`` attribute; every high-level cache method is inherited unchanged.
@@ -14,21 +14,21 @@ from django_cachex.cache.resp import RespCache
 
 
 class RedisRsCache(RespCache):
-    """Django cache backend using the Rust driver against a single node."""
+    """Django cache backend using the Rust adapter against a single node."""
 
     _cachex_support = "cachex"
     _adapter_class = RedisRsAdapter
 
 
 class RedisRsClusterCache(RespCache):
-    """Rust-driven Valkey/Redis cluster backend."""
+    """Rust adapter for Valkey/Redis cluster mode."""
 
     _cachex_support = "cachex"
     _adapter_class = RedisRsClusterAdapter
 
 
 class RedisRsSentinelCache(RespCache):
-    """Rust-driven sentinel-managed Valkey/Redis backend."""
+    """Rust adapter for sentinel-managed Valkey/Redis topologies."""
 
     _cachex_support = "cachex"
     _adapter_class = RedisRsSentinelAdapter

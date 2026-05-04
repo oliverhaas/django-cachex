@@ -24,7 +24,6 @@ if TYPE_CHECKING:
     from datetime import datetime, timedelta
 
     from django_cachex.adapters.protocols import RespAsyncPipelineProtocol, RespPipelineProtocol
-    from django_cachex.types import KeyT
 
 from django_cachex.script import ScriptHelpers
 
@@ -32,10 +31,6 @@ from django_cachex.script import ScriptHelpers
 # annotations at runtime, but type checkers still resolve them in class scope).
 _set = set
 _type = type
-
-# Type aliases matching django_cachex.types for convenience
-type ExpiryT = int | timedelta
-type AbsExpiryT = int | datetime
 
 
 class Pipeline:
@@ -211,7 +206,7 @@ class Pipeline:
     # Key/value helpers
     # -------------------------------------------------------------------------
 
-    def _make_key(self, key: KeyT, version: int | None = None) -> KeyT:
+    def _make_key(self, key: str, version: int | None = None) -> str:
         """Create a prefixed key."""
         v = version if version is not None else self._version
         if self._key_func is not None:
@@ -228,7 +223,7 @@ class Pipeline:
 
     def set(
         self,
-        key: KeyT,
+        key: str,
         value: Any,
         timeout: int | None = None,
         version: int | None = None,
@@ -262,14 +257,14 @@ class Pipeline:
         self._decoders.append(lambda x: True if (x is not None and x != b"" and x is not False) else None)
         return self
 
-    def get(self, key: KeyT, version: int | None = None) -> Self:
+    def get(self, key: str, version: int | None = None) -> Self:
         """Queue a GET command."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.get(nkey)
         self._decoders.append(self._decode_single)
         return self
 
-    def delete(self, key: KeyT, version: int | None = None) -> Self:
+    def delete(self, key: str, version: int | None = None) -> Self:
         """Queue a DELETE command."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.delete(nkey)
@@ -277,7 +272,7 @@ class Pipeline:
         self._decoders.append(bool)
         return self
 
-    def exists(self, key: KeyT, version: int | None = None) -> Self:
+    def exists(self, key: str, version: int | None = None) -> Self:
         """Queue an EXISTS command."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.exists(nkey)
@@ -287,7 +282,7 @@ class Pipeline:
 
     def expire(
         self,
-        key: KeyT,
+        key: str,
         timeout: int,
         version: int | None = None,
     ) -> Self:
@@ -297,7 +292,7 @@ class Pipeline:
         self._decoders.append(self._noop)
         return self
 
-    def ttl(self, key: KeyT, version: int | None = None) -> Self:
+    def ttl(self, key: str, version: int | None = None) -> Self:
         """Queue a TTL command."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.ttl(nkey)
@@ -306,7 +301,7 @@ class Pipeline:
 
     def incr(
         self,
-        key: KeyT,
+        key: str,
         delta: int = 1,
         version: int | None = None,
     ) -> Self:
@@ -318,7 +313,7 @@ class Pipeline:
 
     def decr(
         self,
-        key: KeyT,
+        key: str,
         delta: int = 1,
         version: int | None = None,
     ) -> Self:
@@ -328,14 +323,14 @@ class Pipeline:
         self._decoders.append(self._noop)
         return self
 
-    def persist(self, key: KeyT, version: int | None = None) -> Self:
+    def persist(self, key: str, version: int | None = None) -> Self:
         """Queue a PERSIST command (remove expiry)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.persist(nkey)
         self._decoders.append(bool)
         return self
 
-    def pttl(self, key: KeyT, version: int | None = None) -> Self:
+    def pttl(self, key: str, version: int | None = None) -> Self:
         """Queue a PTTL command (TTL in milliseconds)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.pttl(nkey)
@@ -344,8 +339,8 @@ class Pipeline:
 
     def expireat(
         self,
-        key: KeyT,
-        when: AbsExpiryT,
+        key: str,
+        when: int | datetime,
         version: int | None = None,
     ) -> Self:
         """Queue an EXPIREAT command (set expiry to absolute time)."""
@@ -356,8 +351,8 @@ class Pipeline:
 
     def pexpire(
         self,
-        key: KeyT,
-        timeout: ExpiryT,
+        key: str,
+        timeout: int | timedelta,
         version: int | None = None,
     ) -> Self:
         """Queue a PEXPIRE command (set expiry in milliseconds)."""
@@ -368,8 +363,8 @@ class Pipeline:
 
     def pexpireat(
         self,
-        key: KeyT,
-        when: AbsExpiryT,
+        key: str,
+        when: int | datetime,
         version: int | None = None,
     ) -> Self:
         """Queue a PEXPIREAT command (set expiry to absolute time, ms precision)."""
@@ -378,14 +373,14 @@ class Pipeline:
         self._decoders.append(bool)
         return self
 
-    def expiretime(self, key: KeyT, version: int | None = None) -> Self:
+    def expiretime(self, key: str, version: int | None = None) -> Self:
         """Queue an EXPIRETIME command (get absolute expiry timestamp)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.expiretime(nkey)
         self._decoders.append(self._noop)
         return self
 
-    def type(self, key: KeyT, version: int | None = None) -> Self:
+    def type(self, key: str, version: int | None = None) -> Self:
         """Queue a TYPE command (get key data type)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.type(nkey)
@@ -394,8 +389,8 @@ class Pipeline:
 
     def rename(
         self,
-        src: KeyT,
-        dst: KeyT,
+        src: str,
+        dst: str,
         version: int | None = None,
         version_src: int | None = None,
         version_dst: int | None = None,
@@ -411,8 +406,8 @@ class Pipeline:
 
     def renamenx(
         self,
-        src: KeyT,
-        dst: KeyT,
+        src: str,
+        dst: str,
         version: int | None = None,
         version_src: int | None = None,
         version_dst: int | None = None,
@@ -432,7 +427,7 @@ class Pipeline:
 
     def lpush(
         self,
-        key: KeyT,
+        key: str,
         *values: Any,
         version: int | None = None,
     ) -> Self:
@@ -445,7 +440,7 @@ class Pipeline:
 
     def rpush(
         self,
-        key: KeyT,
+        key: str,
         *values: Any,
         version: int | None = None,
     ) -> Self:
@@ -458,7 +453,7 @@ class Pipeline:
 
     def lpop(
         self,
-        key: KeyT,
+        key: str,
         count: int | None = None,
         version: int | None = None,
     ) -> Self:
@@ -470,7 +465,7 @@ class Pipeline:
 
     def rpop(
         self,
-        key: KeyT,
+        key: str,
         count: int | None = None,
         version: int | None = None,
     ) -> Self:
@@ -482,7 +477,7 @@ class Pipeline:
 
     def lrange(
         self,
-        key: KeyT,
+        key: str,
         start: int,
         end: int,
         version: int | None = None,
@@ -495,7 +490,7 @@ class Pipeline:
 
     def lindex(
         self,
-        key: KeyT,
+        key: str,
         index: int,
         version: int | None = None,
     ) -> Self:
@@ -507,7 +502,7 @@ class Pipeline:
 
     def llen(
         self,
-        key: KeyT,
+        key: str,
         version: int | None = None,
     ) -> Self:
         """Queue LLEN command (get list length)."""
@@ -518,7 +513,7 @@ class Pipeline:
 
     def lrem(
         self,
-        key: KeyT,
+        key: str,
         count: int,
         value: Any,
         version: int | None = None,
@@ -532,7 +527,7 @@ class Pipeline:
 
     def ltrim(
         self,
-        key: KeyT,
+        key: str,
         start: int,
         end: int,
         version: int | None = None,
@@ -545,7 +540,7 @@ class Pipeline:
 
     def lset(
         self,
-        key: KeyT,
+        key: str,
         index: int,
         value: Any,
         version: int | None = None,
@@ -559,7 +554,7 @@ class Pipeline:
 
     def linsert(
         self,
-        key: KeyT,
+        key: str,
         where: str,
         pivot: Any,
         value: Any,
@@ -575,7 +570,7 @@ class Pipeline:
 
     def lpos(
         self,
-        key: KeyT,
+        key: str,
         value: Any,
         rank: int | None = None,
         count: int | None = None,
@@ -591,8 +586,8 @@ class Pipeline:
 
     def lmove(
         self,
-        source: KeyT,
-        destination: KeyT,
+        source: str,
+        destination: str,
         src_direction: str = "LEFT",
         dest_direction: str = "RIGHT",
         version: int | None = None,
@@ -614,7 +609,7 @@ class Pipeline:
 
     def sadd(
         self,
-        key: KeyT,
+        key: str,
         *values: Any,
         version: int | None = None,
     ) -> Self:
@@ -627,7 +622,7 @@ class Pipeline:
 
     def scard(
         self,
-        key: KeyT,
+        key: str,
         version: int | None = None,
     ) -> Self:
         """Queue SCARD command (get set cardinality)."""
@@ -638,11 +633,11 @@ class Pipeline:
 
     def sdiff(
         self,
-        keys: KeyT | Sequence[KeyT],
+        keys: str | Sequence[str],
         version: int | None = None,
     ) -> Self:
         """Queue SDIFF command (set difference)."""
-        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
+        keys = [keys] if isinstance(keys, str) else keys
         nkeys = [self._make_key(key, version) for key in keys]
         self._pipeline_adapter.sdiff(*nkeys)
         self._decoders.append(self._decode_set)
@@ -650,14 +645,14 @@ class Pipeline:
 
     def sdiffstore(
         self,
-        dest: KeyT,
-        keys: KeyT | Sequence[KeyT],
+        dest: str,
+        keys: str | Sequence[str],
         version: int | None = None,
         version_dest: int | None = None,
         version_keys: int | None = None,
     ) -> Self:
         """Queue SDIFFSTORE command (store set difference)."""
-        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
+        keys = [keys] if isinstance(keys, str) else keys
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
         ndest = self._make_key(dest, dest_ver)
@@ -668,11 +663,11 @@ class Pipeline:
 
     def sinter(
         self,
-        keys: KeyT | Sequence[KeyT],
+        keys: str | Sequence[str],
         version: int | None = None,
     ) -> Self:
         """Queue SINTER command (set intersection)."""
-        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
+        keys = [keys] if isinstance(keys, str) else keys
         nkeys = [self._make_key(key, version) for key in keys]
         self._pipeline_adapter.sinter(*nkeys)
         self._decoders.append(self._decode_set)
@@ -680,14 +675,14 @@ class Pipeline:
 
     def sinterstore(
         self,
-        dest: KeyT,
-        keys: KeyT | Sequence[KeyT],
+        dest: str,
+        keys: str | Sequence[str],
         version: int | None = None,
         version_dest: int | None = None,
         version_keys: int | None = None,
     ) -> Self:
         """Queue SINTERSTORE command (store set intersection)."""
-        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
+        keys = [keys] if isinstance(keys, str) else keys
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
         ndest = self._make_key(dest, dest_ver)
@@ -698,7 +693,7 @@ class Pipeline:
 
     def sismember(
         self,
-        key: KeyT,
+        key: str,
         member: Any,
         version: int | None = None,
     ) -> Self:
@@ -711,7 +706,7 @@ class Pipeline:
 
     def smismember(
         self,
-        key: KeyT,
+        key: str,
         *members: Any,
         version: int | None = None,
     ) -> Self:
@@ -724,7 +719,7 @@ class Pipeline:
 
     def smembers(
         self,
-        key: KeyT,
+        key: str,
         version: int | None = None,
     ) -> Self:
         """Queue SMEMBERS command (get all members)."""
@@ -735,8 +730,8 @@ class Pipeline:
 
     def smove(
         self,
-        source: KeyT,
-        destination: KeyT,
+        source: str,
+        destination: str,
         member: Any,
         version: int | None = None,
         version_src: int | None = None,
@@ -754,7 +749,7 @@ class Pipeline:
 
     def spop(
         self,
-        key: KeyT,
+        key: str,
         count: int | None = None,
         version: int | None = None,
     ) -> Self:
@@ -766,7 +761,7 @@ class Pipeline:
 
     def srandmember(
         self,
-        key: KeyT,
+        key: str,
         count: int | None = None,
         version: int | None = None,
     ) -> Self:
@@ -785,7 +780,7 @@ class Pipeline:
 
     def srem(
         self,
-        key: KeyT,
+        key: str,
         *members: Any,
         version: int | None = None,
     ) -> Self:
@@ -798,11 +793,11 @@ class Pipeline:
 
     def sunion(
         self,
-        keys: KeyT | Sequence[KeyT],
+        keys: str | Sequence[str],
         version: int | None = None,
     ) -> Self:
         """Queue SUNION command (set union)."""
-        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
+        keys = [keys] if isinstance(keys, str) else keys
         nkeys = [self._make_key(key, version) for key in keys]
         self._pipeline_adapter.sunion(*nkeys)
         self._decoders.append(self._decode_set)
@@ -810,14 +805,14 @@ class Pipeline:
 
     def sunionstore(
         self,
-        destination: KeyT,
-        keys: KeyT | Sequence[KeyT],
+        destination: str,
+        keys: str | Sequence[str],
         version: int | None = None,
         version_dest: int | None = None,
         version_keys: int | None = None,
     ) -> Self:
         """Queue SUNIONSTORE command (store set union)."""
-        keys = [keys] if isinstance(keys, (str, bytes, memoryview)) else keys
+        keys = [keys] if isinstance(keys, str) else keys
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
         ndestination = self._make_key(destination, dest_ver)
@@ -832,7 +827,7 @@ class Pipeline:
 
     def hset(
         self,
-        key: KeyT,
+        key: str,
         field: str | None = None,
         value: Any = None,
         version: int | None = None,
@@ -850,7 +845,7 @@ class Pipeline:
 
     def hdel(
         self,
-        key: KeyT,
+        key: str,
         *fields: str,
         version: int | None = None,
     ) -> Self:
@@ -862,7 +857,7 @@ class Pipeline:
 
     def hlen(
         self,
-        key: KeyT,
+        key: str,
         version: int | None = None,
     ) -> Self:
         """Queue HLEN command (get number of fields)."""
@@ -873,7 +868,7 @@ class Pipeline:
 
     def hkeys(
         self,
-        key: KeyT,
+        key: str,
         version: int | None = None,
     ) -> Self:
         """Queue HKEYS command (get all field names)."""
@@ -884,7 +879,7 @@ class Pipeline:
 
     def hexists(
         self,
-        key: KeyT,
+        key: str,
         field: str,
         version: int | None = None,
     ) -> Self:
@@ -896,7 +891,7 @@ class Pipeline:
 
     def hget(
         self,
-        key: KeyT,
+        key: str,
         field: str,
         version: int | None = None,
     ) -> Self:
@@ -908,7 +903,7 @@ class Pipeline:
 
     def hgetall(
         self,
-        key: KeyT,
+        key: str,
         version: int | None = None,
     ) -> Self:
         """Queue HGETALL command (get all fields and values)."""
@@ -919,7 +914,7 @@ class Pipeline:
 
     def hmget(
         self,
-        key: KeyT,
+        key: str,
         *fields: str,
         version: int | None = None,
     ) -> Self:
@@ -931,7 +926,7 @@ class Pipeline:
 
     def hincrby(
         self,
-        key: KeyT,
+        key: str,
         field: str,
         amount: int = 1,
         version: int | None = None,
@@ -944,7 +939,7 @@ class Pipeline:
 
     def hincrbyfloat(
         self,
-        key: KeyT,
+        key: str,
         field: str,
         amount: float = 1.0,
         version: int | None = None,
@@ -957,7 +952,7 @@ class Pipeline:
 
     def hsetnx(
         self,
-        key: KeyT,
+        key: str,
         field: str,
         value: Any,
         version: int | None = None,
@@ -971,7 +966,7 @@ class Pipeline:
 
     def hvals(
         self,
-        key: KeyT,
+        key: str,
         version: int | None = None,
     ) -> Self:
         """Queue HVALS command (get all values)."""
@@ -986,7 +981,7 @@ class Pipeline:
 
     def zadd(
         self,
-        key: KeyT,
+        key: str,
         mapping: dict[Any, float],
         *,
         nx: bool = False,
@@ -1016,7 +1011,7 @@ class Pipeline:
 
     def zcard(
         self,
-        key: KeyT,
+        key: str,
         version: int | None = None,
     ) -> Self:
         """Queue ZCARD command (get cardinality)."""
@@ -1027,7 +1022,7 @@ class Pipeline:
 
     def zcount(
         self,
-        key: KeyT,
+        key: str,
         min: float | str,
         max: float | str,
         version: int | None = None,
@@ -1040,7 +1035,7 @@ class Pipeline:
 
     def zincrby(
         self,
-        key: KeyT,
+        key: str,
         amount: float,
         value: Any,
         version: int | None = None,
@@ -1054,7 +1049,7 @@ class Pipeline:
 
     def zpopmax(
         self,
-        key: KeyT,
+        key: str,
         count: int | None = None,
         version: int | None = None,
     ) -> Self:
@@ -1066,7 +1061,7 @@ class Pipeline:
 
     def zpopmin(
         self,
-        key: KeyT,
+        key: str,
         count: int | None = None,
         version: int | None = None,
     ) -> Self:
@@ -1078,7 +1073,7 @@ class Pipeline:
 
     def zrange(
         self,
-        key: KeyT,
+        key: str,
         start: int,
         end: int,
         *,
@@ -1102,7 +1097,7 @@ class Pipeline:
 
     def zrangebyscore(
         self,
-        key: KeyT,
+        key: str,
         min: float | str,
         max: float | str,
         start: int | None = None,
@@ -1128,7 +1123,7 @@ class Pipeline:
 
     def zrank(
         self,
-        key: KeyT,
+        key: str,
         value: Any,
         version: int | None = None,
     ) -> Self:
@@ -1141,7 +1136,7 @@ class Pipeline:
 
     def zrem(
         self,
-        key: KeyT,
+        key: str,
         *values: Any,
         version: int | None = None,
     ) -> Self:
@@ -1154,7 +1149,7 @@ class Pipeline:
 
     def zremrangebyscore(
         self,
-        key: KeyT,
+        key: str,
         min: float | str,
         max: float | str,
         version: int | None = None,
@@ -1167,7 +1162,7 @@ class Pipeline:
 
     def zremrangebyrank(
         self,
-        key: KeyT,
+        key: str,
         start: int,
         end: int,
         version: int | None = None,
@@ -1180,7 +1175,7 @@ class Pipeline:
 
     def zrevrange(
         self,
-        key: KeyT,
+        key: str,
         start: int,
         end: int,
         *,
@@ -1202,7 +1197,7 @@ class Pipeline:
 
     def zrevrangebyscore(
         self,
-        key: KeyT,
+        key: str,
         max: float | str,
         min: float | str,
         start: int | None = None,
@@ -1228,7 +1223,7 @@ class Pipeline:
 
     def zscore(
         self,
-        key: KeyT,
+        key: str,
         value: Any,
         version: int | None = None,
     ) -> Self:
@@ -1241,7 +1236,7 @@ class Pipeline:
 
     def zrevrank(
         self,
-        key: KeyT,
+        key: str,
         value: Any,
         version: int | None = None,
     ) -> Self:
@@ -1254,7 +1249,7 @@ class Pipeline:
 
     def zmscore(
         self,
-        key: KeyT,
+        key: str,
         *members: Any,
         version: int | None = None,
     ) -> Self:
@@ -1271,7 +1266,7 @@ class Pipeline:
 
     def xadd(
         self,
-        key: KeyT,
+        key: str,
         fields: dict[str, Any],
         entry_id: str = "*",
         maxlen: int | None = None,
@@ -1297,7 +1292,7 @@ class Pipeline:
         self._decoders.append(self._decode_entry_id)
         return self
 
-    def xlen(self, key: KeyT, version: int | None = None) -> Self:
+    def xlen(self, key: str, version: int | None = None) -> Self:
         """Queue XLEN command (get stream length)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.xlen(nkey)
@@ -1306,7 +1301,7 @@ class Pipeline:
 
     def xrange(
         self,
-        key: KeyT,
+        key: str,
         start: str = "-",
         end: str = "+",
         count: int | None = None,
@@ -1320,7 +1315,7 @@ class Pipeline:
 
     def xrevrange(
         self,
-        key: KeyT,
+        key: str,
         end: str = "+",
         start: str = "-",
         count: int | None = None,
@@ -1334,14 +1329,14 @@ class Pipeline:
 
     def xread(
         self,
-        streams: dict[KeyT, str],
+        streams: dict[str, str],
         count: int | None = None,
         block: int | None = None,
         version: int | None = None,
     ) -> Self:
         """Queue XREAD command (read from streams)."""
-        key_map: dict[str, KeyT] = {}
-        nstreams: dict[KeyT, str] = {}
+        key_map: dict[str, str] = {}
+        nstreams: dict[str, str] = {}
         for k, v in streams.items():
             nk = self._make_key(k, version)
             key_map[nk if isinstance(nk, str) else str(nk)] = k
@@ -1352,7 +1347,7 @@ class Pipeline:
 
     def xtrim(
         self,
-        key: KeyT,
+        key: str,
         maxlen: int | None = None,
         approximate: bool = True,
         minid: str | None = None,
@@ -1365,28 +1360,28 @@ class Pipeline:
         self._decoders.append(self._noop)
         return self
 
-    def xdel(self, key: KeyT, *entry_ids: str, version: int | None = None) -> Self:
+    def xdel(self, key: str, *entry_ids: str, version: int | None = None) -> Self:
         """Queue XDEL command (delete stream entries)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.xdel(nkey, *entry_ids)
         self._decoders.append(self._noop)
         return self
 
-    def xinfo_stream(self, key: KeyT, full: bool = False, version: int | None = None) -> Self:
+    def xinfo_stream(self, key: str, full: bool = False, version: int | None = None) -> Self:
         """Queue XINFO STREAM command."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.xinfo_stream(nkey, full=full)
         self._decoders.append(self._noop)
         return self
 
-    def xinfo_groups(self, key: KeyT, version: int | None = None) -> Self:
+    def xinfo_groups(self, key: str, version: int | None = None) -> Self:
         """Queue XINFO GROUPS command."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.xinfo_groups(nkey)
         self._decoders.append(self._noop)
         return self
 
-    def xinfo_consumers(self, key: KeyT, group: str, version: int | None = None) -> Self:
+    def xinfo_consumers(self, key: str, group: str, version: int | None = None) -> Self:
         """Queue XINFO CONSUMERS command."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.xinfo_consumers(nkey, group)
@@ -1395,7 +1390,7 @@ class Pipeline:
 
     def xgroup_create(
         self,
-        key: KeyT,
+        key: str,
         group: str,
         entry_id: str = "$",
         mkstream: bool = False,
@@ -1408,7 +1403,7 @@ class Pipeline:
         self._decoders.append(self._noop)
         return self
 
-    def xgroup_destroy(self, key: KeyT, group: str, version: int | None = None) -> Self:
+    def xgroup_destroy(self, key: str, group: str, version: int | None = None) -> Self:
         """Queue XGROUP DESTROY command."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.xgroup_destroy(nkey, group)
@@ -1417,7 +1412,7 @@ class Pipeline:
 
     def xgroup_setid(
         self,
-        key: KeyT,
+        key: str,
         group: str,
         entry_id: str,
         entries_read: int | None = None,
@@ -1429,7 +1424,7 @@ class Pipeline:
         self._decoders.append(self._noop)
         return self
 
-    def xgroup_delconsumer(self, key: KeyT, group: str, consumer: str, version: int | None = None) -> Self:
+    def xgroup_delconsumer(self, key: str, group: str, consumer: str, version: int | None = None) -> Self:
         """Queue XGROUP DELCONSUMER command."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.xgroup_delconsumer(nkey, group, consumer)
@@ -1440,15 +1435,15 @@ class Pipeline:
         self,
         group: str,
         consumer: str,
-        streams: dict[KeyT, str],
+        streams: dict[str, str],
         count: int | None = None,
         block: int | None = None,
         noack: bool = False,
         version: int | None = None,
     ) -> Self:
         """Queue XREADGROUP command (read as consumer group member)."""
-        key_map: dict[str, KeyT] = {}
-        nstreams: dict[KeyT, str] = {}
+        key_map: dict[str, str] = {}
+        nstreams: dict[str, str] = {}
         for k, v in streams.items():
             nk = self._make_key(k, version)
             key_map[nk if isinstance(nk, str) else str(nk)] = k
@@ -1457,7 +1452,7 @@ class Pipeline:
         self._decoders.append(self._make_stream_key_decoder(key_map))
         return self
 
-    def xack(self, key: KeyT, group: str, *entry_ids: str, version: int | None = None) -> Self:
+    def xack(self, key: str, group: str, *entry_ids: str, version: int | None = None) -> Self:
         """Queue XACK command (acknowledge messages)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.xack(nkey, group, *entry_ids)
@@ -1466,7 +1461,7 @@ class Pipeline:
 
     def xpending(
         self,
-        key: KeyT,
+        key: str,
         group: str,
         start: str | None = None,
         end: str | None = None,
@@ -1491,7 +1486,7 @@ class Pipeline:
 
     def xclaim(
         self,
-        key: KeyT,
+        key: str,
         group: str,
         consumer: str,
         min_idle_time: int,
@@ -1525,7 +1520,7 @@ class Pipeline:
 
     def xautoclaim(
         self,
-        key: KeyT,
+        key: str,
         group: str,
         consumer: str,
         min_idle_time: int,

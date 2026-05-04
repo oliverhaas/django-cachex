@@ -2,13 +2,13 @@
 name = "django-cachex-redis-rs"
 version = "0.3.0"
 edition = "2024"
-description = "Rust I/O driver for django-cachex"
+description = "Rust adapter for django-cachex"
 license = "MIT"
 repository = "https://github.com/oliverhaas/django-cachex"
 publish = false
 
 [lib]
-name = "_driver"
+name = "_redis_rs"
 crate-type = ["cdylib"]
 
 [dependencies]

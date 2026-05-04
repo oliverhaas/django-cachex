@@ -1,26 +1,24 @@
-// Rust I/O driver for django-cachex.
+// Rust adapter for django-cachex.
 //
 // Heavily inspired by django-vcache (MIT, by David Burke / GlitchTip):
 // https://gitlab.com/glitchtip/django-vcache
 
+mod adapter;
 mod async_bridge;
 mod client;
 mod connection;
-mod test_helpers;
+mod pipeline;
+mod stream_decode;
 
 use pyo3::prelude::*;
 
 #[pymodule]
-fn _driver(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _redis_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<async_bridge::RedisRsAwaitable>()?;
-    m.add_class::<client::RedisRsDriver>()?;
-    m.add_function(wrap_pyfunction!(test_helpers::_test_resolved_bytes, m)?)?;
-    m.add_function(wrap_pyfunction!(test_helpers::_test_resolved_none, m)?)?;
-    m.add_function(wrap_pyfunction!(test_helpers::_test_resolved_int, m)?)?;
-    m.add_function(wrap_pyfunction!(test_helpers::_test_delayed_bytes, m)?)?;
-    m.add_function(wrap_pyfunction!(test_helpers::_test_pending, m)?)?;
-    m.add_function(wrap_pyfunction!(test_helpers::_test_dropped, m)?)?;
-    m.add_function(wrap_pyfunction!(test_helpers::_test_error, m)?)?;
-    m.add_function(wrap_pyfunction!(test_helpers::_test_server_error, m)?)?;
+    m.add_class::<adapter::RedisRsAdapter>()?;
+    m.add_class::<adapter::RedisRsClusterAdapter>()?;
+    m.add_class::<adapter::RedisRsSentinelAdapter>()?;
+    m.add_class::<pipeline::RedisRsPipelineAdapter>()?;
+    m.add_class::<pipeline::RedisRsAsyncPipelineAdapter>()?;
     Ok(())
 }

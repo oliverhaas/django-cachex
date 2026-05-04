@@ -1,7 +1,7 @@
 [project]
 name = "django-cachex-redis-rs"
 version = "0.3.0"
-description = "Rust I/O driver (PyO3 + tokio + redis-rs) for django-cachex"
+description = "Rust adapter (PyO3 + tokio + redis-rs) for django-cachex"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.14"
@@ -36,7 +36,7 @@ requires = ["maturin>=1.13,<2.0"]
 build-backend = "maturin"
 
 [tool.maturin]
-module-name = "django_cachex._driver"
+module-name = "django_cachex.adapters._redis_rs"
 features = ["pyo3/extension-module"]
 python-source = "python"
 manifest-path = "Cargo.toml"

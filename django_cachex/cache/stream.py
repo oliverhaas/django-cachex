@@ -65,8 +65,6 @@ from django_cachex.exceptions import NotSupportedError
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from django_cachex.types import KeyT
-
 logger = logging.getLogger(__name__)
 
 
@@ -410,13 +408,13 @@ class StreamCache(LocMemCache):
 
     # -- Standard Django cache interface (LocMemCache + stream sync) --
 
-    def get(self, key: KeyT, default: Any = None, version: int | None = None) -> Any:
+    def get(self, key: str, default: Any = None, version: int | None = None) -> Any:
         self._ensure_consumer()
         return super().get(key, default=default, version=version)
 
     def set(  # type: ignore[override]
         self,
-        key: KeyT,
+        key: str,
         value: Any,
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
@@ -431,10 +429,10 @@ class StreamCache(LocMemCache):
         self._publish("set", key=made_key, val=value, exp=exp_time)
         return True
 
-    def add(self, key: KeyT, value: Any, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
+    def add(self, key: str, value: Any, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
         raise NotSupportedError("add", "StreamCache")
 
-    def delete(self, key: KeyT, version: int | None = None) -> bool:
+    def delete(self, key: str, version: int | None = None) -> bool:
         self._ensure_consumer()
         made_key = self.make_and_validate_key(key, version=version)
         with self._lock:
@@ -442,9 +440,9 @@ class StreamCache(LocMemCache):
         self._publish("delete", key=made_key)
         return existed
 
-    def get_many(self, keys: Iterable[KeyT], version: int | None = None) -> dict[KeyT, Any]:
+    def get_many(self, keys: Iterable[str], version: int | None = None) -> dict[str, Any]:
         self._ensure_consumer()
-        result: dict[KeyT, Any] = {}
+        result: dict[str, Any] = {}
         for k in keys:
             val = self.get(k, default=self, version=version)
             if val is not self:
@@ -453,7 +451,7 @@ class StreamCache(LocMemCache):
 
     def set_many(
         self,
-        data: dict[KeyT, Any],
+        data: dict[str, Any],
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
     ) -> list[Any]:
@@ -461,7 +459,7 @@ class StreamCache(LocMemCache):
             self.set(key, value, timeout, version=version)
         return []
 
-    def delete_many(self, keys: Iterable[KeyT], version: int | None = None) -> None:
+    def delete_many(self, keys: Iterable[str], version: int | None = None) -> None:
         self._ensure_consumer()
         keys_list = list(keys)
         made_keys: list[str] = []
@@ -473,19 +471,19 @@ class StreamCache(LocMemCache):
         if made_keys:
             self._publish("delete_many", keys="\x00".join(made_keys))
 
-    def has_key(self, key: KeyT, version: int | None = None) -> bool:
+    def has_key(self, key: str, version: int | None = None) -> bool:
         self._ensure_consumer()
         return super().has_key(key, version=version)
 
-    def incr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
+    def incr(self, key: str, delta: int = 1, version: int | None = None) -> int:
         raise NotSupportedError("incr", "StreamCache")
 
-    def decr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
+    def decr(self, key: str, delta: int = 1, version: int | None = None) -> int:
         raise NotSupportedError("decr", "StreamCache")
 
     def get_or_set(
         self,
-        key: KeyT,
+        key: str,
         default: Any,
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
@@ -502,7 +500,7 @@ class StreamCache(LocMemCache):
 
     def touch(
         self,
-        key: KeyT,
+        key: str,
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
     ) -> bool:
@@ -549,7 +547,7 @@ class StreamCache(LocMemCache):
         user_keys.sort()
         return user_keys
 
-    def ttl(self, key: KeyT, version: int | None = None) -> int | None:
+    def ttl(self, key: str, version: int | None = None) -> int | None:
         self._ensure_consumer()
         made_key = self.make_and_validate_key(key, version=version)
         with self._lock:
@@ -561,7 +559,7 @@ class StreamCache(LocMemCache):
             remaining = int(exp - time.time())
             return max(0, remaining)
 
-    def pttl(self, key: KeyT, version: int | None = None) -> int | None:
+    def pttl(self, key: str, version: int | None = None) -> int | None:
         self._ensure_consumer()
         made_key = self.make_and_validate_key(key, version=version)
         with self._lock:
@@ -573,13 +571,13 @@ class StreamCache(LocMemCache):
             remaining = int((exp - time.time()) * 1000)
             return max(0, remaining)
 
-    def persist(self, key: KeyT, version: int | None = None) -> bool:
+    def persist(self, key: str, version: int | None = None) -> bool:
         return self.touch(key, timeout=None, version=version)
 
-    def expire(self, key: KeyT, timeout: int, version: int | None = None) -> bool:
+    def expire(self, key: str, timeout: int, version: int | None = None) -> bool:
         return self.touch(key, timeout=timeout, version=version)
 
-    def type(self, key: KeyT, version: int | None = None) -> str:
+    def type(self, key: str, version: int | None = None) -> str:
         self._ensure_consumer()
         made_key = self.make_and_validate_key(key, version=version)
         with self._lock:

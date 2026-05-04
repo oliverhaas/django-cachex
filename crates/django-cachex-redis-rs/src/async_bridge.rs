@@ -91,6 +91,9 @@ pub enum RawResult {
     StringList(Vec<String>),
     /// Field/value pairs for HGETALL/HMSET-style results (bytes value).
     BytesPairs(Vec<(Vec<u8>, Vec<u8>)>),
+    /// Key/value pairs for `aget_many` post-stampede-filter — surfaces as
+    /// a Python ``dict[str, bytes]``.
+    StringBytesPairs(Vec<(String, Vec<u8>)>),
     /// Member/score pairs for ZRANGE WITHSCORES, ZPOPMIN/MAX.
     ScoredMembers(Vec<(Vec<u8>, f64)>),
     OptKeyAndBytesList(Option<(String, Vec<Vec<u8>>)>),
@@ -98,10 +101,24 @@ pub enum RawResult {
     OptKeyAndBytes(Option<(String, Vec<u8>)>),
     /// (cursor, keys) for one SCAN iteration.
     CursorAndStrings(u64, Vec<String>),
+    /// (cursor, members) for one SSCAN iteration over a binary-safe set.
+    CursorAndBytes(u64, Vec<Vec<u8>>),
     /// Generic redis::Value, recursively converted to Python.
-    /// Used for EVAL/EVALSHA, INFO, CLIENT LIST, XREAD, XRANGE, and other
-    /// commands whose return shape varies enough that a typed variant doesn't help.
+    /// Used for EVAL/EVALSHA, INFO, CLIENT LIST, and other commands whose
+    /// return shape varies enough that a typed variant doesn't help.
     Value(redis::Value),
+    /// XRANGE / XREVRANGE / XCLAIM (no JUSTID) — typed as
+    /// ``list[tuple[str, dict[str, bytes]]]``; see :mod:`stream_decode`.
+    StreamEntries(redis::Value),
+    /// XREAD / XREADGROUP — typed as
+    /// ``dict[str, list[tuple[str, dict[str, bytes]]]] | None``.
+    StreamRead(redis::Value),
+    /// XCLAIM with ``JUSTID`` — typed as ``list[str]``.
+    XClaimJustId(redis::Value),
+    /// XAUTOCLAIM — typed as
+    /// ``tuple[str, list[tuple[str, dict[str, bytes]]] | list[str], list[str]]``.
+    /// Bool is the ``justid`` flag the call was issued with.
+    Xautoclaim(redis::Value, bool),
     /// Connection/IO error → PyConnectionError (swallowed by IGNORE_EXCEPTIONS)
     Error(String),
     /// Data/server error → PyRuntimeError (NOT swallowed, indicates real problems)
@@ -226,6 +243,15 @@ impl RawResult {
                 let py_list = PyList::new(py, py_items)?.into_any().unbind();
                 Ok(PyTuple::new(py, [py_cursor, py_list])?.into_any().unbind())
             }
+            RawResult::CursorAndBytes(cursor, members) => {
+                let py_cursor = cursor.into_pyobject(py)?.into_any().unbind();
+                let py_items: Vec<Py<PyAny>> = members
+                    .iter()
+                    .map(|b| PyBytes::new(py, b).into_any().unbind())
+                    .collect();
+                let py_list = PyList::new(py, py_items)?.into_any().unbind();
+                Ok(PyTuple::new(py, [py_cursor, py_list])?.into_any().unbind())
+            }
             RawResult::OptInt(Some(n)) => Ok(n.into_pyobject(py)?.into_any().unbind()),
             RawResult::OptInt(None) => Ok(py.None()),
             RawResult::F64(f) => Ok(f.into_pyobject(py)?.into_any().unbind()),
@@ -241,6 +267,14 @@ impl RawResult {
                 }
                 Ok(dict.into_any().unbind())
             }
+            RawResult::StringBytesPairs(pairs) => {
+                // {str: bytes} dict for aget_many.
+                let dict = PyDict::new(py);
+                for (k, v) in pairs {
+                    dict.set_item(k, PyBytes::new(py, &v))?;
+                }
+                Ok(dict.into_any().unbind())
+            }
             RawResult::ScoredMembers(items) => {
                 let py_items: Vec<Py<PyAny>> = items
                     .into_iter()
@@ -253,6 +287,12 @@ impl RawResult {
                 Ok(PyList::new(py, py_items)?.into_any().unbind())
             }
             RawResult::Value(v) => redis_value_to_py(py, v),
+            RawResult::StreamEntries(v) => crate::stream_decode::entries_to_py(py, v),
+            RawResult::StreamRead(v) => crate::stream_decode::read_to_py(py, v),
+            RawResult::XClaimJustId(v) => crate::stream_decode::xclaim_justid_to_py(py, v),
+            RawResult::Xautoclaim(v, justid) => {
+                crate::stream_decode::xautoclaim_to_py(py, v, justid)
+            }
             RawResult::Error(e) => Err(pyo3::exceptions::PyConnectionError::new_err(e)),
             RawResult::ServerError(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e)),
         }
@@ -297,9 +337,75 @@ struct CallbackState {
     result_slot: Arc<Mutex<Option<Result<RawResult, ()>>>>,
 }
 
+/// Post-await value transform — applied between `RawResult::into_py` and
+/// delivery to the Python consumer. Replaces a stack of single-purpose
+/// Python `async def` wrappers from `django_cachex.adapters._async_helpers`.
+///
+/// The transforms here are pure value reshapes — they do NOT touch the
+/// connection or perform I/O. Multi-step async (e.g. stampede TTL probes)
+/// stays in Python coroutines because it needs further awaits.
+#[derive(Clone, Copy, Debug)]
+pub enum AwaitTransform {
+    None,
+    /// Coerce truthiness to `bool`. (e.g. driver `i64` → `n != 0`.)
+    ToBool,
+    /// Coerce to `int(value)` via Python builtin.
+    ToInt,
+    /// `-1` / `-2` → `None`, else pass through. TTL/PTTL/EXPIRETIME contract.
+    NormalizeTtl,
+    /// `"none"` → `None`, else `django_cachex.types.KeyType(s)`.
+    DecodeKeytype,
+    /// `dict[bytes, T]` → `dict[str, T]` (decode bytes keys).
+    DecodeHgetall,
+    /// Iterable → `set`.
+    ToSet,
+    /// Iterable → `list`.
+    ToList,
+    /// Discard result, deliver `None`. (Async sets/lset/etc.)
+    NilAfter,
+    /// Discard result, deliver `[]`. (`aset_many` returns "list of failed keys".)
+    EmptyListAfter,
+    /// Discard result, deliver `True`. (`alset` / `altrim` / `axgroup_create`.)
+    TrueAfter,
+    /// `[(member, score), ...]` → `[(member, float(score)), ...]`.
+    DecodeScoredMembers,
+    /// `[int, ...]` → `[bool(x), ...]`. (`asmismember`.)
+    MapIntToBool,
+    /// `[bytes | None, ...]` → `[None | float(b), ...]`. (`azmscore`.)
+    MapOptionalFloat,
+    /// `None` → `None`, else `(raw[0], raw[1])`. (`ablpop` / `abrpop`.)
+    OptTupleUnpack,
+    /// ZRANGE/ZREVRANGE/ZRANGEBYSCORE WITHSCORES decoding. Accepts either
+    /// nested `[[m, s], ...]` (RESP3) or flat `[m, s, m, s, ...]` (RESP2)
+    /// and returns `[(m, float(s)), ...]`.
+    DecodeZrangeWithScores,
+    /// ZREVRANGEBYSCORE WITHSCORES decoding — always flat
+    /// `[m, s, m, s, ...]` → `[(m, float(s)), ...]`.
+    DecodeZrevrangebyscoreWithScores,
+    /// XINFO STREAM flat-pair → dict (`adapter::parse_xinfo_pairs`).
+    DecodeXinfoStream,
+    /// XINFO GROUPS / XINFO CONSUMERS list-of-flat-pairs → list of dicts.
+    DecodeXinfoPairsList,
+    /// XPENDING summary form → dict.
+    DecodeXpendingSummary,
+    /// XPENDING range form → list of dicts.
+    DecodeXpendingRange,
+    /// SSCAN: `(cursor, list[bytes])` → `(cursor, set[bytes])`. The list
+    /// elements are unique by Redis contract; we just wrap in a `set()`.
+    SscanCursorToSet,
+    /// `SET ... GET` async: deliver `None` if the input is None/Nil, else
+    /// pass the bytes through.
+    SetWithFlagsGet,
+    /// `SET ... NX|XX` async without GET: input is True (OK), False (NX/XX
+    /// rejection), or None (Nil). Coerce None → False; truthy as-is.
+    SetWithFlagsBool,
+}
+
 #[pyclass]
 pub struct RedisRsAwaitable {
     rx: Option<oneshot::Receiver<RawResult>>,
+    /// Post-await transform applied to the resolved value before delivery.
+    transform: AwaitTransform,
     /// Successful result value — stored for result() after StopIteration delivery.
     value: Option<Py<PyAny>>,
     /// Error exception object — raised by result() for the Task to propagate.
@@ -314,6 +420,199 @@ pub struct RedisRsAwaitable {
     polls: u8,
     /// Callback mode state — allocated lazily on 6th poll miss.
     cb: Option<Box<CallbackState>>,
+}
+
+/// Apply an `AwaitTransform` to the raw resolved value. Pure value reshapes;
+/// no I/O. Errors propagate to the Python consumer as the awaitable's exception.
+fn apply_await_transform(
+    transform: AwaitTransform,
+    py: Python<'_>,
+    val: Py<PyAny>,
+) -> PyResult<Py<PyAny>> {
+    use AwaitTransform::*;
+    match transform {
+        None => Ok(val),
+        ToBool => {
+            let truthy = val.bind(py).is_truthy()?;
+            Ok(truthy.into_pyobject(py)?.to_owned().into_any().unbind())
+        }
+        ToInt => {
+            let int_cls = py.import("builtins")?.getattr("int")?;
+            Ok(int_cls.call1((val.bind(py),))?.unbind())
+        }
+        NormalizeTtl => {
+            // -1 (no expiry) → None; -2 (key missing) and positives pass
+            // through as-is. The `expiretime` contract distinguishes -2.
+            let n: i64 = val.bind(py).extract()?;
+            Ok(if n == -1 {
+                py.None()
+            } else {
+                n.into_pyobject(py)?.into_any().unbind()
+            })
+        }
+        DecodeKeytype => {
+            let s: String = val.bind(py).extract()?;
+            if s == "none" {
+                Ok(py.None())
+            } else {
+                Ok(py
+                    .import("django_cachex.types")?
+                    .getattr("KeyType")?
+                    .call1((s,))?
+                    .unbind())
+            }
+        }
+        DecodeHgetall => {
+            use pyo3::types::PyDict;
+            let raw = val.bind(py).downcast::<PyDict>()?;
+            let out = PyDict::new(py);
+            for (k, v) in raw.iter() {
+                let k_str = if let Ok(b) = k.extract::<Vec<u8>>() {
+                    String::from_utf8_lossy(&b).into_owned()
+                } else {
+                    k.extract::<String>()?
+                };
+                out.set_item(k_str, v)?;
+            }
+            Ok(out.into_any().unbind())
+        }
+        ToSet => {
+            let set_cls = py.import("builtins")?.getattr("set")?;
+            Ok(set_cls.call1((val.bind(py),))?.unbind())
+        }
+        ToList => {
+            let list_cls = py.import("builtins")?.getattr("list")?;
+            Ok(list_cls.call1((val.bind(py),))?.unbind())
+        }
+        NilAfter => Ok(py.None()),
+        EmptyListAfter => Ok(pyo3::types::PyList::empty(py).into_any().unbind()),
+        TrueAfter => Ok(true.into_pyobject(py)?.to_owned().into_any().unbind()),
+        DecodeScoredMembers => {
+            use pyo3::types::{PyList, PyTuple};
+            let bound = val.bind(py);
+            let out = PyList::empty(py);
+            let float_cls = py.import("builtins")?.getattr("float")?;
+            for pair in bound.try_iter()? {
+                let pair = pair?;
+                let m = pair.get_item(0)?;
+                let s = pair.get_item(1)?;
+                let s_float = float_cls.call1((s,))?;
+                out.append(PyTuple::new(py, [m.unbind(), s_float.unbind()])?)?;
+            }
+            Ok(out.into_any().unbind())
+        }
+        MapIntToBool => {
+            use pyo3::types::PyList;
+            let bound = val.bind(py);
+            let out = PyList::empty(py);
+            for item in bound.try_iter()? {
+                out.append(item?.is_truthy()?)?;
+            }
+            Ok(out.into_any().unbind())
+        }
+        MapOptionalFloat => {
+            use pyo3::types::PyList;
+            let bound = val.bind(py);
+            let out = PyList::empty(py);
+            let float_cls = py.import("builtins")?.getattr("float")?;
+            for item in bound.try_iter()? {
+                let item = item?;
+                if item.is_none() {
+                    out.append(py.None())?;
+                } else {
+                    out.append(float_cls.call1((item,))?)?;
+                }
+            }
+            Ok(out.into_any().unbind())
+        }
+        OptTupleUnpack => {
+            let bound = val.bind(py);
+            if bound.is_none() {
+                Ok(py.None())
+            } else {
+                use pyo3::types::PyTuple;
+                let a = bound.get_item(0)?;
+                let b = bound.get_item(1)?;
+                Ok(PyTuple::new(py, [a.unbind(), b.unbind()])?.into_any().unbind())
+            }
+        }
+        DecodeZrangeWithScores => {
+            use pyo3::types::{PyList, PyTuple};
+            let bound = val.bind(py);
+            let raw_len = bound.len()?;
+            if raw_len == 0 {
+                return Ok(PyList::empty(py).into_any().unbind());
+            }
+            let first = bound.get_item(0)?;
+            let nested = first.cast::<PyList>().is_ok() || first.cast::<PyTuple>().is_ok();
+            let out = PyList::empty(py);
+            let float_cls = py.import("builtins")?.getattr("float")?;
+            if nested {
+                for pair in bound.try_iter()? {
+                    let pair = pair?;
+                    let m = pair.get_item(0)?;
+                    let s = float_cls.call1((pair.get_item(1)?,))?;
+                    out.append(PyTuple::new(py, [m.unbind(), s.unbind()])?)?;
+                }
+            } else {
+                let mut iter = bound.try_iter()?;
+                while let (Some(m), Some(s)) = (iter.next(), iter.next()) {
+                    let s_float = float_cls.call1((s?,))?;
+                    out.append(PyTuple::new(py, [m?.unbind(), s_float.unbind()])?)?;
+                }
+            }
+            Ok(out.into_any().unbind())
+        }
+        DecodeZrevrangebyscoreWithScores => {
+            use pyo3::types::{PyList, PyTuple};
+            let bound = val.bind(py);
+            let out = PyList::empty(py);
+            let float_cls = py.import("builtins")?.getattr("float")?;
+            let mut iter = bound.try_iter()?;
+            while let (Some(m), Some(s)) = (iter.next(), iter.next()) {
+                let s_float = float_cls.call1((s?,))?;
+                out.append(PyTuple::new(py, [m?.unbind(), s_float.unbind()])?)?;
+            }
+            Ok(out.into_any().unbind())
+        }
+        DecodeXinfoStream => crate::adapter::parse_xinfo_pairs(py, val.bind(py)),
+        DecodeXinfoPairsList => crate::adapter::parse_xinfo_pairs_list(py, val.bind(py)),
+        DecodeXpendingSummary => crate::adapter::decode_xpending_summary(py, val.bind(py)),
+        DecodeXpendingRange => crate::adapter::decode_xpending_range(py, val.bind(py)),
+        SscanCursorToSet => {
+            use pyo3::types::PyTuple;
+            let bound = val.bind(py);
+            let cursor = bound.get_item(0)?;
+            let members = bound.get_item(1)?;
+            let set_cls = py.import("builtins")?.getattr("set")?;
+            let py_set = set_cls.call1((members,))?;
+            Ok(PyTuple::new(py, [cursor.unbind(), py_set.unbind()])?
+                .into_any()
+                .unbind())
+        }
+        SetWithFlagsGet => {
+            // RawResult::Value carrying redis::Value. After conversion the
+            // raw is `None` (Nil), `bytes` (BulkString), `True`/`""` (Okay),
+            // etc. For SET ... GET, we want None or the prior value.
+            let bound = val.bind(py);
+            if bound.is_none() {
+                Ok(py.None())
+            } else if bound.is_instance_of::<pyo3::types::PyBytes>() {
+                Ok(val)
+            } else {
+                // Okay/SimpleString → prior call delivered the OK marker
+                // but no value. Treat as None for the GET contract.
+                Ok(py.None())
+            }
+        }
+        SetWithFlagsBool => {
+            // Without GET: Okay → True (or non-Nil SimpleString → truthy
+            // bytes). NX/XX rejection delivers Nil → None → falsy.
+            let bound = val.bind(py);
+            let truthy = bound.is_truthy()?;
+            Ok(truthy.into_pyobject(py)?.to_owned().into_any().unbind())
+        }
+    }
 }
 
 /// Helper: raise asyncio.CancelledError.
@@ -393,8 +692,12 @@ impl RedisRsAwaitable {
             let maybe = cb.result_slot.lock().unwrap().take();
             if let Some(raw_result) = maybe {
                 this.cb = None;
+                let transform = this.transform;
                 return match raw_result {
-                    Ok(raw) => match raw.into_py(py) {
+                    Ok(raw) => match raw
+                        .into_py(py)
+                        .and_then(|v| apply_await_transform(transform, py, v))
+                    {
                         Ok(val) => deliver_value(&mut this, py, val),
                         Err(e) => deliver_error(&mut this, py, e),
                     },
@@ -412,7 +715,11 @@ impl RedisRsAwaitable {
             match rx.try_recv() {
                 Ok(raw) => {
                     this.rx = None;
-                    return match raw.into_py(py) {
+                    let transform = this.transform;
+                    return match raw
+                        .into_py(py)
+                        .and_then(|v| apply_await_transform(transform, py, v))
+                    {
                         Ok(val) => deliver_value(&mut this, py, val),
                         Err(e) => deliver_error(&mut this, py, e),
                     };
@@ -593,11 +900,36 @@ impl RedisRsAwaitable {
 
 impl RedisRsAwaitable {
     pub fn new(rx: oneshot::Receiver<RawResult>) -> Self {
+        Self::with_transform(rx, AwaitTransform::None)
+    }
+
+    pub fn with_transform(rx: oneshot::Receiver<RawResult>, transform: AwaitTransform) -> Self {
         RedisRsAwaitable {
             rx: Some(rx),
+            transform,
             value: None,
             error: None,
             resolved: false,
+            cancelled: false,
+            _asyncio_future_blocking: false,
+            polls: 0,
+            cb: None,
+        }
+    }
+
+    /// Awaitable that's already resolved to ``value``. Used by
+    /// empty-args short-circuits (``aset_many`` of an empty mapping,
+    /// ``ahdel`` of zero fields, ...) so the caller's ``await`` resolves
+    /// without a tokio round-trip. The first ``__next__`` poll delivers
+    /// the value via ``StopIteration``, matching the normal awaitable
+    /// path.
+    pub fn ready(value: Py<PyAny>) -> Self {
+        RedisRsAwaitable {
+            rx: None,
+            transform: AwaitTransform::None,
+            value: Some(value),
+            error: None,
+            resolved: true,
             cancelled: false,
             _asyncio_future_blocking: false,
             polls: 0,

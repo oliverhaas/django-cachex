@@ -1,10 +1,10 @@
 # django-cachex-redis-rs
 
-Rust I/O driver for [django-cachex] — built on PyO3 + tokio + [redis-rs].
+Rust adapter for [django-cachex] — built on PyO3 + tokio + [redis-rs].
 
-This is a binary-only companion package that ships the compiled `_driver`
-extension module into the `django_cachex` namespace. Install via the
-`redis-rs` extra on the main package:
+This is a binary-only companion package that ships the compiled
+`_redis_rs` extension module into the `django_cachex.adapters`
+namespace. Install via the `redis-rs` extra on the main package:
 
 ```console
 pip install django-cachex[redis-rs]

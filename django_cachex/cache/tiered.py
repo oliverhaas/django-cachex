@@ -42,8 +42,7 @@ from django_cachex.exceptions import NotSupportedError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
-
-    from django_cachex.types import ExpiryT, KeyT
+    from datetime import timedelta
 
 # Sentinel to distinguish "not in L1" from a stored None
 _L1_MISS = object()
@@ -110,7 +109,7 @@ class TieredCache(BaseCache):
             return min(cap, timeout)
         return timeout
 
-    def _get_l2_ttl(self, key: KeyT, version: int | None = None) -> int | None:
+    def _get_l2_ttl(self, key: str, version: int | None = None) -> int | None:
         """Try to get L2's remaining TTL for a key. Returns None if unsupported."""
         try:
             ttl = self._l2.ttl(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
@@ -118,7 +117,7 @@ class TieredCache(BaseCache):
         except AttributeError, NotSupportedError, TypeError:
             return None
 
-    async def _aget_l2_ttl(self, key: KeyT, version: int | None = None) -> int | None:
+    async def _aget_l2_ttl(self, key: str, version: int | None = None) -> int | None:
         """Try to get L2's remaining TTL for a key asynchronously."""
         try:
             ttl = await self._l2.attl(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
@@ -130,7 +129,7 @@ class TieredCache(BaseCache):
     # Standard Django cache interface
     # =========================================================================
 
-    def get(self, key: KeyT, default: Any = None, version: int | None = None) -> Any:
+    def get(self, key: str, default: Any = None, version: int | None = None) -> Any:
         val = self._l1.get(key, _L1_MISS, version=version)
         if val is not _L1_MISS:
             return val
@@ -141,7 +140,7 @@ class TieredCache(BaseCache):
         self._l1.set(key, val, self._l1_timeout(l2_ttl), version=version)
         return val
 
-    async def aget(self, key: KeyT, default: Any = None, version: int | None = None) -> Any:
+    async def aget(self, key: str, default: Any = None, version: int | None = None) -> Any:
         val = self._l1.get(key, _L1_MISS, version=version)
         if val is not _L1_MISS:
             return val
@@ -154,7 +153,7 @@ class TieredCache(BaseCache):
 
     def set(  # type: ignore[override]
         self,
-        key: KeyT,
+        key: str,
         value: Any,
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
@@ -169,7 +168,7 @@ class TieredCache(BaseCache):
 
     async def aset(  # type: ignore[override]
         self,
-        key: KeyT,
+        key: str,
         value: Any,
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
@@ -182,7 +181,7 @@ class TieredCache(BaseCache):
 
     def add(
         self,
-        key: KeyT,
+        key: str,
         value: Any,
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
@@ -194,7 +193,7 @@ class TieredCache(BaseCache):
 
     async def aadd(
         self,
-        key: KeyT,
+        key: str,
         value: Any,
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
@@ -204,17 +203,17 @@ class TieredCache(BaseCache):
             self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
         return result
 
-    def delete(self, key: KeyT, version: int | None = None) -> bool:
+    def delete(self, key: str, version: int | None = None) -> bool:
         self._l1.delete(key, version=version)
         return self._l2.delete(key, version=version)
 
-    async def adelete(self, key: KeyT, version: int | None = None) -> bool:
+    async def adelete(self, key: str, version: int | None = None) -> bool:
         self._l1.delete(key, version=version)
         return await self._l2.adelete(key, version=version)
 
-    def get_many(self, keys: Iterable[KeyT], version: int | None = None) -> dict[KeyT, Any]:
-        l1_results: dict[KeyT, Any] = {}
-        missed_keys: list[KeyT] = []
+    def get_many(self, keys: Iterable[str], version: int | None = None) -> dict[str, Any]:
+        l1_results: dict[str, Any] = {}
+        missed_keys: list[str] = []
         for key in keys:
             val = self._l1.get(key, _L1_MISS, version=version)
             if val is not _L1_MISS:
@@ -230,9 +229,9 @@ class TieredCache(BaseCache):
         l1_results.update(l2_results)
         return l1_results
 
-    async def aget_many(self, keys: Iterable[KeyT], version: int | None = None) -> dict[KeyT, Any]:
-        l1_results: dict[KeyT, Any] = {}
-        missed_keys: list[KeyT] = []
+    async def aget_many(self, keys: Iterable[str], version: int | None = None) -> dict[str, Any]:
+        l1_results: dict[str, Any] = {}
+        missed_keys: list[str] = []
         for key in keys:
             val = self._l1.get(key, _L1_MISS, version=version)
             if val is not _L1_MISS:
@@ -250,7 +249,7 @@ class TieredCache(BaseCache):
 
     def set_many(
         self,
-        data: dict[KeyT, Any],
+        data: dict[str, Any],
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
     ) -> list[Any]:
@@ -262,7 +261,7 @@ class TieredCache(BaseCache):
 
     async def aset_many(
         self,
-        data: dict[KeyT, Any],
+        data: dict[str, Any],
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
     ) -> list[Any]:
@@ -272,51 +271,51 @@ class TieredCache(BaseCache):
             self._l1.set(key, value, l1_timeout, version=version)
         return result
 
-    def delete_many(self, keys: Iterable[KeyT], version: int | None = None) -> None:
+    def delete_many(self, keys: Iterable[str], version: int | None = None) -> None:
         keys = list(keys)
         for key in keys:
             self._l1.delete(key, version=version)
         self._l2.delete_many(keys, version=version)
 
-    async def adelete_many(self, keys: Iterable[KeyT], version: int | None = None) -> None:
+    async def adelete_many(self, keys: Iterable[str], version: int | None = None) -> None:
         keys = list(keys)
         for key in keys:
             self._l1.delete(key, version=version)
         await self._l2.adelete_many(keys, version=version)
 
-    def has_key(self, key: KeyT, version: int | None = None) -> bool:
+    def has_key(self, key: str, version: int | None = None) -> bool:
         if self._l1.has_key(key, version=version):
             return True
         return self._l2.has_key(key, version=version)
 
-    async def ahas_key(self, key: KeyT, version: int | None = None) -> bool:
+    async def ahas_key(self, key: str, version: int | None = None) -> bool:
         if self._l1.has_key(key, version=version):
             return True
         return await self._l2.ahas_key(key, version=version)
 
-    def incr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
+    def incr(self, key: str, delta: int = 1, version: int | None = None) -> int:
         self._l1.delete(key, version=version)
         return self._l2.incr(key, delta, version=version)
 
-    async def aincr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
+    async def aincr(self, key: str, delta: int = 1, version: int | None = None) -> int:
         self._l1.delete(key, version=version)
         return await self._l2.aincr(key, delta, version=version)
 
-    def decr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
+    def decr(self, key: str, delta: int = 1, version: int | None = None) -> int:
         self._l1.delete(key, version=version)
         return self._l2.decr(key, delta, version=version)
 
-    async def adecr(self, key: KeyT, delta: int = 1, version: int | None = None) -> int:
+    async def adecr(self, key: str, delta: int = 1, version: int | None = None) -> int:
         self._l1.delete(key, version=version)
         return await self._l2.adecr(key, delta, version=version)
 
-    def touch(self, key: KeyT, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
+    def touch(self, key: str, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
         result = self._l2.touch(key, timeout, version=version)
         if result:
             self._l1.touch(key, self._l1_timeout_for_set(timeout), version=version)
         return result
 
-    async def atouch(self, key: KeyT, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
+    async def atouch(self, key: str, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
         result = await self._l2.atouch(key, timeout, version=version)
         if result:
             self._l1.touch(key, self._l1_timeout_for_set(timeout), version=version)
@@ -384,22 +383,22 @@ class TieredCache(BaseCache):
             key_type=key_type,
         )
 
-    def ttl(self, key: KeyT, version: int | None = None) -> int:
+    def ttl(self, key: str, version: int | None = None) -> int:
         return self._delegate("ttl", key, version=version)
 
-    def pttl(self, key: KeyT, version: int | None = None) -> int:
+    def pttl(self, key: str, version: int | None = None) -> int:
         return self._delegate("pttl", key, version=version)
 
-    def type(self, key: KeyT, version: int | None = None) -> str:
+    def type(self, key: str, version: int | None = None) -> str:
         return self._delegate("type", key, version=version)
 
     def info(self, section: str | None = None) -> dict[str, Any]:
         return self._delegate("info", section=section)
 
-    def persist(self, key: KeyT, version: int | None = None) -> bool:
+    def persist(self, key: str, version: int | None = None) -> bool:
         return self._delegate("persist", key, version=version)
 
-    def expire(self, key: KeyT, timeout: ExpiryT, version: int | None = None) -> bool:
+    def expire(self, key: str, timeout: int | timedelta, version: int | None = None) -> bool:
         self._l1.delete(key, version=version)
         return self._delegate("expire", key, timeout, version=version)
 

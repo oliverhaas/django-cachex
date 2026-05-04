@@ -1,4 +1,4 @@
-"""Distributed lock backed by the Rust driver's ``lock_*`` primitives.
+"""Distributed lock backed by ``RedisRsAdapter``'s ``lock_*`` primitives.
 
 A token-scoped Redis lock: SET NX with a TTL plus Lua-script release/extend
 that compare the stored token before mutating. Cluster mode is rejected
@@ -14,7 +14,10 @@ from typing import TYPE_CHECKING, Any, Self
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from django_cachex._driver import RedisRsDriver
+    # The wrapper class mixes in ``RespAdapterProtocol``, so type checkers
+    # see the full command surface (``has_key``/``get``/``aget``/etc.)
+    # plus the lock/pipeline extras spelled out in the Rust pyi.
+    from django_cachex.adapters.redis_rs import RedisRsAdapter
 
 
 class LockError(Exception):
@@ -26,7 +29,7 @@ class LockNotOwnedError(LockError):
 
 
 class ValkeyLock:
-    """Token-scoped distributed lock backed by the Rust driver's lock primitives.
+    """Token-scoped distributed lock backed by ``RedisRsAdapter`` lock primitives.
 
     With ``thread_local=True`` (default) the active token is kept per thread
     so one instance can be shared across threads without cross-release.
@@ -34,7 +37,7 @@ class ValkeyLock:
 
     def __init__(
         self,
-        driver: RedisRsDriver,
+        adapter: RedisRsAdapter,
         name: str,
         timeout: float | None = None,
         sleep: float = 0.1,
@@ -46,7 +49,7 @@ class ValkeyLock:
         if sleep <= 0:
             msg = "sleep must be positive"
             raise ValueError(msg)
-        self._driver = driver
+        self._adapter = adapter
         self.name = name
         self.timeout = timeout
         self.sleep = sleep
@@ -90,24 +93,25 @@ class ValkeyLock:
 
     def locked(self) -> bool:
         """Return True if the lock key exists. Doesn't check ownership."""
-        return self._driver.exists(self.name)
+        return self._adapter.has_key(self.name)
 
     async def alocked(self) -> bool:
-        return await self._driver.aexists(self.name)
+        return await self._adapter.ahas_key(self.name)
 
     def owned(self) -> bool:
         """Return True if this client holds the lock (token still matches)."""
         token = self.token
         if token is None:
             return False
-        stored = self._driver.get(self.name)
+        # Bypass stampede prevention so the lock token check sees the raw stored bytes.
+        stored = self._adapter.get(self.name, stampede_prevention=False)
         return stored == token
 
     async def aowned(self) -> bool:
         token = self.token
         if token is None:
             return False
-        stored = await self._driver.aget(self.name)
+        stored = await self._adapter.aget(self.name, stampede_prevention=False)
         return stored == token
 
     # ----------------------------------------------------------------- sync
@@ -129,7 +133,7 @@ class ValkeyLock:
 
         deadline = time.monotonic() + blocking_timeout if blocking_timeout is not None else None
         while True:
-            if self._driver.lock_acquire(self.name, new_token.decode("ascii"), ttl_ms):
+            if self._adapter.lock_acquire(self.name, new_token.decode("ascii"), ttl_ms):
                 self.token = new_token
                 return True
             if not blocking:
@@ -143,7 +147,7 @@ class ValkeyLock:
         if token is None:
             msg = "Cannot release an unlocked lock"
             raise LockError(msg)
-        result = self._driver.lock_release(self.name, token.decode("ascii"))
+        result = self._adapter.lock_release(self.name, token.decode("ascii"))
         self.token = None
         if result == 0:
             msg = "Cannot release a lock that's no longer owned"
@@ -151,17 +155,17 @@ class ValkeyLock:
 
     def extend(self, additional_time: float, *, replace_ttl: bool = False) -> bool:
         if replace_ttl:
-            # The driver's lock_extend script always adds to the existing TTL
-            # rather than replacing it; flag the divergence loudly instead of
+            # The Lua extend script always adds to the existing TTL rather
+            # than replacing it; flag the divergence loudly instead of
             # silently doing the wrong thing.
-            msg = "ValkeyLock.extend(replace_ttl=True) is not supported by the Rust driver"
+            msg = "ValkeyLock.extend(replace_ttl=True) is not supported"
             raise NotImplementedError(msg)
         token = self.token
         if token is None:
             msg = "Cannot extend an unlocked lock"
             raise LockError(msg)
         additional_ms = max(1, int(additional_time * 1000))
-        result = self._driver.lock_extend(self.name, token.decode("ascii"), additional_ms)
+        result = self._adapter.lock_extend(self.name, token.decode("ascii"), additional_ms)
         if result == 0:
             msg = "Cannot extend a lock that's no longer owned"
             raise LockNotOwnedError(msg)
@@ -186,7 +190,7 @@ class ValkeyLock:
 
         deadline = time.monotonic() + blocking_timeout if blocking_timeout is not None else None
         while True:
-            ok = await self._driver.alock_acquire(self.name, new_token.decode("ascii"), ttl_ms)
+            ok = await self._adapter.alock_acquire(self.name, new_token.decode("ascii"), ttl_ms)
             if ok:
                 self.token = new_token
                 return True
@@ -201,7 +205,7 @@ class ValkeyLock:
         if token is None:
             msg = "Cannot release an unlocked lock"
             raise LockError(msg)
-        result = await self._driver.alock_release(self.name, token.decode("ascii"))
+        result = await self._adapter.alock_release(self.name, token.decode("ascii"))
         self.token = None
         if result == 0:
             msg = "Cannot release a lock that's no longer owned"
@@ -209,14 +213,14 @@ class ValkeyLock:
 
     async def aextend(self, additional_time: float, *, replace_ttl: bool = False) -> bool:
         if replace_ttl:
-            msg = "ValkeyLock.aextend(replace_ttl=True) is not supported by the Rust driver"
+            msg = "ValkeyLock.aextend(replace_ttl=True) is not supported"
             raise NotImplementedError(msg)
         token = self.token
         if token is None:
             msg = "Cannot extend an unlocked lock"
             raise LockError(msg)
         additional_ms = max(1, int(additional_time * 1000))
-        result = await self._driver.alock_extend(self.name, token.decode("ascii"), additional_ms)
+        result = await self._adapter.alock_extend(self.name, token.decode("ascii"), additional_ms)
         if result == 0:
             msg = "Cannot extend a lock that's no longer owned"
             raise LockNotOwnedError(msg)
