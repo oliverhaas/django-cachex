@@ -23,9 +23,9 @@ class TestSentinelSetup:
     def test_sentinel_containers_start(
         self,
         sentinel_container: SentinelContainerInfo,
-        redis_images: tuple[str, str],
+        resp_images: tuple[str, str],
     ):
-        _image, client_library = redis_images
+        _image, client_library = resp_images
         assert sentinel_container.host
         assert sentinel_container.port > 0
         assert sentinel_container.client_library == client_library
@@ -33,9 +33,9 @@ class TestSentinelSetup:
     def test_sentinel_basic_operations(
         self,
         sentinel_container: SentinelContainerInfo,
-        redis_images: tuple[str, str],
+        resp_images: tuple[str, str],
     ):
-        image, client_library = redis_images
+        image, client_library = resp_images
 
         # Use appropriate backend based on client library
         if client_library == "valkey":
@@ -85,9 +85,9 @@ class TestSentinelSetup:
     def test_sentinel_incr_decr(
         self,
         sentinel_container: SentinelContainerInfo,
-        redis_images: tuple[str, str],
+        resp_images: tuple[str, str],
     ):
-        _image, client_library = redis_images
+        _image, client_library = resp_images
 
         if client_library == "valkey":
             backend = "django_cachex.cache.ValkeySentinelCache"
@@ -137,9 +137,9 @@ class TestSentinelAsync:
     async def test_async_operations_with_sentinel(
         self,
         sentinel_container: SentinelContainerInfo,
-        redis_images: tuple[str, str],
+        resp_images: tuple[str, str],
     ):
-        image, client_library = redis_images
+        image, client_library = resp_images
 
         if client_library == "valkey":
             backend = "django_cachex.cache.ValkeySentinelCache"

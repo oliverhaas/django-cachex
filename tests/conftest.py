@@ -8,13 +8,13 @@ from tests.fixtures import (
     cluster_container,
     cluster_container_factory,
     compressors,
-    driver,
     native_parser,
     redis_container,
     redis_container_factory,
-    redis_images,
     replica_container_factory,
     replica_containers,
+    resp_adapter,
+    resp_images,
     sentinel_container,
     sentinel_container_factory,
     sentinel_mode,
@@ -24,9 +24,9 @@ from tests.fixtures import (
 )
 
 # Tests that probe redis-py-specific internals (connection pools, parser
-# class, _lib wiring). These are inherently inapplicable to the Rust driver
-# which doesn't expose those concepts.
-_PY_INTERNALS_TEST_FILES: frozenset[str] = frozenset(
+# class, _lib wiring). They hardcode ``redis.Redis``, ``redis.ConnectionPool``,
+# etc. — so they only run for the redis-py adapter.
+_REDIS_PY_INTERNALS_TEST_FILES: frozenset[str] = frozenset(
     {
         "test_internals.py",
         "test_client.py",
@@ -36,15 +36,18 @@ _PY_INTERNALS_TEST_FILES: frozenset[str] = frozenset(
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    skip_rust_internals = pytest.mark.skip(
-        reason="redis-py internals (pools, parsers) don't apply to the Rust driver",
+    skip_non_redis_py = pytest.mark.skip(
+        reason="redis-py-specific internals (pools, parsers) don't apply to this adapter",
     )
     for item in items:
         callspec = getattr(item, "callspec", None)
-        if callspec is None or callspec.params.get("driver") != "redis-rs":
+        if callspec is None:
             continue
-        if item.path.name in _PY_INTERNALS_TEST_FILES:
-            item.add_marker(skip_rust_internals)
+        adapter = callspec.params.get("resp_adapter")
+        if adapter is None or adapter == "redis-py":
+            continue
+        if item.path.name in _REDIS_PY_INTERNALS_TEST_FILES:
+            item.add_marker(skip_non_redis_py)
 
 
 # Re-export fixtures so pytest can discover them
@@ -54,13 +57,13 @@ __all__ = [
     "cluster_container",
     "cluster_container_factory",
     "compressors",
-    "driver",
     "native_parser",
     "redis_container",
     "redis_container_factory",
-    "redis_images",
     "replica_container_factory",
     "replica_containers",
+    "resp_adapter",
+    "resp_images",
     "sentinel_container",
     "sentinel_container_factory",
     "sentinel_mode",

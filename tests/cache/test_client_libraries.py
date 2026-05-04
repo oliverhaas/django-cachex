@@ -9,13 +9,13 @@ if TYPE_CHECKING:
 class TestClientLibraries:
     """Test that different client libraries work correctly."""
 
-    def test_basic_set_get_with_all_images(self, cache: RespCache, redis_images: tuple[str, str]):
+    def test_basic_set_get_with_all_images(self, cache: RespCache, resp_images: tuple[str, str]):
         """Verify basic operations work with all Redis images and their coupled client libraries.
 
-        By including `redis_images` as a direct parameter, pytest will parametrize
+        By including `resp_images` as a direct parameter, pytest will parametrize
         the test across all configured images (redis, redis-stack, valkey).
         """
-        image, client_library = redis_images
+        image, client_library = resp_images
 
         # Verify we're using the expected client library
         cache.set("test_key", "hello")
@@ -30,7 +30,7 @@ class TestClientLibraries:
     def test_with_native_parser(
         self,
         cache: RespCache,
-        redis_images: tuple[str, str],
+        resp_images: tuple[str, str],
         native_parser: bool,
     ):
         """Verify native parser (hiredis/libvalkey) works correctly.
@@ -38,7 +38,7 @@ class TestClientLibraries:
         By including `native_parser` as a direct parameter, pytest will parametrize
         the test across both parser values (True/False).
         """
-        image, client_library = redis_images
+        image, client_library = resp_images
         parser_type = "native" if native_parser else "python"
 
         # Basic operations should work regardless of parser

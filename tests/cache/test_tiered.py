@@ -385,7 +385,9 @@ class TestTieredCacheConfig:
     def test_l1_timeout_fallback_to_l1_default(self, redis_container: RedisContainerInfo):
         options = _get_client_library_options(redis_container.client_library)
         location = f"redis://{redis_container.host}:{redis_container.port}?db=1"
-        backend_class = BACKENDS[("default", redis_container.client_library, "py")]
+        # Pick the redis-py / valkey-py adapter matching the container's library.
+        py_adapter = "redis-py" if redis_container.client_library == "redis" else "valkey-py"
+        backend_class = BACKENDS[("default", py_adapter)]
 
         config = {
             "l1": {

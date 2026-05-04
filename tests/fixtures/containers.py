@@ -13,8 +13,9 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
 
 # Available Redis-compatible images with their corresponding client library
-# Format: (image, client_library) where client_library is "redis" or "valkey"
-REDIS_IMAGES = [
+# Format: (image, client_library) where client_library is "redis" or "valkey".
+# Used by the opt-in ``resp_images`` fixture for cross-image tests.
+RESP_IMAGES = [
     ("redis:latest", "redis"),
     ("redis/redis-stack-server:latest", "redis"),
     ("valkey/valkey:latest", "valkey"),
@@ -221,9 +222,9 @@ sentinel parallel-syncs mymaster 1
 ContainerFactory = Callable[[str], tuple[str, int]]
 
 
-@pytest.fixture(params=REDIS_IMAGES, ids=lambda x: f"{x[0].split('/')[0]}-{x[1]}")
-def redis_images(request) -> tuple[str, str]:
-    """Parametrized Redis image fixture. Request this to test all Redis-compatible images.
+@pytest.fixture(params=RESP_IMAGES, ids=lambda x: f"{x[0].split('/')[0]}-{x[1]}")
+def resp_images(request) -> tuple[str, str]:
+    """Parametrized RESP-server image fixture for opt-in cross-image tests.
 
     Returns:
         Tuple of (image_name, client_library) where client_library is "redis" or "valkey".
@@ -289,24 +290,32 @@ class RedisContainerInfo(NamedTuple):
     client_library: str  # "redis" or "valkey"
 
 
+def _resolve_image(request: pytest.FixtureRequest) -> tuple[str, str]:
+    """Resolve (image, client_library) from the active fixtures.
+
+    Resolution order:
+    1. ``resp_images`` opt-in (parametrized image set) — wins if requested.
+    2. ``resp_adapter`` — each adapter has a single home image (Valkey for
+       everything except redis-py).
+    3. Default image.
+    """
+    if "resp_images" in request.fixturenames:
+        return request.getfixturevalue("resp_images")
+    if "resp_adapter" in request.fixturenames:
+        from tests.fixtures.cache import ADAPTER_IMAGES
+
+        return ADAPTER_IMAGES[request.getfixturevalue("resp_adapter")]
+    return DEFAULT_REDIS_IMAGE, DEFAULT_CLIENT_LIBRARY
+
+
 @pytest.fixture
 def redis_container(
     redis_container_factory: tuple[ContainerFactory, dict[str, ContainerInfo]],
     request: pytest.FixtureRequest,
 ) -> RedisContainerInfo:
-    """Get a Redis container, using redis_images if opted in.
-
-    Returns:
-        RedisContainerInfo with host, port, and client_library.
-
-    """
+    """Get a Redis/Valkey container, picking the image from ``resp_adapter`` or ``resp_images``."""
     factory, _ = redis_container_factory
-    if "redis_images" in request.fixturenames:
-        image, client_library = request.getfixturevalue("redis_images")
-    else:
-        image = DEFAULT_REDIS_IMAGE
-        client_library = DEFAULT_CLIENT_LIBRARY
-
+    image, client_library = _resolve_image(request)
     host, port = factory(image)
     environ["REDIS_HOST"] = host
     environ["REDIS_PORT"] = str(port)
@@ -327,18 +336,8 @@ def sentinel_container(
     sentinel_container_factory: ContainerFactory,
     request: pytest.FixtureRequest,
 ) -> SentinelContainerInfo:
-    """Get a Sentinel container, using redis_images if opted in.
-
-    Returns:
-        SentinelContainerInfo with host, port, and client_library.
-
-    """
-    if "redis_images" in request.fixturenames:
-        image, client_library = request.getfixturevalue("redis_images")
-    else:
-        image = DEFAULT_REDIS_IMAGE
-        client_library = DEFAULT_CLIENT_LIBRARY
-
+    """Get a Sentinel container, picking the image from ``resp_adapter`` or ``resp_images``."""
+    image, client_library = _resolve_image(request)
     host, port = sentinel_container_factory(image)
     environ["SENTINEL_HOST"] = host
     environ["SENTINEL_PORT"] = str(port)

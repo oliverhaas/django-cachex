@@ -28,7 +28,8 @@ def _build_tiered_config(host: str, port: int, client_library: str = "redis") ->
     """Build CACHES config with l1 (LocMemCache), l2 (Redis/Valkey), and tiered."""
     options = _get_client_library_options(client_library)
     location = f"redis://{host}:{port}?db=1"
-    backend_class = BACKENDS[("default", client_library, "py")]
+    py_adapter = "redis-py" if client_library == "redis" else "valkey-py"
+    backend_class = BACKENDS[("default", py_adapter)]
 
     return {
         "l1": {

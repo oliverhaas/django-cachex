@@ -61,16 +61,17 @@ class TestLockRelease:
 
     def test_double_release_raises(self, cache: RespCache):
         from redis.exceptions import LockError as RedisLockError
+        from valkey.exceptions import LockError as ValkeyLockError
 
         from django_cachex.lock import LockError
 
         lock = cache.lock("dbl_release_resource", timeout=5)
         lock.acquire()
         lock.release()
-        # The py driver raises ``redis.exceptions.LockError`` while the Rust
-        # driver raises ``django_cachex.lock.LockError`` — both fulfill the
+        # redis-py / valkey-py raise their library's ``LockError``; the Rust
+        # adapter raises ``django_cachex.lock.LockError``. All fulfill the
         # "double release is loud" contract.
-        with pytest.raises((LockError, RedisLockError)):
+        with pytest.raises((LockError, RedisLockError, ValkeyLockError)):
             lock.release()
 
 

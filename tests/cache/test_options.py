@@ -64,6 +64,7 @@ class TestDjangoRespCacheEscapePrefix:
 
 def test_custom_key_function(cache: RespCache, settings):
     from redis.cluster import RedisCluster
+    from valkey.cluster import ValkeyCluster
 
     caches_setting = copy.deepcopy(settings.CACHES)
     caches_setting["default"]["KEY_FUNCTION"] = "tests.cache.test_options.make_key"
@@ -81,10 +82,11 @@ def test_custom_key_function(cache: RespCache, settings):
     # ensure our custom function was actually called
     client = cache.get_client(write=False)
     if isinstance(client, RedisCluster):
-        # In cluster mode, query all primary nodes
         raw_keys = client.keys("*", target_nodes=RedisCluster.PRIMARIES)
+    elif isinstance(client, ValkeyCluster):
+        raw_keys = client.keys("*", target_nodes=ValkeyCluster.PRIMARIES)
     else:
         raw_keys = client.keys("*")
-    # redis-py returns bytes; the Rust driver returns str. Normalize.
+    # redis-py / valkey-py return bytes; the Rust adapter returns str. Normalize.
     decoded = {k.decode() if isinstance(k, bytes) else k for k in raw_keys}  # type: ignore[union-attr]
     assert decoded == {"#1#foo-bc", "#1#foo-bb"}

@@ -11,7 +11,12 @@ from django.test import override_settings
 
 from django_cachex.cache.stream import StreamCache
 from django_cachex.exceptions import NotSupportedError
-from tests.fixtures.cache import BACKENDS, _get_client_library_options
+from tests.fixtures.cache import (
+    ADAPTER_IMAGES,
+    BACKENDS,
+    _adapter_library_available,
+    _get_client_library_options,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -24,15 +29,17 @@ if TYPE_CHECKING:
 def _build_sync_config(
     host: str,
     port: int,
-    client_library: str = "redis",
-    driver: str = "py",
+    resp_adapter: str = "redis-py",
     stream_key: str | None = None,
     max_entries: int = 1000,
 ) -> dict:
     """Build CACHES config with redis transport + StreamCache."""
-    options = _get_client_library_options(client_library)
+    if resp_adapter in {"redis-py", "valkey-py"}:
+        options = _get_client_library_options(ADAPTER_IMAGES[resp_adapter][1])
+    else:
+        options = {}
     location = f"redis://{host}:{port}?db=13"
-    backend_class = BACKENDS[("default", client_library, driver)]
+    backend_class = BACKENDS[("default", resp_adapter)]
     sk = stream_key or f"test:sync:{uuid.uuid4().hex[:8]}"
 
     return {
@@ -62,17 +69,14 @@ def _cleanup_globals(stream_key: str) -> None:
 
 
 @pytest.fixture
-def stream_cache(redis_container: RedisContainerInfo, driver: str) -> Iterator[BaseCache]:
-    """Single StreamCache instance for basic operations.
-
-    Parametrized over the transport driver (``py`` and ``rust``) via the
-    shared ``driver`` fixture.
-    """
+def stream_cache(redis_container: RedisContainerInfo, resp_adapter: str) -> Iterator[BaseCache]:
+    """Single StreamCache instance for basic operations, parametrized over ``resp_adapter``."""
+    if not _adapter_library_available(resp_adapter):
+        pytest.skip(f"{resp_adapter} library not installed")
     config = _build_sync_config(
         redis_container.host,
         redis_container.port,
-        client_library=redis_container.client_library,
-        driver=driver,
+        resp_adapter=resp_adapter,
     )
     stream_key = config["default"]["OPTIONS"]["STREAM_KEY"]
 
@@ -85,17 +89,16 @@ def stream_cache(redis_container: RedisContainerInfo, driver: str) -> Iterator[B
 
 
 @pytest.fixture
-def stream_pair(redis_container: RedisContainerInfo, driver: str) -> Iterator[tuple[StreamCache, StreamCache]]:
-    """Two StreamCache instances sharing one stream (simulates two pods).
-
-    Uses separate cache aliases with the same STREAM_KEY but different
-    _STORAGE_KEY values so each pod has its own local dict (simulating
-    separate processes sharing one Redis Stream). Parametrized over the
-    transport driver.
-    """
-    options = _get_client_library_options(redis_container.client_library)
+def stream_pair(redis_container: RedisContainerInfo, resp_adapter: str) -> Iterator[tuple[StreamCache, StreamCache]]:
+    """Two StreamCache instances sharing one stream (simulates two pods)."""
+    if not _adapter_library_available(resp_adapter):
+        pytest.skip(f"{resp_adapter} library not installed")
+    if resp_adapter in {"redis-py", "valkey-py"}:
+        options = _get_client_library_options(ADAPTER_IMAGES[resp_adapter][1])
+    else:
+        options = {}
     location = f"redis://{redis_container.host}:{redis_container.port}?db=13"
-    backend_class = BACKENDS[("default", redis_container.client_library, driver)]
+    backend_class = BACKENDS[("default", resp_adapter)]
     stream_key = f"test:sync-pair:{uuid.uuid4().hex[:8]}"
     storage_key_1 = f"{stream_key}:pod1"
     storage_key_2 = f"{stream_key}:pod2"
@@ -153,12 +156,11 @@ class TestSyncConfig:
         with pytest.raises(ImproperlyConfigured, match="TRANSPORT"):
             StreamCache("", {"OPTIONS": {}})
 
-    def test_default_stream_key(self, redis_container: RedisContainerInfo, driver: str):
+    def test_default_stream_key(self, redis_container: RedisContainerInfo, resp_adapter: str):
         config = _build_sync_config(
             redis_container.host,
             redis_container.port,
-            client_library=redis_container.client_library,
-            driver=driver,
+            resp_adapter=resp_adapter,
         )
         # Remove STREAM_KEY to test default
         del config["default"]["OPTIONS"]["STREAM_KEY"]
@@ -433,12 +435,11 @@ class TestSyncCrossInstance:
 
 
 class TestSyncCull:
-    def test_cull_evicts_when_full(self, redis_container: RedisContainerInfo, driver: str):
+    def test_cull_evicts_when_full(self, redis_container: RedisContainerInfo, resp_adapter: str):
         config = _build_sync_config(
             redis_container.host,
             redis_container.port,
-            client_library=redis_container.client_library,
-            driver=driver,
+            resp_adapter=resp_adapter,
             max_entries=10,
         )
         stream_key = config["default"]["OPTIONS"]["STREAM_KEY"]
@@ -527,15 +528,20 @@ class TestSyncAdmin:
 
 
 class TestSyncReplay:
-    def test_replay_warms_cache_on_startup(self, redis_container: RedisContainerInfo, driver: str):
+    def test_replay_warms_cache_on_startup(self, redis_container: RedisContainerInfo, resp_adapter: str):
         """A new StreamCache with REPLAY > 0 picks up entries from the stream."""
+        if not _adapter_library_available(resp_adapter):
+            pytest.skip(f"{resp_adapter} library not installed")
         stream_key = f"test:replay:{uuid.uuid4().hex[:8]}"
         storage_key_1 = f"{stream_key}:producer"
         storage_key_2 = f"{stream_key}:consumer"
 
-        options = _get_client_library_options(redis_container.client_library)
+        if resp_adapter in {"redis-py", "valkey-py"}:
+            options = _get_client_library_options(ADAPTER_IMAGES[resp_adapter][1])
+        else:
+            options = {}
         location = f"redis://{redis_container.host}:{redis_container.port}?db=13"
-        backend_class = BACKENDS[("default", redis_container.client_library, driver)]
+        backend_class = BACKENDS[("default", resp_adapter)]
 
         config = {
             "transport": {
@@ -585,15 +591,18 @@ class TestSyncReplay:
         _cleanup_globals(storage_key_1)
         _cleanup_globals(storage_key_2)
 
-    def test_replay_zero_starts_empty(self, redis_container: RedisContainerInfo, driver: str):
+    def test_replay_zero_starts_empty(self, redis_container: RedisContainerInfo, resp_adapter: str):
         """With REPLAY=0 (default), a new pod starts with an empty cache."""
         stream_key = f"test:noreplay:{uuid.uuid4().hex[:8]}"
         storage_key_1 = f"{stream_key}:producer"
         storage_key_2 = f"{stream_key}:consumer"
 
-        options = _get_client_library_options(redis_container.client_library)
+        if resp_adapter in {"redis-py", "valkey-py"}:
+            options = _get_client_library_options(ADAPTER_IMAGES[resp_adapter][1])
+        else:
+            options = {}
         location = f"redis://{redis_container.host}:{redis_container.port}?db=13"
-        backend_class = BACKENDS[("default", redis_container.client_library, driver)]
+        backend_class = BACKENDS[("default", resp_adapter)]
 
         config = {
             "transport": {
@@ -640,12 +649,11 @@ class TestSyncReplay:
 
 
 class TestSyncShutdown:
-    def test_shutdown_stops_consumer(self, redis_container: RedisContainerInfo, driver: str):
+    def test_shutdown_stops_consumer(self, redis_container: RedisContainerInfo, resp_adapter: str):
         config = _build_sync_config(
             redis_container.host,
             redis_container.port,
-            client_library=redis_container.client_library,
-            driver=driver,
+            resp_adapter=resp_adapter,
         )
         stream_key = config["default"]["OPTIONS"]["STREAM_KEY"]
 

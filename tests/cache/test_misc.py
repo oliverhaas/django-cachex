@@ -11,20 +11,20 @@ if TYPE_CHECKING:
 
 
 class TestScanOperations:
-    def _is_py_cluster(self, client_class: str, sentinel_mode: str | bool, driver: str) -> bool:
-        """redis-py cluster can't combine per-node cursors, so SCAN raises.
-        The Rust driver does scan all nodes itself and returns combined keys.
+    def _is_py_cluster(self, client_class: str, sentinel_mode: str | bool, resp_adapter: str) -> bool:
+        """redis-py / valkey-py cluster can't combine per-node cursors, so SCAN raises.
+        The Rust adapter scans all nodes itself and returns combined keys.
         """
-        return client_class == "cluster" and not sentinel_mode and driver == "py"
+        return client_class == "cluster" and not sentinel_mode and resp_adapter in {"redis-py", "valkey-py"}
 
     def test_scan_returns_keys(
         self,
         cache: RespCache,
         client_class: str,
         sentinel_mode: str | bool,
-        driver: str,
+        resp_adapter: str,
     ):
-        if self._is_py_cluster(client_class, sentinel_mode, driver):
+        if self._is_py_cluster(client_class, sentinel_mode, resp_adapter):
             with pytest.raises(NotSupportedError):
                 cache.scan(pattern="scantest_*")
             return
@@ -45,9 +45,9 @@ class TestScanOperations:
         cache: RespCache,
         client_class: str,
         sentinel_mode: str | bool,
-        driver: str,
+        resp_adapter: str,
     ):
-        if self._is_py_cluster(client_class, sentinel_mode, driver):
+        if self._is_py_cluster(client_class, sentinel_mode, resp_adapter):
             with pytest.raises(NotSupportedError):
                 cache.scan(pattern="nonexistent_pattern_xyz_*")
             return
@@ -105,10 +105,9 @@ class TestAsyncScan:
         cache: RespCache,
         client_class: str,
         sentinel_mode: str | bool,
-        driver: str,
+        resp_adapter: str,
     ):
-        # redis-py cluster can't combine per-node cursors; the Rust driver does.
-        if client_class == "cluster" and not sentinel_mode and driver == "py":
+        if client_class == "cluster" and not sentinel_mode and resp_adapter in {"redis-py", "valkey-py"}:
             with pytest.raises(NotSupportedError):
                 await cache.ascan(pattern="ascantest_*")
             return
@@ -130,9 +129,9 @@ class TestAsyncScan:
         cache: RespCache,
         client_class: str,
         sentinel_mode: str | bool,
-        driver: str,
+        resp_adapter: str,
     ):
-        if client_class == "cluster" and not sentinel_mode and driver == "py":
+        if client_class == "cluster" and not sentinel_mode and resp_adapter in {"redis-py", "valkey-py"}:
             with pytest.raises(NotSupportedError):
                 await cache.ascan(pattern="nonexistent_pattern_xyz_*")
             return
