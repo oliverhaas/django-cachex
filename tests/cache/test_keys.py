@@ -263,6 +263,16 @@ class TestAsyncIterKeys:
         result = [key async for key in cache.aiter_keys("aikeys2_foo*", itersize=2)]
         assert len(result) == 3
 
+    @pytest.mark.asyncio
+    async def test_aiter_keys_async_generator(self, cache: RespCache):
+        cache.set("aikgen_foo1", 1)
+        cache.set("aikgen_foo2", 1)
+        cache.set("aikgen_foo3", 1)
+
+        result = cache.aiter_keys("aikgen_foo*")
+        next_value = await anext(result)
+        assert next_value is not None
+
 
 class TestAsyncDeletePattern:
     """Tests for adelete_pattern() method."""
@@ -282,6 +292,35 @@ class TestAsyncDeletePattern:
     async def test_adelete_pattern_no_match(self, cache: RespCache):
         result = await cache.adelete_pattern("nonexistent_pattern_xyz*")
         assert bool(result) is False
+
+    @pytest.mark.asyncio
+    async def test_adelete_pattern_with_custom_count(self, cache: RespCache):
+        for key in ["afoo-aa", "afoo-ab", "afoo-bb", "afoo-bc"]:
+            cache.set(key, "foo")
+
+        res = await cache.adelete_pattern("*afoo-a*", itersize=2)
+        assert bool(res) is True
+
+        keys = cache.keys("afoo*")
+        assert set(keys) == {"afoo-bb", "afoo-bc"}
+
+    @pytest.mark.asyncio
+    async def test_adelete_pattern_with_settings_default_scan_count(
+        self,
+        patch_itersize_setting,
+        cache: RespCache,
+        settings: SettingsWrapper,
+    ):
+        for key in ["asfoo-aa", "asfoo-ab", "asfoo-bb", "asfoo-bc"]:
+            cache.set(key, "foo")
+
+        assert settings.DJANGO_REDIS_SCAN_ITERSIZE == 30
+
+        res = await cache.adelete_pattern("*asfoo-a*")
+        assert bool(res) is True
+
+        keys = cache.keys("asfoo*")
+        assert set(keys) == {"asfoo-bb", "asfoo-bc"}
 
 
 class TestAsyncRename:
@@ -365,59 +404,3 @@ class TestAsyncRenameTTL:
         ttl = await cache.attl("{aslotttl}:dest")
         assert ttl is not None
         assert ttl > 3500
-
-
-class TestAsyncDeletePatternExtra:
-    """Coverage for itersize / SCAN-count knobs on adelete_pattern."""
-
-    @pytest.mark.asyncio
-    async def test_adelete_pattern_with_custom_count(self, cache: RespCache):
-        for key in ["afoo-aa", "afoo-ab", "afoo-bb", "afoo-bc"]:
-            cache.set(key, "foo")
-
-        res = await cache.adelete_pattern("*afoo-a*", itersize=2)
-        assert bool(res) is True
-
-        keys = cache.keys("afoo*")
-        assert set(keys) == {"afoo-bb", "afoo-bc"}
-
-    @pytest.mark.asyncio
-    async def test_adelete_pattern_with_settings_default_scan_count(
-        self,
-        patch_itersize_setting,
-        cache: RespCache,
-        settings: SettingsWrapper,
-    ):
-        for key in ["asfoo-aa", "asfoo-ab", "asfoo-bb", "asfoo-bc"]:
-            cache.set(key, "foo")
-
-        assert settings.DJANGO_REDIS_SCAN_ITERSIZE == 30
-
-        res = await cache.adelete_pattern("*asfoo-a*")
-        assert bool(res) is True
-
-        keys = cache.keys("asfoo*")
-        assert set(keys) == {"asfoo-bb", "asfoo-bc"}
-
-
-class TestAsyncIterKeysExtra:
-    """Coverage for the async iter_keys generator surface."""
-
-    @pytest.mark.asyncio
-    async def test_aiter_keys_itersize(self, cache: RespCache):
-        cache.set("aiks_foo1", 1)
-        cache.set("aiks_foo2", 1)
-        cache.set("aiks_foo3", 1)
-
-        result = [key async for key in cache.aiter_keys("aiks_foo*", itersize=2)]
-        assert len(result) == 3
-
-    @pytest.mark.asyncio
-    async def test_aiter_keys_async_generator(self, cache: RespCache):
-        cache.set("aikgen_foo1", 1)
-        cache.set("aikgen_foo2", 1)
-        cache.set("aikgen_foo3", 1)
-
-        result = cache.aiter_keys("aikgen_foo*")
-        next_value = await anext(result)
-        assert next_value is not None

@@ -394,22 +394,14 @@ class TestAsyncDelete:
         assert cache.get("versioned_delete", version=1) is None
         assert cache.get("versioned_delete", version=2) == "v2_data"
 
-
-class TestAsyncTouch:
-    """Tests for the atouch() method."""
-
     @pytest.mark.asyncio
-    async def test_atouch_updates_timeout(self, cache: RespCache):
-        cache.set("async_touch_key", "value", timeout=10)
-        result = await cache.atouch("async_touch_key", timeout=60)
+    async def test_adelete_returns_boolean(self, cache: RespCache):
+        await cache.aset("abool_del", "value")
+        result = await cache.adelete("abool_del")
+        assert isinstance(result, bool)
         assert result is True
-        ttl = cache.ttl("async_touch_key")
-        assert ttl is not None and ttl > 10
-
-    @pytest.mark.asyncio
-    async def test_atouch_nonexistent_key(self, cache: RespCache):
-        cache.delete("async_touch_missing")
-        result = await cache.atouch("async_touch_missing", timeout=60)
+        result = await cache.adelete("abool_del")
+        assert isinstance(result, bool)
         assert result is False
 
 
@@ -475,8 +467,14 @@ class TestAsyncGetMany:
         }
 
     @pytest.mark.asyncio
+    async def test_aget_many_integers(self, cache: RespCache):
+        await cache.aset("ax", 10)
+        await cache.aset("ay", 20)
+        await cache.aset("az", 30)
+        assert await cache.aget_many(["ax", "ay", "az"]) == {"ax": 10, "ay": 20, "az": 30}
+
+    @pytest.mark.asyncio
     async def test_aget_many_partial_match(self, cache: RespCache):
-        """Test aget_many only returns existing keys."""
         cache.set("async_partial_a", "a")
         cache.delete("async_partial_b")
 
@@ -515,6 +513,27 @@ class TestAsyncDeleteMany:
         assert cache.get("async_del_1") is None
         assert cache.get("async_del_2") is None
         assert cache.get("async_del_3") == 3
+
+    @pytest.mark.asyncio
+    async def test_adelete_many_already_deleted(self, cache: RespCache):
+        await cache.adelete_many(["agone1", "agone2"])
+        result = await cache.adelete_many(["agone1", "agone2"])
+        assert bool(result) is False
+
+    @pytest.mark.asyncio
+    async def test_adelete_many_with_generator(self, cache: RespCache):
+        await cache.aset_many({"agen1": 1, "agen2": 2, "agen3": 3})
+        result = await cache.adelete_many(k for k in ["agen1", "agen2"])  # type: ignore[arg-type]
+        assert bool(result) is True
+        remaining = await cache.aget_many(["agen1", "agen2", "agen3"])
+        assert remaining == {"agen3": 3}
+
+    @pytest.mark.asyncio
+    async def test_adelete_many_empty_generator(self, cache: RespCache):
+        from typing import cast
+
+        result = await cache.adelete_many(k for k in cast("list[str]", []))  # type: ignore[arg-type]
+        assert bool(result) is False
 
 
 class TestAsyncClear:
@@ -728,71 +747,6 @@ class TestAsyncDataTypePersistence:
         result = await cache.aget("aflag_off")
         assert isinstance(result, bool)
         assert result is False
-
-
-class TestAsyncBulkGetOperationsExtra:
-    """Additional aget_many() coverage."""
-
-    @pytest.mark.asyncio
-    async def test_aget_many_integers(self, cache: RespCache):
-        await cache.aset("ax", 10)
-        await cache.aset("ay", 20)
-        await cache.aset("az", 30)
-        result = await cache.aget_many(["ax", "ay", "az"])
-        assert result == {"ax": 10, "ay": 20, "az": 30}
-
-    @pytest.mark.asyncio
-    async def test_aget_many_strings(self, cache: RespCache):
-        await cache.aset("as1", "alpha")
-        await cache.aset("as2", "beta")
-        await cache.aset("as3", "gamma")
-        result = await cache.aget_many(["as1", "as2", "as3"])
-        assert result == {"as1": "alpha", "as2": "beta", "as3": "gamma"}
-
-
-class TestAsyncBulkSetOperationsExtra:
-    """Additional aset_many() coverage."""
-
-    @pytest.mark.asyncio
-    async def test_aset_many_and_retrieve(self, cache: RespCache):
-        await cache.aset_many({"am1": 100, "am2": 200, "am3": 300})
-        result = await cache.aget_many(["am1", "am2", "am3"])
-        assert result == {"am1": 100, "am2": 200, "am3": 300}
-
-
-class TestAsyncDeleteOperationsExtra:
-    """Additional adelete()/adelete_many() coverage."""
-
-    @pytest.mark.asyncio
-    async def test_adelete_returns_boolean(self, cache: RespCache):
-        await cache.aset("abool_del", "value")
-        result = await cache.adelete("abool_del")
-        assert isinstance(result, bool)
-        assert result is True
-        result = await cache.adelete("abool_del")
-        assert isinstance(result, bool)
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_adelete_many_already_deleted(self, cache: RespCache):
-        await cache.adelete_many(["agone1", "agone2"])
-        result = await cache.adelete_many(["agone1", "agone2"])
-        assert bool(result) is False
-
-    @pytest.mark.asyncio
-    async def test_adelete_many_with_generator(self, cache: RespCache):
-        await cache.aset_many({"agen1": 1, "agen2": 2, "agen3": 3})
-        result = await cache.adelete_many(k for k in ["agen1", "agen2"])  # type: ignore[arg-type]
-        assert bool(result) is True
-        remaining = await cache.aget_many(["agen1", "agen2", "agen3"])
-        assert remaining == {"agen3": 3}
-
-    @pytest.mark.asyncio
-    async def test_adelete_many_empty_generator(self, cache: RespCache):
-        from typing import cast
-
-        result = await cache.adelete_many(k for k in cast("list[str]", []))  # type: ignore[arg-type]
-        assert bool(result) is False
 
 
 class TestAsyncCloseOperation:

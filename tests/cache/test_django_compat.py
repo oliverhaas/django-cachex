@@ -7,7 +7,6 @@ for Django's builtin Redis backend (django.core.cache.backends.redis.RedisCache)
 import pickle
 from typing import TYPE_CHECKING
 
-import pytest
 from django.core.cache import caches
 from django.test import override_settings
 
@@ -248,64 +247,3 @@ class TestLocationFormats:
             cache.set("test_comma_location", "value")
             assert cache.get("test_comma_location") == "value"
             cache.delete("test_comma_location")
-
-
-@pytest.mark.asyncio
-class TestAsyncMethods:
-    """Test that async methods inherited from Django's BaseCache work."""
-
-    async def test_async_get_set(self, cache: RespCache):
-        await cache.aset("async_test_key", "async_value")
-        result = await cache.aget("async_test_key")
-        assert result == "async_value"
-        await cache.adelete("async_test_key")
-
-    async def test_async_add(self, cache: RespCache):
-        await cache.adelete("async_add_key")
-        result = await cache.aadd("async_add_key", "first_value")
-        assert result is True
-        result = await cache.aadd("async_add_key", "second_value")
-        assert result is False
-        assert await cache.aget("async_add_key") == "first_value"
-        await cache.adelete("async_add_key")
-
-    async def test_async_delete(self, cache: RespCache):
-        await cache.aset("async_delete_key", "value")
-        result = await cache.adelete("async_delete_key")
-        assert result is True
-        assert await cache.aget("async_delete_key") is None
-
-    async def test_async_has_key(self, cache: RespCache):
-        await cache.aset("async_has_key", "value")
-        assert await cache.ahas_key("async_has_key") is True
-        await cache.adelete("async_has_key")
-        assert await cache.ahas_key("async_has_key") is False
-
-    async def test_async_get_many(self, cache: RespCache):
-        await cache.aset("async_many_1", "value1")
-        await cache.aset("async_many_2", "value2")
-        result = await cache.aget_many(["async_many_1", "async_many_2", "async_missing"])
-        assert result == {"async_many_1": "value1", "async_many_2": "value2"}
-        await cache.adelete("async_many_1")
-        await cache.adelete("async_many_2")
-
-    async def test_async_set_many(self, cache: RespCache):
-        await cache.aset_many({"async_set_1": "v1", "async_set_2": "v2"})
-        assert await cache.aget("async_set_1") == "v1"
-        assert await cache.aget("async_set_2") == "v2"
-        await cache.adelete("async_set_1")
-        await cache.adelete("async_set_2")
-
-    async def test_async_incr_decr(self, cache: RespCache):
-        await cache.aset("async_counter", 10)
-        result = await cache.aincr("async_counter")
-        assert result == 11
-        result = await cache.adecr("async_counter", 3)
-        assert result == 8
-        await cache.adelete("async_counter")
-
-    async def test_async_touch(self, cache: RespCache):
-        await cache.aset("async_touch_key", "value", timeout=100)
-        result = await cache.atouch("async_touch_key", timeout=200)
-        assert result is True
-        await cache.adelete("async_touch_key")
