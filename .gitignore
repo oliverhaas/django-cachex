@@ -25,6 +25,7 @@ doc/index.html
 dump.rdb
 .idea
 .venv
+.venv-*
 .coverage
 coverage.xml
 cobertura.xml
