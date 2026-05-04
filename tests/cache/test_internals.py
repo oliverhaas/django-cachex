@@ -40,12 +40,12 @@ class TestRedisCacheInternals:
     def test_adapter_class(self, cache: RespCache):
         # Check _adapter_class attribute points to a redis-py adapter (any topology)
         from django_cachex.adapters import RedisPyClusterAdapter, RedisPySentinelAdapter
-        from django_cachex.adapters.redis_py import _RedisDriverMixin
+        from django_cachex.adapters.redis_py import _RedisPyMixin
 
         assert issubclass(  # type: ignore[attr-defined]
             cache._adapter_class,
             (RedisPyAdapter, RedisPyClusterAdapter, RedisPySentinelAdapter),
-        ) or issubclass(cache._adapter_class, _RedisDriverMixin)  # type: ignore[attr-defined]
+        ) or issubclass(cache._adapter_class, _RedisPyMixin)  # type: ignore[attr-defined]
         # Check adapter is an instance of the configured class
         assert isinstance(cache.adapter, cache._adapter_class)
 

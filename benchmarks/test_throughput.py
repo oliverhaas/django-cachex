@@ -2,17 +2,17 @@
 
 Parametrized tests:
 
-- ``test_drivers`` — fixed pickle serializer, varies the driver. Isolates the
-  driver/parser/connection stack.
-- ``test_serializers`` — fixed rust-valkey driver, varies the serializer.
-  Isolates serializer cost (driver overhead is minimal at that point).
+- ``test_adapters_sync`` — fixed pickle serializer, varies the adapter.
+  Isolates the adapter/parser/connection stack.
+- ``test_serializers`` — fixed rust-valkey adapter, varies the serializer.
+  Isolates serializer cost (adapter overhead is minimal at that point).
 - ``test_compressors_macro`` — fixed rust-valkey + pickle, varies the
   compressor on a large payload. End-to-end ops/sec showing the compress
   cost vs network savings tradeoff in real cache calls.
 - ``test_compressors_micro`` — pure compress/decompress in-process, no
-  driver or container. Reports ratio and MB/s for each compressor.
-- ``test_drivers_request_cycle`` — same shape as ``test_drivers`` but every
-  cache op is wrapped in a real Django request cycle (URL resolve,
+  adapter or container. Reports ratio and MB/s for each compressor.
+- ``test_adapters_request_cycle`` — same shape as ``test_adapters_sync`` but
+  every cache op is wrapped in a real Django request cycle (URL resolve,
   middleware, view dispatch, signals). Direct comparison reveals the
   per-request overhead Django adds on top of the cache call itself.
 
@@ -49,7 +49,7 @@ ASGI_WORKERS = 4
 
 
 @pytest.mark.parametrize("driver", DRIVER_CONFIGS, ids=lambda c: c.id)
-def test_drivers(driver, server_url, results, capsys) -> None:
+def test_adapters_sync(driver, server_url, results, capsys) -> None:
     pickle_serializer = SERIALIZER_BY_ID["pickle"]
     location = server_url(driver.server)
 
@@ -95,7 +95,7 @@ def test_compressors_macro(compressor, server_url, results, capsys) -> None:
 
 
 @pytest.mark.parametrize("driver", DRIVER_CONFIGS, ids=lambda c: c.id)
-def test_drivers_async_serial(driver, server_url, results, capsys) -> None:
+def test_adapters_async_serial(driver, server_url, results, capsys) -> None:
     pickle_serializer = SERIALIZER_BY_ID["pickle"]
     location = server_url(driver.server)
 
@@ -109,7 +109,7 @@ def test_drivers_async_serial(driver, server_url, results, capsys) -> None:
 
 
 @pytest.mark.parametrize("driver", DRIVER_CONFIGS, ids=lambda c: c.id)
-def test_drivers_async_concurrent(driver, server_url, results, capsys) -> None:
+def test_adapters_async_concurrent(driver, server_url, results, capsys) -> None:
     pickle_serializer = SERIALIZER_BY_ID["pickle"]
     location = server_url(driver.server)
 
@@ -128,7 +128,7 @@ def test_drivers_async_concurrent(driver, server_url, results, capsys) -> None:
 
 
 @pytest.mark.parametrize("driver", DRIVER_CONFIGS, ids=lambda c: c.id)
-def test_drivers_request_cycle(driver, server_url, results, capsys) -> None:
+def test_adapters_request_cycle(driver, server_url, results, capsys) -> None:
     pickle_serializer = SERIALIZER_BY_ID["pickle"]
     location = server_url(driver.server)
 
@@ -183,7 +183,7 @@ def test_pool_size_sweep(max_conns: int, server_url, asgi_results, capsys) -> No
 
 
 @pytest.mark.parametrize("driver", DRIVER_CONFIGS, ids=lambda c: c.id)
-def test_drivers_asgi(driver, server_url, asgi_results, capsys) -> None:
+def test_adapters_asgi(driver, server_url, asgi_results, capsys) -> None:
     """Full-stack ASGI benchmark — granian + httpx + 6 cache ops per request.
 
     Mirrors django-vcache's ``bench_compare.py`` shape so numbers are

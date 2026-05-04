@@ -3,7 +3,7 @@
 ``redis-py`` and ``valkey-py`` share an API surface (``valkey-py`` is a fork);
 the redis-py adapters here are thin subclasses that swap in the redis-py
 classes via class slots and redirect the lib-availability check from
-valkey-py to redis-py via :class:`_RedisDriverMixin`. All command logic is
+valkey-py to redis-py via :class:`_RedisPyMixin`. All command logic is
 inherited from :class:`~django_cachex.adapters.valkey_py.ValkeyPyAdapter`
 and friends.
 """
@@ -50,7 +50,7 @@ def _missing_redis() -> ImportError:
     )
 
 
-class _RedisDriverMixin:
+class _RedisPyMixin:
     """Redirects ValkeyPyAdapter's lib-availability check from valkey-py to redis-py.
 
     Mixed in (first) to every redis-py concrete class — ``RedisPyAdapter``,
@@ -86,7 +86,7 @@ class RedisPyAsyncPipelineAdapter(ValkeyPyAsyncPipelineAdapter):
     """
 
 
-class RedisPyAdapter(_RedisDriverMixin, ValkeyPyAdapter):
+class RedisPyAdapter(_RedisPyMixin, ValkeyPyAdapter):
     """Single-node / replicated cache adapter using ``redis-py``."""
 
     if _REDIS_AVAILABLE:
@@ -105,7 +105,7 @@ class RedisPyAdapter(_RedisDriverMixin, ValkeyPyAdapter):
         return RedisPyAsyncPipelineAdapter(client.pipeline(transaction=transaction))
 
 
-class RedisPySentinelAdapter(_RedisDriverMixin, ValkeyPySentinelAdapter):
+class RedisPySentinelAdapter(_RedisPyMixin, ValkeyPySentinelAdapter):
     """Sentinel-managed cache adapter using ``redis-py``."""
 
     if _REDIS_AVAILABLE:
@@ -127,7 +127,7 @@ class RedisPySentinelAdapter(_RedisDriverMixin, ValkeyPySentinelAdapter):
         return RedisPyAsyncPipelineAdapter(client.pipeline(transaction=transaction))
 
 
-class RedisPyClusterAdapter(_RedisDriverMixin, ValkeyPyClusterAdapter):
+class RedisPyClusterAdapter(_RedisPyMixin, ValkeyPyClusterAdapter):
     """Cluster cache adapter using ``redis-py``."""
 
     if _REDIS_AVAILABLE:

@@ -38,16 +38,16 @@ depends on letting workloads run).
 
 Compressor candidates: `none`, `zlib`, `gzip`, `lzma`, `lz4`, `zstd`.
 
-**Request cycle** (`test_drivers_request_cycle`) — same workload as
-`test_drivers`, but each cache op runs inside a real Django request cycle:
+**Request cycle** (`test_adapters_request_cycle`) — same workload as
+`test_adapters_sync`, but each cache op runs inside a real Django request cycle:
 `Client().get(url)` → URL resolve → `CommonMiddleware` → view function →
 response → `request_finished` signal. The view in [urls.py](urls.py) does
 exactly one cache op per request, so ops/sec is on the same scale as
-`test_drivers` and you can read off the per-op overhead Django adds. Driver
+`test_adapters_sync` and you can read off the per-op overhead Django adds. Driver
 ids are suffixed with `#req` in the final summary so the request-cycle rows
 sit next to their direct counterparts.
 
-**ASGI** (`test_drivers_asgi`) — full-stack benchmark in the shape of
+**ASGI** (`test_adapters_asgi`) — full-stack benchmark in the shape of
 [`django-vcache`'s `bench_compare.py`](https://gitlab.com/glitchtip/django-vcache/-/blob/main/bench_compare.py):
 
 - Spawns a real **`granian`** ASGI server (4 workers) per driver
@@ -76,11 +76,11 @@ the magnitude grows dramatically.
 
 **Async** — two views via `aget` / `aset` / `aget_many` / etc.:
 
-- *Serial* (`test_drivers_async_serial`) — `await cache.aget(...)` one op at
+- *Serial* (`test_adapters_async_serial`) — `await cache.aget(...)` one op at
   a time. Direct comparison with sync; the gap reveals asyncio-loop
   overhead and, for backends without native async, the cost of Django's
   `sync_to_async` fallback. Ids suffixed with `#async`.
-- *Concurrent* (`test_drivers_async_concurrent`) — `asyncio.gather` of
+- *Concurrent* (`test_adapters_async_concurrent`) — `asyncio.gather` of
   `ASYNC_CONCURRENCY` (default 50) ops in flight. Stresses the connection
   pool: peak connections jump to roughly the concurrency level for backends
   with native async + per-op pool checkout. The intended use is also to
@@ -114,17 +114,17 @@ Knobs in [runner.py](runner.py): `N_OPS`, `K_RUNS`, `WARMUP_KEYS`, `MGET_BATCH`.
 uv run pytest benchmarks/ -c benchmarks/pytest.ini
 
 # Just one slice
-uv run pytest benchmarks/test_throughput.py::test_drivers                  -c benchmarks/pytest.ini
+uv run pytest benchmarks/test_throughput.py::test_adapters_sync                  -c benchmarks/pytest.ini
 uv run pytest benchmarks/test_throughput.py::test_serializers              -c benchmarks/pytest.ini
 uv run pytest benchmarks/test_throughput.py::test_compressors_macro        -c benchmarks/pytest.ini
 uv run pytest benchmarks/test_throughput.py::test_compressors_micro        -c benchmarks/pytest.ini
-uv run pytest benchmarks/test_throughput.py::test_drivers_request_cycle    -c benchmarks/pytest.ini
-uv run pytest benchmarks/test_throughput.py::test_drivers_async_serial     -c benchmarks/pytest.ini
-uv run pytest benchmarks/test_throughput.py::test_drivers_async_concurrent -c benchmarks/pytest.ini
-uv run pytest benchmarks/test_throughput.py::test_drivers_asgi             -c benchmarks/pytest.ini
+uv run pytest benchmarks/test_throughput.py::test_adapters_request_cycle    -c benchmarks/pytest.ini
+uv run pytest benchmarks/test_throughput.py::test_adapters_async_serial     -c benchmarks/pytest.ini
+uv run pytest benchmarks/test_throughput.py::test_adapters_async_concurrent -c benchmarks/pytest.ini
+uv run pytest benchmarks/test_throughput.py::test_adapters_asgi             -c benchmarks/pytest.ini
 
 # A single config
-uv run pytest 'benchmarks/test_throughput.py::test_drivers[rust-valkey]' -c benchmarks/pytest.ini
+uv run pytest 'benchmarks/test_throughput.py::test_adapters_sync[rust-valkey]' -c benchmarks/pytest.ini
 ```
 
 `test_compressors_micro` is the only test that doesn't need Docker — useful
@@ -150,7 +150,7 @@ Snapshot of the driver matrix on a Ryzen 9 5950X / 32 GiB / Linux 6.17,
 Python 3.14, Django 6.0, all servers in local Docker. Numbers shift run to
 run; ordering is what matters.
 
-### Sync direct (`test_drivers`) — ops/sec
+### Sync direct (`test_adapters_sync`) — ops/sec
 
 | Driver               |    get |    set |  mget |  mset |   incr | py-mem KiB |
 | -------------------- | -----: | -----: | ----: | ----: | -----: | ---------: |
@@ -161,7 +161,7 @@ run; ordering is what matters.
 | **rust-valkey**      |  9,268 | 10,844 | 2,730 | 4,461 | 12,046 |         24 |
 | django (builtin)     |  2,312 |  2,295 | 1,496 | 1,364 |  1,911 |         56 |
 
-### Django request cycle (`test_drivers_request_cycle`, `#req`) — ops/sec
+### Django request cycle (`test_adapters_request_cycle`, `#req`) — ops/sec
 
 One cache op per request through the full middleware/URL/view path.
 
@@ -172,7 +172,7 @@ One cache op per request through the full middleware/URL/view path.
 | **rust-valkey**      | 1,847 | 1,864 | 1,890 |
 | django (builtin)     | 1,108 | 1,078 |   966 |
 
-### Async serial (`test_drivers_async_serial`, `#async`) — ops/sec
+### Async serial (`test_adapters_async_serial`, `#async`) — ops/sec
 
 One `await` at a time. The Python↔Rust crossing per op doesn't amortize, so
 Rust falls behind the C-parser Python drivers on this shape only.
@@ -184,7 +184,7 @@ Rust falls behind the C-parser Python drivers on this shape only.
 | **rust-valkey**      | 1,394 | 1,384 |   880 | 1,134 | 1,372 |
 | django (builtin)     | 1,687 | 1,780 |   184 |   186 |   912 |
 
-### Async concurrent at 50 (`test_drivers_async_concurrent`, `#async50`) — ops/sec
+### Async concurrent at 50 (`test_adapters_async_concurrent`, `#async50`) — ops/sec
 
 `asyncio.gather` of 50 ops in flight — the workload most Django ASGI apps
 actually generate.
@@ -196,7 +196,7 @@ actually generate.
 | **rust-valkey**      | 18,801 | 25,515 | 3,175 | 6,072 | 28,567 |        108 |
 | django (builtin)     |  2,029 |  2,042 |   201 |   204 |  1,025 |        111 |
 
-### ASGI full-stack (`test_drivers_asgi`)
+### ASGI full-stack (`test_adapters_asgi`)
 
 `granian` (4 workers) + `httpx` (100 concurrent, 20 s). Each request runs
 six async cache ops — the shape closest to real production load.
