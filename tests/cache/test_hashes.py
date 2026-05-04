@@ -136,21 +136,20 @@ class TestHashKeyPrefixing:
     """Tests verifying hash keys use prefixes but fields do not."""
 
     def test_key_prefixed_but_fields_raw(self, cache: RespCache):
-        client = cache.get_client(write=False)
-
         cache.hset("account:500", "balance", 1000.00, version=2)
         cache.hset("account:500", "currency", "USD", version=2)
 
         prefixed_key = cache.make_key("account:500", version=2)
 
-        assert client.exists(prefixed_key)
-        # redis-py returns bytes; the Rust driver returns str. Normalize.
-        key_type = client.type(prefixed_key)
+        # Adapter-level exists / type / hkeys, so this test stays driver-agnostic.
+        adapter = cache.adapter
+        assert adapter.has_key(prefixed_key)
+        key_type = adapter.type(prefixed_key)
         if isinstance(key_type, bytes):
             key_type = key_type.decode()
         assert key_type == "hash"
 
-        raw_fields = {f.decode() if isinstance(f, bytes) else f for f in client.hkeys(prefixed_key)}
+        raw_fields = {f.decode() if isinstance(f, bytes) else f for f in adapter.hkeys(prefixed_key)}
         assert "balance" in raw_fields
         assert "currency" in raw_fields
 
@@ -413,20 +412,18 @@ class TestAsyncHashKeyPrefixing:
 
     @pytest.mark.asyncio
     async def test_akey_prefixed_but_fields_raw(self, cache: RespCache):
-        client = cache.get_client(write=False)
-
         await cache.ahset("aaccount:500", "balance", 1000.00, version=2)
         await cache.ahset("aaccount:500", "currency", "USD", version=2)
 
         prefixed_key = cache.make_key("aaccount:500", version=2)
 
-        assert client.exists(prefixed_key)
-        # redis-py returns bytes; the Rust driver returns str. Normalize.
-        key_type = client.type(prefixed_key)
+        adapter = cache.adapter
+        assert await adapter.ahas_key(prefixed_key)
+        key_type = await adapter.atype(prefixed_key)
         if isinstance(key_type, bytes):
             key_type = key_type.decode()
         assert key_type == "hash"
 
-        raw_fields = {f.decode() if isinstance(f, bytes) else f for f in client.hkeys(prefixed_key)}
+        raw_fields = {f.decode() if isinstance(f, bytes) else f for f in await adapter.ahkeys(prefixed_key)}
         assert "balance" in raw_fields
         assert "currency" in raw_fields

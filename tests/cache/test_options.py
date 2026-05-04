@@ -63,9 +63,6 @@ class TestDjangoRespCacheEscapePrefix:
 
 
 def test_custom_key_function(cache: RespCache, settings):
-    from redis.cluster import RedisCluster
-    from valkey.cluster import ValkeyCluster
-
     caches_setting = copy.deepcopy(settings.CACHES)
     caches_setting["default"]["KEY_FUNCTION"] = "tests.cache.test_options.make_key"
     caches_setting["default"]["OPTIONS"]["reverse_key_function"] = "tests.cache.test_options.reverse_key"
@@ -79,14 +76,10 @@ def test_custom_key_function(cache: RespCache, settings):
 
     keys = cache.keys("foo*")
     assert set(keys) == {"foo-bb", "foo-bc"}
-    # ensure our custom function was actually called
-    client = cache.get_client(write=False)
-    if isinstance(client, RedisCluster):
-        raw_keys = client.keys("*", target_nodes=RedisCluster.PRIMARIES)
-    elif isinstance(client, ValkeyCluster):
-        raw_keys = client.keys("*", target_nodes=ValkeyCluster.PRIMARIES)
-    else:
-        raw_keys = client.keys("*")
-    # redis-py / valkey-py return bytes; the Rust adapter returns str. Normalize.
-    decoded = {k.decode() if isinstance(k, bytes) else k for k in raw_keys}  # type: ignore[union-attr]
+    # Verify that the prefixed-key form is what landed in the store. Going
+    # through the adapter's ``keys()`` keeps this test driver-agnostic
+    # (cluster needs target_nodes; glide doesn't expose ``.keys()`` on the
+    # raw client at all).
+    raw_keys = cache.adapter.keys("*")
+    decoded = {k.decode() if isinstance(k, bytes) else k for k in raw_keys}
     assert decoded == {"#1#foo-bc", "#1#foo-bb"}
