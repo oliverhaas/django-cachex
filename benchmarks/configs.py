@@ -80,6 +80,18 @@ ADAPTER_CONFIGS: tuple[AdapterConfig, ...] = (
         options={},
         server="valkey",
     ),
+    # Experimental: one ``valkey.asyncio`` client per process running on a
+    # daemon-thread loop, with sync calls routed via
+    # ``run_coroutine_threadsafe``. Spike to compare against the standard
+    # two-pool valkey-py setup.
+    AdapterConfig(
+        id="valkey-py#unified",
+        backend="django_cachex.cache._experimental.UnifiedValkeyCache",
+        options={
+            "max_connections": 50,
+        },
+        server="valkey",
+    ),
     # Django's official built-in Redis cache backend (added in Django 4.0,
     # `django.core.cache.backends.redis.RedisCache`). Not to be confused with
     # the third-party `jazzband/django-redis` package — that one ships under
