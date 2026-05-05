@@ -543,7 +543,7 @@ pub(crate) fn connection(slf: &Bound<'_, RedisRsAdapter>) -> PyResult<crate::con
     let config = this.config.clone();
     let new_conn = slf
         .py()
-        .detach(|| crate::async_bridge::get_runtime().block_on(config.connect()))
+        .detach(|| crate::async_bridge::get_runtime().block_on(config.connect_cached()))
         .map_err(pyo3::exceptions::PyConnectionError::new_err)?;
     let mut state = this.state.lock().unwrap();
     *state = (cur_pid, Some(new_conn.clone()));
@@ -694,7 +694,79 @@ impl AdapterConnConfig {
             .await,
         }
     }
+
+    /// Stable hashable key for the process-wide ``Conn`` cache. Two configs
+    /// with the same key produce equivalent connections and can share a
+    /// multiplexed transport.
+    fn cache_key(&self) -> String {
+        fn cache_opts(o: &Option<crate::connection::ClientCacheOpts>) -> String {
+            match o {
+                Some(o) => format!("c{}/{}", o.max_size, o.ttl_secs),
+                None => "n".to_string(),
+            }
+        }
+        fn tls_opts(o: &Option<crate::connection::TlsOpts>) -> String {
+            match o {
+                Some(_) => "tls".to_string(),
+                None => "n".to_string(),
+            }
+        }
+        match self {
+            Self::Standard {
+                url,
+                cache_opts: c,
+                tls_opts: t,
+            } => format!("S|{}|{}|{}", url, cache_opts(c), tls_opts(t)),
+            Self::Cluster {
+                urls,
+                tls_opts: t,
+            } => format!("C|{}|{}", urls.join(","), tls_opts(t)),
+            Self::Sentinel {
+                sentinel_urls,
+                service_name,
+                db,
+                cache_opts: c,
+                tls_opts: t,
+            } => format!(
+                "T|{}|{}|{}|{}|{}",
+                sentinel_urls.join(","),
+                service_name,
+                db,
+                cache_opts(c),
+                tls_opts(t),
+            ),
+        }
+    }
+
+    /// Resolve a ``Conn`` for this config, sharing one across all adapter
+    /// instances in the process (per-config). Django ASGI under granian
+    /// instantiates a fresh adapter per asyncio task — without this cache
+    /// every task would build its own multiplexed transport, exploding
+    /// the upstream connection count.
+    async fn connect_cached(&self) -> Result<crate::connection::Conn, String> {
+        let key = self.cache_key();
+        let cur_pid = std::process::id();
+        {
+            let cache = CONN_CACHE.lock().unwrap();
+            if let Some((pid, conn)) = cache.get(&key) {
+                if *pid == cur_pid {
+                    return Ok(conn.clone());
+                }
+            }
+        }
+        let conn = self.connect().await?;
+        let mut cache = CONN_CACHE.lock().unwrap();
+        cache.insert(key, (cur_pid, conn.clone()));
+        Ok(conn)
+    }
 }
+
+/// Process-wide cache of multiplexed ``Conn`` instances, keyed by adapter
+/// config. Each ``Conn`` is ``Arc``-backed so cloning is cheap; sharing
+/// one across adapter instances means the bg multiplexer task is created
+/// once per (process, config) instead of once per adapter __init__.
+static CONN_CACHE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, (u32, crate::connection::Conn)>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
 /// Build the adapter-side ``Standard`` config from the cachex options dict.
 fn standard_config_from_options(
@@ -858,7 +930,7 @@ impl RedisRsAdapter {
             .call1((stampede_option,))?
             .unbind();
         let conn = py
-            .detach(|| crate::async_bridge::get_runtime().block_on(config.connect()))
+            .detach(|| crate::async_bridge::get_runtime().block_on(config.connect_cached()))
             .map_err(pyo3::exceptions::PyConnectionError::new_err)?;
         let pid = std::process::id();
         Ok(Self {

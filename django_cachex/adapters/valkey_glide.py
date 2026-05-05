@@ -18,11 +18,14 @@ rough until we decide whether to keep this approach.
 import asyncio
 import datetime
 import os
+import threading
 import time
+import weakref
 from typing import TYPE_CHECKING, Any, Self
 from urllib.parse import urlparse
 
 from django_cachex.adapters.protocols import RespAdapterProtocol, RespPipelineProtocol
+from django_cachex.adapters.valkey_py import _options_key
 from django_cachex.stampede import (
     StampedeConfig,
     get_timeout_with_buffer,
@@ -74,6 +77,44 @@ def _check_installed() -> None:
 # Alias for the `set` builtin shadowed by the `set` method (PEP 649 defers
 # annotations at runtime, but type checkers still resolve them in class scope).
 _set = set
+
+
+# =============================================================================
+# Process-wide client registries
+# =============================================================================
+# Glide's clients are expensive (each opens at least one TCP connection), and
+# Django's ``asgiref.local.Local`` returns a fresh ``BaseCache`` per asyncio
+# task — under granian + 100 concurrent ``httpx`` clients we'd otherwise
+# build thousands of clients. Mirror :mod:`~django_cachex.adapters.valkey_py`'s
+# ``_async_pools`` registry so adapter instances within the same loop share
+# one client.
+#
+# Sync registry: a plain dict guarded by a lock. Process-wide. Glide's sync
+# client is itself thread-safe, so multiple threads can use one client; we
+# only need the lock for the lazy-init race.
+#
+# Async registry: ``WeakKeyDictionary`` keyed by the running event loop, so
+# entries clear when a worker's loop is GC'd. Inner dict keyed by the same
+# config tuple as :mod:`valkey_py` so different cache configs in the same
+# loop don't share a client.
+
+if TYPE_CHECKING:
+    _GlideSyncRegistry = dict[tuple[Any, ...], "GlideClient"]
+    _GlideAsyncRegistry = weakref.WeakKeyDictionary[
+        asyncio.AbstractEventLoop,
+        dict[tuple[Any, ...], "AsyncGlideClient"],
+    ]
+
+_GLIDE_SYNC_CLIENTS: dict[tuple[Any, ...], Any] = {}
+_GLIDE_SYNC_LOCK = threading.Lock()
+_GLIDE_ASYNC_CLIENTS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], Any]] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _glide_config_key(servers: list[str], options: dict[str, Any]) -> tuple[Any, ...]:
+    """Stable hashable key from the constructor inputs."""
+    return (tuple(servers), _options_key(options))
 
 
 # =============================================================================
@@ -903,8 +944,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         self._servers = servers
         self._options = options
         self._stampede_config: StampedeConfig | None = make_stampede_config(options.get("stampede_prevention"))
-        self._sync_glide_client: GlideClient | None = None
-        self._async_glide_clients: dict[int, AsyncGlideClient] = {}
+        self._config_key = _glide_config_key(servers, options)
 
     def _resolve_stampede(self, stampede_prevention: bool | dict | None = None) -> StampedeConfig | None:
         return resolve_stampede(self._stampede_config, stampede_prevention)
@@ -918,25 +958,34 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     # ---- client lifecycle ----
     def _client(self) -> GlideClient:
-        if self._sync_glide_client is None:
-            u = urlparse(self._servers[0])
-            cfg = GlideClientConfiguration(
-                addresses=[NodeAddress(u.hostname or "localhost", u.port or 6379)],
-            )
-            self._sync_glide_client = GlideClient.create(cfg)
-        return self._sync_glide_client
+        client = _GLIDE_SYNC_CLIENTS.get(self._config_key)
+        if client is not None:
+            return client
+        with _GLIDE_SYNC_LOCK:
+            client = _GLIDE_SYNC_CLIENTS.get(self._config_key)
+            if client is None:
+                u = urlparse(self._servers[0])
+                cfg = GlideClientConfiguration(
+                    addresses=[NodeAddress(u.hostname or "localhost", u.port or 6379)],
+                )
+                client = GlideClient.create(cfg)
+                _GLIDE_SYNC_CLIENTS[self._config_key] = client
+        return client
 
     async def _aclient(self) -> AsyncGlideClient:
         loop = asyncio.get_running_loop()
-        loop_id = id(loop)
-        client = self._async_glide_clients.get(loop_id)
+        sub = _GLIDE_ASYNC_CLIENTS.get(loop)
+        if sub is None:
+            sub = {}
+            _GLIDE_ASYNC_CLIENTS[loop] = sub
+        client = sub.get(self._config_key)
         if client is None:
             u = urlparse(self._servers[0])
             cfg = AsyncGlideClientConfiguration(
                 addresses=[AsyncNodeAddress(u.hostname or "localhost", u.port or 6379)],
             )
             client = await AsyncGlideClient.create(cfg)
-            self._async_glide_clients[loop_id] = client
+            sub[self._config_key] = client
         return client
 
     def get_client(self, key: Any = None, *, write: bool = False) -> GlideClient:
