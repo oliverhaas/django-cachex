@@ -179,10 +179,15 @@ One cache op per request through the full middleware/URL/view path.
 | valkey-py+libvalkey  | 1,059 | 1,253 | 1,295 |
 | django (builtin)     |   913 | 1,131 | 1,019 |
 
-`redis-rs` and `valkey-glide` rows are missing from this snapshot —
-the full-matrix run exhausted local TIME\_WAIT sockets by the time it
-reached those tests, and Docker couldn't bind new container ports for
-the per-test container start. Run them in isolation to capture numbers.
+`redis-rs` and `valkey-glide` rows are missing from this snapshot.
+Both adapters fail under sustained sync request-cycle pressure
+(~2k sequential `cache.get()` through Django's view layer): `redis-rs`
+sees `Connection reset by peer (os error 104)` from the valkey
+container, `valkey-glide` sees a `glide_shared.exceptions.ClosingError`
+timeout. The pure-Python adapters complete the same workload without
+issues, so this is a real connection-handling difference between the
+sync paths of the two Rust adapters, not an environmental flake. Worth
+investigating separately.
 
 ### Async serial (`test_adapters_async_serial`, `#async`) — ops/sec
 
