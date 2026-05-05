@@ -3416,13 +3416,10 @@ impl RedisRsAdapter {
 
     #[pyo3(signature = (**_kwargs))]
     fn close(&self, _kwargs: Option<&Bound<'_, PyDict>>) {
-        // Drop the cached connection so the next command reconnects.
-        // ``Conn`` holds its bg multiplexer task via ``Arc``; the
-        // task winds down once the last clone is dropped (i.e., when no
-        // in-flight command holds a reference).
-        if let Ok(mut state) = self.state.lock() {
-            state.1 = None;
-        }
+        // No-op. Django fires ``cache.close()`` on every ``request_finished``
+        // signal as a request-cycle cleanup hook, not a shutdown call —
+        // dropping the multiplexed connection here would force a reconnect
+        // per request and saturate the server with TCP handshakes.
     }
 
     #[pyo3(signature = (**_kwargs))]

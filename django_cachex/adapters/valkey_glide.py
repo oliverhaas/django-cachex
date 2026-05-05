@@ -1126,9 +1126,9 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return self._client().flushdb(FlushMode.SYNC) == "OK"
 
     def close(self, **kwargs: Any) -> None:
-        if self._sync_glide_client is not None:
-            self._sync_glide_client.close()
-            self._sync_glide_client = None
+        """No-op. Django fires ``cache.close()`` on every ``request_finished``
+        signal — tearing the glide client down here would force a reconnect
+        per request."""
 
     # ---- TTL ----
     def ttl(self, key: str) -> int | None:
@@ -2076,9 +2076,9 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return (await (await self._aclient()).flushdb(FlushMode.SYNC)) == "OK"
 
     async def aclose(self, **kwargs: Any) -> None:
-        for client in self._async_glide_clients.values():
-            await client.close()
-        self._async_glide_clients.clear()
+        """No-op. Same rationale as ``close()`` — tearing down the per-loop
+        async clients here would force a reconnect on every Django request
+        cycle."""
 
     # ---- Async TTL ----
     async def attl(self, key: str) -> int | None:
