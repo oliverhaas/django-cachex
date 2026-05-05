@@ -972,7 +972,18 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
                 _GLIDE_SYNC_CLIENTS[self._config_key] = client
         return client
 
-    async def _aclient(self) -> AsyncGlideClient:
+    def get_client(self, key: Any = None, *, write: bool = False) -> GlideClient:
+        del key, write
+        return self._client()
+
+    async def get_async_client(self, key: Any = None, *, write: bool = False) -> AsyncGlideClient:
+        """Lazy-init the async client for the running loop and config.
+
+        ``async def`` because glide's ``AsyncGlideClient.create`` is itself
+        an async constructor — unlike redis-py's, where the sync helper
+        gets us a Redis instance whose connection is opened on first use.
+        """
+        del key, write
         loop = asyncio.get_running_loop()
         sub = _GLIDE_ASYNC_CLIENTS.get(loop)
         if sub is None:
@@ -988,15 +999,9 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             sub[self._config_key] = client
         return client
 
-    def get_client(self, key: Any = None, *, write: bool = False) -> GlideClient:
-        return self._client()
-
-    def get_async_client(self, key: Any = None, *, write: bool = False) -> AsyncGlideClient:
-        # Awaiting must happen at call sites; this method is sync-only by
-        # RespAdapterProtocol's contract. Only here for completeness; the
-        # aXXX methods below do not call this.
-        msg = "Use the a* methods on this client; get_async_client is not supported"
-        raise NotImplementedError(msg)
+    # Internal alias kept for the existing ``await self._aclient()`` call
+    # sites in this file — it's exactly ``get_async_client``.
+    _aclient = get_async_client
 
     # =========================================================================
     # Core ops (sync)

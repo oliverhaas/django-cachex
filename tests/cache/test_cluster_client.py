@@ -409,7 +409,7 @@ class TestRedisClusterAdapter:
         client._async_cluster_instances = weakref.WeakKeyDictionary()
 
         # Create the async cluster instance
-        client.get_async_client()
+        await client.get_async_client()
         loop = asyncio.get_running_loop()
         assert loop in client._async_cluster_instances
 

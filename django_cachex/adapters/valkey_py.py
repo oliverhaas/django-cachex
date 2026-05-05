@@ -315,8 +315,24 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             sub[key] = pool
         return pool
 
-    def get_async_client(self, key: str | None = None, *, write: bool = False) -> Any:
-        """Get an async client connection."""
+    async def get_async_client(self, key: str | None = None, *, write: bool = False) -> Any:
+        """Get an async client connection.
+
+        ``async def`` for Protocol uniformity — adapters whose async-client
+        construction is genuinely async (glide, redis-rs) can ``await``
+        inside; this body has no awaits because pool lookup and ``Redis(
+        connection_pool=...)`` are both sync. ``apipeline()`` (which is
+        sync) calls the helpers below directly to avoid needing ``await``.
+        """
+        return self._build_async_client_sync(write=write)
+
+    def _build_async_client_sync(self, *, write: bool) -> Any:
+        """Sync-callable async-client builder for use by ``apipeline()``.
+
+        Same construction sequence as :meth:`get_async_client` — separated
+        so the sync ``apipeline`` entry-point doesn't need to be in an
+        async context just to construct the underlying pipeline.
+        """
         pool = self._get_async_connection_pool(write=write)
         if self._async_client_class is None:
             msg = "Async operations require _async_client_class to be set. Use RedisPyAdapter or ValkeyPyAdapter."
@@ -361,7 +377,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         stampede_prevention: bool | dict | None = None,
     ) -> bool:
         """Set a value only if the key doesn't exist, asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
         nvalue = value
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
@@ -386,7 +402,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def aget(self, key: str, *, stampede_prevention: bool | dict | None = None) -> Any:
         """Fetch a value from the cache asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
         val = await client.get(key)
         if val is None:
             return None
@@ -424,7 +440,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         stampede_prevention: bool | dict | None = None,
     ) -> None:
         """Set a value in the cache asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
         nvalue = value
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
@@ -480,7 +496,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         Returns bool for nx/xx (success status), or the previous value
         (decoded) when get=True.
         """
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
         nvalue = value
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
@@ -505,7 +521,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def atouch(self, key: str, timeout: int | None) -> bool:
         """Update the timeout on a key asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         if timeout is None:
             return bool(await client.persist(key))
@@ -519,7 +535,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def adelete(self, key: str) -> bool:
         """Remove a key from the cache asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         return bool(await client.delete(key))
 
@@ -562,7 +578,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         if not keys:
             return {}
 
-        client = self.get_async_client(write=False)
+        client = await self.get_async_client(write=False)
         results = await client.mget(keys)
 
         # Collect non-None results
@@ -592,7 +608,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def ahas_key(self, key: str) -> bool:
         """Check if a key exists asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         return bool(await client.exists(key))
 
@@ -607,7 +623,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def atype(self, key: str) -> KeyType | None:
         """Get the Redis data type of a key asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         result = await client.type(key)
         if isinstance(result, bytes):
@@ -621,7 +637,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def aincr(self, key: str, delta: int = 1) -> int:
         """Increment a value asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
         return await client.incr(key, delta)
 
     def set_many(
@@ -662,7 +678,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         if not data:
             return []
 
-        client = self.get_async_client(write=True)
+        client = await self.get_async_client(write=True)
         prepared = dict(data.items())
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
@@ -692,7 +708,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         if not keys:
             return 0
 
-        client = self.get_async_client(write=True)
+        client = await self.get_async_client(write=True)
 
         return await client.delete(*keys)
 
@@ -704,7 +720,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def aclear(self) -> bool:
         """Flush the database asynchronously."""
-        client = self.get_async_client(write=True)
+        client = await self.get_async_client(write=True)
 
         return bool(await client.flushdb())
 
@@ -763,12 +779,12 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def attl(self, key: str) -> int | None:
         """Get TTL in seconds asynchronously. Returns None if no expiry, -2 if key doesn't exist."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
         return self._normalize_ttl(await client.ttl(key))
 
     async def apttl(self, key: str) -> int | None:
         """Get TTL in milliseconds asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
         return self._normalize_ttl(await client.pttl(key))
 
     async def aexpiretime(self, key: str) -> int | None:
@@ -777,36 +793,36 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         Returns None if the key has no expiry, -2 if the key doesn't exist.
         Requires Redis 7.0+ / Valkey 7.2+.
         """
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
         return self._normalize_ttl(await client.expiretime(key))
 
     async def aexpire(self, key: str, timeout: int | timedelta) -> bool:
         """Set expiry on a key asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         return bool(await client.expire(key, timeout))
 
     async def apexpire(self, key: str, timeout: int | timedelta) -> bool:
         """Set expiry in milliseconds asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         return bool(await client.pexpire(key, timeout))
 
     async def aexpireat(self, key: str, when: int | datetime) -> bool:
         """Set expiry at absolute time asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         return bool(await client.expireat(key, when))
 
     async def apexpireat(self, key: str, when: int | datetime) -> bool:
         """Set expiry at absolute time in milliseconds asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         return bool(await client.pexpireat(key, when))
 
     async def apersist(self, key: str) -> bool:
         """Remove expiry from a key asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         return bool(await client.persist(key))
 
@@ -857,7 +873,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         _type: str | None = None,
     ) -> tuple[int, list[str]]:
         """Perform a single SCAN iteration asynchronously returning (next_cursor, keys)."""
-        client = self.get_async_client(write=False)
+        client = await self.get_async_client(write=False)
 
         if count is None:
             count = self._default_scan_itersize
@@ -911,14 +927,14 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def akeys(self, pattern: str) -> list[str]:
         """Get all keys matching pattern (already prefixed) asynchronously."""
-        client = self.get_async_client(write=False)
+        client = await self.get_async_client(write=False)
 
         keys_result = await client.keys(pattern)
         return [k.decode() if isinstance(k, bytes) else k for k in keys_result]
 
     async def aiter_keys(self, pattern: str, itersize: int | None = None) -> AsyncIterator[str]:
         """Iterate keys matching pattern (already prefixed) asynchronously."""
-        client = self.get_async_client(write=False)
+        client = await self.get_async_client(write=False)
 
         if itersize is None:
             itersize = self._default_scan_itersize
@@ -928,7 +944,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def adelete_pattern(self, pattern: str, itersize: int | None = None) -> int:
         """Delete all keys matching pattern (already prefixed) asynchronously."""
-        client = self.get_async_client(write=True)
+        client = await self.get_async_client(write=True)
 
         if itersize is None:
             itersize = self._default_scan_itersize
@@ -946,7 +962,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def arename(self, src: str, dst: str) -> bool:
         """Rename a key asynchronously."""
-        client = self.get_async_client(src, write=True)
+        client = await self.get_async_client(src, write=True)
 
         try:
             await client.rename(src, dst)
@@ -960,7 +976,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def arenamenx(self, src: str, dst: str) -> bool:
         """Rename a key only if the destination does not exist, asynchronously."""
-        client = self.get_async_client(src, write=True)
+        client = await self.get_async_client(src, write=True)
 
         try:
             return bool(await client.renamenx(src, dst))
@@ -1002,7 +1018,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         thread_local: bool = True,
     ) -> Any:
         """Get an async distributed lock."""
-        client = self.get_async_client(key, write=True)
+        client = self._build_async_client_sync(write=True)
         return client.lock(
             key,
             timeout=timeout,
@@ -1029,7 +1045,10 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         ``redis.asyncio`` / ``valkey.asyncio`` async pipeline. ``RespCache.apipeline()``
         wraps the result in an :class:`AsyncPipeline`.
         """
-        client = self.get_async_client(write=True)
+        # Use the sync helper so this method can stay non-async — async-client
+        # construction has no awaits on this adapter, only the Protocol contract
+        # marks ``get_async_client`` async (see :meth:`get_async_client`).
+        client = self._build_async_client_sync(write=True)
         return ValkeyPyAsyncPipelineAdapter(client.pipeline(transaction=transaction))
 
     # =========================================================================
@@ -1199,7 +1218,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         items: list[Any] | None = None,
     ) -> int:
         """Set hash field(s) asynchronously. Use field/value, mapping, or items (flat key-value pairs)."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
         nvalue = value if field is not None else None
         nmapping = dict(mapping.items()) if mapping else None
         nitems = list(items) if items else None
@@ -1208,73 +1227,73 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def ahsetnx(self, key: str, field: str, value: Any) -> bool:
         """Set a hash field only if it doesn't exist, asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
         nvalue = value
 
         return bool(await client.hsetnx(key, field, nvalue))
 
     async def ahget(self, key: str, field: str) -> Any | None:
         """Get a hash field asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         val = await client.hget(key, field)
         return val if val is not None else None
 
     async def ahmget(self, key: str, *fields: str) -> list[Any | None]:
         """Get multiple hash fields asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         values = await client.hmget(key, fields)
         return [v if v is not None else None for v in values]
 
     async def ahgetall(self, key: str) -> dict[str, Any]:
         """Get all hash fields asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         raw = await client.hgetall(key)
         return {(f.decode() if isinstance(f, bytes) else f): v for f, v in raw.items()}
 
     async def ahdel(self, key: str, *fields: str) -> int:
         """Delete hash fields asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         return cast("int", await client.hdel(key, *fields))
 
     async def ahexists(self, key: str, field: str) -> bool:
         """Check if a hash field exists asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         return bool(await client.hexists(key, field))
 
     async def ahlen(self, key: str) -> int:
         """Get the number of fields in a hash asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         return cast("int", await client.hlen(key))
 
     async def ahkeys(self, key: str) -> list[str]:
         """Get all field names in a hash asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         fields = await client.hkeys(key)
         return [f.decode() if isinstance(f, bytes) else f for f in fields]
 
     async def ahvals(self, key: str) -> list[Any]:
         """Get all values in a hash asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         values = await client.hvals(key)
         return list(values)
 
     async def ahincrby(self, key: str, field: str, amount: int = 1) -> int:
         """Increment a hash field by an integer asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         return cast("int", await client.hincrby(key, field, amount))
 
     async def ahincrbyfloat(self, key: str, field: str, amount: float = 1.0) -> float:
         """Increment a hash field by a float asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         return float(await client.hincrbyfloat(key, field, amount))
 
@@ -1453,21 +1472,21 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def alpush(self, key: str, *values: Any) -> int:
         """Push values to the left of a list asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
         nvalues = list(values)
 
         return cast("int", await client.lpush(key, *nvalues))
 
     async def arpush(self, key: str, *values: Any) -> int:
         """Push values to the right of a list asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
         nvalues = list(values)
 
         return cast("int", await client.rpush(key, *nvalues))
 
     async def alpop(self, key: str, count: int | None = None) -> Any | list[Any] | None:
         """Pop value(s) from the left of a list asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         if count is not None:
             vals = await client.lpop(key, count)
@@ -1477,7 +1496,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def arpop(self, key: str, count: int | None = None) -> Any | list[Any] | None:
         """Pop value(s) from the right of a list asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         if count is not None:
             vals = await client.rpop(key, count)
@@ -1487,7 +1506,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def allen(self, key: str) -> int:
         """Get the length of a list asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         return cast("int", await client.llen(key))
 
@@ -1500,7 +1519,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         maxlen: int | None = None,
     ) -> int | list[int] | None:
         """Find position(s) of element in list asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
         encoded_value = value
 
         kwargs: dict[str, Any] = {}
@@ -1521,28 +1540,28 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         whereto: str,
     ) -> Any | None:
         """Atomically move an element from one list to another asynchronously."""
-        client = self.get_async_client(src, write=True)
+        client = await self.get_async_client(src, write=True)
 
         val = await client.lmove(src, dst, wherefrom, whereto)
         return val if val is not None else None
 
     async def alrange(self, key: str, start: int, end: int) -> list[Any]:
         """Get a range of elements from a list asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         values = await client.lrange(key, start, end)
         return list(values)
 
     async def alindex(self, key: str, index: int) -> Any | None:
         """Get an element from a list by index asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         val = await client.lindex(key, index)
         return val if val is not None else None
 
     async def alset(self, key: str, index: int, value: Any) -> bool:
         """Set an element in a list by index asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
         nvalue = value
 
         await client.lset(key, index, nvalue)
@@ -1550,14 +1569,14 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def alrem(self, key: str, count: int, value: Any) -> int:
         """Remove elements from a list asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
         nvalue = value
 
         return cast("int", await client.lrem(key, count, nvalue))
 
     async def altrim(self, key: str, start: int, end: int) -> bool:
         """Trim a list to the specified range asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         await client.ltrim(key, start, end)
         return True
@@ -1570,7 +1589,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         value: Any,
     ) -> int:
         """Insert an element before or after another element asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
         npivot = pivot
         nvalue = value
 
@@ -1582,7 +1601,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         timeout: float = 0,
     ) -> tuple[str, Any] | None:
         """Blocking pop from head of list asynchronously."""
-        client = self.get_async_client(write=True)
+        client = await self.get_async_client(write=True)
 
         result = await client.blpop(keys, timeout=timeout)
         if result is None:
@@ -1597,7 +1616,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         timeout: float = 0,
     ) -> tuple[str, Any] | None:
         """Blocking pop from tail of list asynchronously."""
-        client = self.get_async_client(write=True)
+        client = await self.get_async_client(write=True)
 
         result = await client.brpop(keys, timeout=timeout)
         if result is None:
@@ -1615,7 +1634,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         whereto: str = "RIGHT",
     ) -> Any | None:
         """Blocking atomically move element from one list to another asynchronously."""
-        client = self.get_async_client(src, write=True)
+        client = await self.get_async_client(src, write=True)
 
         val = await client.blmove(src, dst, timeout, wherefrom, whereto)
         return val if val is not None else None
@@ -1758,41 +1777,41 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def asadd(self, key: str, *members: Any) -> int:
         """Add members to a set asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
         nmembers = list(members)
 
         return cast("int", await client.sadd(key, *nmembers))
 
     async def asrem(self, key: str, *members: Any) -> int:
         """Remove members from a set asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
         nmembers = list(members)
 
         return cast("int", await client.srem(key, *nmembers))
 
     async def asmembers(self, key: str) -> _set[Any]:
         """Get all members of a set asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         result = await client.smembers(key)
         return set(result)
 
     async def asismember(self, key: str, member: Any) -> bool:
         """Check if a value is a member of a set asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
         nmember = member
 
         return bool(await client.sismember(key, nmember))
 
     async def ascard(self, key: str) -> int:
         """Get the number of members in a set asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         return cast("int", await client.scard(key))
 
     async def aspop(self, key: str, count: int | None = None) -> Any | list[Any] | None:
         """Remove and return random member(s) from a set asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         if count is None:
             val = await client.spop(key)
@@ -1802,7 +1821,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def asrandmember(self, key: str, count: int | None = None) -> Any | list[Any] | None:
         """Get random member(s) from a set asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         if count is None:
             val = await client.srandmember(key)
@@ -1812,53 +1831,53 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def asmove(self, src: str, dst: str, member: Any) -> bool:
         """Move a member from one set to another asynchronously."""
-        client = self.get_async_client(write=True)
+        client = await self.get_async_client(write=True)
         nmember = member
 
         return bool(await client.smove(src, dst, nmember))
 
     async def asdiff(self, keys: list[str]) -> _set[Any]:
         """Return the difference of sets asynchronously."""
-        client = self.get_async_client(write=False)
+        client = await self.get_async_client(write=False)
 
         result = await client.sdiff(keys)
         return set(result)
 
     async def asdiffstore(self, dest: str, keys: list[str]) -> int:
         """Store the difference of sets asynchronously."""
-        client = self.get_async_client(write=True)
+        client = await self.get_async_client(write=True)
 
         return cast("int", await client.sdiffstore(dest, keys))
 
     async def asinter(self, keys: list[str]) -> _set[Any]:
         """Return the intersection of sets asynchronously."""
-        client = self.get_async_client(write=False)
+        client = await self.get_async_client(write=False)
 
         result = await client.sinter(keys)
         return set(result)
 
     async def asinterstore(self, dest: str, keys: list[str]) -> int:
         """Store the intersection of sets asynchronously."""
-        client = self.get_async_client(write=True)
+        client = await self.get_async_client(write=True)
 
         return cast("int", await client.sinterstore(dest, keys))
 
     async def asunion(self, keys: list[str]) -> _set[Any]:
         """Return the union of sets asynchronously."""
-        client = self.get_async_client(write=False)
+        client = await self.get_async_client(write=False)
 
         result = await client.sunion(keys)
         return set(result)
 
     async def asunionstore(self, dest: str, keys: list[str]) -> int:
         """Store the union of sets asynchronously."""
-        client = self.get_async_client(write=True)
+        client = await self.get_async_client(write=True)
 
         return cast("int", await client.sunionstore(dest, keys))
 
     async def asmismember(self, key: str, *members: Any) -> list[bool]:
         """Check if multiple values are members of a set asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
         nmembers = list(members)
 
         result = await client.smismember(key, nmembers)
@@ -1872,7 +1891,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         count: int | None = None,
     ) -> tuple[int, _set[Any]]:
         """Incrementally iterate over set members asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         next_cursor, members = await client.sscan(key, cursor=cursor, match=match, count=count)
         return next_cursor, set(members)
@@ -1884,7 +1903,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         count: int | None = None,
     ) -> AsyncIterator[Any]:
         """Iterate over set members using SSCAN asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         async for member in client.sscan_iter(key, match=match, count=count):
             yield member
@@ -2086,21 +2105,21 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         ch: bool = False,
     ) -> int:
         """Add members to a sorted set asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
         scored_mapping = dict(mapping.items())
 
         return cast("int", await client.zadd(key, scored_mapping, nx=nx, xx=xx, gt=gt, lt=lt, ch=ch))
 
     async def azrem(self, key: str, *members: Any) -> int:
         """Remove members from a sorted set asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
         nmembers = list(members)
 
         return cast("int", await client.zrem(key, *nmembers))
 
     async def azscore(self, key: str, member: Any) -> float | None:
         """Get the score of a member asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
         nmember = member
 
         result = await client.zscore(key, nmember)
@@ -2108,33 +2127,33 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def azrank(self, key: str, member: Any) -> int | None:
         """Get the rank of a member (0-based) asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
         nmember = member
 
         return await client.zrank(key, nmember)
 
     async def azrevrank(self, key: str, member: Any) -> int | None:
         """Get the reverse rank of a member asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
         nmember = member
 
         return await client.zrevrank(key, nmember)
 
     async def azcard(self, key: str) -> int:
         """Get the number of members in a sorted set asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         return cast("int", await client.zcard(key))
 
     async def azcount(self, key: str, min_score: float | str, max_score: float | str) -> int:
         """Count members in a score range asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         return cast("int", await client.zcount(key, min_score, max_score))
 
     async def azincrby(self, key: str, amount: float, member: Any) -> float:
         """Increment the score of a member asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
         nmember = member
 
         return float(await client.zincrby(key, amount, nmember))
@@ -2148,7 +2167,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         withscores: bool = False,
     ) -> list[Any] | list[tuple[Any, float]]:
         """Get a range of members by index asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         result = await client.zrange(key, start, end, withscores=withscores)
         if withscores:
@@ -2164,7 +2183,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         withscores: bool = False,
     ) -> list[Any] | list[tuple[Any, float]]:
         """Get a range of members by index, reversed, asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         result = await client.zrevrange(key, start, end, withscores=withscores)
         if withscores:
@@ -2182,7 +2201,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         withscores: bool = False,
     ) -> list[Any] | list[tuple[Any, float]]:
         """Get members by score range asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         result = await client.zrangebyscore(
             key,
@@ -2207,7 +2226,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         withscores: bool = False,
     ) -> list[Any] | list[tuple[Any, float]]:
         """Get members by score range, reversed, asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         result = await client.zrevrangebyscore(
             key,
@@ -2223,33 +2242,33 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def azremrangebyrank(self, key: str, start: int, end: int) -> int:
         """Remove members by rank range asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         return cast("int", await client.zremrangebyrank(key, start, end))
 
     async def azremrangebyscore(self, key: str, min_score: float | str, max_score: float | str) -> int:
         """Remove members by score range asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         return cast("int", await client.zremrangebyscore(key, min_score, max_score))
 
     async def azpopmin(self, key: str, count: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with lowest scores asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         result = await client.zpopmin(key, count)
         return [(m, float(s)) for m, s in result]
 
     async def azpopmax(self, key: str, count: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with highest scores asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         result = await client.zpopmax(key, count)
         return [(m, float(s)) for m, s in result]
 
     async def azmscore(self, key: str, *members: Any) -> list[float | None]:
         """Get scores for multiple members asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
         nmembers = list(members)
 
         results = await client.zmscore(key, nmembers)
@@ -2575,7 +2594,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         limit: int | None = None,
     ) -> str:
         """Add an entry to a stream asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
         encoded_fields = dict(fields.items())
 
         result = await client.xadd(
@@ -2592,7 +2611,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def axlen(self, key: str) -> int:
         """Get the number of entries in a stream asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         return cast("int", await client.xlen(key))
 
@@ -2604,7 +2623,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         count: int | None = None,
     ) -> list[tuple[str, dict[str, Any]]]:
         """Get entries from a stream in ascending order asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         results = await client.xrange(key, min=start, max=end, count=count)
         return self._decode_stream_entries(results)
@@ -2617,7 +2636,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         count: int | None = None,
     ) -> list[tuple[str, dict[str, Any]]]:
         """Get entries from a stream in descending order asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         results = await client.xrevrange(key, max=end, min=start, count=count)
         return self._decode_stream_entries(results)
@@ -2629,7 +2648,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         block: int | None = None,
     ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
         """Read entries from one or more streams asynchronously."""
-        client = self.get_async_client(write=False)
+        client = await self.get_async_client(write=False)
 
         results = await client.xread(streams=streams, count=count, block=block)
         if results is None:
@@ -2646,7 +2665,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         limit: int | None = None,
     ) -> int:
         """Trim a stream asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         return cast(
             "int",
@@ -2655,13 +2674,13 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def axdel(self, key: str, *entry_ids: str) -> int:
         """Delete entries from a stream asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         return cast("int", await client.xdel(key, *entry_ids))
 
     async def axinfo_stream(self, key: str, full: bool = False) -> dict[str, Any]:
         """Get information about a stream asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         if full:
             return await client.xinfo_stream(key, full=True)
@@ -2669,13 +2688,13 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def axinfo_groups(self, key: str) -> list[dict[str, Any]]:
         """Get information about consumer groups for a stream asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         return await client.xinfo_groups(key)
 
     async def axinfo_consumers(self, key: str, group: str) -> list[dict[str, Any]]:
         """Get information about consumers in a group asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         return await client.xinfo_consumers(key, group)
 
@@ -2688,14 +2707,14 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         entries_read: int | None = None,
     ) -> bool:
         """Create a consumer group asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         await client.xgroup_create(key, group, id=entry_id, mkstream=mkstream, entries_read=entries_read)
         return True
 
     async def axgroup_destroy(self, key: str, group: str) -> int:
         """Destroy a consumer group asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         return cast("int", await client.xgroup_destroy(key, group))
 
@@ -2707,14 +2726,14 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         entries_read: int | None = None,
     ) -> bool:
         """Set the last delivered ID for a consumer group asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         await client.xgroup_setid(key, group, id=entry_id, entries_read=entries_read)
         return True
 
     async def axgroup_delconsumer(self, key: str, group: str, consumer: str) -> int:
         """Remove a consumer from a group asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         return cast("int", await client.xgroup_delconsumer(key, group, consumer))
 
@@ -2728,7 +2747,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         noack: bool = False,
     ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
         """Read entries from streams as a consumer group member asynchronously."""
-        client = self.get_async_client(write=True)
+        client = await self.get_async_client(write=True)
 
         results = await client.xreadgroup(
             groupname=group,
@@ -2745,7 +2764,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     async def axack(self, key: str, group: str, *entry_ids: str) -> int:
         """Acknowledge message processing asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         return cast("int", await client.xack(key, group, *entry_ids))
 
@@ -2760,7 +2779,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         idle: int | None = None,
     ) -> dict[str, Any] | list[dict[str, Any]]:
         """Get pending entries information asynchronously."""
-        client = self.get_async_client(key, write=False)
+        client = await self.get_async_client(key, write=False)
 
         if start is not None and end is not None and count is not None:
             return await client.xpending_range(
@@ -2788,7 +2807,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         justid: bool = False,
     ) -> list[tuple[str, dict[str, Any]]] | list[str]:
         """Claim pending messages asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         results = await client.xclaim(
             key,
@@ -2817,7 +2836,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         justid: bool = False,
     ) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
         """Auto-claim pending messages asynchronously."""
-        client = self.get_async_client(key, write=True)
+        client = await self.get_async_client(key, write=True)
 
         result = await client.xautoclaim(
             key,
@@ -2859,7 +2878,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         *keys_and_args: Any,
     ) -> Any:
         """Execute a Lua script server-side asynchronously."""
-        client = self.get_async_client(write=True)
+        client = await self.get_async_client(write=True)
         return await client.eval(script, numkeys, *keys_and_args)
 
 
@@ -3164,8 +3183,14 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         return self._cluster_instance
 
     @override
-    def get_async_client(self, key: str | None = None, *, write: bool = False) -> Any:
+    async def get_async_client(self, key: str | None = None, *, write: bool = False) -> Any:
         """Get the async Cluster client for the current event loop."""
+        return self._build_async_client_sync(write=write)
+
+    @override
+    def _build_async_client_sync(self, *, write: bool) -> Any:
+        """Sync-callable async-cluster builder for use by ``apipeline()``."""
+        del write
         loop = asyncio.get_running_loop()
 
         # Check if we already have an async cluster for this loop
@@ -3378,7 +3403,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         if not keys:
             return {}
 
-        client = self.get_async_client(write=False)
+        client = await self.get_async_client(write=False)
 
         # mget_nonatomic handles slot splitting
         results = cast(
@@ -3415,7 +3440,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         if not data:
             return []
 
-        client = self.get_async_client(write=True)
+        client = await self.get_async_client(write=True)
 
         prepared_data = dict(data.items())
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
@@ -3443,7 +3468,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         if not keys:
             return 0
 
-        client = self.get_async_client(write=True)
+        client = await self.get_async_client(write=True)
 
         # Group keys by slot
         slots = self._group_keys_by_slot(keys)
@@ -3456,7 +3481,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
     @override
     async def aclear(self) -> bool:
         """Flush all primary nodes in the cluster asynchronously."""
-        client = self.get_async_client(write=True)
+        client = await self.get_async_client(write=True)
 
         # Use PRIMARIES constant from the cluster class
         await client.flushdb(target_nodes=self._async_cluster.PRIMARIES)
@@ -3465,7 +3490,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
     @override
     async def akeys(self, pattern: str) -> list[str]:
         """Execute KEYS command asynchronously across all primary nodes."""
-        client = self.get_async_client(write=False)
+        client = await self.get_async_client(write=False)
 
         keys_result = cast(
             "list[bytes]",
@@ -3480,7 +3505,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         itersize: int | None = None,
     ) -> AsyncIterator[str]:
         """Iterate keys matching pattern asynchronously across all primary nodes."""
-        client = self.get_async_client(write=False)
+        client = await self.get_async_client(write=False)
 
         if itersize is None:
             itersize = self._default_scan_itersize
@@ -3499,7 +3524,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         itersize: int | None = None,
     ) -> int:
         """Remove all keys matching pattern asynchronously across all primary nodes."""
-        client = self.get_async_client(write=True)
+        client = await self.get_async_client(write=True)
 
         if itersize is None:
             itersize = self._default_scan_itersize
@@ -3545,7 +3570,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
     @override
     def apipeline(self, *, transaction: bool = True) -> ValkeyPyAsyncPipelineAdapter:
         """Construct an async cluster pipeline adapter. ``ClusterPipeline`` doesn't use MULTI/EXEC."""
-        client = self.get_async_client(write=True)
+        client = self._build_async_client_sync(write=True)
         return ValkeyPyAsyncPipelineAdapter(client.pipeline(transaction=False))
 
 

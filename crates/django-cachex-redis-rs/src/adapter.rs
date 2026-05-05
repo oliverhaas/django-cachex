@@ -979,10 +979,19 @@ impl RedisRsAdapter {
         slf.clone().unbind().into_any()
     }
 
+    /// Async-by-Protocol-contract; the body has no awaits because the
+    /// adapter is its own multiplexed transport. Returns a pre-resolved
+    /// awaitable so callers can ``await self.get_async_client(...)``
+    /// uniformly across adapters.
     #[pyo3(signature = (key=None, *, write=false))]
-    fn get_async_client(slf: &Bound<'_, Self>, key: Option<Py<PyAny>>, write: bool) -> Py<PyAny> {
+    fn get_async_client(
+        slf: &Bound<'_, Self>,
+        key: Option<Py<PyAny>>,
+        write: bool,
+    ) -> PyResult<Py<crate::async_bridge::RedisRsAwaitable>> {
         let _ = (key, write);
-        slf.clone().unbind().into_any()
+        let py = slf.py();
+        await_constant(py, slf.clone().unbind().into_any())
     }
 
     fn get_raw_client(slf: &Bound<'_, Self>) -> Py<PyAny> {
