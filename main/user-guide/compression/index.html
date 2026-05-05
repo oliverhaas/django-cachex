@@ -1266,7 +1266,7 @@ Throughput factor is normalized to <strong>no compression</strong>, so the table
 </ul>
 <p>¹ Compressed size as a percentage of the input (~14 KiB pickled queryset-shaped payload).
 ² Absolute compress/decompress throughput in a tight loop (200 ops × 20 runs, median, single core). Numbers are hardware-dependent; use the ratios between rows, not the absolute values. Real-world impact also depends on payload compressibility (text/JSON compresses ~10×; already-compressed bytes barely shrink).
-³ Geometric mean of <code>get</code>/<code>set</code>/<code>mget</code>/<code>mset</code> ops/sec end-to-end via Django cache → <code>rust-valkey</code> driver → localhost Valkey, normalized to running without a compressor. Reproduce with the <a href="https://github.com/e1plus/django-cachex/tree/main/benchmarks">benchmarks</a> harness.</p>
+³ Geometric mean of <code>get</code>/<code>set</code>/<code>mget</code>/<code>mset</code> ops/sec end-to-end via Django cache → <code>redis-rs</code> adapter → localhost Valkey, normalized to running without a compressor. Reproduce with the <a href="https://github.com/e1plus/django-cachex/tree/main/benchmarks">benchmarks</a> harness.</p>
 <h2 id="fallback-for-migration">Fallback for Migration<a class="headerlink" href="#fallback-for-migration" title="Permanent link">&para;</a></h2>
 <p>Specify a list of compressors to safely migrate between formats. The first is used for writing, all are tried for reading:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>

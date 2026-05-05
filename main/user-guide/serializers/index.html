@@ -1257,7 +1257,7 @@ on read), <strong>✗</strong> raises <code>SerializerError</code> on <code>dump
 </tr>
 </tbody>
 </table>
-<p>¹ End-to-end Django cache → <code>rust-valkey</code> driver → localhost Valkey,
+<p>¹ End-to-end Django cache → <code>redis-rs</code> adapter → localhost Valkey,
 ~150 B payload, geometric mean of <code>get</code>/<code>set</code>/<code>mget</code>/<code>mset</code> ops/sec.
 Real network or larger payloads dampen the spread. Reproduce with the
 <a href="https://github.com/e1plus/django-cachex/tree/main/benchmarks">benchmarks</a> harness.</p>
