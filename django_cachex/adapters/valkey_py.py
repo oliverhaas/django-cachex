@@ -65,8 +65,8 @@ _set = set
 # process-wide registry every async cache call creates a brand-new pool —
 # ``max_connections`` is moot because each call gets its own pool. Sharing
 # pools at the module level by event loop + config makes the cap effective
-# and brings pool-based backends in line with the multiplexed rust-valkey
-# driver.
+# and brings pool-based backends in line with the multiplexed redis-rs
+# adapter.
 #
 # The registry itself lives on each driver-specific adapter class as the
 # ``_async_pools`` class attribute (see :mod:`~django_cachex.adapters.redis_py`

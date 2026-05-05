@@ -15,12 +15,16 @@ depends on letting workloads run).
 - `redis-py+hiredis` — C parser
 - `valkey-py` — pure-Python parser
 - `valkey-py+libvalkey` — C parser
-- `rust-valkey` — our Rust extension adapter
+- `redis-rs` — our Rust extension adapter (PyO3 bindings around the
+  `redis-rs` crate, multiplexed Tokio transport)
+- `valkey-glide` — `valkey/valkey-glide` Python wheels (also Rust-cored,
+  but with a thread-pool transport instead of multiplexed). Only available
+  on cp314 GIL — no cp314t (free-threaded) wheels yet.
 - `django (builtin)` — Django's official built-in `django.core.cache.backends.redis.RedisCache`
   (since 4.0). Not the third-party `jazzband/django-redis` package — that one is
   unrelated. Included as an external reference point.
 
-**Serializers** (with `rust-valkey` adapter, since adapter overhead is smallest there):
+**Serializers** (with `redis-rs` adapter, since adapter overhead is smallest there):
 
 - `pickle` — stdlib default
 - `json` — Django's `DjangoJSONEncoder`
@@ -28,7 +32,7 @@ depends on letting workloads run).
 - `orjson` — Rust-backed JSON
 - `ormsgpack` — Rust-backed MessagePack
 
-**Compressors** — two views, both with `rust-valkey` + `pickle`:
+**Compressors** — two views, both with `redis-rs` + `pickle`:
 
 - *Macro* (`test_compressors_macro`) — end-to-end Django cache ops on a
   ~14 KiB queryset-shaped payload. Captures the cost of compress/decompress
@@ -124,7 +128,7 @@ uv run pytest benchmarks/test_throughput.py::test_adapters_async_concurrent -c b
 uv run pytest benchmarks/test_throughput.py::test_adapters_asgi             -c benchmarks/pytest.ini
 
 # A single config
-uv run pytest 'benchmarks/test_throughput.py::test_adapters_sync[rust-valkey]' -c benchmarks/pytest.ini
+uv run pytest 'benchmarks/test_throughput.py::test_adapters_sync[redis-rs]' -c benchmarks/pytest.ini
 ```
 
 `test_compressors_micro` is the only test that doesn't need Docker — useful
@@ -135,10 +139,11 @@ A summary table prints at the end of the session.
 ## Notes
 
 - **No xdist.** Parallel runs make timings noisy; benchmarks run sequentially.
-- **Redis vs Valkey.** Each adapter is paired with its natural server (redis-py
-  → redis, valkey-py → valkey, rust → valkey). Cross-pairings are intentionally
-  not in the matrix — both servers speak the same protocol, so the comparison
-  is mostly a wash.
+- **Redis vs Valkey.** Each adapter is paired with its natural server
+  (redis-py → redis, valkey-py / redis-rs / valkey-glide → valkey,
+  django (builtin) → redis). Cross-pairings are intentionally not in the
+  matrix — both servers speak the same protocol, so the comparison is
+  mostly a wash.
 - **Warmup.** Each phase runs an untimed pass before the timed runs to prime
   connections, server keyspace, and lazy serializer state.
 - **Memory caveat.** `used_memory` is whole-server, so concurrent activity on
@@ -158,7 +163,7 @@ run; ordering is what matters.
 | redis-py+hiredis     |  2,412 |  2,338 | 1,540 | 1,382 |  2,570 |         57 |
 | valkey-py            |  2,760 |  2,729 | 1,589 | 1,442 |  3,030 |        109 |
 | valkey-py+libvalkey  |  2,782 |  2,735 | 1,684 | 1,530 |  3,038 |         51 |
-| **rust-valkey**      |  9,268 | 10,844 | 2,730 | 4,461 | 12,046 |         24 |
+| **redis-rs**      |  9,268 | 10,844 | 2,730 | 4,461 | 12,046 |         24 |
 | django (builtin)     |  2,312 |  2,295 | 1,496 | 1,364 |  1,911 |         56 |
 
 ### Django request cycle (`test_adapters_request_cycle`, `#req`) — ops/sec
@@ -169,7 +174,7 @@ One cache op per request through the full middleware/URL/view path.
 | -------------------- | ----: | ----: | ----: |
 | redis-py             | 1,055 | 1,054 | 1,066 |
 | valkey-py+libvalkey  | 1,198 | 1,192 | 1,227 |
-| **rust-valkey**      | 1,847 | 1,864 | 1,890 |
+| **redis-rs**      | 1,847 | 1,864 | 1,890 |
 | django (builtin)     | 1,108 | 1,078 |   966 |
 
 ### Async serial (`test_adapters_async_serial`, `#async`) — ops/sec
@@ -181,7 +186,7 @@ Rust falls behind the C-parser Python adapters on this shape only.
 | -------------------- | ----: | ----: | ----: | ----: | ----: |
 | redis-py+hiredis     | 1,801 | 1,734 | 1,172 |   861 | 1,894 |
 | valkey-py+libvalkey  | 2,042 | 2,083 | 1,305 |   874 | 2,200 |
-| **rust-valkey**      | 1,394 | 1,384 |   880 | 1,134 | 1,372 |
+| **redis-rs**      | 1,394 | 1,384 |   880 | 1,134 | 1,372 |
 | django (builtin)     | 1,687 | 1,780 |   184 |   186 |   912 |
 
 ### Async concurrent at 50 (`test_adapters_async_concurrent`, `#async50`) — ops/sec
@@ -193,7 +198,7 @@ actually generate.
 | -------------------- | -----: | -----: | ----: | ----: | -----: | ---------: |
 | redis-py+hiredis     |  2,091 |  2,021 | 1,307 |   922 |  2,192 |        110 |
 | valkey-py+libvalkey  |  2,419 |  2,331 | 1,428 |   909 |  2,528 |        108 |
-| **rust-valkey**      | 18,801 | 25,515 | 3,175 | 6,072 | 28,567 |        108 |
+| **redis-rs**      | 18,801 | 25,515 | 3,175 | 6,072 | 28,567 |        108 |
 | django (builtin)     |  2,029 |  2,042 |   201 |   204 |  1,025 |        111 |
 
 ### ASGI full-stack (`test_adapters_asgi`)
@@ -207,12 +212,12 @@ six async cache ops — the shape closest to real production load.
 | redis-py+hiredis     |   227 |    437 |  2,542 |            179 |        122 |           122 |
 | valkey-py            |   159 |    618 |  2,674 |            149 |        111 |           111 |
 | valkey-py+libvalkey  |   149 |    663 |  3,124 |            147 |        134 |           134 |
-| **rust-valkey**      |   251 |    395 |  2,314 |            135 |          2 |             2 |
+| **redis-rs**      |   251 |    395 |  2,314 |            135 |          2 |             2 |
 | django (builtin)     |   157 |    631 |  1,138 |            417 |      1,840 |         1,798 |
 
 ### Takeaways
 
-- Under realistic concurrent load, `rust-valkey` is **3–4×** faster than the
+- Under realistic concurrent load, `redis-rs` is **3–4×** faster than the
   fastest Python adapter on sync direct, **8–12×** faster on `async50`, and
   ~10% ahead on full ASGI throughput while using **50× fewer Valkey
   connections** (multiplexed Tokio transport — 2 vs 100+).
@@ -220,7 +225,7 @@ six async cache ops — the shape closest to real production load.
   vcache flagged: 1,840 connections peak, settled at 1,798, 3× the RSS of
   the cachex backends. The cachex async path keeps Δ at 0 across phases on
   every adapter.
-- The one shape where `rust-valkey` trails is async serial — one `await` at
+- The one shape where `redis-rs` trails is async serial — one `await` at
   a time. With no concurrency to multiplex over, the Python↔Rust crossing
   costs ~30% versus `valkey-py+libvalkey`. Real Django ASGI apps don't sit
   in that shape; production code that does should batch via `aget_many` /

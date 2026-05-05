@@ -76,7 +76,7 @@ Picking guide:
 
 ¹ Compressed size as a percentage of the input (~14 KiB pickled queryset-shaped payload).
 ² Absolute compress/decompress throughput in a tight loop (200 ops × 20 runs, median, single core). Numbers are hardware-dependent; use the ratios between rows, not the absolute values. Real-world impact also depends on payload compressibility (text/JSON compresses ~10×; already-compressed bytes barely shrink).
-³ Geometric mean of `get`/`set`/`mget`/`mset` ops/sec end-to-end via Django cache → `rust-valkey` driver → localhost Valkey, normalized to running without a compressor. Reproduce with the [benchmarks](https://github.com/e1plus/django-cachex/tree/main/benchmarks) harness.
+³ Geometric mean of `get`/`set`/`mget`/`mset` ops/sec end-to-end via Django cache → `redis-rs` adapter → localhost Valkey, normalized to running without a compressor. Reproduce with the [benchmarks](https://github.com/e1plus/django-cachex/tree/main/benchmarks) harness.
 
 ## Fallback for Migration
 

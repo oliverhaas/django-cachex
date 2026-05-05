@@ -4,9 +4,9 @@ Parametrized tests:
 
 - ``test_adapters_sync`` — fixed pickle serializer, varies the adapter.
   Isolates the adapter/parser/connection stack.
-- ``test_serializers`` — fixed rust-valkey adapter, varies the serializer.
+- ``test_serializers`` — fixed redis-rs adapter, varies the serializer.
   Isolates serializer cost (adapter overhead is minimal at that point).
-- ``test_compressors_macro`` — fixed rust-valkey + pickle, varies the
+- ``test_compressors_macro`` — fixed redis-rs + pickle, varies the
   compressor on a large payload. End-to-end ops/sec showing the compress
   cost vs network savings tradeoff in real cache calls.
 - ``test_compressors_micro`` — pure compress/decompress in-process, no
@@ -150,7 +150,7 @@ _POOL_SIZE_SWEEP = (10, 25, 50, 100, 200, 500)
 def test_pool_size_sweep(max_conns: int, server_url, asgi_results, capsys) -> None:
     """Sweep ``max_connections`` against a pool-based adapter to find the elbow.
 
-    Picks ``redis-py`` as the representative pool backend (rust-valkey
+    Picks ``redis-py`` as the representative pool backend (redis-rs
     multiplexes and ignores the cap; django (builtin) sets its own cap via
     the thread executor). Used to validate the default we ship with.
     """
