@@ -25,8 +25,9 @@ Caveats:
 """
 
 import asyncio
+import inspect
 import threading
-from typing import Any
+from typing import Any, Self
 
 from django_cachex.adapters.valkey_py import (
     _VALKEY_AVAILABLE,
@@ -106,7 +107,9 @@ class _UnifiedSyncFacade:
 
     Each callable attribute returns a sync function that schedules the
     underlying coroutine on the worker loop and blocks on the result.
-    Non-callable attributes pass through.
+    Non-callable attributes pass through. The ``pipeline()`` method is
+    special-cased to wrap the returned ``Pipeline`` in a sync facade so
+    chained ops route through the worker loop too.
     """
 
     __slots__ = ("_c", "_loop")
@@ -120,6 +123,13 @@ class _UnifiedSyncFacade:
         if not callable(attr):
             return attr
         loop = self._loop
+
+        if name == "pipeline":
+
+            def pipe_call(*args: Any, **kwargs: Any) -> _UnifiedSyncPipelineFacade:
+                return _UnifiedSyncPipelineFacade(attr(*args, **kwargs), loop)
+
+            return pipe_call
 
         def call(*args: Any, **kwargs: Any) -> Any:
             r = attr(*args, **kwargs)
@@ -131,13 +141,129 @@ class _UnifiedSyncFacade:
         return call
 
 
+class _UnifiedAsyncPipelineFacade:
+    """Wrap an async ``Pipeline``. Chaining methods (``mset``/``expire``/...)
+    return the underlying pipeline synchronously — we re-wrap to ourselves
+    so the chain stays inside the facade. Async methods (``execute``,
+    ``discard``, ...) route their coroutines via the worker loop."""
+
+    __slots__ = ("_loop", "_p")
+
+    def __init__(self, pipe: Any, loop: asyncio.AbstractEventLoop) -> None:
+        self._p = pipe
+        self._loop = loop
+
+    def __getattr__(self, name: str) -> Any:
+        attr = getattr(self._p, name)
+        if not callable(attr):
+            return attr
+        loop = self._loop
+
+        if inspect.iscoroutinefunction(attr):
+
+            async def async_call(*args: Any, **kwargs: Any) -> Any:
+                r = attr(*args, **kwargs)
+                if asyncio.iscoroutine(r):
+                    fut = asyncio.run_coroutine_threadsafe(r, loop)
+                    return await asyncio.wrap_future(fut)
+                return r
+
+            return async_call
+
+        underlying = self._p
+
+        def chain_call(*args: Any, **kwargs: Any) -> Any:
+            r = attr(*args, **kwargs)
+            if r is underlying:
+                return self
+            return r
+
+        return chain_call
+
+    async def __aenter__(self) -> Self:
+        fut = asyncio.run_coroutine_threadsafe(self._p.__aenter__(), self._loop)
+        await asyncio.wrap_future(fut)
+        return self
+
+    async def __aexit__(self, *exc: object) -> Any:
+        fut = asyncio.run_coroutine_threadsafe(self._p.__aexit__(*exc), self._loop)
+        return await asyncio.wrap_future(fut)
+
+
+class _UnifiedSyncPipelineFacade:
+    """Sync variant — same idea, but ``execute()`` etc block on ``.result()``."""
+
+    __slots__ = ("_loop", "_p")
+
+    def __init__(self, pipe: Any, loop: asyncio.AbstractEventLoop) -> None:
+        self._p = pipe
+        self._loop = loop
+
+    def __getattr__(self, name: str) -> Any:
+        attr = getattr(self._p, name)
+        if not callable(attr):
+            return attr
+        loop = self._loop
+
+        if inspect.iscoroutinefunction(attr):
+
+            def async_call(*args: Any, **kwargs: Any) -> Any:
+                r = attr(*args, **kwargs)
+                if asyncio.iscoroutine(r):
+                    fut = asyncio.run_coroutine_threadsafe(r, loop)
+                    return fut.result()
+                return r
+
+            return async_call
+
+        underlying = self._p
+
+        def chain_call(*args: Any, **kwargs: Any) -> Any:
+            r = attr(*args, **kwargs)
+            if r is underlying:
+                return self
+            return r
+
+        return chain_call
+
+
+class _UnifiedAsyncIterator:
+    """Drive each ``__anext__`` of an async generator on the worker loop.
+
+    Async generators returned by methods like ``scan_iter`` perform I/O
+    inside their bodies (``await self.scan(...)``). Iterating them on the
+    calling loop would await on the wrong loop; routing each step via the
+    worker loop keeps the generator's I/O on the same loop as the client.
+    """
+
+    __slots__ = ("_g", "_loop")
+
+    def __init__(self, agen: Any, loop: asyncio.AbstractEventLoop) -> None:
+        self._g = agen
+        self._loop = loop
+
+    def __aiter__(self) -> _UnifiedAsyncIterator:
+        return self
+
+    async def __anext__(self) -> Any:
+        fut = asyncio.run_coroutine_threadsafe(self._g.__anext__(), self._loop)
+        return await asyncio.wrap_future(fut)
+
+    async def aclose(self) -> None:
+        if hasattr(self._g, "aclose"):
+            fut = asyncio.run_coroutine_threadsafe(self._g.aclose(), self._loop)
+            await asyncio.wrap_future(fut)
+
+
 class _UnifiedAsyncFacade:
     """Async-shaped wrapper around a ``valkey.asyncio.Valkey`` client.
 
     Each callable attribute is wrapped in an ``async def`` that, when the
     underlying call returns a coroutine, schedules it on the worker loop
-    and awaits the wrapped future. Lets adapter methods written against
-    ``redis.asyncio`` semantics work unchanged.
+    and awaits the wrapped future. Async-generator methods like
+    ``scan_iter`` are special-cased: the wrapper returns the generator
+    immediately (no extra ``await``) but each ``__anext__`` is routed to
+    the worker loop via :class:`_UnifiedAsyncIterator`.
     """
 
     __slots__ = ("_c", "_loop")
@@ -151,6 +277,30 @@ class _UnifiedAsyncFacade:
         if not callable(attr):
             return attr
         loop = self._loop
+
+        if inspect.isasyncgenfunction(attr):
+            # Adapter callers do ``async for x in client.method(...)`` —
+            # no ``await`` — so the wrapper must return an async iterator
+            # synchronously, not via ``async def``.
+            def gen_call(*args: Any, **kwargs: Any) -> _UnifiedAsyncIterator:
+                return _UnifiedAsyncIterator(attr(*args, **kwargs), loop)
+
+            return gen_call
+
+        if name == "pipeline":
+            # ``pipeline()`` is sync on ``redis.asyncio.Redis``; wrap the
+            # returned Pipeline so its chain stays inside our facade.
+            def pipe_call(*args: Any, **kwargs: Any) -> _UnifiedAsyncPipelineFacade:
+                return _UnifiedAsyncPipelineFacade(attr(*args, **kwargs), loop)
+
+            return pipe_call
+
+        # Default: ``async def`` wrapper that detects coroutine returns at
+        # call time. We can't gate on ``inspect.iscoroutinefunction(attr)``
+        # because ``valkey.asyncio`` defines ``set`` / ``get`` etc. as
+        # plain ``def`` methods that *return* coroutines (commands are
+        # generated by metaclass), so ``iscoroutinefunction`` is False
+        # for them but they still need cross-loop routing.
 
         async def call(*args: Any, **kwargs: Any) -> Any:
             r = attr(*args, **kwargs)
