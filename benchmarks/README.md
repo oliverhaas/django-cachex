@@ -159,13 +159,13 @@ run; ordering is what matters.
 
 | Adapter              |    get | get-miss |    set |  mget |  mset |   incr | delete | py-mem KiB |
 | -------------------- | -----: | -------: | -----: | ----: | ----: | -----: | -----: | ---------: |
-| redis-py             |  2,298 |    2,441 |  2,266 | 1,435 | 1,287 |  2,460 |  1,195 |        111 |
-| redis-py+hiredis     |  2,357 |    2,488 |  2,296 | 1,517 | 1,355 |  2,512 |  1,213 |         51 |
-| valkey-py            |  2,796 |    2,981 |  2,742 | 1,612 | 1,427 |  3,008 |  1,452 |        109 |
-| valkey-py+libvalkey  |  2,865 |    3,038 |  2,761 | 1,714 | 1,514 |  3,067 |  1,469 |         48 |
-| **redis-rs**         |  9,821 |   13,743 | 12,050 | 3,014 | 4,528 | 13,523 |  6,267 |         29 |
-| **valkey-glide**     |  7,023 |    9,267 |  7,203 | 2,044 | 1,904 |  9,364 |  3,980 |         29 |
-| django (builtin)     |  2,334 |    2,469 |  2,297 | 1,495 | 1,363 |  1,944 |  1,212 |         51 |
+| redis-py             |  2,301 |    2,439 |  2,251 | 1,439 | 1,285 |  2,463 |  1,189 |        111 |
+| redis-py+hiredis     |  2,332 |    2,480 |  2,281 | 1,515 | 1,345 |  2,506 |  1,209 |         51 |
+| valkey-py            |  2,783 |    2,956 |  2,695 | 1,595 | 1,418 |  2,978 |  1,437 |        109 |
+| valkey-py+libvalkey  |  2,821 |    2,973 |  2,741 | 1,695 | 1,508 |  3,040 |  1,465 |         48 |
+| **redis-rs**         |  9,651 |   13,396 | 11,151 | 2,967 | 4,520 | 13,226 |  5,894 |         29 |
+| **valkey-glide**     |  6,982 |    8,783 |  6,982 | 2,030 | 1,916 |  8,901 |  3,994 |         29 |
+| django (builtin)     |  2,307 |    2,459 |  2,269 | 1,501 | 1,347 |  1,947 |  1,199 |         51 |
 
 ### Django request cycle (`test_adapters_request_cycle`, `#req`) — ops/sec
 
@@ -173,13 +173,13 @@ One cache op per request through the full middleware/URL/view path.
 
 | Adapter              |   get | get-miss |   set |  mget |  mset |  incr | delete |
 | -------------------- | ----: | -------: | ----: | ----: | ----: | ----: | -----: |
-| redis-py             | 1,109 |    1,178 | 1,127 |   837 |   777 | 1,160 |  1,148 |
-| redis-py+hiredis     | 1,055 |    1,182 | 1,137 |   870 |   807 | 1,170 |  1,174 |
-| valkey-py            | 1,081 |    1,295 | 1,232 |   891 |   822 | 1,277 |  1,279 |
-| valkey-py+libvalkey  | 1,051 |    1,314 | 1,256 |   932 |   868 | 1,296 |  1,295 |
-| **redis-rs**         | 1,409 |    2,094 | 1,998 | 1,258 | 1,512 | 2,040 |  2,033 |
-| **valkey-glide**     | 1,262 |    1,892 | 1,778 | 1,028 | 1,003 | 1,843 |  1,838 |
-| django (builtin)     |   866 |    1,183 | 1,138 |   859 |   810 | 1,016 |  1,178 |
+| redis-py             | 1,106 |    1,180 | 1,129 |   835 |   778 | 1,153 |  1,152 |
+| redis-py+hiredis     | 1,065 |    1,181 | 1,131 |   866 |   807 | 1,168 |  1,173 |
+| valkey-py            | 1,089 |    1,299 | 1,241 |   891 |   836 | 1,276 |  1,282 |
+| valkey-py+libvalkey  | 1,053 |    1,306 | 1,248 |   924 |   861 | 1,290 |  1,300 |
+| **redis-rs**         | 1,382 |    2,044 | 2,001 | 1,265 | 1,490 | 1,995 |  2,005 |
+| **valkey-glide**     | 1,237 |    1,863 | 1,753 | 1,023 |   994 | 1,816 |  1,838 |
+| django (builtin)     |   861 |    1,177 | 1,133 |   859 |   806 | 1,016 |  1,169 |
 
 ### Async serial (`test_adapters_async_serial`, `#async`) — ops/sec
 
@@ -187,13 +187,13 @@ One `await` at a time.
 
 | Adapter              |   get | get-miss |   set |  mget |  mset |  incr | delete |
 | -------------------- | ----: | -------: | ----: | ----: | ----: | ----: | -----: |
-| redis-py             | 1,832 |    1,908 | 1,729 | 1,205 |   856 | 1,899 |    915 |
-| redis-py+hiredis     | 1,816 |    1,914 | 1,724 | 1,209 |   859 | 1,892 |    913 |
-| valkey-py            | 2,069 |    2,170 | 2,035 | 1,328 |   852 | 2,173 |  1,045 |
-| valkey-py+libvalkey  | 2,075 |    2,181 | 2,030 | 1,325 |   852 | 2,185 |  1,049 |
-| **redis-rs**         | 6,922 |    8,607 | 7,801 | 2,520 | 3,668 | 8,764 |  4,274 |
-| **valkey-glide**     | 3,328 |    3,631 | 3,282 | 1,737 | 1,686 | 3,713 |  1,768 |
-| django (builtin)     | 1,915 |    2,048 | 1,945 |   198 |   195 |   995 |    992 |
+| redis-py             | 1,820 |    1,911 | 1,724 | 1,195 |   849 | 1,903 |    917 |
+| redis-py+hiredis     | 1,815 |    1,913 | 1,729 | 1,199 |   849 | 1,911 |    915 |
+| valkey-py            | 2,080 |    2,184 | 2,039 | 1,331 |   854 | 2,190 |  1,055 |
+| valkey-py+libvalkey  | 2,075 |    2,187 | 2,029 | 1,329 |   852 | 2,176 |  1,049 |
+| **redis-rs**         | 6,862 |    8,238 | 7,517 | 2,474 | 3,560 | 8,265 |  3,952 |
+| **valkey-glide**     | 3,300 |    3,738 | 3,297 | 1,725 | 1,678 | 3,693 |  1,735 |
+| django (builtin)     | 1,948 |    1,995 | 1,929 |   199 |   197 |   989 |    992 |
 
 ### Async concurrent at 50 (`test_adapters_async_concurrent`, `#async50`) — ops/sec
 
@@ -202,13 +202,13 @@ actually generate.
 
 | Adapter              |    get | get-miss |    set |  mget |  mset |   incr | delete | conns peak |
 | -------------------- | -----: | -------: | -----: | ----: | ----: | -----: | -----: | ---------: |
-| redis-py             |  2,119 |    2,258 |  2,059 | 1,353 |   928 |  2,161 |    981 |         56 |
-| redis-py+hiredis     |  2,116 |    2,258 |  2,055 | 1,358 |   930 |  2,161 |    979 |        106 |
-| valkey-py            |  2,471 |    2,580 |  2,327 | 1,233 |   919 |  2,559 |  1,126 |         58 |
-| valkey-py+libvalkey  |  2,479 |    2,592 |  2,333 | 1,237 |   920 |  2,561 |  1,127 |        108 |
-| **redis-rs**         | 22,419 |   36,201 | 28,862 | 2,498 | 6,548 | 39,650 |  6,272 |        109 |
-| **valkey-glide**     | 10,184 |   12,512 | 10,032 | 2,073 | 2,629 | 12,314 |  2,649 |        109 |
-| django (builtin)     |  2,060 |    2,218 |  2,120 |   210 |   211 |  1,056 |  1,018 |        107 |
+| redis-py             |  2,109 |    2,254 |  2,043 | 1,343 |   925 |  2,148 |    971 |         56 |
+| redis-py+hiredis     |  2,121 |    2,254 |  2,047 | 1,347 |   931 |  2,149 |    979 |        106 |
+| valkey-py            |  2,465 |    2,591 |  2,327 | 1,229 |   920 |  2,569 |  1,130 |         58 |
+| valkey-py+libvalkey  |  2,467 |    2,588 |  2,329 | 1,223 |   917 |  2,564 |  1,129 |        108 |
+| **redis-rs**         | 22,335 |   35,848 | 28,528 | 2,508 | 6,533 | 39,406 |  5,543 |        108 |
+| **valkey-glide**     | 10,149 |   12,575 | 10,045 | 2,074 | 2,607 | 12,232 |  2,627 |        109 |
+| django (builtin)     |  2,078 |    2,177 |  2,076 |   212 |   210 |  1,051 |  1,018 |        107 |
 
 ### ASGI full-stack (`test_adapters_asgi`)
 
@@ -217,41 +217,40 @@ six async cache ops — the shape closest to real production load.
 
 | Adapter              | req/s | avg ms | p99 ms | RSS peak (MiB) | conns peak | conns settled |
 | -------------------- | ----: | -----: | -----: | -------------: | ---------: | ------------: |
-| redis-py             |   503 |    198 |  1,340 |            418 |        209 |           209 |
-| redis-py+hiredis     |   339 |    294 |  1,569 |            417 |        209 |           209 |
-| valkey-py            |   263 |    378 |  1,876 |            411 |        227 |           227 |
-| valkey-py+libvalkey  |   514 |    194 |  1,325 |            450 |        215 |           215 |
-| **redis-rs**         |   286 |    346 |  1,985 |            433 |        592 |           592 |
-| **valkey-glide**     |   219 |    452 |  2,094 |            666 |      4,577 |         4,577 |
-| django (builtin)     |   174 |    567 |  2,816 |            536 |        387 |           387 |
+| redis-py             |   424 |    235 |  1,486 |            413 |        216 |           216 |
+| redis-py+hiredis     |   467 |    213 |  1,509 |            414 |        209 |           209 |
+| valkey-py            |   519 |    192 |  1,375 |            420 |        211 |           211 |
+| valkey-py+libvalkey  |   498 |    200 |  1,599 |            432 |        211 |           211 |
+| **redis-rs**         |   607 |    164 |  1,152 |            430 |        115 |           115 |
+| **valkey-glide**     |   553 |    180 |  1,395 |            446 |        172 |           172 |
+| django (builtin)     |   156 |    634 |  3,117 |            466 |        337 |           337 |
 
 ### Takeaways
 
-- **Sync direct.** `redis-rs` leads on every phase — **~10k get / 12k set
-  / 13.5k incr / 6.3k delete** ops/sec, ~4× the fastest pure-Python
-  adapter. `valkey-glide` is second on single-key ops (`get`/`set`/`incr`
-  ~7–9k) but trails `redis-rs` on multi-key and `delete`. Both Rust
-  adapters use ~4× less Python memory than the pure-Python adapters.
-- **Django request cycle.** With `close()` correctly treated as a no-op,
-  both Rust adapters now lead the table — `redis-rs` ~1.4–2.1k ops/sec,
-  `valkey-glide` ~1.3–1.9k. Pre-fix this benchmark failed entirely on
-  both Rust adapters because `request_finished` was tearing down the
-  connection on every request.
+- **Sync direct.** `redis-rs` leads on every phase — **~10k get / 11k set
+  / 13k incr / 6k delete** ops/sec, ~4× the fastest pure-Python adapter.
+  `valkey-glide` is second on single-key ops (`get`/`set`/`incr` ~7–9k)
+  but trails `redis-rs` on multi-key and `delete`. Both Rust adapters
+  use ~4× less Python memory than the pure-Python adapters.
+- **Django request cycle.** Both Rust adapters lead the table —
+  `redis-rs` ~1.4–2.1k ops/sec, `valkey-glide` ~1.2–1.9k. Earlier
+  versions of these adapters failed this benchmark entirely because
+  ``close()`` was tearing down the connection on every
+  ``request_finished`` signal; now they outperform the Python adapters.
 - **Async serial.** `redis-rs` runs **~3–4× faster** than the C-parser
-  Python adapters on every phase (6.9k get, 8.7k incr). `valkey-glide`
+  Python adapters on every phase (6.9k get, 8.3k incr). `valkey-glide`
   is also faster than Python (~1.5–1.8×) but trails `redis-rs`.
 - **Async concurrent (50 in flight).** `redis-rs` peaks at **22k get /
   36k get-miss / 39k incr** ops/sec — **9–18×** the fastest Python
   adapter. `valkey-glide` is half that rate but still **~4×** ahead of
   the Python adapters.
-- **ASGI full-stack** (granian × 4 workers, httpx × 100 concurrent) is
-  noisy run-to-run. Best-case Python adapters land in the 300–500 req/s
-  range; Rust adapters in the 200–290 req/s range here. The connection
-  count for `valkey-glide` is still anomalously high (4,577) — likely
-  granian spawning many short-lived event loops, each getting a fresh
-  per-loop async client; worth a follow-up. `redis-rs` improved from
-  1,111 → 592 thanks to the close fix but is still elevated vs the
-  Python adapters' ~210.
+- **ASGI full-stack** (granian × 4 workers, httpx × 100 concurrent).
+  Both Rust adapters lead on req/s — `redis-rs` 607 (164 ms avg, 1.15 s
+  p99), `valkey-glide` 553 — and use **fewer connections** than every
+  Python adapter (`redis-rs` 115, `valkey-glide` 172, vs Python ~210).
+  Process-wide client sharing (added after this benchmark first
+  surfaced 1,111 / 4,577 conn counts) brought the Rust adapters in
+  line with the multiplexed-transport claim.
 - **Connection stability.** Across every shape the cachex path keeps
   `Δ` at 0 between phases — no per-phase connection leaks on any
   adapter.
