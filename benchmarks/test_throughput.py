@@ -1,4 +1,4 @@
-"""Driver, serializer and compressor throughput benchmarks.
+"""Adapter, serializer and compressor throughput benchmarks.
 
 Parametrized tests:
 
@@ -23,9 +23,9 @@ session-scoped ``results`` sink that prints a final table at session end.
 import pytest
 
 from benchmarks.configs import (
+    ADAPTER_BY_ID,
+    ADAPTER_CONFIGS,
     COMPRESSOR_CONFIGS,
-    DRIVER_BY_ID,
-    DRIVER_CONFIGS,
     SERIALIZER_BY_ID,
     SERIALIZER_CONFIGS,
 )
@@ -48,12 +48,12 @@ ASGI_CONCURRENCY = 100
 ASGI_WORKERS = 4
 
 
-@pytest.mark.parametrize("driver", DRIVER_CONFIGS, ids=lambda c: c.id)
-def test_adapters_sync(driver, server_url, results, capsys) -> None:
+@pytest.mark.parametrize("adapter", ADAPTER_CONFIGS, ids=lambda c: c.id)
+def test_adapters_sync(adapter, server_url, results, capsys) -> None:
     pickle_serializer = SERIALIZER_BY_ID["pickle"]
-    location = server_url(driver.server)
+    location = server_url(adapter.server)
 
-    result = run_benchmark(driver, pickle_serializer, location)
+    result = run_benchmark(adapter, pickle_serializer, location)
     results.add(result)
 
     with capsys.disabled():
@@ -63,10 +63,10 @@ def test_adapters_sync(driver, server_url, results, capsys) -> None:
 
 @pytest.mark.parametrize("serializer", SERIALIZER_CONFIGS, ids=lambda c: c.id)
 def test_serializers(serializer, server_url, results, capsys) -> None:
-    rust_driver = DRIVER_BY_ID["redis-rs"]
-    location = server_url(rust_driver.server)
+    rust_adapter = ADAPTER_BY_ID["redis-rs"]
+    location = server_url(rust_adapter.server)
 
-    result = run_benchmark(rust_driver, serializer, location)
+    result = run_benchmark(rust_adapter, serializer, location)
     results.add(result)
 
     with capsys.disabled():
@@ -76,12 +76,12 @@ def test_serializers(serializer, server_url, results, capsys) -> None:
 
 @pytest.mark.parametrize("compressor", COMPRESSOR_CONFIGS, ids=lambda c: c.id)
 def test_compressors_macro(compressor, server_url, results, capsys) -> None:
-    rust_driver = DRIVER_BY_ID["redis-rs"]
+    rust_adapter = ADAPTER_BY_ID["redis-rs"]
     pickle_serializer = SERIALIZER_BY_ID["pickle"]
-    location = server_url(rust_driver.server)
+    location = server_url(rust_adapter.server)
 
     result = run_benchmark(
-        rust_driver,
+        rust_adapter,
         pickle_serializer,
         location,
         compressor=compressor,
@@ -94,13 +94,13 @@ def test_compressors_macro(compressor, server_url, results, capsys) -> None:
         print(format_summary(result))
 
 
-@pytest.mark.parametrize("driver", DRIVER_CONFIGS, ids=lambda c: c.id)
-def test_adapters_async_serial(driver, server_url, results, capsys) -> None:
+@pytest.mark.parametrize("adapter", ADAPTER_CONFIGS, ids=lambda c: c.id)
+def test_adapters_async_serial(adapter, server_url, results, capsys) -> None:
     pickle_serializer = SERIALIZER_BY_ID["pickle"]
-    location = server_url(driver.server)
+    location = server_url(adapter.server)
 
-    result = run_async_benchmark(driver, pickle_serializer, location, concurrency=1)
-    result.driver_id = f"{driver.id}#async"
+    result = run_async_benchmark(adapter, pickle_serializer, location, concurrency=1)
+    result.adapter_id = f"{adapter.id}#async"
     results.add(result)
 
     with capsys.disabled():
@@ -108,18 +108,18 @@ def test_adapters_async_serial(driver, server_url, results, capsys) -> None:
         print(format_summary(result))
 
 
-@pytest.mark.parametrize("driver", DRIVER_CONFIGS, ids=lambda c: c.id)
-def test_adapters_async_concurrent(driver, server_url, results, capsys) -> None:
+@pytest.mark.parametrize("adapter", ADAPTER_CONFIGS, ids=lambda c: c.id)
+def test_adapters_async_concurrent(adapter, server_url, results, capsys) -> None:
     pickle_serializer = SERIALIZER_BY_ID["pickle"]
-    location = server_url(driver.server)
+    location = server_url(adapter.server)
 
     result = run_async_benchmark(
-        driver,
+        adapter,
         pickle_serializer,
         location,
         concurrency=ASYNC_CONCURRENCY,
     )
-    result.driver_id = f"{driver.id}#async{ASYNC_CONCURRENCY}"
+    result.adapter_id = f"{adapter.id}#async{ASYNC_CONCURRENCY}"
     results.add(result)
 
     with capsys.disabled():
@@ -127,15 +127,15 @@ def test_adapters_async_concurrent(driver, server_url, results, capsys) -> None:
         print(format_summary(result))
 
 
-@pytest.mark.parametrize("driver", DRIVER_CONFIGS, ids=lambda c: c.id)
-def test_adapters_request_cycle(driver, server_url, results, capsys) -> None:
+@pytest.mark.parametrize("adapter", ADAPTER_CONFIGS, ids=lambda c: c.id)
+def test_adapters_request_cycle(adapter, server_url, results, capsys) -> None:
     pickle_serializer = SERIALIZER_BY_ID["pickle"]
-    location = server_url(driver.server)
+    location = server_url(adapter.server)
 
-    result = run_request_cycle_benchmark(driver, pickle_serializer, location)
+    result = run_request_cycle_benchmark(adapter, pickle_serializer, location)
     # Tag the label so the final summary distinguishes request-cycle rows
     # from direct rows when both tests run in the same session.
-    result.driver_id = f"{driver.id}#req"
+    result.adapter_id = f"{adapter.id}#req"
     results.add(result)
 
     with capsys.disabled():
@@ -148,17 +148,17 @@ _POOL_SIZE_SWEEP = (10, 25, 50, 100, 200, 500)
 
 @pytest.mark.parametrize("max_conns", _POOL_SIZE_SWEEP, ids=lambda n: f"max={n}")
 def test_pool_size_sweep(max_conns: int, server_url, asgi_results, capsys) -> None:
-    """Sweep ``max_connections`` against a pool-based driver to find the elbow.
+    """Sweep ``max_connections`` against a pool-based adapter to find the elbow.
 
     Picks ``redis-py`` as the representative pool backend (rust-valkey
     multiplexes and ignores the cap; django (builtin) sets its own cap via
     the thread executor). Used to validate the default we ship with.
     """
 
-    from benchmarks.configs import DriverConfig
+    from benchmarks.configs import AdapterConfig
 
-    base = DRIVER_BY_ID["redis-py"]
-    custom = DriverConfig(
+    base = ADAPTER_BY_ID["redis-py"]
+    custom = AdapterConfig(
         id=f"redis-py#max{max_conns}",
         backend=base.backend,
         options={**base.options, "max_connections": max_conns},
@@ -182,8 +182,8 @@ def test_pool_size_sweep(max_conns: int, server_url, asgi_results, capsys) -> No
         print(format_asgi_summary(result))
 
 
-@pytest.mark.parametrize("driver", DRIVER_CONFIGS, ids=lambda c: c.id)
-def test_adapters_asgi(driver, server_url, asgi_results, capsys) -> None:
+@pytest.mark.parametrize("adapter", ADAPTER_CONFIGS, ids=lambda c: c.id)
+def test_adapters_asgi(adapter, server_url, asgi_results, capsys) -> None:
     """Full-stack ASGI benchmark — granian + httpx + 6 cache ops per request.
 
     Mirrors django-vcache's ``bench_compare.py`` shape so numbers are
@@ -194,10 +194,10 @@ def test_adapters_asgi(driver, server_url, asgi_results, capsys) -> None:
     the pool can grow.
     """
     pickle_serializer = SERIALIZER_BY_ID["pickle"]
-    location = server_url(driver.server)
+    location = server_url(adapter.server)
 
     result = run_asgi_benchmark(
-        driver,
+        adapter,
         pickle_serializer,
         location,
         duration_s=ASGI_DURATION_S,

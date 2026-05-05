@@ -1,7 +1,7 @@
-"""Driver and serializer configurations enumerated for the benchmark matrix.
+"""Adapter and serializer configurations enumerated for the benchmark matrix.
 
 Each config is a small dataclass describing how to build a CACHES entry. The
-runner takes a (driver, serializer) pair and a server URL and produces the
+runner takes an (adapter, serializer) pair and a server URL and produces the
 override_settings payload.
 """
 
@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class DriverConfig:
+class AdapterConfig:
     id: str
     backend: str
     options: dict
@@ -28,11 +28,11 @@ class CompressorConfig:
     dotted_path: str | None  # None means no compression
 
 
-# Drivers we want to compare. The "server" field decides which container URL
+# Adapters we want to compare. The "server" field decides which container URL
 # the runner connects to — we keep redis-py paired with redis-server and
 # valkey-py paired with valkey-server because that's the natural pairing.
-DRIVER_CONFIGS: tuple[DriverConfig, ...] = (
-    DriverConfig(
+ADAPTER_CONFIGS: tuple[AdapterConfig, ...] = (
+    AdapterConfig(
         id="redis-py",
         backend="django_cachex.cache.RedisCache",
         options={
@@ -41,7 +41,7 @@ DRIVER_CONFIGS: tuple[DriverConfig, ...] = (
         },
         server="redis",
     ),
-    DriverConfig(
+    AdapterConfig(
         id="redis-py+hiredis",
         backend="django_cachex.cache.RedisCache",
         options={
@@ -50,7 +50,7 @@ DRIVER_CONFIGS: tuple[DriverConfig, ...] = (
         },
         server="redis",
     ),
-    DriverConfig(
+    AdapterConfig(
         id="valkey-py",
         backend="django_cachex.cache.ValkeyCache",
         options={
@@ -59,7 +59,7 @@ DRIVER_CONFIGS: tuple[DriverConfig, ...] = (
         },
         server="valkey",
     ),
-    DriverConfig(
+    AdapterConfig(
         id="valkey-py+libvalkey",
         backend="django_cachex.cache.ValkeyCache",
         options={
@@ -68,13 +68,13 @@ DRIVER_CONFIGS: tuple[DriverConfig, ...] = (
         },
         server="valkey",
     ),
-    DriverConfig(
+    AdapterConfig(
         id="redis-rs",
         backend="django_cachex.cache.RedisRsCache",
         options={},
         server="valkey",
     ),
-    DriverConfig(
+    AdapterConfig(
         id="valkey-glide",
         backend="django_cachex.cache.valkey_glide.ValkeyGlideCache",
         options={},
@@ -88,7 +88,7 @@ DRIVER_CONFIGS: tuple[DriverConfig, ...] = (
     # Useful as an external reference point: its `get_client()` instantiates
     # a fresh `redis.Redis` per cache call, sharing only the pool. Makes it
     # an interesting subject for our connection tracking.
-    DriverConfig(
+    AdapterConfig(
         id="django (builtin)",
         backend="django.core.cache.backends.redis.RedisCache",
         options={},
@@ -116,6 +116,6 @@ COMPRESSOR_CONFIGS: tuple[CompressorConfig, ...] = (
 )
 
 
-DRIVER_BY_ID = {c.id: c for c in DRIVER_CONFIGS}
+ADAPTER_BY_ID = {c.id: c for c in ADAPTER_CONFIGS}
 SERIALIZER_BY_ID = {c.id: c for c in SERIALIZER_CONFIGS}
 COMPRESSOR_BY_ID = {c.id: c for c in COMPRESSOR_CONFIGS}

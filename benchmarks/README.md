@@ -1,6 +1,6 @@
 # Benchmarks
 
-Throughput and memory comparison across cache driver/parser/serializer/compressor
+Throughput and memory comparison across cache adapter/parser/serializer/compressor
 combos.
 
 Not part of the regular test suite — runs separately because it spins up its
@@ -9,18 +9,18 @@ depends on letting workloads run).
 
 ## What gets compared
 
-**Drivers** (with default pickle serializer):
+**Adapters** (with default pickle serializer):
 
 - `redis-py` — pure-Python parser
 - `redis-py+hiredis` — C parser
 - `valkey-py` — pure-Python parser
 - `valkey-py+libvalkey` — C parser
-- `rust-valkey` — our Rust extension driver
+- `rust-valkey` — our Rust extension adapter
 - `django (builtin)` — Django's official built-in `django.core.cache.backends.redis.RedisCache`
   (since 4.0). Not the third-party `jazzband/django-redis` package — that one is
   unrelated. Included as an external reference point.
 
-**Serializers** (with `rust-valkey` driver, since driver overhead is smallest there):
+**Serializers** (with `rust-valkey` adapter, since adapter overhead is smallest there):
 
 - `pickle` — stdlib default
 - `json` — Django's `DjangoJSONEncoder`
@@ -34,7 +34,7 @@ depends on letting workloads run).
   ~14 KiB queryset-shaped payload. Captures the cost of compress/decompress
   against the savings from sending fewer bytes over the wire.
 - *Micro* (`test_compressors_micro`) — pure compress/decompress in a tight
-  loop. Reports output ratio and MB/s. No driver, no container.
+  loop. Reports output ratio and MB/s. No adapter, no container.
 
 Compressor candidates: `none`, `zlib`, `gzip`, `lzma`, `lz4`, `zstd`.
 
@@ -43,14 +43,14 @@ Compressor candidates: `none`, `zlib`, `gzip`, `lzma`, `lz4`, `zstd`.
 `Client().get(url)` → URL resolve → `CommonMiddleware` → view function →
 response → `request_finished` signal. The view in [urls.py](urls.py) does
 exactly one cache op per request, so ops/sec is on the same scale as
-`test_adapters_sync` and you can read off the per-op overhead Django adds. Driver
+`test_adapters_sync` and you can read off the per-op overhead Django adds. Adapter
 ids are suffixed with `#req` in the final summary so the request-cycle rows
 sit next to their direct counterparts.
 
 **ASGI** (`test_adapters_asgi`) — full-stack benchmark in the shape of
 [`django-vcache`'s `bench_compare.py`](https://gitlab.com/glitchtip/django-vcache/-/blob/main/bench_compare.py):
 
-- Spawns a real **`granian`** ASGI server (4 workers) per driver
+- Spawns a real **`granian`** ASGI server (4 workers) per adapter
 - Drives load with **`httpx.AsyncClient`** (100 concurrent connections,
   20 second duration by default; bump `ASGI_CONCURRENCY` /
   `ASGI_DURATION_S` in `test_throughput.py` for hero numbers)
@@ -90,7 +90,7 @@ the magnitude grows dramatically.
 
 ## What gets measured
 
-Driver / serializer / compressor-macro / request-cycle tests run a
+Adapter / serializer / compressor-macro / request-cycle tests run a
 seven-phase workload — `get`, `get-miss`, `set`, `mget` (10-key batch),
 `mset` (10-key batch), `incr`, `delete` — `N_OPS=1000` operations per phase,
 repeated `K_RUNS=10` times.
@@ -110,7 +110,7 @@ Knobs in [runner.py](runner.py): `N_OPS`, `K_RUNS`, `WARMUP_KEYS`, `MGET_BATCH`.
 ## Running
 
 ```console
-# Full matrix (drivers + serializers + compressors)
+# Full matrix (adapters + serializers + compressors)
 uv run pytest benchmarks/ -c benchmarks/pytest.ini
 
 # Just one slice
@@ -135,7 +135,7 @@ A summary table prints at the end of the session.
 ## Notes
 
 - **No xdist.** Parallel runs make timings noisy; benchmarks run sequentially.
-- **Redis vs Valkey.** Each driver is paired with its natural server (redis-py
+- **Redis vs Valkey.** Each adapter is paired with its natural server (redis-py
   → redis, valkey-py → valkey, rust → valkey). Cross-pairings are intentionally
   not in the matrix — both servers speak the same protocol, so the comparison
   is mostly a wash.
@@ -146,13 +146,13 @@ A summary table prints at the end of the session.
 
 ## Reference results
 
-Snapshot of the driver matrix on a Ryzen 9 5950X / 32 GiB / Linux 6.17,
+Snapshot of the adapter matrix on a Ryzen 9 5950X / 32 GiB / Linux 6.17,
 Python 3.14, Django 6.0, all servers in local Docker. Numbers shift run to
 run; ordering is what matters.
 
 ### Sync direct (`test_adapters_sync`) — ops/sec
 
-| Driver               |    get |    set |  mget |  mset |   incr | py-mem KiB |
+| Adapter               |    get |    set |  mget |  mset |   incr | py-mem KiB |
 | -------------------- | -----: | -----: | ----: | ----: | -----: | ---------: |
 | redis-py             |  2,363 |  2,315 | 1,426 | 1,309 |  2,516 |        115 |
 | redis-py+hiredis     |  2,412 |  2,338 | 1,540 | 1,382 |  2,570 |         57 |
@@ -165,7 +165,7 @@ run; ordering is what matters.
 
 One cache op per request through the full middleware/URL/view path.
 
-| Driver               |   get |   set |  incr |
+| Adapter               |   get |   set |  incr |
 | -------------------- | ----: | ----: | ----: |
 | redis-py             | 1,055 | 1,054 | 1,066 |
 | valkey-py+libvalkey  | 1,198 | 1,192 | 1,227 |
@@ -175,9 +175,9 @@ One cache op per request through the full middleware/URL/view path.
 ### Async serial (`test_adapters_async_serial`, `#async`) — ops/sec
 
 One `await` at a time. The Python↔Rust crossing per op doesn't amortize, so
-Rust falls behind the C-parser Python drivers on this shape only.
+Rust falls behind the C-parser Python adapters on this shape only.
 
-| Driver               |   get |   set |  mget |  mset |  incr |
+| Adapter               |   get |   set |  mget |  mset |  incr |
 | -------------------- | ----: | ----: | ----: | ----: | ----: |
 | redis-py+hiredis     | 1,801 | 1,734 | 1,172 |   861 | 1,894 |
 | valkey-py+libvalkey  | 2,042 | 2,083 | 1,305 |   874 | 2,200 |
@@ -189,7 +189,7 @@ Rust falls behind the C-parser Python drivers on this shape only.
 `asyncio.gather` of 50 ops in flight — the workload most Django ASGI apps
 actually generate.
 
-| Driver               |    get |    set |  mget |  mset |   incr | conns peak |
+| Adapter               |    get |    set |  mget |  mset |   incr | conns peak |
 | -------------------- | -----: | -----: | ----: | ----: | -----: | ---------: |
 | redis-py+hiredis     |  2,091 |  2,021 | 1,307 |   922 |  2,192 |        110 |
 | valkey-py+libvalkey  |  2,419 |  2,331 | 1,428 |   909 |  2,528 |        108 |
@@ -201,7 +201,7 @@ actually generate.
 `granian` (4 workers) + `httpx` (100 concurrent, 20 s). Each request runs
 six async cache ops — the shape closest to real production load.
 
-| Driver               | req/s | avg ms | p99 ms | RSS peak (MiB) | conns peak | conns settled |
+| Adapter               | req/s | avg ms | p99 ms | RSS peak (MiB) | conns peak | conns settled |
 | -------------------- | ----: | -----: | -----: | -------------: | ---------: | ------------: |
 | redis-py             |   155 |    637 |  2,946 |            145 |        128 |           128 |
 | redis-py+hiredis     |   227 |    437 |  2,542 |            179 |        122 |           122 |
@@ -213,13 +213,13 @@ six async cache ops — the shape closest to real production load.
 ### Takeaways
 
 - Under realistic concurrent load, `rust-valkey` is **3–4×** faster than the
-  fastest Python driver on sync direct, **8–12×** faster on `async50`, and
+  fastest Python adapter on sync direct, **8–12×** faster on `async50`, and
   ~10% ahead on full ASGI throughput while using **50× fewer Valkey
   connections** (multiplexed Tokio transport — 2 vs 100+).
 - The Django built-in `RedisCache` shows the connection-growth pattern
   vcache flagged: 1,840 connections peak, settled at 1,798, 3× the RSS of
   the cachex backends. The cachex async path keeps Δ at 0 across phases on
-  every driver.
+  every adapter.
 - The one shape where `rust-valkey` trails is async serial — one `await` at
   a time. With no concurrency to multiplex over, the Python↔Rust crossing
   costs ~30% versus `valkey-py+libvalkey`. Real Django ASGI apps don't sit

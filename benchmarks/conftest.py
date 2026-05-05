@@ -48,7 +48,7 @@ def valkey_url() -> Iterator[str]:
 
 @pytest.fixture(scope="session")
 def server_url(redis_url: str, valkey_url: str):
-    """Returns a callable that picks the correct URL for a driver config."""
+    """Returns a callable that picks the correct URL for an adapter config."""
 
     def pick(server: str) -> str:
         return redis_url if server == "redis" else valkey_url

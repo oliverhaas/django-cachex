@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from django.test import override_settings
 
-from benchmarks.configs import CompressorConfig, DriverConfig, SerializerConfig
+from benchmarks.configs import AdapterConfig, CompressorConfig, SerializerConfig
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -55,7 +55,7 @@ class PhaseTiming:
 
 @dataclass
 class BenchmarkResult:
-    driver_id: str
+    adapter_id: str
     serializer_id: str
     server: str
     compressor_id: str = ""
@@ -68,7 +68,7 @@ class BenchmarkResult:
     @property
     def label(self) -> str:
         compressor = f"+{self.compressor_id}" if self.compressor_id else ""
-        return f"{self.driver_id}+{self.serializer_id}{compressor}@{self.server}"
+        return f"{self.adapter_id}+{self.serializer_id}{compressor}@{self.server}"
 
     @property
     def server_connections_peak(self) -> int:
@@ -88,7 +88,7 @@ class AsgiResult:
     two harnesses produce comparable numbers.
     """
 
-    driver_id: str
+    adapter_id: str
     serializer_id: str
     server: str
     requests_per_sec: float
@@ -109,7 +109,7 @@ class AsgiResult:
 
     @property
     def label(self) -> str:
-        return f"{self.driver_id}+{self.serializer_id}@{self.server}"
+        return f"{self.adapter_id}+{self.serializer_id}@{self.server}"
 
     @property
     def rss_growth_mb(self) -> float:
@@ -118,7 +118,7 @@ class AsgiResult:
 
 @dataclass
 class MicroResult:
-    """Pure compress/decompress numbers — no driver, no network, no Django."""
+    """Pure compress/decompress numbers — no adapter, no network, no Django."""
 
     compressor_id: str
     input_bytes: int
@@ -132,19 +132,19 @@ class MicroResult:
 
 
 def build_caches(
-    driver: DriverConfig,
+    adapter: AdapterConfig,
     serializer: SerializerConfig,
     location: str,
     compressor: CompressorConfig | None = None,
 ) -> dict[str, dict[str, Any]]:
-    options = dict(driver.options)
+    options = dict(adapter.options)
     if serializer.dotted_path is not None:
         options["serializer"] = serializer.dotted_path
     if compressor is not None and compressor.dotted_path is not None:
         options["compressor"] = compressor.dotted_path
     return {
         "default": {
-            "BACKEND": driver.backend,
+            "BACKEND": adapter.backend,
             "LOCATION": location,
             "OPTIONS": options,
         },
@@ -362,7 +362,7 @@ def _flush_cache(cache) -> None:
 
 
 def run_benchmark(  # noqa: PLR0915 — phase-by-phase flow is the readable shape here
-    driver: DriverConfig,
+    adapter: AdapterConfig,
     serializer: SerializerConfig,
     location: str,
     *,
@@ -372,15 +372,15 @@ def run_benchmark(  # noqa: PLR0915 — phase-by-phase flow is the readable shap
     """Run the workload K_RUNS times and return aggregated metrics."""
 
     result = BenchmarkResult(
-        driver_id=driver.id,
+        adapter_id=adapter.id,
         serializer_id=serializer.id,
-        server=driver.server,
+        server=adapter.server,
         compressor_id=compressor.id if compressor is not None else "",
     )
     for name in ("get", "get-miss", "set", "mget", "mset", "incr", "delete"):
         result.phases[name] = PhaseTiming(name=name)
 
-    caches = build_caches(driver, serializer, location, compressor=compressor)
+    caches = build_caches(adapter, serializer, location, compressor=compressor)
     payload = _build_payload_large() if payload_kind == "large" else _build_payload()
 
     info_client = _open_info_client(location)
@@ -473,7 +473,7 @@ _REQUEST_CYCLE_MIDDLEWARE = [
 
 
 def run_request_cycle_benchmark(  # noqa: PLR0915 — phase-by-phase flow is readable
-    driver: DriverConfig,
+    adapter: AdapterConfig,
     serializer: SerializerConfig,
     location: str,
     *,
@@ -496,15 +496,15 @@ def run_request_cycle_benchmark(  # noqa: PLR0915 — phase-by-phase flow is rea
     benchmark_urls.set_payload_kind(payload_kind)
 
     result = BenchmarkResult(
-        driver_id=driver.id,
+        adapter_id=adapter.id,
         serializer_id=serializer.id,
-        server=driver.server,
+        server=adapter.server,
         compressor_id=compressor.id if compressor is not None else "",
     )
     for name in ("get", "get-miss", "set", "mget", "mset", "incr", "delete"):
         result.phases[name] = PhaseTiming(name=name)
 
-    caches = build_caches(driver, serializer, location, compressor=compressor)
+    caches = build_caches(adapter, serializer, location, compressor=compressor)
     payload = _build_payload_large() if payload_kind == "large" else _build_payload()
 
     overrides = {
@@ -666,7 +666,7 @@ def _wait_for_port(host: str, port: int, timeout_s: float = 15.0) -> bool:
 
 
 def run_asgi_benchmark(  # noqa: C901, PLR0915 — orchestrates many phases in one function for readability
-    driver: DriverConfig,
+    adapter: AdapterConfig,
     serializer: SerializerConfig,
     location: str,
     *,
@@ -702,14 +702,14 @@ def run_asgi_benchmark(  # noqa: C901, PLR0915 — orchestrates many phases in o
 
     import httpx
 
-    options_for_env = dict(driver.options)
+    options_for_env = dict(adapter.options)
     if serializer.dotted_path is not None:
         options_for_env["serializer"] = serializer.dotted_path
 
     env = {
         **os.environ,
         "DJANGO_SETTINGS_MODULE": "benchmarks.asgi_settings",
-        "BENCH_CACHE_BACKEND": driver.backend,
+        "BENCH_CACHE_BACKEND": adapter.backend,
         "BENCH_CACHE_LOCATION": location,
         "BENCH_CACHE_OPTIONS_JSON": json.dumps(options_for_env),
     }
@@ -833,9 +833,9 @@ def run_asgi_benchmark(  # noqa: C901, PLR0915 — orchestrates many phases in o
         p99_lat = sorted(latencies)[int(round(0.99 * (len(latencies) - 1)))] if latencies else 0.0
 
         return AsgiResult(
-            driver_id=driver.id,
+            adapter_id=adapter.id,
             serializer_id=serializer.id,
-            server=driver.server,
+            server=adapter.server,
             requests_per_sec=rps,
             avg_latency_ms=avg_lat,
             p99_latency_ms=p99_lat,
@@ -864,7 +864,7 @@ def run_asgi_benchmark(  # noqa: C901, PLR0915 — orchestrates many phases in o
 
 def format_asgi_summary(result: AsgiResult) -> str:
     return (
-        f"  driver={result.driver_id}  serializer={result.serializer_id}  server={result.server}\n"
+        f"  adapter={result.adapter_id}  serializer={result.serializer_id}  server={result.server}\n"
         f"  duration={result.duration_s:.1f}s  concurrency={result.concurrency}  "
         f"workers via granian (started by runner)\n"
         f"  requests={result.total_requests:,}  errors={result.errors}  "
@@ -986,7 +986,7 @@ async def _run_async_workload(
 
 
 def run_async_benchmark(
-    driver: DriverConfig,
+    adapter: AdapterConfig,
     serializer: SerializerConfig,
     location: str,
     *,
@@ -1008,15 +1008,15 @@ def run_async_benchmark(
     """
 
     result = BenchmarkResult(
-        driver_id=driver.id,
+        adapter_id=adapter.id,
         serializer_id=serializer.id,
-        server=driver.server,
+        server=adapter.server,
         compressor_id=compressor.id if compressor is not None else "",
     )
     for name in ("get", "get-miss", "set", "mget", "mset", "incr", "delete"):
         result.phases[name] = PhaseTiming(name=name)
 
-    caches = build_caches(driver, serializer, location, compressor=compressor)
+    caches = build_caches(adapter, serializer, location, compressor=compressor)
     payload = _build_payload_large() if payload_kind == "large" else _build_payload()
 
     info_client = _open_info_client(location)
@@ -1039,7 +1039,7 @@ def run_compressor_micro(
 ) -> MicroResult | None:
     """Pure compress/decompress throughput on the large benchmark payload.
 
-    No driver, no Django, no network — just the algorithm against a fixed
+    No adapter, no Django, no network — just the algorithm against a fixed
     blob. Returns None for the no-compression baseline.
     """
     from django.utils.module_loading import import_string
@@ -1105,7 +1105,7 @@ def format_micro_table(results: list[MicroResult]) -> str:
 def format_summary(result: BenchmarkResult) -> str:
     compressor = f"  compressor={result.compressor_id}" if result.compressor_id else ""
     lines = [
-        f"  driver={result.driver_id}  serializer={result.serializer_id}{compressor}  server={result.server}",
+        f"  adapter={result.adapter_id}  serializer={result.serializer_id}{compressor}  server={result.server}",
         f"  {'phase':<10} {'med (ms)':>10} {'p95 (ms)':>10} {'ops/sec':>12}",
     ]
     for phase in result.phases.values():
