@@ -55,56 +55,52 @@ All standard Django cache methods have async equivalents with the `a` prefix:
 
 ### Extended Methods
 
-django-cachex extended methods also have async versions at the client level (`cache._cache`):
+django-cachex extended methods also have async versions, called directly on the cache:
 
 ```python
-client = cache._cache  # Access the cache client for extended async methods
-
 # TTL operations
-ttl = await client.attl(key)             # Get TTL in seconds
-pttl = await client.apttl(key)           # Get TTL in milliseconds
-await client.aexpire(key, timeout=60)    # Set expiration
-await client.apersist(key)               # Remove expiration
+ttl = await cache.attl(key)             # Get TTL in seconds
+pttl = await cache.apttl(key)           # Get TTL in milliseconds
+await cache.aexpire(key, timeout=60)    # Set expiration
+await cache.apersist(key)               # Remove expiration
 
 # Key operations
-keys = await client.akeys("pattern:*")
-await client.adelete_pattern("session:*")
-await client.arename(key, new_key)
+keys = await cache.akeys("pattern:*")
+await cache.adelete_pattern("session:*")
+await cache.arename(key, new_key)
 
 # Iterate keys (memory-efficient)
-async for key in client.aiter_keys("user:*"):
+async for key in cache.aiter_keys("user:*"):
     print(key)
 ```
 
-!!! note "Key prefixing"
-    Client-level methods operate on raw (already-prefixed) keys. Use `cache.make_and_validate_key()` to prefix keys when calling client methods directly.
+!!! note "Adapter-level methods"
+    For ops that bypass the prefix/serializer pipeline, drop down to `cache.adapter` (e.g. `await cache.adapter.aget(raw_key)`). Adapter methods take already-prefixed keys and return raw bytes/values.
 
 ### Data Structures
 
-Data structure operations have async equivalents at the client level:
+Data structure operations have async equivalents on the cache directly:
 
 ```python
-client = cache._cache
-
 # Hashes
-await client.ahset(key, "name", "Alice")
-name = await client.ahget(key, "name")
-user = await client.ahgetall(key)
+await cache.ahset(key, "name", "Alice")
+name = await cache.ahget(key, "name")
+user = await cache.ahgetall(key)
 
 # Lists
-await client.alpush(key, "item")
-item = await client.alpop(key)
-items = await client.alrange(key, 0, -1)
+await cache.alpush(key, "item")
+item = await cache.alpop(key)
+items = await cache.alrange(key, 0, -1)
 
 # Sets
-await client.asadd(key, "python", "django")
-members = await client.asmembers(key)
-is_member = await client.asismember(key, "python")
+await cache.asadd(key, "python", "django")
+members = await cache.asmembers(key)
+is_member = await cache.asismember(key, "python")
 
 # Sorted Sets
-await client.azadd(key, {"alice": 100, "bob": 85})
-rank = await client.azrank(key, "alice")
-top_players = await client.azrange(key, 0, 9, withscores=True)
+await cache.azadd(key, {"alice": 100, "bob": 85})
+rank = await cache.azrank(key, "alice")
+top_players = await cache.azrange(key, 0, 9, withscores=True)
 ```
 
 ### Async Pipelines
@@ -112,16 +108,16 @@ top_players = await client.azrange(key, 0, 9, withscores=True)
 Batch multiple operations and dispatch them in a single round trip:
 
 ```python
-async with cache.apipeline() as pipe:
+async with await cache.apipeline() as pipe:
     pipe.set("a", 1)
     pipe.set("b", 2)
     pipe.hset("h", "field", "value")
     results = await pipe.execute()
 ```
 
-Queueing methods (`set`, `hset`, `lpush`, ...) stay synchronous; only `execute()` is awaited. The wrapper's behaviour mirrors the sync `pipeline()` — see [Pipelines](../reference/api.md#pipelines) for the shared command surface.
+Queueing methods (`set`, `hset`, `lpush`, ...) stay synchronous; only `apipeline()` and `execute()` are awaited. The wrapper's behaviour mirrors the sync `pipeline()` — see [Pipelines](../reference/api.md#pipelines) for the shared command surface.
 
-`apipeline()` itself is sync (it just constructs the wrapper). It is safe to call outside of an async context, but `execute()` requires an event loop.
+`apipeline()` is `async def` because the valkey-glide adapter resolves the underlying async client during construction. The `await` is required even on adapters where the construction is trivial.
 
 ## How It Works
 

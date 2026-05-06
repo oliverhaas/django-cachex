@@ -10,7 +10,7 @@ from django_cachex.adapters.redis_rs import (
     RedisRsClusterAdapter,
     RedisRsSentinelAdapter,
 )
-from django_cachex.cache.resp import RespCache
+from django_cachex.cache.resp import RespCache, RespClusterCache, RespSentinelCache
 
 
 class RedisRsCache(RespCache):
@@ -20,14 +20,14 @@ class RedisRsCache(RespCache):
     _adapter_class = RedisRsAdapter
 
 
-class RedisRsClusterCache(RespCache):
+class RedisRsClusterCache(RespClusterCache):
     """Rust adapter for Valkey/Redis cluster mode."""
 
     _cachex_support = "cachex"
     _adapter_class = RedisRsClusterAdapter
 
 
-class RedisRsSentinelCache(RespCache):
+class RedisRsSentinelCache(RespSentinelCache):
     """Rust adapter for sentinel-managed Valkey/Redis topologies."""
 
     _cachex_support = "cachex"

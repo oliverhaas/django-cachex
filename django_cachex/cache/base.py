@@ -81,6 +81,10 @@ class BaseCachex(BaseCache):
         """Set expiry to an absolute time in milliseconds."""
         raise NotSupportedError("pexpireat", self.__class__.__name__)
 
+    def expiretime(self, key: str, version: int | None = None) -> int | None:
+        """Get the absolute Unix timestamp (seconds) when a key will expire."""
+        raise NotSupportedError("expiretime", self.__class__.__name__)
+
     async def attl(self, key: str, version: int | None = None) -> int | None:
         """Async: get the TTL of a key in seconds."""
         raise NotSupportedError("attl", self.__class__.__name__)
@@ -112,6 +116,10 @@ class BaseCachex(BaseCache):
     async def apexpireat(self, key: str, when: int | datetime, version: int | None = None) -> bool:
         """Async: set expiry to an absolute time in milliseconds."""
         raise NotSupportedError("apexpireat", self.__class__.__name__)
+
+    async def aexpiretime(self, key: str, version: int | None = None) -> int | None:
+        """Async: get the absolute Unix timestamp (seconds) when a key will expire."""
+        raise NotSupportedError("aexpiretime", self.__class__.__name__)
 
     # =========================================================================
     # Key Operations

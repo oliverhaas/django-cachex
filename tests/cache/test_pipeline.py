@@ -44,7 +44,18 @@ class TestPipelineBasic:
         results = pipe.execute()
         assert results == [True, True, "a", "b"]
 
-    def test_pipeline_transaction(self, cache: RespCache):
+    def test_pipeline_transaction(
+        self,
+        cache: RespCache,
+        client_class: str,
+        sentinel_mode: str | bool,
+    ):
+        if client_class == "cluster" and not sentinel_mode:
+            from django_cachex.exceptions import NotSupportedError
+
+            with pytest.raises(NotSupportedError):
+                cache.pipeline(transaction=True)
+            return
         pipe = cache.pipeline(transaction=True)
         pipe.set("tx_key", "tx_value")
         pipe.get("tx_key")

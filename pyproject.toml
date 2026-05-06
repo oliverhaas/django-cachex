@@ -92,14 +92,14 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["django_cachex"]
-# _driver.pyi is the type stub for the optional Rust extension. It lives
+# _redis_rs.pyi is the type stub for the optional Rust extension. It lives
 # alongside django_cachex source so type checkers find it during dev, but
 # it ships with the django-cachex-redis-rs binary package, not this one.
-exclude = ["**/_driver.pyi"]
+exclude = ["**/_redis_rs.pyi"]
 
 [tool.hatch.build.targets.sdist]
 include = ["django_cachex/**", "README.md", "LICENSE", "pyproject.toml"]
-exclude = ["**/_driver.pyi"]
+exclude = ["**/_redis_rs.pyi"]
 
 [tool.uv.workspace]
 members = ["crates/*"]

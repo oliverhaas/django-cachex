@@ -110,6 +110,10 @@ _GLIDE_SYNC_LOCK = threading.Lock()
 _GLIDE_ASYNC_CLIENTS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], Any]] = (
     weakref.WeakKeyDictionary()
 )
+# Per-loop async-create locks. Without this, two concurrent tasks on the same
+# loop both miss the registry, both await ``AsyncGlideClient.create``, and the
+# loser's client is GC'd without ``close()`` — leaking a connection.
+_GLIDE_ASYNC_LOCKS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = weakref.WeakKeyDictionary()
 
 
 def _glide_config_key(servers: list[str], options: dict[str, Any]) -> tuple[Any, ...]:
@@ -903,11 +907,17 @@ class ValkeyGlideAsyncPipelineAdapter:
         return call
 
     async def execute(self) -> list[Any]:
-        result = await self._client.exec(self._batch, raise_on_error=True)
-        return result or []
+        # Swap before awaiting so the pipeline is reusable; mirrors the sync
+        # adapter's contract.
+        batch = self._batch
+        self._batch = Batch(is_atomic=batch.is_atomic)
+        if not batch.commands:
+            return []
+        result = await self._client.exec(batch, raise_on_error=True)
+        return list(result or [])
 
     async def reset(self) -> None:
-        self._batch = Batch(is_atomic=False)
+        self._batch = Batch(is_atomic=self._batch.is_atomic)
 
     def execute_command(self, *args: Any) -> Self:
         if not args:
@@ -989,13 +999,21 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             sub = {}
             _GLIDE_ASYNC_CLIENTS[loop] = sub
         client = sub.get(self._config_key)
-        if client is None:
-            u = urlparse(self._servers[0])
-            cfg = AsyncGlideClientConfiguration(
-                addresses=[AsyncNodeAddress(u.hostname or "localhost", u.port or 6379)],
-            )
-            client = await AsyncGlideClient.create(cfg)
-            sub[self._config_key] = client
+        if client is not None:
+            return client
+        lock = _GLIDE_ASYNC_LOCKS.get(loop)
+        if lock is None:
+            lock = asyncio.Lock()
+            _GLIDE_ASYNC_LOCKS[loop] = lock
+        async with lock:
+            client = sub.get(self._config_key)
+            if client is None:
+                u = urlparse(self._servers[0])
+                cfg = AsyncGlideClientConfiguration(
+                    addresses=[AsyncNodeAddress(u.hostname or "localhost", u.port or 6379)],
+                )
+                client = await AsyncGlideClient.create(cfg)
+                sub[self._config_key] = client
         return client
 
     # =========================================================================
@@ -3018,7 +3036,7 @@ class _GlideLock:
 
         kw: dict[str, Any] = {"conditional_set": ConditionalChange.ONLY_IF_DOES_NOT_EXIST}
         if self._timeout is not None:
-            kw["expiry"] = ExpirySet(ExpiryType.SEC, int(self._timeout))
+            kw["expiry"] = ExpirySet(ExpiryType.MILLSEC, int(self._timeout * 1000))
 
         while True:
             result = self._client.set(self._key, self._initial_token, **kw)
@@ -3100,7 +3118,7 @@ class _AsyncGlideLock:
 
         kw: dict[str, Any] = {"conditional_set": ConditionalChange.ONLY_IF_DOES_NOT_EXIST}
         if self._timeout is not None:
-            kw["expiry"] = ExpirySet(ExpiryType.SEC, int(self._timeout))
+            kw["expiry"] = ExpirySet(ExpiryType.MILLSEC, int(self._timeout * 1000))
 
         while True:
             result = await client.set(self._key, self._initial_token, **kw)

@@ -229,7 +229,7 @@ jobs:
       - name: Install both wheels (opt-in path)
         run: |
           uv pip install --no-deps wheelhouse/django_cachex-*-py3-none-any.whl
-          uv pip install --no-deps wheelhouse/django_cachex_rust-*-cp314-cp314-*.whl
+          uv pip install --no-deps wheelhouse/django_cachex_redis_rs-*-cp314-cp314-*.whl
 
       - name: Run cache tests against built wheels
         run: uv run --no-sync pytest tests/cache/ -n auto
@@ -259,10 +259,10 @@ jobs:
         run: |
           uv venv --python 3.14t
           uv pip install --no-deps wheelhouse/django_cachex-*-py3-none-any.whl django asgiref sqlparse
-          uv pip install --no-deps wheelhouse/django_cachex_rust-*-cp314-cp314t-*.whl
+          uv pip install --no-deps wheelhouse/django_cachex_redis_rs-*-cp314-cp314t-*.whl
 
       - name: Verify FT wheel imports
-        run: uv run --no-sync python -c "import sys; from django_cachex import _driver; assert not sys._is_gil_enabled(), 'GIL is enabled — not running on free-threaded build'; print('OK', _driver, sys.version)"
+        run: uv run --no-sync python -c "import sys; from django_cachex.adapters import _redis_rs; assert not sys._is_gil_enabled(), 'GIL is enabled — not running on free-threaded build'; print('OK', _redis_rs, sys.version)"
 
   smoke-test-pure-only:
     name: Smoke-test opt-out (pure wheel only, no rust package)

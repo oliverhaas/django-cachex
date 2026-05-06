@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from django_cachex.types import KeyType
 
 from django_cachex.cache.base import BaseCachex
-from django_cachex.exceptions import CompressorError, SerializerError
+from django_cachex.exceptions import CompressorError, NotSupportedError, SerializerError
 from django_cachex.script import ScriptHelpers
 
 # Alias for the `set` builtin shadowed by the `set` method (PEP 649 defers
@@ -475,7 +475,7 @@ class RespCache(BaseCachex):
             # Fetch the value again to avoid a race condition if another caller
             # set between the first get() and the set/add() above.
             # Disable stampede here — we just wrote the value, don't re-trigger.
-            return self.get(key, default, version=version)
+            return self.get(key, default, version=version, stampede_prevention=False)
         return val
 
     @override
@@ -500,7 +500,7 @@ class RespCache(BaseCachex):
             # Fetch the value again to avoid a race condition if another caller
             # set between the first aget() and the aset/aadd() above.
             # Disable stampede here — we just wrote the value, don't re-trigger.
-            return await self.aget(key, default, version=version)
+            return await self.aget(key, default, version=version, stampede_prevention=False)
         return val
 
     @override
@@ -3135,19 +3135,33 @@ class RespClusterCache(RespCache):
     def pipeline(
         self,
         *,
-        transaction: bool = True,
+        transaction: bool = False,
         version: int | None = None,
     ) -> Pipeline:
-        """Create a pipeline. Cluster pipelines never use transactions."""
+        """Create a pipeline. Cluster pipelines never use transactions.
+
+        ``transaction=True`` raises :class:`NotSupportedError` rather than
+        silently downgrading — cluster mode can't honour MULTI/EXEC across
+        slots.
+        """
+        if transaction:
+            raise NotSupportedError("MULTI/EXEC pipelines", backend="cluster")
         return super().pipeline(transaction=False, version=version)
 
     async def apipeline(
         self,
         *,
-        transaction: bool = True,
+        transaction: bool = False,
         version: int | None = None,
     ) -> AsyncPipeline:
-        """Create an async pipeline. Cluster pipelines never use transactions."""
+        """Create an async pipeline. Cluster pipelines never use transactions.
+
+        ``transaction=True`` raises :class:`NotSupportedError` rather than
+        silently downgrading — cluster mode can't honour MULTI/EXEC across
+        slots.
+        """
+        if transaction:
+            raise NotSupportedError("MULTI/EXEC pipelines", backend="cluster")
         return await super().apipeline(transaction=False, version=version)
 
 

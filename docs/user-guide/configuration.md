@@ -40,12 +40,9 @@ Same wire-level features as the Python driver, dispatched through the optional `
 
 | Backend | Description |
 |---------|-------------|
-| `RedisRsCache` | Standard Valkey connection |
-| `RedisRsCache` | Standard Redis connection |
-| `RedisRsSentinelCache` | Valkey Sentinel high availability |
-| `RedisRsSentinelCache` | Redis Sentinel high availability |
-| `RedisRsClusterCache` | Valkey Cluster sharding |
-| `RedisRsClusterCache` | Redis Cluster sharding |
+| `RedisRsCache` | Standard connection (Valkey or Redis — protocol-compatible) |
+| `RedisRsSentinelCache` | Sentinel high availability |
+| `RedisRsClusterCache` | Cluster sharding |
 
 ### Valkey-Glide
 
@@ -135,8 +132,12 @@ Available serializers:
 | Serializer | Description |
 |------------|-------------|
 | `django_cachex.serializers.pickle.PickleSerializer` | Python pickle (default) |
-| `django_cachex.serializers.json.JSONSerializer` | JSON |
-| `django_cachex.serializers.msgpack.MessagePackSerializer` | MessagePack (requires msgpack) |
+| `django_cachex.serializers.json.JSONSerializer` | JSON via `DjangoJSONEncoder` |
+| `django_cachex.serializers.msgpack.MessagePackSerializer` | MessagePack (requires `msgpack`) |
+| `django_cachex.serializers.orjson.OrjsonSerializer` | Rust-backed JSON (requires `orjson`) |
+| `django_cachex.serializers.ormsgpack.OrMessagePackSerializer` | Rust-backed MessagePack (requires `ormsgpack`) |
+
+See [Serializers](serializers.md) for type-compatibility details and benchmarks.
 
 ### Compression
 
@@ -157,11 +158,11 @@ Available compressors:
 
 | Compressor | Description |
 |------------|-------------|
-| `django_cachex.compressors.zlib.ZlibCompressor` | zlib compression |
-| `django_cachex.compressors.gzip.GzipCompressor` | gzip compression |
-| `django_cachex.compressors.lz4.Lz4Compressor` | LZ4 (requires lz4) |
-| `django_cachex.compressors.lzma.LzmaCompressor` | LZMA |
-| `django_cachex.compressors.zstd.ZstdCompressor` | Zstandard (requires zstd) |
+| `django_cachex.compressors.zlib.ZlibCompressor` | zlib (stdlib) |
+| `django_cachex.compressors.gzip.GzipCompressor` | gzip (stdlib) |
+| `django_cachex.compressors.lzma.LzmaCompressor` | LZMA (stdlib) |
+| `django_cachex.compressors.zstd.ZstdCompressor` | Zstandard (stdlib on 3.14+) |
+| `django_cachex.compressors.lz4.Lz4Compressor` | LZ4 (requires `lz4`) |
 
 Compression is only applied to values larger than `min_length` bytes (default: 256).
 

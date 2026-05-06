@@ -241,16 +241,17 @@ value = await cache.aget("key")
 - `aincr_version`, `adecr_version`
 - `aeval_script`
 
-Extended methods (data structures, TTL, patterns) have async versions on the cache client, accessible via `cache._cache`:
+Extended methods (data structures, TTL, patterns) have async versions directly on the cache. Both forms apply key prefixing and the serializer/compressor pipeline:
 
 ```python
-# Sync (on cache object directly)
+# Sync
 cache.hset("hash", "field", "value")
 
-# Async (on cache client; note that client methods take raw/prefixed keys)
-key = cache.make_and_validate_key("hash")
-await cache._cache.ahset(key, "field", "value")
+# Async
+await cache.ahset("hash", "field", "value")
 ```
+
+For raw access that skips prefixing/serialization, use `cache.adapter` (e.g. `await cache.adapter.aget(prefixed_key)`).
 
 - `attl`, `apttl`, `aexpire`, `apexpire`, `aexpireat`, `apexpireat`, `apersist`
 - `akeys`, `aiter_keys`, `adelete_pattern`
@@ -302,6 +303,26 @@ if lock.acquire():
         lock.release()
 ```
 
+### Async lock
+
+`alock()` is `async def` (parallel to `apipeline()`):
+
+```python
+# Context manager
+async with await cache.alock("mylock"):
+    await do_work()
+
+# Manual acquire/release
+lock = await cache.alock("mylock")
+if await lock.acquire():
+    try:
+        await do_work()
+    finally:
+        await lock.release()
+```
+
+Cluster-mode async locks are unavailable on redis-py / valkey-py because the underlying `EVALSHA` routes to replicas; the Rust adapter handles this internally.
+
 ## Pipelines
 
 Batch multiple operations for efficiency. Queueing methods (`set`, `hset`, `lpush`, ...) stay synchronous in both wrappers; only `execute()` performs I/O.
@@ -319,13 +340,13 @@ with cache.pipeline() as pipe:
 ### Async
 
 ```python
-async with cache.apipeline() as pipe:
+async with await cache.apipeline() as pipe:
     pipe.set("key1", "value1")
     pipe.hset("hash", "field", "value")
     results = await pipe.execute()
 ```
 
-`apipeline()` itself is sync — it just constructs the wrapper, mirroring `redis.asyncio.Redis().pipeline()`.
+`apipeline()` is `async def` so adapters whose async-client construction is itself awaitable (e.g. valkey-glide) can resolve the client before returning the wrapper. Queueing methods stay synchronous; only `apipeline()` and `execute()` need to be awaited.
 
 All cache methods are available on the pipeline. Results are returned as a list in the same order as the commands.
 
