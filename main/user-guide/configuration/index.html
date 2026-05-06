@@ -1841,27 +1841,15 @@
 <tbody>
 <tr>
 <td><code>RedisRsCache</code></td>
-<td>Standard Valkey connection</td>
-</tr>
-<tr>
-<td><code>RedisRsCache</code></td>
-<td>Standard Redis connection</td>
+<td>Standard connection (Valkey or Redis — protocol-compatible)</td>
 </tr>
 <tr>
 <td><code>RedisRsSentinelCache</code></td>
-<td>Valkey Sentinel high availability</td>
-</tr>
-<tr>
-<td><code>RedisRsSentinelCache</code></td>
-<td>Redis Sentinel high availability</td>
+<td>Sentinel high availability</td>
 </tr>
 <tr>
 <td><code>RedisRsClusterCache</code></td>
-<td>Valkey Cluster sharding</td>
-</tr>
-<tr>
-<td><code>RedisRsClusterCache</code></td>
-<td>Redis Cluster sharding</td>
+<td>Cluster sharding</td>
 </tr>
 </tbody>
 </table>
@@ -1985,14 +1973,23 @@
 </tr>
 <tr>
 <td><code>django_cachex.serializers.json.JSONSerializer</code></td>
-<td>JSON</td>
+<td>JSON via <code>DjangoJSONEncoder</code></td>
 </tr>
 <tr>
 <td><code>django_cachex.serializers.msgpack.MessagePackSerializer</code></td>
-<td>MessagePack (requires msgpack)</td>
+<td>MessagePack (requires <code>msgpack</code>)</td>
+</tr>
+<tr>
+<td><code>django_cachex.serializers.orjson.OrjsonSerializer</code></td>
+<td>Rust-backed JSON (requires <code>orjson</code>)</td>
+</tr>
+<tr>
+<td><code>django_cachex.serializers.ormsgpack.OrMessagePackSerializer</code></td>
+<td>Rust-backed MessagePack (requires <code>ormsgpack</code>)</td>
 </tr>
 </tbody>
 </table>
+<p>See <a href="../serializers/">Serializers</a> for type-compatibility details and benchmarks.</p>
 <h3 id="compression">Compression<a class="headerlink" href="#compression" title="Permanent link">&para;</a></h3>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="c1"># Single compressor</span>
@@ -2016,23 +2013,23 @@
 <tbody>
 <tr>
 <td><code>django_cachex.compressors.zlib.ZlibCompressor</code></td>
-<td>zlib compression</td>
+<td>zlib (stdlib)</td>
 </tr>
 <tr>
 <td><code>django_cachex.compressors.gzip.GzipCompressor</code></td>
-<td>gzip compression</td>
-</tr>
-<tr>
-<td><code>django_cachex.compressors.lz4.Lz4Compressor</code></td>
-<td>LZ4 (requires lz4)</td>
+<td>gzip (stdlib)</td>
 </tr>
 <tr>
 <td><code>django_cachex.compressors.lzma.LzmaCompressor</code></td>
-<td>LZMA</td>
+<td>LZMA (stdlib)</td>
 </tr>
 <tr>
 <td><code>django_cachex.compressors.zstd.ZstdCompressor</code></td>
-<td>Zstandard (requires zstd)</td>
+<td>Zstandard (stdlib on 3.14+)</td>
+</tr>
+<tr>
+<td><code>django_cachex.compressors.lz4.Lz4Compressor</code></td>
+<td>LZ4 (requires <code>lz4</code>)</td>
 </tr>
 </tbody>
 </table>
