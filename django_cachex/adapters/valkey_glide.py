@@ -36,7 +36,7 @@ from django_cachex.stampede import (
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
 
 # valkey-glide is an optional install. The names below are unbound when it
@@ -842,19 +842,19 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
 class ValkeyGlideAsyncPipelineAdapter:
     """Async parallel of ``ValkeyGlidePipelineAdapter``.
 
-    Conforms to :class:`RespAsyncPipelineProtocol`. Accepts a callable that
-    returns the awaitable async client (rather than a resolved client) so the
-    factory can stay sync — the underlying glide client is acquired lazily
-    inside ``execute()``.
+    Conforms to :class:`RespAsyncPipelineProtocol`. Holds a resolved
+    ``AsyncGlideClient`` — the adapter's ``apipeline()`` is async so it
+    can ``await self.get_async_client()`` before constructing this
+    wrapper, removing the lazy-factory dance the v1 design needed.
     """
 
     def __init__(
         self,
-        client_factory: Callable[[], Awaitable[AsyncGlideClient]],
+        client: AsyncGlideClient,
         *,
         transaction: bool = False,
     ) -> None:
-        self._client_factory = client_factory
+        self._client = client
         self._batch = Batch(is_atomic=transaction)
 
     def set(self, key: Any, value: Any, **kw: Any) -> Self:
@@ -903,8 +903,7 @@ class ValkeyGlideAsyncPipelineAdapter:
         return call
 
     async def execute(self) -> list[Any]:
-        client = await self._client_factory()
-        result = await client.exec(self._batch, raise_on_error=True)
+        result = await self._client.exec(self._batch, raise_on_error=True)
         return result or []
 
     async def reset(self) -> None:
@@ -998,10 +997,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             client = await AsyncGlideClient.create(cfg)
             sub[self._config_key] = client
         return client
-
-    # Internal alias kept for the existing ``await self._aclient()`` call
-    # sites in this file — it's exactly ``get_async_client``.
-    _aclient = get_async_client
 
     # =========================================================================
     # Core ops (sync)
@@ -1939,14 +1934,10 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def pipeline(self, *, transaction: bool = True) -> ValkeyGlidePipelineAdapter:
         return self._pipeline(transaction=transaction)
 
-    def apipeline(self, *, transaction: bool = True) -> ValkeyGlideAsyncPipelineAdapter:
-        """Construct an async pipeline adapter wrapping glide's async ``Batch``.
-
-        The async client is acquired lazily inside ``execute()`` because
-        ``_aclient()`` is itself awaitable; chainable methods only buffer
-        commands on the ``Batch`` object so they don't need a client yet.
-        """
-        return ValkeyGlideAsyncPipelineAdapter(self._aclient, transaction=transaction)
+    async def apipeline(self, *, transaction: bool = True) -> ValkeyGlideAsyncPipelineAdapter:
+        """Construct an async pipeline adapter wrapping glide's async ``Batch``."""
+        client = await self.get_async_client()
+        return ValkeyGlideAsyncPipelineAdapter(client, transaction=transaction)
 
     # =========================================================================
     # Async core ops
@@ -1960,7 +1951,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         *,
         stampede_prevention: bool | dict | None = None,
     ) -> bool:
-        client = await self._aclient()
+        client = await self.get_async_client()
         nvalue = value
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
@@ -1981,7 +1972,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return await client.set(key, _enc(nvalue), **kw) == "OK"
 
     async def aget(self, key: str, *, stampede_prevention: bool | dict | None = None) -> Any:
-        client = await self._aclient()
+        client = await self.get_async_client()
         val = await client.get(key)
         if val is None:
             return None
@@ -2000,7 +1991,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         *,
         stampede_prevention: bool | dict | None = None,
     ) -> None:
-        client = await self._aclient()
+        client = await self.get_async_client()
         nvalue = value
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
@@ -2022,7 +2013,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         get: bool = False,
         stampede_prevention: bool | dict | None = None,
     ) -> bool | Any:
-        client = await self._aclient()
+        client = await self.get_async_client()
         nvalue = value
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
@@ -2045,13 +2036,13 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return result == "OK"
 
     async def atouch(self, key: str, timeout: int | None) -> bool:
-        client = await self._aclient()
+        client = await self.get_async_client()
         if timeout is None:
             return bool(await client.persist(key))
         return bool(await client.expire(key, timeout))
 
     async def adelete(self, key: str) -> bool:
-        return bool(await (await self._aclient()).delete([key]))
+        return bool(await (await self.get_async_client()).delete([key]))
 
     async def aget_many(
         self,
@@ -2063,7 +2054,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         if not keys:
             return {}
 
-        client = await self._aclient()
+        client = await self.get_async_client()
         results = await client.mget(keys)
         found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
@@ -2082,16 +2073,16 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return dict(found.items())
 
     async def ahas_key(self, key: str) -> bool:
-        return bool(await (await self._aclient()).exists([key]))
+        return bool(await (await self.get_async_client()).exists([key]))
 
     async def atype(self, key: str) -> KeyType | None:
-        result = await (await self._aclient()).type(key)
+        result = await (await self.get_async_client()).type(key)
         if isinstance(result, bytes):
             result = result.decode("utf-8")
         return None if result == "none" else KeyType(result)
 
     async def aincr(self, key: str, delta: int = 1) -> int:
-        client = await self._aclient()
+        client = await self.get_async_client()
         if delta == 1:
             return await client.incr(key)
         return await client.incrby(key, delta)
@@ -2105,7 +2096,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     ) -> list:
         if not data:
             return []
-        client = await self._aclient()
+        client = await self.get_async_client()
         prepared = {k: _enc(v) for k, v in data.items()}
         actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
 
@@ -2124,10 +2115,10 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def adelete_many(self, keys: Sequence[str]) -> int:
         if not keys:
             return 0
-        return await (await self._aclient()).delete(list(keys))
+        return await (await self.get_async_client()).delete(list(keys))
 
     async def aclear(self) -> bool:
-        return (await (await self._aclient()).flushdb(FlushMode.SYNC)) == "OK"
+        return (await (await self.get_async_client()).flushdb(FlushMode.SYNC)) == "OK"
 
     async def aclose(self, **kwargs: Any) -> None:
         """No-op. Same rationale as ``close()`` — tearing down the per-loop
@@ -2136,32 +2127,32 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     # ---- Async TTL ----
     async def attl(self, key: str) -> int | None:
-        return _normalize_ttl(await (await self._aclient()).ttl(key))
+        return _normalize_ttl(await (await self.get_async_client()).ttl(key))
 
     async def apttl(self, key: str) -> int | None:
-        return _normalize_ttl(await (await self._aclient()).pttl(key))
+        return _normalize_ttl(await (await self.get_async_client()).pttl(key))
 
     async def apersist(self, key: str) -> bool:
-        return bool(await (await self._aclient()).persist(key))
+        return bool(await (await self.get_async_client()).persist(key))
 
     async def aexpire(self, key: str, timeout: int) -> bool:
-        return bool(await (await self._aclient()).expire(key, timeout))
+        return bool(await (await self.get_async_client()).expire(key, timeout))
 
     async def apexpire(self, key: str, timeout: int) -> bool:
-        return bool(await (await self._aclient()).pexpire(key, timeout))
+        return bool(await (await self.get_async_client()).pexpire(key, timeout))
 
     async def aexpireat(self, key: str, when: int | datetime.datetime) -> bool:
-        return bool(await (await self._aclient()).expireat(key, _to_unix(when)))
+        return bool(await (await self.get_async_client()).expireat(key, _to_unix(when)))
 
     async def apexpireat(self, key: str, when: int | datetime.datetime) -> bool:
-        return bool(await (await self._aclient()).pexpireat(key, _to_unix(when, milliseconds=True)))
+        return bool(await (await self.get_async_client()).pexpireat(key, _to_unix(when, milliseconds=True)))
 
     async def aexpiretime(self, key: str) -> int | None:
-        return _normalize_ttl(await (await self._aclient()).expiretime(key))
+        return _normalize_ttl(await (await self.get_async_client()).expiretime(key))
 
     async def arename(self, src: str, dst: str) -> bool:
         try:
-            return (await (await self._aclient()).rename(src, dst)) == "OK"
+            return (await (await self.get_async_client()).rename(src, dst)) == "OK"
         except Exception as exc:
             if "no such key" in str(exc).lower():
                 msg = f"Key {src!r} not found"
@@ -2170,7 +2161,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     async def arenamenx(self, src: str, dst: str) -> bool:
         try:
-            return bool(await (await self._aclient()).renamenx(src, dst))
+            return bool(await (await self.get_async_client()).renamenx(src, dst))
         except Exception as exc:
             if "no such key" in str(exc).lower():
                 msg = f"Key {src!r} not found"
@@ -2179,7 +2170,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     # ---- Async scan ----
     async def akeys(self, pattern: str = "*") -> list[str]:
-        result = await (await self._aclient()).custom_command([b"KEYS", _enc(pattern)])
+        result = await (await self.get_async_client()).custom_command([b"KEYS", _enc(pattern)])
         return _dec_keys(result) if result else []
 
     async def ascan(
@@ -2189,11 +2180,11 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         count: int | None = None,
         _type: str | None = None,
     ) -> tuple[int, list[str]]:
-        result = await (await self._aclient()).scan(_enc(cursor), match=match, count=count, type=_type)
+        result = await (await self.get_async_client()).scan(_enc(cursor), match=match, count=count, type=_type)
         return int(_dec_str(result[0])), _dec_keys(result[1])
 
     async def aiter_keys(self, pattern: str, itersize: int | None = None):
-        client = await self._aclient()
+        client = await self.get_async_client()
         cursor: Any = b"0"
         while True:
             result = await client.scan(cursor, match=pattern, count=itersize)
@@ -2204,7 +2195,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
                 return
 
     async def adelete_pattern(self, pattern: str, itersize: int | None = None) -> int:
-        client = await self._aclient()
+        client = await self.get_async_client()
         deleted = 0
         keys: list = []
         async for k in self.aiter_keys(pattern, itersize=itersize):
@@ -2228,7 +2219,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         mapping: Mapping[str, Any] | None = None,
         items: list[Any] | None = None,
     ) -> int:
-        client = await self._aclient()
+        client = await self.get_async_client()
         m: dict[Any, Any] = {}
         if field is not None:
             m[field] = _enc(value)
@@ -2242,99 +2233,99 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return await client.hset(key, m)
 
     async def ahsetnx(self, key: str, field: str, value: Any) -> bool:
-        return await (await self._aclient()).hsetnx(key, field, _enc(value))
+        return await (await self.get_async_client()).hsetnx(key, field, _enc(value))
 
     async def ahget(self, key: str, field: str) -> Any:
-        val = await (await self._aclient()).hget(key, field)
+        val = await (await self.get_async_client()).hget(key, field)
         return None if val is None else val
 
     async def ahmget(self, key: str, *fields: str) -> list:
         if len(fields) == 1 and isinstance(fields[0], (list, tuple)):
             fields = tuple(fields[0])
-        values = await (await self._aclient()).hmget(key, list(fields))
+        values = await (await self.get_async_client()).hmget(key, list(fields))
         return [v if v is not None else None for v in values]
 
     async def ahgetall(self, key: str) -> dict[str, Any]:
-        result = await (await self._aclient()).hgetall(key)
+        result = await (await self.get_async_client()).hgetall(key)
         return {k.decode() if isinstance(k, bytes) else k: v for k, v in result.items()}
 
     async def ahkeys(self, key: str) -> list[str]:
-        return [k.decode() if isinstance(k, bytes) else k for k in await (await self._aclient()).hkeys(key)]
+        return [k.decode() if isinstance(k, bytes) else k for k in await (await self.get_async_client()).hkeys(key)]
 
     async def ahvals(self, key: str) -> list:
-        return list(await (await self._aclient()).hvals(key))
+        return list(await (await self.get_async_client()).hvals(key))
 
     async def ahlen(self, key: str) -> int:
-        return await (await self._aclient()).hlen(key)
+        return await (await self.get_async_client()).hlen(key)
 
     async def ahexists(self, key: str, field: str) -> bool:
-        return bool(await (await self._aclient()).hexists(key, field))
+        return bool(await (await self.get_async_client()).hexists(key, field))
 
     async def ahdel(self, key: str, *fields: str) -> int:
-        return await (await self._aclient()).hdel(key, list(fields))
+        return await (await self.get_async_client()).hdel(key, list(fields))
 
     async def ahincrby(self, key: str, field: str, amount: int = 1) -> int:
-        return await (await self._aclient()).hincrby(key, field, amount)
+        return await (await self.get_async_client()).hincrby(key, field, amount)
 
     async def ahincrbyfloat(self, key: str, field: str, amount: float) -> float:
-        return await (await self._aclient()).hincrbyfloat(key, field, amount)
+        return await (await self.get_async_client()).hincrbyfloat(key, field, amount)
 
     # =========================================================================
     # Async sets
     # =========================================================================
 
     async def asadd(self, key: str, *members: Any) -> int:
-        return await (await self._aclient()).sadd(key, [_enc(m) for m in members])
+        return await (await self.get_async_client()).sadd(key, [_enc(m) for m in members])
 
     async def asrem(self, key: str, *members: Any) -> int:
-        return await (await self._aclient()).srem(key, [_enc(m) for m in members])
+        return await (await self.get_async_client()).srem(key, [_enc(m) for m in members])
 
     async def asmembers(self, key: str) -> _set[Any]:
-        return set(await (await self._aclient()).smembers(key))
+        return set(await (await self.get_async_client()).smembers(key))
 
     async def asismember(self, key: str, member: Any) -> bool:
-        return bool(await (await self._aclient()).sismember(key, _enc(member)))
+        return bool(await (await self.get_async_client()).sismember(key, _enc(member)))
 
     async def asmismember(self, key: str, *members: Any) -> list[bool]:
-        return list(await (await self._aclient()).smismember(key, [_enc(m) for m in members]))
+        return list(await (await self.get_async_client()).smismember(key, [_enc(m) for m in members]))
 
     async def ascard(self, key: str) -> int:
-        return await (await self._aclient()).scard(key)
+        return await (await self.get_async_client()).scard(key)
 
     async def aspop(self, key: str, count: int | None = None) -> Any:
-        client = await self._aclient()
+        client = await self.get_async_client()
         if count is None:
             v = await client.spop(key)
             return None if v is None else v
         return list(await client.spop_count(key, count))
 
     async def asrandmember(self, key: str, count: int | None = None) -> Any:
-        client = await self._aclient()
+        client = await self.get_async_client()
         if count is None:
             v = await client.srandmember(key)
             return None if v is None else v
         return list(await client.srandmember_count(key, count))
 
     async def asmove(self, src: str, dst: str, member: Any) -> bool:
-        return bool(await (await self._aclient()).smove(src, dst, _enc(member)))
+        return bool(await (await self.get_async_client()).smove(src, dst, _enc(member)))
 
     async def asinter(self, keys: Sequence[str]) -> _set[Any]:
-        return set(await (await self._aclient()).sinter(list(keys)))
+        return set(await (await self.get_async_client()).sinter(list(keys)))
 
     async def asunion(self, keys: Sequence[str]) -> _set[Any]:
-        return set(await (await self._aclient()).sunion(list(keys)))
+        return set(await (await self.get_async_client()).sunion(list(keys)))
 
     async def asdiff(self, keys: Sequence[str]) -> _set[Any]:
-        return set(await (await self._aclient()).sdiff(list(keys)))
+        return set(await (await self.get_async_client()).sdiff(list(keys)))
 
     async def asinterstore(self, dst: str, keys: Sequence[str]) -> int:
-        return await (await self._aclient()).sinterstore(dst, list(keys))
+        return await (await self.get_async_client()).sinterstore(dst, list(keys))
 
     async def asunionstore(self, dst: str, keys: Sequence[str]) -> int:
-        return await (await self._aclient()).sunionstore(dst, list(keys))
+        return await (await self.get_async_client()).sunionstore(dst, list(keys))
 
     async def asdiffstore(self, dst: str, keys: Sequence[str]) -> int:
-        return await (await self._aclient()).sdiffstore(dst, list(keys))
+        return await (await self.get_async_client()).sdiffstore(dst, list(keys))
 
     async def asscan(
         self,
@@ -2343,11 +2334,11 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         match: str | None = None,
         count: int | None = None,
     ) -> tuple[bytes, list]:
-        result = await (await self._aclient()).sscan(key, _enc(cursor), match=match, count=count)
+        result = await (await self.get_async_client()).sscan(key, _enc(cursor), match=match, count=count)
         return result[0], list(result[1])
 
     async def asscan_iter(self, key: str, match: str | None = None, count: int | None = None):
-        client = await self._aclient()
+        client = await self.get_async_client()
         cursor: Any = b"0"
         while True:
             result = await client.sscan(key, cursor, match=match, count=count)
@@ -2362,7 +2353,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     # =========================================================================
 
     async def azadd(self, key: str, mapping: Mapping[Any, float], **kwargs: Any) -> int:
-        client = await self._aclient()
+        client = await self.get_async_client()
         if kwargs:
             args: list[Any] = [b"ZADD", key]
             if kwargs.get("nx"):
@@ -2379,34 +2370,34 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return await client.zadd(key, {_enc(m): float(s) for m, s in mapping.items()})
 
     async def azrem(self, key: str, *members: Any) -> int:
-        return await (await self._aclient()).zrem(key, [_enc(m) for m in members])
+        return await (await self.get_async_client()).zrem(key, [_enc(m) for m in members])
 
     async def azscore(self, key: str, member: Any) -> float | None:
-        return await (await self._aclient()).zscore(key, _enc(member))
+        return await (await self.get_async_client()).zscore(key, _enc(member))
 
     async def azmscore(self, key: str, *members: Any) -> list[float | None]:
-        return list(await (await self._aclient()).zmscore(key, [_enc(m) for m in members]))
+        return list(await (await self.get_async_client()).zmscore(key, [_enc(m) for m in members]))
 
     async def azrank(self, key: str, member: Any) -> int | None:
-        return await (await self._aclient()).zrank(key, _enc(member))
+        return await (await self.get_async_client()).zrank(key, _enc(member))
 
     async def azrevrank(self, key: str, member: Any) -> int | None:
-        return await (await self._aclient()).zrevrank(key, _enc(member))
+        return await (await self.get_async_client()).zrevrank(key, _enc(member))
 
     async def azincrby(self, key: str, amount: float, member: Any) -> float:
-        return await (await self._aclient()).zincrby(key, amount, _enc(member))
+        return await (await self.get_async_client()).zincrby(key, amount, _enc(member))
 
     async def azremrangebyrank(self, key: str, start: int, end: int) -> int:
-        return await (await self._aclient()).zremrangebyrank(key, start, end)
+        return await (await self.get_async_client()).zremrangebyrank(key, start, end)
 
     async def azremrangebyscore(self, key: str, mn: Any, mx: Any) -> int:
-        return await (await self._aclient()).custom_command([b"ZREMRANGEBYSCORE", key, _enc(mn), _enc(mx)])
+        return await (await self.get_async_client()).custom_command([b"ZREMRANGEBYSCORE", key, _enc(mn), _enc(mx)])
 
     async def azcard(self, key: str) -> int:
-        return await (await self._aclient()).zcard(key)
+        return await (await self.get_async_client()).zcard(key)
 
     async def azcount(self, key: str, mn: Any, mx: Any) -> int:
-        return await (await self._aclient()).custom_command([b"ZCOUNT", key, _enc(mn), _enc(mx)])
+        return await (await self.get_async_client()).custom_command([b"ZCOUNT", key, _enc(mn), _enc(mx)])
 
     async def azrange(
         self,
@@ -2422,7 +2413,11 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.append(b"REV")
         if withscores:
             args.append(b"WITHSCORES")
-        return _decode_zrange(await (await self._aclient()).custom_command(args), _passthrough, withscores=withscores)
+        return _decode_zrange(
+            await (await self.get_async_client()).custom_command(args),
+            _passthrough,
+            withscores=withscores,
+        )
 
     async def azrevrange(
         self,
@@ -2449,7 +2444,11 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.append(b"WITHSCORES")
         if start is not None and num is not None:
             args.extend([b"LIMIT", str(start).encode(), str(num).encode()])
-        return _decode_zrange(await (await self._aclient()).custom_command(args), _passthrough, withscores=withscores)
+        return _decode_zrange(
+            await (await self.get_async_client()).custom_command(args),
+            _passthrough,
+            withscores=withscores,
+        )
 
     async def azrevrangebyscore(
         self,
@@ -2466,26 +2465,30 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.append(b"WITHSCORES")
         if start is not None and num is not None:
             args.extend([b"LIMIT", str(start).encode(), str(num).encode()])
-        return _decode_zrange(await (await self._aclient()).custom_command(args), _passthrough, withscores=withscores)
+        return _decode_zrange(
+            await (await self.get_async_client()).custom_command(args),
+            _passthrough,
+            withscores=withscores,
+        )
 
     async def azpopmin(self, key: str, count: int = 1) -> list[tuple[Any, float]]:
-        return _decode_zpop(await (await self._aclient()).zpopmin(key, count), _passthrough)
+        return _decode_zpop(await (await self.get_async_client()).zpopmin(key, count), _passthrough)
 
     async def azpopmax(self, key: str, count: int = 1) -> list[tuple[Any, float]]:
-        return _decode_zpop(await (await self._aclient()).zpopmax(key, count), _passthrough)
+        return _decode_zpop(await (await self.get_async_client()).zpopmax(key, count), _passthrough)
 
     # =========================================================================
     # Async lists
     # =========================================================================
 
     async def alpush(self, key: str, *values: Any) -> int:
-        return await (await self._aclient()).lpush(key, [_enc(v) for v in values])
+        return await (await self.get_async_client()).lpush(key, [_enc(v) for v in values])
 
     async def arpush(self, key: str, *values: Any) -> int:
-        return await (await self._aclient()).rpush(key, [_enc(v) for v in values])
+        return await (await self.get_async_client()).rpush(key, [_enc(v) for v in values])
 
     async def alpop(self, key: str, count: int | None = None) -> Any:
-        client = await self._aclient()
+        client = await self.get_async_client()
         if count is None:
             v = await client.lpop(key)
             return None if v is None else v
@@ -2493,7 +2496,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return list(result) if result else []
 
     async def arpop(self, key: str, count: int | None = None) -> Any:
-        client = await self._aclient()
+        client = await self.get_async_client()
         if count is None:
             v = await client.rpop(key)
             return None if v is None else v
@@ -2501,26 +2504,26 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return list(result) if result else []
 
     async def alrange(self, key: str, start: int, end: int) -> list:
-        return list(await (await self._aclient()).lrange(key, start, end))
+        return list(await (await self.get_async_client()).lrange(key, start, end))
 
     async def altrim(self, key: str, start: int, end: int) -> bool:
-        return (await (await self._aclient()).ltrim(key, start, end)) == "OK"
+        return (await (await self.get_async_client()).ltrim(key, start, end)) == "OK"
 
     async def allen(self, key: str) -> int:
-        return await (await self._aclient()).llen(key)
+        return await (await self.get_async_client()).llen(key)
 
     async def alindex(self, key: str, index: int) -> Any:
-        v = await (await self._aclient()).lindex(key, index)
+        v = await (await self.get_async_client()).lindex(key, index)
         return None if v is None else v
 
     async def alset(self, key: str, index: int, value: Any) -> bool:
-        return (await (await self._aclient()).lset(key, index, _enc(value))) == "OK"
+        return (await (await self.get_async_client()).lset(key, index, _enc(value))) == "OK"
 
     async def alrem(self, key: str, count: int, value: Any) -> int:
-        return await (await self._aclient()).lrem(key, count, _enc(value))
+        return await (await self.get_async_client()).lrem(key, count, _enc(value))
 
     async def alinsert(self, key: str, where: str, pivot: Any, value: Any) -> int:
-        return await (await self._aclient()).custom_command(
+        return await (await self.get_async_client()).custom_command(
             [
                 b"LINSERT",
                 key,
@@ -2538,10 +2541,10 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.extend([b"COUNT", str(count).encode()])
         if (maxlen := kwargs.get("maxlen")) is not None:
             args.extend([b"MAXLEN", str(maxlen).encode()])
-        return await (await self._aclient()).custom_command(args)
+        return await (await self.get_async_client()).custom_command(args)
 
     async def almove(self, src: str, dst: str, src_dir: str, dst_dir: str) -> Any:
-        v = await (await self._aclient()).custom_command(
+        v = await (await self.get_async_client()).custom_command(
             [b"LMOVE", src, dst, _enc(src_dir.upper()), _enc(dst_dir.upper())],
         )
         return None if v is None else v
@@ -2554,7 +2557,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         wherefrom: str = "LEFT",
         whereto: str = "RIGHT",
     ) -> Any:
-        result = await (await self._aclient()).custom_command(
+        result = await (await self.get_async_client()).custom_command(
             [
                 b"BLMOVE",
                 src,
@@ -2568,7 +2571,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     async def ablpop(self, keys: Any, timeout: float = 0) -> Any:
         ks = list(keys) if isinstance(keys, (list, tuple)) else [keys]
-        result = await (await self._aclient()).custom_command([b"BLPOP", *_enc_list(ks), str(timeout).encode()])
+        result = await (await self.get_async_client()).custom_command([b"BLPOP", *_enc_list(ks), str(timeout).encode()])
         if result is None:
             return None
         key, value = result[0], result[1]
@@ -2576,7 +2579,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     async def abrpop(self, keys: Any, timeout: float = 0) -> Any:
         ks = list(keys) if isinstance(keys, (list, tuple)) else [keys]
-        result = await (await self._aclient()).custom_command([b"BRPOP", *_enc_list(ks), str(timeout).encode()])
+        result = await (await self.get_async_client()).custom_command([b"BRPOP", *_enc_list(ks), str(timeout).encode()])
         if result is None:
             return None
         key, value = result[0], result[1]
@@ -2605,11 +2608,11 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args.append(_enc(id))
         for f, v in fields.items():
             args.extend([_enc(f), _enc(v)])
-        result = await (await self._aclient()).custom_command(args)
+        result = await (await self.get_async_client()).custom_command(args)
         return result.decode() if isinstance(result, bytes) else result
 
     async def axlen(self, key: str) -> int:
-        return await (await self._aclient()).xlen(key)
+        return await (await self.get_async_client()).xlen(key)
 
     async def axrange(
         self,
@@ -2621,7 +2624,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args = [b"XRANGE", key, _enc(mn), _enc(mx)]
         if count is not None:
             args.extend([b"COUNT", str(count).encode()])
-        return _decode_stream_entries(await (await self._aclient()).custom_command(args))
+        return _decode_stream_entries(await (await self.get_async_client()).custom_command(args))
 
     async def axrevrange(
         self,
@@ -2633,10 +2636,10 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args = [b"XREVRANGE", key, _enc(mx), _enc(mn)]
         if count is not None:
             args.extend([b"COUNT", str(count).encode()])
-        return _decode_stream_entries(await (await self._aclient()).custom_command(args))
+        return _decode_stream_entries(await (await self.get_async_client()).custom_command(args))
 
     async def axdel(self, key: str, *ids: Any) -> int:
-        return await (await self._aclient()).custom_command([b"XDEL", key, *_enc_list(ids)])
+        return await (await self.get_async_client()).custom_command([b"XDEL", key, *_enc_list(ids)])
 
     async def axtrim(self, key: str, **kwargs: Any) -> int:
         args: list[Any] = [b"XTRIM", key]
@@ -2652,10 +2655,10 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.append(_enc(minid))
         if (limit := kwargs.get("limit")) is not None:
             args.extend([b"LIMIT", str(limit).encode()])
-        return await (await self._aclient()).custom_command(args)
+        return await (await self.get_async_client()).custom_command(args)
 
     async def axack(self, key: str, group: str, *ids: Any) -> int:
-        return await (await self._aclient()).custom_command([b"XACK", key, _enc(group), *_enc_list(ids)])
+        return await (await self.get_async_client()).custom_command([b"XACK", key, _enc(group), *_enc_list(ids)])
 
     async def axclaim(
         self,
@@ -2689,7 +2692,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.append(b"FORCE")
         if justid:
             args.append(b"JUSTID")
-        result = await (await self._aclient()).custom_command(args)
+        result = await (await self.get_async_client()).custom_command(args)
         if justid:
             return _dec_keys(result or [])
         return _decode_stream_entries(result)
@@ -2716,7 +2719,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.extend([b"COUNT", str(count).encode()])
         if justid:
             args.append(b"JUSTID")
-        result = await (await self._aclient()).custom_command(args)
+        result = await (await self.get_async_client()).custom_command(args)
         next_id = _dec_str(result[0])
         if justid:
             claimed: Any = _dec_keys(result[1] or [])
@@ -2744,7 +2747,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.extend([_enc(start), _enc(end), str(count).encode()])
             if consumer is not None:
                 args.append(_enc(consumer))
-        result = await (await self._aclient()).custom_command(args)
+        result = await (await self.get_async_client()).custom_command(args)
         if is_range:
             return [[_dec_str(row[0]), _dec_str(row[1]), int(row[2]), int(row[3])] for row in (result or [])]
         if not result or result[0] == 0:
@@ -2761,14 +2764,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args: list[Any] = [b"XINFO", b"STREAM", key]
         if full:
             args.append(b"FULL")
-        return _decode_xinfo(await (await self._aclient()).custom_command(args))
+        return _decode_xinfo(await (await self.get_async_client()).custom_command(args))
 
     async def axinfo_groups(self, key: str) -> Any:
-        result = await (await self._aclient()).custom_command([b"XINFO", b"GROUPS", key])
+        result = await (await self.get_async_client()).custom_command([b"XINFO", b"GROUPS", key])
         return [_decode_xinfo(g) for g in (result or [])]
 
     async def axinfo_consumers(self, key: str, group: str) -> Any:
-        result = await (await self._aclient()).custom_command([b"XINFO", b"CONSUMERS", key, _enc(group)])
+        result = await (await self.get_async_client()).custom_command([b"XINFO", b"CONSUMERS", key, _enc(group)])
         return [_decode_xinfo(c) for c in (result or [])]
 
     async def axgroup_create(
@@ -2785,10 +2788,10 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.append(b"MKSTREAM")
         if entries_read is not None:
             args.extend([b"ENTRIESREAD", str(entries_read).encode()])
-        return (await (await self._aclient()).custom_command(args)) == "OK"
+        return (await (await self.get_async_client()).custom_command(args)) == "OK"
 
     async def axgroup_destroy(self, key: str, group: str) -> int:
-        return await (await self._aclient()).custom_command([b"XGROUP", b"DESTROY", key, _enc(group)])
+        return await (await self.get_async_client()).custom_command([b"XGROUP", b"DESTROY", key, _enc(group)])
 
     async def axgroup_setid(
         self,
@@ -2801,10 +2804,10 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args: list[Any] = [b"XGROUP", b"SETID", key, _enc(group), _enc(entry_id)]
         if entries_read is not None:
             args.extend([b"ENTRIESREAD", str(entries_read).encode()])
-        return (await (await self._aclient()).custom_command(args)) == "OK"
+        return (await (await self.get_async_client()).custom_command(args)) == "OK"
 
     async def axgroup_delconsumer(self, key: str, group: str, consumer: str) -> int:
-        return await (await self._aclient()).custom_command(
+        return await (await self.get_async_client()).custom_command(
             [b"XGROUP", b"DELCONSUMER", key, _enc(group), _enc(consumer)],
         )
 
@@ -2822,7 +2825,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args.append(b"STREAMS")
         args.extend(_enc_list(streams.keys()))
         args.extend(_enc_list(streams.values()))
-        return _decode_xread(await (await self._aclient()).custom_command(args))
+        return _decode_xread(await (await self.get_async_client()).custom_command(args))
 
     async def axreadgroup(
         self,
@@ -2843,14 +2846,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args.append(b"STREAMS")
         args.extend(_enc_list(streams.keys()))
         args.extend(_enc_list(streams.values()))
-        return _decode_xread(await (await self._aclient()).custom_command(args))
+        return _decode_xread(await (await self.get_async_client()).custom_command(args))
 
     # =========================================================================
     # Async eval
     # =========================================================================
 
     async def aeval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any:
-        return await (await self._aclient()).custom_command(
+        return await (await self.get_async_client()).custom_command(
             [b"EVAL", _enc(script), str(numkeys).encode(), *_enc_list(keys_and_args)],
         )
 
@@ -2858,7 +2861,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     # Async lock
     # =========================================================================
 
-    def alock(
+    async def alock(
         self,
         key: str,
         timeout: float | None = None,
@@ -2868,6 +2871,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         blocking_timeout: float | None = None,
         thread_local: bool = True,
     ) -> Any:
+        del thread_local  # glide locks don't track caller thread
         return _AsyncGlideLock(
             self,
             key,
@@ -3092,7 +3096,7 @@ class _AsyncGlideLock:
         bl = self._blocking if blocking is None else blocking
         bt = self._blocking_timeout if blocking_timeout is None else blocking_timeout
         deadline = time.monotonic() + bt if bt else None
-        client = await self._adapter._aclient()
+        client = await self._adapter.get_async_client()
 
         kw: dict[str, Any] = {"conditional_set": ConditionalChange.ONLY_IF_DOES_NOT_EXIST}
         if self._timeout is not None:
@@ -3115,7 +3119,7 @@ class _AsyncGlideLock:
         if self._token is None:
             msg = "Cannot release un-acquired lock"
             raise LockError(msg)
-        client = await self._adapter._aclient()
+        client = await self._adapter.get_async_client()
         await client.custom_command([b"EVAL", _RELEASE_LUA.encode(), b"1", _enc(self._key), self._token])
         self._token = None
 
@@ -3125,7 +3129,7 @@ class _AsyncGlideLock:
         if self._token is None:
             msg = "Cannot extend un-acquired lock"
             raise LockError(msg)
-        client = await self._adapter._aclient()
+        client = await self._adapter.get_async_client()
         added_ms = int(additional_time * 1000)
         result = await client.custom_command(
             [

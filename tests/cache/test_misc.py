@@ -149,7 +149,7 @@ class TestAsyncLock:
 
     @pytest.mark.asyncio
     async def test_alock_acquire_and_release(self, cache: RespCache):
-        lock = cache.alock("alock_resource")
+        lock = await cache.alock("alock_resource")
         acquired = await lock.acquire(blocking=False)
         assert acquired is True
         assert cache.has_key("alock_resource") is True
@@ -159,17 +159,17 @@ class TestAsyncLock:
 
     @pytest.mark.asyncio
     async def test_alock_prevents_double_acquire(self, cache: RespCache):
-        lock1 = cache.alock("alock_resource2")
+        lock1 = await cache.alock("alock_resource2")
         assert await lock1.acquire(blocking=False) is True
 
-        lock2 = cache.alock("alock_resource2")
+        lock2 = await cache.alock("alock_resource2")
         assert await lock2.acquire(blocking=False) is False
 
         await lock1.release()
 
     @pytest.mark.asyncio
     async def test_alock_context_manager(self, cache: RespCache):
-        async with cache.alock("alock_ctx"):
+        async with await cache.alock("alock_ctx"):
             assert cache.has_key("alock_ctx") is True
         assert cache.has_key("alock_ctx") is False
 

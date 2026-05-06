@@ -319,20 +319,12 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """Get an async client connection.
 
         ``async def`` for Protocol uniformity — adapters whose async-client
-        construction is genuinely async (glide, redis-rs) can ``await``
-        inside; this body has no awaits because pool lookup and ``Redis(
-        connection_pool=...)`` are both sync. ``apipeline()`` (which is
-        sync) calls the helpers below directly to avoid needing ``await``.
+        construction is genuinely async (glide, redis-rs) ``await`` here;
+        for redis-py / valkey-py the body is sync (pool lookup +
+        ``Redis(connection_pool=...)``) since the connection opens
+        lazily on the first awaited command.
         """
-        return self._build_async_client_sync(write=write)
-
-    def _build_async_client_sync(self, *, write: bool) -> Any:
-        """Sync-callable async-client builder for use by ``apipeline()``.
-
-        Same construction sequence as :meth:`get_async_client` — separated
-        so the sync ``apipeline`` entry-point doesn't need to be in an
-        async context just to construct the underlying pipeline.
-        """
+        del key
         pool = self._get_async_connection_pool(write=write)
         if self._async_client_class is None:
             msg = "Async operations require _async_client_class to be set. Use RedisPyAdapter or ValkeyPyAdapter."
@@ -1007,7 +999,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             thread_local=thread_local,
         )
 
-    def alock(
+    async def alock(
         self,
         key: str,
         timeout: float | None = None,
@@ -1018,7 +1010,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         thread_local: bool = True,
     ) -> Any:
         """Get an async distributed lock."""
-        client = self._build_async_client_sync(write=True)
+        client = await self.get_async_client(key, write=True)
         return client.lock(
             key,
             timeout=timeout,
@@ -1038,17 +1030,14 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         client = self.get_client(write=True)
         return ValkeyPyPipelineAdapter(client.pipeline(transaction=transaction))
 
-    def apipeline(self, *, transaction: bool = True) -> ValkeyPyAsyncPipelineAdapter:
+    async def apipeline(self, *, transaction: bool = True) -> ValkeyPyAsyncPipelineAdapter:
         """Construct an async pipeline adapter for this driver.
 
         Returns a :class:`ValkeyPyAsyncPipelineAdapter` wrapping the underlying
         ``redis.asyncio`` / ``valkey.asyncio`` async pipeline. ``RespCache.apipeline()``
         wraps the result in an :class:`AsyncPipeline`.
         """
-        # Use the sync helper so this method can stay non-async — async-client
-        # construction has no awaits on this adapter, only the Protocol contract
-        # marks ``get_async_client`` async (see :meth:`get_async_client`).
-        client = self._build_async_client_sync(write=True)
+        client = await self.get_async_client(write=True)
         return ValkeyPyAsyncPipelineAdapter(client.pipeline(transaction=transaction))
 
     # =========================================================================
@@ -3185,12 +3174,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
     @override
     async def get_async_client(self, key: str | None = None, *, write: bool = False) -> Any:
         """Get the async Cluster client for the current event loop."""
-        return self._build_async_client_sync(write=write)
-
-    @override
-    def _build_async_client_sync(self, *, write: bool) -> Any:
-        """Sync-callable async-cluster builder for use by ``apipeline()``."""
-        del write
+        del key, write
         loop = asyncio.get_running_loop()
 
         # Check if we already have an async cluster for this loop
@@ -3568,9 +3552,9 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         return ValkeyPyPipelineAdapter(client.pipeline(transaction=False))
 
     @override
-    def apipeline(self, *, transaction: bool = True) -> ValkeyPyAsyncPipelineAdapter:
+    async def apipeline(self, *, transaction: bool = True) -> ValkeyPyAsyncPipelineAdapter:
         """Construct an async cluster pipeline adapter. ``ClusterPipeline`` doesn't use MULTI/EXEC."""
-        client = self._build_async_client_sync(write=True)
+        client = await self.get_async_client(write=True)
         return ValkeyPyAsyncPipelineAdapter(client.pipeline(transaction=False))
 
 

@@ -1020,19 +1020,23 @@ impl RedisRsAdapter {
             .unbind())
     }
 
-    // ``apipeline`` returns a Python ``RedisRsAsyncPipelineAdapter`` class
-    // instance — not a redis-rs awaitable — so the return type is
-    // genuinely ``Py<PyAny>``.
+    // ``apipeline`` is async by Protocol contract; return a pre-resolved
+    // awaitable that delivers the constructed pipeline wrapper. Construction
+    // itself is sync — buffering the commands needs no I/O.
     #[pyo3(signature = (*, transaction = true))]
-    fn apipeline(slf: &Bound<'_, Self>, transaction: bool) -> PyResult<Py<PyAny>> {
+    fn apipeline(
+        slf: &Bound<'_, Self>,
+        transaction: bool,
+    ) -> PyResult<Py<crate::async_bridge::RedisRsAwaitable>> {
         let py = slf.py();
         let kwargs = PyDict::new(py);
         kwargs.set_item("transaction", transaction)?;
-        Ok(py
+        let pipe = py
             .import("django_cachex.adapters._redis_rs")?
             .getattr("RedisRsAsyncPipelineAdapter")?
             .call((slf.clone(),), Some(&kwargs))?
-            .unbind())
+            .unbind();
+        await_constant(py, pipe)
     }
 
     // =====================================================================
@@ -3749,8 +3753,9 @@ impl RedisRsAdapter {
             .unbind())
     }
 
-    // ``alock`` returns a Python ``AsyncValkeyLock`` instance (not an
-    // awaitable) — return type is genuinely ``Py<PyAny>``.
+    // ``alock`` is async by Protocol contract; return a pre-resolved
+    // awaitable that delivers the constructed AsyncValkeyLock. The lock
+    // itself does its acquire I/O lazily on ``__aenter__`` / ``acquire()``.
     #[pyo3(signature = (key, timeout=None, sleep=0.1, *, blocking=true, blocking_timeout=None, thread_local=true))]
     fn alock(
         slf: &Bound<'_, Self>,
@@ -3760,7 +3765,7 @@ impl RedisRsAdapter {
         blocking: bool,
         blocking_timeout: Option<f64>,
         thread_local: bool,
-    ) -> PyResult<Py<PyAny>> {
+    ) -> PyResult<Py<crate::async_bridge::RedisRsAwaitable>> {
         let py = slf.py();
         let kwargs = PyDict::new(py);
         kwargs.set_item("timeout", timeout)?;
@@ -3768,11 +3773,12 @@ impl RedisRsAdapter {
         kwargs.set_item("blocking", blocking)?;
         kwargs.set_item("blocking_timeout", blocking_timeout)?;
         kwargs.set_item("thread_local", thread_local)?;
-        Ok(py
+        let lock = py
             .import("django_cachex.lock")?
             .getattr("AsyncValkeyLock")?
             .call((slf.clone(), key), Some(&kwargs))?
-            .unbind())
+            .unbind();
+        await_constant(py, lock)
     }
 
     // =====================================================================

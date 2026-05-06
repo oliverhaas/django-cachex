@@ -100,8 +100,8 @@ class RedisPyAdapter(_RedisPyMixin, ValkeyPyAdapter):
         client = self.get_client(write=True)
         return RedisPyPipelineAdapter(client.pipeline(transaction=transaction))
 
-    def apipeline(self, *, transaction: bool = True) -> RedisPyAsyncPipelineAdapter:
-        client = self._build_async_client_sync(write=True)
+    async def apipeline(self, *, transaction: bool = True) -> RedisPyAsyncPipelineAdapter:
+        client = await self.get_async_client(write=True)
         return RedisPyAsyncPipelineAdapter(client.pipeline(transaction=transaction))
 
 
@@ -122,8 +122,8 @@ class RedisPySentinelAdapter(_RedisPyMixin, ValkeyPySentinelAdapter):
         client = self.get_client(write=True)
         return RedisPyPipelineAdapter(client.pipeline(transaction=transaction))
 
-    def apipeline(self, *, transaction: bool = True) -> RedisPyAsyncPipelineAdapter:
-        client = self._build_async_client_sync(write=True)
+    async def apipeline(self, *, transaction: bool = True) -> RedisPyAsyncPipelineAdapter:
+        client = await self.get_async_client(write=True)
         return RedisPyAsyncPipelineAdapter(client.pipeline(transaction=transaction))
 
 
@@ -142,8 +142,8 @@ class RedisPyClusterAdapter(_RedisPyMixin, ValkeyPyClusterAdapter):
         client = self.get_client(write=True)
         return RedisPyPipelineAdapter(client.pipeline(transaction=False))
 
-    def apipeline(self, *, transaction: bool = True) -> RedisPyAsyncPipelineAdapter:
-        client = self._build_async_client_sync(write=True)
+    async def apipeline(self, *, transaction: bool = True) -> RedisPyAsyncPipelineAdapter:
+        client = await self.get_async_client(write=True)
         return RedisPyAsyncPipelineAdapter(client.pipeline(transaction=False))
 
 

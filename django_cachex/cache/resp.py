@@ -849,7 +849,7 @@ class RespCache(BaseCachex):
             thread_local=thread_local,
         )
 
-    def alock(
+    async def alock(
         self,
         key: str,
         version: int | None = None,
@@ -860,9 +860,15 @@ class RespCache(BaseCachex):
         blocking_timeout: float | None = None,
         thread_local: bool = True,
     ) -> Any:
-        """Return an async Lock object for distributed locking."""
+        """Return an async Lock object for distributed locking.
+
+        ``async def`` because adapters whose async-client construction is
+        itself async (glide) need to ``await`` to resolve the client
+        before building the lock. Use as
+        ``async with await cache.alock(key) as lock:``.
+        """
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.alock(
+        return await self.adapter.alock(
             key,
             timeout=timeout,
             sleep=sleep,
@@ -888,7 +894,7 @@ class RespCache(BaseCachex):
         pipe._cache_version = v
         return pipe
 
-    def apipeline(
+    async def apipeline(
         self,
         *,
         transaction: bool = True,
@@ -896,14 +902,17 @@ class RespCache(BaseCachex):
     ) -> AsyncPipeline:
         """Create an async pipeline for batched operations.
 
-        ``apipeline()`` itself is sync — it just constructs the wrapper.
-        Only ``await pipeline.execute()`` performs I/O. Mirrors how
-        ``redis.asyncio.Redis().pipeline()`` works.
+        ``async def`` because adapters whose async-client construction is
+        itself async (glide) need to ``await`` to resolve the client
+        before building the pipeline. Use as
+        ``async with await cache.apipeline() as pipe:``. Only
+        ``await pipe.execute()`` performs the round-trip; chained
+        ``pipe.set(...)`` / ``pipe.expire(...)`` calls are sync.
         """
         from django_cachex.adapters.pipeline import AsyncPipeline
 
         v = version if version is not None else self.version
-        pipeline_adapter = self.adapter.apipeline(transaction=transaction)
+        pipeline_adapter = await self.adapter.apipeline(transaction=transaction)
         pipe = AsyncPipeline(cache=self, pipeline_adapter=pipeline_adapter, version=v)
         pipe._key_func = self.make_and_validate_key
         pipe._cache_version = v
@@ -3132,14 +3141,14 @@ class RespClusterCache(RespCache):
         """Create a pipeline. Cluster pipelines never use transactions."""
         return super().pipeline(transaction=False, version=version)
 
-    def apipeline(
+    async def apipeline(
         self,
         *,
         transaction: bool = True,
         version: int | None = None,
     ) -> AsyncPipeline:
         """Create an async pipeline. Cluster pipelines never use transactions."""
-        return super().apipeline(transaction=False, version=version)
+        return await super().apipeline(transaction=False, version=version)
 
 
 class RespSentinelCache(RespCache):

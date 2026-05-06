@@ -41,7 +41,7 @@ async def async_demo(request: HttpRequest) -> JsonResponse:
 async def apipeline_demo(request: HttpRequest) -> JsonResponse:
     """Async pipeline: queueing is sync, only execute() awaits."""
     cache = caches["default"]
-    async with cache.apipeline() as pipe:
+    async with await cache.apipeline() as pipe:
         pipe.set("demo:p1", "x")
         pipe.set("demo:p2", "y")
         pipe.get("demo:p1")

@@ -267,7 +267,7 @@ class BaseCachex(BaseCache):
         """Create a pipeline for batched operations."""
         raise NotSupportedError("pipeline", self.__class__.__name__)
 
-    def alock(
+    async def alock(
         self,
         key: str,
         version: int | None = None,
@@ -281,7 +281,7 @@ class BaseCachex(BaseCache):
         """Async: return an async Lock object for distributed locking."""
         raise NotSupportedError("alock", self.__class__.__name__)
 
-    def apipeline(self, *, transaction: bool = True, version: int | None = None) -> AsyncPipeline:
+    async def apipeline(self, *, transaction: bool = True, version: int | None = None) -> AsyncPipeline:
         """Create an async pipeline for batched operations."""
         raise NotSupportedError("apipeline", self.__class__.__name__)
 
