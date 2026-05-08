@@ -13,14 +13,26 @@ CACHES = {
 
 ## Backend Classes
 
+All backends live in `django_cachex.cache`. See the [configuration reference](../user-guide/configuration.md#backend-classes) for the full table.
+
+**Valkey / Redis (Python driver, default):**
+
 | Backend | Description |
 |---------|-------------|
-| `ValkeyCache` | Standard Valkey connection |
-| `RedisCache` | Standard Redis connection |
-| `ValkeySentinelCache` | Valkey Sentinel high availability |
-| `RedisSentinelCache` | Redis Sentinel high availability |
-| `ValkeyClusterCache` | Valkey Cluster sharding |
-| `RedisClusterCache` | Redis Cluster sharding |
+| `ValkeyCache` / `RedisCache` | Standard connection |
+| `ValkeySentinelCache` / `RedisSentinelCache` | Sentinel high availability |
+| `ValkeyClusterCache` / `RedisClusterCache` | Cluster sharding |
+
+**Other adapters:**
+
+| Backend | Description |
+|---------|-------------|
+| `RedisRsCache` / `RedisRsSentinelCache` / `RedisRsClusterCache` | Rust driver (opt-in via `redis-rs` extra) |
+| `ValkeyGlideCache` | valkey-glide (opt-in via `valkey-glide` extra) |
+| `LocMemCache` | Drop-in replacement for Django's `LocMemCache` |
+| `DatabaseCache` | Drop-in replacement for Django's `DatabaseCache` |
+| `StreamCache` | In-memory cache synchronized via a Redis Stream |
+| `TieredCache` | L1/L2 composite with TTL propagation |
 
 !!! note "Valkey and Redis Compatibility"
     Valkey and Redis are protocol-compatible, so either backend works with either server.

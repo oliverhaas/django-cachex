@@ -70,18 +70,16 @@ Create a new cache entry with key name, value (JSON objects/arrays are parsed au
 
 The admin adapts based on backend capabilities:
 
-| Feature | cachex | LocMemCache | DatabaseCache | FileBasedCache | limited |
-|---------|--------|-------------|---------------|----------------|---------|
-| List keys | Yes | Yes | Yes | Yes* | No |
-| Get key | Yes | Yes | Yes | No | Yes |
-| Delete key | Yes | Yes | Yes | No | Yes |
-| Edit key | Yes | Yes | Yes | No | Yes |
-| Get TTL | Yes | Yes | Yes | No | No |
-| Get type | Yes | No | No | No | No |
-| Cache info | Yes | Yes | Yes | Yes | No |
-| Flush cache | Yes | Yes | Yes | Yes | Varies |
-
-*FileBasedCache shows MD5 hashes instead of original key names (one-way hash)
+| Feature | cachex | LocMemCache | DatabaseCache | limited |
+|---------|--------|-------------|---------------|---------|
+| List keys | Yes | Yes | Yes | No |
+| Get key | Yes | Yes | Yes | Yes |
+| Delete key | Yes | Yes | Yes | Yes |
+| Edit key | Yes | Yes | Yes | Yes |
+| Get TTL | Yes | Yes | Yes | No |
+| Get type | Yes | No | No | No |
+| Cache info | Yes | Yes | Yes | No |
+| Flush cache | Yes | Yes | Yes | Varies |
 
 ## Tips
 

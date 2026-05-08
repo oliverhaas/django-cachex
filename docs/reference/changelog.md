@@ -15,14 +15,14 @@
 
 ### New features
 
-- **Rust I/O driver.** Optional native driver built on PyO3 + tokio + redis-rs, shipped as a separate `django-cachex-redis-rs` package. Opt in via the `redis-rs` extra (`pip install django-cachex[redis-rs]`); without it, only the pure-Python backends are pulled in and `RedisRsCache` raise a clean `ImportError` on first use. Set `BACKEND` to one of `RedisRsCache`, `RedisRsCache`, `RedisRsClusterCache`, `RedisRsClusterCache`, `RedisRsSentinelCache`, `RedisRsSentinelCache`. Sync and async share one tokio runtime; async dodges the threadpool round-trip.
+- **Rust I/O driver.** Optional native driver built on PyO3 + tokio + redis-rs, shipped as a separate `django-cachex-redis-rs` package. Opt in via the `redis-rs` extra (`pip install django-cachex[redis-rs]`); without it, only the pure-Python backends are pulled in and the `RedisRsCache` classes raise a clean `ImportError` on first use. Set `BACKEND` to one of `RedisRsCache`, `RedisRsClusterCache`, or `RedisRsSentinelCache`. Sync and async share one tokio runtime; async dodges the threadpool round-trip.
 - **`StreamCache` backend.** Stream-synchronized in-memory cache: reads are local, writes broadcast over a Redis Stream, a daemon thread on each pod consumes the stream and applies remote changes. Read-heavy, write-light, eventually consistent.
 - **`TieredCache` backend.** Composes two existing `CACHES` entries as L1 (fast, e.g. LocMem) and L2 (durable, e.g. Redis), with TTL propagation and pull-through reads.
 - **Cache-stampede prevention.** TTL-based XFetch via `OPTIONS["stampede_prevention"]` (or `stampede_prevention=` per call). Configurable buffer/beta/delta.
 - **`LocMemCache` and `DatabaseCache` extensions.** Drop-in replacements for the Django builtins, adding data-structure ops, TTL helpers, and admin support. Compound read-modify-write ops on `LocMemCache` are serialized via a per-backend `RLock` (#62).
 - **`orjson` and `ormsgpack` serializer extras.**
-- **Free-threaded CPython (3.14t) support.** A cp314t wheel is built; `_driver` works with the GIL disabled. The Rust driver also runs on the free-threaded build.
-- **PyPI wheels via cibuildwheel.** Manylinux x86_64 wheels for cp314 and cp314t.
+- **Free-threaded CPython (3.14t) support.** A cp314t wheel is built; `_redis_rs` works with the GIL disabled. The Rust driver also runs on the free-threaded build.
+- **PyPI wheels via cibuildwheel.** Wheels for Linux x86_64, Linux aarch64, macOS arm64, and Windows amd64, on cp314 and cp314t.
 - **Async pool sharing.** A single async connection pool is shared across per-task `Cache` instances (#83), avoiding the thundering-herd reconnect on cold start.
 - **Pipeline parity.** Stream ops, CAS ops, missing key ops (`persist`/`pttl`/`expireat`/etc.), context manager, `zpopmin`/`zpopmax` default `count=1` aligned with the cache API.
 - **Compressors gain a uniform `level=` parameter** (gzip, lz4, zstd join zlib/lzma in exposing it). Defaults match each library's own default.

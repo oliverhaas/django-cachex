@@ -47,6 +47,14 @@ if TYPE_CHECKING:
 _MISSING = object()
 
 
+class _ZSet(dict[Any, float]):
+    """Tagged ``dict`` that distinguishes a sorted set from a hash in storage.
+
+    Both data structures naturally serialize to ``dict``; the wrapper lets
+    ``type()`` and ``_typed_get_zset`` discriminate without inspecting values.
+    """
+
+
 class LocMemCache(BaseCachex, DjangoLocMemCache):
     """LocMemCache with cachex extensions, implemented natively.
 
@@ -172,6 +180,8 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             return KeyType.LIST
         if isinstance(value, set):
             return KeyType.SET
+        if isinstance(value, _ZSet):
+            return KeyType.ZSET
         if isinstance(value, dict) and all(isinstance(k, str) for k in value):
             return KeyType.HASH
         return KeyType.STRING
@@ -781,12 +791,12 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     # Sorted Set Operations
     # =========================================================================
 
-    def _typed_get_zset(self, internal_key: str) -> dict[Any, float] | None:
+    def _typed_get_zset(self, internal_key: str) -> _ZSet | None:
         """Caller holds ``self._lock``. Returns the stored sorted set or None."""
         value = self._native_get(internal_key)
         if value is _MISSING:
             return None
-        if not isinstance(value, dict):
+        if not isinstance(value, _ZSet):
             msg = f"Key {internal_key!r} does not hold a sorted set value."
             raise TypeError(msg)
         return value
@@ -811,7 +821,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Add members to a sorted set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_zset(internal_key) or {}
+            current = self._typed_get_zset(internal_key) or _ZSet()
             changed = 0
             for member, score in mapping.items():
                 exists = member in current
@@ -974,7 +984,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Increment the score of a member."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_zset(internal_key) or {}
+            current = self._typed_get_zset(internal_key) or _ZSet()
             current[member] = current.get(member, 0.0) + amount
             self._native_write(internal_key, current)
             return current[member]

@@ -173,6 +173,12 @@ class TestKeysAndAdmin:
         locmem_cache.set("k", {"name": "alice"})
         assert locmem_cache.type("k") == "hash"
 
+    def test_type_zset_distinguished_from_hash(self, locmem_cache: LocMemCache):
+        # zset members can be strings (Redis-typical), so the only reliable
+        # distinguisher from a hash is the storage tag set by zadd().
+        locmem_cache.zadd("k", {"alice": 100.0, "bob": 85.0})
+        assert locmem_cache.type("k") == "zset"
+
     def test_type_empty_dict_is_hash(self, locmem_cache: LocMemCache):
         locmem_cache.set("k", {})
         assert locmem_cache.type("k") == "hash"
