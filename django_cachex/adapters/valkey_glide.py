@@ -914,13 +914,13 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         self._stampede_config: StampedeConfig | None = make_stampede_config(options.get("stampede_prevention"))
         self._config_key = _glide_config_key(servers, options)
 
-    def resolve_stampede(self, stampede_prevention: bool | dict | None = None) -> StampedeConfig | None:
+    def resolve_stampede(self, stampede_prevention: bool | StampedeConfig | None = None) -> StampedeConfig | None:
         return resolve_stampede(self._stampede_config, stampede_prevention)
 
     def get_timeout_with_buffer(
         self,
         timeout: int | None,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> int | None:
         return get_timeout_with_buffer(timeout, self._stampede_config, stampede_prevention)
 
@@ -985,7 +985,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         value: Any,
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
         client = self._client()
         nvalue = value
@@ -1007,7 +1007,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             kw["expiry"] = ExpirySet(ExpiryType.SEC, actual_timeout)
         return client.set(key, _enc(nvalue), **kw) == "OK"
 
-    def get(self, key: str, *, stampede_prevention: bool | dict | None = None) -> Any:
+    def get(self, key: str, *, stampede_prevention: bool | StampedeConfig | None = None) -> Any:
         client = self._client()
         val = client.get(key)
         if val is None:
@@ -1025,7 +1025,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         value: Any,
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> None:
         client = self._client()
         nvalue = value
@@ -1047,7 +1047,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         nx: bool = False,
         xx: bool = False,
         get: bool = False,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool | Any:
         client = self._client()
         nvalue = value
@@ -1080,7 +1080,12 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def delete(self, key: str) -> bool:
         return bool(self._client().delete([key]))
 
-    def get_many(self, keys: Iterable[str], *, stampede_prevention: bool | dict | None = None) -> dict[str, Any]:
+    def get_many(
+        self,
+        keys: Iterable[str],
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
+    ) -> dict[str, Any]:
         keys = list(keys)
         if not keys:
             return {}
@@ -1123,7 +1128,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         data: Mapping[str, Any],
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> list:
         if not data:
             return []
@@ -1922,7 +1927,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         value: Any,
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
         client = await self.get_async_client()
         nvalue = value
@@ -1944,7 +1949,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             kw["expiry"] = ExpirySet(ExpiryType.SEC, actual_timeout)
         return await client.set(key, _enc(nvalue), **kw) == "OK"
 
-    async def aget(self, key: str, *, stampede_prevention: bool | dict | None = None) -> Any:
+    async def aget(self, key: str, *, stampede_prevention: bool | StampedeConfig | None = None) -> Any:
         client = await self.get_async_client()
         val = await client.get(key)
         if val is None:
@@ -1962,7 +1967,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         value: Any,
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> None:
         client = await self.get_async_client()
         nvalue = value
@@ -1984,7 +1989,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         nx: bool = False,
         xx: bool = False,
         get: bool = False,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool | Any:
         client = await self.get_async_client()
         nvalue = value
@@ -2021,7 +2026,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         self,
         keys: Iterable[str],
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> dict[str, Any]:
         keys = list(keys)
         if not keys:
@@ -2065,7 +2070,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         data: Mapping[str, Any],
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> list:
         if not data:
             return []

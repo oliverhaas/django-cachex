@@ -65,7 +65,7 @@ class TestDjangoRespCacheEscapePrefix:
 def test_custom_key_function(cache: RespCache, settings):
     caches_setting = copy.deepcopy(settings.CACHES)
     caches_setting["default"]["KEY_FUNCTION"] = "tests.cache.test_options.make_key"
-    caches_setting["default"]["OPTIONS"]["reverse_key_function"] = "tests.cache.test_options.reverse_key"
+    caches_setting["default"]["REVERSE_KEY_FUNCTION"] = "tests.cache.test_options.reverse_key"
     settings.CACHES = caches_setting
 
     for key in ["foo-aa", "foo-ab", "foo-bb", "foo-bc"]:

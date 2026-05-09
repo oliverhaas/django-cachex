@@ -574,7 +574,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             current = self._typed_get_set(internal_key)
         return set() if current is None else set(current)
 
-    def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | set[Any]:
+    def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | set[Any] | None:
         """Remove and return random member(s) from set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:

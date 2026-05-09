@@ -641,7 +641,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         existing = self._coerce_set(self._read(self._internal_key(key, version=version)))
         return set() if existing is None else set(existing)
 
-    def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | set[Any]:
+    def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | set[Any] | None:
         def transform(current: Any) -> tuple[Any, Any]:
             existing = self._coerce_set(current)
             if not existing:

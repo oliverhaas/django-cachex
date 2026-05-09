@@ -90,7 +90,7 @@ def _report_pop(request: HttpRequest, result: Any, *, on_empty: str, kind: str) 
     if not result:
         messages.error(request, on_empty)
     elif len(result) == 1:
-        messages.success(request, f"Popped: {result[0]}")
+        messages.success(request, f"Popped: {next(iter(result))}")
     else:
         messages.success(request, f"Popped {len(result)} {kind}: {result}")
 

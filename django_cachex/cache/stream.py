@@ -115,11 +115,12 @@ class StreamCache(LocMemCache):
         self._block_timeout: int = options.get("block_timeout", 1000)
         self._replay_count: int = options.get("replay", 0)
 
-        # LocMemCache uses ``name`` (the LOCATION value) to key its module-level
-        # globals. We use _STORAGE_KEY or stream_key so each stream has isolated
-        # storage. Tests can override _STORAGE_KEY to simulate separate pods
-        # within the same process.
-        storage_key = options.get("_STORAGE_KEY", self._stream_key)
+        # LocMemCache uses its ``server`` argument to key its module-level
+        # globals. Use Django's ``LOCATION`` to do the same — multiple
+        # StreamCache aliases sharing one ``stream_key`` but distinct
+        # ``LOCATION``s simulate separate pods within the same process,
+        # which is how the test suite exercises the consumer side.
+        storage_key = server or self._stream_key
         self._storage_key: str = storage_key
         super().__init__(storage_key, params)
 
@@ -482,17 +483,20 @@ class StreamCache(LocMemCache):
             self.set(key, value, timeout, version=version)
         return []
 
-    def delete_many(self, keys: Iterable[str], version: int | None = None) -> None:
+    def delete_many(self, keys: Iterable[str], version: int | None = None) -> int:  # type: ignore[override]
         self._ensure_consumer()
         keys_list = list(keys)
         made_keys: list[str] = []
+        deleted = 0
         with self._lock:
             for k in keys_list:
                 mk = self.make_and_validate_key(k, version=version)
                 made_keys.append(mk)
-                self._delete(mk)
+                if self._delete(mk):
+                    deleted += 1
         if made_keys:
             self._publish("delete_many", keys="\x00".join(made_keys))
+        return deleted
 
     def has_key(self, key: str, version: int | None = None) -> bool:
         self._ensure_consumer()
@@ -537,10 +541,11 @@ class StreamCache(LocMemCache):
         self._publish("touch", key=made_key, exp=exp_time)
         return True
 
-    def clear(self) -> None:
+    def clear(self) -> bool:  # type: ignore[override]
         self._ensure_consumer()
         super().clear()
         self._publish("clear")
+        return True
 
     def close(self, **kwargs: Any) -> None:
         """No-op. Use ``shutdown()`` to stop the consumer thread + publish executor."""

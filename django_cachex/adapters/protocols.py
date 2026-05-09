@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
     from datetime import datetime, timedelta
 
+    from django_cachex.stampede import StampedeConfig
     from django_cachex.types import KeyType
 
 # Aliases for builtins shadowed by `set`/`type` methods (PEP 649 defers
@@ -356,11 +357,11 @@ class RespAdapterProtocol(Protocol):
 
     # Private-ish stampede helpers — called by ``RespCache`` to resolve
     # per-call overrides against the adapter's instance config.
-    def resolve_stampede(self, stampede_prevention: bool | dict | None = None) -> Any: ...
+    def resolve_stampede(self, stampede_prevention: bool | StampedeConfig | None = None) -> Any: ...
     def get_timeout_with_buffer(
         self,
         timeout: int | None,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> int | None: ...
 
     def get_client(self, key: str | None = None, *, write: bool = False) -> Any: ...
@@ -371,7 +372,7 @@ class RespAdapterProtocol(Protocol):
         value: bytes | int,
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool: ...
     async def aadd(
         self,
@@ -379,17 +380,17 @@ class RespAdapterProtocol(Protocol):
         value: bytes | int,
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool: ...
-    def get(self, key: str, *, stampede_prevention: bool | dict | None = None) -> bytes | None: ...
-    async def aget(self, key: str, *, stampede_prevention: bool | dict | None = None) -> bytes | None: ...
+    def get(self, key: str, *, stampede_prevention: bool | StampedeConfig | None = None) -> bytes | None: ...
+    async def aget(self, key: str, *, stampede_prevention: bool | StampedeConfig | None = None) -> bytes | None: ...
     def set(
         self,
         key: str,
         value: bytes | int,
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> None: ...
     async def aset(
         self,
@@ -397,7 +398,7 @@ class RespAdapterProtocol(Protocol):
         value: bytes | int,
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> None: ...
     def set_with_flags(
         self,
@@ -408,7 +409,7 @@ class RespAdapterProtocol(Protocol):
         nx: bool = False,
         xx: bool = False,
         get: bool = False,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool | bytes | None: ...
     async def aset_with_flags(
         self,
@@ -419,7 +420,7 @@ class RespAdapterProtocol(Protocol):
         nx: bool = False,
         xx: bool = False,
         get: bool = False,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool | bytes | None: ...
     def touch(self, key: str, timeout: int | None) -> bool: ...
     async def atouch(self, key: str, timeout: int | None) -> bool: ...
@@ -429,13 +430,13 @@ class RespAdapterProtocol(Protocol):
         self,
         keys: list[str],
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> dict[str, bytes]: ...
     async def aget_many(
         self,
         keys: list[str],
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> dict[str, bytes]: ...
     def has_key(self, key: str) -> bool: ...
     async def ahas_key(self, key: str) -> bool: ...
@@ -448,14 +449,14 @@ class RespAdapterProtocol(Protocol):
         data: Mapping[str, bytes | int],
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> list: ...
     async def aset_many(
         self,
         data: Mapping[str, bytes | int],
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> list: ...
     def delete_many(self, keys: Sequence[str]) -> int: ...
     async def adelete_many(self, keys: Sequence[str]) -> int: ...

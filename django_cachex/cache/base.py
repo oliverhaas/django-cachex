@@ -681,7 +681,7 @@ class BaseCachex(BaseCache):
         """Move member from one set to another."""
         raise NotSupportedError("smove", self.__class__.__name__)
 
-    def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | set[Any]:
+    def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | set[Any] | None:
         """Remove and return random member(s) from set."""
         raise NotSupportedError("spop", self.__class__.__name__)
 
@@ -783,7 +783,7 @@ class BaseCachex(BaseCache):
         """Async: move member from one set to another."""
         raise NotSupportedError("asmove", self.__class__.__name__)
 
-    async def aspop(self, key: str, count: int | None = None, version: int | None = None) -> Any | set[Any]:
+    async def aspop(self, key: str, count: int | None = None, version: int | None = None) -> Any | set[Any] | None:
         """Async: remove and return random member(s) from set."""
         raise NotSupportedError("aspop", self.__class__.__name__)
 

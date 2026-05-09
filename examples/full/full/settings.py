@@ -109,8 +109,8 @@ CACHES = {
         "BACKEND": "django_cachex.cache.RedisCache",
         "LOCATION": "redis://127.0.0.1:6380/1",
         "KEY_FUNCTION": "full.settings.passthrough_key",
+        "REVERSE_KEY_FUNCTION": "full.settings.passthrough_reverse_key",
         "OPTIONS": {
-            "reverse_key_function": "full.settings.passthrough_reverse_key",
             "serializer": "django_cachex.serializers.json.JsonSerializer",
         },
     },

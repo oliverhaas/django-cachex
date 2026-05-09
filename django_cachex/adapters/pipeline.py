@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from datetime import datetime, timedelta
 
     from django_cachex.adapters.protocols import RespAsyncPipelineProtocol, RespPipelineProtocol
+    from django_cachex.stampede import StampedeConfig
 
 from django_cachex.script import ScriptHelpers
 
@@ -216,7 +217,7 @@ class Pipeline:
         *,
         nx: bool = False,
         xx: bool = False,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> Self:
         """Queue a SET command."""
         if nx and xx:

@@ -264,9 +264,6 @@ CACHES = {
         "BACKEND": "django_cachex.cache.ValkeyCache",
         "LOCATION": "valkey://127.0.0.1:6379/1",
         "TIMEOUT": 300,
-        "OPTIONS": {
-            "max_connections": 50,
-        }
     }
 }
 

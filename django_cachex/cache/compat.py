@@ -173,12 +173,17 @@ class CachexCompat(BaseCachex):
             self.set(key, new_list, timeout=timeout, version=version)
             return len(new_list)
 
-    def lpop(self, key: str, count: int | None = None, version: int | None = None) -> list[Any]:
-        """Remove and return element(s) from the head of a list."""
+    def lpop(self, key: str, count: int | None = None, version: int | None = None) -> Any | list[Any] | None:
+        """Remove and return element(s) from the head of a list.
+
+        Matches Redis ``LPOP``: bare value when ``count`` is ``None``, list
+        of up to ``count`` items when given (empty list if exhausted), or
+        ``None`` when the list is empty / missing and ``count`` is ``None``.
+        """
         with self._compound_op_lock():
             current = self._get_list(key, version=version)
             if not current:
-                return []
+                return [] if count is not None else None
             timeout = self._get_ttl_timeout(key, version=version)
             pop_count = count if count is not None else 1
             popped = current[:pop_count]
@@ -187,14 +192,14 @@ class CachexCompat(BaseCachex):
                 self.set(key, remaining, timeout=timeout, version=version)
             else:
                 self.delete(key, version=version)
-            return popped
+            return popped if count is not None else popped[0]
 
-    def rpop(self, key: str, count: int | None = None, version: int | None = None) -> list[Any]:
+    def rpop(self, key: str, count: int | None = None, version: int | None = None) -> Any | list[Any] | None:
         """Remove and return element(s) from the tail of a list."""
         with self._compound_op_lock():
             current = self._get_list(key, version=version)
             if not current:
-                return []
+                return [] if count is not None else None
             timeout = self._get_ttl_timeout(key, version=version)
             pop_count = count if count is not None else 1
             popped = list(reversed(current[-pop_count:]))
@@ -203,7 +208,7 @@ class CachexCompat(BaseCachex):
                 self.set(key, remaining, timeout=timeout, version=version)
             else:
                 self.delete(key, version=version)
-            return popped
+            return popped if count is not None else popped[0]
 
     def lrange(self, key: str, start: int, end: int, version: int | None = None) -> list[Any]:
         """Return a range of elements from a list (inclusive end, Redis-style)."""
@@ -416,7 +421,7 @@ class CachexCompat(BaseCachex):
         current = self._get_set(key, version=version)
         return set() if current is None else set(current)
 
-    def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | set[Any]:
+    def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | set[Any] | None:
         """Remove and return random member(s) from set."""
         with self._compound_op_lock():
             current = self._get_set(key, version=version)

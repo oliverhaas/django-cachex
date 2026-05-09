@@ -111,10 +111,10 @@ def stream_pair(redis_container: RedisContainerInfo, resp_adapter: str) -> Itera
         },
         "pod1": {
             "BACKEND": "django_cachex.cache.StreamCache",
+            "LOCATION": storage_key_1,
             "OPTIONS": {
                 "transport": "transport",
                 "stream_key": stream_key,
-                "_STORAGE_KEY": storage_key_1,
                 "MAX_ENTRIES": 1000,
                 "maxlen": 10000,
                 "block_timeout": 100,
@@ -122,10 +122,10 @@ def stream_pair(redis_container: RedisContainerInfo, resp_adapter: str) -> Itera
         },
         "pod2": {
             "BACKEND": "django_cachex.cache.StreamCache",
+            "LOCATION": storage_key_2,
             "OPTIONS": {
                 "transport": "transport",
                 "stream_key": stream_key,
-                "_STORAGE_KEY": storage_key_2,
                 "MAX_ENTRIES": 1000,
                 "maxlen": 10000,
                 "block_timeout": 100,
@@ -551,20 +551,20 @@ class TestSyncReplay:
             },
             "producer": {
                 "BACKEND": "django_cachex.cache.StreamCache",
+                "LOCATION": storage_key_1,
                 "OPTIONS": {
                     "transport": "transport",
                     "stream_key": stream_key,
-                    "_STORAGE_KEY": storage_key_1,
                     "maxlen": 10000,
                     "block_timeout": 100,
                 },
             },
             "consumer": {
                 "BACKEND": "django_cachex.cache.StreamCache",
+                "LOCATION": storage_key_2,
                 "OPTIONS": {
                     "transport": "transport",
                     "stream_key": stream_key,
-                    "_STORAGE_KEY": storage_key_2,
                     "maxlen": 10000,
                     "block_timeout": 100,
                     "replay": 100,
@@ -612,23 +612,23 @@ class TestSyncReplay:
             },
             "producer": {
                 "BACKEND": "django_cachex.cache.StreamCache",
+                "LOCATION": storage_key_1,
                 "OPTIONS": {
                     "transport": "transport",
                     "stream_key": stream_key,
-                    "_STORAGE_KEY": storage_key_1,
                     "maxlen": 10000,
                     "block_timeout": 100,
                 },
             },
             "consumer": {
                 "BACKEND": "django_cachex.cache.StreamCache",
+                "LOCATION": storage_key_2,
                 "OPTIONS": {
                     "transport": "transport",
                     "stream_key": stream_key,
-                    "_STORAGE_KEY": storage_key_2,
                     "maxlen": 10000,
                     "block_timeout": 100,
-                    # REPLAY defaults to 0
+                    # replay defaults to 0
                 },
             },
         }

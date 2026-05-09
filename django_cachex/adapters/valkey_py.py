@@ -63,11 +63,10 @@ _set = set
 # Django's ``asgiref.local.Local``-backed cache handler returns a fresh
 # ``BaseCache`` instance per asyncio task, which means our cached adapter
 # (and any instance-level pool dict) is fresh per task. Without a
-# process-wide registry every async cache call creates a brand-new pool —
-# ``max_connections`` is moot because each call gets its own pool. Sharing
-# pools at the module level by event loop + config makes the cap effective
-# and brings pool-based backends in line with the multiplexed redis-rs
-# adapter.
+# process-wide registry every async cache call would open a brand-new
+# TCP connection — slow on the hot path and noisy on the server. Sharing
+# pools at the module level by event loop + config keeps connections
+# reused across tasks, in line with the multiplexed redis-rs adapter.
 #
 # The registry itself lives on each driver-specific adapter class as the
 # ``_async_pools`` class attribute (see :mod:`~django_cachex.adapters.redis_py`
@@ -182,7 +181,6 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             "sentinels",
             "sentinel_kwargs",
             "async_pool_class",
-            "reverse_key_function",
             "stampede_prevention",
         },
     )
@@ -240,13 +238,13 @@ class ValkeyPyAdapter(RespAdapterProtocol):
     # Stampede + replica-index helpers
     # =========================================================================
 
-    def resolve_stampede(self, stampede_prevention: bool | dict | None = None) -> StampedeConfig | None:
+    def resolve_stampede(self, stampede_prevention: bool | StampedeConfig | None = None) -> StampedeConfig | None:
         return resolve_stampede(self._stampede_config, stampede_prevention)
 
     def get_timeout_with_buffer(
         self,
         timeout: int | None,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> int | None:
         return get_timeout_with_buffer(timeout, self._stampede_config, stampede_prevention)
 
@@ -298,8 +296,8 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         The cache lives on the driver-specific class (``_async_pools``)
         rather than the instance: Django's ``asgiref.local.Local`` returns a
         fresh ``BaseCache`` per asyncio task, so an instance-level dict
-        would be empty on every request and a brand-new pool would be
-        created each time, defeating ``max_connections`` entirely.
+        would be empty on every request and a brand-new pool would open
+        a fresh TCP connection on every cache call.
         """
         loop = asyncio.get_running_loop()
         index = self._get_connection_pool_index(write=write)
@@ -310,9 +308,6 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         # Filter out parser_class — it's sync-specific.
         async_pool_options: dict[str, Any] = {k: v for k, v in self._pool_options.items() if k != "parser_class"}
-        # Default cap so concurrent async load can't grow the pool unbounded.
-        # Users who need more can set ``max_connections`` in OPTIONS.
-        async_pool_options.setdefault("max_connections", 50)
 
         url = self._servers[index]
         key = (self._async_pool_class, url, _options_key(async_pool_options), index)
@@ -360,7 +355,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         value: Any,
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
         """Set a value only if the key doesn't exist."""
         client = self.get_client(key, write=True)
@@ -379,7 +374,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         value: Any,
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
         """Set a value only if the key doesn't exist, asynchronously."""
         client = await self.get_async_client(key, write=True)
@@ -392,7 +387,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             return ret
         return bool(await client.set(key, nvalue, nx=True, ex=actual_timeout))
 
-    def get(self, key: str, *, stampede_prevention: bool | dict | None = None) -> Any:
+    def get(self, key: str, *, stampede_prevention: bool | StampedeConfig | None = None) -> Any:
         """Fetch a value from the cache."""
         client = self.get_client(key, write=False)
         val = client.get(key)
@@ -405,7 +400,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
                 return None
         return val
 
-    async def aget(self, key: str, *, stampede_prevention: bool | dict | None = None) -> Any:
+    async def aget(self, key: str, *, stampede_prevention: bool | StampedeConfig | None = None) -> Any:
         """Fetch a value from the cache asynchronously."""
         client = await self.get_async_client(key, write=False)
         val = await client.get(key)
@@ -424,7 +419,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         value: Any,
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> None:
         """Set a value in the cache (standard Django interface)."""
         client = self.get_client(key, write=True)
@@ -442,7 +437,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         value: Any,
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> None:
         """Set a value in the cache asynchronously."""
         client = await self.get_async_client(key, write=True)
@@ -463,7 +458,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         nx: bool = False,
         xx: bool = False,
         get: bool = False,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool | Any:
         """Set a value with nx/xx/get flags.
 
@@ -494,7 +489,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         nx: bool = False,
         xx: bool = False,
         get: bool = False,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool | Any:
         """Set a value with nx/xx/get flags asynchronously.
 
@@ -544,7 +539,12 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         return bool(await client.delete(key))
 
-    def get_many(self, keys: Iterable[str], *, stampede_prevention: bool | dict | None = None) -> dict[str, Any]:
+    def get_many(
+        self,
+        keys: Iterable[str],
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
+    ) -> dict[str, Any]:
         """Retrieve many keys."""
         keys = list(keys)
         if not keys:
@@ -576,7 +576,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         self,
         keys: Iterable[str],
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> dict[str, Any]:
         """Retrieve many keys asynchronously."""
         keys = list(keys)
@@ -650,7 +650,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         data: Mapping[str, Any],
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> list:
         """Set multiple values. timeout=0 deletes keys, None sets without expiry."""
         if not data:
@@ -677,7 +677,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         data: Mapping[str, Any],
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> list:
         """Set multiple values asynchronously."""
         if not data:
@@ -3082,8 +3082,6 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
             if hasattr(self, "_pool_options")
             else {}
         )
-        # Default cap so concurrent async load can't grow the pool unbounded.
-        pool_options.setdefault("max_connections", 50)
         pool_options.update(
             service_name=service_name,
             sentinel_manager=async_sentinel,
@@ -3215,7 +3213,12 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
     # Override methods that need cluster-specific handling
 
     @override
-    def get_many(self, keys: Iterable[str], *, stampede_prevention: bool | dict | None = None) -> dict[str, Any]:
+    def get_many(
+        self,
+        keys: Iterable[str],
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
+    ) -> dict[str, Any]:
         """Retrieve many keys, handling cross-slot keys."""
         keys = list(keys)
         if not keys:
@@ -3251,7 +3254,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         data: Mapping[str, Any],
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> list:
         """Set multiple values, handling cross-slot keys."""
         if not data:
@@ -3384,7 +3387,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         self,
         keys: Iterable[str],
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> dict[str, Any]:
         """Retrieve many keys asynchronously, handling cross-slot keys."""
 
@@ -3423,7 +3426,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         data: Mapping[str, Any],
         timeout: int | None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> list:
         """Set multiple values asynchronously, handling cross-slot keys."""
         if not data:

@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
     from django_cachex.adapters.pipeline import AsyncPipeline, Pipeline
     from django_cachex.adapters.protocols import RespAdapterProtocol
+    from django_cachex.stampede import StampedeConfig
     from django_cachex.types import KeyType
 
 from django_cachex.cache.base import BaseCachex
@@ -88,8 +89,9 @@ class RespCache(BaseCachex):
 
         self._options = params.get("OPTIONS", {})
 
-        # Handle reverse_key_function option (mirrors Django's KEY_FUNCTION handling)
-        reverse_key_func = self._options.get("reverse_key_function")
+        # ``REVERSE_KEY_FUNCTION`` lives at the top level alongside Django's
+        # ``KEY_FUNCTION`` — same shape, mirror semantics.
+        reverse_key_func = params.get("REVERSE_KEY_FUNCTION")
         if reverse_key_func is not None:
             if isinstance(reverse_key_func, str):
                 self._reverse_key_func: Callable[[str], str] | None = import_string(reverse_key_func)
@@ -223,7 +225,7 @@ class RespCache(BaseCachex):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
         """Set a value only if the key doesn't exist."""
         key = self.make_and_validate_key(key, version=version)
@@ -242,7 +244,7 @@ class RespCache(BaseCachex):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
         """Set a value only if the key doesn't exist, asynchronously."""
         key = self.make_and_validate_key(key, version=version)
@@ -260,7 +262,7 @@ class RespCache(BaseCachex):
         default: Any = None,
         version: int | None = None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> Any:
         """Fetch a value from the cache."""
         key = self.make_and_validate_key(key, version=version)
@@ -276,7 +278,7 @@ class RespCache(BaseCachex):
         default: Any = None,
         version: int | None = None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> Any:
         """Fetch a value from the cache asynchronously."""
         key = self.make_and_validate_key(key, version=version)
@@ -293,7 +295,7 @@ class RespCache(BaseCachex):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
         **kwargs: Any,
     ) -> Any:
         """Set a value in the cache asynchronously.
@@ -336,7 +338,7 @@ class RespCache(BaseCachex):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
         **kwargs: Any,
     ) -> Any:
         """Set a value in the cache.
@@ -401,7 +403,7 @@ class RespCache(BaseCachex):
         keys: list[str],
         version: int | None = None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> dict[str, Any]:
         """Retrieve many keys."""
         key_map = {self.make_and_validate_key(key, version=version): key for key in keys}
@@ -414,7 +416,7 @@ class RespCache(BaseCachex):
         keys: list[str],
         version: int | None = None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> dict[str, Any]:
         """Retrieve many keys asynchronously."""
         key_map = {self.make_and_validate_key(key, version=version): key for key in keys}
@@ -458,7 +460,7 @@ class RespCache(BaseCachex):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> Any:
         """Fetch a key from the cache, setting it to default if missing."""
         val = self.get(key, self._missing_key, version=version, stampede_prevention=stampede_prevention)
@@ -486,7 +488,7 @@ class RespCache(BaseCachex):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> Any:
         """Fetch a key from the cache asynchronously, setting it to default if missing."""
         val = await self.aget(key, self._missing_key, version=version, stampede_prevention=stampede_prevention)
@@ -510,7 +512,7 @@ class RespCache(BaseCachex):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> list:
         """Set multiple values."""
         if not data:
@@ -528,7 +530,7 @@ class RespCache(BaseCachex):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         *,
-        stampede_prevention: bool | dict | None = None,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> list:
         """Set multiple values asynchronously."""
         if not data:
@@ -1713,14 +1715,19 @@ class RespCache(BaseCachex):
         key: str,
         count: int | None = None,
         version: int | None = None,
-    ) -> Any | list[Any] | None:
-        """Remove and return random member(s) from set."""
+    ) -> Any | _set[Any] | None:
+        """Remove and return random member(s) from set.
+
+        Returns a single member when ``count`` is ``None``, a ``set`` of
+        members when ``count`` is given (always a set, even empty), or
+        ``None`` when the set is empty and ``count`` is ``None``.
+        """
         key = self.make_and_validate_key(key, version=version)
         result = self.adapter.spop(key, count)
         if result is None:
-            return None
+            return set() if count is not None else None
         if isinstance(result, (list, set)):
-            return type(result)(self.decode(m) for m in result)
+            return {self.decode(m) for m in result}
         return self.decode(result)
 
     def srandmember(
@@ -1917,14 +1924,14 @@ class RespCache(BaseCachex):
         key: str,
         count: int | None = None,
         version: int | None = None,
-    ) -> Any | list[Any] | None:
+    ) -> Any | _set[Any] | None:
         """Remove and return random member(s) from set asynchronously."""
         key = self.make_and_validate_key(key, version=version)
         result = await self.adapter.aspop(key, count)
         if result is None:
-            return None
+            return set() if count is not None else None
         if isinstance(result, (list, set)):
-            return type(result)(self.decode(m) for m in result)
+            return {self.decode(m) for m in result}
         return self.decode(result)
 
     async def asrandmember(

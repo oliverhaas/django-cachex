@@ -190,25 +190,6 @@ Python adapters, and Django's built-in `RedisCache` opens 316
 connections — it instantiates a fresh `redis.Redis` per cache call —
 and pays the highest avg latency on the smallest server.
 
-## Pool size sweep
-
-`redis-py` ASGI run with `OPTIONS["max_connections"]` swept across
-six values. Helps anchor the default we ship.
-
-| `max_connections` | req/s | avg ms | p99 ms | conns peak |
-|-------------------|------:|-------:|-------:|-----------:|
-|  10 | 341 | 290.9 | 1,674.1 | 140 |
-|  25 | 453 | 219.2 | 1,444.1 | 176 |
-|  50 | 438 | 227.2 | 1,457.2 | 208 |
-| 100 | 312 | 318.4 | 1,799.9 | 209 |
-| 200 | 363 | 273.5 | 1,572.5 | 214 |
-| 500 | 545 | 182.8 | 1,319.9 | 211 |
-
-The throughput curve is non-monotonic at this scale — single-run
-noise dominates. The robust signal is that 10 is too low (pool
-contention dominates tail latency) and that beyond ~25 the marginal
-benefit per extra connection is small.
-
 ## Reproducing
 
 The benchmarks live in [`benchmarks/`][bench-src] and spin up their

@@ -88,7 +88,7 @@ class TestSetOperations:
 
     def test_spop_with_count(self, cache: RespCache):
         cache.sadd("foo", "bar1", "bar2")
-        assert cache.spop("foo", 1) in [["bar1"], ["bar2"]]
+        assert cache.spop("foo", 1) in [{"bar1"}, {"bar2"}]
         assert cache.smembers("foo") in [{"bar1"}, {"bar2"}]
 
     def test_srandmember_default_count(self, cache: RespCache):
@@ -172,7 +172,7 @@ class TestAsyncSetOperations:
     @pytest.mark.asyncio
     async def test_aspop_with_count(self, cache: RespCache):
         cache.sadd("afoo", "bar1", "bar2")
-        assert await cache.aspop("afoo", 1) in [["bar1"], ["bar2"]]
+        assert await cache.aspop("afoo", 1) in [{"bar1"}, {"bar2"}]
 
     @pytest.mark.asyncio
     async def test_asrandmember_default_count(self, cache: RespCache):

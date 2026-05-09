@@ -302,21 +302,30 @@ class TestStampedeOverride:
         assert ttl is not None
         assert ttl > 300  # Buffer was added
 
-    def test_dict_override_buffer(self, cache: RespCache):
-        """stampede_prevention=dict should override specific config values."""
-        # Non-stampede cache with per-call dict override: buffer=120
-        cache.set("sp_ovr_dict", "val", timeout=300, stampede_prevention={"buffer": 120})
-        ttl = cache.ttl("sp_ovr_dict")
+    def test_config_override_buffer(self, cache: RespCache):
+        """``stampede_prevention=StampedeConfig(...)`` should force the supplied policy."""
+        from django_cachex.stampede import StampedeConfig
+
+        # Non-stampede cache with per-call override: buffer=120
+        cache.set("sp_ovr_cfg", "val", timeout=300, stampede_prevention=StampedeConfig(buffer=120))
+        ttl = cache.ttl("sp_ovr_cfg")
         assert ttl is not None
         assert 300 < ttl <= 420  # 300 + 120 buffer
 
-    def test_dict_override_merges_with_instance(self, stampede_cache: RespCache):
-        """Dict override merges with instance config (buffer=60 default)."""
-        # Instance has buffer=60, override only changes delta — buffer stays 60
-        stampede_cache.set("sp_ovr_merge", "val", timeout=300, stampede_prevention={"delta": 5.0})
-        ttl = stampede_cache.ttl("sp_ovr_merge")
+    def test_config_override_replaces_instance(self, stampede_cache: RespCache):
+        """``StampedeConfig`` override replaces the instance config wholesale."""
+        from django_cachex.stampede import StampedeConfig
+
+        # Instance has buffer=60; explicit override supplies the full policy.
+        stampede_cache.set(
+            "sp_ovr_replace",
+            "val",
+            timeout=300,
+            stampede_prevention=StampedeConfig(buffer=90, delta=5.0),
+        )
+        ttl = stampede_cache.ttl("sp_ovr_replace")
         assert ttl is not None
-        assert 300 < ttl <= 360  # buffer=60 inherited from instance config
+        assert 300 < ttl <= 390  # 300 + 90 buffer from override
 
 
 # =============================================================================

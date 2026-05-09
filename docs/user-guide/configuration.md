@@ -173,8 +173,6 @@ Compression is only applied to values larger than `min_length` bytes (default: 2
     # Custom pool class (use valkey.ConnectionPool for Valkey)
     "pool_class": "valkey.ConnectionPool",
 
-    # Pool size and options (passed to pool constructor)
-    "max_connections": 100,
     "retry_on_timeout": True,
 
     # Socket timeouts
@@ -182,6 +180,10 @@ Compression is only applied to values larger than `min_length` bytes (default: 2
     "socket_timeout": 5,
 }
 ```
+
+Any extra keys you add are forwarded to the underlying pool's `from_url(...)`,
+so you can pin driver-specific options (`socket_keepalive`, `health_check_interval`,
+etc.) the same way.
 
 ### Parser
 
@@ -381,7 +383,6 @@ CACHES = {
             "compressor": "django_cachex.compressors.zstd.ZstdCompressor",
 
             # Connection pool
-            "max_connections": 50,
             "socket_connect_timeout": 5,
             "socket_timeout": 5,
         }

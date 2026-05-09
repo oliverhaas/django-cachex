@@ -271,17 +271,20 @@ class TieredCache(BaseCache):
             self._l1.set(key, value, l1_timeout, version=version)
         return result
 
-    def delete_many(self, keys: Iterable[str], version: int | None = None) -> None:
+    # Django's ``BaseCache.delete_many``/``clear`` return ``None``; ``RespCache``
+    # extends both to return ``int`` / ``bool``. Coerce so the contract holds
+    # whatever L2 happens to be (cachex backend or stock Django).
+    def delete_many(self, keys: Iterable[str], version: int | None = None) -> int:  # type: ignore[override]
         keys = list(keys)
         for key in keys:
             self._l1.delete(key, version=version)
-        self._l2.delete_many(keys, version=version)
+        return self._l2.delete_many(keys, version=version) or 0  # type: ignore[func-returns-value]
 
-    async def adelete_many(self, keys: Iterable[str], version: int | None = None) -> None:
+    async def adelete_many(self, keys: Iterable[str], version: int | None = None) -> int:  # type: ignore[override]
         keys = list(keys)
         for key in keys:
             self._l1.delete(key, version=version)
-        await self._l2.adelete_many(keys, version=version)
+        return await self._l2.adelete_many(keys, version=version) or 0  # type: ignore[func-returns-value]
 
     def has_key(self, key: str, version: int | None = None) -> bool:
         if self._l1.has_key(key, version=version):
@@ -321,13 +324,13 @@ class TieredCache(BaseCache):
             self._l1.touch(key, self._l1_timeout_for_set(timeout), version=version)
         return result
 
-    def clear(self) -> None:
+    def clear(self) -> bool:  # type: ignore[override]
         self._l1.clear()
-        self._l2.clear()
+        return bool(self._l2.clear())  # type: ignore[func-returns-value]
 
-    async def aclear(self) -> None:
+    async def aclear(self) -> bool:  # type: ignore[override]
         self._l1.clear()
-        await self._l2.aclear()
+        return bool(await self._l2.aclear())  # type: ignore[func-returns-value]
 
     def close(self, **kwargs: Any) -> None:
         self._l1.close(**kwargs)
