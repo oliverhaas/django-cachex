@@ -35,6 +35,18 @@ def _handle_danger_zone_post(
         raise PermissionDenied
 
     action = request.POST.get("action")
+    if action not in ("clear_all_versions", "flush_db"):
+        return None
+
+    # The danger-zone buttons are only rendered for cachex backends; a
+    # direct POST against a wrapped/limited backend would otherwise hit
+    # AttributeError on ``clear_all_versions`` / ``flush_db``. Reject up
+    # front with a clean message instead.
+    cache_obj = Cache.get_by_name(cache_name)
+    if cache_obj is None or cache_obj.support_level != "cachex":
+        messages.error(request, "Destructive operations are only available on django-cachex backends.")
+        return redirect(request.get_full_path())
+
     cache = get_cache(cache_name)
 
     if action == "clear_all_versions":
@@ -45,15 +57,13 @@ def _handle_danger_zone_post(
             messages.error(request, f"Error: {exc}")
         return redirect(request.get_full_path())
 
-    if action == "flush_db":
-        try:
-            cache.flush_db()
-            messages.success(request, f"Database flushed for '{cache_name}'.")
-        except Exception as exc:  # noqa: BLE001
-            messages.error(request, f"Error: {exc}")
-        return redirect(request.get_full_path())
-
-    return None
+    # The action == "flush_db" branch.
+    try:
+        cache.flush_db()
+        messages.success(request, f"Database flushed for '{cache_name}'.")
+    except Exception as exc:  # noqa: BLE001
+        messages.error(request, f"Error: {exc}")
+    return redirect(request.get_full_path())
 
 
 def _cache_detail_view(

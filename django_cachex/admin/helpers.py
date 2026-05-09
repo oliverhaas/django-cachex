@@ -1,6 +1,7 @@
 """Helper functions for cache admin views."""
 
 import json
+import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -11,6 +12,8 @@ from django.utils.translation import gettext_lazy as _
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 from django_cachex.utils import _deep_getsizeof
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -146,8 +149,8 @@ def parse_metadata(
             if ks:
                 base_info["keyspace"] = ks
 
-    except Exception:  # noqa: BLE001, S110
-        pass
+    except Exception:
+        logger.exception("parse_metadata: failed to extract section data")
 
     return base_info
 
@@ -403,17 +406,6 @@ def get_slowlog(cache: Any, count: int = 25) -> dict[str, Any]:
             return result
         except NotSupportedError:
             raise
-        except Exception as e:  # noqa: BLE001
-            result["error"] = str(e)
-            return result
-
-    # Fall back to internal cache client for native backends
-    if hasattr(cache, "_cache") and hasattr(cache.adapter, "slowlog_get"):
-        try:
-            result["length"] = cache.adapter.slowlog_len()
-            raw_entries = cache.adapter.slowlog_get(count)
-            result["entries"] = [_parse_slowlog_entry(entry) for entry in raw_entries]
-            return result
         except Exception as e:  # noqa: BLE001
             result["error"] = str(e)
             return result

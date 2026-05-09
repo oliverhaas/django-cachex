@@ -195,7 +195,18 @@ class StreamCache(LocMemCache):
         }
         if keys:
             fields["keys"] = keys
-        self._publish_executor.submit(self._do_xadd, fields)
+        try:
+            self._publish_executor.submit(self._do_xadd, fields)
+        except RuntimeError:
+            # Executor was shut down (likely from a prior ``__del__`` /
+            # ``shutdown`` and a thread is racing the teardown). Drop the
+            # publish — losing the broadcast is preferable to crashing the
+            # caller. If the cache is still in active use ``_ensure_consumer``
+            # will rebuild the executor on the next get/set.
+            logger.warning(
+                "StreamCache: publish executor closed; dropping %s broadcast",
+                op,
+            )
 
     def _do_xadd(self, fields: dict[str, Any]) -> None:
         """Execute a single XADD via the transport's high-level API."""
@@ -395,11 +406,23 @@ class StreamCache(LocMemCache):
                 return
 
     def shutdown(self) -> None:
-        """Stop the consumer thread and publish executor."""
-        # Stop consumer first (it uses the raw client which shares a connection)
+        """Stop the consumer thread and publish executor.
+
+        The consumer is parked in ``XREAD BLOCK self._block_timeout`` (ms),
+        so the join grace has to outlast one block window. We give it
+        ``block_timeout + 1s`` (capped at 10s); if the thread is still
+        alive after that it gets dropped — leaking the daemon thread is
+        cheaper than blocking process shutdown.
+        """
         if self._consumer_thread is not None:
             self._stop_event.set()
-            self._consumer_thread.join(timeout=2.0)
+            join_timeout = min(10.0, (self._block_timeout / 1000.0) + 1.0)
+            self._consumer_thread.join(timeout=join_timeout)
+            if self._consumer_thread.is_alive():
+                logger.warning(
+                    "StreamCache: consumer thread still alive after %.1fs; abandoning it",
+                    join_timeout,
+                )
             self._consumer_thread = None
             self._initialized = False
             self._stop_event.clear()

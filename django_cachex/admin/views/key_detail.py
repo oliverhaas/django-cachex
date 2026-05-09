@@ -4,6 +4,7 @@ Key detail view for the django-cachex admin.
 
 import contextlib
 import json
+import logging
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -34,6 +35,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from django.http import HttpRequest, HttpResponse
+
+logger = logging.getLogger(__name__)
 
 
 # -- Small helpers --------------------------------------------------------------
@@ -218,15 +221,18 @@ def _handle_rpush(request: HttpRequest, cache: Any, cache_name: str, key: str, p
 
 def _handle_lrem(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
     raw = request.POST.get("value", "").strip()
+    if not raw:
+        # ``raw`` (the form-supplied string) gates submission; checking the
+        # parsed value would reject legitimate falsy entries like 0, false,
+        # null, "", or [].
+        messages.error(request, "Value is required.")
+        return _redirect_to_key(cache_name, key, page)
     value = _parse_json_or_str(raw)
     count = 0  # 0 = remove all occurrences
     count_str = request.POST.get("lrem_count", "").strip()
     if count_str:
         with contextlib.suppress(ValueError):
             count = int(count_str)
-    if not value:
-        messages.error(request, "Value is required.")
-        return _redirect_to_key(cache_name, key, page)
     try:
         removed = cache.lrem(key, count, value)
         if removed > 0:
@@ -616,8 +622,17 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
             )
         else:
             if hasattr(cache, "eval_script"):
-                with contextlib.suppress(Exception):
+                try:
                     string_sha1 = get_string_sha1(cache, key)
+                except Exception:  # noqa: BLE001
+                    # CAS protection silently downgrades — log so operators
+                    # know an edit will land without conflict detection
+                    # (e.g. cluster routing failure).
+                    logger.warning(
+                        "CAS fingerprint lookup failed for key %r; edit will skip conflict check",
+                        key,
+                        exc_info=True,
+                    )
 
     if value_decode_error is not None:
         value_display = f"<value cannot be decoded: {value_decode_error}>"

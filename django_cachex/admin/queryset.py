@@ -534,8 +534,14 @@ class KeyAdminMixin:
 
             return KeyQuerySet(data, cache_name, next_cursor=next_cursor, cursor=cursor, scan_count=count)
 
-        except Exception:
+        except Exception as exc:
             logger.exception("Error querying cache '%s'", cache_name)
+            # Surface the failure so users don't read "no keys" as "empty
+            # cache" when the real issue is e.g. a connection error.
+            messages.error(
+                request,
+                f"Error querying cache '{cache_name}': {exc}",
+            )
             return KeyQuerySet([], cache_name)
 
     def get_search_results(
