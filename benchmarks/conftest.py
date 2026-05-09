@@ -1,6 +1,6 @@
-"""Benchmark fixtures: session-scoped Redis + Valkey containers, results sink."""
+"""Benchmark fixtures: session-scoped Redis + Valkey containers, results sinks."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator
 
 import pytest
 from testcontainers.core.container import DockerContainer
@@ -16,7 +16,7 @@ from benchmarks.runner import (
 )
 
 
-def _start(image: str) -> tuple[str, str]:
+def _start(image: str) -> tuple[str, DockerContainer]:
     container = DockerContainer(image)
     container.with_exposed_ports(6379)
     container.with_command("redis-server --enable-debug-command yes --protected-mode no")
@@ -47,7 +47,7 @@ def valkey_url() -> Iterator[str]:
 
 
 @pytest.fixture(scope="session")
-def server_url(redis_url: str, valkey_url: str):
+def server_url(redis_url: str, valkey_url: str) -> Callable[[str], str]:
     """Returns a callable that picks the correct URL for an adapter config."""
 
     def pick(server: str) -> str:
@@ -56,64 +56,40 @@ def server_url(redis_url: str, valkey_url: str):
     return pick
 
 
-class _Results:
-    def __init__(self) -> None:
-        self.items: list[BenchmarkResult] = []
+class _Sink[T]:
+    def __init__(self, title: str, formatter: Callable[[Iterable[T]], str]) -> None:
+        self.items: list[T] = []
+        self._title = title
+        self._formatter = formatter
 
-    def add(self, r: BenchmarkResult) -> None:
-        self.items.append(r)
+    def add(self, item: T) -> None:
+        self.items.append(item)
+
+    def render(self) -> None:
+        if not self.items:
+            return
+        bar = "=" * 80
+        print(f"\n{bar}\n{self._title}\n{bar}")
+        print(self._formatter(self.items))
+        print(bar)
+
+
+def _sink_fixture[T](title: str, formatter: Callable[[Iterable[T]], str]) -> Iterator[_Sink[T]]:
+    sink: _Sink[T] = _Sink(title, formatter)
+    yield sink
+    sink.render()
 
 
 @pytest.fixture(scope="session")
-def results() -> Iterator[_Results]:
-    sink = _Results()
-    yield sink
-    if sink.items:
-        print()
-        print("=" * 80)
-        print("BENCHMARK SUMMARY")
-        print("=" * 80)
-        print(format_table(sink.items))
-        print("=" * 80)
-
-
-class _MicroResults:
-    def __init__(self) -> None:
-        self.items: list[MicroResult] = []
-
-    def add(self, r: MicroResult) -> None:
-        self.items.append(r)
+def results() -> Iterator[_Sink[BenchmarkResult]]:
+    yield from _sink_fixture("BENCHMARK SUMMARY", format_table)
 
 
 @pytest.fixture(scope="session")
-def micro_results() -> Iterator[_MicroResults]:
-    sink = _MicroResults()
-    yield sink
-    if sink.items:
-        print()
-        print("=" * 80)
-        print("COMPRESSOR MICRO SUMMARY")
-        print("=" * 80)
-        print(format_micro_table(sink.items))
-        print("=" * 80)
-
-
-class _AsgiResults:
-    def __init__(self) -> None:
-        self.items: list[AsgiResult] = []
-
-    def add(self, r: AsgiResult) -> None:
-        self.items.append(r)
+def micro_results() -> Iterator[_Sink[MicroResult]]:
+    yield from _sink_fixture("COMPRESSOR MICRO SUMMARY", format_micro_table)
 
 
 @pytest.fixture(scope="session")
-def asgi_results() -> Iterator[_AsgiResults]:
-    sink = _AsgiResults()
-    yield sink
-    if sink.items:
-        print()
-        print("=" * 80)
-        print("ASGI BENCHMARK SUMMARY")
-        print("=" * 80)
-        print(format_asgi_table(sink.items))
-        print("=" * 80)
+def asgi_results() -> Iterator[_Sink[AsgiResult]]:
+    yield from _sink_fixture("ASGI BENCHMARK SUMMARY", format_asgi_table)

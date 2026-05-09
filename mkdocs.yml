@@ -68,4 +68,5 @@ nav:
   - Migration: migration.md
   - Reference:
       - API: reference/api.md
+      - Benchmarks: reference/benchmarks.md
       - Changelog: reference/changelog.md

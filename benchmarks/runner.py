@@ -1,25 +1,31 @@
-"""Benchmark workload + measurement helpers.
-
-Single source of truth for what an "operation" means in this harness. The
-goal is explicit and readable, not generic — adjust the workload phases here
-when the questions you care about change.
-"""
+"""Benchmark workload + measurement helpers."""
 
 import asyncio
 import gc
+import json
+import os
+import pickle
+import shutil
+import socket
+import subprocess
+import sys
 import time
 import tracemalloc
 import warnings
 from dataclasses import dataclass, field
+from pathlib import Path
 from statistics import mean, median
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
-from django.test import override_settings
+import httpx
+import redis
+from django.test import Client, override_settings
+from django.utils.module_loading import import_string
 
 from benchmarks.configs import AdapterConfig, CompressorConfig, SerializerConfig
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
 
 
 # Workload sizing — kept here so all phases share the knob.
@@ -27,6 +33,9 @@ N_OPS = 1000
 K_RUNS = 10
 WARMUP_KEYS = 100
 MGET_BATCH = 10
+
+PHASE_NAMES = ("get", "get-miss", "set", "mget", "mset", "incr", "delete")
+BATCH_PHASES = frozenset({"mget", "mset"})
 
 
 @dataclass
@@ -131,6 +140,22 @@ class MicroResult:
         return self.output_bytes / self.input_bytes if self.input_bytes else 0.0
 
 
+def _new_result(
+    adapter: AdapterConfig,
+    serializer: SerializerConfig,
+    compressor: CompressorConfig | None,
+) -> BenchmarkResult:
+    result = BenchmarkResult(
+        adapter_id=adapter.id,
+        serializer_id=serializer.id,
+        server=adapter.server,
+        compressor_id=compressor.id if compressor is not None else "",
+    )
+    for name in PHASE_NAMES:
+        result.phases[name] = PhaseTiming(name=name)
+    return result
+
+
 def build_caches(
     adapter: AdapterConfig,
     serializer: SerializerConfig,
@@ -149,12 +174,6 @@ def build_caches(
             "OPTIONS": options,
         },
     }
-
-
-def _phase(name: str, fn: Callable[[], None]) -> tuple[str, float]:
-    start = time.perf_counter()
-    fn()
-    return name, time.perf_counter() - start
 
 
 def _build_payload() -> dict[str, Any]:
@@ -222,7 +241,6 @@ def _bench_incr(cache, n: int) -> None:
 
 
 def _bench_delete(cache, n: int) -> None:
-    # Pre-populate so deletes hit existing keys.
     for i in range(n):
         cache.set(f"del:{i}", 1)
     for i in range(n):
@@ -312,41 +330,37 @@ async def _abench_delete(cache, n: int, concurrency: int) -> None:
         await asyncio.gather(*(cache.adelete(f"del:{chunk + j}") for j in range(size)))
 
 
-def _open_info_client(location: str):
+def _open_info_client(location: str) -> redis.Redis:
     """Side-channel redis-py client for INFO sampling.
 
     Used regardless of the cache backend under test, so backends without an
     ``info()`` method (Django's built-in ``RedisCache``) still report memory
     and connection metrics. Works against Valkey too — same RESP protocol.
     """
-    import redis
-
     return redis.Redis.from_url(location)
 
 
-def _server_used_memory(info_client) -> int | None:
-    import redis
-
+def _info_section(info_client: redis.Redis, section: str) -> dict[str, Any] | None:
+    """Sample a redis INFO section. ``redis.Redis.info`` is annotated as
+    polymorphic sync/async; this is the sync client, so we cast once."""
     try:
-        info = info_client.info("memory")
+        return cast("dict[str, Any]", info_client.info(section))
     except (redis.RedisError, OSError) as exc:
-        warnings.warn(f"server INFO memory sample failed: {exc!r}", stacklevel=2)
+        warnings.warn(f"server INFO {section} sample failed: {exc!r}", stacklevel=2)
         return None
-    if not isinstance(info, dict):
+
+
+def _server_used_memory(info_client: redis.Redis) -> int | None:
+    info = _info_section(info_client, "memory")
+    if info is None:
         return None
     val = info.get("used_memory")
     return int(val) if val is not None else None
 
 
-def _server_connections(info_client) -> int | None:
-    import redis
-
-    try:
-        info = info_client.info("clients")
-    except (redis.RedisError, OSError) as exc:
-        warnings.warn(f"server INFO clients sample failed: {exc!r}", stacklevel=2)
-        return None
-    if not isinstance(info, dict):
+def _server_connections(info_client: redis.Redis) -> int | None:
+    info = _info_section(info_client, "clients")
+    if info is None:
         return None
     val = info.get("connected_clients")
     return int(val) if val is not None else None
@@ -361,7 +375,69 @@ def _flush_cache(cache) -> None:
         cache.clear()
 
 
-def run_benchmark(  # noqa: PLR0915 — phase-by-phase flow is the readable shape here
+def _record_baseline_conns(result: BenchmarkResult, info_client: redis.Redis) -> None:
+    v = _server_connections(info_client)
+    if v is not None:
+        result.server_connections_baseline = v
+
+
+def _sample_phase(
+    name: str,
+    fn: Callable[[], None],
+    result: BenchmarkResult,
+    info_client: redis.Redis,
+) -> None:
+    start = time.perf_counter()
+    fn()
+    elapsed = time.perf_counter() - start
+    if name in BATCH_PHASES:
+        elapsed *= MGET_BATCH  # normalize batch ops to per-key
+    result.phases[name].seconds_per_run.append(elapsed)
+    sample = _server_connections(info_client)
+    if sample is not None:
+        result.server_connections_samples.append(sample)
+
+
+def _run_timed_block(
+    result: BenchmarkResult,
+    info_client: redis.Redis,
+    body: Callable[[], None],
+) -> None:
+    """Wrap one K_RUNS iteration with gc / tracemalloc / server-memory bookkeeping."""
+    gc.collect()
+    tracemalloc.start()
+    before_used = _server_used_memory(info_client) or 0
+
+    body()
+
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    result.py_peak_kb_per_run.append(peak / 1024)
+
+    after_used = _server_used_memory(info_client) or 0
+    result.server_used_memory_delta_kb_per_run.append(max(0, (after_used - before_used) / 1024))
+
+
+def _run_phase_loop(
+    phases: dict[str, Callable[[], None]],
+    result: BenchmarkResult,
+    info_client: redis.Redis,
+    *,
+    pre_run: Callable[[], None] | None = None,
+) -> None:
+    """Run K_RUNS iterations of every phase, recording timings + telemetry."""
+
+    def body() -> None:
+        if pre_run is not None:
+            pre_run()
+        for name, fn in phases.items():
+            _sample_phase(name, fn, result, info_client)
+
+    for _ in range(K_RUNS):
+        _run_timed_block(result, info_client, body)
+
+
+def run_benchmark(
     adapter: AdapterConfig,
     serializer: SerializerConfig,
     location: str,
@@ -371,15 +447,7 @@ def run_benchmark(  # noqa: PLR0915 — phase-by-phase flow is the readable shap
 ) -> BenchmarkResult:
     """Run the workload K_RUNS times and return aggregated metrics."""
 
-    result = BenchmarkResult(
-        adapter_id=adapter.id,
-        serializer_id=serializer.id,
-        server=adapter.server,
-        compressor_id=compressor.id if compressor is not None else "",
-    )
-    for name in ("get", "get-miss", "set", "mget", "mset", "incr", "delete"):
-        result.phases[name] = PhaseTiming(name=name)
-
+    result = _new_result(adapter, serializer, compressor)
     caches = build_caches(adapter, serializer, location, compressor=compressor)
     payload = _build_payload_large() if payload_kind == "large" else _build_payload()
 
@@ -390,12 +458,20 @@ def run_benchmark(  # noqa: PLR0915 — phase-by-phase flow is the readable shap
 
             _flush_cache(cache)
 
-            # Warmup: populate known keys for get/mget phases.
             for i in range(WARMUP_KEYS):
                 cache.set(f"warm:{i}", payload)
 
-            # One untimed pass through every phase to prime connections, server
-            # working set, and any lazy serializer state.
+            phases: dict[str, Callable[[], None]] = {
+                "get": lambda: _bench_get(cache, N_OPS),
+                "get-miss": lambda: _bench_get_miss(cache, N_OPS),
+                "set": lambda: _bench_set(cache, N_OPS, payload),
+                "mget": lambda: _bench_mget(cache, N_OPS // MGET_BATCH),
+                "mset": lambda: _bench_mset(cache, N_OPS // MGET_BATCH, payload),
+                "incr": lambda: _bench_incr(cache, N_OPS),
+                "delete": lambda: _bench_delete(cache, N_OPS),
+            }
+
+            # Untimed warmup pass (smaller N) primes connections + serializer state.
             _bench_get(cache, 100)
             _bench_set(cache, 100, payload)
             _bench_mget(cache, 10)
@@ -403,59 +479,8 @@ def run_benchmark(  # noqa: PLR0915 — phase-by-phase flow is the readable shap
             _bench_incr(cache, 100)
             _bench_delete(cache, 100)
 
-            # Record baseline connection count after warmup but before any timed
-            # phases, so per-phase samples reveal what the workload itself opens.
-            baseline_conns = _server_connections(info_client)
-            if baseline_conns is not None:
-                result.server_connections_baseline = baseline_conns
-
-            def _sample_conns() -> None:
-                v = _server_connections(info_client)
-                if v is not None:
-                    result.server_connections_samples.append(v)
-
-            for _ in range(K_RUNS):
-                gc.collect()
-                tracemalloc.start()
-
-                run_before_used = _server_used_memory(info_client) or 0
-
-                _, t = _phase("get", lambda: _bench_get(cache, N_OPS))
-                result.phases["get"].seconds_per_run.append(t)
-                _sample_conns()
-
-                _, t = _phase("get-miss", lambda: _bench_get_miss(cache, N_OPS))
-                result.phases["get-miss"].seconds_per_run.append(t)
-                _sample_conns()
-
-                _, t = _phase("set", lambda: _bench_set(cache, N_OPS, payload))
-                result.phases["set"].seconds_per_run.append(t)
-                _sample_conns()
-
-                _, t = _phase("mget", lambda: _bench_mget(cache, N_OPS // MGET_BATCH))
-                result.phases["mget"].seconds_per_run.append(t * MGET_BATCH)  # normalize to per-key
-                _sample_conns()
-
-                _, t = _phase("mset", lambda: _bench_mset(cache, N_OPS // MGET_BATCH, payload))
-                result.phases["mset"].seconds_per_run.append(t * MGET_BATCH)  # normalize to per-key
-                _sample_conns()
-
-                _, t = _phase("incr", lambda: _bench_incr(cache, N_OPS))
-                result.phases["incr"].seconds_per_run.append(t)
-                _sample_conns()
-
-                _, t = _phase("delete", lambda: _bench_delete(cache, N_OPS))
-                result.phases["delete"].seconds_per_run.append(t)
-                _sample_conns()
-
-                _, peak = tracemalloc.get_traced_memory()
-                tracemalloc.stop()
-                result.py_peak_kb_per_run.append(peak / 1024)
-
-                run_after_used = _server_used_memory(info_client) or 0
-                result.server_used_memory_delta_kb_per_run.append(
-                    max(0, (run_after_used - run_before_used) / 1024),
-                )
+            _record_baseline_conns(result, info_client)
+            _run_phase_loop(phases, result, info_client)
 
             _flush_cache(cache)
     finally:
@@ -467,12 +492,15 @@ def run_benchmark(  # noqa: PLR0915 — phase-by-phase flow is the readable shap
 # Minimal middleware list for the request-cycle benchmark. CommonMiddleware
 # is the only one a typical Django app always has; SessionMiddleware /
 # AuthenticationMiddleware would pull in DB queries that distort cache timing.
-_REQUEST_CYCLE_MIDDLEWARE = [
-    "django.middleware.common.CommonMiddleware",
-]
+_REQUEST_CYCLE_MIDDLEWARE = ["django.middleware.common.CommonMiddleware"]
 
 
-def run_request_cycle_benchmark(  # noqa: PLR0915 — phase-by-phase flow is readable
+def _drive(client: Client, url_template: str, n: int) -> None:
+    for i in range(n):
+        client.get(url_template.format(i=i))
+
+
+def run_request_cycle_benchmark(
     adapter: AdapterConfig,
     serializer: SerializerConfig,
     location: str,
@@ -488,22 +516,11 @@ def run_request_cycle_benchmark(  # noqa: PLR0915 — phase-by-phase flow is rea
     so the two are directly comparable — the gap is the per-request overhead
     Django itself adds when cache work happens inside a view.
     """
-
-    from django.test import Client
-
     from benchmarks import urls as benchmark_urls
 
     benchmark_urls.set_payload_kind(payload_kind)
 
-    result = BenchmarkResult(
-        adapter_id=adapter.id,
-        serializer_id=serializer.id,
-        server=adapter.server,
-        compressor_id=compressor.id if compressor is not None else "",
-    )
-    for name in ("get", "get-miss", "set", "mget", "mset", "incr", "delete"):
-        result.phases[name] = PhaseTiming(name=name)
-
+    result = _new_result(adapter, serializer, compressor)
     caches = build_caches(adapter, serializer, location, compressor=compressor)
     payload = _build_payload_large() if payload_kind == "large" else _build_payload()
 
@@ -511,13 +528,7 @@ def run_request_cycle_benchmark(  # noqa: PLR0915 — phase-by-phase flow is rea
         "CACHES": caches,
         "ROOT_URLCONF": "benchmarks.urls",
         "MIDDLEWARE": _REQUEST_CYCLE_MIDDLEWARE,
-        "ALLOWED_HOSTS": ["*"],
-        "DEBUG": False,
     }
-
-    def _drive(client: Client, url_template: str, n: int) -> None:
-        for i in range(n):
-            client.get(url_template.format(i=i))
 
     info_client = _open_info_client(location)
     try:
@@ -526,18 +537,14 @@ def run_request_cycle_benchmark(  # noqa: PLR0915 — phase-by-phase flow is rea
 
             _flush_cache(cache)
 
-            # Populate the keys read by the get/mget views.
             for i in range(WARMUP_KEYS):
                 cache.set(f"warm:{i}", payload)
-
-            # Django's built-in RedisCache.incr() raises if the key is missing,
-            # so the counter has to exist before the incr view ever runs.
+            # Django's built-in RedisCache.incr() raises if the key is missing.
             cache.set("counter", 0)
 
             client = Client()
 
-            # Untimed warmup so the connection pool, URL resolver cache, and
-            # serializer all see the workload before timing begins.
+            # Untimed warmup: prime URL resolver, connection pool, serializer.
             _drive(client, "/bench/get/{i}/", 100)
             _drive(client, "/bench/set/{i}/", 100)
             _drive(client, "/bench/mget/{i}/", 10)
@@ -545,64 +552,27 @@ def run_request_cycle_benchmark(  # noqa: PLR0915 — phase-by-phase flow is rea
             _drive(client, "/bench/incr/{i}/", 100)
             _drive(client, "/bench/delete/{i}/", 100)
 
-            baseline_conns = _server_connections(info_client)
-            if baseline_conns is not None:
-                result.server_connections_baseline = baseline_conns
+            phases: dict[str, Callable[[], None]] = {
+                "get": lambda: _drive(client, "/bench/get/{i}/", N_OPS),
+                "get-miss": lambda: _drive(client, "/bench/get-miss/{i}/", N_OPS),
+                "set": lambda: _drive(client, "/bench/set/{i}/", N_OPS),
+                "mget": lambda: _drive(client, "/bench/mget/{i}/", N_OPS // MGET_BATCH),
+                "mset": lambda: _drive(client, "/bench/mset/{i}/", N_OPS // MGET_BATCH),
+                "incr": lambda: _drive(client, "/bench/incr/{i}/", N_OPS),
+                "delete": lambda: _drive(client, "/bench/delete/{i}/", N_OPS),
+            }
 
-            def _sample_conns() -> None:
-                v = _server_connections(info_client)
-                if v is not None:
-                    result.server_connections_samples.append(v)
-
-            for _ in range(K_RUNS):
-                gc.collect()
-                tracemalloc.start()
-                run_before_used = _server_used_memory(info_client) or 0
-
-                _, t = _phase("get", lambda: _drive(client, "/bench/get/{i}/", N_OPS))
-                result.phases["get"].seconds_per_run.append(t)
-                _sample_conns()
-
-                _, t = _phase("get-miss", lambda: _drive(client, "/bench/get-miss/{i}/", N_OPS))
-                result.phases["get-miss"].seconds_per_run.append(t)
-                _sample_conns()
-
-                _, t = _phase("set", lambda: _drive(client, "/bench/set/{i}/", N_OPS))
-                result.phases["set"].seconds_per_run.append(t)
-                _sample_conns()
-
-                # Batch ops: one HTTP request per batch; normalize timing per-key
-                # so ops/sec is on the same scale as the direct benchmark.
-                _, t = _phase("mget", lambda: _drive(client, "/bench/mget/{i}/", N_OPS // MGET_BATCH))
-                result.phases["mget"].seconds_per_run.append(t * MGET_BATCH)
-                _sample_conns()
-
-                _, t = _phase("mset", lambda: _drive(client, "/bench/mset/{i}/", N_OPS // MGET_BATCH))
-                result.phases["mset"].seconds_per_run.append(t * MGET_BATCH)
-                _sample_conns()
-
-                # incr resets the counter inside the view's cache call; pre-set it
-                # once per run to mirror the direct benchmark.
+            def _pre_run() -> None:
+                # The incr view doesn't reset the counter; the delete view
+                # doesn't pre-populate. The direct benchmark bakes both into
+                # its phase helpers, but here the views are single-op so we
+                # do the setup before each timed run.
                 cache.set("counter", 0)
-                _, t = _phase("incr", lambda: _drive(client, "/bench/incr/{i}/", N_OPS))
-                result.phases["incr"].seconds_per_run.append(t)
-                _sample_conns()
-
-                # delete needs keys to delete; populate first.
                 for i in range(N_OPS):
                     cache.set(f"del:{i}", 1)
-                _, t = _phase("delete", lambda: _drive(client, "/bench/delete/{i}/", N_OPS))
-                result.phases["delete"].seconds_per_run.append(t)
-                _sample_conns()
 
-                _, peak = tracemalloc.get_traced_memory()
-                tracemalloc.stop()
-                result.py_peak_kb_per_run.append(peak / 1024)
-
-                run_after_used = _server_used_memory(info_client) or 0
-                result.server_used_memory_delta_kb_per_run.append(
-                    max(0, (run_after_used - run_before_used) / 1024),
-                )
+            _record_baseline_conns(result, info_client)
+            _run_phase_loop(phases, result, info_client, pre_run=_pre_run)
 
             _flush_cache(cache)
     finally:
@@ -617,10 +587,6 @@ def _total_rss_kb(parent_pid: int) -> float:
     Granian spawns one parent + N workers; we want the total resident set
     so growth shows up regardless of which worker grew.
     """
-    import shutil
-    import subprocess
-    from pathlib import Path
-
     total = 0.0
     try:
         with Path(f"/proc/{parent_pid}/status").open() as f:
@@ -653,8 +619,6 @@ def _total_rss_kb(parent_pid: int) -> float:
 
 
 def _wait_for_port(host: str, port: int, timeout_s: float = 15.0) -> bool:
-    import socket
-
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         try:
@@ -693,15 +657,6 @@ def run_asgi_benchmark(  # noqa: C901, PLR0915 — orchestrates many phases in o
     container with ``--cap-add NET_ADMIN`` and apply ``netem`` against the
     Valkey/Redis interface to reproduce vcache's numbers.
     """
-
-    import asyncio as _asyncio
-    import json
-    import os
-    import subprocess
-    import sys
-
-    import httpx
-
     options_for_env = dict(adapter.options)
     if serializer.dotted_path is not None:
         options_for_env["serializer"] = serializer.dotted_path
@@ -753,69 +708,65 @@ def run_asgi_benchmark(  # noqa: C901, PLR0915 — orchestrates many phases in o
         peak_rss = initial_rss
         peak_conns = initial_conns
 
+        async def _client_loop(
+            client: httpx.AsyncClient,
+            url: str,
+            stop_at: float,
+        ) -> tuple[int, int, list[float]]:
+            local_lat: list[float] = []
+            t = 0
+            e = 0
+            while time.perf_counter() < stop_at:
+                start = time.perf_counter()
+                try:
+                    resp = await client.get(url)
+                    local_lat.append((time.perf_counter() - start) * 1000)
+                    if resp.status_code >= 400:
+                        e += 1
+                except httpx.HTTPError:
+                    # Transport / protocol / status errors are part of what we measure.
+                    # Programming bugs (NameError, TypeError, etc.) intentionally propagate
+                    # so they crash the run instead of being counted as request errors.
+                    e += 1
+                t += 1
+            return t, e, local_lat
+
+        async def _sampler() -> None:
+            nonlocal peak_rss, peak_conns
+            try:
+                while True:
+                    await asyncio.sleep(sample_every_s)
+                    rss = _total_rss_kb(proc.pid) / 1024.0
+                    conns = _server_connections(info_client) or 0
+                    peak_rss = max(peak_rss, rss)
+                    peak_conns = max(peak_conns, conns)
+            except asyncio.CancelledError:
+                return
+
         async def _load() -> tuple[int, int, list[float]]:
-            """Generate load with ``concurrency`` httpx clients for ``duration_s``.
-
-            Returns (total_requests, errors, per-request latency samples).
-            """
-
             url = f"http://127.0.0.1:{port}/bench/mixed/"
             stop_at = time.perf_counter() + duration_s
-            latencies: list[float] = []
-            total = 0
-            errors = 0
-
-            async def _client_loop(client: httpx.AsyncClient) -> tuple[int, int, list[float]]:
-                local_lat: list[float] = []
-                t = 0
-                e = 0
-                while time.perf_counter() < stop_at:
-                    start = time.perf_counter()
-                    try:
-                        resp = await client.get(url)
-                        local_lat.append((time.perf_counter() - start) * 1000)
-                        if resp.status_code >= 400:
-                            e += 1
-                    except httpx.HTTPError:
-                        # Transport / protocol / status errors are part of what we measure.
-                        # Programming bugs (NameError, TypeError, etc.) intentionally propagate
-                        # so they crash the run instead of being counted as request errors.
-                        e += 1
-                    t += 1
-                return t, e, local_lat
-
             limits = httpx.Limits(
                 max_connections=concurrency * 2,
                 max_keepalive_connections=concurrency * 2,
             )
             async with httpx.AsyncClient(timeout=30.0, limits=limits) as client:
-                tasks = [_asyncio.create_task(_client_loop(client)) for _ in range(concurrency)]
-
-                # Sampler runs alongside the load.
-                sample_task = _asyncio.create_task(_sampler())
-                results = await _asyncio.gather(*tasks)
+                tasks = [asyncio.create_task(_client_loop(client, url, stop_at)) for _ in range(concurrency)]
+                sample_task = asyncio.create_task(_sampler())
+                results = await asyncio.gather(*tasks)
                 sample_task.cancel()
 
+            total = 0
+            errors = 0
+            latencies: list[float] = []
             for t, e, lats in results:
                 total += t
                 errors += e
                 latencies.extend(lats)
             return total, errors, latencies
 
-        async def _sampler() -> None:
-            nonlocal peak_rss, peak_conns
-            try:
-                while True:
-                    await _asyncio.sleep(sample_every_s)
-                    rss = _total_rss_kb(proc.pid) / 1024.0
-                    conns = _server_connections(info_client) or 0
-                    peak_rss = max(peak_rss, rss)
-                    peak_conns = max(peak_conns, conns)
-            except _asyncio.CancelledError:
-                return
-
         load_started = time.perf_counter()
-        total_requests, errors, latencies = _asyncio.run(_load())
+        total_requests, errors, latencies = asyncio.run(_load())
         actual_duration = time.perf_counter() - load_started
 
         final_rss = _total_rss_kb(proc.pid) / 1024.0
@@ -862,71 +813,39 @@ def run_asgi_benchmark(  # noqa: C901, PLR0915 — orchestrates many phases in o
         info_client.close()
 
 
-def format_asgi_summary(result: AsgiResult) -> str:
-    return (
-        f"  adapter={result.adapter_id}  serializer={result.serializer_id}  server={result.server}\n"
-        f"  duration={result.duration_s:.1f}s  concurrency={result.concurrency}  "
-        f"workers via granian (started by runner)\n"
-        f"  requests={result.total_requests:,}  errors={result.errors}  "
-        f"req/s={result.requests_per_sec:,.0f}\n"
-        f"  latency avg={result.avg_latency_ms:.1f}ms  p99={result.p99_latency_ms:.1f}ms\n"
-        f"  RSS init={result.initial_rss_mb:.1f}  peak={result.peak_rss_mb:.1f}  "
-        f"final={result.final_rss_mb:.1f}  settled={result.settled_rss_mb:.1f} MB  "
-        f"(growth {result.rss_growth_mb:+.1f} MB)\n"
-        f"  conns init={result.initial_conns}  peak={result.peak_conns}  "
-        f"final={result.final_conns}  settled={result.settled_conns}"
-    )
-
-
-def format_asgi_table(results: list[AsgiResult]) -> str:
-    if not results:
-        return "(no asgi results)"
-    header = ["config", "req/s", "avg ms", "p99 ms", "RSS init", "RSS peak", "RSS final", "conns peak", "conns settled"]
-    rows: list[list[str]] = []
-    for r in results:
-        rows.append(
-            [
-                r.label,
-                f"{r.requests_per_sec:,.0f}",
-                f"{r.avg_latency_ms:.1f}",
-                f"{r.p99_latency_ms:.1f}",
-                f"{r.initial_rss_mb:.0f}",
-                f"{r.peak_rss_mb:.0f}",
-                f"{r.final_rss_mb:.0f}",
-                str(r.peak_conns),
-                str(r.settled_conns),
-            ],
-        )
-    widths = [len(h) for h in header]
-    for row in rows:
-        widths = [max(w, len(c)) for w, c in zip(widths, row, strict=True)]
-    sep = "  ".join("-" * w for w in widths)
-    lines = ["  ".join(h.ljust(w) for h, w in zip(header, widths, strict=True)), sep]
-    for row in rows:
-        lines.append(
-            "  ".join(c.rjust(w) if i else c.ljust(w) for i, (c, w) in enumerate(zip(row, widths, strict=True))),
-        )
-    return "\n".join(lines)
+async def _phase_async(
+    name: str,
+    coro_factory: Callable[[], Any],
+    result: BenchmarkResult,
+    info_client: redis.Redis,
+) -> None:
+    start = time.perf_counter()
+    await coro_factory()
+    elapsed = time.perf_counter() - start
+    if name in BATCH_PHASES:
+        elapsed *= MGET_BATCH
+    result.phases[name].seconds_per_run.append(elapsed)
+    sample = _server_connections(info_client)
+    if sample is not None:
+        result.server_connections_samples.append(sample)
 
 
 async def _run_async_workload(
     cache,
-    info_client,
+    info_client: redis.Redis,
     payload: Any,
     concurrency: int,
     result: BenchmarkResult,
 ) -> None:
     await cache.aclear()
 
-    # Warmup: populate known keys for get/mget phases.
     for i in range(WARMUP_KEYS):
         await cache.aset(f"warm:{i}", payload)
-
     # Pre-set the incr counter for backends (e.g. Django's built-in
     # RedisCache) that raise on incr against a missing key.
     await cache.aset("counter", 0)
 
-    # One untimed pass per phase to warm up async transports / serializers.
+    # Untimed warmup pass.
     await _abench_get(cache, 100, concurrency)
     await _abench_set(cache, 100, concurrency, payload)
     await _abench_mget(cache, 10, concurrency)
@@ -934,53 +853,29 @@ async def _run_async_workload(
     await _abench_incr(cache, 100, concurrency)
     await _abench_delete(cache, 100, concurrency)
 
-    baseline_conns = _server_connections(info_client)
-    if baseline_conns is not None:
-        result.server_connections_baseline = baseline_conns
+    _record_baseline_conns(result, info_client)
 
-    def _sample_conns() -> None:
-        v = _server_connections(info_client)
-        if v is not None:
-            result.server_connections_samples.append(v)
-
-    async def _phase_async(name: str, coro_factory) -> None:
-        start = time.perf_counter()
-        await coro_factory()
-        result.phases[name].seconds_per_run.append(time.perf_counter() - start)
-        _sample_conns()
+    n_batches = N_OPS // MGET_BATCH
 
     for _ in range(K_RUNS):
         gc.collect()
         tracemalloc.start()
-        run_before_used = _server_used_memory(info_client) or 0
+        before_used = _server_used_memory(info_client) or 0
 
-        await _phase_async("get", lambda: _abench_get(cache, N_OPS, concurrency))
-        await _phase_async("get-miss", lambda: _abench_get_miss(cache, N_OPS, concurrency))
-        await _phase_async("set", lambda: _abench_set(cache, N_OPS, concurrency, payload))
-
-        # Batch ops: same per-key normalisation as the sync path.
-        n_batches = N_OPS // MGET_BATCH
-        start = time.perf_counter()
-        await _abench_mget(cache, n_batches, concurrency)
-        result.phases["mget"].seconds_per_run.append((time.perf_counter() - start) * MGET_BATCH)
-        _sample_conns()
-
-        start = time.perf_counter()
-        await _abench_mset(cache, n_batches, concurrency, payload)
-        result.phases["mset"].seconds_per_run.append((time.perf_counter() - start) * MGET_BATCH)
-        _sample_conns()
-
-        await _phase_async("incr", lambda: _abench_incr(cache, N_OPS, concurrency))
-        await _phase_async("delete", lambda: _abench_delete(cache, N_OPS, concurrency))
+        await _phase_async("get", lambda: _abench_get(cache, N_OPS, concurrency), result, info_client)
+        await _phase_async("get-miss", lambda: _abench_get_miss(cache, N_OPS, concurrency), result, info_client)
+        await _phase_async("set", lambda: _abench_set(cache, N_OPS, concurrency, payload), result, info_client)
+        await _phase_async("mget", lambda: _abench_mget(cache, n_batches, concurrency), result, info_client)
+        await _phase_async("mset", lambda: _abench_mset(cache, n_batches, concurrency, payload), result, info_client)
+        await _phase_async("incr", lambda: _abench_incr(cache, N_OPS, concurrency), result, info_client)
+        await _phase_async("delete", lambda: _abench_delete(cache, N_OPS, concurrency), result, info_client)
 
         _, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
         result.py_peak_kb_per_run.append(peak / 1024)
 
-        run_after_used = _server_used_memory(info_client) or 0
-        result.server_used_memory_delta_kb_per_run.append(
-            max(0, (run_after_used - run_before_used) / 1024),
-        )
+        after_used = _server_used_memory(info_client) or 0
+        result.server_used_memory_delta_kb_per_run.append(max(0, (after_used - before_used) / 1024))
 
     await cache.aclear()
 
@@ -1006,16 +901,7 @@ def run_async_benchmark(
     (e.g. Django's built-in ``RedisCache.get_client()``) that hold a fresh
     ``redis.Redis`` instance per concurrent op.
     """
-
-    result = BenchmarkResult(
-        adapter_id=adapter.id,
-        serializer_id=serializer.id,
-        server=adapter.server,
-        compressor_id=compressor.id if compressor is not None else "",
-    )
-    for name in ("get", "get-miss", "set", "mget", "mset", "incr", "delete"):
-        result.phases[name] = PhaseTiming(name=name)
-
+    result = _new_result(adapter, serializer, compressor)
     caches = build_caches(adapter, serializer, location, compressor=compressor)
     payload = _build_payload_large() if payload_kind == "large" else _build_payload()
 
@@ -1042,14 +928,10 @@ def run_compressor_micro(
     No adapter, no Django, no network — just the algorithm against a fixed
     blob. Returns None for the no-compression baseline.
     """
-    from django.utils.module_loading import import_string
-
     if compressor.dotted_path is None:
         return None
 
-    import pickle as _pickle
-
-    payload = _pickle.dumps(_build_payload_large())
+    payload = pickle.dumps(_build_payload_large())
     cls = import_string(compressor.dotted_path)
     instance = cls()
     compressed = instance._compress(payload)
@@ -1075,31 +957,18 @@ def run_compressor_micro(
     )
 
 
-def format_micro_table(results: list[MicroResult]) -> str:
-    """Table of compressor micro results — absolute MB/s plus output ratio."""
-    if not results:
-        return "(no micro results)"
-    header = ["compressor", "out %", "compress (MB/s)", "decompress (MB/s)"]
-    rows: list[list[str]] = []
-    for r in results:
-        rows.append(
-            [
-                r.compressor_id,
-                f"{r.ratio:.1%}",
-                f"{r.compress_mb_s:,.1f}",
-                f"{r.decompress_mb_s:,.1f}",
-            ],
-        )
-    widths = [len(h) for h in header]
+def _render_table(headers: list[str], rows: list[list[str]]) -> str:
+    """Right-justify every column except the first; pad to widest cell."""
+    widths = [len(h) for h in headers]
     for row in rows:
         widths = [max(w, len(c)) for w, c in zip(widths, row, strict=True)]
     sep = "  ".join("-" * w for w in widths)
-    lines = ["  ".join(h.ljust(w) for h, w in zip(header, widths, strict=True)), sep]
+    out = ["  ".join(h.ljust(w) for h, w in zip(headers, widths, strict=True)), sep]
     for row in rows:
-        lines.append(
+        out.append(
             "  ".join(c.rjust(w) if i else c.ljust(w) for i, (c, w) in enumerate(zip(row, widths, strict=True))),
         )
-    return "\n".join(lines)
+    return "\n".join(out)
 
 
 def format_summary(result: BenchmarkResult) -> str:
@@ -1122,29 +991,88 @@ def format_summary(result: BenchmarkResult) -> str:
     return "\n".join(lines)
 
 
-def format_table(results: list[BenchmarkResult]) -> str:
+def format_table(results: Iterable[BenchmarkResult]) -> str:
     """Compact one-row-per-config summary across all phases."""
+    results = list(results)
     if not results:
         return "(no benchmark results)"
     phase_names = list(results[0].phases.keys())
-    header = ["config"] + [f"{p} (ops/s)" for p in phase_names] + ["py-mem KiB", "srv-mem KiB", "conns peak", "conns Δ"]
-    widths = [len(h) for h in header]
-    rows: list[list[str]] = []
+    headers = (
+        ["config"] + [f"{p} (ops/s)" for p in phase_names] + ["py-mem KiB", "srv-mem KiB", "conns peak", "conns Δ"]
+    )
+    rows = []
     for r in results:
         row = [r.label]
-        for p in phase_names:
-            row.append(f"{r.phases[p].ops_per_sec:,.0f}")
+        row.extend(f"{r.phases[p].ops_per_sec:,.0f}" for p in phase_names)
         row.append(f"{mean(r.py_peak_kb_per_run):.0f}")
         row.append(f"{mean(r.server_used_memory_delta_kb_per_run):.0f}")
         row.append(str(r.server_connections_peak))
         row.append(str(r.server_connections_delta))
         rows.append(row)
-        widths = [max(w, len(c)) for w, c in zip(widths, row, strict=True)]
+    return _render_table(headers, rows)
 
-    sep = "  ".join("-" * w for w in widths)
-    lines = ["  ".join(h.ljust(w) for h, w in zip(header, widths, strict=True)), sep]
-    for row in rows:
-        lines.append(
-            "  ".join(c.rjust(w) if i else c.ljust(w) for i, (c, w) in enumerate(zip(row, widths, strict=True))),
-        )
-    return "\n".join(lines)
+
+def format_asgi_summary(result: AsgiResult) -> str:
+    return (
+        f"  adapter={result.adapter_id}  serializer={result.serializer_id}  server={result.server}\n"
+        f"  duration={result.duration_s:.1f}s  concurrency={result.concurrency}  "
+        f"workers via granian (started by runner)\n"
+        f"  requests={result.total_requests:,}  errors={result.errors}  "
+        f"req/s={result.requests_per_sec:,.0f}\n"
+        f"  latency avg={result.avg_latency_ms:.1f}ms  p99={result.p99_latency_ms:.1f}ms\n"
+        f"  RSS init={result.initial_rss_mb:.1f}  peak={result.peak_rss_mb:.1f}  "
+        f"final={result.final_rss_mb:.1f}  settled={result.settled_rss_mb:.1f} MB  "
+        f"(growth {result.rss_growth_mb:+.1f} MB)\n"
+        f"  conns init={result.initial_conns}  peak={result.peak_conns}  "
+        f"final={result.final_conns}  settled={result.settled_conns}"
+    )
+
+
+def format_asgi_table(results: Iterable[AsgiResult]) -> str:
+    results = list(results)
+    if not results:
+        return "(no asgi results)"
+    headers = [
+        "config",
+        "req/s",
+        "avg ms",
+        "p99 ms",
+        "RSS init",
+        "RSS peak",
+        "RSS final",
+        "conns peak",
+        "conns settled",
+    ]
+    rows = [
+        [
+            r.label,
+            f"{r.requests_per_sec:,.0f}",
+            f"{r.avg_latency_ms:.1f}",
+            f"{r.p99_latency_ms:.1f}",
+            f"{r.initial_rss_mb:.0f}",
+            f"{r.peak_rss_mb:.0f}",
+            f"{r.final_rss_mb:.0f}",
+            str(r.peak_conns),
+            str(r.settled_conns),
+        ]
+        for r in results
+    ]
+    return _render_table(headers, rows)
+
+
+def format_micro_table(results: Iterable[MicroResult]) -> str:
+    """Table of compressor micro results — absolute MB/s plus output ratio."""
+    results = list(results)
+    if not results:
+        return "(no micro results)"
+    headers = ["compressor", "out %", "compress (MB/s)", "decompress (MB/s)"]
+    rows = [
+        [
+            r.compressor_id,
+            f"{r.ratio:.1%}",
+            f"{r.compress_mb_s:,.1f}",
+            f"{r.decompress_mb_s:,.1f}",
+        ]
+        for r in results
+    ]
+    return _render_table(headers, rows)

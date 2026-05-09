@@ -52,3 +52,22 @@ classes are still importable but raise a clean `ImportError` on first
 use, naming the extra you need.
 
 [redis-rs]: https://github.com/redis-rs/redis-rs
+
+## Valkey-Glide adapter (optional)
+
+The `ValkeyGlideCache` backend wraps Valkey's official client,
+[valkey-glide]. It's a Rust core (like `redis-rs`) but packaged separately
+through PyPI as two distributions — `valkey-glide-sync` and `valkey-glide`
+— pulled in together via the `valkey-glide` extra:
+
+```console
+uv add django-cachex[valkey-glide]
+```
+
+cp314 GIL only — no cp314t (free-threaded) wheels are published yet.
+Cluster and Sentinel variants aren't currently exposed; only the standalone
+`ValkeyGlideCache` class is wired up. See the
+[user-guide configuration page](../user-guide/configuration.md#valkey-glide)
+for setup details.
+
+[valkey-glide]: https://github.com/valkey-io/valkey-glide

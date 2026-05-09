@@ -271,7 +271,25 @@ client = cache.get_client(write=True)
 |-----------|-------------|
 | `write` | Get write connection for primary (default: `False`) |
 
-Returns the underlying `valkey.Valkey` or `redis.Redis` client instance.
+Returns the underlying client object. The concrete type depends on which
+adapter is configured:
+
+| Backend | `get_client()` returns |
+|---------|------------------------|
+| `ValkeyCache` (`valkey-py`) | `valkey.Valkey` |
+| `RedisCache` (`redis-py`) | `redis.Redis` |
+| `RedisRsCache` (`redis-rs`) | `django_cachex.adapters.RedisRsAdapter` (the adapter is its own multiplexed client) |
+| `ValkeyGlideCache` (`valkey-glide`) | `glide_sync.GlideClient` |
+
+The four objects expose comparable command surfaces but are not
+interchangeable types — code that pins to one adapter for type-narrowing
+or vendor-specific calls won't work against the others. For
+adapter-portable code use the cache API directly; reach for
+`get_client()` only as an escape hatch, since it bypasses the configured
+key prefix, version, serializer, and compressor.
+
+The async equivalent is `get_async_client()`, which is `async def` and
+returns the adapter's async client.
 
 ## Lock Interface
 
@@ -357,10 +375,7 @@ All cache methods are available on the pipeline. Results are returned as a list 
 | `clear()` / `aclear()` | Remove only this cache's keys (`KEY_PREFIX` + `VERSION`). Implemented as `delete_pattern("*")`. |
 | `flush_db()` / `aflush_db()` | `FLUSHDB`: remove **all** keys in the underlying Redis/Valkey database, regardless of prefix. |
 
-`clear()` is safe when multiple apps share a Redis database. Use `flush_db()` only when this cache has a dedicated database.
-
-!!! warning "Breaking change"
-    Pre-1.0 versions of django-cachex implemented `clear()` as `FLUSHDB`. The current scoped behaviour is the safer default; callers that need the old wipe-everything semantics must call `flush_db()` explicitly.
+`clear()` is safe when multiple apps share a Redis database. Use `flush_db()` only when you really want to flush the whole database and not the configured Django namespace.
 
 ## Settings Reference
 

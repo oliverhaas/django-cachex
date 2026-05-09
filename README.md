@@ -38,6 +38,7 @@ CACHES = {
 - Two composite backends: `StreamCache` (cross-pod stream-synchronized in-memory cache) and `TieredCache` (L1/L2 with TTL propagation).
 - Django `LocMemCache` and `DatabaseCache` extensions with the same data-structure ops and admin support.
 - Optional Rust I/O driver (PyO3 + tokio + redis-rs) under the same `RespCache` API. Free-threaded CPython (3.14t) supported.
+- Optional `valkey-glide` adapter — Valkey's official Rust-cored client, exposed as `ValkeyGlideCache`.
 - Django admin UI for browsing keys, inspecting values, editing, and flushing — see below.
 
 ## Cache Admin
@@ -81,8 +82,13 @@ extra (`pip install django-cachex[redis-rs]`); this pulls in the
 `django-cachex-redis-rs` companion package. Prebuilt wheels are published
 for Linux x86_64, Linux aarch64, macOS arm64, and Windows amd64, on
 both cp314 and cp314t (free-threaded). Without the extra, the
-`RedisRsCache` backends are unavailable but
-everything else works.
+`RedisRsCache` backends are unavailable but everything else works.
+
+The `valkey-glide` adapter is also optional. Install with the
+`valkey-glide` extra (`pip install django-cachex[valkey-glide]`) to enable
+`ValkeyGlideCache`; it pulls in `valkey-glide-sync` and `valkey-glide`,
+the official Rust-cored Valkey client. cp314 GIL only — no free-threaded
+wheels yet. Cluster and Sentinel variants aren't currently exposed.
 
 ## Acknowledgments
 
