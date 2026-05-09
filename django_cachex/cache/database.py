@@ -41,7 +41,7 @@ from django.conf import settings
 from django.core.cache.backends.db import DatabaseCache as DjangoDatabaseCache
 from django.db import connections, models, router, transaction
 
-from django_cachex.cache.base import BaseCachex
+from django_cachex.cache.base import BaseCachex, _install_async_delegates
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
@@ -1075,3 +1075,8 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             return (existing or _DELETE), len(to_remove)
 
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
+
+
+# Async ext methods delegate to sync — DB calls block the event loop, but the
+# contract holds. Real async would need an async DB driver wired through Django.
+_install_async_delegates(DatabaseCache)

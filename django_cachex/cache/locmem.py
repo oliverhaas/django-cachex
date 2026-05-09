@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING, Any
 
 from django.core.cache.backends.locmem import LocMemCache as DjangoLocMemCache
 
-from django_cachex.cache.base import BaseCachex
+from django_cachex.cache.base import BaseCachex, _install_async_delegates
 from django_cachex.types import KeyType
 from django_cachex.utils import _deep_getsizeof, _format_bytes
 
@@ -1119,3 +1119,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             else:
                 self._delete(internal_key)
             return len(to_remove)
+
+
+# Async ext methods are blocking sync calls — LocMem is in-memory, no I/O to await.
+_install_async_delegates(LocMemCache)
