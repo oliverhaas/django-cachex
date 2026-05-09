@@ -92,29 +92,6 @@ jobs:
           files: ./coverage.xml
           fail_ci_if_error: false
 
-  test-rust:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version:
-          - "3.14"
-          - "3.14t"
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: uv sync --group dev
-
-      - name: Run rust async-bridge tests
-        run: uv run pytest tests/rust/ -v
-
   test-admin:
     runs-on: ubuntu-latest
     steps:
@@ -289,11 +266,11 @@ jobs:
         run: |
           uv run --no-sync python -c "
           import django_cachex
-          import django_cachex.cache, django_cachex.client
+          import django_cachex.cache, django_cachex.adapters
           from django_cachex.cache import RedisRsCache, ValkeyCache
           try:
-              from django_cachex import _driver
-              raise SystemExit('FAIL: _driver present in pure-only install')
+              from django_cachex.adapters import _redis_rs
+              raise SystemExit('FAIL: _redis_rs present in pure-only install')
           except ImportError:
               pass
           rust = RedisRsCache(server='valkey://localhost:6379/0', params={'OPTIONS': {}})
