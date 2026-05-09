@@ -143,45 +143,6 @@ def test_adapters_request_cycle(adapter, server_url, results, capsys) -> None:
         print(format_summary(result))
 
 
-_POOL_SIZE_SWEEP = (10, 25, 50, 100, 200, 500)
-
-
-@pytest.mark.parametrize("max_conns", _POOL_SIZE_SWEEP, ids=lambda n: f"max={n}")
-def test_pool_size_sweep(max_conns: int, server_url, asgi_results, capsys) -> None:
-    """Sweep ``max_connections`` against a pool-based adapter to find the elbow.
-
-    Picks ``redis-py`` as the representative pool backend (redis-rs
-    multiplexes and ignores the cap; django (builtin) sets its own cap via
-    the thread executor). Used to validate the default we ship with.
-    """
-
-    from benchmarks.configs import AdapterConfig
-
-    base = ADAPTER_BY_ID["redis-py"]
-    custom = AdapterConfig(
-        id=f"redis-py#max{max_conns}",
-        backend=base.backend,
-        options={**base.options, "max_connections": max_conns},
-        server=base.server,
-    )
-    pickle_serializer = SERIALIZER_BY_ID["pickle"]
-    location = server_url(custom.server)
-
-    result = run_asgi_benchmark(
-        custom,
-        pickle_serializer,
-        location,
-        duration_s=ASGI_DURATION_S,
-        concurrency=ASGI_CONCURRENCY,
-        workers=ASGI_WORKERS,
-    )
-    asgi_results.add(result)
-
-    with capsys.disabled():
-        print()
-        print(format_asgi_summary(result))
-
-
 @pytest.mark.parametrize("adapter", ADAPTER_CONFIGS, ids=lambda c: c.id)
 def test_adapters_asgi(adapter, server_url, asgi_results, capsys) -> None:
     """Full-stack ASGI benchmark — granian + httpx + 6 cache ops per request.

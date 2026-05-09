@@ -320,14 +320,14 @@ class TestConnectionCleanup:
         self,
         cache: RespCache,
     ) -> None:
-        """Regression: a fresh the adapter reuses the existing pool.
+        """Regression: a fresh adapter reuses the existing pool.
 
         Django's ``asgiref.local.Local``-backed cache handler returns a fresh
-        ``BaseCache`` instance per asyncio task, which means a fresh
-        the adapter is built on every async request. Before the
-        process-wide ``_async_pools`` registry, each fresh client created its
-        own pool, so ``max_connections`` had no effect across tasks and the
-        pool grew unbounded under concurrent load. This locks in the fix.
+        ``BaseCache`` instance per asyncio task, which means a fresh adapter
+        is built on every async request. Before the process-wide
+        ``_async_pools`` registry, each fresh client created its own pool, so
+        every async cache call opened a new TCP connection instead of reusing
+        the one from the prior call. This locks in the fix.
         """
         if cache.adapter._async_pool_class is None:
             pytest.skip("Async not supported for this client type")
