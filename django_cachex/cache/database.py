@@ -31,6 +31,7 @@ Then run ``manage.py createcachetable``.
 """
 
 import base64
+import logging
 import pickle
 import random
 from datetime import UTC, datetime, timedelta
@@ -47,6 +48,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
 
     from django.db.backends.base.base import BaseDatabaseWrapper
+
+logger = logging.getLogger(__name__)
 
 # Sentinels for compound-op transforms.
 _MISSING = object()  # current value: row absent (or expired)
@@ -250,33 +253,41 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         return int((expires_dt - now).total_seconds())
 
     def expire(self, key: str, timeout: int | timedelta, version: int | None = None) -> bool:
-        """Set the TTL of a key. Returns ``True`` if the key existed."""
+        """Set the TTL of a key. Returns ``True`` if the key existed and was live."""
         if isinstance(timeout, timedelta):
             timeout_secs = timeout.total_seconds()
         else:
             timeout_secs = float(timeout)
-        new_expires = _now() + timedelta(seconds=timeout_secs)
+        now = _now()
+        new_expires = now + timedelta(seconds=timeout_secs)
         conn = self._get_connection(write=True)
         quote = conn.ops.quote_name
         table = quote(self._get_table_name())
         internal_key = self._internal_key(key, version=version)
         with conn.cursor() as cursor:
             cursor.execute(
-                f"UPDATE {table} SET {quote('expires')} = %s WHERE {quote('cache_key')} = %s",  # noqa: S608
-                [_adapt_dt(conn, new_expires), internal_key],
+                f"UPDATE {table} SET {quote('expires')} = %s "  # noqa: S608
+                f"WHERE {quote('cache_key')} = %s AND {quote('expires')} > %s",
+                [_adapt_dt(conn, new_expires), internal_key, _adapt_dt(conn, now)],
             )
             return cursor.rowcount > 0
 
     def persist(self, key: str, version: int | None = None) -> bool:
-        """Remove the TTL by setting expires to ``datetime.max``."""
+        """Remove the TTL by setting expires to ``datetime.max``.
+
+        Skips rows whose ``expires`` is already in the past so a logically
+        expired key isn't accidentally revived.
+        """
+        now = _now()
         conn = self._get_connection(write=True)
         quote = conn.ops.quote_name
         table = quote(self._get_table_name())
         internal_key = self._internal_key(key, version=version)
         with conn.cursor() as cursor:
             cursor.execute(
-                f"UPDATE {table} SET {quote('expires')} = %s WHERE {quote('cache_key')} = %s",  # noqa: S608
-                [_adapt_dt(conn, _no_expiry_dt()), internal_key],
+                f"UPDATE {table} SET {quote('expires')} = %s "  # noqa: S608
+                f"WHERE {quote('cache_key')} = %s AND {quote('expires')} > %s",
+                [_adapt_dt(conn, _no_expiry_dt()), internal_key, _adapt_dt(conn, now)],
             )
             return cursor.rowcount > 0
 
@@ -307,14 +318,17 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         ``*`` and ``?`` translate to SQL ``LIKE`` wildcards (``%`` and ``_``).
         Assumes Django's default key format ``KEY_PREFIX:VERSION:key``;
         falls back to the raw cache key if it doesn't fit that shape.
+        ``version`` scopes results to a single version (default: this
+        cache's ``self.version``).
         """
         conn = self._get_connection()
         quote = conn.ops.quote_name
         table = quote(self._get_table_name())
-        if pattern and pattern != "*":
-            sql_pattern = self.make_key(pattern).replace("*", "%").replace("?", "_")
-        else:
-            sql_pattern = "%"
+        # Always anchor the SQL pattern to ``KEY_PREFIX:VERSION:`` so the
+        # LIKE only matches the requested version; otherwise ``pattern="*"``
+        # or unrelated prefixes leak through.
+        prefixed = self.make_key(pattern or "*", version=version)
+        sql_pattern = prefixed.replace("*", "%").replace("?", "_")
         with conn.cursor() as cursor:
             cursor.execute(
                 f"SELECT {quote('cache_key')} FROM {table} "  # noqa: S608
@@ -376,8 +390,8 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
                     [_adapt_dt(conn, _now())],
                 )
                 active_count = cursor.fetchone()[0]
-        except Exception:  # noqa: BLE001, S110
-            pass
+        except Exception:
+            logger.exception("DatabaseCache.info(): row-count query failed; reporting 0")
         return {
             "backend": "DatabaseCache",
             "server": {
@@ -424,29 +438,33 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
 
-    def lpop(self, key: str, count: int | None = None, version: int | None = None) -> list[Any]:
-        def transform(current: Any) -> tuple[Any, list[Any]]:
+    def lpop(self, key: str, count: int | None = None, version: int | None = None) -> Any | list[Any] | None:
+        empty: list[Any] | None = [] if count is not None else None
+
+        def transform(current: Any) -> tuple[Any, Any | list[Any] | None]:
             existing = self._coerce_list(current)
             if not existing:
-                return _DELETE if existing is not None else _MISSING, []
+                return _DELETE if existing is not None else _MISSING, empty
             n = count if count is not None else 1
             popped = existing[:n]
             remaining = existing[n:]
-            return (remaining or _DELETE), popped
+            return (remaining or _DELETE), (popped if count is not None else popped[0])
 
-        return cast("list[Any]", self._atomic_compound(self._internal_key(key, version=version), transform))
+        return self._atomic_compound(self._internal_key(key, version=version), transform)
 
-    def rpop(self, key: str, count: int | None = None, version: int | None = None) -> list[Any]:
-        def transform(current: Any) -> tuple[Any, list[Any]]:
+    def rpop(self, key: str, count: int | None = None, version: int | None = None) -> Any | list[Any] | None:
+        empty: list[Any] | None = [] if count is not None else None
+
+        def transform(current: Any) -> tuple[Any, Any | list[Any] | None]:
             existing = self._coerce_list(current)
             if not existing:
-                return _DELETE if existing is not None else _MISSING, []
+                return _DELETE if existing is not None else _MISSING, empty
             n = count if count is not None else 1
             popped = list(reversed(existing[-n:]))
             remaining = existing[:-n] if n < len(existing) else []
-            return (remaining or _DELETE), popped
+            return (remaining or _DELETE), (popped if count is not None else popped[0])
 
-        return cast("list[Any]", self._atomic_compound(self._internal_key(key, version=version), transform))
+        return self._atomic_compound(self._internal_key(key, version=version), transform)
 
     def lrange(self, key: str, start: int, end: int, version: int | None = None) -> list[Any]:
         current = self._read(self._internal_key(key, version=version))
@@ -570,7 +588,10 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             if rank > 0:
                 positions = positions[rank - 1 :]
             elif rank < 0:
-                positions = list(reversed(positions))[: abs(rank)]
+                # Negative rank: scan from the tail. ``rank=-1`` returns the
+                # last match, ``rank=-2`` the second-to-last, etc. Continue
+                # toward the head from there.
+                positions = list(reversed(positions))[abs(rank) - 1 :]
         if count is not None:
             return positions if count == 0 else positions[:count]
         return positions[0] if positions else None

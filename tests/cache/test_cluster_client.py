@@ -1,6 +1,7 @@
 """Tests for RedisPyClusterAdapter."""
 
 import asyncio
+import weakref
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -10,12 +11,19 @@ from django_cachex.adapters import RedisPyClusterAdapter
 
 
 def setup_cluster_client(mock_cluster_cls=None):
-    """Helper to create a properly configured RedisPyClusterAdapter for testing."""
+    """Helper to create a properly configured RedisPyClusterAdapter for testing.
+
+    Each call gets isolated cluster registries so concurrent tests don't
+    share cached cluster instances and don't poison the process-wide
+    real-driver caches.
+    """
     client = RedisPyClusterAdapter.__new__(RedisPyClusterAdapter)
     client._servers = ["redis://localhost:7000"]
     client._options = {}
     client._stampede_config = None
-    client._cluster_instance = None
+    client._clusters = {}
+    client._clusters_lock = __import__("threading").Lock()
+    client._async_clusters = weakref.WeakKeyDictionary()
     # Set class attributes that are normally set via class definition
     if mock_cluster_cls is not None:
         client._cluster_class = mock_cluster_cls
@@ -389,31 +397,30 @@ class TestRedisClusterAdapter:
         client = setup_cluster_client(mock_cluster_cls)
         # Create the cluster instance
         client.get_client()
-        assert client._cluster_instance is not None
+        assert len(client._clusters) == 1
 
         # close() should NOT close the cluster
         client.close()
-        assert client._cluster_instance is not None
+        assert len(client._clusters) == 1
         mock_cluster.close.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_aclose_is_noop(self):
         """Test aclose() is a no-op — async cluster persists after aclose."""
-        import weakref
-
         mock_cluster_cls = MagicMock()
         mock_async_cluster = AsyncMock()
 
         client = setup_cluster_client(mock_cluster_cls)
         client._async_cluster_class = MagicMock(return_value=mock_async_cluster)
-        client._async_cluster_instances = weakref.WeakKeyDictionary()
 
         # Create the async cluster instance
         await client.get_async_client()
         loop = asyncio.get_running_loop()
-        assert loop in client._async_cluster_instances
+        assert loop in client._async_clusters
+        assert len(client._async_clusters[loop]) == 1
 
         # aclose() should NOT close the cluster
         await client.aclose()
-        assert loop in client._async_cluster_instances
+        assert loop in client._async_clusters
+        assert len(client._async_clusters[loop]) == 1
         mock_async_cluster.aclose.assert_not_called()

@@ -8,10 +8,13 @@ inherited from :class:`~django_cachex.adapters.valkey_py.ValkeyPyAdapter`
 and friends.
 """
 
+import threading
 import weakref
 
 from django_cachex.adapters.valkey_py import (
+    AsyncClusterRegistry,
     AsyncPoolsRegistry,
+    ClusterRegistry,
     ValkeyPyAdapter,
     ValkeyPyAsyncPipelineAdapter,
     ValkeyPyClusterAdapter,
@@ -25,6 +28,12 @@ from django_cachex.adapters.valkey_py import (
 # but keeping them isolated makes ownership obvious. Shared across all
 # three redis-py topologies (single, sentinel, cluster).
 _REDIS_ASYNC_POOLS: AsyncPoolsRegistry = weakref.WeakKeyDictionary()
+
+# Cluster registries for redis-py (keep RedisCluster and ValkeyCluster
+# instances out of the same dict; they aren't interchangeable).
+_REDIS_CLUSTERS: ClusterRegistry = {}
+_REDIS_CLUSTERS_LOCK = threading.Lock()
+_REDIS_ASYNC_CLUSTERS: AsyncClusterRegistry = weakref.WeakKeyDictionary()
 
 _REDIS_AVAILABLE = False
 try:
@@ -129,6 +138,10 @@ class RedisPySentinelAdapter(_RedisPyMixin, ValkeyPySentinelAdapter):
 
 class RedisPyClusterAdapter(_RedisPyMixin, ValkeyPyClusterAdapter):
     """Cluster cache adapter using ``redis-py``."""
+
+    _clusters = _REDIS_CLUSTERS
+    _clusters_lock = _REDIS_CLUSTERS_LOCK
+    _async_clusters = _REDIS_ASYNC_CLUSTERS
 
     if _REDIS_AVAILABLE:
         _lib = redis

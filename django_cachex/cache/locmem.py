@@ -26,6 +26,7 @@ Usage::
 """
 
 import fnmatch
+import logging
 import pickle
 import random
 import time
@@ -37,6 +38,8 @@ from django.core.cache.backends.locmem import LocMemCache as DjangoLocMemCache
 from django_cachex.cache.base import BaseCachex
 from django_cachex.types import KeyType
 from django_cachex.utils import _deep_getsizeof, _format_bytes
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections import OrderedDict
@@ -195,14 +198,19 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
         Assumes Django's default key format ``KEY_PREFIX:VERSION:key``.
         Custom ``KEY_FUNCTION`` settings may produce different formats —
-        we fall back to the raw internal key in that case.
+        we fall back to the raw internal key in that case. ``version``
+        scopes results to a single version (default: this cache's
+        ``self.version``).
         """
+        wanted_version = str(version if version is not None else self.version)
         with self._lock:
             internal_keys = list(self._cache)
         all_keys = []
         for internal_key in internal_keys:
             parts = internal_key.split(":", 2)
             if len(parts) >= 3:
+                if parts[1] != wanted_version:
+                    continue
                 user_key = parts[2]
                 if self.key_prefix and user_key.startswith(self.key_prefix):
                     user_key = user_key[len(self.key_prefix) :]
@@ -249,7 +257,8 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             try:
                 total_size = sum(_deep_getsizeof(v) for v in self._cache.values())
                 total_size += sum(_deep_getsizeof(k) for k in self._cache)
-            except Exception:  # noqa: BLE001
+            except Exception:
+                logger.exception("LocMemCache.info(): _deep_getsizeof failed; reporting 0")
                 total_size = 0
         return {
             "backend": "LocMemCache",
@@ -304,13 +313,17 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             self._native_write(internal_key, new_list)
             return len(new_list)
 
-    def lpop(self, key: str, count: int | None = None, version: int | None = None) -> list[Any]:
-        """Remove and return element(s) from the head of a list."""
+    def lpop(self, key: str, count: int | None = None, version: int | None = None) -> Any | list[Any] | None:
+        """Remove and return element(s) from the head of a list.
+
+        ``count=None`` returns the bare popped value (or ``None`` if empty),
+        matching Redis ``LPOP``. ``count=int`` always returns a list.
+        """
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_list(internal_key)
             if not current:
-                return []
+                return [] if count is not None else None
             pop_count = count if count is not None else 1
             popped = current[:pop_count]
             remaining = current[pop_count:]
@@ -318,15 +331,19 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 self._native_write(internal_key, remaining)
             else:
                 self._delete(internal_key)
-            return popped
+            return popped if count is not None else popped[0]
 
-    def rpop(self, key: str, count: int | None = None, version: int | None = None) -> list[Any]:
-        """Remove and return element(s) from the tail of a list."""
+    def rpop(self, key: str, count: int | None = None, version: int | None = None) -> Any | list[Any] | None:
+        """Remove and return element(s) from the tail of a list.
+
+        ``count=None`` returns the bare popped value (or ``None`` if empty),
+        matching Redis ``RPOP``. ``count=int`` always returns a list.
+        """
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_list(internal_key)
             if not current:
-                return []
+                return [] if count is not None else None
             pop_count = count if count is not None else 1
             popped = list(reversed(current[-pop_count:]))
             remaining = current[:-pop_count] if pop_count < len(current) else []
@@ -334,7 +351,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 self._native_write(internal_key, remaining)
             else:
                 self._delete(internal_key)
-            return popped
+            return popped if count is not None else popped[0]
 
     def lrange(self, key: str, start: int, end: int, version: int | None = None) -> list[Any]:
         """Return a range of elements from a list (inclusive end, Redis-style)."""
@@ -487,7 +504,10 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             if rank > 0:
                 positions = positions[rank - 1 :]
             elif rank < 0:
-                positions = list(reversed(positions))[: abs(rank)]
+                # Negative rank: scan from the tail. ``rank=-1`` returns the
+                # last match, ``rank=-2`` the second-to-last, etc. Continue
+                # toward the head from there.
+                positions = list(reversed(positions))[abs(rank) - 1 :]
         if count is not None:
             return positions if count == 0 else positions[:count]
         return positions[0] if positions else None

@@ -22,6 +22,7 @@ and ``_missing_lib_error`` to redirect the check.
 
 import asyncio
 import random
+import threading
 import weakref
 from collections import defaultdict
 from itertools import batched
@@ -100,6 +101,18 @@ def _options_key(options: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
 
 
 _VALKEY_ASYNC_POOLS: AsyncPoolsRegistry = weakref.WeakKeyDictionary()
+
+# Cluster-client caches, shared process-wide. Sync clusters are pooled by
+# config-key inside a thread-safe dict; async clusters live under the same
+# WeakKeyDictionary[loop] shape as the regular async pools because they're
+# bound to the loop they were created on. See ``_VALKEY_ASYNC_POOLS`` for
+# the rationale (Django's ``asgiref.local.Local`` returns a fresh
+# ``BaseCache`` per task, so instance-level caches don't share).
+ClusterRegistry = dict[tuple[Any, ...], Any]
+AsyncClusterRegistry = weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], Any]]
+_VALKEY_CLUSTERS: ClusterRegistry = {}
+_VALKEY_CLUSTERS_LOCK = threading.Lock()
+_VALKEY_ASYNC_CLUSTERS: AsyncClusterRegistry = weakref.WeakKeyDictionary()
 
 _VALKEY_AVAILABLE = False
 try:
@@ -292,7 +305,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         index = self._get_connection_pool_index(write=write)
 
         if self._async_pool_class is None:
-            msg = "Async operations require _async_pool_class to be set. Use RedisAdapter or ValkeyAdapter."
+            msg = "Async operations require _async_pool_class to be set. Use RedisPyAdapter or ValkeyPyAdapter."
             raise RuntimeError(msg)
 
         # Filter out parser_class — it's sync-specific.
@@ -2957,16 +2970,22 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
 
         return [replace_query(url, q) for q in (primary_query, replica_query)]
 
-    def _parse_sentinel_url(self, index: int) -> tuple[str | None, bool, str]:
+    def _parse_sentinel_url(self, index: int) -> tuple[str, bool, str]:
         """Parse a sentinel URL into (service_name, is_master, clean_url).
 
         Extracts the service name from the hostname, the is_master flag from
         query params, and returns a clean URL with is_master stripped.
+        Raises ``ImproperlyConfigured`` if the URL has no hostname (which
+        would otherwise be passed as ``service_name=None`` to ``from_url``).
         """
-        parsed = urlparse(self._servers[index])
+        url = self._servers[index]
+        parsed = urlparse(url)
         query_params = parse_qs(parsed.query)
 
         service_name = parsed.hostname
+        if not service_name:
+            msg = f"Sentinel URL {url!r} has no hostname (service name)."
+            raise ImproperlyConfigured(msg)
         is_master = True
         if "is_master" in query_params:
             is_master = query_params["is_master"][0] in ("1", "true", "True")
@@ -3099,12 +3118,12 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
 class ValkeyPyClusterAdapter(ValkeyPyAdapter):
     """Cluster cache client base class.
 
-    Extends ``ValkeyAdapter`` with cluster-specific handling for
+    Extends ``ValkeyPyAdapter`` with cluster-specific handling for
     server-side sharding and slot-aware operations.
     """
 
     # Cluster manages its own pool; clear the generic pool slots inherited
-    # from ``ValkeyAdapter`` so callers probing ``_async_pool_class``
+    # from ``ValkeyPyAdapter`` so callers probing ``_async_pool_class``
     # correctly identify this adapter as cluster-shaped.
     _async_pool_class: builtins.type[Any] | None = None
 
@@ -3113,26 +3132,17 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
     _async_cluster_class: builtins.type[Any] | None = None
     _key_slot_func: Any = None  # Function to calculate key slot
 
+    # Process-wide cluster registries. Subclasses (RedisPyClusterAdapter)
+    # can point at their own dicts so cluster instances aren't shared
+    # across drivers. Both default to the valkey-py-flavoured registry.
+    _clusters: ClusterRegistry = _VALKEY_CLUSTERS
+    _clusters_lock: threading.Lock = _VALKEY_CLUSTERS_LOCK
+    _async_clusters: AsyncClusterRegistry = _VALKEY_ASYNC_CLUSTERS
+
     if _VALKEY_AVAILABLE:
         _cluster_class = ValkeyCluster
         _async_cluster_class = AsyncValkeyCluster
         _key_slot_func = staticmethod(valkey_key_slot)
-
-    @override
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        # Per-instance cluster (cluster manages its own connection pool)
-        self._cluster_instance: Any | None = None
-        # Per-instance async clusters: WeakKeyDictionary keyed by event loop
-        # Keyed by event loop because async clusters are bound to the loop they're
-        # created on. The same client instance can see multiple loops (e.g., WSGI
-        # thread that calls asyncio.run() — ContextVar copies mean the same cache
-        # instance is shared with the async context). WeakKeyDictionary ensures
-        # automatic cleanup when a loop is GC'd.
-        self._async_cluster_instances: weakref.WeakKeyDictionary[
-            asyncio.AbstractEventLoop,
-            Any,
-        ] = weakref.WeakKeyDictionary()
 
     @property
     def _cluster(self) -> builtins.type[Any]:
@@ -3150,52 +3160,47 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
             raise RuntimeError(msg)
         return self._async_cluster_class
 
-    @override
-    def get_client(self, key: str | None = None, *, write: bool = False) -> Any:
-        """Get the Cluster client."""
-        if self._cluster_instance is not None:
-            return self._cluster_instance
-
+    def _cluster_options(self) -> tuple[dict[str, Any], tuple[Any, ...]]:
+        """Build kwargs for the cluster constructor and a hashable cache key."""
         url = self._servers[0]
         parsed_url = urlparse(url)
-        # Pass through options
         cluster_options = {
             key_opt: value for key_opt, value in self._options.items() if key_opt not in self._CLIENT_ONLY_OPTIONS
         }
-
         if parsed_url.hostname:
             cluster_options["host"] = parsed_url.hostname
         if parsed_url.port:
             cluster_options["port"] = parsed_url.port
+        return cluster_options, (self._cluster_class, url, _options_key(cluster_options))
 
-        self._cluster_instance = self._cluster(**cluster_options)
-        return self._cluster_instance
+    @override
+    def get_client(self, key: str | None = None, *, write: bool = False) -> Any:
+        """Get the Cluster client (shared process-wide per config)."""
+        del key, write
+        cluster_options, cache_key = self._cluster_options()
+        with self._clusters_lock:
+            cluster = self._clusters.get(cache_key)
+            if cluster is None:
+                cluster = self._cluster(**cluster_options)
+                self._clusters[cache_key] = cluster
+            return cluster
 
     @override
     async def get_async_client(self, key: str | None = None, *, write: bool = False) -> Any:
-        """Get the async Cluster client for the current event loop."""
+        """Get the async Cluster client for the current event loop (shared process-wide per loop)."""
         del key, write
         loop = asyncio.get_running_loop()
+        cluster_options, cache_key = self._cluster_options()
 
-        # Check if we already have an async cluster for this loop
-        if loop in self._async_cluster_instances:
-            return self._async_cluster_instances[loop]
+        sub = self._async_clusters.get(loop)
+        if sub is None:
+            sub = {}
+            self._async_clusters[loop] = sub
 
-        url = self._servers[0]
-        parsed_url = urlparse(url)
-        # Pass through options
-        cluster_options = {
-            key_opt: value for key_opt, value in self._options.items() if key_opt not in self._CLIENT_ONLY_OPTIONS
-        }
-
-        if parsed_url.hostname:
-            cluster_options["host"] = parsed_url.hostname
-        if parsed_url.port:
-            cluster_options["port"] = parsed_url.port
-
-        cluster = self._async_cluster(**cluster_options)
-        self._async_cluster_instances[loop] = cluster
-
+        cluster = sub.get(cache_key)
+        if cluster is None:
+            cluster = self._async_cluster(**cluster_options)
+            sub[cache_key] = cluster
         return cluster
 
     def _group_keys_by_slot(self, keys: Iterable[str]) -> dict[int, list[str]]:
@@ -3305,10 +3310,10 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         client = self.get_client(write=False)
 
         keys_result = cast(
-            "list[bytes]",
+            "list[bytes | str]",
             client.keys(pattern, target_nodes=self._cluster.PRIMARIES),
         )
-        return [k.decode() for k in keys_result]
+        return [k.decode() if isinstance(k, bytes) else k for k in keys_result]
 
     @override
     def iter_keys(
@@ -3327,7 +3332,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
             count=itersize,
             target_nodes=self._cluster.PRIMARIES,
         ):
-            yield item.decode()
+            yield item.decode() if isinstance(item, bytes) else item
 
     @override
     def delete_pattern(
@@ -3477,10 +3482,10 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         client = await self.get_async_client(write=False)
 
         keys_result = cast(
-            "list[bytes]",
+            "list[bytes | str]",
             await client.keys(pattern, target_nodes=self._async_cluster.PRIMARIES),
         )
-        return [k.decode() for k in keys_result]
+        return [k.decode() if isinstance(k, bytes) else k for k in keys_result]
 
     @override
     async def aiter_keys(
@@ -3499,7 +3504,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
             count=itersize,
             target_nodes=self._async_cluster.PRIMARIES,
         ):
-            yield item.decode()
+            yield item.decode() if isinstance(item, bytes) else item
 
     @override
     async def adelete_pattern(

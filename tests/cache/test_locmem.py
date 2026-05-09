@@ -239,7 +239,7 @@ class TestListOps:
 
     def test_lpop_returns_first(self, locmem_cache: LocMemCache):
         locmem_cache.set("k", [1, 2, 3])
-        assert locmem_cache.lpop("k") == [1]
+        assert locmem_cache.lpop("k") == 1
         assert locmem_cache.get("k") == [2, 3]
 
     def test_lpop_with_count(self, locmem_cache: LocMemCache):
@@ -248,7 +248,8 @@ class TestListOps:
         assert locmem_cache.get("k") == [3, 4]
 
     def test_lpop_empty(self, locmem_cache: LocMemCache):
-        assert locmem_cache.lpop("missing") == []
+        assert locmem_cache.lpop("missing") is None
+        assert locmem_cache.lpop("missing", count=2) == []
 
     def test_lpop_deletes_when_empty(self, locmem_cache: LocMemCache):
         locmem_cache.set("k", [1])
@@ -257,7 +258,7 @@ class TestListOps:
 
     def test_rpop_returns_last(self, locmem_cache: LocMemCache):
         locmem_cache.set("k", [1, 2, 3])
-        assert locmem_cache.rpop("k") == [3]
+        assert locmem_cache.rpop("k") == 3
         assert locmem_cache.get("k") == [1, 2]
 
     def test_rpop_with_count(self, locmem_cache: LocMemCache):
@@ -266,7 +267,8 @@ class TestListOps:
         assert locmem_cache.get("k") == [1, 2]
 
     def test_rpop_empty(self, locmem_cache: LocMemCache):
-        assert locmem_cache.rpop("missing") == []
+        assert locmem_cache.rpop("missing") is None
+        assert locmem_cache.rpop("missing", count=2) == []
 
     def test_rpop_deletes_when_empty(self, locmem_cache: LocMemCache):
         locmem_cache.set("k", [1])
