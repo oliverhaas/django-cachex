@@ -1132,6 +1132,8 @@
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">}</span>
 </span></code></pre></div>
 <h2 id="backend-classes">Backend Classes<a class="headerlink" href="#backend-classes" title="Permanent link">&para;</a></h2>
+<p>All backends live in <code>django_cachex.cache</code>. See the <a href="../../user-guide/configuration/#backend-classes">configuration reference</a> for the full table.</p>
+<p><strong>Valkey / Redis (Python driver, default):</strong></p>
 <table>
 <thead>
 <tr>
@@ -1141,28 +1143,51 @@
 </thead>
 <tbody>
 <tr>
-<td><code>ValkeyCache</code></td>
-<td>Standard Valkey connection</td>
+<td><code>ValkeyCache</code> / <code>RedisCache</code></td>
+<td>Standard connection</td>
 </tr>
 <tr>
-<td><code>RedisCache</code></td>
-<td>Standard Redis connection</td>
+<td><code>ValkeySentinelCache</code> / <code>RedisSentinelCache</code></td>
+<td>Sentinel high availability</td>
 </tr>
 <tr>
-<td><code>ValkeySentinelCache</code></td>
-<td>Valkey Sentinel high availability</td>
+<td><code>ValkeyClusterCache</code> / <code>RedisClusterCache</code></td>
+<td>Cluster sharding</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Other adapters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RedisRsCache</code> / <code>RedisRsSentinelCache</code> / <code>RedisRsClusterCache</code></td>
+<td>Rust driver (opt-in via <code>redis-rs</code> extra)</td>
 </tr>
 <tr>
-<td><code>RedisSentinelCache</code></td>
-<td>Redis Sentinel high availability</td>
+<td><code>ValkeyGlideCache</code></td>
+<td>valkey-glide (opt-in via <code>valkey-glide</code> extra)</td>
 </tr>
 <tr>
-<td><code>ValkeyClusterCache</code></td>
-<td>Valkey Cluster sharding</td>
+<td><code>LocMemCache</code></td>
+<td>Drop-in replacement for Django's <code>LocMemCache</code></td>
 </tr>
 <tr>
-<td><code>RedisClusterCache</code></td>
-<td>Redis Cluster sharding</td>
+<td><code>DatabaseCache</code></td>
+<td>Drop-in replacement for Django's <code>DatabaseCache</code></td>
+</tr>
+<tr>
+<td><code>StreamCache</code></td>
+<td>In-memory cache synchronized via a Redis Stream</td>
+</tr>
+<tr>
+<td><code>TieredCache</code></td>
+<td>L1/L2 composite with TTL propagation</td>
 </tr>
 </tbody>
 </table>
