@@ -778,7 +778,10 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         if (idle := kwargs.get("idle")) is not None:
             args.extend([b"IDLE", str(idle).encode()])
         args.extend([_enc(min), _enc(max), str(count).encode()])
-        if (consumer := kwargs.get("consumer")) is not None:
+        # ``pipeline.py`` writes ``kwargs["consumername"] = consumer``;
+        # tolerate the older ``"consumer"`` spelling too.
+        consumer = kwargs.get("consumername", kwargs.get("consumer"))
+        if consumer is not None:
             args.append(_enc(consumer))
         self._batch.custom_command(args)
         return self
@@ -843,89 +846,49 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         return None
 
 
-class ValkeyGlideAsyncPipelineAdapter:
+class ValkeyGlideAsyncPipelineAdapter(ValkeyGlidePipelineAdapter):
     """Async parallel of ``ValkeyGlidePipelineAdapter``.
 
     Conforms to :class:`RespAsyncPipelineProtocol`. Holds a resolved
     ``AsyncGlideClient`` — the adapter's ``apipeline()`` is async so it
     can ``await self.get_async_client()`` before constructing this
     wrapper, removing the lazy-factory dance the v1 design needed.
+
+    Inherits every queueing method from the sync adapter (they only
+    mutate ``self._batch``) and overrides ``execute`` / ``reset`` to go
+    through the async client. Don't redefine queueing methods here —
+    the sync surface already covers ``zrange(withscores=...)``,
+    ``xrange(min=...)``, ``hset(mapping=...)``, etc., and any divergence
+    risks the same kwargs-rejection regression that prompted this
+    rewrite.
     """
 
-    def __init__(
+    def __init__(  # type: ignore[override]
         self,
         client: AsyncGlideClient,
         *,
         transaction: bool = False,
     ) -> None:
-        self._client = client
+        self._client = client  # type: ignore[assignment]
         self._batch = Batch(is_atomic=transaction)
+        self._post: dict[int, Any] = {}
 
-    def set(self, key: Any, value: Any, **kw: Any) -> Self:
-        self._batch.set(key, _enc(value), **_set_kw(**kw))
-        return self
-
-    def get(self, key: Any) -> Self:
-        self._batch.get(key)
-        return self
-
-    def delete(self, *keys: Any) -> Self:
-        self._batch.delete(_enc_list(keys))
-        return self
-
-    def mget(self, keys: Iterable[Any]) -> Self:
-        self._batch.mget(_enc_list(keys))
-        return self
-
-    def mset(self, mapping: Mapping[Any, Any]) -> Self:
-        self._batch.mset(_enc_map(mapping))
-        return self
-
-    def incrby(self, key: Any, amount: int) -> Self:
-        self._batch.incrby(key, amount)
-        return self
-
-    def expire(self, key: Any, seconds: int) -> Self:
-        self._batch.expire(key, seconds)
-        return self
-
-    def ttl(self, key: Any) -> Self:
-        self._batch.ttl(key)
-        return self
-
-    def exists(self, *keys: Any) -> Self:
-        self._batch.exists(_enc_list(keys))
-        return self
-
-    def __getattr__(self, name: str) -> Any:
-        cmd = name.upper()
-
-        def call(*args: Any) -> Self:
-            self._batch.custom_command([cmd, *_enc_list(args)])
-            return self
-
-        return call
-
-    async def execute(self) -> list[Any]:
-        # Swap before awaiting so the pipeline is reusable; mirrors the sync
-        # adapter's contract.
-        batch = self._batch
+    async def execute(self) -> list[Any]:  # type: ignore[override]
+        # Capture before awaiting so a transform raising mid-decode doesn't
+        # leave the next ``execute()`` replaying the same commands.
+        batch, post = self._batch, self._post
         self._batch = Batch(is_atomic=batch.is_atomic)
+        self._post = {}
         if not batch.commands:
             return []
-        result = await self._client.exec(batch, raise_on_error=True)
-        return list(result or [])
+        raw = await self._client.exec(batch, raise_on_error=True) or []
+        if not post:
+            return list(raw)
+        return [post[i](r) if i in post else r for i, r in enumerate(raw)]
 
-    async def reset(self) -> None:
+    async def reset(self) -> None:  # type: ignore[override]
         self._batch = Batch(is_atomic=self._batch.is_atomic)
-
-    def execute_command(self, *args: Any) -> Self:
-        if not args:
-            msg = "execute_command requires at least the command name"
-            raise ValueError(msg)
-        cmd_name = args[0] if isinstance(args[0], str) else args[0].decode()
-        self._batch.custom_command([cmd_name, *_enc_list(args[1:])])
-        return self
+        self._post = {}
 
     async def __aenter__(self) -> Self:
         return self
