@@ -121,7 +121,7 @@ Server URL(s):
 
     # Or with fallback for migration
     "serializer": [
-        "django_cachex.serializers.msgpack.MessagePackSerializer",  # Write
+        "django_cachex.serializers.msgpack.MsgpackSerializer",  # Write
         "django_cachex.serializers.pickle.PickleSerializer",    # Fallback read
     ],
 }
@@ -132,10 +132,10 @@ Available serializers:
 | Serializer | Description |
 |------------|-------------|
 | `django_cachex.serializers.pickle.PickleSerializer` | Python pickle (default) |
-| `django_cachex.serializers.json.JSONSerializer` | JSON via `DjangoJSONEncoder` |
-| `django_cachex.serializers.msgpack.MessagePackSerializer` | MessagePack (requires `msgpack`) |
+| `django_cachex.serializers.json.JsonSerializer` | JSON via `DjangoJSONEncoder` |
+| `django_cachex.serializers.msgpack.MsgpackSerializer` | MessagePack (requires `msgpack`) |
 | `django_cachex.serializers.orjson.OrjsonSerializer` | Rust-backed JSON (requires `orjson`) |
-| `django_cachex.serializers.ormsgpack.OrMessagePackSerializer` | Rust-backed MessagePack (requires `ormsgpack`) |
+| `django_cachex.serializers.ormsgpack.OrmsgpackSerializer` | Rust-backed MessagePack (requires `ormsgpack`) |
 
 See [Serializers](serializers.md) for type-compatibility details and benchmarks.
 

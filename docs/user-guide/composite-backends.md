@@ -22,11 +22,11 @@ CACHES = {
     "default": {
         "BACKEND": "django_cachex.cache.StreamCache",
         "OPTIONS": {
-            "TRANSPORT": "redis",   # alias of any cachex RespCache subclass
-            "STREAM_KEY": "cache:sync",
-            "MAXLEN": 10000,        # approximate trim
-            "BLOCK_TIMEOUT": 1000,  # XREAD BLOCK timeout, ms
-            "REPLAY": 0,            # entries to replay on startup; 0 disables
+            "transport": "redis",   # alias of any cachex RespCache subclass
+            "stream_key": "cache:sync",
+            "maxlen": 10000,        # approximate trim
+            "block_timeout": 1000,  # XREAD BLOCK timeout, ms
+            "replay": 0,            # entries to replay on startup; 0 disables
         },
     },
 }
@@ -59,8 +59,8 @@ CACHES = {
     "default": {
         "BACKEND": "django_cachex.cache.TieredCache",
         "OPTIONS": {
-            "TIERS": ["l1", "l2"],
-            "L1_TIMEOUT": 5,    # cap for how long entries live in L1
+            "tiers": ["l1", "l2"],
+            "l1_timeout": 5,    # cap for how long entries live in L1
         },
     },
 }

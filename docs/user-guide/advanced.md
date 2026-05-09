@@ -10,7 +10,7 @@ CACHES = {
         "BACKEND": "django_cachex.cache.ValkeyCache",
         "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
-            "serializer": "django_cachex.serializers.json.JSONSerializer",
+            "serializer": "django_cachex.serializers.json.JsonSerializer",
         }
     }
 }
@@ -314,9 +314,11 @@ from django_cachex import (
     full_encode_pre,    # Prefix keys AND encode args (serialize values)
     decode_single_post, # Decode a single returned value
     decode_list_post,   # Decode a list of returned values
-    noop_post,          # Return result unchanged
 )
 ```
+
+Pass ``post_hook=None`` (the default) when no decoding is needed — the result is
+returned unchanged.
 
 #### Key Prefixing
 

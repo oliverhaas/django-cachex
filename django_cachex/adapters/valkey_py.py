@@ -45,7 +45,7 @@ from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
     import builtins
-    from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Mapping, Sequence
+    from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
     from datetime import datetime, timedelta
 
     from redis.connection import ConnectionPool
@@ -240,10 +240,10 @@ class ValkeyPyAdapter(RespAdapterProtocol):
     # Stampede + replica-index helpers
     # =========================================================================
 
-    def _resolve_stampede(self, stampede_prevention: bool | dict | None = None) -> StampedeConfig | None:
+    def resolve_stampede(self, stampede_prevention: bool | dict | None = None) -> StampedeConfig | None:
         return resolve_stampede(self._stampede_config, stampede_prevention)
 
-    def _get_timeout_with_buffer(
+    def get_timeout_with_buffer(
         self,
         timeout: int | None,
         stampede_prevention: bool | dict | None = None,
@@ -365,7 +365,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """Set a value only if the key doesn't exist."""
         client = self.get_client(key, write=True)
         nvalue = value
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             if ret := bool(client.set(key, nvalue, nx=True)):
@@ -384,7 +384,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """Set a value only if the key doesn't exist, asynchronously."""
         client = await self.get_async_client(key, write=True)
         nvalue = value
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             if ret := bool(await client.set(key, nvalue, nx=True)):
@@ -398,7 +398,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         val = client.get(key)
         if val is None:
             return None
-        config = self._resolve_stampede(stampede_prevention)
+        config = self.resolve_stampede(stampede_prevention)
         if config and isinstance(val, bytes):
             ttl = client.ttl(key)
             if ttl > 0 and should_recompute(ttl, config):
@@ -411,7 +411,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         val = await client.get(key)
         if val is None:
             return None
-        config = self._resolve_stampede(stampede_prevention)
+        config = self.resolve_stampede(stampede_prevention)
         if config and isinstance(val, bytes):
             ttl = await client.ttl(key)
             if ttl > 0 and should_recompute(ttl, config):
@@ -429,7 +429,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """Set a value in the cache (standard Django interface)."""
         client = self.get_client(key, write=True)
         nvalue = value
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             client.delete(key)
@@ -447,7 +447,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """Set a value in the cache asynchronously."""
         client = await self.get_async_client(key, write=True)
         nvalue = value
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             await client.delete(key)
@@ -472,7 +472,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """
         client = self.get_client(key, write=True)
         nvalue = value
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             if get:
@@ -503,7 +503,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """
         client = await self.get_async_client(key, write=True)
         nvalue = value
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             if get:
@@ -558,7 +558,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         # Stampede filtering: pipeline TTL for found keys with bytes values
         # (integers bypass stampede, matching get() behavior)
-        config = self._resolve_stampede(stampede_prevention)
+        config = self.resolve_stampede(stampede_prevention)
         if config and found:
             stampede_keys = [k for k, v in found.items() if isinstance(v, bytes)]
             if stampede_keys:
@@ -591,7 +591,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         # Stampede filtering: pipeline TTL for found keys with bytes values
         # (integers bypass stampede, matching aget() behavior)
-        config = self._resolve_stampede(stampede_prevention)
+        config = self.resolve_stampede(stampede_prevention)
         if config and found:
             stampede_keys = [k for k, v in found.items() if isinstance(v, bytes)]
             if stampede_keys:
@@ -658,7 +658,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         client = self.get_client(write=True)
         prepared = dict(data.items())
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             client.delete(*prepared.keys())
@@ -685,7 +685,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         client = await self.get_async_client(write=True)
         prepared = dict(data.items())
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             await client.delete(*prepared.keys())
@@ -3232,7 +3232,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
         # Stampede filtering: pipeline TTL for all found keys
-        config = self._resolve_stampede(stampede_prevention)
+        config = self.resolve_stampede(stampede_prevention)
         if config and found:
             pipe = client.pipeline()
             found_keys = list(found.keys())
@@ -3260,7 +3260,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         client = self.get_client(write=True)
 
         prepared_data = dict(data.items())
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             # timeout=0 means "delete immediately" (matches base client behavior)
@@ -3404,7 +3404,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
         # Stampede filtering: pipeline TTL for all found keys
-        config = self._resolve_stampede(stampede_prevention)
+        config = self.resolve_stampede(stampede_prevention)
         if config and found:
             pipe = client.pipeline()
             found_keys = list(found.keys())
@@ -3432,7 +3432,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         client = await self.get_async_client(write=True)
 
         prepared_data = dict(data.items())
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             # timeout=0 means "delete immediately" (matches base client behavior)
@@ -3718,8 +3718,8 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
     ) -> Any:
         return self._raw.lpos(key, value, rank=rank, count=count, maxlen=maxlen)
 
-    def lmove(self, source: Any, destination: Any, src: str = "LEFT", dest: str = "RIGHT") -> Any:
-        return self._raw.lmove(source, destination, src, dest)
+    def lmove(self, src: Any, dst: Any, wherefrom: str = "LEFT", whereto: str = "RIGHT") -> Any:
+        return self._raw.lmove(src, dst, wherefrom, whereto)
 
     # -------------------------------------------------------------------------
     # Sets
@@ -3879,7 +3879,6 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
         *,
         desc: bool = False,
         withscores: bool = False,
-        score_cast_func: Callable[[Any], Any] = float,
     ) -> Any:
         return self._raw.zrange(
             key,
@@ -3887,7 +3886,6 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
             end,
             desc=desc,
             withscores=withscores,
-            score_cast_func=score_cast_func,
         )
 
     def zrevrange(
@@ -3897,14 +3895,12 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
         end: int,
         *,
         withscores: bool = False,
-        score_cast_func: Callable[[Any], Any] = float,
     ) -> Any:
         return self._raw.zrevrange(
             key,
             start,
             end,
             withscores=withscores,
-            score_cast_func=score_cast_func,
         )
 
     def zrangebyscore(
@@ -3916,7 +3912,6 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
         num: int | None = None,
         *,
         withscores: bool = False,
-        score_cast_func: Callable[[Any], Any] = float,
     ) -> Any:
         return self._raw.zrangebyscore(
             key,
@@ -3925,7 +3920,6 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
             start=start,
             num=num,
             withscores=withscores,
-            score_cast_func=score_cast_func,
         )
 
     def zrevrangebyscore(
@@ -3937,7 +3931,6 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
         num: int | None = None,
         *,
         withscores: bool = False,
-        score_cast_func: Callable[[Any], Any] = float,
     ) -> Any:
         return self._raw.zrevrangebyscore(
             key,
@@ -3946,7 +3939,6 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
             start=start,
             num=num,
             withscores=withscores,
-            score_cast_func=score_cast_func,
         )
 
     # -------------------------------------------------------------------------

@@ -77,22 +77,10 @@ class _RedisPyMixin:
         return _missing_redis()
 
 
-class RedisPyPipelineAdapter(ValkeyPyPipelineAdapter):
-    """Pipeline adapter for the redis-py driver.
-
-    Empty subclass — redis-py and valkey-py share a pipeline API surface,
-    so all the queueing logic is inherited from
-    :class:`~django_cachex.adapters.valkey_py.ValkeyPyPipelineAdapter`.
-    Exists for symmetry with :class:`RedisPyAdapter` so the class
-    hierarchy mirrors the adapter hierarchy.
-    """
-
-
-class RedisPyAsyncPipelineAdapter(ValkeyPyAsyncPipelineAdapter):
-    """Async pipeline adapter for the redis-py driver.
-
-    Empty subclass — same rationale as :class:`RedisPyPipelineAdapter`.
-    """
+# redis-py and valkey-py share an identical pipeline API surface — alias
+# directly rather than carry empty subclasses.
+RedisPyPipelineAdapter = ValkeyPyPipelineAdapter
+RedisPyAsyncPipelineAdapter = ValkeyPyAsyncPipelineAdapter
 
 
 class RedisPyAdapter(_RedisPyMixin, ValkeyPyAdapter):

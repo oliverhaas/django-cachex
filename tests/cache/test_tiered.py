@@ -353,18 +353,18 @@ class TestTieredCacheConfig:
     """Test configuration and initialization."""
 
     def test_missing_tiers_raises(self):
-        """Missing TIERS option should raise ImproperlyConfigured."""
+        """Missing tiers option should raise ImproperlyConfigured."""
         config = {
             "default": {
                 "BACKEND": "django_cachex.cache.TieredCache",
                 "OPTIONS": {},
             },
         }
-        with override_settings(CACHES=config), pytest.raises(ImproperlyConfigured, match="TIERS"):
+        with override_settings(CACHES=config), pytest.raises(ImproperlyConfigured, match="tiers"):
             caches["default"].get("test")
 
     def test_wrong_tier_count_raises(self):
-        """TIERS with wrong number of aliases should raise ImproperlyConfigured."""
+        """tiers with wrong number of aliases should raise ImproperlyConfigured."""
         config = {
             "l1": {
                 "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
@@ -372,11 +372,11 @@ class TestTieredCacheConfig:
             "default": {
                 "BACKEND": "django_cachex.cache.TieredCache",
                 "OPTIONS": {
-                    "TIERS": ["l1"],
+                    "tiers": ["l1"],
                 },
             },
         }
-        with override_settings(CACHES=config), pytest.raises(ImproperlyConfigured, match="TIERS"):
+        with override_settings(CACHES=config), pytest.raises(ImproperlyConfigured, match="tiers"):
             caches["default"].get("test")
 
     def test_l1_timeout_from_option(self, tiered_cache: BaseCache):
@@ -402,7 +402,7 @@ class TestTieredCacheConfig:
             "default": {
                 "BACKEND": "django_cachex.cache.TieredCache",
                 "OPTIONS": {
-                    "TIERS": ["l1", "l2"],
+                    "tiers": ["l1", "l2"],
                     # No L1_TIMEOUT — should fall back to L1's TIMEOUT (42)
                 },
             },

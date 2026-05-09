@@ -27,10 +27,10 @@ if TYPE_CHECKING:
 
 from django_cachex.script import ScriptHelpers
 
-# Aliases for builtins shadowed by `set`/`type` methods (PEP 649 defers
-# annotations at runtime, but type checkers still resolve them in class scope).
+# Alias for the ``set`` builtin shadowed by the ``set`` method (PEP 649
+# defers annotations at runtime, but type checkers still resolve them in
+# class scope).
 _set = set
-_type = type
 
 
 class Pipeline:
@@ -48,9 +48,9 @@ class Pipeline:
     ) -> None:
         """Initialize the wrapped pipeline."""
         self._cache = cache
-        # Adapter back-reference for timeout / stampede helpers that still
-        # live on the adapter layer (``_get_timeout_with_buffer`` /
-        # ``_resolve_stampede``). Encoding/decoding lives on the cache.
+        # Adapter back-reference for timeout / stampede helpers that live
+        # on the adapter layer (``get_timeout_with_buffer`` /
+        # ``resolve_stampede``). Encoding/decoding lives on the cache.
         self._adapter = cache.adapter
         self._pipeline_adapter = pipeline_adapter
         self._version = version
@@ -168,20 +168,6 @@ class Pipeline:
             for entry_id, fields in results
         ]
 
-    def _decode_stream_results(
-        self,
-        results: list[tuple[Any, list[tuple[Any, dict[Any, Any]]]]] | None,
-    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
-        """Decode multi-stream results (xread/xreadgroup)."""
-        if results is None:
-            return None
-        return {
-            (stream_key.decode() if isinstance(stream_key, bytes) else stream_key): self._decode_stream_entries(
-                entries,
-            )
-            for stream_key, entries in results
-        }
-
     def _make_stream_key_decoder(
         self,
         key_map: dict[str, Any],
@@ -233,9 +219,11 @@ class Pipeline:
         stampede_prevention: bool | dict | None = None,
     ) -> Self:
         """Queue a SET command."""
+        if nx and xx:
+            raise ValueError("nx and xx are mutually exclusive")
         nkey = self._make_key(key, version)
         nvalue = self._encode(value)
-        actual_timeout = self._adapter._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self._adapter.get_timeout_with_buffer(timeout, stampede_prevention)
 
         # timeout=0 means "expire immediately" (Django convention) — queue a DELETE
         if actual_timeout == 0:
@@ -586,10 +574,10 @@ class Pipeline:
 
     def lmove(
         self,
-        source: str,
-        destination: str,
-        src_direction: str = "LEFT",
-        dest_direction: str = "RIGHT",
+        src: str,
+        dst: str,
+        wherefrom: str = "LEFT",
+        whereto: str = "RIGHT",
         version: int | None = None,
         version_src: int | None = None,
         version_dst: int | None = None,
@@ -597,9 +585,9 @@ class Pipeline:
         """Queue LMOVE command (move element between lists)."""
         src_ver = version_src if version_src is not None else version
         dst_ver = version_dst if version_dst is not None else version
-        nsrc = self._make_key(source, src_ver)
-        ndst = self._make_key(destination, dst_ver)
-        self._pipeline_adapter.lmove(nsrc, ndst, src_direction, dest_direction)
+        nsrc = self._make_key(src, src_ver)
+        ndst = self._make_key(dst, dst_ver)
+        self._pipeline_adapter.lmove(nsrc, ndst, wherefrom, whereto)
         self._decoders.append(self._decode_single)
         return self
 
@@ -1079,7 +1067,6 @@ class Pipeline:
         *,
         desc: bool = False,
         withscores: bool = False,
-        score_cast_func: _type = float,
         version: int | None = None,
     ) -> Self:
         """Queue ZRANGE command (get members by index range)."""
@@ -1090,7 +1077,6 @@ class Pipeline:
             end,
             desc=desc,
             withscores=withscores,
-            score_cast_func=score_cast_func,
         )
         self._decoders.append(self._make_zset_decoder(withscores=withscores))
         return self
@@ -1104,7 +1090,6 @@ class Pipeline:
         num: int | None = None,
         *,
         withscores: bool = False,
-        score_cast_func: _type = float,
         version: int | None = None,
     ) -> Self:
         """Queue ZRANGEBYSCORE command (get members by score range)."""
@@ -1116,7 +1101,6 @@ class Pipeline:
             start=start,
             num=num,
             withscores=withscores,
-            score_cast_func=score_cast_func,
         )
         self._decoders.append(self._make_zset_decoder(withscores=withscores))
         return self
@@ -1180,7 +1164,6 @@ class Pipeline:
         end: int,
         *,
         withscores: bool = False,
-        score_cast_func: _type = float,
         version: int | None = None,
     ) -> Self:
         """Queue ZREVRANGE command (get members by index, high to low)."""
@@ -1190,7 +1173,6 @@ class Pipeline:
             start,
             end,
             withscores=withscores,
-            score_cast_func=score_cast_func,
         )
         self._decoders.append(self._make_zset_decoder(withscores=withscores))
         return self
@@ -1204,7 +1186,6 @@ class Pipeline:
         num: int | None = None,
         *,
         withscores: bool = False,
-        score_cast_func: _type = float,
         version: int | None = None,
     ) -> Self:
         """Queue ZREVRANGEBYSCORE command (get by score, high to low)."""
@@ -1216,7 +1197,6 @@ class Pipeline:
             start=start,
             num=num,
             withscores=withscores,
-            score_cast_func=score_cast_func,
         )
         self._decoders.append(self._make_zset_decoder(withscores=withscores))
         return self
@@ -1664,4 +1644,4 @@ class AsyncPipeline(Pipeline):
         return [decoder(result) for result, decoder in zip(results, decoders, strict=True)]
 
 
-__all__ = ["Pipeline"]
+__all__ = ["AsyncPipeline", "Pipeline"]

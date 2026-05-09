@@ -18,21 +18,21 @@ Configuration::
         "default": {
             "BACKEND": "django_cachex.cache.StreamCache",
             "OPTIONS": {
-                "TRANSPORT": "redis",
-                "STREAM_KEY": "cache:sync",
-                "MAXLEN": 10000,
-                "BLOCK_TIMEOUT": 1000,
+                "transport": "redis",
+                "stream_key": "cache:sync",
+                "maxlen": 10000,
+                "block_timeout": 1000,
             },
         },
     }
 
-``TRANSPORT`` is the alias of any cachex ``RespCache`` subclass (pure-Python
+``transport`` is the alias of any cachex ``RespCache`` subclass (pure-Python
 or Rust-driver-backed) used for stream I/O.
-``STREAM_KEY`` is the Redis Stream key shared by all pods (default ``cache:sync``).
-``MAXLEN`` caps stream length via approximate trimming (default 10000).
-``BLOCK_TIMEOUT`` is the XREAD BLOCK timeout in milliseconds (default 1000).
-``REPLAY`` is the number of recent stream entries to replay on startup to
-warm the local cache (default 0 = no replay). Values up to ``MAXLEN`` work;
+``stream_key`` is the Redis Stream key shared by all pods (default ``cache:sync``).
+``maxlen`` caps stream length via approximate trimming (default 10000).
+``block_timeout`` is the XREAD BLOCK timeout in milliseconds (default 1000).
+``replay`` is the number of recent stream entries to replay on startup to
+warm the local cache (default 0 = no replay). Values up to ``maxlen`` work;
 ``1000`` replays the last 1000 mutations so a restarting pod doesn't start
 with an empty cache.
 
@@ -40,7 +40,7 @@ Wire format: stream fields go through the transport cache's high-level
 ``xadd``/``xread``/``xrevrange`` methods, which apply its configured serializer
 and compressor end-to-end. If the transport is configured with
 ``OPTIONS={"serializer": "msgpack", "compressor": "zstd"}``, stream entries
-are msgpack-then-zstd. All pods sharing one ``STREAM_KEY`` must use the same
+are msgpack-then-zstd. All pods sharing one ``stream_key`` must use the same
 transport ``BACKEND`` + ``OPTIONS`` so their serializers agree.
 """
 
@@ -63,7 +63,7 @@ from django.core.exceptions import ImproperlyConfigured
 from django_cachex.exceptions import NotSupportedError
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -105,15 +105,15 @@ class StreamCache(LocMemCache):
     def __init__(self, server: str, params: dict[str, Any]) -> None:
         options = params.get("OPTIONS", {})
 
-        self._transport_alias: str = options.get("TRANSPORT", "")
+        self._transport_alias: str = options.get("transport", "")
         if not self._transport_alias:
-            msg = "StreamCache requires OPTIONS['TRANSPORT'] with a cache alias for stream transport."
+            msg = "StreamCache requires OPTIONS['transport'] with a cache alias for stream transport."
             raise ImproperlyConfigured(msg)
 
-        self._stream_key: str = options.get("STREAM_KEY", "cache:sync")
-        self._maxlen: int = options.get("MAXLEN", 10000)
-        self._block_timeout: int = options.get("BLOCK_TIMEOUT", 1000)
-        self._replay_count: int = options.get("REPLAY", 0)
+        self._stream_key: str = options.get("stream_key", "cache:sync")
+        self._maxlen: int = options.get("maxlen", 10000)
+        self._block_timeout: int = options.get("block_timeout", 1000)
+        self._replay_count: int = options.get("replay", 0)
 
         # LocMemCache uses ``name`` (the LOCATION value) to key its module-level
         # globals. We use _STORAGE_KEY or stream_key so each stream has isolated
@@ -658,8 +658,9 @@ class StreamCache(LocMemCache):
         self,
         pattern: str,
         itersize: int | None = None,
-    ) -> list[str]:
-        return self.keys(pattern)
+        version: int | None = None,
+    ) -> Iterator[str]:
+        yield from self.keys(pattern, version=version)
 
     def make_pattern(self, pattern: str, version: int | None = None) -> str:
         """Make a key pattern with the cache prefix."""

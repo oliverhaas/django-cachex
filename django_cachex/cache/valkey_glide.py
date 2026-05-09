@@ -1,4 +1,4 @@
-"""Spike: Django cache backend backed by ``valkey-glide-sync``."""
+"""Django cache backend backed by ``valkey-glide``."""
 
 from django_cachex.adapters.valkey_glide import ValkeyGlideAdapter
 from django_cachex.cache.resp import RespCache

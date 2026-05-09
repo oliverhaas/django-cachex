@@ -99,10 +99,10 @@ ADAPTER_CONFIGS: tuple[AdapterConfig, ...] = (
 
 SERIALIZER_CONFIGS: tuple[SerializerConfig, ...] = (
     SerializerConfig(id="pickle", dotted_path=None),
-    SerializerConfig(id="json", dotted_path="django_cachex.serializers.json.JSONSerializer"),
-    SerializerConfig(id="msgpack", dotted_path="django_cachex.serializers.msgpack.MessagePackSerializer"),
+    SerializerConfig(id="json", dotted_path="django_cachex.serializers.json.JsonSerializer"),
+    SerializerConfig(id="msgpack", dotted_path="django_cachex.serializers.msgpack.MsgpackSerializer"),
     SerializerConfig(id="orjson", dotted_path="django_cachex.serializers.orjson.OrjsonSerializer"),
-    SerializerConfig(id="ormsgpack", dotted_path="django_cachex.serializers.ormsgpack.OrMessagePackSerializer"),
+    SerializerConfig(id="ormsgpack", dotted_path="django_cachex.serializers.ormsgpack.OrmsgpackSerializer"),
 )
 
 

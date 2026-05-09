@@ -195,8 +195,8 @@ result = cache.eval_script(
 | `full_encode_pre` | Prefix keys AND encode all args |
 | `decode_single_post` | Decode a single returned value |
 | `decode_list_post` | Decode a list of returned values |
-| `decode_list_or_none_post` | Decode list or return None |
-| `noop_post` | Return result unchanged |
+
+Pass ``post_hook=None`` (the default) when no decoding is needed.
 
 #### ScriptHelpers
 

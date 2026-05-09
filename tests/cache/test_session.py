@@ -327,7 +327,7 @@ def test_decode_failure_logged_to_security(session, caplog):
     reason="PickleSerializer is removed as of https://code.djangoproject.com/ticket/29708",
 )
 def test_actual_expiry(session):
-    # this doesn't work with JSONSerializer (serializing timedelta)
+    # this doesn't work with JsonSerializer (serializing timedelta)
     with override_settings(
         SESSION_SERIALIZER="django.contrib.sessions.serializers.PickleSerializer",
     ):

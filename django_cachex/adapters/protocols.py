@@ -21,7 +21,7 @@ pipeline layers rely on.
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
+    from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
     from datetime import datetime, timedelta
 
     from django_cachex.types import KeyType
@@ -107,7 +107,7 @@ class _RespPipelineCommandsProtocol(Protocol):
         count: int | None = None,
         maxlen: int | None = None,
     ) -> Any: ...
-    def lmove(self, source: Any, destination: Any, src: str = "LEFT", dest: str = "RIGHT") -> Any: ...
+    def lmove(self, src: Any, dst: Any, wherefrom: str = "LEFT", whereto: str = "RIGHT") -> Any: ...
 
     # -------------------------------------------------------------------------
     # Sets
@@ -189,7 +189,6 @@ class _RespPipelineCommandsProtocol(Protocol):
         *,
         desc: bool = False,
         withscores: bool = False,
-        score_cast_func: Callable[[Any], Any] = float,
     ) -> Any: ...
     def zrevrange(
         self,
@@ -198,7 +197,6 @@ class _RespPipelineCommandsProtocol(Protocol):
         end: int,
         *,
         withscores: bool = False,
-        score_cast_func: Callable[[Any], Any] = float,
     ) -> Any: ...
     def zrangebyscore(
         self,
@@ -209,7 +207,6 @@ class _RespPipelineCommandsProtocol(Protocol):
         num: int | None = None,
         *,
         withscores: bool = False,
-        score_cast_func: Callable[[Any], Any] = float,
     ) -> Any: ...
     def zrevrangebyscore(
         self,
@@ -220,7 +217,6 @@ class _RespPipelineCommandsProtocol(Protocol):
         num: int | None = None,
         *,
         withscores: bool = False,
-        score_cast_func: Callable[[Any], Any] = float,
     ) -> Any: ...
 
     # -------------------------------------------------------------------------
@@ -360,8 +356,8 @@ class RespAdapterProtocol(Protocol):
 
     # Private-ish stampede helpers — called by ``RespCache`` to resolve
     # per-call overrides against the adapter's instance config.
-    def _resolve_stampede(self, stampede_prevention: bool | dict | None = None) -> Any: ...
-    def _get_timeout_with_buffer(
+    def resolve_stampede(self, stampede_prevention: bool | dict | None = None) -> Any: ...
+    def get_timeout_with_buffer(
         self,
         timeout: int | None,
         stampede_prevention: bool | dict | None = None,
@@ -813,14 +809,6 @@ class RespAdapterProtocol(Protocol):
         minid: str | None = None,
         limit: int | None = None,
     ) -> str: ...
-    def _decode_stream_entries(
-        self,
-        results: list[tuple[Any, dict[Any, Any]]],
-    ) -> list[tuple[str, dict[str, bytes]]]: ...
-    def _decode_stream_results(
-        self,
-        results: list[tuple[Any, list[tuple[Any, dict[Any, Any]]]]],
-    ) -> dict[str, list[tuple[str, dict[str, bytes]]]]: ...
     def xlen(self, key: str) -> int: ...
     def xrange(
         self,

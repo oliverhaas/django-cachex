@@ -57,20 +57,6 @@ def test_unreachable_server_raises_at_construction(redis_container):
             cache.get("k")
 
 
-# -------------------------------------------------------- driver-specific lock
-
-
-def test_lock_extend_replace_ttl_raises(rust_cache):
-    """``replace_ttl=True`` is not implementable on the current driver — must raise loudly."""
-    lock = rust_cache.lock("mylock", timeout=5)
-    lock.acquire()
-    try:
-        with pytest.raises(NotImplementedError):
-            lock.extend(10, replace_ttl=True)
-    finally:
-        lock.release()
-
-
 # ----------------------------------------------------------- regression cases
 
 

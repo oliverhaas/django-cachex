@@ -44,8 +44,8 @@ def _build_tiered_config(host: str, port: int, client_library: str = "redis") ->
         "default": {
             "BACKEND": "django_cachex.cache.TieredCache",
             "OPTIONS": {
-                "TIERS": ["l1", "l2"],
-                "L1_TIMEOUT": L1_TIMEOUT,
+                "tiers": ["l1", "l2"],
+                "l1_timeout": L1_TIMEOUT,
             },
         },
     }

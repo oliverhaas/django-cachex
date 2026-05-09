@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from django_cachex.serializers.json import JSONSerializer
-from django_cachex.serializers.msgpack import MessagePackSerializer
+from django_cachex.serializers.json import JsonSerializer
+from django_cachex.serializers.msgpack import MsgpackSerializer
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -122,7 +122,7 @@ class TestDataTypePersistence:
         assert result == "café résumé"
 
     def test_dictionary_with_datetime(self, cache: RespCache):
-        if isinstance(cache._serializers[0], JSONSerializer | MessagePackSerializer):
+        if isinstance(cache._serializers[0], JsonSerializer | MsgpackSerializer):
             timestamp: str | datetime.datetime = datetime.datetime.now().isoformat()
         else:
             timestamp = datetime.datetime.now()
@@ -712,7 +712,7 @@ class TestAsyncDataTypePersistence:
 
     @pytest.mark.asyncio
     async def test_adictionary_with_datetime(self, cache: RespCache):
-        if isinstance(cache._serializers[0], JSONSerializer | MessagePackSerializer):
+        if isinstance(cache._serializers[0], JsonSerializer | MsgpackSerializer):
             timestamp: str | datetime.datetime = datetime.datetime.now().isoformat()
         else:
             timestamp = datetime.datetime.now()

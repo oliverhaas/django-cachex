@@ -28,7 +28,7 @@ class LockNotOwnedError(LockError):
     """Raised when releasing or extending a lock the caller no longer owns."""
 
 
-class ValkeyLock:
+class Lock:
     """Token-scoped distributed lock backed by ``RedisRsAdapter`` lock primitives.
 
     With ``thread_local=True`` (default) the active token is kept per thread
@@ -89,14 +89,29 @@ class ValkeyLock:
             return None
         return max(1, int(timeout * 1000))
 
-    # ---------------------------------------------------------------- helpers
+    @staticmethod
+    def _coerce_token(token: bytes | str | Any) -> bytes:
+        if isinstance(token, bytes):
+            try:
+                token.decode("ascii")
+            except UnicodeDecodeError as exc:
+                msg = "lock token must be ASCII-safe"
+                raise ValueError(msg) from exc
+            return token
+        if isinstance(token, str):
+            try:
+                return token.encode("ascii")
+            except UnicodeEncodeError as exc:
+                msg = "lock token must be ASCII-safe"
+                raise ValueError(msg) from exc
+        msg = f"token must be bytes or str, got {type(token).__name__}"
+        raise TypeError(msg)
+
+    # ----------------------------------------------------------------- public
 
     def locked(self) -> bool:
         """Return True if the lock key exists. Doesn't check ownership."""
         return self._adapter.has_key(self.name)
-
-    async def alocked(self) -> bool:
-        return await self._adapter.ahas_key(self.name)
 
     def owned(self) -> bool:
         """Return True if this client holds the lock (token still matches)."""
@@ -106,15 +121,6 @@ class ValkeyLock:
         # Bypass stampede prevention so the lock token check sees the raw stored bytes.
         stored = self._adapter.get(self.name, stampede_prevention=False)
         return stored == token
-
-    async def aowned(self) -> bool:
-        token = self.token
-        if token is None:
-            return False
-        stored = await self._adapter.aget(self.name, stampede_prevention=False)
-        return stored == token
-
-    # ----------------------------------------------------------------- sync
 
     def acquire(
         self,
@@ -153,13 +159,7 @@ class ValkeyLock:
             msg = "Cannot release a lock that's no longer owned"
             raise LockNotOwnedError(msg)
 
-    def extend(self, additional_time: float, *, replace_ttl: bool = False) -> bool:
-        if replace_ttl:
-            # The Lua extend script always adds to the existing TTL rather
-            # than replacing it; flag the divergence loudly instead of
-            # silently doing the wrong thing.
-            msg = "ValkeyLock.extend(replace_ttl=True) is not supported"
-            raise NotImplementedError(msg)
+    def extend(self, additional_time: float) -> bool:
         token = self.token
         if token is None:
             msg = "Cannot extend an unlocked lock"
@@ -171,9 +171,41 @@ class ValkeyLock:
             raise LockNotOwnedError(msg)
         return True
 
-    # ---------------------------------------------------------------- async
+    def __enter__(self) -> Self:
+        if self.acquire():
+            return self
+        msg = f"Could not acquire lock {self.name!r}"
+        raise LockError(msg)
 
-    async def aacquire(
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        self.release()
+
+
+class AsyncLock(Lock):
+    """Async-flavored :class:`Lock` — ``acquire``/``release``/``extend``/``locked``/``owned`` are coroutines.
+
+    Mirrors redis-py's async ``Lock`` API. The ``# type: ignore[override]``
+    comments below all stem from the same fact: the sync→async signature
+    change is intentional and not expressible to the type checker. Sync
+    context-manager (``__enter__``) intentionally absent.
+    """
+
+    async def locked(self) -> bool:  # type: ignore[override]
+        return await self._adapter.ahas_key(self.name)
+
+    async def owned(self) -> bool:  # type: ignore[override]
+        token = self.token
+        if token is None:
+            return False
+        stored = await self._adapter.aget(self.name, stampede_prevention=False)
+        return stored == token
+
+    async def acquire(  # type: ignore[override]
         self,
         *,
         blocking: bool | None = None,
@@ -200,7 +232,7 @@ class ValkeyLock:
                 return False
             await asyncio.sleep(self.sleep)
 
-    async def arelease(self) -> None:
+    async def release(self) -> None:  # type: ignore[override]
         token = self.token
         if token is None:
             msg = "Cannot release an unlocked lock"
@@ -211,10 +243,7 @@ class ValkeyLock:
             msg = "Cannot release a lock that's no longer owned"
             raise LockNotOwnedError(msg)
 
-    async def aextend(self, additional_time: float, *, replace_ttl: bool = False) -> bool:
-        if replace_ttl:
-            msg = "ValkeyLock.aextend(replace_ttl=True) is not supported"
-            raise NotImplementedError(msg)
+    async def extend(self, additional_time: float) -> bool:  # type: ignore[override]
         token = self.token
         if token is None:
             msg = "Cannot extend an unlocked lock"
@@ -226,24 +255,8 @@ class ValkeyLock:
             raise LockNotOwnedError(msg)
         return True
 
-    # ---------------------------------------------------------- ctx managers
-
-    def __enter__(self) -> Self:
-        if self.acquire():
-            return self
-        msg = f"Could not acquire lock {self.name!r}"
-        raise LockError(msg)
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        self.release()
-
     async def __aenter__(self) -> Self:
-        if await self.aacquire():
+        if await self.acquire():
             return self
         msg = f"Could not acquire lock {self.name!r}"
         raise LockError(msg)
@@ -254,62 +267,7 @@ class ValkeyLock:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        await self.arelease()
-
-    # ---------------------------------------------------------------- helpers
-
-    @staticmethod
-    def _coerce_token(token: bytes | str | Any) -> bytes:
-        if isinstance(token, bytes):
-            try:
-                token.decode("ascii")
-            except UnicodeDecodeError as exc:
-                msg = "lock token must be ASCII-safe"
-                raise ValueError(msg) from exc
-            return token
-        if isinstance(token, str):
-            try:
-                return token.encode("ascii")
-            except UnicodeEncodeError as exc:
-                msg = "lock token must be ASCII-safe"
-                raise ValueError(msg) from exc
-        msg = f"token must be bytes or str, got {type(token).__name__}"
-        raise TypeError(msg)
+        await self.release()
 
 
-class AsyncValkeyLock(ValkeyLock):
-    """Async-flavored ``ValkeyLock``: ``acquire``/``release``/``extend``/``locked``/``owned`` are coroutines.
-
-    Mirrors redis-py's async ``Lock`` API. The ``# type: ignore[override]``
-    comments below all stem from the same fact: the sync→async signature
-    change is intentional and not expressible to the type checker.
-    Sync context-manager (``__enter__``) intentionally absent.
-    """
-
-    async def acquire(  # type: ignore[override]
-        self,
-        *,
-        blocking: bool | None = None,
-        blocking_timeout: float | None = None,
-        token: bytes | str | None = None,
-    ) -> bool:
-        return await self.aacquire(
-            blocking=blocking,
-            blocking_timeout=blocking_timeout,
-            token=token,
-        )
-
-    async def release(self) -> None:  # type: ignore[override]
-        await self.arelease()
-
-    async def extend(self, additional_time: float, *, replace_ttl: bool = False) -> bool:  # type: ignore[override]
-        return await self.aextend(additional_time, replace_ttl=replace_ttl)
-
-    async def locked(self) -> bool:  # type: ignore[override]
-        return await self.alocked()
-
-    async def owned(self) -> bool:  # type: ignore[override]
-        return await self.aowned()
-
-
-__all__ = ["AsyncValkeyLock", "LockError", "LockNotOwnedError", "ValkeyLock"]
+__all__ = ["AsyncLock", "Lock", "LockError", "LockNotOwnedError"]

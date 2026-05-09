@@ -11,10 +11,12 @@ from django.core.serializers.json import DjangoJSONEncoder
 from django_cachex.serializers.base import BaseSerializer
 
 
-class JSONSerializer(BaseSerializer):
+class JsonSerializer(BaseSerializer):
     """JSON serializer using ``DjangoJSONEncoder`` (handles datetime, UUID, etc.)."""
 
-    encoder_class = DjangoJSONEncoder
+    def __init__(self, *, encoder_class: type[json.JSONEncoder] = DjangoJSONEncoder) -> None:
+        super().__init__()
+        self.encoder_class = encoder_class
 
     def _dumps(self, obj: Any) -> bytes:
         return json.dumps(obj, cls=self.encoder_class).encode()

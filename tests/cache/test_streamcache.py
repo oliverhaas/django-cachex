@@ -51,11 +51,11 @@ def _build_sync_config(
         "default": {
             "BACKEND": "django_cachex.cache.StreamCache",
             "OPTIONS": {
-                "TRANSPORT": "transport",
-                "STREAM_KEY": sk,
+                "transport": "transport",
+                "stream_key": sk,
                 "MAX_ENTRIES": max_entries,
-                "MAXLEN": 10000,
-                "BLOCK_TIMEOUT": 100,
+                "maxlen": 10000,
+                "block_timeout": 100,
             },
         },
     }
@@ -78,7 +78,7 @@ def stream_cache(redis_container: RedisContainerInfo, resp_adapter: str) -> Iter
         redis_container.port,
         resp_adapter=resp_adapter,
     )
-    stream_key = config["default"]["OPTIONS"]["STREAM_KEY"]
+    stream_key = config["default"]["OPTIONS"]["stream_key"]
 
     with override_settings(CACHES=config):
         cache = caches["default"]
@@ -112,23 +112,23 @@ def stream_pair(redis_container: RedisContainerInfo, resp_adapter: str) -> Itera
         "pod1": {
             "BACKEND": "django_cachex.cache.StreamCache",
             "OPTIONS": {
-                "TRANSPORT": "transport",
-                "STREAM_KEY": stream_key,
+                "transport": "transport",
+                "stream_key": stream_key,
                 "_STORAGE_KEY": storage_key_1,
                 "MAX_ENTRIES": 1000,
-                "MAXLEN": 10000,
-                "BLOCK_TIMEOUT": 100,
+                "maxlen": 10000,
+                "block_timeout": 100,
             },
         },
         "pod2": {
             "BACKEND": "django_cachex.cache.StreamCache",
             "OPTIONS": {
-                "TRANSPORT": "transport",
-                "STREAM_KEY": stream_key,
+                "transport": "transport",
+                "stream_key": stream_key,
                 "_STORAGE_KEY": storage_key_2,
                 "MAX_ENTRIES": 1000,
-                "MAXLEN": 10000,
-                "BLOCK_TIMEOUT": 100,
+                "maxlen": 10000,
+                "block_timeout": 100,
             },
         },
     }
@@ -153,7 +153,7 @@ def stream_pair(redis_container: RedisContainerInfo, resp_adapter: str) -> Itera
 
 class TestSyncConfig:
     def test_missing_transport_raises(self):
-        with pytest.raises(ImproperlyConfigured, match="TRANSPORT"):
+        with pytest.raises(ImproperlyConfigured, match="transport"):
             StreamCache("", {"OPTIONS": {}})
 
     def test_default_stream_key(self, redis_container: RedisContainerInfo, resp_adapter: str):
@@ -162,8 +162,8 @@ class TestSyncConfig:
             redis_container.port,
             resp_adapter=resp_adapter,
         )
-        # Remove STREAM_KEY to test default
-        del config["default"]["OPTIONS"]["STREAM_KEY"]
+        # Remove stream_key to test default
+        del config["default"]["OPTIONS"]["stream_key"]
         with override_settings(CACHES=config):
             cache = caches["default"]
             assert cache._stream_key == "cache:sync"
@@ -442,7 +442,7 @@ class TestSyncCull:
             resp_adapter=resp_adapter,
             max_entries=10,
         )
-        stream_key = config["default"]["OPTIONS"]["STREAM_KEY"]
+        stream_key = config["default"]["OPTIONS"]["stream_key"]
 
         with override_settings(CACHES=config):
             cache = caches["default"]
@@ -552,22 +552,22 @@ class TestSyncReplay:
             "producer": {
                 "BACKEND": "django_cachex.cache.StreamCache",
                 "OPTIONS": {
-                    "TRANSPORT": "transport",
-                    "STREAM_KEY": stream_key,
+                    "transport": "transport",
+                    "stream_key": stream_key,
                     "_STORAGE_KEY": storage_key_1,
-                    "MAXLEN": 10000,
-                    "BLOCK_TIMEOUT": 100,
+                    "maxlen": 10000,
+                    "block_timeout": 100,
                 },
             },
             "consumer": {
                 "BACKEND": "django_cachex.cache.StreamCache",
                 "OPTIONS": {
-                    "TRANSPORT": "transport",
-                    "STREAM_KEY": stream_key,
+                    "transport": "transport",
+                    "stream_key": stream_key,
                     "_STORAGE_KEY": storage_key_2,
-                    "MAXLEN": 10000,
-                    "BLOCK_TIMEOUT": 100,
-                    "REPLAY": 100,
+                    "maxlen": 10000,
+                    "block_timeout": 100,
+                    "replay": 100,
                 },
             },
         }
@@ -613,21 +613,21 @@ class TestSyncReplay:
             "producer": {
                 "BACKEND": "django_cachex.cache.StreamCache",
                 "OPTIONS": {
-                    "TRANSPORT": "transport",
-                    "STREAM_KEY": stream_key,
+                    "transport": "transport",
+                    "stream_key": stream_key,
                     "_STORAGE_KEY": storage_key_1,
-                    "MAXLEN": 10000,
-                    "BLOCK_TIMEOUT": 100,
+                    "maxlen": 10000,
+                    "block_timeout": 100,
                 },
             },
             "consumer": {
                 "BACKEND": "django_cachex.cache.StreamCache",
                 "OPTIONS": {
-                    "TRANSPORT": "transport",
-                    "STREAM_KEY": stream_key,
+                    "transport": "transport",
+                    "stream_key": stream_key,
                     "_STORAGE_KEY": storage_key_2,
-                    "MAXLEN": 10000,
-                    "BLOCK_TIMEOUT": 100,
+                    "maxlen": 10000,
+                    "block_timeout": 100,
                     # REPLAY defaults to 0
                 },
             },
@@ -655,7 +655,7 @@ class TestSyncShutdown:
             redis_container.port,
             resp_adapter=resp_adapter,
         )
-        stream_key = config["default"]["OPTIONS"]["STREAM_KEY"]
+        stream_key = config["default"]["OPTIONS"]["stream_key"]
 
         with override_settings(CACHES=config):
             cache = caches["default"]

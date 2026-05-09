@@ -11,31 +11,37 @@ try:
 except PackageNotFoundError:
     __version__ = "0.0.0+unknown"
 
+from django_cachex.adapters.pipeline import AsyncPipeline, Pipeline
 from django_cachex.exceptions import (
     CompressorError,
     NotSupportedError,
     SerializerError,
 )
+from django_cachex.lock import AsyncLock, Lock, LockError, LockNotOwnedError
 from django_cachex.script import (
     ScriptHelpers,
-    decode_list_or_none_post,
     decode_list_post,
     decode_single_post,
     full_encode_pre,
     keys_only_pre,
-    noop_post,
 )
+from django_cachex.stampede import StampedeConfig
 
 __all__ = [
+    "AsyncLock",
+    "AsyncPipeline",
     "CompressorError",
+    "Lock",
+    "LockError",
+    "LockNotOwnedError",
     "NotSupportedError",
+    "Pipeline",
     "ScriptHelpers",
     "SerializerError",
+    "StampedeConfig",
     "__version__",
-    "decode_list_or_none_post",
     "decode_list_post",
     "decode_single_post",
     "full_encode_pre",
     "keys_only_pre",
-    "noop_post",
 ]

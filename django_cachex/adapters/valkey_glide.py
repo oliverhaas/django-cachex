@@ -4,7 +4,7 @@
 Each operation method overrides ``RespAdapterProtocol`` and calls
 ``glide_sync.GlideClient`` / ``glide.GlideClient`` natively. There is
 no redis-py-shaped intermediary for the operation surface — only
-``encode``/``decode``/``_resolve_stampede`` are shared from the base.
+``encode``/``decode``/``resolve_stampede`` are shared from the base.
 
 The pipeline adapter (``ValkeyGlidePipelineAdapter`` / ``ValkeyGlideAsyncPipelineAdapter``)
 implements ``RespPipelineProtocol`` natively against glide's ``Batch``
@@ -555,7 +555,6 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         end: int,
         withscores: bool = False,
         desc: bool = False,
-        score_cast_func: Any = None,
     ) -> Self:
         args = [b"ZRANGE", key, str(start).encode(), str(end).encode()]
         if desc:
@@ -572,7 +571,6 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         start: int,
         end: int,
         withscores: bool = False,
-        score_cast_func: Any = None,
     ) -> Self:
         return self.zrange(key, start, end, withscores=withscores, desc=True)
 
@@ -584,7 +582,6 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         withscores: bool = False,
         start: int | None = None,
         num: int | None = None,
-        score_cast_func: Any = None,
     ) -> Self:
         args = [b"ZRANGEBYSCORE", key, _enc(mn), _enc(mx)]
         if withscores:
@@ -603,7 +600,6 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         withscores: bool = False,
         start: int | None = None,
         num: int | None = None,
-        score_cast_func: Any = None,
     ) -> Self:
         args = [b"ZREVRANGEBYSCORE", key, _enc(mx), _enc(mn)]
         if withscores:
@@ -688,8 +684,8 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         self._batch.custom_command(args)
         return self
 
-    def lmove(self, src: Any, dst: Any, src_dir: str, dst_dir: str) -> Self:
-        self._batch.custom_command([b"LMOVE", src, dst, _enc(src_dir.upper()), _enc(dst_dir.upper())])
+    def lmove(self, src: Any, dst: Any, wherefrom: str, whereto: str) -> Self:
+        self._batch.custom_command([b"LMOVE", src, dst, _enc(wherefrom.upper()), _enc(whereto.upper())])
         return self
 
     # ---- streams (via custom_command for everything that's not single-response) ----
@@ -918,10 +914,10 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         self._stampede_config: StampedeConfig | None = make_stampede_config(options.get("stampede_prevention"))
         self._config_key = _glide_config_key(servers, options)
 
-    def _resolve_stampede(self, stampede_prevention: bool | dict | None = None) -> StampedeConfig | None:
+    def resolve_stampede(self, stampede_prevention: bool | dict | None = None) -> StampedeConfig | None:
         return resolve_stampede(self._stampede_config, stampede_prevention)
 
-    def _get_timeout_with_buffer(
+    def get_timeout_with_buffer(
         self,
         timeout: int | None,
         stampede_prevention: bool | dict | None = None,
@@ -993,7 +989,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     ) -> bool:
         client = self._client()
         nvalue = value
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             result = client.set(
@@ -1016,7 +1012,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         val = client.get(key)
         if val is None:
             return None
-        config = self._resolve_stampede(stampede_prevention)
+        config = self.resolve_stampede(stampede_prevention)
         if config and isinstance(val, bytes):
             ttl = client.ttl(key)
             if ttl > 0 and should_recompute(ttl, config):
@@ -1033,7 +1029,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     ) -> None:
         client = self._client()
         nvalue = value
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             client.delete([key])
@@ -1055,7 +1051,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     ) -> bool | Any:
         client = self._client()
         nvalue = value
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             return None if get else False
@@ -1093,7 +1089,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         results = client.mget(keys)
         found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
-        config = self._resolve_stampede(stampede_prevention)
+        config = self.resolve_stampede(stampede_prevention)
         if config and found:
             stampede_keys = [k for k, v in found.items() if isinstance(v, bytes)]
             if stampede_keys:
@@ -1133,7 +1129,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             return []
         client = self._client()
         prepared = {k: _enc(v) for k, v in data.items()}
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             client.delete(list(prepared.keys()))
@@ -1435,7 +1431,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         end: int,
         withscores: bool = False,
         desc: bool = False,
-        score_cast_func: Any = None,
     ) -> list:
         args = [b"ZRANGE", key, str(start).encode(), str(end).encode()]
         if desc:
@@ -1451,7 +1446,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         start: int,
         end: int,
         withscores: bool = False,
-        score_cast_func: Any = None,
     ) -> list:
         return self.zrange(key, start, end, withscores=withscores, desc=True)
 
@@ -1463,7 +1457,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         withscores: bool = False,
         start: int | None = None,
         num: int | None = None,
-        score_cast_func: Any = None,
     ) -> list:
         args = [b"ZRANGEBYSCORE", key, _enc(mn), _enc(mx)]
         if withscores:
@@ -1480,7 +1473,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         withscores: bool = False,
         start: int | None = None,
         num: int | None = None,
-        score_cast_func: Any = None,
     ) -> list:
         args = [b"ZREVRANGEBYSCORE", key, _enc(mx), _enc(mn)]
         if withscores:
@@ -1561,8 +1553,8 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.extend([b"MAXLEN", str(maxlen).encode()])
         return self._client().custom_command(args)
 
-    def lmove(self, src: str, dst: str, src_dir: str, dst_dir: str) -> Any:
-        v = self._client().custom_command([b"LMOVE", src, dst, _enc(src_dir.upper()), _enc(dst_dir.upper())])
+    def lmove(self, src: str, dst: str, wherefrom: str, whereto: str) -> Any:
+        v = self._client().custom_command([b"LMOVE", src, dst, _enc(wherefrom.upper()), _enc(whereto.upper())])
         return None if v is None else v
 
     def blmove(self, src: str, dst: str, timeout: float, wherefrom: str = "LEFT", whereto: str = "RIGHT") -> Any:
@@ -1934,7 +1926,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     ) -> bool:
         client = await self.get_async_client()
         nvalue = value
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             result = await client.set(
@@ -1957,7 +1949,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         val = await client.get(key)
         if val is None:
             return None
-        config = self._resolve_stampede(stampede_prevention)
+        config = self.resolve_stampede(stampede_prevention)
         if config and isinstance(val, bytes):
             ttl = await client.ttl(key)
             if ttl > 0 and should_recompute(ttl, config):
@@ -1974,7 +1966,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     ) -> None:
         client = await self.get_async_client()
         nvalue = value
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             await client.delete([key])
@@ -1996,7 +1988,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     ) -> bool | Any:
         client = await self.get_async_client()
         nvalue = value
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             return None if get else False
@@ -2039,7 +2031,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         results = await client.mget(keys)
         found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
-        config = self._resolve_stampede(stampede_prevention)
+        config = self.resolve_stampede(stampede_prevention)
         if config and found:
             stampede_keys = [k for k, v in found.items() if isinstance(v, bytes)]
             if stampede_keys:
@@ -2079,7 +2071,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             return []
         client = await self.get_async_client()
         prepared = {k: _enc(v) for k, v in data.items()}
-        actual_timeout = self._get_timeout_with_buffer(timeout, stampede_prevention)
+        actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             await client.delete(list(prepared.keys()))
@@ -2387,7 +2379,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         end: int,
         withscores: bool = False,
         desc: bool = False,
-        score_cast_func: Any = None,
     ) -> list:
         args = [b"ZRANGE", key, str(start).encode(), str(end).encode()]
         if desc:
@@ -2406,7 +2397,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         start: int,
         end: int,
         withscores: bool = False,
-        score_cast_func: Any = None,
     ) -> list:
         return await self.azrange(key, start, end, withscores=withscores, desc=True)
 
@@ -2418,7 +2408,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         withscores: bool = False,
         start: int | None = None,
         num: int | None = None,
-        score_cast_func: Any = None,
     ) -> list:
         args = [b"ZRANGEBYSCORE", key, _enc(mn), _enc(mx)]
         if withscores:
@@ -2439,7 +2428,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         withscores: bool = False,
         start: int | None = None,
         num: int | None = None,
-        score_cast_func: Any = None,
     ) -> list:
         args = [b"ZREVRANGEBYSCORE", key, _enc(mx), _enc(mn)]
         if withscores:
@@ -2524,9 +2512,9 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.extend([b"MAXLEN", str(maxlen).encode()])
         return await (await self.get_async_client()).custom_command(args)
 
-    async def almove(self, src: str, dst: str, src_dir: str, dst_dir: str) -> Any:
+    async def almove(self, src: str, dst: str, wherefrom: str, whereto: str) -> Any:
         v = await (await self.get_async_client()).custom_command(
-            [b"LMOVE", src, dst, _enc(src_dir.upper()), _enc(dst_dir.upper())],
+            [b"LMOVE", src, dst, _enc(wherefrom.upper()), _enc(whereto.upper())],
         )
         return None if v is None else v
 

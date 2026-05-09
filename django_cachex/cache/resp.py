@@ -465,7 +465,7 @@ class RespCache(BaseCachex):
         if val is self._missing_key:
             if callable(default):
                 default = default()
-            if self.adapter._resolve_stampede(stampede_prevention):
+            if self.adapter.resolve_stampede(stampede_prevention):
                 # Stampede may return "miss" for a key that still physically exists.
                 # Use set() (unconditional write) instead of add() (NX) so the
                 # recomputed value actually overwrites the stale key.
@@ -493,7 +493,7 @@ class RespCache(BaseCachex):
         if val is self._missing_key:
             if callable(default):
                 default = await default() if inspect.iscoroutinefunction(default) else default()
-            if self.adapter._resolve_stampede(stampede_prevention):
+            if self.adapter.resolve_stampede(stampede_prevention):
                 await self.aset(key, default, timeout=timeout, version=version, stampede_prevention=stampede_prevention)
             else:
                 await self.aadd(key, default, timeout=timeout, version=version)

@@ -10,7 +10,7 @@ CACHES = {
         "BACKEND": "django_cachex.cache.ValkeyCache",
         "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
-            "serializer": "django_cachex.serializers.json.JSONSerializer",
+            "serializer": "django_cachex.serializers.json.JsonSerializer",
         }
     }
 }
@@ -21,10 +21,10 @@ CACHES = {
 | Serializer | Description | Extra |
 |------------|-------------|-------|
 | `django_cachex.serializers.pickle.PickleSerializer` | Python pickle (default); supports nearly all Python types | — |
-| `django_cachex.serializers.json.JSONSerializer` | JSON via Django's `DjangoJSONEncoder` (broadest Django type coverage of the JSON family) | — |
-| `django_cachex.serializers.msgpack.MessagePackSerializer` | Pure-Python MessagePack; compact binary format | `msgpack` |
+| `django_cachex.serializers.json.JsonSerializer` | JSON via Django's `DjangoJSONEncoder` (broadest Django type coverage of the JSON family) | — |
+| `django_cachex.serializers.msgpack.MsgpackSerializer` | Pure-Python MessagePack; compact binary format | `msgpack` |
 | `django_cachex.serializers.orjson.OrjsonSerializer` | Rust-backed JSON; fewer types than `DjangoJSONEncoder` | `orjson` |
-| `django_cachex.serializers.ormsgpack.OrMessagePackSerializer` | Rust-backed MessagePack | `ormsgpack` |
+| `django_cachex.serializers.ormsgpack.OrmsgpackSerializer` | Rust-backed MessagePack | `ormsgpack` |
 
 Install optional serializers via the matching extra:
 
@@ -80,7 +80,7 @@ Specify a list of serializers to safely migrate between formats. The first is us
 ```python
 "OPTIONS": {
     "serializer": [
-        "django_cachex.serializers.json.JSONSerializer",     # Write with new format
+        "django_cachex.serializers.json.JsonSerializer",     # Write with new format
         "django_cachex.serializers.pickle.PickleSerializer", # Read old format
     ],
 }

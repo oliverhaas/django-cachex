@@ -3,9 +3,9 @@ import pickle
 import pytest
 
 from django_cachex.exceptions import SerializerError
-from django_cachex.serializers.json import JSONSerializer
-from django_cachex.serializers.msgpack import MessagePackSerializer
-from django_cachex.serializers.ormsgpack import OrMessagePackSerializer
+from django_cachex.serializers.json import JsonSerializer
+from django_cachex.serializers.msgpack import MsgpackSerializer
+from django_cachex.serializers.ormsgpack import OrmsgpackSerializer
 from django_cachex.serializers.pickle import PickleSerializer
 
 try:
@@ -14,16 +14,16 @@ except ImportError:
     OrjsonSerializer = None  # type: ignore[assignment,misc]
 
 
-class TestJSONSerializer:
+class TestJsonSerializer:
     def test_basic_roundtrip(self):
-        serializer = JSONSerializer()
+        serializer = JsonSerializer()
         data = {"key": "value", "number": 42, "nested": {"list": [1, 2, 3]}}
         encoded = serializer.dumps(data)
         decoded = serializer.loads(encoded)
         assert decoded == data
 
     def test_regular_string_not_modified(self):
-        serializer = JSONSerializer()
+        serializer = JsonSerializer()
         data = {"message": "Hello world", "code": "ABC-123"}
         encoded = serializer.dumps(data)
         decoded = serializer.loads(encoded)
@@ -47,9 +47,9 @@ class TestPickleSerializer:
             serializer.dumps({"x": 1})
 
 
-class TestMessagePackSerializer:
+class TestMsgpackSerializer:
     def test_basic_roundtrip(self):
-        serializer = MessagePackSerializer()
+        serializer = MsgpackSerializer()
         data = {"key": "value", "number": 42, "nested": {"list": [1, 2, 3]}}
         encoded = serializer.dumps(data)
         assert isinstance(encoded, bytes)
@@ -58,39 +58,39 @@ class TestMessagePackSerializer:
 
     def test_loads_int_passthrough(self):
         """Int values are passed through unchanged (for Redis INCR results)."""
-        serializer = MessagePackSerializer()
+        serializer = MsgpackSerializer()
         assert serializer.loads(42) == 42
 
     def test_loads_invalid_data_raises_serializer_error(self):
-        serializer = MessagePackSerializer()
+        serializer = MsgpackSerializer()
         with pytest.raises(SerializerError):
             serializer.loads(b"\xff\xfe\xfd")  # Invalid msgpack data
 
     def test_bytes_roundtrip(self):
-        serializer = MessagePackSerializer()
+        serializer = MsgpackSerializer()
         data = b"binary data"
         encoded = serializer.dumps(data)
         decoded = serializer.loads(encoded)
         assert decoded == data
 
     def test_none_roundtrip(self):
-        serializer = MessagePackSerializer()
+        serializer = MsgpackSerializer()
         encoded = serializer.dumps(None)
         decoded = serializer.loads(encoded)
         assert decoded is None
 
     def test_non_string_key_dict_roundtrip(self):
         """Dicts with non-string keys (e.g. int) must roundtrip correctly."""
-        serializer = MessagePackSerializer()
+        serializer = MsgpackSerializer()
         data = {1: "a", 2: "b"}
         encoded = serializer.dumps(data)
         decoded = serializer.loads(encoded)
         assert decoded == data
 
 
-class TestOrMessagePackSerializer:
+class TestOrmsgpackSerializer:
     def test_basic_roundtrip(self):
-        serializer = OrMessagePackSerializer()
+        serializer = OrmsgpackSerializer()
         data = {"key": "value", "number": 42, "nested": {"list": [1, 2, 3]}}
         encoded = serializer.dumps(data)
         assert isinstance(encoded, bytes)
@@ -98,16 +98,16 @@ class TestOrMessagePackSerializer:
         assert decoded == data
 
     def test_loads_int_passthrough(self):
-        serializer = OrMessagePackSerializer()
+        serializer = OrmsgpackSerializer()
         assert serializer.loads(42) == 42
 
     def test_loads_invalid_data_raises_serializer_error(self):
-        serializer = OrMessagePackSerializer()
+        serializer = OrmsgpackSerializer()
         with pytest.raises(SerializerError):
             serializer.loads(b"\xc1")  # reserved byte in msgpack spec
 
     def test_none_roundtrip(self):
-        serializer = OrMessagePackSerializer()
+        serializer = OrmsgpackSerializer()
         encoded = serializer.dumps(None)
         decoded = serializer.loads(encoded)
         assert decoded is None

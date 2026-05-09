@@ -111,7 +111,7 @@ CACHES = {
         "KEY_FUNCTION": "full.settings.passthrough_key",
         "OPTIONS": {
             "reverse_key_function": "full.settings.passthrough_reverse_key",
-            "serializer": "django_cachex.serializers.json.JSONSerializer",
+            "serializer": "django_cachex.serializers.json.JsonSerializer",
         },
     },
     # -------------------------------------------------------------------------
@@ -147,10 +147,10 @@ CACHES = {
     "sync": {
         "BACKEND": "django_cachex.cache.StreamCache",
         "OPTIONS": {
-            "TRANSPORT": "stream_transport",
-            "STREAM_KEY": "cache:sync",
-            "MAXLEN": 10000,
-            "BLOCK_TIMEOUT": 1000,
+            "transport": "stream_transport",
+            "stream_key": "cache:sync",
+            "maxlen": 10000,
+            "block_timeout": 1000,
         },
     },
     # Dedicated transport for StreamCache (same Redis server, separate db)

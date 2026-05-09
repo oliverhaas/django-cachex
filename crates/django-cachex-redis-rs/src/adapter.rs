@@ -1079,9 +1079,9 @@ impl RedisRsAdapter {
     //
     // Distributed lock built on Lua scripts — atomic acquire / release /
     // extend keyed by an adapter-owned token. Called from the Python
-    // ``ValkeyLock`` / ``AsyncValkeyLock`` wrappers (see
-    // ``django_cachex.lock``); the wrappers handle blocking, retry, and
-    // context-manager semantics on top of these primitives.
+    // ``Lock`` / ``AsyncLock`` wrappers (see ``django_cachex.lock``); the
+    // wrappers handle blocking, retry, and context-manager semantics on
+    // top of these primitives.
     // =====================================================================
 
     #[pyo3(signature = (key, token, timeout_ms=None))]
@@ -1169,7 +1169,7 @@ impl RedisRsAdapter {
     /// instance config — returns the effective ``StampedeConfig`` or ``None``.
     /// Used by :class:`RespCache` to decide whether the per-call buffer applies.
     #[pyo3(signature = (stampede_prevention=None))]
-    fn _resolve_stampede(
+    fn resolve_stampede(
         slf: &Bound<'_, Self>,
         stampede_prevention: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Py<PyAny>> {
@@ -1180,7 +1180,7 @@ impl RedisRsAdapter {
 
     /// Add the stampede buffer to ``timeout`` when prevention is enabled.
     #[pyo3(signature = (timeout, stampede_prevention=None))]
-    fn _get_timeout_with_buffer(
+    fn get_timeout_with_buffer(
         slf: &Bound<'_, Self>,
         timeout: Option<i64>,
         stampede_prevention: Option<&Bound<'_, PyAny>>,
@@ -3748,13 +3748,13 @@ impl RedisRsAdapter {
         kwargs.set_item("thread_local", thread_local)?;
         Ok(py
             .import("django_cachex.lock")?
-            .getattr("ValkeyLock")?
+            .getattr("Lock")?
             .call((slf.clone(), key), Some(&kwargs))?
             .unbind())
     }
 
     // ``alock`` is async by Protocol contract; return a pre-resolved
-    // awaitable that delivers the constructed AsyncValkeyLock. The lock
+    // awaitable that delivers the constructed AsyncLock. The lock
     // itself does its acquire I/O lazily on ``__aenter__`` / ``acquire()``.
     #[pyo3(signature = (key, timeout=None, sleep=0.1, *, blocking=true, blocking_timeout=None, thread_local=true))]
     fn alock(
@@ -3775,7 +3775,7 @@ impl RedisRsAdapter {
         kwargs.set_item("thread_local", thread_local)?;
         let lock = py
             .import("django_cachex.lock")?
-            .getattr("AsyncValkeyLock")?
+            .getattr("AsyncLock")?
             .call((slf.clone(), key), Some(&kwargs))?
             .unbind();
         await_constant(py, lock)

@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from django_cachex.exceptions import SerializerError
-from django_cachex.serializers.json import JSONSerializer
+from django_cachex.serializers.json import JsonSerializer
 from django_cachex.serializers.pickle import PickleSerializer
 
 
@@ -39,13 +39,13 @@ class TestDefaultClientSerializerConfig:
     def test_list_config_with_fallback(self, redis_container):
         cache = _make_cache(
             serializer=[
-                "django_cachex.serializers.json.JSONSerializer",
+                "django_cachex.serializers.json.JsonSerializer",
                 "django_cachex.serializers.pickle.PickleSerializer",
             ],
         )
 
         assert len(cache._serializers) == 2
-        assert cache._serializers[0].__class__.__name__ == "JSONSerializer"
+        assert cache._serializers[0].__class__.__name__ == "JsonSerializer"
         assert cache._serializers[1].__class__.__name__ == "PickleSerializer"
 
     def test_migration_scenario(self, redis_container):
@@ -77,7 +77,7 @@ class TestDefaultClientSerializerConfig:
                 "LOCATION": f"redis://{host}:{port}?db=10",
                 "OPTIONS": {
                     "serializer": [
-                        "django_cachex.serializers.json.JSONSerializer",
+                        "django_cachex.serializers.json.JsonSerializer",
                         "django_cachex.serializers.pickle.PickleSerializer",
                     ],
                 },
@@ -104,7 +104,7 @@ class TestDeserializeFallback:
     def test_deserialize_json_with_multiple_serializers(self, redis_container):
         cache = _make_cache(
             serializer=[
-                "django_cachex.serializers.json.JSONSerializer",
+                "django_cachex.serializers.json.JsonSerializer",
                 "django_cachex.serializers.pickle.PickleSerializer",
             ],
         )
@@ -115,7 +115,7 @@ class TestDeserializeFallback:
     def test_deserialize_pickle_with_json_first(self, redis_container):
         cache = _make_cache(
             serializer=[
-                "django_cachex.serializers.json.JSONSerializer",
+                "django_cachex.serializers.json.JsonSerializer",
                 "django_cachex.serializers.pickle.PickleSerializer",
             ],
         )
@@ -126,7 +126,7 @@ class TestDeserializeFallback:
 
     def test_deserialize_raises_when_all_fail(self, redis_container):
         """Test that _deserialize raises SerializerError when all serializers fail."""
-        cache = _make_cache(serializer=["django_cachex.serializers.json.JSONSerializer"])
+        cache = _make_cache(serializer=["django_cachex.serializers.json.JsonSerializer"])
         # Invalid data that can't be deserialized as JSON
         invalid_data = b"\x80\x04\x95\x00\x00\x00\x00"  # Pickle header, not JSON
         with pytest.raises(SerializerError):
@@ -135,7 +135,7 @@ class TestDeserializeFallback:
     def test_deserialize_continues_on_failure(self, redis_container):
         cache = _make_cache(
             serializer=[
-                "django_cachex.serializers.json.JSONSerializer",
+                "django_cachex.serializers.json.JsonSerializer",
                 "django_cachex.serializers.pickle.PickleSerializer",
             ],
         )
@@ -156,13 +156,13 @@ class TestSerializerError:
             serializer.loads(b"not valid pickle data")
 
     def test_json_raises_serializer_error_on_invalid_data(self):
-        """Test that JSONSerializer raises SerializerError on invalid data."""
-        serializer = JSONSerializer()
+        """Test that JsonSerializer raises SerializerError on invalid data."""
+        serializer = JsonSerializer()
         with pytest.raises(SerializerError):
             serializer.loads(b"not valid json data")
 
     def test_json_raises_serializer_error_on_invalid_utf8(self):
-        """Test that JSONSerializer raises SerializerError on invalid UTF-8."""
-        serializer = JSONSerializer()
+        """Test that JsonSerializer raises SerializerError on invalid UTF-8."""
+        serializer = JsonSerializer()
         with pytest.raises(SerializerError):
             serializer.loads(b"\xff\xfe")  # Invalid UTF-8

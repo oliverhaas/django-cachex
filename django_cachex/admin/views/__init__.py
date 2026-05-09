@@ -1,7 +1,6 @@
 """Views for the django-cachex cache admin."""
 
 from .base import (
-    ADMIN_CONFIG,
     ViewConfig,
     cache_list_url,
     format_value_for_display,
@@ -16,7 +15,6 @@ from .key_add import _key_add_view
 from .key_detail import _key_detail_view
 
 __all__ = [
-    "ADMIN_CONFIG",
     "ViewConfig",
     "_cache_detail_view",
     "_key_add_view",

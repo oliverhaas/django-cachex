@@ -5,7 +5,7 @@ import ormsgpack
 from django_cachex.serializers.base import BaseSerializer
 
 
-class OrMessagePackSerializer(BaseSerializer):
+class OrmsgpackSerializer(BaseSerializer):
     """MessagePack serializer backed by ormsgpack (Rust)."""
 
     def _dumps(self, obj: Any) -> bytes:

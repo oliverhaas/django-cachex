@@ -49,28 +49,19 @@ def key_add_url(cache_name: str) -> str:
 # =============================================================================
 
 
-class ViewConfig:
-    """Configuration for cache admin views, supporting Django admin and alternative themes."""
+_TEMPLATE_PREFIX = "admin/django_cachex"
 
-    def __init__(
-        self,
-        template_prefix: str = "admin/django_cachex",
-        template_overrides: dict[str, str] | None = None,
-        help_messages: dict[str, str] | None = None,
-    ):
-        self.template_prefix = template_prefix.rstrip("/")
-        self.template_overrides = template_overrides or {}
+
+class ViewConfig:
+    """Per-admin context passed into cache admin views (just help messages today)."""
+
+    def __init__(self, help_messages: dict[str, str] | None = None) -> None:
         self.help_messages = help_messages or {}
 
-    def template(self, name: str) -> str:
-        """Get the full template path for a template name."""
-        if name in self.template_overrides:
-            return f"{self.template_prefix}/{self.template_overrides[name]}"
-        return f"{self.template_prefix}/{name}"
-
-
-# Default configuration for standard Django admin
-ADMIN_CONFIG = ViewConfig(template_prefix="admin/django_cachex")
+    @staticmethod
+    def template(name: str) -> str:
+        """Resolve a template path under the cachex admin namespace."""
+        return f"{_TEMPLATE_PREFIX}/{name}"
 
 
 # =============================================================================

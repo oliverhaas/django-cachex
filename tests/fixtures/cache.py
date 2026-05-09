@@ -24,8 +24,8 @@ COMPRESSORS = {
 # Available serializers (None means default pickle)
 SERIALIZERS = {
     None: None,
-    "json": "django_cachex.serializers.json.JSONSerializer",
-    "msgpack": "django_cachex.serializers.msgpack.MessagePackSerializer",
+    "json": "django_cachex.serializers.json.JsonSerializer",
+    "msgpack": "django_cachex.serializers.msgpack.MsgpackSerializer",
 }
 
 # Available cache backends keyed by (topology, resp_adapter).

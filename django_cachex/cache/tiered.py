@@ -22,13 +22,13 @@ Configuration::
         "default": {
             "BACKEND": "django_cachex.cache.TieredCache",
             "OPTIONS": {
-                "TIERS": ["l1", "l2"],
-                "L1_TIMEOUT": 5,
+                "tiers": ["l1", "l2"],
+                "l1_timeout": 5,
             },
         },
     }
 
-``L1_TIMEOUT`` caps how long entries live in L1. If omitted, falls back
+``l1_timeout`` caps how long entries live in L1. If omitted, falls back
 to L1's own ``TIMEOUT`` setting.
 """
 
@@ -60,16 +60,16 @@ class TieredCache(BaseCache):
     def __init__(self, server: str, params: dict[str, Any]) -> None:
         super().__init__(params)
         options = params.get("OPTIONS", {})
-        tiers = options.get("TIERS")
+        tiers = options.get("tiers")
         if not tiers or len(tiers) != 2:
             msg = (
-                f"TieredCache requires OPTIONS['TIERS'] with exactly 2 cache aliases, e.g. ['l1', 'l2']. Got: {tiers!r}"
+                f"TieredCache requires OPTIONS['tiers'] with exactly 2 cache aliases, e.g. ['l1', 'l2']. Got: {tiers!r}"
             )
             raise ImproperlyConfigured(msg)
         self._l1_alias: str = tiers[0]
         self._l2_alias: str = tiers[1]
         # L1 TTL cap: explicit option or fall back to L1's own default_timeout
-        self._l1_max_timeout: float | None = options.get("L1_TIMEOUT")
+        self._l1_max_timeout: float | None = options.get("l1_timeout")
 
     @cached_property
     def _l1(self) -> BaseCache:

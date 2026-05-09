@@ -52,13 +52,3 @@ def decode_list_post(helpers: ScriptHelpers, result: Any) -> list[Any]:
     if result is None:
         return []
     return helpers.decode_values(result)
-
-
-def decode_list_or_none_post(helpers: ScriptHelpers, result: Any) -> list[Any] | None:
-    if result is None:
-        return None
-    return helpers.decode_values(result)
-
-
-def noop_post(_helpers: ScriptHelpers, result: Any) -> Any:
-    return result
