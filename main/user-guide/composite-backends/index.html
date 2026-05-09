@@ -993,6 +993,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/changelog/" class="md-nav__link">
         
   
@@ -1193,11 +1221,11 @@
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.StreamCache&quot;</span><span class="p">,</span>
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>        <span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>            <span class="s2">&quot;TRANSPORT&quot;</span><span class="p">:</span> <span class="s2">&quot;redis&quot;</span><span class="p">,</span>   <span class="c1"># alias of any cachex RespCache subclass</span>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>            <span class="s2">&quot;STREAM_KEY&quot;</span><span class="p">:</span> <span class="s2">&quot;cache:sync&quot;</span><span class="p">,</span>
-</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>            <span class="s2">&quot;MAXLEN&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">,</span>        <span class="c1"># approximate trim</span>
-</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>            <span class="s2">&quot;BLOCK_TIMEOUT&quot;</span><span class="p">:</span> <span class="mi">1000</span><span class="p">,</span>  <span class="c1"># XREAD BLOCK timeout, ms</span>
-</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>            <span class="s2">&quot;REPLAY&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>            <span class="c1"># entries to replay on startup; 0 disables</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>            <span class="s2">&quot;transport&quot;</span><span class="p">:</span> <span class="s2">&quot;redis&quot;</span><span class="p">,</span>   <span class="c1"># alias of any cachex RespCache subclass</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>            <span class="s2">&quot;stream_key&quot;</span><span class="p">:</span> <span class="s2">&quot;cache:sync&quot;</span><span class="p">,</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>            <span class="s2">&quot;maxlen&quot;</span><span class="p">:</span> <span class="mi">10000</span><span class="p">,</span>        <span class="c1"># approximate trim</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>            <span class="s2">&quot;block_timeout&quot;</span><span class="p">:</span> <span class="mi">1000</span><span class="p">,</span>  <span class="c1"># XREAD BLOCK timeout, ms</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>            <span class="s2">&quot;replay&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>            <span class="c1"># entries to replay on startup; 0 disables</span>
 </span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>        <span class="p">},</span>
 </span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="p">},</span>
 </span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="p">}</span>
@@ -1226,8 +1254,8 @@
 </span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.TieredCache&quot;</span><span class="p">,</span>
 </span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>        <span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>            <span class="s2">&quot;TIERS&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;l1&quot;</span><span class="p">,</span> <span class="s2">&quot;l2&quot;</span><span class="p">],</span>
-</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>            <span class="s2">&quot;L1_TIMEOUT&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span>    <span class="c1"># cap for how long entries live in L1</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>            <span class="s2">&quot;tiers&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;l1&quot;</span><span class="p">,</span> <span class="s2">&quot;l2&quot;</span><span class="p">],</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>            <span class="s2">&quot;l1_timeout&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span>    <span class="c1"># cap for how long entries live in L1</span>
 </span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>        <span class="p">},</span>
 </span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>    <span class="p">},</span>
 </span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="p">}</span>

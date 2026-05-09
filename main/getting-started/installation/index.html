@@ -448,6 +448,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#valkey-glide-adapter-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Valkey-Glide adapter (optional)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -948,6 +959,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/changelog/" class="md-nav__link">
         
   
@@ -1046,6 +1085,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#valkey-glide-adapter-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Valkey-Glide adapter (optional)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1104,6 +1154,18 @@ Rust toolchain. Drop the <code>redis-rs</code> extra to avoid that.</p>
 <p>When the binary isn't installed, <code>RedisRsCache</code>
 classes are still importable but raise a clean <code>ImportError</code> on first
 use, naming the extra you need.</p>
+<h2 id="valkey-glide-adapter-optional">Valkey-Glide adapter (optional)<a class="headerlink" href="#valkey-glide-adapter-optional" title="Permanent link">&para;</a></h2>
+<p>The <code>ValkeyGlideCache</code> backend wraps Valkey's official client,
+<a href="https://github.com/valkey-io/valkey-glide">valkey-glide</a>. It's a Rust core (like <code>redis-rs</code>) but packaged separately
+through PyPI as two distributions — <code>valkey-glide-sync</code> and <code>valkey-glide</code>
+— pulled in together via the <code>valkey-glide</code> extra:</p>
+<div class="language-console highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="go">uv add django-cachex[valkey-glide]</span>
+</span></code></pre></div>
+<p>cp314 GIL only — no cp314t (free-threaded) wheels are published yet.
+Cluster and Sentinel variants aren't currently exposed; only the standalone
+<code>ValkeyGlideCache</code> class is wired up. See the
+<a href="../../user-guide/configuration/#valkey-glide">user-guide configuration page</a>
+for setup details.</p>
 
 
 

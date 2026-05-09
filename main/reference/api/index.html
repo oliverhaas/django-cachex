@@ -16,7 +16,7 @@
         <link rel="prev" href="../../migration/">
       
       
-        <link rel="next" href="../changelog/">
+        <link rel="next" href="../benchmarks/">
       
       
         
@@ -1187,6 +1187,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../changelog/" class="md-nav__link">
         
   
@@ -2134,16 +2162,9 @@
 <td><code>decode_list_post</code></td>
 <td>Decode a list of returned values</td>
 </tr>
-<tr>
-<td><code>decode_list_or_none_post</code></td>
-<td>Decode list or return None</td>
-</tr>
-<tr>
-<td><code>noop_post</code></td>
-<td>Return result unchanged</td>
-</tr>
 </tbody>
 </table>
+<p>Pass <code>post_hook=None</code> (the default) when no decoding is needed.</p>
 <h4 id="scripthelpers">ScriptHelpers<a class="headerlink" href="#scripthelpers" title="Permanent link">&para;</a></h4>
 <p>The helpers object passed to pre/post hooks:</p>
 <table>
@@ -2257,7 +2278,42 @@
 </tr>
 </tbody>
 </table>
-<p>Returns the underlying <code>valkey.Valkey</code> or <code>redis.Redis</code> client instance.</p>
+<p>Returns the underlying client object. The concrete type depends on which
+adapter is configured:</p>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th><code>get_client()</code> returns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ValkeyCache</code> (<code>valkey-py</code>)</td>
+<td><code>valkey.Valkey</code></td>
+</tr>
+<tr>
+<td><code>RedisCache</code> (<code>redis-py</code>)</td>
+<td><code>redis.Redis</code></td>
+</tr>
+<tr>
+<td><code>RedisRsCache</code> (<code>redis-rs</code>)</td>
+<td><code>django_cachex.adapters.RedisRsAdapter</code> (the adapter is its own multiplexed client)</td>
+</tr>
+<tr>
+<td><code>ValkeyGlideCache</code> (<code>valkey-glide</code>)</td>
+<td><code>glide_sync.GlideClient</code></td>
+</tr>
+</tbody>
+</table>
+<p>The four objects expose comparable command surfaces but are not
+interchangeable types — code that pins to one adapter for type-narrowing
+or vendor-specific calls won't work against the others. For
+adapter-portable code use the cache API directly; reach for
+<code>get_client()</code> only as an escape hatch, since it bypasses the configured
+key prefix, version, serializer, and compressor.</p>
+<p>The async equivalent is <code>get_async_client()</code>, which is <code>async def</code> and
+returns the adapter's async client.</p>
 <h2 id="lock-interface">Lock Interface<a class="headerlink" href="#lock-interface" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sleep</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">blocking_timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 </span></code></pre></div>
@@ -2355,11 +2411,7 @@
 </tr>
 </tbody>
 </table>
-<p><code>clear()</code> is safe when multiple apps share a Redis database. Use <code>flush_db()</code> only when this cache has a dedicated database.</p>
-<div class="admonition warning">
-<p class="admonition-title">Breaking change</p>
-<p>Pre-1.0 versions of django-cachex implemented <code>clear()</code> as <code>FLUSHDB</code>. The current scoped behaviour is the safer default; callers that need the old wipe-everything semantics must call <code>flush_db()</code> explicitly.</p>
-</div>
+<p><code>clear()</code> is safe when multiple apps share a Redis database. Use <code>flush_db()</code> only when you really want to flush the whole database and not the configured Django namespace.</p>
 <h2 id="settings-reference">Settings Reference<a class="headerlink" href="#settings-reference" title="Permanent link">&para;</a></h2>
 <h3 id="cache-options">Cache OPTIONS<a class="headerlink" href="#cache-options" title="Permanent link">&para;</a></h3>
 <table>

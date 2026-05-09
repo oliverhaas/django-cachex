@@ -1303,6 +1303,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/changelog/" class="md-nav__link">
         
   
@@ -1953,7 +1981,7 @@
 </span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
 </span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="c1"># Or with fallback for migration</span>
 </span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="s2">&quot;serializer&quot;</span><span class="p">:</span> <span class="p">[</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>        <span class="s2">&quot;django_cachex.serializers.msgpack.MessagePackSerializer&quot;</span><span class="p">,</span>  <span class="c1"># Write</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>        <span class="s2">&quot;django_cachex.serializers.msgpack.MsgpackSerializer&quot;</span><span class="p">,</span>  <span class="c1"># Write</span>
 </span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>        <span class="s2">&quot;django_cachex.serializers.pickle.PickleSerializer&quot;</span><span class="p">,</span>    <span class="c1"># Fallback read</span>
 </span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="p">],</span>
 </span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="p">}</span>
@@ -1972,11 +2000,11 @@
 <td>Python pickle (default)</td>
 </tr>
 <tr>
-<td><code>django_cachex.serializers.json.JSONSerializer</code></td>
+<td><code>django_cachex.serializers.json.JsonSerializer</code></td>
 <td>JSON via <code>DjangoJSONEncoder</code></td>
 </tr>
 <tr>
-<td><code>django_cachex.serializers.msgpack.MessagePackSerializer</code></td>
+<td><code>django_cachex.serializers.msgpack.MsgpackSerializer</code></td>
 <td>MessagePack (requires <code>msgpack</code>)</td>
 </tr>
 <tr>
@@ -1984,7 +2012,7 @@
 <td>Rust-backed JSON (requires <code>orjson</code>)</td>
 </tr>
 <tr>
-<td><code>django_cachex.serializers.ormsgpack.OrMessagePackSerializer</code></td>
+<td><code>django_cachex.serializers.ormsgpack.OrmsgpackSerializer</code></td>
 <td>Rust-backed MessagePack (requires <code>ormsgpack</code>)</td>
 </tr>
 </tbody>
