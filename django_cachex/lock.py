@@ -261,9 +261,18 @@ class ValkeyLock:
     @staticmethod
     def _coerce_token(token: bytes | str | Any) -> bytes:
         if isinstance(token, bytes):
+            try:
+                token.decode("ascii")
+            except UnicodeDecodeError as exc:
+                msg = "lock token must be ASCII-safe"
+                raise ValueError(msg) from exc
             return token
         if isinstance(token, str):
-            return token.encode("ascii")
+            try:
+                return token.encode("ascii")
+            except UnicodeEncodeError as exc:
+                msg = "lock token must be ASCII-safe"
+                raise ValueError(msg) from exc
         msg = f"token must be bytes or str, got {type(token).__name__}"
         raise TypeError(msg)
 

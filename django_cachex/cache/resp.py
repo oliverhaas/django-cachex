@@ -3164,6 +3164,27 @@ class RespClusterCache(RespCache):
             raise NotSupportedError("MULTI/EXEC pipelines", backend="cluster")
         return await super().apipeline(transaction=False, version=version)
 
+    @override
+    def incr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        """Cluster mode can't ``RENAME`` across slots.
+
+        ``KEY_PREFIX:V:key`` and ``KEY_PREFIX:V+1:key`` only land in the
+        same slot when the user-supplied ``key`` includes a hash tag
+        (``{...}`` segment) that excludes the version. Without one the
+        rename hits CROSSSLOT. Reject up front instead of leaving users
+        with a runtime cluster error and a half-renamed state.
+        """
+        if "{" not in key or "}" not in key:
+            raise NotSupportedError("incr_version (without hash tag)", backend="cluster")
+        return super().incr_version(key, delta, version)
+
+    @override
+    async def aincr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        """See :meth:`incr_version` — same hash-tag requirement."""
+        if "{" not in key or "}" not in key:
+            raise NotSupportedError("aincr_version (without hash tag)", backend="cluster")
+        return await super().aincr_version(key, delta, version)
+
 
 class RespSentinelCache(RespCache):
     """Sentinel cache backend base class.

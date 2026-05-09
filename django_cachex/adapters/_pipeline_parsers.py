@@ -25,6 +25,8 @@ def to_float_or_none(v: Any) -> float | None:
 
 
 def list_to_float_or_none(v: Any) -> list[float | None]:
+    if v is None:
+        return []
     return [to_float_or_none(x) for x in v]
 
 

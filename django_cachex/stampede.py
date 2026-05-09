@@ -21,7 +21,16 @@ class StampedeConfig:
 
 
 def should_recompute(ttl: int, config: StampedeConfig) -> bool:
-    """Return True when the caller should recompute the value early."""
+    """Return True when the caller should recompute the value early.
+
+    Redis ``TTL`` sentinels are filtered up front: ``-1`` (key has no
+    expire) and ``-2`` (key absent) would otherwise both flip to
+    "recompute now" because ``ttl - buffer`` is unconditionally
+    negative. ``ttl == 0`` (about-to-expire) still triggers — that's
+    the whole point of the ``buffer``.
+    """
+    if ttl < 0:
+        return False
     remaining = ttl - config.buffer
 
     if remaining <= 0:
@@ -81,10 +90,28 @@ def get_timeout_with_buffer(
     return timeout + config.buffer
 
 
+_STAMPEDE_FIELDS = ("buffer", "beta", "delta")
+
+
 def make_stampede_config(option: bool | dict | None) -> StampedeConfig | None:
-    """Build a ``StampedeConfig`` from an adapter ``stampede_prevention`` option."""
+    """Build a ``StampedeConfig`` from an adapter ``stampede_prevention`` option.
+
+    Unknown dict keys are dropped (with a warning) instead of raising
+    ``TypeError``. Matches ``resolve_stampede``'s tolerance for typos in
+    per-call overrides — the two were inconsistent before.
+    """
     if not option:
         return None
     if isinstance(option, dict):
-        return StampedeConfig(**option)
+        known = {k: v for k, v in option.items() if k in _STAMPEDE_FIELDS}
+        unknown = sorted(set(option) - set(_STAMPEDE_FIELDS))
+        if unknown:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "stampede_prevention: ignoring unknown keys %s (valid: %s)",
+                unknown,
+                _STAMPEDE_FIELDS,
+            )
+        return StampedeConfig(**known)
     return StampedeConfig()
