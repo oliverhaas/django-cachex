@@ -1027,17 +1027,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#pool-size-sweep" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Pool size sweep
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#reproducing" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1222,17 +1211,6 @@
     <span class="md-ellipsis">
       
         ASGI full-stack
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#pool-size-sweep" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Pool size sweep
       
     </span>
   </a>
@@ -1988,68 +1966,6 @@ takeaways: both Rust adapters keep the connection count to ~half the
 Python adapters, and Django's built-in <code>RedisCache</code> opens 316
 connections — it instantiates a fresh <code>redis.Redis</code> per cache call —
 and pays the highest avg latency on the smallest server.</p>
-<h2 id="pool-size-sweep">Pool size sweep<a class="headerlink" href="#pool-size-sweep" title="Permanent link">&para;</a></h2>
-<p><code>redis-py</code> ASGI run with <code>OPTIONS["max_connections"]</code> swept across
-six values. Helps anchor the default we ship.</p>
-<table>
-<thead>
-<tr>
-<th><code>max_connections</code></th>
-<th style="text-align: right;">req/s</th>
-<th style="text-align: right;">avg ms</th>
-<th style="text-align: right;">p99 ms</th>
-<th style="text-align: right;">conns peak</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>10</td>
-<td style="text-align: right;">341</td>
-<td style="text-align: right;">290.9</td>
-<td style="text-align: right;">1,674.1</td>
-<td style="text-align: right;">140</td>
-</tr>
-<tr>
-<td>25</td>
-<td style="text-align: right;">453</td>
-<td style="text-align: right;">219.2</td>
-<td style="text-align: right;">1,444.1</td>
-<td style="text-align: right;">176</td>
-</tr>
-<tr>
-<td>50</td>
-<td style="text-align: right;">438</td>
-<td style="text-align: right;">227.2</td>
-<td style="text-align: right;">1,457.2</td>
-<td style="text-align: right;">208</td>
-</tr>
-<tr>
-<td>100</td>
-<td style="text-align: right;">312</td>
-<td style="text-align: right;">318.4</td>
-<td style="text-align: right;">1,799.9</td>
-<td style="text-align: right;">209</td>
-</tr>
-<tr>
-<td>200</td>
-<td style="text-align: right;">363</td>
-<td style="text-align: right;">273.5</td>
-<td style="text-align: right;">1,572.5</td>
-<td style="text-align: right;">214</td>
-</tr>
-<tr>
-<td>500</td>
-<td style="text-align: right;">545</td>
-<td style="text-align: right;">182.8</td>
-<td style="text-align: right;">1,319.9</td>
-<td style="text-align: right;">211</td>
-</tr>
-</tbody>
-</table>
-<p>The throughput curve is non-monotonic at this scale — single-run
-noise dominates. The robust signal is that 10 is too low (pool
-contention dominates tail latency) and that beyond ~25 the marginal
-benefit per extra connection is small.</p>
 <h2 id="reproducing">Reproducing<a class="headerlink" href="#reproducing" title="Permanent link">&para;</a></h2>
 <p>The benchmarks live in <a href="https://github.com/oliverhaas/django-cachex/tree/main/benchmarks"><code>benchmarks/</code></a> and spin up their
 own Redis + Valkey containers via <code>testcontainers</code>, so a Docker daemon
