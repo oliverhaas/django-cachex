@@ -22,6 +22,7 @@ from django.utils.translation import gettext_lazy as _
 
 from django_cachex.admin.helpers import get_cache, get_size
 from django_cachex.admin.models import Cache, Key
+from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
@@ -534,10 +535,19 @@ class KeyAdminMixin:
 
             return KeyQuerySet(data, cache_name, next_cursor=next_cursor, cursor=cursor, scan_count=count)
 
+        except AttributeError, NotSupportedError:
+            # Backend doesn't expose ``scan()`` (e.g. FileBasedCache,
+            # DummyCache, third-party limited backends). Render an empty
+            # list with an info message rather than the raw stacktrace.
+            messages.info(
+                request,
+                f"Cache '{cache_name}' does not support key listing.",
+            )
+            return KeyQuerySet([], cache_name)
         except Exception as exc:
             logger.exception("Error querying cache '%s'", cache_name)
-            # Surface the failure so users don't read "no keys" as "empty
-            # cache" when the real issue is e.g. a connection error.
+            # Surface real failures so users don't read "no keys" as "empty
+            # cache" when the cause is e.g. a connection error.
             messages.error(
                 request,
                 f"Error querying cache '{cache_name}': {exc}",

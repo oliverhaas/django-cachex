@@ -16,6 +16,7 @@ from django_cachex.admin.views.base import (
     cache_list_url,
     show_help,
 )
+from django_cachex.exceptions import NotSupportedError
 
 if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
@@ -88,11 +89,17 @@ def _cache_detail_view(
     cache = get_cache(cache_name)
     cache_config = settings.CACHES.get(cache_name, {})
 
-    # Get cache metadata and info (single round-trip)
+    # Get cache metadata and info (single round-trip).
+    # ``AttributeError`` and ``NotSupportedError`` mean "this backend
+    # doesn't expose info" — render nothing, no scary error. Anything
+    # else is a real failure (connection drop, etc.) and gets surfaced.
     info_data = None
     raw_info = None
+    info_unsupported = False
     try:
         raw_info = cache.info()
+    except AttributeError, NotSupportedError:
+        info_unsupported = True
     except Exception as e:  # noqa: BLE001
         messages.error(request, f"Error retrieving cache info: {e!s}")
     else:
@@ -104,10 +111,12 @@ def _cache_detail_view(
     except ValueError, TypeError:
         slowlog_count = 10
 
-    # Get slowlog entries
+    # Get slowlog entries — same "missing method = unsupported" handling.
     slowlog_data = None
     try:
         slowlog_data = get_slowlog(cache, slowlog_count)
+    except AttributeError, NotSupportedError:
+        slowlog_data = None
     except Exception as e:  # noqa: BLE001
         messages.error(request, f"Error retrieving slow log: {e!s}")
 
@@ -127,6 +136,7 @@ def _cache_detail_view(
             "cache_name": cache_name,
             "cache_obj": cache_obj,
             "info_data": info_data,
+            "info_unsupported": info_unsupported,
             "raw_info_json": raw_info_json,
             "slowlog_data": slowlog_data,
             "slowlog_count": slowlog_count,
