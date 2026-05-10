@@ -34,6 +34,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from django.core.cache.backends.locmem import LocMemCache as DjangoLocMemCache
+from sortedcontainers import SortedList  # type: ignore[import-untyped]
 
 from django_cachex.cache.base import BaseCachex, _install_async_delegates
 from django_cachex.exceptions import WrongTypeError
@@ -69,7 +70,104 @@ class _Hash(dict[str, Any]):
 
 
 class _ZSet(dict[Any, float]):
-    """Tagged ``dict`` marking a key as a RESP sorted set. See :class:`_List`."""
+    """Tagged sorted set: ``dict[member, score]`` + sorted-index sidecar.
+
+    Stores scores as a regular dict for O(1) ``zscore``/``zincrby``, plus a
+    :class:`sortedcontainers.SortedList` of ``(score, str(member), member)``
+    tuples that gives O(log N) ``zrange``/``zrank``/``zpopmin``/``zpopmax``
+    instead of the O(N log N) ``sorted(...)`` re-sort the previous
+    plain-dict implementation paid on every read. The triple form keeps
+    the SortedList sortable by tuple comparison alone (no key function),
+    which keeps it pickle-friendly.
+    """
+
+    def __init__(self, items: Any = None) -> None:
+        if items is None:
+            super().__init__()
+        else:
+            super().__init__(items)
+        self._sorted: SortedList = SortedList((s, str(m), m) for m, s in self.items())
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (_make_zset, (dict(self),))
+
+    def __setitem__(self, member: Any, score: float) -> None:
+        if super().__contains__(member):
+            old = super().__getitem__(member)
+            self._sorted.remove((old, str(member), member))
+        super().__setitem__(member, score)
+        self._sorted.add((score, str(member), member))
+
+    def __delitem__(self, member: Any) -> None:
+        old = super().__getitem__(member)
+        super().__delitem__(member)
+        self._sorted.remove((old, str(member), member))
+
+    def pop(self, member: Any, *args: Any) -> Any:
+        if super().__contains__(member):
+            old = super().__getitem__(member)
+            super().__delitem__(member)
+            self._sorted.remove((old, str(member), member))
+            return old
+        if args:
+            return args[0]
+        raise KeyError(member)
+
+    def clear(self) -> None:
+        super().clear()
+        self._sorted.clear()
+
+    def sorted_members(self) -> list[tuple[Any, float]]:
+        """All ``(member, score)`` pairs in ``(score, str(member))`` order — O(N)."""
+        return [(m, s) for s, _, m in self._sorted]
+
+    def reversed_members(self) -> list[tuple[Any, float]]:
+        """All ``(member, score)`` pairs in reverse sorted order — O(N)."""
+        return [(m, s) for s, _, m in reversed(self._sorted)]
+
+    def rank_of(self, member: Any) -> int | None:
+        """Rank of ``member`` (lowest score = 0). O(log N). ``None`` if missing."""
+        if not super().__contains__(member):
+            return None
+        score = super().__getitem__(member)
+        return self._sorted.index((score, str(member), member))
+
+    def revrank_of(self, member: Any) -> int | None:
+        """Reverse rank (highest score = 0). O(log N). ``None`` if missing."""
+        rank = self.rank_of(member)
+        return None if rank is None else len(self._sorted) - 1 - rank
+
+    def range_by_score(self, lo: float, hi: float) -> list[tuple[Any, float]]:
+        """``(member, score)`` pairs where ``lo <= score <= hi``, in sorted order.
+
+        Iterates the sorted index and short-circuits once ``score > hi``, so it
+        runs in O(log N + k) when the matched range is small relative to N
+        (worst case O(N) when the whole set is within range).
+        """
+        out: list[tuple[Any, float]] = []
+        for s, _, m in self._sorted:
+            if s < lo:
+                continue
+            if s > hi:
+                break
+            out.append((m, s))
+        return out
+
+    def count_by_score(self, lo: float, hi: float) -> int:
+        """Number of members with ``lo <= score <= hi``. Same complexity as :meth:`range_by_score`."""
+        n = 0
+        for s, _, _m in self._sorted:
+            if s < lo:
+                continue
+            if s > hi:
+                break
+            n += 1
+        return n
+
+
+def _make_zset(items: dict[Any, float]) -> _ZSet:
+    """Pickle reconstructor — rebuilds the SortedList sidecar via ``__init__``."""
+    return _ZSet(items)
 
 
 _TAGGED_COLLECTIONS: tuple[type, ...] = (_List, _Set, _Hash, _ZSet)
@@ -876,11 +974,6 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             raise WrongTypeError(msg)
         return value
 
-    @staticmethod
-    def _sorted_members(zset: dict[Any, float]) -> list[tuple[Any, float]]:
-        """Order members by (score, str(member)) — Redis-style stable ordering."""
-        return sorted(zset.items(), key=lambda x: (x[1], str(x[0])))
-
     def zadd(
         self,
         key: str,
@@ -933,28 +1026,18 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         return None if current is None else current.get(member)
 
     def zrank(self, key: str, member: Any, version: int | None = None) -> int | None:
-        """Get the rank of a member (lowest score = 0)."""
+        """Get the rank of a member (lowest score = 0). O(log N)."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_zset(internal_key)
-        if current is None or member not in current:
-            return None
-        for i, (m, _) in enumerate(self._sorted_members(current)):
-            if m == member:
-                return i
-        return None
+        return None if current is None else current.rank_of(member)
 
     def zrevrank(self, key: str, member: Any, version: int | None = None) -> int | None:
-        """Get the rank of a member (highest score = 0)."""
+        """Get the rank of a member (highest score = 0). O(log N)."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_zset(internal_key)
-        if current is None or member not in current:
-            return None
-        for i, (m, _) in enumerate(reversed(self._sorted_members(current))):
-            if m == member:
-                return i
-        return None
+        return None if current is None else current.revrank_of(member)
 
     def zrange(
         self,
@@ -971,15 +1054,14 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             current = self._typed_get_zset(internal_key)
         if not current:
             return []
-        sorted_members = self._sorted_members(current)
-        length = len(sorted_members)
+        length = len(current)
         if start < 0:
             start = max(length + start, 0)
         if end < 0:
             end = length + end
         if start >= length or end < start:
             return []
-        sliced = sorted_members[start : end + 1]
+        sliced = [(m, s) for s, _, m in current._sorted[start : end + 1]]
         if withscores:
             return sliced
         return [m for m, _ in sliced]
@@ -999,15 +1081,17 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             current = self._typed_get_zset(internal_key)
         if not current:
             return []
-        sorted_members = list(reversed(self._sorted_members(current)))
-        length = len(sorted_members)
+        length = len(current)
         if start < 0:
             start = max(length + start, 0)
         if end < 0:
             end = length + end
         if start >= length or end < start:
             return []
-        sliced = sorted_members[start : end + 1]
+        # Reverse-index slice without materializing the full reversed list.
+        rev_start = max(length - end - 1, 0)
+        rev_end = length - start
+        sliced = [(m, s) for s, _, m in reversed(current._sorted[rev_start:rev_end])]
         if withscores:
             return sliced
         return [m for m, _ in sliced]
@@ -1031,7 +1115,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             return []
         lo = float("-inf") if min_score == "-inf" else float(min_score)
         hi = float("inf") if max_score == "+inf" else float(max_score)
-        filtered = [(m, s) for m, s in self._sorted_members(current) if lo <= s <= hi]
+        filtered = current.range_by_score(lo, hi)
         if start is not None and num is not None:
             filtered = filtered[start : start + num]
         if withscores:
@@ -1079,18 +1163,17 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             return 0
         lo = float("-inf") if min_score == "-inf" else float(min_score)
         hi = float("inf") if max_score == "+inf" else float(max_score)
-        return sum(1 for s in current.values() if lo <= s <= hi)
+        return current.count_by_score(lo, hi)
 
     def zpopmin(self, key: str, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
-        """Remove and return members with lowest scores."""
+        """Remove and return members with lowest scores. O((log N) * count)."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_zset(internal_key)
             if not current:
                 return []
-            sorted_members = self._sorted_members(current)
             n = 1 if count is None else count
-            popped = sorted_members[:n]
+            popped = [(m, s) for s, _, m in current._sorted[:n]]
             for m, _ in popped:
                 del current[m]
             if current:
@@ -1100,15 +1183,15 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             return popped
 
     def zpopmax(self, key: str, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
-        """Remove and return members with highest scores."""
+        """Remove and return members with highest scores. O((log N) * count)."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_zset(internal_key)
             if not current:
                 return []
-            sorted_members = list(reversed(self._sorted_members(current)))
             n = 1 if count is None else count
-            popped = sorted_members[:n]
+            tail = current._sorted[-n:] if n <= len(current) else list(current._sorted)
+            popped = [(m, s) for s, _, m in reversed(tail)]
             for m, _ in popped:
                 del current[m]
             if current:
@@ -1152,22 +1235,21 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             return len(to_remove)
 
     def zremrangebyrank(self, key: str, start: int, end: int, version: int | None = None) -> int:
-        """Remove members by rank range."""
+        """Remove members by rank range. O((log N) * k)."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_zset(internal_key)
             if not current:
                 return 0
-            sorted_members = self._sorted_members(current)
-            length = len(sorted_members)
+            length = len(current)
             if start < 0:
                 start = max(length + start, 0)
             if end < 0:
                 end = length + end
             if start >= length or end < start:
                 return 0
-            to_remove = sorted_members[start : end + 1]
-            for m, _ in to_remove:
+            to_remove = [m for _s, _k, m in current._sorted[start : end + 1]]
+            for m in to_remove:
                 del current[m]
             if current:
                 self._native_write(internal_key, current)
