@@ -36,6 +36,7 @@ from django_cachex.adapters.redis_rs import (
 from django_cachex.adapters.valkey_glide import (
     ValkeyGlideAdapter,
     ValkeyGlideAsyncPipelineAdapter,
+    ValkeyGlideClusterAdapter,
     ValkeyGlidePipelineAdapter,
 )
 from django_cachex.adapters.valkey_py import (
@@ -64,6 +65,7 @@ __all__ = [
     "RespPipelineProtocol",
     "ValkeyGlideAdapter",
     "ValkeyGlideAsyncPipelineAdapter",
+    "ValkeyGlideClusterAdapter",
     "ValkeyGlidePipelineAdapter",
     "ValkeyPyAdapter",
     "ValkeyPyAsyncPipelineAdapter",

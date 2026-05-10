@@ -47,6 +47,10 @@ if TYPE_CHECKING:
 try:
     from glide import GlideClient as AsyncGlideClient  # ty: ignore[unresolved-import]
     from glide import GlideClientConfiguration as AsyncGlideClientConfiguration  # ty: ignore[unresolved-import]
+    from glide import GlideClusterClient as AsyncGlideClusterClient  # ty: ignore[unresolved-import]
+    from glide import (  # ty: ignore[unresolved-import]
+        GlideClusterClientConfiguration as AsyncGlideClusterClientConfiguration,
+    )
     from glide import NodeAddress as AsyncNodeAddress  # ty: ignore[unresolved-import]
     from glide_sync import (  # ty: ignore[unresolved-import]
         Batch,
@@ -55,6 +59,8 @@ try:
         ExpiryType,
         FlushMode,
         GlideClientConfiguration,
+        GlideClusterClient,
+        GlideClusterClientConfiguration,
         NodeAddress,
     )
     from glide_sync.glide_client import GlideClient  # ty: ignore[unresolved-import]
@@ -2854,6 +2860,81 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             blocking=blocking,
             blocking_timeout=blocking_timeout,
         )
+
+
+# =============================================================================
+# Cluster topology
+# =============================================================================
+# Distinct registries from the standalone ones above so cluster vs standalone
+# clients (different config classes, can't mix) stay isolated even when the
+# same address tuple appears in both.
+_GLIDE_SYNC_CLUSTER_CLIENTS: dict[tuple[Any, ...], Any] = {}
+_GLIDE_SYNC_CLUSTER_LOCK = threading.Lock()
+_GLIDE_ASYNC_CLUSTER_CLIENTS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], Any]] = (
+    weakref.WeakKeyDictionary()
+)
+_GLIDE_ASYNC_CLUSTER_LOCKS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
+    """Cluster-mode adapter — wraps ``GlideClusterClient`` instead of standalone.
+
+    Inherits the full command surface from :class:`ValkeyGlideAdapter`;
+    only the client-construction hooks change. Multi-key operations must
+    hash to a single slot — use ``{tag}`` hash tags on related keys
+    (matches :class:`~django_cachex.cache.resp.RespClusterCache` semantics
+    for the other drivers).
+    """
+
+    def _client(self) -> Any:
+        client = _GLIDE_SYNC_CLUSTER_CLIENTS.get(self._config_key)
+        if client is not None:
+            return client
+        with _GLIDE_SYNC_CLUSTER_LOCK:
+            client = _GLIDE_SYNC_CLUSTER_CLIENTS.get(self._config_key)
+            if client is None:
+                cfg = GlideClusterClientConfiguration(addresses=self._cluster_addresses())
+                client = GlideClusterClient.create(cfg)
+                _GLIDE_SYNC_CLUSTER_CLIENTS[self._config_key] = client
+        return client
+
+    async def get_async_client(self, key: Any = None, *, write: bool = False) -> Any:
+        del key, write
+        loop = asyncio.get_running_loop()
+        sub = _GLIDE_ASYNC_CLUSTER_CLIENTS.get(loop)
+        if sub is None:
+            sub = {}
+            _GLIDE_ASYNC_CLUSTER_CLIENTS[loop] = sub
+        client = sub.get(self._config_key)
+        if client is not None:
+            return client
+        lock = _GLIDE_ASYNC_CLUSTER_LOCKS.get(loop)
+        if lock is None:
+            lock = asyncio.Lock()
+            _GLIDE_ASYNC_CLUSTER_LOCKS[loop] = lock
+        async with lock:
+            client = sub.get(self._config_key)
+            if client is None:
+                cfg = AsyncGlideClusterClientConfiguration(addresses=self._cluster_addresses_async())
+                client = await AsyncGlideClusterClient.create(cfg)
+                sub[self._config_key] = client
+        return client
+
+    def _cluster_addresses(self) -> list[NodeAddress]:
+        out: list[NodeAddress] = []
+        for raw in self._servers:
+            u = urlparse(raw)
+            out.append(NodeAddress(u.hostname or "localhost", u.port or 6379))
+        return out
+
+    def _cluster_addresses_async(self) -> list[AsyncNodeAddress]:
+        out: list[AsyncNodeAddress] = []
+        for raw in self._servers:
+            u = urlparse(raw)
+            out.append(AsyncNodeAddress(u.hostname or "localhost", u.port or 6379))
+        return out
 
 
 # =============================================================================

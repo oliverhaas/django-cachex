@@ -30,9 +30,9 @@ SERIALIZERS = {
 
 # Available cache backends keyed by (topology, resp_adapter).
 #
-# ``valkey-glide`` only ships a single-topology cache class — no cluster /
-# sentinel variants exist, so its row is restricted to ``"default"``. The
-# matrix-level ``cache`` fixture skips the missing combos automatically.
+# ``valkey-glide`` ships standalone + cluster clients only — no Sentinel
+# client exists upstream, so its sentinel row is omitted. The matrix-level
+# ``cache`` fixture skips the missing combos automatically.
 BACKENDS = {
     ("default", "redis-py"): "django_cachex.cache.RedisCache",
     ("sentinel", "redis-py"): "django_cachex.cache.RedisSentinelCache",
@@ -41,6 +41,7 @@ BACKENDS = {
     ("sentinel", "valkey-py"): "django_cachex.cache.ValkeySentinelCache",
     ("cluster", "valkey-py"): "django_cachex.cache.ValkeyClusterCache",
     ("default", "valkey-glide"): "django_cachex.cache.ValkeyGlideCache",
+    ("cluster", "valkey-glide"): "django_cachex.cache.ValkeyGlideClusterCache",
     ("default", "redis-rs"): "django_cachex.cache.RedisRsCache",
     ("sentinel", "redis-rs"): "django_cachex.cache.RedisRsSentinelCache",
     ("cluster", "redis-rs"): "django_cachex.cache.RedisRsClusterCache",

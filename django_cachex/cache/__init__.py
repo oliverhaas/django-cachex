@@ -19,7 +19,7 @@ from django_cachex.cache.redis_rs import (
 from django_cachex.cache.resp import RespCache, RespClusterCache, RespSentinelCache
 from django_cachex.cache.stream import StreamCache
 from django_cachex.cache.tiered import TieredCache
-from django_cachex.cache.valkey_glide import ValkeyGlideCache
+from django_cachex.cache.valkey_glide import ValkeyGlideCache, ValkeyGlideClusterCache
 from django_cachex.cache.valkey_py import (
     ValkeyCache,
     ValkeyClusterCache,
@@ -44,5 +44,6 @@ __all__ = [
     "ValkeyCache",
     "ValkeyClusterCache",
     "ValkeyGlideCache",
+    "ValkeyGlideClusterCache",
     "ValkeySentinelCache",
 ]
