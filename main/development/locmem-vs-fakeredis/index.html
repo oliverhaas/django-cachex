@@ -10,25 +10,29 @@
       
       
       
+        <link rel="canonical" href="https://oliverhaas.github.io/django-cachex/main/development/locmem-vs-fakeredis/">
+      
+      
+        <link rel="prev" href="../../reference/changelog/">
       
       
       
         
       
       
-      <link rel="icon" href="/django-cachex/main/assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>Django CacheX</title>
+        <title>LocMemCache vs fakeredis - Django CacheX</title>
       
     
     
-      <link rel="stylesheet" href="/django-cachex/main/assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="/django-cachex/main/assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -47,7 +51,7 @@
       
     
     
-    <script>__md_scope=new URL("/django-cachex/main",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -71,6 +75,11 @@
     <label class="md-overlay" for="__drawer"></label>
     <div data-md-component="skip">
       
+        
+        <a href="#why-a-custom-locmemcache" class="md-skip">
+          Skip to content
+        </a>
+      
     </div>
     <div data-md-component="announce">
       
@@ -87,7 +96,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="/django-cachex/main/." title="Django CacheX" class="md-header__button md-logo" aria-label="Django CacheX" data-md-component="logo">
+    <a href="../.." title="Django CacheX" class="md-header__button md-logo" aria-label="Django CacheX" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -107,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              
+              LocMemCache vs fakeredis
             
           </span>
         </div>
@@ -223,7 +232,7 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="/django-cachex/main/." title="Django CacheX" class="md-nav__button md-logo" aria-label="Django CacheX" data-md-component="logo">
+    <a href="../.." title="Django CacheX" class="md-nav__button md-logo" aria-label="Django CacheX" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -253,7 +262,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/django-cachex/main/." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -334,7 +343,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/django-cachex/main/getting-started/installation/" class="md-nav__link">
+      <a href="../../getting-started/installation/" class="md-nav__link">
         
   
   
@@ -362,7 +371,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/django-cachex/main/getting-started/quickstart/" class="md-nav__link">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
         
   
   
@@ -451,7 +460,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/django-cachex/main/user-guide/configuration/" class="md-nav__link">
+      <a href="../../user-guide/configuration/" class="md-nav__link">
         
   
   
@@ -479,7 +488,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/django-cachex/main/user-guide/admin/" class="md-nav__link">
+      <a href="../../user-guide/admin/" class="md-nav__link">
         
   
   
@@ -507,7 +516,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/django-cachex/main/user-guide/async/" class="md-nav__link">
+      <a href="../../user-guide/async/" class="md-nav__link">
         
   
   
@@ -535,7 +544,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/django-cachex/main/user-guide/advanced/" class="md-nav__link">
+      <a href="../../user-guide/advanced/" class="md-nav__link">
         
   
   
@@ -563,7 +572,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/django-cachex/main/user-guide/serializers/" class="md-nav__link">
+      <a href="../../user-guide/serializers/" class="md-nav__link">
         
   
   
@@ -591,7 +600,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/django-cachex/main/user-guide/compression/" class="md-nav__link">
+      <a href="../../user-guide/compression/" class="md-nav__link">
         
   
   
@@ -619,7 +628,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/django-cachex/main/user-guide/sentinel/" class="md-nav__link">
+      <a href="../../user-guide/sentinel/" class="md-nav__link">
         
   
   
@@ -647,7 +656,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/django-cachex/main/user-guide/cluster/" class="md-nav__link">
+      <a href="../../user-guide/cluster/" class="md-nav__link">
         
   
   
@@ -675,7 +684,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/django-cachex/main/user-guide/composite-backends/" class="md-nav__link">
+      <a href="../../user-guide/composite-backends/" class="md-nav__link">
         
   
   
@@ -710,7 +719,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/django-cachex/main/recipes/" class="md-nav__link">
+      <a href="../../recipes/" class="md-nav__link">
         
   
   
@@ -737,7 +746,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/django-cachex/main/migration/" class="md-nav__link">
+      <a href="../../migration/" class="md-nav__link">
         
   
   
@@ -818,7 +827,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/django-cachex/main/reference/api/" class="md-nav__link">
+      <a href="../../reference/api/" class="md-nav__link">
         
   
   
@@ -846,7 +855,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/django-cachex/main/reference/benchmarks/" class="md-nav__link">
+      <a href="../../reference/benchmarks/" class="md-nav__link">
         
   
   
@@ -874,7 +883,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/django-cachex/main/reference/changelog/" class="md-nav__link">
+      <a href="../../reference/changelog/" class="md-nav__link">
         
   
   
@@ -906,8 +915,10 @@
       
   
   
+    
   
   
+  
     
     
     
@@ -918,13 +929,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
         
           
           <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
@@ -945,7 +954,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             
@@ -960,10 +969,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="/django-cachex/main/development/locmem-vs-fakeredis/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LocMemCache vs fakeredis
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -979,6 +1015,109 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-our-locmemcache-does" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What our LocMemCache does
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-not-just-use-fakeredis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why not just use fakeredis?
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why not just use fakeredis?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-op-latency-microseconds-single-threaded-best-of-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-op latency (microseconds, single-threaded, best of 3)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-this-tells-us" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What this tells us
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-that-matters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where that matters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-fakeredis-would-actually-be-useful" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where fakeredis would actually be useful
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#latency-context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Latency context
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1008,6 +1147,99 @@
   
   
   
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-our-locmemcache-does" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What our LocMemCache does
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-not-just-use-fakeredis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why not just use fakeredis?
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why not just use fakeredis?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-op-latency-microseconds-single-threaded-best-of-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-op latency (microseconds, single-threaded, best of 3)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-this-tells-us" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What this tells us
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-that-matters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where that matters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-fakeredis-would-actually-be-useful" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where fakeredis would actually be useful
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#latency-context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Latency context
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -1020,8 +1252,172 @@
               
               <article class="md-content__inner md-typeset">
                 
-  <h1>404 - Not found</h1>
+                  
 
+
+  
+  
+
+
+<h1 id="why-a-custom-locmemcache">Why a custom <code>LocMemCache</code>?<a class="headerlink" href="#why-a-custom-locmemcache" title="Permanent link">&para;</a></h1>
+<p>django-cachex ships its own <code>LocMemCache</code> rather than backing a <code>RespCache</code>
+with <a href="https://github.com/cunla/fakeredis">fakeredis</a>. This page captures
+the reasoning so the next maintainer doesn't have to re-litigate the
+trade-off from first principles.</p>
+<h2 id="what-our-locmemcache-does">What our <code>LocMemCache</code> does<a class="headerlink" href="#what-our-locmemcache-does" title="Permanent link">&para;</a></h2>
+<p><code>django_cachex.cache.LocMemCache</code> extends Django's built-in
+<code>LocMemCache</code> with the full cachex extension surface (lists, sets,
+hashes, sorted sets, TTL ops, key scanning, admin info), implemented
+natively against the underlying in-process dict.</p>
+<p>It mirrors RESP semantics where it counts:</p>
+<ul>
+<li>A key's RESP type is determined by the command that wrote it. A plain
+  Python <code>list</code> stored via <code>cache.set()</code> is opaque ("string" in RESP
+  terms); only values created via <code>lpush</code>/<code>rpush</code> carry the <code>_List</code> tag
+  and are accepted by the list typed accessor. Cross-type access raises
+  <code>WrongTypeError</code> (a <code>TypeError</code> subclass) — the same exception the
+  RESP adapters raise after translating their backend's <code>WRONGTYPE</code>
+  response.</li>
+<li>Tagged collections (<code>_List</code>/<code>_Set</code>/<code>_Hash</code>/<code>_ZSet</code>) live as long-lived
+  Python objects in <code>self._collections</code>, separate from Django's
+  pickled-bytes <code>self._cache</code>. Mutations are in-place under the cache
+  lock — no pickle round-trip per op.</li>
+<li>Sorted sets carry a <code>sortedcontainers.SortedList</code> sidecar, so
+  <code>zrange</code>/<code>zrank</code>/<code>zpopmin</code> are O(log N) instead of the O(N log N)
+  re-sort the naive dict-based approach pays.</li>
+</ul>
+<h2 id="why-not-just-use-fakeredis">Why not just use fakeredis?<a class="headerlink" href="#why-not-just-use-fakeredis" title="Permanent link">&para;</a></h2>
+<p><a href="https://github.com/cunla/fakeredis">fakeredis</a> is a pure-Python Redis
+emulator with full protocol fidelity. In principle we could delete
+~1500 lines of <code>LocMemCache</code> code and ship a <code>RedisCache</code> configured
+with a <code>FakeRedis</code> client instead. We benchmarked it; the answer is no.</p>
+<h3 id="per-op-latency-microseconds-single-threaded-best-of-3">Per-op latency (microseconds, single-threaded, best of 3)<a class="headerlink" href="#per-op-latency-microseconds-single-threaded-best-of-3" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Op</th>
+<th>LocMem (any N)</th>
+<th>fakeredis-backed (any N)</th>
+<th>Real Redis container</th>
+<th>AWS ElastiCache</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>set</code>/<code>get</code>/<code>del</code></td>
+<td>2-3</td>
+<td>~620</td>
+<td>~100</td>
+<td>~1000</td>
+</tr>
+<tr>
+<td><code>lpush</code>/<code>lpop</code></td>
+<td>2-3</td>
+<td>~620</td>
+<td>~100</td>
+<td>~1000</td>
+</tr>
+<tr>
+<td><code>zrange</code> head 10</td>
+<td>2.5</td>
+<td>~680</td>
+<td>~100</td>
+<td>~1000</td>
+</tr>
+<tr>
+<td><code>zrank</code></td>
+<td>1.5-2</td>
+<td>~620</td>
+<td>~100</td>
+<td>~1000</td>
+</tr>
+<tr>
+<td><code>hgetall</code> (10k fields)</td>
+<td>38</td>
+<td>14 600</td>
+<td>n/a</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td><code>lrange</code> 0..-1 (10k)</td>
+<td>52</td>
+<td>21 500</td>
+<td>n/a</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td><code>hset</code> (10k-field hash)</td>
+<td>1.7</td>
+<td>1 600</td>
+<td>n/a</td>
+<td>n/a</td>
+</tr>
+</tbody>
+</table>
+<p>(Reproduce: <code>python -m django_cachex.benchmarks.locmem_vs_fakeredis</code>
+isn't checked in — it's a one-off; see the commit that introduced this
+page for the script.)</p>
+<h3 id="what-this-tells-us">What this tells us<a class="headerlink" href="#what-this-tells-us" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>fakeredis has a ~600 µs floor regardless of op or N.</strong> That's the
+   cost of the redis-py client serializing the command to RESP wire
+   format, fakeredis interpreting it, formatting the response, and
+   redis-py deserializing back. Even though everything is in-process,
+   the protocol layer dominates.</li>
+<li><strong>fakeredis lands in the same ballpark as Redis on localhost</strong> — it
+   behaves like Redis-on-localhost for latency, ~6x slower than a
+   container on the same pod.</li>
+<li><strong>Our <code>LocMemCache</code> is ~250-400× faster per single op</strong> than
+   fakeredis, and the gap widens with N for collection-spanning ops
+   (<code>hgetall</code>, <code>lrange 0..-1</code>) where fakeredis's internal data
+   structures aren't tuned for big working sets.</li>
+</ol>
+<h3 id="where-that-matters">Where that matters<a class="headerlink" href="#where-that-matters" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Test suites.</strong> A 12k-test suite that touches the cache ten times
+  per test would pay an extra ~70 s of wall-clock per run on the
+  fakeredis path. Multiplied across CI, contributor laptops, and the
+  inner-loop <code>pytest -k foo</code> cycle, that compounds.</li>
+<li><strong>Dev REPL feedback.</strong> A cache op that takes ~1 ms instead of ~2 µs
+  changes the feel of "let me poke this in the shell" from
+  instantaneous to noticeable.</li>
+<li><strong><code>TieredCache</code> L1 hits.</strong> <code>LocMemCache</code> is the default L1 in front
+  of a Redis L2. Inflating the L1 hit cost defeats the point.</li>
+</ul>
+<h3 id="where-fakeredis-would-actually-be-useful">Where fakeredis would actually be useful<a class="headerlink" href="#where-fakeredis-would-actually-be-useful" title="Permanent link">&para;</a></h3>
+<p>For testing the <strong>adapter layer</strong> (redis-py / valkey-py command paths,
+the <code>WRONGTYPE</code> translation, pipelines, scripts) without standing up a
+testcontainer Redis. We currently rely on a real Valkey/Redis container
+for adapter integration tests, which is correct but requires Docker.</p>
+<p>We haven't wired this in — it would be a <code>[testing]</code> extra and a
+fixture, not a runtime dependency — and the testcontainer path is fast
+enough today (~140 s for the full suite) that the marginal benefit
+hasn't justified the setup. Worth revisiting if a contributor needs to
+work without Docker, or if the suite gets meaningfully larger.</p>
+<h2 id="latency-context">Latency context<a class="headerlink" href="#latency-context" title="Permanent link">&para;</a></h2>
+<p>For perspective, where each backend lives on the latency curve:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>LocMemCache (in-process):   ~2 µs    (0.002 ms)
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>fakeredis + RespCache:      ~620 µs  (0.6 ms)
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>Redis on same pod:          ~100 µs  (0.1 ms)
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>AWS ElastiCache (cross-AZ): ~1000 µs (1.0 ms)
+</span></code></pre></div>
+<p><code>LocMemCache</code> is the fastest option by two orders of magnitude. It's
+also the only option that doesn't pay protocol-serialization cost. Use
+it as L1 in <code>TieredCache</code>, as the dev/test backend, and anywhere
+in-process caching dominates the access pattern.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
               </article>
             </div>
           
@@ -1060,10 +1456,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "/django-cachex/main", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.sections", "navigation.expand", "content.code.copy", "content.code.annotate"], "search": "/django-cachex/main/assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.sections", "navigation.expand", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
-      <script src="/django-cachex/main/assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>
