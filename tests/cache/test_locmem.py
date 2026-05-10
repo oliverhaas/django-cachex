@@ -158,37 +158,33 @@ class TestKeysAndAdmin:
         assert locmem_cache.type("k") == "string"
 
     def test_type_list(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", [1, 2, 3])
+        locmem_cache.rpush("k", 1, 2, 3)
         assert locmem_cache.type("k") == "list"
 
     def test_type_set(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {1, 2, 3})
+        locmem_cache.sadd("k", 1, 2, 3)
         assert locmem_cache.type("k") == "set"
 
-    def test_type_empty_set(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", set())
-        assert locmem_cache.type("k") == "set"
-
-    def test_type_hash_str_keys(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"name": "alice"})
+    def test_type_hash(self, locmem_cache: LocMemCache):
+        locmem_cache.hset("k", mapping={"name": "alice"})
         assert locmem_cache.type("k") == "hash"
 
-    def test_type_zset_distinguished_from_hash(self, locmem_cache: LocMemCache):
-        # zset members can be strings (Redis-typical), so the only reliable
-        # distinguisher from a hash is the storage tag set by zadd().
+    def test_type_zset(self, locmem_cache: LocMemCache):
         locmem_cache.zadd("k", {"alice": 100.0, "bob": 85.0})
         assert locmem_cache.type("k") == "zset"
 
-    def test_type_empty_dict_is_hash(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {})
-        assert locmem_cache.type("k") == "hash"
-
-    def test_type_int_keyed_dict_is_string(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {1: "a", 2: "b"})
+    def test_type_opaque_python_list_is_string(self, locmem_cache: LocMemCache):
+        # A plain Python list stored via ``cache.set()`` is opaque to RESP —
+        # ``type()`` reports STRING and list ops would WRONGTYPE on it.
+        locmem_cache.set("k", [1, 2, 3])
         assert locmem_cache.type("k") == "string"
 
-    def test_type_mixed_keyed_dict_is_string(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a": 1, 2: "b"})
+    def test_type_opaque_python_dict_is_string(self, locmem_cache: LocMemCache):
+        locmem_cache.set("k", {"name": "alice"})
+        assert locmem_cache.type("k") == "string"
+
+    def test_type_opaque_python_set_is_string(self, locmem_cache: LocMemCache):
+        locmem_cache.set("k", {1, 2, 3})
         assert locmem_cache.type("k") == "string"
 
     def test_type_missing(self, locmem_cache: LocMemCache):
@@ -203,95 +199,101 @@ class TestKeysAndAdmin:
 class TestListOps:
     def test_lpush_creates_new_list(self, locmem_cache: LocMemCache):
         assert locmem_cache.lpush("k", "a") == 1
-        assert locmem_cache.get("k") == ["a"]
+        assert locmem_cache.lrange("k", 0, -1) == ["a"]
 
     def test_lpush_prepends(self, locmem_cache: LocMemCache):
         locmem_cache.lpush("k", "a")
         locmem_cache.lpush("k", "b")
-        assert locmem_cache.get("k") == ["b", "a"]
+        assert locmem_cache.lrange("k", 0, -1) == ["b", "a"]
 
     def test_lpush_multiple_values(self, locmem_cache: LocMemCache):
         assert locmem_cache.lpush("k", "a", "b", "c") == 3
-        assert locmem_cache.get("k") == ["c", "b", "a"]
+        assert locmem_cache.lrange("k", 0, -1) == ["c", "b", "a"]
 
-    def test_lpush_type_error_on_non_list(self, locmem_cache: LocMemCache):
+    def test_lpush_wrongtype_on_string(self, locmem_cache: LocMemCache):
         locmem_cache.set("k", "string")
         with pytest.raises(TypeError):
             locmem_cache.lpush("k", "x")
 
+    def test_lpush_wrongtype_on_opaque_python_list(self, locmem_cache: LocMemCache):
+        # A Python list stored via ``cache.set()`` is opaque (RESP "string").
+        locmem_cache.set("k", [1, 2, 3])
+        with pytest.raises(TypeError):
+            locmem_cache.lpush("k", 4)
+
     def test_rpush_creates_new_list(self, locmem_cache: LocMemCache):
         assert locmem_cache.rpush("k", "a") == 1
-        assert locmem_cache.get("k") == ["a"]
+        assert locmem_cache.lrange("k", 0, -1) == ["a"]
 
     def test_rpush_appends(self, locmem_cache: LocMemCache):
         locmem_cache.rpush("k", "a")
         locmem_cache.rpush("k", "b")
-        assert locmem_cache.get("k") == ["a", "b"]
+        assert locmem_cache.lrange("k", 0, -1) == ["a", "b"]
 
     def test_rpush_multiple_values(self, locmem_cache: LocMemCache):
         assert locmem_cache.rpush("k", "a", "b", "c") == 3
-        assert locmem_cache.get("k") == ["a", "b", "c"]
+        assert locmem_cache.lrange("k", 0, -1) == ["a", "b", "c"]
 
-    def test_rpush_type_error_on_non_list(self, locmem_cache: LocMemCache):
+    def test_rpush_wrongtype_on_string(self, locmem_cache: LocMemCache):
         locmem_cache.set("k", "string")
         with pytest.raises(TypeError):
             locmem_cache.rpush("k", "x")
 
     def test_lpop_returns_first(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", [1, 2, 3])
+        locmem_cache.rpush("k", 1, 2, 3)
         assert locmem_cache.lpop("k") == 1
-        assert locmem_cache.get("k") == [2, 3]
+        assert locmem_cache.lrange("k", 0, -1) == [2, 3]
 
     def test_lpop_with_count(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", [1, 2, 3, 4])
+        locmem_cache.rpush("k", 1, 2, 3, 4)
         assert locmem_cache.lpop("k", count=2) == [1, 2]
-        assert locmem_cache.get("k") == [3, 4]
+        assert locmem_cache.lrange("k", 0, -1) == [3, 4]
 
     def test_lpop_empty(self, locmem_cache: LocMemCache):
         assert locmem_cache.lpop("missing") is None
         assert locmem_cache.lpop("missing", count=2) == []
 
     def test_lpop_deletes_when_empty(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", [1])
+        locmem_cache.rpush("k", 1)
         locmem_cache.lpop("k")
-        assert locmem_cache.get("k") is None
+        assert locmem_cache.has_key("k") is False
 
     def test_rpop_returns_last(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", [1, 2, 3])
+        locmem_cache.rpush("k", 1, 2, 3)
         assert locmem_cache.rpop("k") == 3
-        assert locmem_cache.get("k") == [1, 2]
+        assert locmem_cache.lrange("k", 0, -1) == [1, 2]
 
     def test_rpop_with_count(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", [1, 2, 3, 4])
+        locmem_cache.rpush("k", 1, 2, 3, 4)
         assert locmem_cache.rpop("k", count=2) == [4, 3]
-        assert locmem_cache.get("k") == [1, 2]
+        assert locmem_cache.lrange("k", 0, -1) == [1, 2]
 
     def test_rpop_empty(self, locmem_cache: LocMemCache):
         assert locmem_cache.rpop("missing") is None
         assert locmem_cache.rpop("missing", count=2) == []
 
     def test_rpop_deletes_when_empty(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", [1])
+        locmem_cache.rpush("k", 1)
         locmem_cache.rpop("k")
-        assert locmem_cache.get("k") is None
+        assert locmem_cache.has_key("k") is False
 
     def test_lrange_full(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a", "b", "c"])
+        locmem_cache.rpush("k", "a", "b", "c")
         assert locmem_cache.lrange("k", 0, -1) == ["a", "b", "c"]
 
     def test_lrange_partial(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a", "b", "c", "d"])
+        locmem_cache.rpush("k", "a", "b", "c", "d")
         assert locmem_cache.lrange("k", 1, 2) == ["b", "c"]
 
     def test_lrange_negative_indices(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a", "b", "c", "d", "e"])
+        locmem_cache.rpush("k", "a", "b", "c", "d", "e")
         assert locmem_cache.lrange("k", -3, -1) == ["c", "d", "e"]
 
     def test_lrange_missing(self, locmem_cache: LocMemCache):
         assert locmem_cache.lrange("missing", 0, -1) == []
 
     def test_llen(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", [1, 2, 3])
+        locmem_cache.rpush("k", 1, 2, 3)
         assert locmem_cache.llen("k") == 3
 
     def test_llen_missing(self, locmem_cache: LocMemCache):
@@ -307,103 +309,103 @@ class TestListOps:
         ids=["all", "head_2", "tail_1"],
     )
     def test_lrem(self, locmem_cache: LocMemCache, count: int, expected_removed: int, expected_list: list):
-        locmem_cache.set("k", ["a", "b", "a", "c", "a"])
+        locmem_cache.rpush("k", "a", "b", "a", "c", "a")
         assert locmem_cache.lrem("k", count, "a") == expected_removed
-        assert locmem_cache.get("k") == expected_list
+        assert locmem_cache.lrange("k", 0, -1) == expected_list
 
     def test_lrem_not_found(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a", "b"])
+        locmem_cache.rpush("k", "a", "b")
         assert locmem_cache.lrem("k", 0, "z") == 0
 
     def test_lrem_missing_key(self, locmem_cache: LocMemCache):
         assert locmem_cache.lrem("missing", 0, "a") == 0
 
     def test_lrem_deletes_when_all_removed(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a", "a"])
+        locmem_cache.rpush("k", "a", "a")
         locmem_cache.lrem("k", 0, "a")
-        assert locmem_cache.get("k") is None
+        assert locmem_cache.has_key("k") is False
 
     def test_ltrim_basic(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a", "b", "c", "d", "e"])
+        locmem_cache.rpush("k", "a", "b", "c", "d", "e")
         assert locmem_cache.ltrim("k", 1, 3) is True
-        assert locmem_cache.get("k") == ["b", "c", "d"]
+        assert locmem_cache.lrange("k", 0, -1) == ["b", "c", "d"]
 
     def test_ltrim_negative_end(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a", "b", "c"])
+        locmem_cache.rpush("k", "a", "b", "c")
         locmem_cache.ltrim("k", 0, -2)
-        assert locmem_cache.get("k") == ["a", "b"]
+        assert locmem_cache.lrange("k", 0, -1) == ["a", "b"]
 
     def test_ltrim_out_of_range_deletes(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a", "b"])
+        locmem_cache.rpush("k", "a", "b")
         locmem_cache.ltrim("k", 5, 10)
-        assert locmem_cache.get("k") is None
+        assert locmem_cache.has_key("k") is False
 
     def test_ltrim_missing_key(self, locmem_cache: LocMemCache):
         assert locmem_cache.ltrim("missing", 0, -1) is True
 
     def test_lindex(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a", "b", "c"])
+        locmem_cache.rpush("k", "a", "b", "c")
         assert locmem_cache.lindex("k", 0) == "a"
         assert locmem_cache.lindex("k", -1) == "c"
 
     def test_lindex_out_of_range(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a"])
+        locmem_cache.rpush("k", "a")
         assert locmem_cache.lindex("k", 5) is None
 
     def test_lindex_missing_key(self, locmem_cache: LocMemCache):
         assert locmem_cache.lindex("missing", 0) is None
 
     def test_lset(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a", "b", "c"])
+        locmem_cache.rpush("k", "a", "b", "c")
         assert locmem_cache.lset("k", 1, "B") is True
-        assert locmem_cache.get("k") == ["a", "B", "c"]
+        assert locmem_cache.lrange("k", 0, -1) == ["a", "B", "c"]
 
     def test_lset_missing_key_raises(self, locmem_cache: LocMemCache):
         with pytest.raises(ValueError, match="no such key"):
             locmem_cache.lset("missing", 0, "x")
 
     def test_lset_out_of_range_raises(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a"])
+        locmem_cache.rpush("k", "a")
         with pytest.raises(ValueError, match="index out of range"):
             locmem_cache.lset("k", 5, "x")
 
     def test_linsert_before(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a", "c"])
+        locmem_cache.rpush("k", "a", "c")
         assert locmem_cache.linsert("k", "BEFORE", "c", "b") == 3
-        assert locmem_cache.get("k") == ["a", "b", "c"]
+        assert locmem_cache.lrange("k", 0, -1) == ["a", "b", "c"]
 
     def test_linsert_after(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a", "b"])
+        locmem_cache.rpush("k", "a", "b")
         assert locmem_cache.linsert("k", "AFTER", "a", "X") == 3
-        assert locmem_cache.get("k") == ["a", "X", "b"]
+        assert locmem_cache.lrange("k", 0, -1) == ["a", "X", "b"]
 
     def test_linsert_pivot_not_found(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a"])
+        locmem_cache.rpush("k", "a")
         assert locmem_cache.linsert("k", "BEFORE", "z", "x") == -1
 
     def test_linsert_missing_key(self, locmem_cache: LocMemCache):
         assert locmem_cache.linsert("missing", "BEFORE", "a", "x") == 0
 
     def test_lpos_basic(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a", "b", "c", "b"])
+        locmem_cache.rpush("k", "a", "b", "c", "b")
         assert locmem_cache.lpos("k", "b") == 1
 
     def test_lpos_with_rank(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a", "b", "c", "b", "d", "b"])
+        locmem_cache.rpush("k", "a", "b", "c", "b", "d", "b")
         assert locmem_cache.lpos("k", "b", rank=2) == 3
         assert locmem_cache.lpos("k", "b", rank=-1) == 5
 
     def test_lpos_with_count(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a", "b", "c", "b", "d", "b"])
+        locmem_cache.rpush("k", "a", "b", "c", "b", "d", "b")
         assert locmem_cache.lpos("k", "b", count=0) == [1, 3, 5]
         assert locmem_cache.lpos("k", "b", count=2) == [1, 3]
 
     def test_lpos_with_maxlen(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a", "b", "c", "b"])
+        locmem_cache.rpush("k", "a", "b", "c", "b")
         assert locmem_cache.lpos("k", "b", maxlen=2) == 1
 
     def test_lpos_not_found(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", ["a"])
+        locmem_cache.rpush("k", "a")
         assert locmem_cache.lpos("k", "z") is None
         assert locmem_cache.lpos("k", "z", count=0) == []
 
@@ -412,12 +414,13 @@ class TestListOps:
         assert locmem_cache.lpos("missing", "x", count=0) == []
 
     def test_list_ops_preserve_ttl(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", [1, 2], timeout=3600)
+        locmem_cache.rpush("k", 1, 2)
+        locmem_cache.expire("k", 3600)
         locmem_cache.rpush("k", 3)
         assert 3590 <= locmem_cache.ttl("k") <= 3600
 
     def test_list_ops_no_expiry_stays(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", [1, 2], timeout=None)
+        locmem_cache.rpush("k", 1, 2)
         locmem_cache.rpush("k", 3)
         assert locmem_cache.ttl("k") == -1
 
@@ -430,12 +433,12 @@ class TestListOps:
 class TestSetOps:
     def test_sadd_creates_new_set(self, locmem_cache: LocMemCache):
         assert locmem_cache.sadd("k", "a") == 1
-        assert locmem_cache.get("k") == {"a"}
+        assert locmem_cache.smembers("k") == {"a"}
 
     def test_sadd_adds_to_existing(self, locmem_cache: LocMemCache):
         locmem_cache.sadd("k", "a")
         assert locmem_cache.sadd("k", "b") == 1
-        assert locmem_cache.get("k") == {"a", "b"}
+        assert locmem_cache.smembers("k") == {"a", "b"}
 
     def test_sadd_duplicate_returns_zero(self, locmem_cache: LocMemCache):
         locmem_cache.sadd("k", "a")
@@ -443,44 +446,49 @@ class TestSetOps:
 
     def test_sadd_multiple_members(self, locmem_cache: LocMemCache):
         assert locmem_cache.sadd("k", "a", "b", "c") == 3
-        assert locmem_cache.get("k") == {"a", "b", "c"}
+        assert locmem_cache.smembers("k") == {"a", "b", "c"}
 
-    def test_sadd_type_error_on_non_set(self, locmem_cache: LocMemCache):
+    def test_sadd_wrongtype_on_string(self, locmem_cache: LocMemCache):
         locmem_cache.set("k", "string")
         with pytest.raises(TypeError):
             locmem_cache.sadd("k", "x")
 
+    def test_sadd_wrongtype_on_opaque_python_set(self, locmem_cache: LocMemCache):
+        locmem_cache.set("k", {"a", "b"})
+        with pytest.raises(TypeError):
+            locmem_cache.sadd("k", "c")
+
     def test_srem(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a", "b", "c"})
+        locmem_cache.sadd("k", "a", "b", "c")
         assert locmem_cache.srem("k", "b") == 1
-        assert locmem_cache.get("k") == {"a", "c"}
+        assert locmem_cache.smembers("k") == {"a", "c"}
 
     def test_srem_multiple_members(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a", "b", "c", "d"})
+        locmem_cache.sadd("k", "a", "b", "c", "d")
         assert locmem_cache.srem("k", "a", "c") == 2
-        assert locmem_cache.get("k") == {"b", "d"}
+        assert locmem_cache.smembers("k") == {"b", "d"}
 
     def test_srem_nonexistent_member(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a", "b"})
+        locmem_cache.sadd("k", "a", "b")
         assert locmem_cache.srem("k", "z") == 0
 
     def test_srem_missing_key(self, locmem_cache: LocMemCache):
         assert locmem_cache.srem("missing", "a") == 0
 
     def test_srem_deletes_when_empty(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a"})
+        locmem_cache.sadd("k", "a")
         locmem_cache.srem("k", "a")
-        assert locmem_cache.get("k") is None
+        assert locmem_cache.has_key("k") is False
 
     def test_scard(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a", "b", "c"})
+        locmem_cache.sadd("k", "a", "b", "c")
         assert locmem_cache.scard("k") == 3
 
     def test_scard_missing(self, locmem_cache: LocMemCache):
         assert locmem_cache.scard("missing") == 0
 
     def test_sismember(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a"})
+        locmem_cache.sadd("k", "a")
         assert locmem_cache.sismember("k", "a") is True
         assert locmem_cache.sismember("k", "z") is False
 
@@ -488,31 +496,30 @@ class TestSetOps:
         assert locmem_cache.sismember("missing", "a") is False
 
     def test_smembers_returns_copy(self, locmem_cache: LocMemCache):
-        original = {"a", "b", "c"}
-        locmem_cache.set("k", original)
+        locmem_cache.sadd("k", "a", "b", "c")
         result = locmem_cache.smembers("k")
-        assert result == original
+        assert result == {"a", "b", "c"}
         result.add("d")
-        assert locmem_cache.smembers("k") == original
+        assert locmem_cache.smembers("k") == {"a", "b", "c"}
 
     def test_smembers_missing(self, locmem_cache: LocMemCache):
         assert locmem_cache.smembers("missing") == set()
 
     def test_smismember(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a", "b", "c"})
+        locmem_cache.sadd("k", "a", "b", "c")
         assert locmem_cache.smismember("k", "a", "z", "c") == [True, False, True]
 
     def test_smismember_missing_key(self, locmem_cache: LocMemCache):
         assert locmem_cache.smismember("missing", "a", "b") == [False, False]
 
     def test_spop_single(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a", "b", "c"})
+        locmem_cache.sadd("k", "a", "b", "c")
         member = locmem_cache.spop("k")
         assert member in {"a", "b", "c"}
         assert locmem_cache.scard("k") == 2
 
     def test_spop_with_count(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a", "b", "c"})
+        locmem_cache.sadd("k", "a", "b", "c")
         popped = locmem_cache.spop("k", count=2)
         assert isinstance(popped, set)
         assert len(popped) == 2
@@ -525,17 +532,17 @@ class TestSetOps:
         assert locmem_cache.spop("missing", count=2) == set()
 
     def test_spop_deletes_when_empty(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a"})
+        locmem_cache.sadd("k", "a")
         locmem_cache.spop("k")
-        assert locmem_cache.get("k") is None
+        assert locmem_cache.has_key("k") is False
 
     def test_srandmember_single(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a", "b", "c"})
+        locmem_cache.sadd("k", "a", "b", "c")
         assert locmem_cache.srandmember("k") in {"a", "b", "c"}
         assert locmem_cache.scard("k") == 3
 
     def test_srandmember_with_count(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a", "b", "c"})
+        locmem_cache.sadd("k", "a", "b", "c")
         members = locmem_cache.srandmember("k", count=2)
         assert isinstance(members, list)
         assert len(members) == 2
@@ -549,41 +556,42 @@ class TestSetOps:
         assert locmem_cache.srandmember("missing", count=2) == []
 
     def test_sdiff(self, locmem_cache: LocMemCache):
-        locmem_cache.set("a", {"x", "y", "z"})
-        locmem_cache.set("b", {"y"})
+        locmem_cache.sadd("a", "x", "y", "z")
+        locmem_cache.sadd("b", "y")
         assert locmem_cache.sdiff(["a", "b"]) == {"x", "z"}
 
     def test_sdiff_single_string_key(self, locmem_cache: LocMemCache):
-        locmem_cache.set("a", {"x", "y"})
+        locmem_cache.sadd("a", "x", "y")
         assert locmem_cache.sdiff("a") == {"x", "y"}
 
     def test_sdiff_missing_keys_yield_empty(self, locmem_cache: LocMemCache):
         assert locmem_cache.sdiff(["missing1", "missing2"]) == set()
 
     def test_sinter(self, locmem_cache: LocMemCache):
-        locmem_cache.set("a", {"x", "y", "z"})
-        locmem_cache.set("b", {"y", "z", "w"})
+        locmem_cache.sadd("a", "x", "y", "z")
+        locmem_cache.sadd("b", "y", "z", "w")
         assert locmem_cache.sinter(["a", "b"]) == {"y", "z"}
 
     def test_sinter_with_missing_yields_empty(self, locmem_cache: LocMemCache):
-        locmem_cache.set("a", {"x"})
+        locmem_cache.sadd("a", "x")
         assert locmem_cache.sinter(["a", "missing"]) == set()
 
     def test_sunion(self, locmem_cache: LocMemCache):
-        locmem_cache.set("a", {"x", "y"})
-        locmem_cache.set("b", {"y", "z"})
+        locmem_cache.sadd("a", "x", "y")
+        locmem_cache.sadd("b", "y", "z")
         assert locmem_cache.sunion(["a", "b"]) == {"x", "y", "z"}
 
     def test_sunion_empty_input(self, locmem_cache: LocMemCache):
         assert locmem_cache.sunion(["missing1", "missing2"]) == set()
 
     def test_set_ops_preserve_ttl(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a"}, timeout=3600)
+        locmem_cache.sadd("k", "a")
+        locmem_cache.expire("k", 3600)
         locmem_cache.sadd("k", "b")
         assert 3590 <= locmem_cache.ttl("k") <= 3600
 
     def test_set_ops_no_expiry_stays(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a"}, timeout=None)
+        locmem_cache.sadd("k", "a")
         locmem_cache.sadd("k", "b")
         assert locmem_cache.ttl("k") == -1
 
@@ -596,108 +604,112 @@ class TestSetOps:
 class TestHashOps:
     def test_hset_creates_new_hash(self, locmem_cache: LocMemCache):
         assert locmem_cache.hset("k", "name", "alice") == 1
-        assert locmem_cache.get("k") == {"name": "alice"}
+        assert locmem_cache.hgetall("k") == {"name": "alice"}
 
     def test_hset_adds_field(self, locmem_cache: LocMemCache):
         locmem_cache.hset("k", "name", "alice")
         assert locmem_cache.hset("k", "age", "30") == 1
-        assert locmem_cache.get("k") == {"name": "alice", "age": "30"}
+        assert locmem_cache.hgetall("k") == {"name": "alice", "age": "30"}
 
     def test_hset_overwrites_returns_zero(self, locmem_cache: LocMemCache):
         locmem_cache.hset("k", "name", "alice")
         assert locmem_cache.hset("k", "name", "bob") == 0
-        assert locmem_cache.get("k") == {"name": "bob"}
+        assert locmem_cache.hgetall("k") == {"name": "bob"}
 
-    def test_hset_type_error_on_non_hash(self, locmem_cache: LocMemCache):
+    def test_hset_wrongtype_on_string(self, locmem_cache: LocMemCache):
         locmem_cache.set("k", "string")
         with pytest.raises(TypeError):
             locmem_cache.hset("k", "f", "v")
 
+    def test_hset_wrongtype_on_opaque_python_dict(self, locmem_cache: LocMemCache):
+        locmem_cache.set("k", {"a": 1})
+        with pytest.raises(TypeError):
+            locmem_cache.hset("k", "b", 2)
+
     def test_hset_mapping_creates_hash(self, locmem_cache: LocMemCache):
         assert locmem_cache.hset("k", mapping={"a": 1, "b": 2}) == 2
-        assert locmem_cache.get("k") == {"a": 1, "b": 2}
+        assert locmem_cache.hgetall("k") == {"a": 1, "b": 2}
 
     def test_hset_mapping_merges_fields(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a": 1})
+        locmem_cache.hset("k", mapping={"a": 1})
         locmem_cache.hset("k", mapping={"b": 2, "c": 3})
-        assert locmem_cache.get("k") == {"a": 1, "b": 2, "c": 3}
+        assert locmem_cache.hgetall("k") == {"a": 1, "b": 2, "c": 3}
 
     def test_hset_items_creates_hash(self, locmem_cache: LocMemCache):
         # items is a flat list of [field, value, field, value, ...]
         assert locmem_cache.hset("k", items=["a", 1, "b", 2]) == 2
-        assert locmem_cache.get("k") == {"a": 1, "b": 2}
+        assert locmem_cache.hgetall("k") == {"a": 1, "b": 2}
 
     def test_hset_items_odd_length_raises(self, locmem_cache: LocMemCache):
         with pytest.raises(ValueError, match="even number"):
             locmem_cache.hset("k", items=["a", 1, "b"])
 
     def test_hdel_removes_field(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a": 1, "b": 2, "c": 3})
+        locmem_cache.hset("k", mapping={"a": 1, "b": 2, "c": 3})
         assert locmem_cache.hdel("k", "b") == 1
-        assert locmem_cache.get("k") == {"a": 1, "c": 3}
+        assert locmem_cache.hgetall("k") == {"a": 1, "c": 3}
 
     def test_hdel_multiple_fields(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a": 1, "b": 2, "c": 3})
+        locmem_cache.hset("k", mapping={"a": 1, "b": 2, "c": 3})
         assert locmem_cache.hdel("k", "a", "c") == 2
-        assert locmem_cache.get("k") == {"b": 2}
+        assert locmem_cache.hgetall("k") == {"b": 2}
 
     def test_hdel_nonexistent_field(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a": 1})
+        locmem_cache.hset("k", mapping={"a": 1})
         assert locmem_cache.hdel("k", "z") == 0
 
     def test_hdel_missing_key(self, locmem_cache: LocMemCache):
         assert locmem_cache.hdel("missing", "f") == 0
 
     def test_hdel_deletes_when_empty(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a": 1})
+        locmem_cache.hset("k", mapping={"a": 1})
         locmem_cache.hdel("k", "a")
-        assert locmem_cache.get("k") is None
+        assert locmem_cache.has_key("k") is False
 
     def test_hget(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"name": "alice"})
+        locmem_cache.hset("k", mapping={"name": "alice"})
         assert locmem_cache.hget("k", "name") == "alice"
 
     def test_hget_missing_field(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"name": "alice"})
+        locmem_cache.hset("k", mapping={"name": "alice"})
         assert locmem_cache.hget("k", "age") is None
 
     def test_hget_missing_key(self, locmem_cache: LocMemCache):
         assert locmem_cache.hget("missing", "f") is None
 
     def test_hgetall_returns_copy(self, locmem_cache: LocMemCache):
-        original = {"a": 1, "b": 2}
-        locmem_cache.set("k", original)
+        locmem_cache.hset("k", mapping={"a": 1, "b": 2})
         result = locmem_cache.hgetall("k")
-        assert result == original
+        assert result == {"a": 1, "b": 2}
         result["c"] = 3
-        assert locmem_cache.hgetall("k") == original
+        assert locmem_cache.hgetall("k") == {"a": 1, "b": 2}
 
     def test_hgetall_missing(self, locmem_cache: LocMemCache):
         assert locmem_cache.hgetall("missing") == {}
 
     def test_hlen(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a": 1, "b": 2, "c": 3})
+        locmem_cache.hset("k", mapping={"a": 1, "b": 2, "c": 3})
         assert locmem_cache.hlen("k") == 3
 
     def test_hlen_missing(self, locmem_cache: LocMemCache):
         assert locmem_cache.hlen("missing") == 0
 
     def test_hkeys(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"x": 1, "y": 2})
+        locmem_cache.hset("k", mapping={"x": 1, "y": 2})
         assert sorted(locmem_cache.hkeys("k")) == ["x", "y"]
 
     def test_hkeys_missing(self, locmem_cache: LocMemCache):
         assert locmem_cache.hkeys("missing") == []
 
     def test_hvals(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"x": 10, "y": 20})
+        locmem_cache.hset("k", mapping={"x": 10, "y": 20})
         assert sorted(locmem_cache.hvals("k")) == [10, 20]
 
     def test_hvals_missing(self, locmem_cache: LocMemCache):
         assert locmem_cache.hvals("missing") == []
 
     def test_hexists(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"name": "alice"})
+        locmem_cache.hset("k", mapping={"name": "alice"})
         assert locmem_cache.hexists("k", "name") is True
         assert locmem_cache.hexists("k", "age") is False
 
@@ -705,57 +717,56 @@ class TestHashOps:
         assert locmem_cache.hexists("missing", "f") is False
 
     def test_hmget(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a": 1, "b": 2, "c": 3})
+        locmem_cache.hset("k", mapping={"a": 1, "b": 2, "c": 3})
         assert locmem_cache.hmget("k", "a", "c") == [1, 3]
 
     def test_hmget_missing_fields(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a": 1})
+        locmem_cache.hset("k", mapping={"a": 1})
         assert locmem_cache.hmget("k", "a", "z") == [1, None]
 
     def test_hmget_missing_key(self, locmem_cache: LocMemCache):
         assert locmem_cache.hmget("missing", "a", "b") == [None, None]
 
     def test_hsetnx_sets_new_field(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a": 1})
+        locmem_cache.hset("k", mapping={"a": 1})
         assert locmem_cache.hsetnx("k", "b", 2) is True
-        assert locmem_cache.get("k") == {"a": 1, "b": 2}
+        assert locmem_cache.hgetall("k") == {"a": 1, "b": 2}
 
     def test_hsetnx_skips_existing_field(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a": 1})
+        locmem_cache.hset("k", mapping={"a": 1})
         assert locmem_cache.hsetnx("k", "a", 99) is False
-        assert locmem_cache.get("k") == {"a": 1}
+        assert locmem_cache.hgetall("k") == {"a": 1}
 
     def test_hsetnx_creates_hash(self, locmem_cache: LocMemCache):
         assert locmem_cache.hsetnx("k", "f", "v") is True
-        assert locmem_cache.get("k") == {"f": "v"}
+        assert locmem_cache.hgetall("k") == {"f": "v"}
 
     def test_hincrby_new_field(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {})
         assert locmem_cache.hincrby("k", "count", 5) == 5
 
     def test_hincrby_existing_field(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"count": 10})
+        locmem_cache.hset("k", mapping={"count": 10})
         assert locmem_cache.hincrby("k", "count", 3) == 13
 
     def test_hincrby_creates_hash(self, locmem_cache: LocMemCache):
         assert locmem_cache.hincrby("k", "x") == 1
-        assert locmem_cache.get("k") == {"x": 1}
+        assert locmem_cache.hgetall("k") == {"x": 1}
 
     def test_hincrbyfloat_new_field(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {})
         assert locmem_cache.hincrbyfloat("k", "score", 1.5) == pytest.approx(1.5)
 
     def test_hincrbyfloat_existing_field(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"score": 2.5})
+        locmem_cache.hset("k", mapping={"score": 2.5})
         assert locmem_cache.hincrbyfloat("k", "score", 0.5) == pytest.approx(3.0)
 
     def test_hash_ops_preserve_ttl(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a": 1}, timeout=3600)
+        locmem_cache.hset("k", mapping={"a": 1})
+        locmem_cache.expire("k", 3600)
         locmem_cache.hset("k", "b", 2)
         assert 3590 <= locmem_cache.ttl("k") <= 3600
 
     def test_hash_ops_no_expiry_stays(self, locmem_cache: LocMemCache):
-        locmem_cache.set("k", {"a": 1}, timeout=None)
+        locmem_cache.hset("k", mapping={"a": 1})
         locmem_cache.hset("k", "b", 2)
         assert locmem_cache.ttl("k") == -1
 

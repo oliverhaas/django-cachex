@@ -55,3 +55,13 @@ class NotSupportedError(Exception):
         if backend:
             msg += f" by {backend}"
         super().__init__(msg)
+
+
+class WrongTypeError(TypeError):
+    """Raised when an operation is applied to a key holding the wrong RESP type.
+
+    Mirrors Redis ``WRONGTYPE Operation against a key holding the wrong kind
+    of value``. Subclasses :class:`TypeError` so existing ``except TypeError``
+    callers keep working while new code can catch this specifically across
+    backends (LocMem, redis-py, valkey-py, valkey-glide, redis-rs).
+    """
