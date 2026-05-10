@@ -24,7 +24,7 @@ import contextlib
 import random
 from typing import TYPE_CHECKING, Any
 
-from django_cachex.cache.base import BaseCachex, _install_async_delegates
+from django_cachex.cache.base import BaseCachex
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
@@ -934,8 +934,3 @@ class CachexCompat(BaseCachex):
             else:
                 self.delete(key, version=version)
             return len(to_remove)
-
-
-# Compat is a thin shim over Django's ``BaseCache``; async ext methods delegate
-# to the sync emulation. Real async needs a driver that supports it natively.
-_install_async_delegates(CachexCompat)

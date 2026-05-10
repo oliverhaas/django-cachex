@@ -82,13 +82,21 @@ class Cache(models.Model):
 
     @property
     def support_level(self) -> str:
-        """Determine the support level for this cache backend."""
+        """Determine the support level for this cache backend.
+
+        - ``"cachex"`` / ``"limited"`` come from a native cachex backend's
+          ``_cachex_support`` marker.
+        - Anything else with a resolvable cache instance is wrappable on
+          the fly via :func:`~django_cachex.admin.helpers.wrap_for_admin`,
+          so it reports ``"wrapped"``.
+        - If the cache can't be resolved at all, fall back to ``"limited"``.
+        """
         cache = self._get_cache()
-        if cache is not None and hasattr(cache, "_cachex_support"):
+        if cache is None:
+            return "limited"
+        if hasattr(cache, "_cachex_support"):
             return cache._cachex_support
-        if self.backend.startswith("django_cachex."):
-            return "cachex"
-        return "limited"
+        return "wrapped"
 
     @property
     def cachex_upgrade_hint(self) -> str | None:

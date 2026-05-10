@@ -37,11 +37,12 @@ import random
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
+from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.cache.backends.db import DatabaseCache as DjangoDatabaseCache
 from django.db import connections, models, router, transaction
 
-from django_cachex.cache.base import BaseCachex, _install_async_delegates
+from django_cachex.cache.base import BaseCachex
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
@@ -1076,7 +1077,190 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
 
+    # =========================================================================
+    # Async surface
+    # =========================================================================
+    # DatabaseCache reads and writes a real DB, so each ``a*`` wrapper offloads
+    # the sync call to a thread via ``sync_to_async`` to avoid blocking the
+    # event loop. ``thread_sensitive=True`` keeps successive DB calls on the
+    # same connection (Django connections are thread-local). When Django gains
+    # native async DB-cursor APIs, we'll swap each ``await sync_to_async(...)``
+    # for a real async query without touching the public surface.
 
-# Async ext methods delegate to sync — DB calls block the event loop, but the
-# contract holds. Real async would need an async DB driver wired through Django.
-_install_async_delegates(DatabaseCache)
+    async def attl(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.ttl, thread_sensitive=True)(*args, **kwargs)
+
+    async def atype(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.type, thread_sensitive=True)(*args, **kwargs)
+
+    async def apersist(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.persist, thread_sensitive=True)(*args, **kwargs)
+
+    async def aexpire(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.expire, thread_sensitive=True)(*args, **kwargs)
+
+    async def akeys(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.keys, thread_sensitive=True)(*args, **kwargs)
+
+    async def aiter_keys(self, *args: Any, **kwargs: Any) -> Any:
+        # iter_keys is a generator over a list snapshot — materializing once
+        # in the worker thread, then yielding from the coroutine, is fine.
+        items = await sync_to_async(lambda: list(self.iter_keys(*args, **kwargs)), thread_sensitive=True)()
+        for item in items:
+            yield item
+
+    async def adelete_pattern(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.delete_pattern, thread_sensitive=True)(*args, **kwargs)
+
+    async def alpush(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.lpush, thread_sensitive=True)(*args, **kwargs)
+
+    async def arpush(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.rpush, thread_sensitive=True)(*args, **kwargs)
+
+    async def alpop(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.lpop, thread_sensitive=True)(*args, **kwargs)
+
+    async def arpop(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.rpop, thread_sensitive=True)(*args, **kwargs)
+
+    async def alrange(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.lrange, thread_sensitive=True)(*args, **kwargs)
+
+    async def allen(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.llen, thread_sensitive=True)(*args, **kwargs)
+
+    async def alrem(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.lrem, thread_sensitive=True)(*args, **kwargs)
+
+    async def altrim(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.ltrim, thread_sensitive=True)(*args, **kwargs)
+
+    async def alindex(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.lindex, thread_sensitive=True)(*args, **kwargs)
+
+    async def alset(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.lset, thread_sensitive=True)(*args, **kwargs)
+
+    async def alinsert(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.linsert, thread_sensitive=True)(*args, **kwargs)
+
+    async def alpos(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.lpos, thread_sensitive=True)(*args, **kwargs)
+
+    async def asadd(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.sadd, thread_sensitive=True)(*args, **kwargs)
+
+    async def asrem(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.srem, thread_sensitive=True)(*args, **kwargs)
+
+    async def ascard(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.scard, thread_sensitive=True)(*args, **kwargs)
+
+    async def asismember(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.sismember, thread_sensitive=True)(*args, **kwargs)
+
+    async def asmembers(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.smembers, thread_sensitive=True)(*args, **kwargs)
+
+    async def aspop(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.spop, thread_sensitive=True)(*args, **kwargs)
+
+    async def asrandmember(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.srandmember, thread_sensitive=True)(*args, **kwargs)
+
+    async def asmismember(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.smismember, thread_sensitive=True)(*args, **kwargs)
+
+    async def asdiff(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.sdiff, thread_sensitive=True)(*args, **kwargs)
+
+    async def asinter(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.sinter, thread_sensitive=True)(*args, **kwargs)
+
+    async def asunion(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.sunion, thread_sensitive=True)(*args, **kwargs)
+
+    async def ahset(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.hset, thread_sensitive=True)(*args, **kwargs)
+
+    async def ahdel(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.hdel, thread_sensitive=True)(*args, **kwargs)
+
+    async def ahget(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.hget, thread_sensitive=True)(*args, **kwargs)
+
+    async def ahgetall(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.hgetall, thread_sensitive=True)(*args, **kwargs)
+
+    async def ahlen(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.hlen, thread_sensitive=True)(*args, **kwargs)
+
+    async def ahkeys(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.hkeys, thread_sensitive=True)(*args, **kwargs)
+
+    async def ahvals(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.hvals, thread_sensitive=True)(*args, **kwargs)
+
+    async def ahexists(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.hexists, thread_sensitive=True)(*args, **kwargs)
+
+    async def ahmget(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.hmget, thread_sensitive=True)(*args, **kwargs)
+
+    async def ahsetnx(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.hsetnx, thread_sensitive=True)(*args, **kwargs)
+
+    async def ahincrby(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.hincrby, thread_sensitive=True)(*args, **kwargs)
+
+    async def ahincrbyfloat(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.hincrbyfloat, thread_sensitive=True)(*args, **kwargs)
+
+    async def azadd(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.zadd, thread_sensitive=True)(*args, **kwargs)
+
+    async def azcard(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.zcard, thread_sensitive=True)(*args, **kwargs)
+
+    async def azscore(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.zscore, thread_sensitive=True)(*args, **kwargs)
+
+    async def azrank(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.zrank, thread_sensitive=True)(*args, **kwargs)
+
+    async def azrevrank(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.zrevrank, thread_sensitive=True)(*args, **kwargs)
+
+    async def azrange(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.zrange, thread_sensitive=True)(*args, **kwargs)
+
+    async def azrevrange(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.zrevrange, thread_sensitive=True)(*args, **kwargs)
+
+    async def azrangebyscore(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.zrangebyscore, thread_sensitive=True)(*args, **kwargs)
+
+    async def azrem(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.zrem, thread_sensitive=True)(*args, **kwargs)
+
+    async def azincrby(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.zincrby, thread_sensitive=True)(*args, **kwargs)
+
+    async def azcount(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.zcount, thread_sensitive=True)(*args, **kwargs)
+
+    async def azpopmin(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.zpopmin, thread_sensitive=True)(*args, **kwargs)
+
+    async def azpopmax(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.zpopmax, thread_sensitive=True)(*args, **kwargs)
+
+    async def azmscore(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.zmscore, thread_sensitive=True)(*args, **kwargs)
+
+    async def azremrangebyrank(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.zremrangebyrank, thread_sensitive=True)(*args, **kwargs)
+
+    async def azremrangebyscore(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.zremrangebyscore, thread_sensitive=True)(*args, **kwargs)

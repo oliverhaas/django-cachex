@@ -242,12 +242,22 @@ Both views use the same cache backend configured in settings.
 ## Other backends
 
 The async ext surface (`alpush`, `ahset`, `azadd`, `attl`, `aexpire`, …)
-is also available on `LocMemCache`, `DatabaseCache`, and any
-`CachexCompat`-wrapped backend. These adapters don't have a real async
-client underneath, so the calls run their sync implementation under
-``sync_to_async`` — they're safe to ``await`` from async views without
-falling back to ``NotSupportedError`` and without blocking the event
-loop on the calling thread.
+is also available on `LocMemCache` and `DatabaseCache`. The two backends
+take different routes because the underlying work is different:
+
+- **`LocMemCache`** is in-memory: each `a*` method calls its sync
+  counterpart directly with no thread offload. There's no I/O to await,
+  so awaiting from an event loop is harmless.
+- **`DatabaseCache`** does real DB queries, so each `a*` method offloads
+  the sync call via ``asgiref.sync.sync_to_async`` (Django's own pattern
+  for `BaseCache.aget`). Native async DB cursors will replace this path
+  once Django exposes them, without changing the public surface.
+
+`CachexCompat` (used internally by the admin to wrap stock non-cachex
+backends on the fly) does **not** expose async methods. It's a
+sync-only admin shim. If you need an async ext surface, use a native
+cachex backend (`RespCache`, `LocMemCache`, `DatabaseCache`) or wrap
+your own ``sync_to_async`` around the sync calls.
 
 ## Cluster and Sentinel
 
