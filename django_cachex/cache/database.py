@@ -4,13 +4,13 @@ Extends ``django.core.cache.backends.db.DatabaseCache`` with the cachex
 extension surface (lists, sets, hashes, sorted sets, TTL ops, key scanning,
 admin info) implemented natively against the underlying cache table.
 
-Compared to running ``CachexCompat`` over a plain ``BaseCache``:
+Notable design points:
 
 - Compound ops run inside a single ``transaction.atomic()`` block with a
   ``SELECT ... FOR UPDATE`` row lock (PostgreSQL, MySQL/InnoDB; no-op on
   SQLite). Two concurrent ``lpush``/``sadd``/``hincrby`` calls against the
   same key are serialized at the database, eliminating the GET-then-SET
-  race that the emulated path is exposed to.
+  race the naive emulation path is exposed to.
 - One pickle round-trip per op, the same shape Django's stock backend
   uses (``pickle.dumps`` → base64 → ``TEXT`` column). No double encoding
   through the public ``set``/``get`` surface.

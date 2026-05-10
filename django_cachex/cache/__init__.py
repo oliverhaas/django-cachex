@@ -3,7 +3,6 @@
 These are the classes to use as BACKEND in Django's CACHES setting.
 """
 
-from django_cachex.cache.compat import CachexCompat
 from django_cachex.cache.database import DatabaseCache
 from django_cachex.cache.locmem import LocMemCache
 from django_cachex.cache.redis_py import (
@@ -27,7 +26,6 @@ from django_cachex.cache.valkey_py import (
 )
 
 __all__ = [
-    "CachexCompat",
     "DatabaseCache",
     "LocMemCache",
     "RedisCache",

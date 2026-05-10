@@ -24,13 +24,28 @@
 <div id="content-main">
     <!-- Object tools -->
     <ul class="object-tools">
+        {% if cache_obj.support_level == "cachex" %}
         <li>
             <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}">{% trans 'List Keys' %}</a>
         </li>
+        {% endif %}
         <li>
             <a href="?{% if not help_active %}help=1{% endif %}">{% trans 'Help' %}</a>
         </li>
     </ul>
+
+    {% if cache_obj.support_level != "cachex" %}
+    <fieldset class="module aligned info-section">
+        <h2>{% trans 'Limited backend' %}</h2>
+        <p style="padding: 1em;">
+            {% blocktrans %}This backend doesn't expose a key-listing API, so the django-cachex admin can only display its configuration. Browsing, type detection, TTL inspection, and edits aren't available.{% endblocktrans %}
+            {% if cache_obj.cachex_upgrade_hint %}
+            <br><br>
+            {% blocktrans with hint=cache_obj.cachex_upgrade_hint %}Switch <code>BACKEND</code> to <code>{{ hint }}</code> for the full admin experience.{% endblocktrans %}
+            {% endif %}
+        </p>
+    </fieldset>
+    {% endif %}
 
     {% if info_unsupported %}
     <fieldset class="module aligned info-section">

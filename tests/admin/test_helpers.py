@@ -1,11 +1,8 @@
 """Tests for admin helper functions."""
 
 import pytest
-from django.core.cache.backends.locmem import LocMemCache as DjangoLocMemCache
 
-from django_cachex.admin.helpers import PAGE_SIZE, _paginate, wrap_for_admin
-from django_cachex.cache import LocMemCache
-from django_cachex.cache.compat import CachexCompat
+from django_cachex.admin.helpers import PAGE_SIZE, _paginate
 
 
 class TestPaginate:
@@ -81,46 +78,3 @@ class TestPaginate:
 
     def test_page_size_constant(self):
         assert PAGE_SIZE == 100
-
-
-class TestWrapForAdmin:
-    """``wrap_for_admin`` makes non-cachex backends look like cachex backends
-    for the duration of an admin request. Native cachex backends pass through
-    unchanged."""
-
-    def test_native_cachex_backend_returned_unchanged(self):
-        cache = LocMemCache("native", {})
-        assert wrap_for_admin(cache) is cache
-
-    def test_stock_django_locmem_gets_wrapped(self):
-        cache = DjangoLocMemCache("stock", {})
-        wrapped = wrap_for_admin(cache)
-
-        assert wrapped is not cache
-        assert isinstance(wrapped, DjangoLocMemCache)
-        assert isinstance(wrapped, CachexCompat)
-        assert wrapped._cachex_support == "wrapped"
-
-    def test_wrapped_shares_state_with_underlying(self):
-        cache = DjangoLocMemCache("share", {})
-        wrapped = wrap_for_admin(cache)
-
-        wrapped.set("k", "v")
-        assert cache.get("k") == "v"
-        cache.set("k2", "v2")
-        assert wrapped.get("k2") == "v2"
-
-    def test_wrapped_supports_cachex_ext_ops(self):
-        cache = DjangoLocMemCache("ext", {})
-        wrapped = wrap_for_admin(cache)
-
-        wrapped.lpush("mylist", 1, 2, 3)
-        assert wrapped.lrange("mylist", 0, -1) == [3, 2, 1]
-        assert wrapped.llen("mylist") == 3
-
-    def test_wrap_class_memoized_per_underlying_class(self):
-        a = DjangoLocMemCache("a", {})
-        b = DjangoLocMemCache("b", {})
-        wrapped_a = wrap_for_admin(a)
-        wrapped_b = wrap_for_admin(b)
-        assert type(wrapped_a) is type(wrapped_b)

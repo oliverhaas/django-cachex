@@ -17,6 +17,7 @@ from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 from django.utils.timesince import timeuntil
 from django.utils.translation import gettext_lazy as _
 
@@ -118,7 +119,7 @@ class CacheQuerySet:
 
 
 class SupportLevelFilter(admin.SimpleListFilter):
-    """Filter caches by support level (cachex / wrapped / limited)."""
+    """Filter caches by support level (cachex / limited)."""
 
     title = _("support level")
     parameter_name = "support"
@@ -130,7 +131,6 @@ class SupportLevelFilter(admin.SimpleListFilter):
     ) -> list[tuple[str, str]]:
         return [
             ("cachex", "cachex"),
-            ("wrapped", "wrapped"),
             ("limited", "limited"),
         ]
 
@@ -262,16 +262,13 @@ class CacheAdminMixin:
         if level == "cachex":
             style = "background:#dcfce7;color:#15803d;"
             title = "Full support \u2014 django-cachex backend"
-        elif level == "wrapped":
-            style = "background:#dbeafe;color:#1d4ed8;"
-            title = "Wrapped \u2014 CachexCompat (data structures, scan, TTL). No streams, pipelines, or Lua."
         else:
             style = "background:#f3f4f6;color:#374151;"
             hint = obj.cachex_upgrade_hint
             if hint:
-                title = f"Limited support \u2014 switch to {hint} for full features"
+                title = f"Limited \u2014 admin shows configuration only. Switch to {hint} for browsing."
             else:
-                title = "Limited support \u2014 custom backend"
+                title = "Limited \u2014 admin shows configuration only. Non-cachex backend doesn't expose key listing."
         return format_html(
             '<span style="{}padding:2px 8px;border-radius:4px;'
             'font-size:11px;font-weight:600;text-transform:uppercase" '
@@ -283,6 +280,8 @@ class CacheAdminMixin:
 
     @admin.display(description=_("Actions"))
     def keys_link(self, obj: Cache) -> str:
+        if obj.support_level != "cachex":
+            return mark_safe('<span style="color:#9ca3af">—</span>')
         url = reverse("admin:django_cachex_key_changelist") + f"?cache={obj.name}"
         return format_html('<a href="{}">{}</a>', url, _("List Keys"))
 

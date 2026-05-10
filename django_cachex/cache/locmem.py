@@ -4,11 +4,9 @@ Extends ``django.core.cache.backends.locmem.LocMemCache`` with the cachex
 extension surface (lists, sets, hashes, sorted sets, TTL ops, key scanning,
 admin info) implemented natively against the underlying ``OrderedDict``.
 
-Compared to running ``CachexCompat`` over a plain ``BaseCache``:
+Notable design points:
 
-- Compound ops acquire Django's own ``self._lock`` once, instead of
-  layering a separate reentrant lock on top of two ``self.get``/``self.set``
-  calls. One lock acquire per op, not two.
+- Compound ops acquire Django's own ``self._lock`` once per op.
 - Tagged RESP collections (``_List``/``_Set``/``_Hash``/``_ZSet``) live as
   long-lived Python objects in a dedicated ``self._collections`` map;
   mutations are in-place under the lock, so collection ops avoid the

@@ -147,7 +147,7 @@ def populate_cache_if_needed(cache_alias: str) -> None:
         except Exception as e:
             print(f"    [{cache_alias}] Warning: Failed to set {key}: {e}")
 
-    # Add data structures if supported (Redis/Valkey backends + CachexCompat backends)
+    # Add data structures if supported (RESP-backed and LocMem/Database cachex backends)
     has_data_structures = hasattr(cache, "rpush") and "Cluster" not in backend
 
     if has_data_structures:

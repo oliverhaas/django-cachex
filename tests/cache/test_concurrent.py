@@ -1,18 +1,13 @@
 """Concurrent thread-safety tests for cache compound data-structure ops.
 
-Targets the read-modify-write race in ``CachexCompat`` (#62): operations like
-``lpush``/``sadd``/``hset``/``hincrby``/``zadd``/``zincrby`` are implemented as
-GET-then-SET, so two concurrent calls on the same key can lose data.
+Operations like ``lpush``/``sadd``/``hset``/``hincrby``/``zadd``/``zincrby``
+are compound (read-modify-write); a naive GET-then-SET implementation can
+lose updates under concurrent threads. ``LocMemCache`` serializes them under
+its ``self._lock``; Redis backends rely on native atomic commands.
 
 The ``fast_thread_switching`` fixture lowers ``sys.setswitchinterval`` so the
 interpreter switches threads far more aggressively, dramatically increasing
 the chance of catching the race within the test's iteration budget.
-
-Backends covered:
-
-- ``LocMemCache`` (``CachexCompat``) — RED until #62 is fixed.
-- Redis-backed via the existing ``cache`` fixture — uses native atomic
-  Redis commands, so these tests serve as cross-backend smoke coverage.
 """
 
 import sys
@@ -76,7 +71,7 @@ def _run_in_threads(worker: Callable[[int], None], n_threads: int = N_THREADS) -
 
 
 # =============================================================================
-# CachexCompat race tests (RED on main, GREEN once #62 is fixed)
+# LocMemCache compound-op race tests
 # =============================================================================
 
 

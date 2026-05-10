@@ -419,11 +419,6 @@ class TestTieredCacheConfig:
 
         assert LocMemCache._cachex_support == "cachex"
 
-    def test_mixin_support_level(self):
-        from django_cachex.cache.compat import CachexCompat
-
-        assert CachexCompat._cachex_support == "wrapped"
-
 
 class TestTieredSetManyOrdering:
     """Verify set_many writes L2 before L1 so L1 doesn't have phantom data on L2 failure."""

@@ -253,11 +253,10 @@ take different routes because the underlying work is different:
   for `BaseCache.aget`). Native async DB cursors will replace this path
   once Django exposes them, without changing the public surface.
 
-`CachexCompat` (used internally by the admin to wrap stock non-cachex
-backends on the fly) does **not** expose async methods. It's a
-sync-only admin shim. If you need an async ext surface, use a native
-cachex backend (`RespCache`, `LocMemCache`, `DatabaseCache`) or wrap
-your own ``sync_to_async`` around the sync calls.
+Stock Django backends (``django.core.cache.backends.*``) and any other
+non-cachex backend don't get an ext surface from django-cachex. The admin
+shows them with a "limited" badge — configuration only, no key browsing —
+and recommends switching ``BACKEND`` to a cachex equivalent if available.
 
 ## Cluster and Sentinel
 

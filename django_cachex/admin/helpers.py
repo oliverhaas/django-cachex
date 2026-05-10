@@ -9,7 +9,6 @@ from django.conf import settings
 from django.core.cache import caches
 from django.utils.translation import gettext_lazy as _
 
-from django_cachex.cache.compat import CachexCompat
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 from django_cachex.utils import _deep_getsizeof
@@ -88,46 +87,13 @@ def _stats_rows(stats: Mapping[str, Any]) -> list[dict[str, Any]]:
     return [r for r in candidates if r is not None]
 
 
-# Memoize one dynamic CachexCompat-wrapper class per concrete cache class.
-# CachexCompat is a behavior-only mixin (no ``__init__`` or instance state),
-# so a fresh per-request instance can share ``__dict__`` with the real cache
-# without re-running the underlying ``__init__``.
-_wrapped_cache_classes: dict[type, type] = {}
-
-
-def wrap_for_admin(cache: Any) -> Any:
-    """Return a CachexCompat-wrapped view of ``cache`` for admin use.
-
-    Native cachex backends (those declaring ``_cachex_support``) are returned
-    as-is. Anything else gets a per-request wrapper that adds the cachex ext
-    surface (data structures, ``scan``, ``type``, …) on top of the real
-    backend's ``get``/``set``. Mutations through the wrapper hit the same
-    underlying state as the original cache instance.
-
-    Best-effort: ops that read collection contents written by other
-    processes (e.g. raw ``HSET`` against the same Redis) won't see them
-    because the wrapper goes through the underlying cache's pickled
-    ``get``/``set``.
-    """
-    if hasattr(cache, "_cachex_support"):
-        return cache
-    cls = type(cache)
-    wrapped_cls = _wrapped_cache_classes.get(cls)
-    if wrapped_cls is None:
-        wrapped_cls = type(f"{cls.__name__}WithCachexCompat", (CachexCompat, cls), {})
-        _wrapped_cache_classes[cls] = wrapped_cls
-    new: Any = object.__new__(wrapped_cls)
-    new.__dict__ = cache.__dict__
-    return new
-
-
 def get_cache(cache_name: str) -> Any:
-    """Get a cache backend for admin use, wrapping non-cachex backends on the fly."""
+    """Get a cache backend for admin use."""
     cache_config = settings.CACHES.get(cache_name)
     if not cache_config:
         msg = f"Cache '{cache_name}' is not configured in CACHES setting."
         raise ValueError(msg)
-    return wrap_for_admin(caches[cache_name])
+    return caches[cache_name]
 
 
 def parse_metadata(
