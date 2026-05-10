@@ -123,6 +123,10 @@ pub enum RawResult {
     Error(String),
     /// Data/server error → PyRuntimeError (NOT swallowed, indicates real problems)
     ServerError(String),
+    /// Server returned ``WRONGTYPE`` → ``django_cachex.exceptions.WrongTypeError``
+    /// (subclass of ``TypeError``). Distinct from ``ServerError`` so the
+    /// async path can lift the same uniform exception the sync path does.
+    WrongType(String),
 }
 
 /// Recursively convert a `redis::Value` to a Python object.
@@ -295,6 +299,7 @@ impl RawResult {
             }
             RawResult::Error(e) => Err(pyo3::exceptions::PyConnectionError::new_err(e)),
             RawResult::ServerError(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e)),
+            RawResult::WrongType(e) => Err(crate::client::wrongtype_py_err(&e)),
         }
     }
 }

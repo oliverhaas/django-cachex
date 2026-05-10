@@ -21,6 +21,7 @@ and ``_missing_lib_error`` to redirect the check.
 """
 
 import asyncio
+import inspect
 import random
 import threading
 import weakref
@@ -33,7 +34,7 @@ from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
 
 from django_cachex.adapters.protocols import RespAdapterProtocol, RespAsyncPipelineProtocol, RespPipelineProtocol
-from django_cachex.exceptions import NotSupportedError, _main_exceptions
+from django_cachex.exceptions import NotSupportedError, _main_exceptions, maybe_wrap_wrongtype
 from django_cachex.stampede import (
     StampedeConfig,
     get_timeout_with_buffer,
@@ -112,6 +113,47 @@ AsyncClusterRegistry = weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict
 _VALKEY_CLUSTERS: ClusterRegistry = {}
 _VALKEY_CLUSTERS_LOCK = threading.Lock()
 _VALKEY_ASYNC_CLUSTERS: AsyncClusterRegistry = weakref.WeakKeyDictionary()
+
+_WRONGTYPE_INSTALLED_ATTR = "_django_cachex_wrongtype_installed"
+
+
+def _install_wrongtype_translation(client: Any) -> Any:
+    """Patch ``client.execute_command`` to surface WRONGTYPE as :class:`WrongTypeError`.
+
+    Idempotent: a sentinel attribute prevents re-wrapping if the same client
+    is passed in twice. Cluster clients route via the same hook, so this also
+    covers ``ValkeyCluster`` / ``RedisCluster`` instances. No-op for clients
+    that don't expose ``execute_command`` (e.g. valkey-glide's Rust pyclass);
+    those adapters need their own translation.
+    """
+    if getattr(client, _WRONGTYPE_INSTALLED_ATTR, False):
+        return client
+    orig = getattr(client, "execute_command", None)
+    if orig is None:
+        return client
+
+    async def _aexecute(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return await orig(*args, **kwargs)
+        except Exception as e:
+            wrapped = maybe_wrap_wrongtype(e)
+            if wrapped is e:
+                raise
+            raise wrapped from e
+
+    def _sexecute(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return orig(*args, **kwargs)
+        except Exception as e:
+            wrapped = maybe_wrap_wrongtype(e)
+            if wrapped is e:
+                raise
+            raise wrapped from e
+
+    client.execute_command = _aexecute if inspect.iscoroutinefunction(orig) else _sexecute
+    client._django_cachex_wrongtype_installed = True
+    return client
+
 
 _VALKEY_AVAILABLE = False
 try:
@@ -284,7 +326,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         if self._client_class is None:
             msg = "Subclasses must set _client_class"
             raise RuntimeError(msg)
-        return self._client_class(connection_pool=pool)
+        return _install_wrongtype_translation(self._client_class(connection_pool=pool))
 
     # =========================================================================
     # Async Connection Pool Management
@@ -337,7 +379,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         if self._async_client_class is None:
             msg = "Async operations require _async_client_class to be set. Use RedisPyAdapter or ValkeyPyAdapter."
             raise RuntimeError(msg)
-        return self._async_client_class(connection_pool=pool)
+        return _install_wrongtype_translation(self._async_client_class(connection_pool=pool))
 
     def close(self, **kwargs: Any) -> None:
         """No-op. Pools live for the instance's lifetime (matches Django's BaseCache)."""
@@ -3181,7 +3223,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
             if cluster is None:
                 cluster = self._cluster(**cluster_options)
                 self._clusters[cache_key] = cluster
-            return cluster
+            return _install_wrongtype_translation(cluster)
 
     @override
     async def get_async_client(self, key: str | None = None, *, write: bool = False) -> Any:
@@ -3199,7 +3241,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         if cluster is None:
             cluster = self._async_cluster(**cluster_options)
             sub[cache_key] = cluster
-        return cluster
+        return _install_wrongtype_translation(cluster)
 
     def _group_keys_by_slot(self, keys: Iterable[str]) -> dict[int, list[str]]:
         """Group keys by their cluster slot."""

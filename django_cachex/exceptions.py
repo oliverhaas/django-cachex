@@ -65,3 +65,24 @@ class WrongTypeError(TypeError):
     callers keep working while new code can catch this specifically across
     backends (LocMem, redis-py, valkey-py, valkey-glide, redis-rs).
     """
+
+
+def maybe_wrap_wrongtype(exc: BaseException) -> BaseException:
+    """Return :class:`WrongTypeError` if ``exc`` is a backend WRONGTYPE response.
+
+    Each RESP client surfaces ``WRONGTYPE`` differently — redis-py and
+    valkey-py raise their own ``ResponseError`` subclasses, valkey-glide
+    raises ``RequestError``, and the Rust adapter currently raises
+    ``RuntimeError``. They all carry the literal ``WRONGTYPE`` token in the
+    message. This helper inspects the message and returns a uniform
+    :class:`WrongTypeError` (preserving the original as ``__cause__``) so
+    callers can catch a single exception across backends.
+    """
+    if isinstance(exc, WrongTypeError):
+        return exc
+    msg = str(exc)
+    if "WRONGTYPE" in msg:
+        wrapped = WrongTypeError(msg)
+        wrapped.__cause__ = exc
+        return wrapped
+    return exc

@@ -31,6 +31,8 @@ use crate::connection::{ClientCacheOpts, TlsOpts};
 pub(crate) fn classify(e: redis::RedisError) -> RawResult {
     if is_connection_error(&e) {
         RawResult::Error(e.to_string())
+    } else if is_wrongtype(&e) {
+        RawResult::WrongType(e.to_string())
     } else {
         RawResult::ServerError(e.to_string())
     }
@@ -39,9 +41,34 @@ pub(crate) fn classify(e: redis::RedisError) -> RawResult {
 pub(crate) fn to_py_err(e: redis::RedisError) -> PyErr {
     if is_connection_error(&e) {
         pyo3::exceptions::PyConnectionError::new_err(e.to_string())
+    } else if is_wrongtype(&e) {
+        wrongtype_py_err(&e.to_string())
     } else {
         pyo3::exceptions::PyRuntimeError::new_err(e.to_string())
     }
+}
+
+/// Server returned ``WRONGTYPE`` — applying a command to a key whose type
+/// doesn't match (e.g. ``LPUSH`` on a key that holds a string).
+pub(crate) fn is_wrongtype(e: &redis::RedisError) -> bool {
+    matches!(e.code(), Some("WRONGTYPE"))
+}
+
+/// Construct a Python ``WrongTypeError`` (from
+/// ``django_cachex.exceptions``) for the given message. Falls back to
+/// ``PyTypeError`` if the import fails (shouldn't happen at runtime, but
+/// keeps the Rust crate independently usable).
+pub(crate) fn wrongtype_py_err(msg: &str) -> PyErr {
+    Python::attach(|py| match py.import("django_cachex.exceptions") {
+        Ok(module) => match module.getattr("WrongTypeError") {
+            Ok(class) => match class.call1((msg,)) {
+                Ok(instance) => PyErr::from_value(instance),
+                Err(err) => err,
+            },
+            Err(err) => err,
+        },
+        Err(_) => pyo3::exceptions::PyTypeError::new_err(msg.to_owned()),
+    })
 }
 
 pub(crate) fn is_connection_error(e: &redis::RedisError) -> bool {
