@@ -16,6 +16,7 @@ from django_cachex.exceptions import (
     CompressorError,
     NotSupportedError,
     SerializerError,
+    WrongTypeError,
 )
 from django_cachex.lock import AsyncLock, Lock, LockError, LockNotOwnedError
 from django_cachex.script import (
@@ -39,6 +40,7 @@ __all__ = [
     "ScriptHelpers",
     "SerializerError",
     "StampedeConfig",
+    "WrongTypeError",
     "__version__",
     "decode_list_post",
     "decode_single_post",

@@ -10,8 +10,6 @@ Valkey and Redis cache backend for Django, with a Django admin UI for cache insp
 
 ```console
 pip install django-cachex[valkey-py]
-# or
-pip install django-cachex[redis-py]
 ```
 
 ## Quick Start
@@ -19,8 +17,8 @@ pip install django-cachex[redis-py]
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.ValkeyCache",  # or RedisCache
-        "LOCATION": "valkey://127.0.0.1:6379/1",       # or redis://...
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
     }
 }
 ```
@@ -88,7 +86,9 @@ The `valkey-glide` adapter is also optional. Install with the
 `valkey-glide` extra (`pip install django-cachex[valkey-glide]`) to enable
 `ValkeyGlideCache`; it pulls in `valkey-glide-sync` and `valkey-glide`,
 the official Rust-cored Valkey client. cp314 GIL only — no free-threaded
-wheels yet. Cluster and Sentinel variants aren't currently exposed.
+wheels yet. Cluster is supported via `ValkeyGlideClusterCache`; Sentinel
+is not currently exposed (`valkey-glide` itself does not ship a Sentinel
+client).
 
 ## Acknowledgments
 

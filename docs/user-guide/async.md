@@ -239,6 +239,16 @@ async def async_view(request):
 
 Both views use the same cache backend configured in settings.
 
+## Other backends
+
+The async ext surface (`alpush`, `ahset`, `azadd`, `attl`, `aexpire`, …)
+is also available on `LocMemCache`, `DatabaseCache`, and any
+`CachexCompat`-wrapped backend. These adapters don't have a real async
+client underneath, so the calls run their sync implementation under
+``sync_to_async`` — they're safe to ``await`` from async views without
+falling back to ``NotSupportedError`` and without blocking the event
+loop on the calling thread.
+
 ## Cluster and Sentinel
 
 Async works identically with Cluster and Sentinel backends:

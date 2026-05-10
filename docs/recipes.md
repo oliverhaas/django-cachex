@@ -131,20 +131,23 @@ with cache.lock("process-payments", timeout=30):
 
 ## Development Without a Server
 
-For local development without a running server, [fakeredis](https://github.com/cunla/fakeredis-py) provides an in-memory implementation:
+For local development without a running server, use `LocMemCache`:
 
 ```python
 # settings_dev.py
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://localhost:6379/0",
-        "OPTIONS": {
-            "pool_class": "fakeredis.FakeConnectionPool",
-        },
+        "BACKEND": "django_cachex.cache.LocMemCache",
+        "LOCATION": "dev",
     }
 }
 ```
+
+`django_cachex.cache.LocMemCache` extends Django's built-in `LocMemCache`
+with the full data-structure surface (`hset`, `lpush`, `zadd`, …), TTL
+helpers, and admin support. See
+[LocMemCache vs fakeredis](development/locmem-vs-fakeredis.md) for the
+performance comparison and rationale.
 
 !!! tip "For testing"
     django-cachex uses [testcontainers](https://testcontainers.com/) for its test suite.

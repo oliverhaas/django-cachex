@@ -1,6 +1,4 @@
-"""
-Cache detail view for the django-cachex admin.
-"""
+"""Cache detail view for the django-cachex admin."""
 
 import json
 from typing import TYPE_CHECKING
@@ -83,13 +81,11 @@ def _cache_detail_view(
     if response is not None:
         return response
 
-    # Show help message if requested
     help_active = show_help(request, "cache_detail", config.help_messages)
 
     cache = get_cache(cache_name)
     cache_config = settings.CACHES.get(cache_name, {})
 
-    # Get cache metadata and info (single round-trip).
     # ``AttributeError`` and ``NotSupportedError`` mean "this backend
     # doesn't expose info" — render nothing, no scary error. Anything
     # else is a real failure (connection drop, etc.) and gets surfaced.
@@ -105,13 +101,11 @@ def _cache_detail_view(
     else:
         info_data = parse_metadata(cache, cache_config, raw_info)
 
-    # Get slowlog count from query param (default 10)
     try:
         slowlog_count = max(1, int(request.GET.get("count", 10)))
     except ValueError, TypeError:
         slowlog_count = 10
 
-    # Get slowlog entries — same "missing method = unsupported" handling.
     slowlog_data = None
     try:
         slowlog_data = get_slowlog(cache, slowlog_count)
@@ -120,12 +114,10 @@ def _cache_detail_view(
     except Exception as e:  # noqa: BLE001
         messages.error(request, f"Error retrieving slow log: {e!s}")
 
-    # Convert raw_info to pretty-printed JSON for display
     raw_info_json = None
     if raw_info:
         raw_info_json = json.dumps(raw_info, indent=2, default=str)
 
-    # Check if the cache supports destructive operations (cachex backends only)
     is_cachex = cache_obj.support_level == "cachex"
     can_change = request.user.has_perm("django_cachex.change_cache")  # ty: ignore[unresolved-attribute]
 

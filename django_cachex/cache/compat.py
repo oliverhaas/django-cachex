@@ -355,7 +355,7 @@ class CachexCompat(BaseCachex):
             if rank > 0:
                 positions = positions[rank - 1 :]
             elif rank < 0:
-                positions = list(reversed(positions))[: abs(rank)]
+                positions = list(reversed(positions))[abs(rank) - 1 :]
         if count is not None:
             # Redis: count=0 means "return all matches"
             return positions if count == 0 else positions[:count]

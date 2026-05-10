@@ -39,7 +39,7 @@ pure-Python backends never carry the binary.
 uv add django-cachex[valkey-py]
 
 # With the Rust I/O driver
-uv add django-cachex[valkey,redis-rs]
+uv add django-cachex[valkey-py,redis-rs]
 ```
 
 Prebuilt `django-cachex-redis-rs` wheels are published for Linux x86_64,
@@ -65,8 +65,9 @@ uv add django-cachex[valkey-glide]
 ```
 
 cp314 GIL only — no cp314t (free-threaded) wheels are published yet.
-Cluster and Sentinel variants aren't currently exposed; only the standalone
-`ValkeyGlideCache` class is wired up. See the
+Standalone (`ValkeyGlideCache`) and cluster (`ValkeyGlideClusterCache`)
+backends are wired up; Sentinel is not exposed (`valkey-glide` itself does
+not ship a Sentinel client). See the
 [user-guide configuration page](../user-guide/configuration.md#valkey-glide)
 for setup details.
 

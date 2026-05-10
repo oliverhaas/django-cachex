@@ -296,9 +296,9 @@ class TestSyncExpiry:
         assert ttl is not None
         assert 50 <= ttl <= 60
 
-    def test_ttl_returns_none_for_persistent(self, stream_cache: BaseCache):
+    def test_ttl_returns_minus_one_for_persistent(self, stream_cache: BaseCache):
         stream_cache.set("persist_key", "val", timeout=None)
-        assert stream_cache.ttl("persist_key") is None
+        assert stream_cache.ttl("persist_key") == -1
 
     def test_ttl_returns_minus_two_for_missing(self, stream_cache: BaseCache):
         assert stream_cache.ttl("no_key") == -2
@@ -318,7 +318,7 @@ class TestSyncExpiry:
     def test_persist_removes_expiry(self, stream_cache: BaseCache):
         stream_cache.set("persist_test", "val", timeout=60)
         stream_cache.persist("persist_test")
-        assert stream_cache.ttl("persist_test") is None
+        assert stream_cache.ttl("persist_test") == -1
 
     def test_expire_sets_new_ttl(self, stream_cache: BaseCache):
         stream_cache.set("expire_test", "val", timeout=None)
@@ -490,7 +490,7 @@ class TestSyncAdmin:
         assert stream_cache.type("type_key") == "string"
 
     def test_type_missing_returns_none(self, stream_cache: BaseCache):
-        assert stream_cache.type("no_such") == "none"
+        assert stream_cache.type("no_such") is None
 
     def test_pttl(self, stream_cache: BaseCache):
         stream_cache.set("pttl_key", "val", timeout=60)

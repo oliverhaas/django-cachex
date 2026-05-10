@@ -412,7 +412,7 @@ class TestTieredCacheConfig:
             assert cache._l1_cap == 42
 
     def test_cachex_support_level(self, tiered_cache: BaseCache):
-        assert tiered_cache._cachex_support == "cachex"
+        assert tiered_cache._cachex_support == "limited"
 
     def test_locmem_support_level(self):
         from django_cachex.cache.locmem import LocMemCache

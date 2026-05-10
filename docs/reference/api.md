@@ -37,6 +37,7 @@ django-cachex adds these extended methods:
 | `pexpire(key, timeout)` | Set expiration in milliseconds |
 | `expireat(key, when)` | Set expiration at datetime |
 | `pexpireat(key, when)` | Set expiration at datetime (ms precision) |
+| `expiretime(key)` | Absolute Unix timestamp (seconds) when the key expires |
 | `persist(key)` | Remove expiration |
 | `type(key)` | Get the data type of a key |
 | `lock(key, ...)` | Get a distributed lock |
@@ -215,7 +216,7 @@ The helpers object passed to pre/post hooks:
 ### Set Method Options
 
 ```python
-cache.set(key, value, timeout=300, nx=False, xx=False)
+cache.set(key, value, timeout=300, nx=False, xx=False, get=False)
 ```
 
 | Parameter | Description |
@@ -223,6 +224,7 @@ cache.set(key, value, timeout=300, nx=False, xx=False)
 | `timeout` | Expiration in seconds (`None` = never, `0` = immediate) |
 | `nx` | Only set if key doesn't exist (SETNX) |
 | `xx` | Only set if key exists |
+| `get` | Return the previous value (atomic get-and-set) |
 
 ## Async Methods
 
@@ -385,9 +387,41 @@ All cache methods are available on the pipeline. Results are returned as a list 
 |--------|-------------|
 | `serializer` | Serializer class or list for fallback |
 | `compressor` | Compressor class or list for fallback |
+| `min_length` | Skip compression for payloads below this byte count (default `15`) |
 | `password` | Server password |
 | `socket_connect_timeout` | Connection timeout |
 | `socket_timeout` | Read/write timeout |
-| `pool_class` | Custom connection pool class |
+| `pool_class` | Custom connection pool class (sync) |
+| `async_pool_class` | Custom connection pool class (async) |
+| `parser_class` | Custom RESP parser class |
+| `stampede_prevention` | `True` / `False` / dict (`buffer`, `beta`, `delta`) — see [`StampedeConfig`](#stampedeconfig) |
 | `sentinels` | Sentinel server list (for Sentinel backends) |
 | `sentinel_kwargs` | Sentinel configuration |
+
+### StampedeConfig
+
+`django_cachex.StampedeConfig(buffer=60, beta=1.0, delta=1.0)` — frozen
+dataclass that tunes the TTL-based XFetch stampede-prevention algorithm.
+Pass it to `OPTIONS["stampede_prevention"]` to apply globally, or to the
+`stampede_prevention=` kwarg on `get`/`set`/`get_many`/`set_many`/`add`/
+`get_or_set` for per-call overrides.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `buffer` | `60`  | Seconds added to TTL on writes; defines the early-recompute window. |
+| `beta`   | `1.0` | Multiplier on the recompute probability — higher = recompute earlier. |
+| `delta`  | `1.0` | Recompute-cost estimate (seconds); larger = recompute earlier. |
+
+## Exceptions
+
+All raised from `django_cachex.exceptions` and re-exported at the package
+root.
+
+| Exception | Description |
+|-----------|-------------|
+| `WrongTypeError` | Operation applied to a key holding the wrong RESP type (subclass of `TypeError`). Mirrors Redis ``WRONGTYPE``; raised consistently across LocMem, redis-py, valkey-py, valkey-glide, and the Rust adapter. |
+| `CompressorError` | Compression or decompression failed. Triggers the configured compressor fallback chain. |
+| `SerializerError` | Serialization or deserialization failed. Triggers the serializer fallback chain. |
+| `NotSupportedError` | Operation is not supported by this backend (e.g. `lpush` on `TieredCache`). |
+| `LockError` | Generic lock failure (couldn't acquire, releasing an unlocked lock, …). |
+| `LockNotOwnedError` | Releasing or extending a lock whose token no longer matches — i.e. the lock expired or was stolen. Subclass of `LockError`. |

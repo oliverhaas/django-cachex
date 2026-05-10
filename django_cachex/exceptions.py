@@ -72,11 +72,12 @@ def maybe_wrap_wrongtype(exc: BaseException) -> BaseException:
 
     Each RESP client surfaces ``WRONGTYPE`` differently — redis-py and
     valkey-py raise their own ``ResponseError`` subclasses, valkey-glide
-    raises ``RequestError``, and the Rust adapter currently raises
-    ``RuntimeError``. They all carry the literal ``WRONGTYPE`` token in the
-    message. This helper inspects the message and returns a uniform
-    :class:`WrongTypeError` (preserving the original as ``__cause__``) so
-    callers can catch a single exception across backends.
+    raises ``RequestError``. The Rust adapter translates WRONGTYPE to
+    :class:`WrongTypeError` itself before crossing the FFI boundary, so it
+    doesn't need this helper. All backends carry the literal ``WRONGTYPE``
+    token in the message; this helper inspects the message and returns a
+    uniform :class:`WrongTypeError` (preserving the original as
+    ``__cause__``) so callers can catch a single exception across backends.
     """
     if isinstance(exc, WrongTypeError):
         return exc

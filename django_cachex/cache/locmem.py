@@ -41,7 +41,7 @@ from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.cache.backends.locmem import LocMemCache as DjangoLocMemCache
 from sortedcontainers import SortedList  # type: ignore[import-untyped]
 
-from django_cachex.cache.base import BaseCachex, _install_async_delegates
+from django_cachex.cache.base import BaseCachex
 from django_cachex.exceptions import WrongTypeError
 from django_cachex.types import KeyType
 from django_cachex.utils import _deep_getsizeof, _format_bytes
@@ -1315,6 +1315,188 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 self._delete(internal_key)
             return len(to_remove)
 
+    # =========================================================================
+    # Async surface
+    # =========================================================================
+    # LocMemCache is in-memory: no I/O, no thread pool needed. Each ``a*``
+    # method calls its sync counterpart directly. Calling these from an
+    # async event loop is safe — the underlying ops are dict/list/set
+    # mutations behind a per-instance ``RLock``, never blocking on I/O.
+    # Signatures stay loose (``*args, **kwargs``) so the sync method's
+    # signature, which is the source of truth, doesn't need to be
+    # mirrored in two places.
 
-# Async ext methods are blocking sync calls — LocMem is in-memory, no I/O to await.
-_install_async_delegates(LocMemCache)
+    async def attl(self, *args: Any, **kwargs: Any) -> Any:
+        return self.ttl(*args, **kwargs)
+
+    async def atype(self, *args: Any, **kwargs: Any) -> Any:
+        return self.type(*args, **kwargs)
+
+    async def apersist(self, *args: Any, **kwargs: Any) -> Any:
+        return self.persist(*args, **kwargs)
+
+    async def aexpire(self, *args: Any, **kwargs: Any) -> Any:
+        return self.expire(*args, **kwargs)
+
+    async def akeys(self, *args: Any, **kwargs: Any) -> Any:
+        return self.keys(*args, **kwargs)
+
+    async def aiter_keys(self, *args: Any, **kwargs: Any) -> Any:
+        for key in self.iter_keys(*args, **kwargs):
+            yield key
+
+    async def adelete_pattern(self, *args: Any, **kwargs: Any) -> Any:
+        return self.delete_pattern(*args, **kwargs)
+
+    async def alpush(self, *args: Any, **kwargs: Any) -> Any:
+        return self.lpush(*args, **kwargs)
+
+    async def arpush(self, *args: Any, **kwargs: Any) -> Any:
+        return self.rpush(*args, **kwargs)
+
+    async def alpop(self, *args: Any, **kwargs: Any) -> Any:
+        return self.lpop(*args, **kwargs)
+
+    async def arpop(self, *args: Any, **kwargs: Any) -> Any:
+        return self.rpop(*args, **kwargs)
+
+    async def alrange(self, *args: Any, **kwargs: Any) -> Any:
+        return self.lrange(*args, **kwargs)
+
+    async def allen(self, *args: Any, **kwargs: Any) -> Any:
+        return self.llen(*args, **kwargs)
+
+    async def alrem(self, *args: Any, **kwargs: Any) -> Any:
+        return self.lrem(*args, **kwargs)
+
+    async def altrim(self, *args: Any, **kwargs: Any) -> Any:
+        return self.ltrim(*args, **kwargs)
+
+    async def alindex(self, *args: Any, **kwargs: Any) -> Any:
+        return self.lindex(*args, **kwargs)
+
+    async def alset(self, *args: Any, **kwargs: Any) -> Any:
+        return self.lset(*args, **kwargs)
+
+    async def alinsert(self, *args: Any, **kwargs: Any) -> Any:
+        return self.linsert(*args, **kwargs)
+
+    async def alpos(self, *args: Any, **kwargs: Any) -> Any:
+        return self.lpos(*args, **kwargs)
+
+    async def asadd(self, *args: Any, **kwargs: Any) -> Any:
+        return self.sadd(*args, **kwargs)
+
+    async def asrem(self, *args: Any, **kwargs: Any) -> Any:
+        return self.srem(*args, **kwargs)
+
+    async def ascard(self, *args: Any, **kwargs: Any) -> Any:
+        return self.scard(*args, **kwargs)
+
+    async def asismember(self, *args: Any, **kwargs: Any) -> Any:
+        return self.sismember(*args, **kwargs)
+
+    async def asmembers(self, *args: Any, **kwargs: Any) -> Any:
+        return self.smembers(*args, **kwargs)
+
+    async def aspop(self, *args: Any, **kwargs: Any) -> Any:
+        return self.spop(*args, **kwargs)
+
+    async def asrandmember(self, *args: Any, **kwargs: Any) -> Any:
+        return self.srandmember(*args, **kwargs)
+
+    async def asmismember(self, *args: Any, **kwargs: Any) -> Any:
+        return self.smismember(*args, **kwargs)
+
+    async def asdiff(self, *args: Any, **kwargs: Any) -> Any:
+        return self.sdiff(*args, **kwargs)
+
+    async def asinter(self, *args: Any, **kwargs: Any) -> Any:
+        return self.sinter(*args, **kwargs)
+
+    async def asunion(self, *args: Any, **kwargs: Any) -> Any:
+        return self.sunion(*args, **kwargs)
+
+    async def ahset(self, *args: Any, **kwargs: Any) -> Any:
+        return self.hset(*args, **kwargs)
+
+    async def ahdel(self, *args: Any, **kwargs: Any) -> Any:
+        return self.hdel(*args, **kwargs)
+
+    async def ahget(self, *args: Any, **kwargs: Any) -> Any:
+        return self.hget(*args, **kwargs)
+
+    async def ahgetall(self, *args: Any, **kwargs: Any) -> Any:
+        return self.hgetall(*args, **kwargs)
+
+    async def ahlen(self, *args: Any, **kwargs: Any) -> Any:
+        return self.hlen(*args, **kwargs)
+
+    async def ahkeys(self, *args: Any, **kwargs: Any) -> Any:
+        return self.hkeys(*args, **kwargs)
+
+    async def ahvals(self, *args: Any, **kwargs: Any) -> Any:
+        return self.hvals(*args, **kwargs)
+
+    async def ahexists(self, *args: Any, **kwargs: Any) -> Any:
+        return self.hexists(*args, **kwargs)
+
+    async def ahmget(self, *args: Any, **kwargs: Any) -> Any:
+        return self.hmget(*args, **kwargs)
+
+    async def ahsetnx(self, *args: Any, **kwargs: Any) -> Any:
+        return self.hsetnx(*args, **kwargs)
+
+    async def ahincrby(self, *args: Any, **kwargs: Any) -> Any:
+        return self.hincrby(*args, **kwargs)
+
+    async def ahincrbyfloat(self, *args: Any, **kwargs: Any) -> Any:
+        return self.hincrbyfloat(*args, **kwargs)
+
+    async def azadd(self, *args: Any, **kwargs: Any) -> Any:
+        return self.zadd(*args, **kwargs)
+
+    async def azcard(self, *args: Any, **kwargs: Any) -> Any:
+        return self.zcard(*args, **kwargs)
+
+    async def azscore(self, *args: Any, **kwargs: Any) -> Any:
+        return self.zscore(*args, **kwargs)
+
+    async def azrank(self, *args: Any, **kwargs: Any) -> Any:
+        return self.zrank(*args, **kwargs)
+
+    async def azrevrank(self, *args: Any, **kwargs: Any) -> Any:
+        return self.zrevrank(*args, **kwargs)
+
+    async def azrange(self, *args: Any, **kwargs: Any) -> Any:
+        return self.zrange(*args, **kwargs)
+
+    async def azrevrange(self, *args: Any, **kwargs: Any) -> Any:
+        return self.zrevrange(*args, **kwargs)
+
+    async def azrangebyscore(self, *args: Any, **kwargs: Any) -> Any:
+        return self.zrangebyscore(*args, **kwargs)
+
+    async def azrem(self, *args: Any, **kwargs: Any) -> Any:
+        return self.zrem(*args, **kwargs)
+
+    async def azincrby(self, *args: Any, **kwargs: Any) -> Any:
+        return self.zincrby(*args, **kwargs)
+
+    async def azcount(self, *args: Any, **kwargs: Any) -> Any:
+        return self.zcount(*args, **kwargs)
+
+    async def azpopmin(self, *args: Any, **kwargs: Any) -> Any:
+        return self.zpopmin(*args, **kwargs)
+
+    async def azpopmax(self, *args: Any, **kwargs: Any) -> Any:
+        return self.zpopmax(*args, **kwargs)
+
+    async def azmscore(self, *args: Any, **kwargs: Any) -> Any:
+        return self.zmscore(*args, **kwargs)
+
+    async def azremrangebyrank(self, *args: Any, **kwargs: Any) -> Any:
+        return self.zremrangebyrank(*args, **kwargs)
+
+    async def azremrangebyscore(self, *args: Any, **kwargs: Any) -> Any:
+        return self.zremrangebyscore(*args, **kwargs)

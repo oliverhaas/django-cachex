@@ -58,7 +58,7 @@ on read), **✗** raises `SerializerError` on `dumps`.
 ¹ End-to-end Django cache → `redis-rs` adapter → localhost Valkey,
 ~150 B payload, geometric mean of `get`/`set`/`mget`/`mset` ops/sec.
 Real network or larger payloads dampen the spread. Reproduce with the
-[benchmarks](https://github.com/e1plus/django-cachex/tree/main/benchmarks) harness.
+[benchmarks](https://github.com/oliverhaas/django-cachex/tree/main/benchmarks) harness.
 
 Notes:
 

@@ -909,7 +909,7 @@ class Pipeline:
     ) -> Self:
         """Queue HMGET command (get multiple field values)."""
         nkey = self._make_key(key, version)
-        self._pipeline_adapter.hmget(nkey, fields)
+        self._pipeline_adapter.hmget(nkey, *fields)
         self._decoders.append(self._decode_hash_values)
         return self
 

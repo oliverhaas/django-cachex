@@ -16,7 +16,6 @@ from django_cachex.cache.resp import RespCache, RespClusterCache
 class ValkeyGlideCache(RespCache):
     """Django cache backend using ``valkey-glide-sync`` standalone."""
 
-    _cachex_support = "cachex"
     _adapter_class = ValkeyGlideAdapter
 
 
@@ -27,7 +26,6 @@ class ValkeyGlideClusterCache(RespClusterCache):
     ``{tag}`` hash tags on related keys.
     """
 
-    _cachex_support = "cachex"
     _adapter_class = ValkeyGlideClusterAdapter
 
 

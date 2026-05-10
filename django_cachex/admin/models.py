@@ -73,7 +73,6 @@ class Cache(models.Model):
         return str(loc) if loc else ""
 
     def _get_cache(self) -> Any | None:
-        """Get the raw cache backend."""
         from django.core.cache import caches
 
         try:
@@ -84,16 +83,11 @@ class Cache(models.Model):
     @property
     def support_level(self) -> str:
         """Determine the support level for this cache backend."""
-        # Check for _cachex_support attribute on the cache backend
         cache = self._get_cache()
         if cache is not None and hasattr(cache, "_cachex_support"):
             return cache._cachex_support
-
-        # Fall back to backend string check
         if self.backend.startswith("django_cachex."):
             return "cachex"
-
-        # Everything else is limited
         return "limited"
 
     @property
@@ -107,12 +101,10 @@ class Cache(models.Model):
 
     @property
     def pk(self) -> str:
-        """Primary key is the cache name."""
         return self.name
 
     @pk.setter
     def pk(self, value: str):
-        """Set primary key (cache name)."""
         self.name = value
 
 

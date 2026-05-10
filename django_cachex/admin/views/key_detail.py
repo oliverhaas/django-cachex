@@ -1,6 +1,4 @@
-"""
-Key detail view for the django-cachex admin.
-"""
+"""Key detail view for the django-cachex admin."""
 
 import contextlib
 import json
@@ -563,16 +561,15 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
             response = handler(request, cache, cache_name, key, page)
             if response is not None:
                 return response
+        else:
+            messages.error(request, f"Unknown action: {action!r}." if action else "No action specified.")
 
-    # GET request - display the key
     key_exists = cache.has_key(key)
 
-    # Check for create mode (type param provided for non-existing key)
     create_mode = False
     create_type = request.GET.get("type", "").strip()
     if not key_exists:
         if create_type:
-            # Create mode: key doesn't exist but type is specified
             create_mode = True
             messages.warning(
                 request,
@@ -582,7 +579,6 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
             messages.error(request, f"Key '{key}' does not exist in cache '{cache_name}'.")
             return redirect(key_list_url(cache_name))
 
-    # Get TTL and type for the key
     key_type = None
     ttl = None
     ttl_expires_at = None
@@ -594,11 +590,9 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
             ttl = cache.ttl(key)
             if ttl is not None and ttl >= 0:
                 ttl_expires_at = timezone.now() + timedelta(seconds=ttl)
-        # Get type-specific data for non-string types
         if key_type and key_type != KeyType.STRING:
             type_data = get_type_data(cache, key, key_type, page=page)
     elif create_mode:
-        # In create mode, use the type from query param
         key_type = create_type
 
     # Get value for string keys (cache.get() only works for strings).
@@ -637,7 +631,6 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
     if value_decode_error is not None:
         value_display = f"<value cannot be decoded: {value_decode_error}>"
     elif raw_value is not None:
-        # Format value for display - JSON-serializable values are editable
         value_display, value_is_editable = format_value_for_display(raw_value)
     else:
         value_display = "null"
@@ -649,7 +642,6 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
     help_key = f"key_detail_{key_type}" if key_type else "key_detail"
     help_active = show_help(request, help_key, config.help_messages)
 
-    # Get cache metadata for displaying the raw key info
     cache_metadata = {
         "key_prefix": cache.key_prefix,
         "version": cache.version,

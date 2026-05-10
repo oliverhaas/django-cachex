@@ -28,7 +28,7 @@ A drop-in replacement for Django's built-in Redis cache, plus:
 
 - Python 3.14+ (free-threaded supported)
 - Django 6.0+
-- valkey-py 6.1+ or redis-py 6.0+
+- valkey-py 6.1+ (redis-py 6.0+ also supported)
 
 ## Quick Start
 
@@ -43,8 +43,8 @@ Configure as cache backend:
 ```python
 CACHES = {
     "default": {
-        "BACKEND": "django_cachex.cache.ValkeyCache",  # or RedisCache
-        "LOCATION": "valkey://127.0.0.1:6379/1",       # or redis://...
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
     }
 }
 ```

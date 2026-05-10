@@ -1,6 +1,4 @@
-"""
-Key add view for the django-cachex admin.
-"""
+"""Key add view for the django-cachex admin."""
 
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
@@ -39,18 +37,14 @@ def _key_add_view(
         if not key_name:
             messages.error(request, "Key name is required.")
         else:
-            # Check if key already exists
             if cache.has_key(key_name):
                 messages.warning(request, f"Key '{key_name}' already exists.")
                 return redirect(key_detail_url(cache_name, key_name))
-            # Redirect to key_detail in create mode
             base_url = key_detail_url(cache_name, key_name)
             params = urlencode({"type": key_type})
-            # Use ? or & depending on whether URL already has query params
             separator = "&" if "?" in base_url else "?"
             return redirect(f"{base_url}{separator}{params}")
 
-    # Pre-fill from query params (for Back button)
     prefill_key = request.GET.get("key", "")
     prefill_type = request.GET.get("type", KeyType.STRING)
 

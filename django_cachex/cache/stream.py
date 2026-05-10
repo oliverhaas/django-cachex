@@ -61,6 +61,7 @@ from django.core.cache.backends.locmem import LocMemCache
 from django.core.exceptions import ImproperlyConfigured
 
 from django_cachex.exceptions import NotSupportedError
+from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -583,7 +584,7 @@ class StreamCache(LocMemCache):
                 return -2
             exp = self._expire_info.get(made_key)
             if exp is None:
-                return None
+                return -1
             remaining = int(exp - time.time())
             return max(0, remaining)
 
@@ -595,7 +596,7 @@ class StreamCache(LocMemCache):
                 return -2
             exp = self._expire_info.get(made_key)
             if exp is None:
-                return None
+                return -1
             remaining = int((exp - time.time()) * 1000)
             return max(0, remaining)
 
@@ -605,13 +606,13 @@ class StreamCache(LocMemCache):
     def expire(self, key: str, timeout: int, version: int | None = None) -> bool:
         return self.touch(key, timeout=timeout, version=version)
 
-    def type(self, key: str, version: int | None = None) -> str:
+    def type(self, key: str, version: int | None = None) -> KeyType | None:
         self._ensure_consumer()
         made_key = self.make_and_validate_key(key, version=version)
         with self._lock:
             if made_key not in self._cache or self._has_expired(made_key):
-                return "none"
-        return "string"
+                return None
+        return KeyType.STRING
 
     def info(self, section: str | None = None) -> dict[str, Any]:
         self._ensure_consumer()
@@ -682,9 +683,7 @@ class StreamCache(LocMemCache):
         itersize: int | None = None,
     ) -> int:
         matching = self.keys(pattern, version=version)
-        for k in matching:
-            self.delete(k, version=version)
-        return len(matching)
+        return sum(1 for k in matching if self.delete(k, version=version))
 
 
 __all__ = [

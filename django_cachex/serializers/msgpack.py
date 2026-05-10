@@ -11,7 +11,7 @@ from django_cachex.serializers.base import BaseSerializer
 
 
 class MsgpackSerializer(BaseSerializer):
-    """MessagePack-based serializer for efficient binary serialization."""
+    """MessagePack-based serializer."""
 
     def _dumps(self, obj: Any) -> bytes:
         return msgpack.dumps(obj)

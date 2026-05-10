@@ -921,19 +921,14 @@ impl RedisRsPipelineAdapter {
         Ok(slf)
     }
 
+    #[pyo3(signature = (key, *fields))]
     fn hmget<'py>(
         mut slf: PyRefMut<'py, Self>,
         key: &Bound<'py, PyAny>,
-        fields: &Bound<'py, PyAny>,
+        fields: Vec<Bound<'py, PyAny>>,
     ) -> PyResult<PyRefMut<'py, Self>> {
         let mut args = vec![to_redis_bytes(key)?];
-        if fields.extract::<&str>().is_ok() || fields.extract::<Vec<u8>>().is_ok() {
-            args.push(to_redis_bytes(fields)?);
-        } else {
-            for item in fields.try_iter()? {
-                args.push(to_redis_bytes(&item?)?);
-            }
-        }
+        args.extend(collect_args(&fields)?);
         slf.commands.push(("HMGET".to_string(), args));
         slf.parsers.push(None);
         Ok(slf)

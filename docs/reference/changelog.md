@@ -6,6 +6,8 @@
 
 - **Python 3.14+ required.** Dropped support for 3.12 and 3.13. The package now ships on cp314 and cp314t (free-threaded) wheels.
 - **Django 6.0+ required.** Dropped support for Django 5.2.
+- **`LocMemCache` data structures use tagged subclasses.** Lists, sets, hashes, sorted sets, and streams are stored as dedicated subclasses (`_List`, `_Set`, `_Hash`, `_ZSet`, `_Stream`) rather than plain Python types, and cross-type access raises `WrongTypeError` instead of silently coercing — matching real Valkey/Redis ``WRONGTYPE`` semantics.
+- **`LocMemCache` bypasses pickle for tagged collections.** Mutations happen in place; the prior copy-on-read/copy-on-write contract no longer holds. Code that relied on getting a detached snapshot from `cache.get()` for these types now sees the live structure.
 - **`StreamCache` wire format changed.** Stream entries now flow through the transport's serializer + compressor pipeline instead of raw pickle. Pods running the new code cannot read entries written by older pods on the same stream; coordinate the rollout (drain or rotate `STREAM_KEY`).
 - **`hmset` removed.** Use `hset(key, mapping=...)` or `hset(key, items=...)` (flat key-value list, matching redis-py/valkey-py).
 - **`django_cachex.unfold` removed.** The django-unfold theme variant of the admin is gone, along with the `[unfold]` extra and `examples/unfold/`. Plain `django_cachex.admin` remains. Unfold support may return as a thin theme override once the core admin app stabilises.
@@ -16,6 +18,9 @@
 ### New features
 
 - **Rust I/O driver.** Optional native driver built on PyO3 + tokio + redis-rs, shipped as a separate `django-cachex-redis-rs` package. Opt in via the `redis-rs` extra (`pip install django-cachex[redis-rs]`); without it, only the pure-Python backends are pulled in and the `RedisRsCache` classes raise a clean `ImportError` on first use. Set `BACKEND` to one of `RedisRsCache`, `RedisRsClusterCache`, or `RedisRsSentinelCache`. Sync and async share one tokio runtime; async dodges the threadpool round-trip.
+- **`valkey-glide` adapter.** Optional Rust-cored client from the Valkey project. Opt in via the `valkey-glide` extra. Standalone (`ValkeyGlideCache`) and cluster (`ValkeyGlideClusterCache`) topologies are exposed; Sentinel is not (`valkey-glide` itself does not ship a Sentinel client).
+- **`WrongTypeError` exception.** Backends now translate Redis ``WRONGTYPE`` responses into a single `django_cachex.WrongTypeError` (subclass of `TypeError`) so user code can catch one exception across LocMem, redis-py, valkey-py, valkey-glide, and the Rust adapter.
+- **Async ext methods on LocMem, Database, and CachexCompat.** The full async data-structure surface (`alpush`, `ahset`, `azadd`, `attl`, `aexpire`, …) is now available on `LocMemCache`, `DatabaseCache`, and any `CachexCompat`-wrapped backend, dispatched via `sync_to_async`. They no longer raise `NotSupportedError` from async views.
 - **`StreamCache` backend.** Stream-synchronized in-memory cache: reads are local, writes broadcast over a Redis Stream, a daemon thread on each pod consumes the stream and applies remote changes. Read-heavy, write-light, eventually consistent.
 - **`TieredCache` backend.** Composes two existing `CACHES` entries as L1 (fast, e.g. LocMem) and L2 (durable, e.g. Redis), with TTL propagation and pull-through reads.
 - **Cache-stampede prevention.** TTL-based XFetch via `OPTIONS["stampede_prevention"]` (or `stampede_prevention=` per call). Configurable buffer/beta/delta.
@@ -27,6 +32,11 @@
 - **Pipeline parity.** Stream ops, CAS ops, missing key ops (`persist`/`pttl`/`expireat`/etc.), context manager, `zpopmin`/`zpopmax` default `count=1` aligned with the cache API.
 - **Compressors gain a uniform `level=` parameter** (gzip, lz4, zstd join zlib/lzma in exposing it). Defaults match each library's own default.
 - **Serializer/compressor wrappers consolidated.** Subclasses now implement `_dumps`/`_loads` (serializers) or `_compress`/`_decompress` (compressors); the base classes wrap the boilerplate (`SerializerError` / `CompressorError` translation, int-passthrough on loads).
+
+### Performance
+
+- **`LocMemCache` sorted sets are O(log N).** Sorted-set operations now back the underlying dict with a `sortedcontainers.SortedList` sidecar for O(log N) insertion, deletion, and rank queries; previous implementation was O(N log N) per write. Adds `sortedcontainers>=2.4` as a runtime dependency.
+- **`LocMemCache` skips pickle for tagged collections.** Tagged subclasses are mutated in place; reads and writes no longer round-trip through pickle for list/set/hash/zset/stream types.
 
 ### Fixes
 

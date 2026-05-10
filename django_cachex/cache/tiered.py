@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any
 from django.core.cache.backends.base import DEFAULT_TIMEOUT, BaseCache
 from django.core.exceptions import ImproperlyConfigured
 
+from django_cachex.cache.base import BaseCachex
 from django_cachex.exceptions import NotSupportedError
 
 if TYPE_CHECKING:
@@ -48,14 +49,17 @@ if TYPE_CHECKING:
 _L1_MISS = object()
 
 
-class TieredCache(BaseCache):
+class TieredCache(BaseCachex):
     """Two-tiered cache referencing other CACHES entries as L1 and L2.
 
     L1 is checked first on reads; on miss, L2 is queried and L1 is populated.
-    L1 TTL is capped by min(L1_TIMEOUT, L2's remaining TTL).
+    L1 TTL is capped by min(L1_TIMEOUT, L2's remaining TTL). Only the standard
+    Django cache surface plus admin metadata (``keys``, ``ttl``, ``type``,
+    ``info``, etc.) is delegated to L2; data-structure ops (``lpush``,
+    ``hset``, ``zadd`` …) raise :class:`NotSupportedError`.
     """
 
-    _cachex_support: str = "cachex"
+    _cachex_support: str = "limited"
 
     def __init__(self, server: str, params: dict[str, Any]) -> None:
         super().__init__(params)
@@ -351,8 +355,8 @@ class TieredCache(BaseCache):
             raise NotSupportedError(method, "TieredCache")
         try:
             return fn(*args, **kwargs)
-        except AttributeError, NotSupportedError:
-            raise NotSupportedError(method, "TieredCache") from None
+        except (AttributeError, NotSupportedError) as exc:
+            raise NotSupportedError(method, "TieredCache") from exc
 
     def make_key(self, key: str, version: int | None = None) -> str:
         return self._delegate("make_key", key, version=version)
@@ -366,8 +370,13 @@ class TieredCache(BaseCache):
     def keys(self, pattern: str = "*", version: int | None = None) -> list[str]:
         return self._delegate("keys", pattern, version=version)
 
-    def iter_keys(self, pattern: str, itersize: int | None = None) -> Iterator[str]:
-        return self._delegate("iter_keys", pattern, itersize=itersize)
+    def iter_keys(
+        self,
+        pattern: str = "*",
+        version: int | None = None,
+        itersize: int | None = None,
+    ) -> Iterator[str]:
+        return self._delegate("iter_keys", pattern, version=version, itersize=itersize)
 
     def scan(
         self,
@@ -386,13 +395,13 @@ class TieredCache(BaseCache):
             key_type=key_type,
         )
 
-    def ttl(self, key: str, version: int | None = None) -> int:
+    def ttl(self, key: str, version: int | None = None) -> int | None:
         return self._delegate("ttl", key, version=version)
 
-    def pttl(self, key: str, version: int | None = None) -> int:
+    def pttl(self, key: str, version: int | None = None) -> int | None:
         return self._delegate("pttl", key, version=version)
 
-    def type(self, key: str, version: int | None = None) -> str:
+    def type(self, key: str, version: int | None = None) -> Any:
         return self._delegate("type", key, version=version)
 
     def info(self, section: str | None = None) -> dict[str, Any]:

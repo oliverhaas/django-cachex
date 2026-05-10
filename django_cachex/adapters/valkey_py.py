@@ -254,23 +254,20 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         self._pools: dict[int, Any] = {}
         self._stampede_config: StampedeConfig | None = make_stampede_config(options.get("stampede_prevention"))
 
-        # Set up pool class (can be overridden via argument)
         if isinstance(pool_class, str):
             pool_class = import_string(pool_class)
         self._pool_class = pool_class or self.__class__._pool_class  # type: ignore[assignment]
 
-        # Set up async pool class (can be overridden via argument)
         if isinstance(async_pool_class, str):
             async_pool_class = import_string(async_pool_class)
         self._async_pool_class = async_pool_class or self.__class__._async_pool_class  # type: ignore[assignment]
 
-        # Set up parser class
         if isinstance(parser_class, str):
             parser_class = import_string(parser_class)
         if parser_class is None and self._lib is not None:
             parser_class = self._lib.connection.DefaultParser
 
-        # Build pool options (filter out client-only options)
+        # Filter out client-only options before passing to the pool.
         self._pool_options = {"parser_class": parser_class}
         for key, value in options.items():
             if key not in self._CLIENT_ONLY_OPTIONS:
@@ -955,7 +952,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         except _main_exceptions as e:
             err_msg = str(e).lower()
             if "no such key" in err_msg:
-                raise ValueError(f"Key {src!r} not found") from None
+                raise ValueError(f"Key {src!r} not found") from e
             raise
         else:
             return True
@@ -969,7 +966,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         except _main_exceptions as e:
             err_msg = str(e).lower()
             if "no such key" in err_msg:
-                raise ValueError(f"Key {src!r} not found") from None
+                raise ValueError(f"Key {src!r} not found") from e
             raise
 
     async def akeys(self, pattern: str) -> list[str]:
@@ -1016,7 +1013,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         except _main_exceptions as e:
             err_msg = str(e).lower()
             if "no such key" in err_msg:
-                raise ValueError(f"Key {src!r} not found") from None
+                raise ValueError(f"Key {src!r} not found") from e
             raise
         else:
             return True
@@ -1030,7 +1027,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         except _main_exceptions as e:
             err_msg = str(e).lower()
             if "no such key" in err_msg:
-                raise ValueError(f"Key {src!r} not found") from None
+                raise ValueError(f"Key {src!r} not found") from e
             raise
 
     def lock(
@@ -2965,29 +2962,25 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
         parser_class: str | type | None = None,
         **options: Any,
     ) -> None:
-        # Transform the first URL to add is_master query param for primary/replica
-        # This creates two URLs: one for primary (is_master=1) and one for replica (is_master=0)
+        # Transform the first URL into two: one with ``is_master=1`` (primary)
+        # and one with ``is_master=0`` (replica).
         if servers:
             servers = self._transform_sentinel_urls(servers[0])
 
         super().__init__(servers, pool_class, parser_class, **options)
 
-        # Initialize async sentinels dict
         self._async_sentinels = weakref.WeakKeyDictionary()
 
-        # Clean up _pool_options to remove sentinel-specific options
-        # These should not be passed to the connection pool
+        # Sentinel-only options must not flow through to the underlying pool.
         if hasattr(self, "_pool_options"):
             for key in self._SENTINEL_ONLY_OPTIONS:
                 self._pool_options.pop(key, None)
 
-        # Create sentinel instance
         sentinels = self._options.get("sentinels")
         if not sentinels:
             raise ImproperlyConfigured("sentinels must be provided as a list of (host, port) tuples")
 
         sentinel_kwargs = self._options.get("sentinel_kwargs", {})
-        # Use _pool_options from parent class (already cleaned above)
         pool_options = dict(self._pool_options) if hasattr(self, "_pool_options") else {}
 
         if self._sentinel_class is None:
@@ -3841,8 +3834,8 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
     def hgetall(self, key: Any) -> Any:
         return self._raw.hgetall(key)
 
-    def hmget(self, key: Any, fields: Sequence[Any]) -> Any:
-        return self._raw.hmget(key, fields)
+    def hmget(self, key: Any, *fields: Any) -> Any:
+        return self._raw.hmget(key, list(fields))
 
     def hlen(self, key: Any) -> Any:
         return self._raw.hlen(key)

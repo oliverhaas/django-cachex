@@ -1,6 +1,4 @@
-"""
-Base utilities and configuration for cache admin views.
-"""
+"""Base utilities and configuration for cache admin views."""
 
 import json
 import logging
@@ -24,23 +22,19 @@ logger = logging.getLogger(__name__)
 
 
 def cache_list_url() -> str:
-    """URL for the cache list page."""
     return reverse("admin:django_cachex_cache_changelist")
 
 
 def key_list_url(cache_name: str) -> str:
-    """URL for the key list page."""
     return reverse("admin:django_cachex_key_changelist") + f"?cache={cache_name}"
 
 
 def key_detail_url(cache_name: str, key: str) -> str:
-    """URL for the key detail page."""
     pk = Key.make_pk(cache_name, key)
     return reverse("admin:django_cachex_key_change", args=[pk])
 
 
 def key_add_url(cache_name: str) -> str:
-    """URL for the key add page."""
     return reverse("admin:django_cachex_key_add") + f"?cache={cache_name}"
 
 

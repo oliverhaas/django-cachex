@@ -16,21 +16,18 @@ from django_cachex.cache.resp import RespCache, RespClusterCache, RespSentinelCa
 class RedisRsCache(RespCache):
     """Django cache backend using the Rust adapter against a single node."""
 
-    _cachex_support = "cachex"
     _adapter_class = RedisRsAdapter
 
 
 class RedisRsClusterCache(RespClusterCache):
-    """Rust adapter for Valkey/Redis cluster mode."""
+    """Django cache backend using the Rust adapter for Valkey/Redis cluster mode."""
 
-    _cachex_support = "cachex"
     _adapter_class = RedisRsClusterAdapter
 
 
 class RedisRsSentinelCache(RespSentinelCache):
-    """Rust adapter for sentinel-managed Valkey/Redis topologies."""
+    """Django cache backend using the Rust adapter for sentinel-managed Valkey/Redis."""
 
-    _cachex_support = "cachex"
     _adapter_class = RedisRsSentinelAdapter
 
 

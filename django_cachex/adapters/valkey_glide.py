@@ -1,5 +1,5 @@
 # ruff: noqa: ERA001, PERF401, PLW2901
-"""Design B: ``valkey-glide``-backed cache client (sync + async).
+"""``valkey-glide``-backed cache adapter (sync + async).
 
 Each operation method overrides ``RespAdapterProtocol`` and calls
 ``glide_sync.GlideClient`` / ``glide.GlideClient`` natively. There is
@@ -10,9 +10,8 @@ The pipeline adapter (``ValkeyGlidePipelineAdapter`` / ``ValkeyGlideAsyncPipelin
 implements ``RespPipelineProtocol`` natively against glide's ``Batch``
 — no redis-py-shaped intermediary on the queueing surface either.
 
-Standalone only; no cluster, no sentinel. Spike-quality — many
-ruff rules suppressed at the file level since this is intentionally
-rough until we decide whether to keep this approach.
+Standalone and cluster topologies are supported; Sentinel is not exposed
+(``valkey-glide`` itself does not ship a Sentinel client).
 """
 
 import asyncio
@@ -905,12 +904,12 @@ class ValkeyGlideAsyncPipelineAdapter(ValkeyGlidePipelineAdapter):
 
 
 class ValkeyGlideAdapter(RespAdapterProtocol):
-    """Design B backend: each operation method calls glide natively.
+    """Implements the cachex adapter surface against ``valkey-glide-sync``.
 
-    Implements the cachex adapter surface against ``valkey-glide-sync``.
-    Everything that touches the wire is overridden directly; the redis-py
-    pool/parser machinery in :class:`~django_cachex.adapters.valkey_py.ValkeyPyAdapter`
-    isn't used here.
+    Each operation method calls glide natively. Everything that touches
+    the wire is overridden directly; the redis-py pool/parser machinery
+    in :class:`~django_cachex.adapters.valkey_py.ValkeyPyAdapter` isn't
+    used here.
     """
 
     def __init__(self, servers: list[str], **options: Any) -> None:
@@ -1885,6 +1884,12 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def slowlog_len(self) -> int:
         return self._client().custom_command([b"SLOWLOG", b"LEN"])
 
+    def slowlog_get(self, num: int | None = None) -> list[Any]:
+        args: list[bytes] = [b"SLOWLOG", b"GET"]
+        if num is not None:
+            args.append(str(num).encode())
+        return self._client().custom_command(args)
+
     # =========================================================================
     # Lock (sync) — inherits from base which uses redis-py-style lock
     # =========================================================================
@@ -1897,7 +1902,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         *,
         blocking: bool = True,
         blocking_timeout: float | None = None,
-        thread_local: bool = True,
     ) -> Any:
         return _GlideLock(
             self._client(),
@@ -2849,9 +2853,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         *,
         blocking: bool = True,
         blocking_timeout: float | None = None,
-        thread_local: bool = True,
     ) -> Any:
-        del thread_local  # glide locks don't track caller thread
         return _AsyncGlideLock(
             self,
             key,
@@ -3087,17 +3089,22 @@ class _GlideLock:
             time.sleep(self._sleep)
 
     def release(self) -> None:
-        from django_cachex.lock import LockError
+        from django_cachex.lock import LockError, LockNotOwnedError
 
         if self._token is None:
             msg = "Cannot release un-acquired lock"
             raise LockError(msg)
-        self._client.custom_command([b"EVAL", _RELEASE_LUA.encode(), b"1", _enc(self._key), self._token])
+        result = self._client.custom_command(
+            [b"EVAL", _RELEASE_LUA.encode(), b"1", _enc(self._key), self._token],
+        )
         self._token = None
+        if not result:
+            msg = "Cannot release a lock that's no longer owned"
+            raise LockNotOwnedError(msg)
 
     def extend(self, additional_time: float, *, replace_ttl: bool = False) -> bool:
         """Extend the lock's TTL by ``additional_time`` seconds (or replace it)."""
-        from django_cachex.lock import LockError
+        from django_cachex.lock import LockError, LockNotOwnedError
 
         if self._token is None:
             msg = "Cannot extend un-acquired lock"
@@ -3114,7 +3121,10 @@ class _GlideLock:
                 b"1" if replace_ttl else b"0",
             ],
         )
-        return bool(result)
+        if not result:
+            msg = "Cannot extend a lock that's no longer owned"
+            raise LockNotOwnedError(msg)
+        return True
 
     def __enter__(self) -> Self:
         if not self.acquire():
@@ -3169,17 +3179,22 @@ class _AsyncGlideLock:
             await asyncio.sleep(self._sleep)
 
     async def release(self) -> None:
-        from django_cachex.lock import LockError
+        from django_cachex.lock import LockError, LockNotOwnedError
 
         if self._token is None:
             msg = "Cannot release un-acquired lock"
             raise LockError(msg)
         client = await self._adapter.get_async_client()
-        await client.custom_command([b"EVAL", _RELEASE_LUA.encode(), b"1", _enc(self._key), self._token])
+        result = await client.custom_command(
+            [b"EVAL", _RELEASE_LUA.encode(), b"1", _enc(self._key), self._token],
+        )
         self._token = None
+        if not result:
+            msg = "Cannot release a lock that's no longer owned"
+            raise LockNotOwnedError(msg)
 
     async def extend(self, additional_time: float, *, replace_ttl: bool = False) -> bool:
-        from django_cachex.lock import LockError
+        from django_cachex.lock import LockError, LockNotOwnedError
 
         if self._token is None:
             msg = "Cannot extend un-acquired lock"
@@ -3197,7 +3212,10 @@ class _AsyncGlideLock:
                 b"1" if replace_ttl else b"0",
             ],
         )
-        return bool(result)
+        if not result:
+            msg = "Cannot extend a lock that's no longer owned"
+            raise LockNotOwnedError(msg)
+        return True
 
     async def __aenter__(self) -> Self:
         if not await self.acquire():

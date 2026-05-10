@@ -51,6 +51,7 @@ Valkey's official client library, bundled as `valkey-glide`. Async-first; cachex
 | Backend | Description |
 |---------|-------------|
 | `ValkeyGlideCache` | Standard Valkey connection via valkey-glide |
+| `ValkeyGlideClusterCache` | Cluster sharding via valkey-glide |
 
 ```python
 CACHES = {
@@ -61,7 +62,7 @@ CACHES = {
 }
 ```
 
-See the upstream [valkey-glide](https://github.com/valkey-io/valkey-glide) docs for client-specific tuning. Cluster and Sentinel variants are not currently exposed.
+See the upstream [valkey-glide](https://github.com/valkey-io/valkey-glide) docs for client-specific tuning. Sentinel is not exposed (`valkey-glide` itself does not ship a Sentinel client).
 
 ### Local backends
 
@@ -225,8 +226,9 @@ selected by your ``BACKEND``. Each cache class has a fixed adapter:
 |----------------------------------------------------|-----------------|
 | ``django_cachex.cache.RedisCache``                 | redis-py        |
 | ``django_cachex.cache.ValkeyCache``                | valkey-py       |
-| ``django_cachex.cache.RedisRsCache``            | Rust driver     |
+| ``django_cachex.cache.RedisRsCache``               | Rust driver     |
 | ``django_cachex.cache.ValkeyGlideCache``           | valkey-glide    |
+| ``django_cachex.cache.ValkeyGlideClusterCache``    | valkey-glide    |
 
 To use a different adapter, change ``BACKEND``. The matching
 ``*ClusterCache`` and ``*SentinelCache`` classes pick the same
