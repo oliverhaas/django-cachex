@@ -1884,11 +1884,10 @@ take different routes because the underlying work is different:</p>
   for <code>BaseCache.aget</code>). Native async DB cursors will replace this path
   once Django exposes them, without changing the public surface.</li>
 </ul>
-<p><code>CachexCompat</code> (used internally by the admin to wrap stock non-cachex
-backends on the fly) does <strong>not</strong> expose async methods. It's a
-sync-only admin shim. If you need an async ext surface, use a native
-cachex backend (<code>RespCache</code>, <code>LocMemCache</code>, <code>DatabaseCache</code>) or wrap
-your own <code>sync_to_async</code> around the sync calls.</p>
+<p>Stock Django backends (<code>django.core.cache.backends.*</code>) and any other
+non-cachex backend don't get an ext surface from django-cachex. The admin
+shows them with a "limited" badge — configuration only, no key browsing —
+and recommends switching <code>BACKEND</code> to a cachex equivalent if available.</p>
 <h2 id="cluster-and-sentinel">Cluster and Sentinel<a class="headerlink" href="#cluster-and-sentinel" title="Permanent link">&para;</a></h2>
 <p>Async works identically with Cluster and Sentinel backends:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Cluster - async works the same way</span>
