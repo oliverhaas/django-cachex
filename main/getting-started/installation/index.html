@@ -1234,7 +1234,7 @@ pure-Python backends never carry the binary.</p>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="go">uv add django-cachex[valkey-py]</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="gp"># </span>With<span class="w"> </span>the<span class="w"> </span>Rust<span class="w"> </span>I/O<span class="w"> </span>driver
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="go">uv add django-cachex[valkey,redis-rs]</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="go">uv add django-cachex[valkey-py,redis-rs]</span>
 </span></code></pre></div>
 <p>Prebuilt <code>django-cachex-redis-rs</code> wheels are published for Linux x86_64,
 Linux aarch64, macOS arm64, and Windows amd64 on both cp314 and cp314t.
@@ -1251,8 +1251,9 @@ through PyPI as two distributions — <code>valkey-glide-sync</code> and <code>v
 <div class="language-console highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="go">uv add django-cachex[valkey-glide]</span>
 </span></code></pre></div>
 <p>cp314 GIL only — no cp314t (free-threaded) wheels are published yet.
-Cluster and Sentinel variants aren't currently exposed; only the standalone
-<code>ValkeyGlideCache</code> class is wired up. See the
+Standalone (<code>ValkeyGlideCache</code>) and cluster (<code>ValkeyGlideClusterCache</code>)
+backends are wired up; Sentinel is not exposed (<code>valkey-glide</code> itself does
+not ship a Sentinel client). See the
 <a href="../../user-guide/configuration/#valkey-glide">user-guide configuration page</a>
 for setup details.</p>
 

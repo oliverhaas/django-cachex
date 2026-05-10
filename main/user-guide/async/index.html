@@ -800,6 +800,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#other-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other backends
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#cluster-and-sentinel" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1542,6 +1553,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#other-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other backends
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#cluster-and-sentinel" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1849,6 +1871,14 @@
 </span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>    <span class="k">return</span> <span class="n">JsonResponse</span><span class="p">({</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="n">value</span><span class="p">})</span>
 </span></code></pre></div>
 <p>Both views use the same cache backend configured in settings.</p>
+<h2 id="other-backends">Other backends<a class="headerlink" href="#other-backends" title="Permanent link">&para;</a></h2>
+<p>The async ext surface (<code>alpush</code>, <code>ahset</code>, <code>azadd</code>, <code>attl</code>, <code>aexpire</code>, …)
+is also available on <code>LocMemCache</code>, <code>DatabaseCache</code>, and any
+<code>CachexCompat</code>-wrapped backend. These adapters don't have a real async
+client underneath, so the calls run their sync implementation under
+<code>sync_to_async</code> — they're safe to <code>await</code> from async views without
+falling back to <code>NotSupportedError</code> and without blocking the event
+loop on the calling thread.</p>
 <h2 id="cluster-and-sentinel">Cluster and Sentinel<a class="headerlink" href="#cluster-and-sentinel" title="Permanent link">&para;</a></h2>
 <p>Async works identically with Cluster and Sentinel backends:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Cluster - async works the same way</span>

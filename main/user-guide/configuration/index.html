@@ -1984,6 +1984,10 @@
 <td><code>ValkeyGlideCache</code></td>
 <td>Standard Valkey connection via valkey-glide</td>
 </tr>
+<tr>
+<td><code>ValkeyGlideClusterCache</code></td>
+<td>Cluster sharding via valkey-glide</td>
+</tr>
 </tbody>
 </table>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
@@ -1993,7 +1997,7 @@
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="p">}</span>
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="p">}</span>
 </span></code></pre></div>
-<p>See the upstream <a href="https://github.com/valkey-io/valkey-glide">valkey-glide</a> docs for client-specific tuning. Cluster and Sentinel variants are not currently exposed.</p>
+<p>See the upstream <a href="https://github.com/valkey-io/valkey-glide">valkey-glide</a> docs for client-specific tuning. Sentinel is not exposed (<code>valkey-glide</code> itself does not ship a Sentinel client).</p>
 <h3 id="local-backends">Local backends<a class="headerlink" href="#local-backends" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -2214,6 +2218,10 @@ selected by your <code>BACKEND</code>. Each cache class has a fixed adapter:</p>
 </tr>
 <tr>
 <td><code>django_cachex.cache.ValkeyGlideCache</code></td>
+<td>valkey-glide</td>
+</tr>
+<tr>
+<td><code>django_cachex.cache.ValkeyGlideClusterCache</code></td>
 <td>valkey-glide</td>
 </tr>
 </tbody>

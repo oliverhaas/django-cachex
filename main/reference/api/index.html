@@ -1166,8 +1166,30 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#stampedeconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StampedeConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exceptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exceptions
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1636,8 +1658,30 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#stampedeconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StampedeConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exceptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exceptions
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1772,6 +1816,10 @@
 <tr>
 <td><code>pexpireat(key, when)</code></td>
 <td>Set expiration at datetime (ms precision)</td>
+</tr>
+<tr>
+<td><code>expiretime(key)</code></td>
+<td>Absolute Unix timestamp (seconds) when the key expires</td>
 </tr>
 <tr>
 <td><code>persist(key)</code></td>
@@ -2295,7 +2343,7 @@
 </tbody>
 </table>
 <h3 id="set-method-options">Set Method Options<a class="headerlink" href="#set-method-options" title="Permanent link">&para;</a></h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">cache</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">nx</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">xx</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">cache</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">nx</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">xx</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">get</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 </span></code></pre></div>
 <table>
 <thead>
@@ -2316,6 +2364,10 @@
 <tr>
 <td><code>xx</code></td>
 <td>Only set if key exists</td>
+</tr>
+<tr>
+<td><code>get</code></td>
+<td>Return the previous value (atomic get-and-set)</td>
 </tr>
 </tbody>
 </table>
@@ -2520,6 +2572,10 @@ returns the adapter's async client.</p>
 <td>Compressor class or list for fallback</td>
 </tr>
 <tr>
+<td><code>min_length</code></td>
+<td>Skip compression for payloads below this byte count (default <code>15</code>)</td>
+</tr>
+<tr>
 <td><code>password</code></td>
 <td>Server password</td>
 </tr>
@@ -2533,7 +2589,19 @@ returns the adapter's async client.</p>
 </tr>
 <tr>
 <td><code>pool_class</code></td>
-<td>Custom connection pool class</td>
+<td>Custom connection pool class (sync)</td>
+</tr>
+<tr>
+<td><code>async_pool_class</code></td>
+<td>Custom connection pool class (async)</td>
+</tr>
+<tr>
+<td><code>parser_class</code></td>
+<td>Custom RESP parser class</td>
+</tr>
+<tr>
+<td><code>stampede_prevention</code></td>
+<td><code>True</code> / <code>False</code> / dict (<code>buffer</code>, <code>beta</code>, <code>delta</code>) — see <a href="#stampedeconfig"><code>StampedeConfig</code></a></td>
 </tr>
 <tr>
 <td><code>sentinels</code></td>
@@ -2542,6 +2610,75 @@ returns the adapter's async client.</p>
 <tr>
 <td><code>sentinel_kwargs</code></td>
 <td>Sentinel configuration</td>
+</tr>
+</tbody>
+</table>
+<h3 id="stampedeconfig">StampedeConfig<a class="headerlink" href="#stampedeconfig" title="Permanent link">&para;</a></h3>
+<p><code>django_cachex.StampedeConfig(buffer=60, beta=1.0, delta=1.0)</code> — frozen
+dataclass that tunes the TTL-based XFetch stampede-prevention algorithm.
+Pass it to <code>OPTIONS["stampede_prevention"]</code> to apply globally, or to the
+<code>stampede_prevention=</code> kwarg on <code>get</code>/<code>set</code>/<code>get_many</code>/<code>set_many</code>/<code>add</code>/
+<code>get_or_set</code> for per-call overrides.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>buffer</code></td>
+<td><code>60</code></td>
+<td>Seconds added to TTL on writes; defines the early-recompute window.</td>
+</tr>
+<tr>
+<td><code>beta</code></td>
+<td><code>1.0</code></td>
+<td>Multiplier on the recompute probability — higher = recompute earlier.</td>
+</tr>
+<tr>
+<td><code>delta</code></td>
+<td><code>1.0</code></td>
+<td>Recompute-cost estimate (seconds); larger = recompute earlier.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="exceptions">Exceptions<a class="headerlink" href="#exceptions" title="Permanent link">&para;</a></h2>
+<p>All raised from <code>django_cachex.exceptions</code> and re-exported at the package
+root.</p>
+<table>
+<thead>
+<tr>
+<th>Exception</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>WrongTypeError</code></td>
+<td>Operation applied to a key holding the wrong RESP type (subclass of <code>TypeError</code>). Mirrors Redis <code>WRONGTYPE</code>; raised consistently across LocMem, redis-py, valkey-py, valkey-glide, and the Rust adapter.</td>
+</tr>
+<tr>
+<td><code>CompressorError</code></td>
+<td>Compression or decompression failed. Triggers the configured compressor fallback chain.</td>
+</tr>
+<tr>
+<td><code>SerializerError</code></td>
+<td>Serialization or deserialization failed. Triggers the serializer fallback chain.</td>
+</tr>
+<tr>
+<td><code>NotSupportedError</code></td>
+<td>Operation is not supported by this backend (e.g. <code>lpush</code> on <code>TieredCache</code>).</td>
+</tr>
+<tr>
+<td><code>LockError</code></td>
+<td>Generic lock failure (couldn't acquire, releasing an unlocked lock, …).</td>
+</tr>
+<tr>
+<td><code>LockNotOwnedError</code></td>
+<td>Releasing or extending a lock whose token no longer matches — i.e. the lock expired or was stolen. Subclass of <code>LockError</code>.</td>
 </tr>
 </tbody>
 </table>
