@@ -238,7 +238,7 @@
             <div class="danger-action">
                 <div>
                     <strong>{% trans 'Flush database' %}</strong>
-                    <p class="help">{% trans 'Execute FLUSHDB — removes ALL keys in the Redis database, not just those belonging to this cache. Only safe if this cache has a dedicated database.' %}</p>
+                    <p class="help">{% trans 'Execute FLUSHDB. Removes ALL keys in the Redis database, not just those belonging to this cache. Only safe if this cache has a dedicated database.' %}</p>
                 </div>
                 <form method="post" style="flex-shrink: 0;">
                     {% csrf_token %}

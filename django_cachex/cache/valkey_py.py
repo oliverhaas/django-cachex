@@ -3,9 +3,9 @@
 Three topologies live here, each a one-line subclass that swaps in the
 matching ``valkey-py`` adapter:
 
-- :class:`ValkeyCache` — single-node / replicated.
-- :class:`ValkeySentinelCache` — Sentinel-managed primary/replicas.
-- :class:`ValkeyClusterCache` — Cluster mode.
+- :class:`ValkeyCache`: single-node or replicated.
+- :class:`ValkeySentinelCache`: Sentinel-managed primary/replicas.
+- :class:`ValkeyClusterCache`: Cluster mode.
 
 See :mod:`django_cachex.cache.redis_py` for the parallel set built on
 ``redis-py`` (the two libraries share an API surface).

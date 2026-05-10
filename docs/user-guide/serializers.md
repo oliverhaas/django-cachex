@@ -20,8 +20,8 @@ CACHES = {
 
 | Serializer | Description | Extra |
 |------------|-------------|-------|
-| `django_cachex.serializers.pickle.PickleSerializer` | Python pickle (default); supports nearly all Python types | — |
-| `django_cachex.serializers.json.JsonSerializer` | JSON via Django's `DjangoJSONEncoder` (broadest Django type coverage of the JSON family) | — |
+| `django_cachex.serializers.pickle.PickleSerializer` | Python pickle (default); supports nearly all Python types | (stdlib) |
+| `django_cachex.serializers.json.JsonSerializer` | JSON via Django's `DjangoJSONEncoder` (broadest Django type coverage of the JSON family) | (stdlib) |
 | `django_cachex.serializers.msgpack.MsgpackSerializer` | Pure-Python MessagePack; compact binary format | `msgpack` |
 | `django_cachex.serializers.orjson.OrjsonSerializer` | Rust-backed JSON; fewer types than `DjangoJSONEncoder` | `orjson` |
 | `django_cachex.serializers.ormsgpack.OrmsgpackSerializer` | Rust-backed MessagePack | `ormsgpack` |

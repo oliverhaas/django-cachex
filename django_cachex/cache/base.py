@@ -1,4 +1,4 @@
-"""Cache-layer base class — the contract every cachex cache satisfies.
+"""Cache-layer base class: the contract every cachex cache satisfies.
 
 :class:`BaseCachex` extends Django's ``BaseCache`` with the cachex
 extension surface (TTL ops, hashes, sets, sorted sets, lists, streams,
@@ -11,12 +11,14 @@ with real implementations; methods left at the default raise
 :class:`~django_cachex.exceptions.NotSupportedError`.
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from django.core.cache.backends.base import BaseCache
 
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
+
+CachexSupportLevel = Literal["cachex", "limited"]
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
@@ -32,15 +34,15 @@ if TYPE_CHECKING:
 
 
 class BaseCachex(BaseCache):
-    """Cache contract — declares the full cachex extension surface on top of ``BaseCache``.
+    """Cache contract; declares the full cachex extension surface on top of ``BaseCache``.
 
     Methods default to :class:`~django_cachex.exceptions.NotSupportedError`;
     native cachex backends override them with real implementations.
-    Subclasses can pick which operations they support — the admin discovers
+    Subclasses can pick which operations they support; the admin discovers
     support via the ``_cachex_support`` marker.
     """
 
-    _cachex_support: str = "limited"
+    _cachex_support: CachexSupportLevel = "limited"
 
     # =========================================================================
     # TTL Operations

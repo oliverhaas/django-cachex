@@ -70,7 +70,7 @@ class WrongTypeError(TypeError):
 def maybe_wrap_wrongtype(exc: BaseException) -> BaseException:
     """Return :class:`WrongTypeError` if ``exc`` is a backend WRONGTYPE response.
 
-    Each RESP client surfaces ``WRONGTYPE`` differently — redis-py and
+    Each RESP client surfaces ``WRONGTYPE`` differently. redis-py and
     valkey-py raise their own ``ResponseError`` subclasses, valkey-glide
     raises ``RequestError``. The Rust adapter translates WRONGTYPE to
     :class:`WrongTypeError` itself before crossing the FFI boundary, so it

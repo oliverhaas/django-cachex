@@ -42,10 +42,10 @@ class CacheAdmin(CacheAdminMixin, _CacheBase):  # type: ignore[misc]
             "<strong>Support Levels</strong><br>"
             "<table style='margin: 4px 0 12px 0; border-collapse: collapse;'>"
             "<tr><td style='padding: 2px 8px;'><strong>cachex</strong></td>"
-            "<td style='padding: 2px 8px;'>Full support — django-cachex backend. All features: "
+            "<td style='padding: 2px 8px;'>Full support: django-cachex backend. All features: "
             "data structures, key browsing, TTL, streams, pipelines, Lua scripting.</td></tr>"
             "<tr><td style='padding: 2px 8px;'><strong>limited</strong></td>"
-            "<td style='padding: 2px 8px;'>Configuration only — Django stock or custom backend. "
+            "<td style='padding: 2px 8px;'>Configuration only: Django stock or custom backend. "
             "Doesn't expose key listing, so the admin shows configuration metadata only. "
             "Hover for upgrade hints.</td></tr>"
             "</table>"
@@ -59,17 +59,17 @@ class CacheAdmin(CacheAdminMixin, _CacheBase):  # type: ignore[misc]
             "<strong>Cache Details</strong><br>"
             "View server information, memory stats, and slow query log for this cache.<br><br>"
             "<strong>Sections</strong><br>"
-            "• <strong>Configuration</strong> — Backend, location, key prefix<br>"
-            "• <strong>Server</strong> — Redis/Valkey version, uptime, port<br>"
-            "• <strong>Memory</strong> — Used memory, peak, eviction policy<br>"
-            "• <strong>Clients</strong> — Connected and blocked clients<br>"
-            "• <strong>Statistics</strong> — Commands processed, hits/misses<br>"
-            "• <strong>Keyspace</strong> — Keys per database<br>"
-            "• <strong>Slow Log</strong> — Slow queries for performance analysis",
+            "• <strong>Configuration</strong>: Backend, location, key prefix<br>"
+            "• <strong>Server</strong>: Redis/Valkey version, uptime, port<br>"
+            "• <strong>Memory</strong>: Used memory, peak, eviction policy<br>"
+            "• <strong>Clients</strong>: Connected and blocked clients<br>"
+            "• <strong>Statistics</strong>: Commands processed, hits/misses<br>"
+            "• <strong>Keyspace</strong>: Keys per database<br>"
+            "• <strong>Slow Log</strong>: Slow queries for performance analysis",
         ),
     }
 
-    # Caches are defined in settings — add/delete don't apply
+    # Caches are defined in settings; add/delete don't apply
     def has_add_permission(self, request: HttpRequest) -> bool:
         return False
 
@@ -125,15 +125,15 @@ class KeyAdmin(KeyAdminMixin, _KeyBase):  # type: ignore[misc]
             "Search and manage keys for this cache.<br><br>"
             "<strong>Search Patterns</strong><br>"
             "Search combines Django-style convenience with Redis/Valkey glob patterns.<br>"
-            "• <code>session</code> — Keys containing 'session' (auto-wrapped as <code>*session*</code>)<br>"
-            "• <code>prefix:*</code> — Keys starting with 'prefix:'<br>"
-            "• <code>*:suffix</code> — Keys ending with ':suffix'<br>"
-            "• <code>*</code> — List all keys (default when empty)<br><br>"
+            "• <code>session</code>: Keys containing 'session' (auto-wrapped as <code>*session*</code>)<br>"
+            "• <code>prefix:*</code>: Keys starting with 'prefix:'<br>"
+            "• <code>*:suffix</code>: Keys ending with ':suffix'<br>"
+            "• <code>*</code>: List all keys (default when empty)<br><br>"
             "<strong>Table Columns</strong><br>"
-            "• <strong>Key</strong> — Click to view/edit the key<br>"
-            "• <strong>Type</strong> — Data type (string, list, set, hash, zset, stream)<br>"
-            "• <strong>TTL</strong> — Time until expiration<br>"
-            "• <strong>Size</strong> — Length for collections, bytes for strings<br><br>"
+            "• <strong>Key</strong>: Click to view/edit the key<br>"
+            "• <strong>Type</strong>: Data type (string, list, set, hash, zset, stream)<br>"
+            "• <strong>TTL</strong>: Time until expiration<br>"
+            "• <strong>Size</strong>: Length for collections, bytes for strings<br><br>"
             "<strong>Actions</strong><br>"
             "• Use 'Add key' to create new entries<br>"
             "• Select keys and use 'Delete selected' to remove them",
@@ -156,10 +156,10 @@ class KeyAdmin(KeyAdminMixin, _KeyBase):  # type: ignore[misc]
             "<strong>List Key</strong><br>"
             "View and modify this Redis list (ordered collection).<br><br>"
             "<strong>Operations</strong><br>"
-            "• <strong>Push Left/Right</strong> — Add items to the head or tail<br>"
-            "• <strong>Pop Left/Right</strong> — Remove and return items from head or tail<br>"
-            "• <strong>Trim</strong> — Keep only items in the specified index range<br>"
-            "• <strong>Remove</strong> — Delete specific items from the list<br><br>"
+            "• <strong>Push Left/Right</strong>: Add items to the head or tail<br>"
+            "• <strong>Pop Left/Right</strong>: Remove and return items from head or tail<br>"
+            "• <strong>Trim</strong>: Keep only items in the specified index range<br>"
+            "• <strong>Remove</strong>: Delete specific items from the list<br><br>"
             "<strong>Index</strong><br>"
             "Items are shown with their 0-based index. Index 0 is the head (left).",
         ),
@@ -167,9 +167,9 @@ class KeyAdmin(KeyAdminMixin, _KeyBase):  # type: ignore[misc]
             "<strong>Set Key</strong><br>"
             "View and modify this Redis set (unordered unique members).<br><br>"
             "<strong>Operations</strong><br>"
-            "• <strong>Add</strong> — Add a new member to the set<br>"
-            "• <strong>Pop</strong> — Remove and return random member(s)<br>"
-            "• <strong>Remove</strong> — Delete a specific member<br><br>"
+            "• <strong>Add</strong>: Add a new member to the set<br>"
+            "• <strong>Pop</strong>: Remove and return random member(s)<br>"
+            "• <strong>Remove</strong>: Delete a specific member<br><br>"
             "<strong>Note</strong><br>"
             "Sets do not allow duplicate members. Adding an existing member has no effect.",
         ),
@@ -177,9 +177,9 @@ class KeyAdmin(KeyAdminMixin, _KeyBase):  # type: ignore[misc]
             "<strong>Hash Key</strong><br>"
             "View and modify this Redis hash (field-value mapping).<br><br>"
             "<strong>Operations</strong><br>"
-            "• <strong>Set Field</strong> — Add a new field or update existing<br>"
-            "• <strong>Update</strong> — Modify a field's value inline<br>"
-            "• <strong>Delete</strong> — Remove a field from the hash<br><br>"
+            "• <strong>Set Field</strong>: Add a new field or update existing<br>"
+            "• <strong>Update</strong>: Modify a field's value inline<br>"
+            "• <strong>Delete</strong>: Remove a field from the hash<br><br>"
             "<strong>Note</strong><br>"
             "Field names must be unique. Setting an existing field overwrites its value.",
         ),
@@ -187,10 +187,10 @@ class KeyAdmin(KeyAdminMixin, _KeyBase):  # type: ignore[misc]
             "<strong>Sorted Set Key</strong><br>"
             "View and modify this Redis sorted set (members ordered by score).<br><br>"
             "<strong>Operations</strong><br>"
-            "• <strong>Add</strong> — Add member with score. Flags: "
+            "• <strong>Add</strong>: Add member with score. Flags: "
             "NX (only if new), XX (only if exists), GT (if score greater), LT (if score less)<br>"
-            "• <strong>Pop Min/Max</strong> — Remove member(s) with lowest/highest score<br>"
-            "• <strong>Remove</strong> — Delete a specific member<br><br>"
+            "• <strong>Pop Min/Max</strong>: Remove member(s) with lowest/highest score<br>"
+            "• <strong>Remove</strong>: Delete a specific member<br><br>"
             "<strong>Ordering</strong><br>"
             "Members are displayed by score (lowest first). Rank is the 0-based position.",
         ),
@@ -198,9 +198,9 @@ class KeyAdmin(KeyAdminMixin, _KeyBase):  # type: ignore[misc]
             "<strong>Stream Key</strong><br>"
             "View and modify this Redis stream (append-only log).<br><br>"
             "<strong>Operations</strong><br>"
-            "• <strong>Add Entry</strong> — Append a new entry with field-value data<br>"
-            "• <strong>Trim</strong> — Limit stream to a maximum number of entries<br>"
-            "• <strong>Delete</strong> — Remove a specific entry by ID<br><br>"
+            "• <strong>Add Entry</strong>: Append a new entry with field-value data<br>"
+            "• <strong>Trim</strong>: Limit stream to a maximum number of entries<br>"
+            "• <strong>Delete</strong>: Remove a specific entry by ID<br><br>"
             "<strong>Entry IDs</strong><br>"
             "Each entry has a unique ID in the format <code>timestamp-sequence</code>. "
             "IDs are auto-generated when adding entries.",
@@ -218,13 +218,13 @@ class KeyAdmin(KeyAdminMixin, _KeyBase):  # type: ignore[misc]
             "Enter a unique identifier. Common patterns: <code>user:123</code>, "
             "<code>session:abc</code>, <code>cache:page:home</code><br><br>"
             "<strong>Value Format</strong><br>"
-            "• Plain text — Stored as a string<br>"
-            '• <code>{"key": "value"}</code> — JSON objects are parsed and stored<br>'
-            "• <code>[1, 2, 3]</code> — JSON arrays are parsed and stored<br><br>"
+            "• Plain text: Stored as a string<br>"
+            '• <code>{"key": "value"}</code>: JSON objects are parsed and stored<br>'
+            "• <code>[1, 2, 3]</code>: JSON arrays are parsed and stored<br><br>"
             "<strong>Timeout</strong><br>"
-            "• Leave empty — Uses the cache's default timeout<br>"
-            "• Enter seconds — Key expires after this duration<br>"
-            "• Enter 0 — Key never expires",
+            "• Leave empty: Uses the cache's default timeout<br>"
+            "• Enter seconds: Key expires after this duration<br>"
+            "• Enter 0: Key never expires",
         ),
     }
 

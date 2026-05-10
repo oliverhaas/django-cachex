@@ -57,14 +57,14 @@ use, naming the extra you need.
 
 The `ValkeyGlideCache` backend wraps Valkey's official client,
 [valkey-glide]. It's a Rust core (like `redis-rs`) but packaged separately
-through PyPI as two distributions — `valkey-glide-sync` and `valkey-glide`
-— pulled in together via the `valkey-glide` extra:
+through PyPI as two distributions, `valkey-glide-sync` and `valkey-glide`,
+pulled in together via the `valkey-glide` extra:
 
 ```console
 uv add django-cachex[valkey-glide]
 ```
 
-cp314 GIL only — no cp314t (free-threaded) wheels are published yet.
+cp314 GIL only; no cp314t (free-threaded) wheels are published yet.
 Standalone (`ValkeyGlideCache`) and cluster (`ValkeyGlideClusterCache`)
 backends are wired up; Sentinel is not exposed (`valkey-glide` itself does
 not ship a Sentinel client). See the

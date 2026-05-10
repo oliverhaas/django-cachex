@@ -1,4 +1,4 @@
-"""Cachex LocMemCache — drop-in replacement for Django's LocMemCache.
+"""Cachex LocMemCache: drop-in replacement for Django's LocMemCache.
 
 Extends ``django.core.cache.backends.locmem.LocMemCache`` with the cachex
 extension surface (lists, sets, hashes, sorted sets, TTL ops, key scanning,
@@ -39,7 +39,7 @@ from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.cache.backends.locmem import LocMemCache as DjangoLocMemCache
 from sortedcontainers import SortedList  # type: ignore[import-untyped]
 
-from django_cachex.cache.base import BaseCachex
+from django_cachex.cache.base import BaseCachex, CachexSupportLevel
 from django_cachex.exceptions import WrongTypeError
 from django_cachex.types import KeyType
 from django_cachex.utils import _deep_getsizeof, _format_bytes
@@ -121,11 +121,11 @@ class _ZSet(dict[Any, float]):
         self._sorted.clear()
 
     def sorted_members(self) -> list[tuple[Any, float]]:
-        """All ``(member, score)`` pairs in ``(score, str(member))`` order — O(N)."""
+        """All ``(member, score)`` pairs in ``(score, str(member))`` order. O(N)."""
         return [(m, s) for s, _, m in self._sorted]
 
     def reversed_members(self) -> list[tuple[Any, float]]:
-        """All ``(member, score)`` pairs in reverse sorted order — O(N)."""
+        """All ``(member, score)`` pairs in reverse sorted order. O(N)."""
         return [(m, s) for s, _, m in reversed(self._sorted)]
 
     def rank_of(self, member: Any) -> int | None:
@@ -169,7 +169,7 @@ class _ZSet(dict[Any, float]):
 
 
 def _make_zset(items: dict[Any, float]) -> _ZSet:
-    """Pickle reconstructor — rebuilds the SortedList sidecar via ``__init__``."""
+    """Pickle reconstructor; rebuilds the SortedList sidecar via ``__init__``."""
     return _ZSet(items)
 
 
@@ -186,11 +186,11 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     ops are atomic within a single process.
     """
 
-    _cachex_support: str = "cachex"
+    _cachex_support: CachexSupportLevel = "cachex"
 
     # Type-only declarations for attributes Django sets in __init__ but
     # doesn't surface in stubs. ``_set`` and ``_delete`` are real overrides
-    # below — no stub needed.
+    # below; no stub needed.
     if TYPE_CHECKING:
         _cache: OrderedDict[str, bytes]
         _expire_info: dict[str, float | None]
@@ -235,7 +235,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
         Caller must hold ``self._lock``. Tagged collections (``_List``/
         ``_Set``/``_Hash``/``_ZSet``) are stored by reference in
-        ``self._collections`` — no pickling, so subsequent in-place mutation
+        ``self._collections``, no pickling, so subsequent in-place mutation
         through the same reference is visible to future reads. Other values
         go through the standard pickled-bytes path in ``self._cache``.
         Existing keys keep their TTL untouched; new keys get no expiry,
@@ -254,7 +254,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             self._set(internal_key, pickled, timeout=None)
 
     # =========================================================================
-    # Django interface overrides — keep ``_collections`` in sync with
+    # Django interface overrides; keep ``_collections`` in sync with
     # Django's ``_cache`` / ``_expire_info`` lifecycle hooks.
     # =========================================================================
 
@@ -263,7 +263,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         # mirroring Redis ``SET`` (which replaces a list/hash/set/zset key
         # without complaint). django-stubs treats Django's ``_set``/``_delete``
         # as private to the concrete subclass and doesn't expose them on the
-        # public type — silence ``attr-defined`` here, the call works at
+        # public type, silence ``attr-defined`` here. The call works at
         # runtime via the MRO.
         self._collections.pop(key, None)
         super()._set(key, value, timeout)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
@@ -304,7 +304,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Get a value, mirroring Redis ``GET``: WRONGTYPE on non-string keys.
 
         A key holding a RESP collection (list/set/hash/zset, written via the
-        respective ops) cannot be retrieved through the string ``GET`` API —
+        respective ops) cannot be retrieved through the string ``GET`` API.
         Redis raises ``WRONGTYPE`` and so do we.
         """
         internal_key = self.make_and_validate_key(key, version=version)
@@ -404,7 +404,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """List user keys matching ``pattern`` (Redis-style glob).
 
         Assumes Django's default key format ``KEY_PREFIX:VERSION:key``.
-        Custom ``KEY_FUNCTION`` settings may produce different formats —
+        Custom ``KEY_FUNCTION`` settings may produce different formats;
         we fall back to the raw internal key in that case. ``version``
         scopes results to a single version (default: this cache's
         ``self.version``).
@@ -497,7 +497,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     def _typed_get_list(self, internal_key: str) -> _List | None:
         """Caller holds ``self._lock``. Returns the stored RESP list or None.
 
-        Raises :class:`WrongTypeError` if the key holds any other type — a
+        Raises :class:`WrongTypeError` if the key holds any other type. A
         plain Python ``list`` set via ``cache.set()`` does not qualify; only
         values produced by ``lpush``/``rpush``/... do.
         """
@@ -518,7 +518,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 current = _List(reversed(values))
                 self._native_write(internal_key, current)
             else:
-                # In-place prepend on the live list — no copy, no rewrite.
+                # In-place prepend on the live list, no copy, no rewrite.
                 current[0:0] = reversed(values)
             return len(current)
 
@@ -1321,7 +1321,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     # =========================================================================
     # LocMemCache is in-memory: no I/O, no thread pool needed. Each ``a*``
     # method calls its sync counterpart directly. Calling these from an
-    # async event loop is safe — the underlying ops are dict/list/set
+    # async event loop is safe: the underlying ops are dict/list/set
     # mutations behind a per-instance ``RLock``, never blocking on I/O.
     # Signatures stay loose (``*args, **kwargs``) so the sync method's
     # signature, which is the source of truth, doesn't need to be

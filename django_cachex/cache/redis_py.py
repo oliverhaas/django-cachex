@@ -3,9 +3,9 @@
 Three topologies live here, each a one-line subclass that swaps in the
 matching ``redis-py`` adapter:
 
-- :class:`RedisCache` — single-node / replicated.
-- :class:`RedisSentinelCache` — Sentinel-managed primary/replicas.
-- :class:`RedisClusterCache` — Cluster mode.
+- :class:`RedisCache`: single-node or replicated.
+- :class:`RedisSentinelCache`: Sentinel-managed primary/replicas.
+- :class:`RedisClusterCache`: Cluster mode.
 
 See :mod:`django_cachex.cache.valkey_py` for the parallel set built on
 ``valkey-py`` (the two libraries share an API surface).

@@ -265,7 +265,7 @@
     color: var(--body-quiet-color);
 }
 
-/* Danger zone buttons — sized to match .submit-row a.deletelink */
+/* Danger zone buttons. Sized to match .submit-row a.deletelink */
 .danger-action .button.delete-btn {
     padding: 0.625rem 0.9375rem;
     border-radius: 4px;

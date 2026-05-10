@@ -103,7 +103,7 @@ def parse_metadata(
 ) -> dict[str, Any]:
     """Build structured cache metadata from a pre-fetched ``cache.info()`` result.
 
-    Pure parsing — does not call ``cache.info()`` itself, so the caller can fetch
+    Pure parsing; does not call ``cache.info()`` itself, so the caller can fetch
     once and reuse the same payload for both metadata display and raw JSON dump.
     """
     # Get location from config
@@ -205,7 +205,7 @@ def get_type_data(
 
 
 def _format_value(value: Any) -> str:
-    """Format a cache value for display — JSON for round-trippable values, repr() otherwise.
+    """Format a cache value for display: JSON for round-trippable values, repr() otherwise.
 
     Uses the same approach as format_value_for_display() for string keys:
     JSON-serializes anything that round-trips cleanly, so types are distinguishable
@@ -262,7 +262,8 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
                 entries = cache.xrange(key, count=pagination["end_index"])
                 sliced = entries[pagination["start_index"] :]
                 return {"entries": sliced, "length": length, "pagination": pagination}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
+        logger.exception("Failed to fetch type-specific admin data for key %r", key)
         return {"error": str(e)}
     return {}
 
@@ -327,7 +328,7 @@ def get_size(cache: Any, key: str, key_type: str | None = None) -> int | None:
         except NotSupportedError, AttributeError:
             pass
         # Fallback: compute Python object size (e.g. LocMemCache). Decode
-        # failures for stale data must not break the size column — return None
+        # failures for stale data must not break the size column, return None
         # so the row still renders and the user can delete the broken key.
         from django_cachex.exceptions import CompressorError, SerializerError
 

@@ -18,13 +18,13 @@ It mirrors RESP semantics where it counts:
   Python `list` stored via `cache.set()` is opaque ("string" in RESP
   terms); only values created via `lpush`/`rpush` carry the `_List` tag
   and are accepted by the list typed accessor. Cross-type access raises
-  `WrongTypeError` (a `TypeError` subclass) — the same exception the
+  `WrongTypeError` (a `TypeError` subclass), the same exception the
   RESP adapters raise after translating their backend's `WRONGTYPE`
   response.
 - Tagged collections (`_List`/`_Set`/`_Hash`/`_ZSet`) live as long-lived
   Python objects in `self._collections`, separate from Django's
   pickled-bytes `self._cache`. Mutations are in-place under the cache
-  lock — no pickle round-trip per op.
+  lock; no pickle round-trip per op.
 - Sorted sets carry a `sortedcontainers.SortedList` sidecar, so
   `zrange`/`zrank`/`zpopmin` are O(log N) instead of the O(N log N)
   re-sort the naive dict-based approach pays.
@@ -49,7 +49,7 @@ with a `FakeRedis` client instead. We benchmarked it; the answer is no.
 | `hset` (10k-field hash) | 1.7 | 1 600 | n/a | n/a |
 
 (Reproduce: `python -m django_cachex.benchmarks.locmem_vs_fakeredis`
-isn't checked in — it's a one-off; see the commit that introduced this
+isn't checked in; it's a one-off, see the commit that introduced this
 page for the script.)
 
 ### What this tells us
@@ -59,7 +59,7 @@ page for the script.)
    format, fakeredis interpreting it, formatting the response, and
    redis-py deserializing back. Even though everything is in-process,
    the protocol layer dominates.
-2. **fakeredis lands in the same ballpark as Redis on localhost** — it
+2. **fakeredis lands in the same ballpark as Redis on localhost**: it
    behaves like Redis-on-localhost for latency, ~6x slower than a
    container on the same pod.
 3. **Our `LocMemCache` is ~250-400× faster per single op** than
@@ -86,8 +86,8 @@ the `WRONGTYPE` translation, pipelines, scripts) without standing up a
 testcontainer Redis. We currently rely on a real Valkey/Redis container
 for adapter integration tests, which is correct but requires Docker.
 
-We haven't wired this in — it would be a `[testing]` extra and a
-fixture, not a runtime dependency — and the testcontainer path is fast
+We haven't wired this in. It would be a `[testing]` extra and a
+fixture, not a runtime dependency, and the testcontainer path is fast
 enough today (~140 s for the full suite) that the marginal benefit
 hasn't justified the setup. Worth revisiting if a contributor needs to
 work without Docker, or if the suite gets meaningfully larger.

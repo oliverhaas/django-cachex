@@ -40,7 +40,7 @@ Same wire-level features as the Python driver, dispatched through the optional `
 
 | Backend | Description |
 |---------|-------------|
-| `RedisRsCache` | Standard connection (Valkey or Redis — protocol-compatible) |
+| `RedisRsCache` | Standard connection (Valkey or Redis, protocol-compatible) |
 | `RedisRsSentinelCache` | Sentinel high availability |
 | `RedisRsClusterCache` | Cluster sharding |
 

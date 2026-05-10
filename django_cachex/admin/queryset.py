@@ -281,7 +281,7 @@ class CacheAdminMixin:
     @admin.display(description=_("Actions"))
     def keys_link(self, obj: Cache) -> str:
         if obj.support_level != "cachex":
-            return mark_safe('<span style="color:#9ca3af">—</span>')
+            return mark_safe('<span style="color:#9ca3af">-</span>')
         url = reverse("admin:django_cachex_key_changelist") + f"?cache={obj.name}"
         return format_html('<a href="{}">{}</a>', url, _("List Keys"))
 
@@ -499,7 +499,7 @@ class KeyAdminMixin:
 
         cache = get_cache(cache_name)
         try:
-            # SCAN's COUNT is a hint — Redis may return fewer matching keys
+            # SCAN's COUNT is a hint; Redis may return fewer matching keys
             # per call.  Loop up to 5 times, but stop early once we have at
             # least half the requested count (avoids showing ~2x items when a
             # late batch pushes us way over).

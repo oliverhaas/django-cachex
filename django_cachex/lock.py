@@ -187,7 +187,7 @@ class Lock:
 
 
 class AsyncLock(Lock):
-    """Async-flavored :class:`Lock` — ``acquire``/``release``/``extend``/``locked``/``owned`` are coroutines.
+    """Async-flavored :class:`Lock`: ``acquire``/``release``/``extend``/``locked``/``owned`` are coroutines.
 
     Mirrors redis-py's async ``Lock`` API. The ``# type: ignore[override]``
     comments below all stem from the same fact: the sync→async signature

@@ -3,14 +3,14 @@
 :class:`Pipeline` is the user-facing wrapper that handles key prefixing,
 value serialization, and result decoding. It delegates all queueing to a
 concrete :class:`~django_cachex.adapters.protocols.RespPipelineProtocol`
-implementation — one per driver:
+implementation, one per driver:
 
 - :class:`~django_cachex.adapters.valkey_py.ValkeyPyPipelineAdapter` /
-  :class:`~django_cachex.adapters.redis_py.RedisPyPipelineAdapter` — wrap a
+  :class:`~django_cachex.adapters.redis_py.RedisPyPipelineAdapter`: wrap a
   redis-py / valkey-py / cluster ``Pipeline`` object.
-- :class:`~django_cachex.adapters.redis_rs.RedisRsPipelineAdapter` —
+- :class:`~django_cachex.adapters.redis_rs.RedisRsPipelineAdapter`:
   buffers RESP wire commands for the Rust driver's ``pipeline_exec``.
-- :class:`~django_cachex.adapters.valkey_glide.ValkeyGlidePipelineAdapter` —
+- :class:`~django_cachex.adapters.valkey_glide.ValkeyGlidePipelineAdapter`:
   drives ``valkey-glide``'s ``Batch``.
 
 Each adapter's ``RespAdapterProtocol.pipeline()`` factory constructs the right
@@ -89,7 +89,7 @@ class Pipeline:
     def _decode_single(self, value: bytes | None) -> Any:
         """Decode a single value, returning None if None.
 
-        Pipelines always serve values as-is (stale serving) — no stampede TTL checks.
+        Pipelines always serve values as-is (stale serving); no stampede TTL checks.
         """
         if value is None:
             return None
@@ -226,7 +226,7 @@ class Pipeline:
         nvalue = self._encode(value)
         actual_timeout = self._adapter.get_timeout_with_buffer(timeout, stampede_prevention)
 
-        # timeout=0 means "expire immediately" (Django convention) — queue a DELETE
+        # timeout=0 means "expire immediately" (Django convention); queue a DELETE
         if actual_timeout == 0:
             self._pipeline_adapter.delete(nkey)
             self._decoders.append(bool)
@@ -1600,7 +1600,7 @@ class Pipeline:
 
 
 class AsyncPipeline(Pipeline):
-    """Async sibling of :class:`Pipeline` — same chainable API, awaitable ``execute()``.
+    """Async sibling of :class:`Pipeline`: same chainable API, awaitable ``execute()``.
 
     Driver async pipelines (``redis.asyncio`` ``Pipeline``, glide async ``Batch``,
     redis-rs ``apipeline_exec``) all expose the same chainable command surface

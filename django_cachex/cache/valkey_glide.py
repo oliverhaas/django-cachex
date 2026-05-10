@@ -2,7 +2,7 @@
 
 ``valkey-glide`` is the Valkey project's official Rust-cored client. It
 ships standalone (single node, optionally with replicas) and cluster
-clients but no Sentinel client — Sentinel-managed deployments would have
+clients but no Sentinel client. Sentinel-managed deployments would have
 to discover the master out-of-band and point a standalone backend at it.
 """
 
@@ -22,7 +22,7 @@ class ValkeyGlideCache(RespCache):
 class ValkeyGlideClusterCache(RespClusterCache):
     """``valkey-glide`` cluster-mode cache backend.
 
-    Multi-key operations require keys to hash to a single slot — use
+    Multi-key operations require keys to hash to a single slot, use
     ``{tag}`` hash tags on related keys.
     """
 

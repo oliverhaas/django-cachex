@@ -115,7 +115,7 @@ async with await cache.apipeline() as pipe:
     results = await pipe.execute()
 ```
 
-Queueing methods (`set`, `hset`, `lpush`, ...) stay synchronous; only `apipeline()` and `execute()` are awaited. The wrapper's behaviour mirrors the sync `pipeline()` — see [Pipelines](../reference/api.md#pipelines) for the shared command surface.
+Queueing methods (`set`, `hset`, `lpush`, ...) stay synchronous; only `apipeline()` and `execute()` are awaited. The wrapper's behaviour mirrors the sync `pipeline()`; see [Pipelines](../reference/api.md#pipelines) for the shared command surface.
 
 `apipeline()` is `async def` because the valkey-glide adapter resolves the underlying async client during construction. The `await` is required even on adapters where the construction is trivial.
 
@@ -255,7 +255,7 @@ take different routes because the underlying work is different:
 
 Stock Django backends (``django.core.cache.backends.*``) and any other
 non-cachex backend don't get an ext surface from django-cachex. The admin
-shows them with a "limited" badge — configuration only, no key browsing —
+shows them with a "limited" badge (configuration only, no key browsing)
 and recommends switching ``BACKEND`` to a cachex equivalent if available.
 
 ## Cluster and Sentinel

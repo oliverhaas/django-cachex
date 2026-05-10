@@ -83,7 +83,7 @@ class Cache(models.Model):
     @property
     def support_level(self) -> str:
         """Cache support tier. Either ``"cachex"`` (native django-cachex
-        backend, full admin functionality) or ``"limited"`` (anything else —
+        backend, full admin functionality) or ``"limited"`` (anything else;
         admin shows configuration only, key browsing not available).
         """
         cache = self._get_cache()

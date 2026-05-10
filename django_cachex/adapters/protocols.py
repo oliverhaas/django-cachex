@@ -3,11 +3,11 @@
 These ``typing.Protocol`` classes formalize the contracts the cache and
 pipeline layers rely on.
 
-- :class:`RespPipelineProtocol` — sync pipeline-adapter contract.
-- :class:`RespAsyncPipelineProtocol` — async pipeline-adapter contract.
+- :class:`RespPipelineProtocol`: sync pipeline-adapter contract.
+- :class:`RespAsyncPipelineProtocol`: async pipeline-adapter contract.
   Identical to the sync one except ``execute()`` is awaitable; chainable
   methods stay sync because queueing never performs I/O.
-- :class:`RespAdapterProtocol` — adapter contract; what
+- :class:`RespAdapterProtocol`: adapter contract; what
   :class:`~django_cachex.cache.resp.RespCache` calls on its
   underlying adapter. Concrete adapters
   (:class:`~django_cachex.adapters.valkey_py.ValkeyPyAdapter`,
@@ -35,7 +35,7 @@ _set = set
 class _RespPipelineCommandsProtocol(Protocol):
     """Shared chainable-command surface for sync/async pipeline protocols.
 
-    Internal — concrete adapters inherit from :class:`RespPipelineProtocol`
+    Internal: concrete adapters inherit from :class:`RespPipelineProtocol`
     or :class:`RespAsyncPipelineProtocol` (both extend this base) and
     implement the chainable methods against their underlying pipeline /
     batch object. Queueing is sync regardless of whether ``execute()`` is
@@ -44,7 +44,7 @@ class _RespPipelineCommandsProtocol(Protocol):
     """
 
     # -------------------------------------------------------------------------
-    # Core lifecycle (excluding ``execute()`` — declared on the sub-protocols)
+    # Core lifecycle (excluding ``execute()``, declared on the sub-protocols)
     # -------------------------------------------------------------------------
 
     def reset(self) -> None: ...
@@ -318,7 +318,7 @@ class _RespPipelineCommandsProtocol(Protocol):
 
 @runtime_checkable
 class RespPipelineProtocol(_RespPipelineCommandsProtocol, Protocol):
-    """Sync pipeline-adapter contract — every command the sync ``Pipeline`` wrapper queues.
+    """Sync pipeline-adapter contract: every command the sync ``Pipeline`` wrapper queues.
 
     Concrete adapters (one per driver) inherit from this Protocol and
     spell out the chainable surface (via :class:`_RespPipelineCommandsProtocol`)
@@ -332,7 +332,7 @@ class RespPipelineProtocol(_RespPipelineCommandsProtocol, Protocol):
 
 @runtime_checkable
 class RespAsyncPipelineProtocol(_RespPipelineCommandsProtocol, Protocol):
-    """Async pipeline-adapter contract — async sibling of :class:`RespPipelineProtocol`.
+    """Async pipeline-adapter contract; async sibling of :class:`RespPipelineProtocol`.
 
     Identical chainable surface; ``execute()`` and ``reset()`` are awaitable
     because some async drivers (``redis.asyncio.Pipeline``) implement them as
@@ -345,7 +345,7 @@ class RespAsyncPipelineProtocol(_RespPipelineCommandsProtocol, Protocol):
 
 @runtime_checkable
 class RespAdapterProtocol(Protocol):
-    """Wire-level adapter contract — every command + topology hook the cache calls.
+    """Wire-level adapter contract: every command + topology hook the cache calls.
 
     Concrete adapters inherit from this Protocol so the full ~200-method
     surface is declared in one place. Adapter implementations override
@@ -355,7 +355,7 @@ class RespAdapterProtocol(Protocol):
 
     def __init__(self, servers: list[str], **options: Any) -> None: ...
 
-    # Private-ish stampede helpers — called by ``RespCache`` to resolve
+    # Private-ish stampede helpers, called by ``RespCache`` to resolve
     # per-call overrides against the adapter's instance config.
     def resolve_stampede(self, stampede_prevention: bool | StampedeConfig | None = None) -> Any: ...
     def get_timeout_with_buffer(
@@ -501,7 +501,7 @@ class RespAdapterProtocol(Protocol):
     def renamenx(self, src: str, dst: str) -> bool: ...
     async def akeys(self, pattern: str) -> list[str]: ...
     # Async generator: declared with plain ``def`` (not ``async def``) so async
-    # generator overrides have a compatible signature — mypy types
+    # generator overrides have a compatible signature; mypy types
     # ``async def -> AsyncIterator[X]`` as ``Coroutine[..., AsyncIterator[X]]``.
     def aiter_keys(self, pattern: str, itersize: int | None = None) -> AsyncIterator[str]: ...
     async def adelete_pattern(self, pattern: str, itersize: int | None = None) -> int: ...

@@ -36,8 +36,8 @@ CACHES = {
 - Two composite backends: `StreamCache` (cross-pod stream-synchronized in-memory cache) and `TieredCache` (L1/L2 with TTL propagation).
 - Django `LocMemCache` and `DatabaseCache` extensions with the same data-structure ops and admin support.
 - Optional Rust I/O driver (PyO3 + tokio + redis-rs) under the same `RespCache` API. Free-threaded CPython (3.14t) supported.
-- Optional `valkey-glide` adapter — Valkey's official Rust-cored client, exposed as `ValkeyGlideCache`.
-- Django admin UI for browsing keys, inspecting values, editing, and flushing — see below.
+- Optional `valkey-glide` adapter: Valkey's official Rust-cored client, exposed as `ValkeyGlideCache`.
+- Django admin UI for browsing keys, inspecting values, editing, and flushing. See below.
 
 ## Cache Admin
 
@@ -87,7 +87,7 @@ both cp314 and cp314t (free-threaded). Without the extra, the
 The `valkey-glide` adapter is also optional. Install with the
 `valkey-glide` extra (`pip install django-cachex[valkey-glide]`) to enable
 `ValkeyGlideCache`; it pulls in `valkey-glide-sync` and `valkey-glide`,
-the official Rust-cored Valkey client. cp314 GIL only — no free-threaded
+the official Rust-cored Valkey client. cp314 GIL only; no free-threaded
 wheels yet. Cluster is supported via `ValkeyGlideClusterCache`; Sentinel
 is not currently exposed (`valkey-glide` itself does not ship a Sentinel
 client).
@@ -96,7 +96,7 @@ client).
 
 This project started from [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some serializer and compressor utility code is derived from django-redis, licensed under BSD-3-Clause. The admin UI was inspired by [django-redisboard](https://github.com/ionelmc/django-redisboard).
 
-The Rust I/O driver and async bridge are heavily inspired by — and in places directly adapted from — [django-vcache](https://gitlab.com/glitchtip/django-vcache) (MIT, by David Burke / GlitchTip). The fork-safe tokio runtime, the `RedisRsAwaitable` deferred-loop-binding pattern, and the multiplexed-connection design all originate there.
+The Rust I/O driver and async bridge are heavily inspired by, and in places directly adapted from, [django-vcache](https://gitlab.com/glitchtip/django-vcache) (MIT, by David Burke / GlitchTip). The fork-safe tokio runtime, the `RedisRsAwaitable` deferred-loop-binding pattern, and the multiplexed-connection design all originate there.
 
 I also want to mention [django-valkey](https://github.com/django-commons/django-valkey) and [dj-cache-panel](https://github.com/yassi/dj-cache-panel), which I never really used, but are newer and interesting efforts of similar goals as this package has.
 

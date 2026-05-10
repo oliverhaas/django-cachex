@@ -3,14 +3,14 @@
 Three topologies live here, each a self-contained subclass of
 :class:`~django_cachex.adapters.protocols.RespAdapterProtocol`:
 
-- :class:`ValkeyPyAdapter` — single-node / replicated. Carries the full
+- :class:`ValkeyPyAdapter`: single-node or replicated. Carries the full
   command surface against a redis-py-API-compatible client and the
   pool-construction machinery; subclasses (including
   :class:`~django_cachex.adapters.redis_py.RedisPyAdapter`) inherit it
   wholesale and only swap in lib-specific class slots.
-- :class:`ValkeyPySentinelAdapter` — Sentinel-discovered primary/replicas
+- :class:`ValkeyPySentinelAdapter`: Sentinel-discovered primary/replicas
   on top of the single-node base.
-- :class:`ValkeyPyClusterAdapter` — Cluster mode on top of the single-node
+- :class:`ValkeyPyClusterAdapter`: Cluster mode on top of the single-node
   base.
 
 If ``valkey-py`` isn't installed, the constructor raises a clean
@@ -53,7 +53,7 @@ if TYPE_CHECKING:
 
 # Alias for the `set` builtin shadowed by the `set` method (PEP 649 defers
 # annotations at runtime, but type checkers still resolve them in class scope).
-# The `type` shadow uses ``builtins.type[X]`` directly — module-level
+# The `type` shadow uses ``builtins.type[X]`` directly. Module-level
 # aliases of `type` don't survive subscript through mypy's name resolution.
 _set = set
 
@@ -65,7 +65,7 @@ _set = set
 # ``BaseCache`` instance per asyncio task, which means our cached adapter
 # (and any instance-level pool dict) is fresh per task. Without a
 # process-wide registry every async cache call would open a brand-new
-# TCP connection — slow on the hot path and noisy on the server. Sharing
+# TCP connection, which is slow on the hot path and noisy on the server. Sharing
 # pools at the module level by event loop + config keeps connections
 # reused across tasks, in line with the multiplexed redis-rs adapter.
 #
@@ -191,14 +191,14 @@ class ValkeyPyAdapter(RespAdapterProtocol):
     Sentinel / Cluster-specific overrides.
     """
 
-    # Class slots — concrete drivers override under their availability flag.
+    # Class slots: concrete drivers override under their availability flag.
     _lib: Any = None
     _client_class: builtins.type[Any] | None = None
     _pool_class: builtins.type[Any] | None = None
     _async_client_class: builtins.type[Any] | None = None
     _async_pool_class: builtins.type[Any] | None = None
 
-    # Polymorphic availability check — redis-py subclasses override
+    # Polymorphic availability check: redis-py subclasses override
     # ``_LIB_AVAILABLE`` and ``_missing_lib_error`` (via mixin) to redirect
     # the ImportError without overriding ``__init__``.
     _LIB_AVAILABLE: bool = _VALKEY_AVAILABLE
@@ -244,7 +244,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         Encoding (serializer + compressor) is owned by the cache layer
         (``RespCache``); adapter methods take and return raw bytes.
         ``serializer`` / ``compressor`` keys in ``options`` are silently
-        ignored here — the cache reads them directly from its own options.
+        ignored here; the cache reads them directly from its own options.
         """
         if not self._LIB_AVAILABLE:
             raise self._missing_lib_error()
@@ -345,7 +345,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             msg = "Async operations require _async_pool_class to be set. Use RedisPyAdapter or ValkeyPyAdapter."
             raise RuntimeError(msg)
 
-        # Filter out parser_class — it's sync-specific.
+        # Filter out parser_class; it's sync-specific.
         async_pool_options: dict[str, Any] = {k: v for k, v in self._pool_options.items() if k != "parser_class"}
 
         url = self._servers[index]
@@ -365,7 +365,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
     async def get_async_client(self, key: str | None = None, *, write: bool = False) -> Any:
         """Get an async client connection.
 
-        ``async def`` for Protocol uniformity — adapters whose async-client
+        ``async def`` for Protocol uniformity: adapters whose async-client
         construction is genuinely async (glide, redis-rs) ``await`` here;
         for redis-py / valkey-py the body is sync (pool lookup +
         ``Redis(connection_pool=...)``) since the connection opens
@@ -3608,7 +3608,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
 class ValkeyPyPipelineAdapter(RespPipelineProtocol):
     """Pipeline adapter for the redis-py / valkey-py / cluster driver.
 
-    Forwards each cachex pipeline op to ``self._raw`` — a redis-py-shaped
+    Forwards each cachex pipeline op to ``self._raw``, a redis-py-shaped
     ``Pipeline`` (or ``ClusterPipeline``) whose method surface mirrors the
     cachex contract one-for-one. The :class:`Pipeline` wrapper passes
     already-prefixed keys and already-encoded values; raw per-command
@@ -4159,7 +4159,7 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
 
 
 class ValkeyPyAsyncPipelineAdapter(ValkeyPyPipelineAdapter, RespAsyncPipelineProtocol):
-    """Async sibling of :class:`ValkeyPyPipelineAdapter` — wraps an async ``Pipeline``.
+    """Async sibling of :class:`ValkeyPyPipelineAdapter`. Wraps an async ``Pipeline``.
 
     The chainable surface inherited from :class:`ValkeyPyPipelineAdapter` is
     purely sync (queueing only); the underlying ``redis.asyncio`` /

@@ -5,10 +5,10 @@ features (data structures, TTL operations, pattern matching, distributed
 locking, pipelines, and multi-serializer/compressor support). Per-driver
 concrete subclasses live in:
 
-- :mod:`django_cachex.cache.valkey_py` — ``valkey-py``
-- :mod:`django_cachex.cache.redis_py` — ``redis-py``
-- :mod:`django_cachex.cache.redis_rs` — Rust ``redis-rs`` driver
-- :mod:`django_cachex.cache.valkey_glide` — ``valkey-glide``
+- :mod:`django_cachex.cache.valkey_py`: ``valkey-py``
+- :mod:`django_cachex.cache.redis_py`: ``redis-py``
+- :mod:`django_cachex.cache.redis_rs`: Rust ``redis-rs`` driver
+- :mod:`django_cachex.cache.valkey_glide`: ``valkey-glide``
 """
 
 import inspect
@@ -29,14 +29,14 @@ if TYPE_CHECKING:
     from django_cachex.stampede import StampedeConfig
     from django_cachex.types import KeyType
 
-from django_cachex.cache.base import BaseCachex
+from django_cachex.cache.base import BaseCachex, CachexSupportLevel
 from django_cachex.exceptions import CompressorError, NotSupportedError, SerializerError
 from django_cachex.script import ScriptHelpers
 
 # Alias for the `set` builtin shadowed by the `set` method (PEP 649 defers
 # annotations at runtime, but type checkers still resolve them in class scope).
 # The `type` shadow is worked around with `builtins.type[X]` directly when
-# subscripts are needed — module-level aliases of `type` don't survive
+# subscripts are needed; module-level aliases of `type` don't survive
 # subscript through mypy's name resolution.
 _set = set
 
@@ -88,7 +88,7 @@ class RespCache(BaseCachex):
     """
 
     # Support level marker for admin interface
-    _cachex_support: str = "cachex"
+    _cachex_support: CachexSupportLevel = "cachex"
 
     # Class attribute - subclasses override this
     _adapter_class: builtins.type[RespAdapterProtocol]
@@ -104,7 +104,7 @@ class RespCache(BaseCachex):
         self._options = params.get("OPTIONS", {})
 
         # ``REVERSE_KEY_FUNCTION`` lives at the top level alongside Django's
-        # ``KEY_FUNCTION`` — same shape, mirror semantics.
+        # ``KEY_FUNCTION`` is same shape, mirror semantics.
         reverse_key_func = params.get("REVERSE_KEY_FUNCTION")
         if reverse_key_func is not None:
             if isinstance(reverse_key_func, str):
@@ -130,7 +130,7 @@ class RespCache(BaseCachex):
         return self._adapter_class(self._servers, **self._options)
 
     # =========================================================================
-    # Serializer / Compressor stack — encoding lives at the cache layer
+    # Serializer / Compressor stack. Encoding lives at the cache layer
     # =========================================================================
 
     @staticmethod
@@ -490,7 +490,7 @@ class RespCache(BaseCachex):
                 self.add(key, default, timeout=timeout, version=version)
             # Fetch the value again to avoid a race condition if another caller
             # set between the first get() and the set/add() above.
-            # Disable stampede here — we just wrote the value, don't re-trigger.
+            # Disable stampede here. We just wrote the value, don't re-trigger.
             return self.get(key, default, version=version, stampede_prevention=False)
         return val
 
@@ -515,7 +515,7 @@ class RespCache(BaseCachex):
                 await self.aadd(key, default, timeout=timeout, version=version)
             # Fetch the value again to avoid a race condition if another caller
             # set between the first aget() and the aset/aadd() above.
-            # Disable stampede here — we just wrote the value, don't re-trigger.
+            # Disable stampede here. We just wrote the value, don't re-trigger.
             return await self.aget(key, default, version=version, stampede_prevention=False)
         return val
 
@@ -3164,7 +3164,7 @@ class RespClusterCache(RespCache):
         """Create a pipeline. Cluster pipelines never use transactions.
 
         ``transaction=True`` raises :class:`NotSupportedError` rather than
-        silently downgrading — cluster mode can't honour MULTI/EXEC across
+        silently downgrading. Cluster mode can't honour MULTI/EXEC across
         slots.
         """
         if transaction:
@@ -3180,7 +3180,7 @@ class RespClusterCache(RespCache):
         """Create an async pipeline. Cluster pipelines never use transactions.
 
         ``transaction=True`` raises :class:`NotSupportedError` rather than
-        silently downgrading — cluster mode can't honour MULTI/EXEC across
+        silently downgrading. Cluster mode can't honour MULTI/EXEC across
         slots.
         """
         if transaction:

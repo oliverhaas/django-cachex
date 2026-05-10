@@ -24,7 +24,7 @@ from django_cachex.adapters.valkey_py import (
 
 # Process-wide async pool registry for the redis-py driver. Distinct from
 # the valkey-py one in :mod:`~django_cachex.adapters.valkey_py` so each
-# driver owns its own state — the two are never used together in practice,
+# driver owns its own state; the two are never used together in practice,
 # but keeping them isolated makes ownership obvious. Shared across all
 # three redis-py topologies (single, sentinel, cluster).
 _REDIS_ASYNC_POOLS: AsyncPoolsRegistry = weakref.WeakKeyDictionary()
@@ -62,8 +62,8 @@ def _missing_redis() -> ImportError:
 class _RedisPyMixin:
     """Redirects ValkeyPyAdapter's lib-availability check from valkey-py to redis-py.
 
-    Mixed in (first) to every redis-py concrete class — ``RedisPyAdapter``,
-    ``RedisPySentinelAdapter``, ``RedisPyClusterAdapter`` — so they raise
+    Mixed in (first) to every redis-py concrete class (``RedisPyAdapter``,
+    ``RedisPySentinelAdapter``, ``RedisPyClusterAdapter``) so they raise
     an ImportError naming redis-py rather than valkey-py when their
     dependency is missing. Also points ``_async_pools`` at the redis-py
     registry so redis-py and valkey-py don't share pool state.
@@ -77,7 +77,7 @@ class _RedisPyMixin:
         return _missing_redis()
 
 
-# redis-py and valkey-py share an identical pipeline API surface — alias
+# redis-py and valkey-py share an identical pipeline API surface; alias
 # directly rather than carry empty subclasses.
 RedisPyPipelineAdapter = ValkeyPyPipelineAdapter
 RedisPyAsyncPipelineAdapter = ValkeyPyAsyncPipelineAdapter

@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING, Any
 from django.core.cache.backends.base import DEFAULT_TIMEOUT, BaseCache
 from django.core.exceptions import ImproperlyConfigured
 
-from django_cachex.cache.base import BaseCachex
+from django_cachex.cache.base import BaseCachex, CachexSupportLevel
 from django_cachex.exceptions import NotSupportedError
 
 if TYPE_CHECKING:
@@ -59,7 +59,7 @@ class TieredCache(BaseCachex):
     ``hset``, ``zadd`` …) raise :class:`NotSupportedError`.
     """
 
-    _cachex_support: str = "limited"
+    _cachex_support: CachexSupportLevel = "limited"
 
     def __init__(self, server: str, params: dict[str, Any]) -> None:
         super().__init__(params)

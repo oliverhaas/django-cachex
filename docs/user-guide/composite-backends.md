@@ -1,6 +1,6 @@
 # Composite Backends
 
-Two backend classes don't talk to a server directly — they compose other entries in your `CACHES` setting.
+Two backend classes don't talk to a server directly. They compose other entries in your `CACHES` setting.
 
 | Backend | Reads served from | Consistency | Best for |
 |---------|-------------------|-------------|----------|

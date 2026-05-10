@@ -5,9 +5,9 @@ updating it. This prevents silent overwrites when two users edit the
 same value concurrently in the admin.
 
 Each CAS function returns:
-    1  — success (value matched, update applied)
-    0  — conflict (value changed since page load)
-   -1  — gone (key/field/index no longer exists)
+    1: success (value matched, update applied)
+    0: conflict (value changed since page load)
+   -1: gone (key/field/index no longer exists)
 """
 
 from typing import TYPE_CHECKING, Any

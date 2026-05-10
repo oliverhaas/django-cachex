@@ -4,7 +4,7 @@ Each adapter class is a structural-typed thin wrapper around the
 corresponding Rust ``#[pyclass]`` from
 :mod:`django_cachex.adapters._redis_rs`, with :class:`RespAdapterProtocol`
 mixed in so type checkers see the full command surface (the Rust class
-itself satisfies the protocol structurally — runtime-checkable).
+itself satisfies the protocol structurally, runtime-checkable).
 """
 
 from typing import TYPE_CHECKING, Any
@@ -81,7 +81,7 @@ class RedisRsAdapter(_RustRedisRsAdapter, RespAdapterProtocol):
     """Standard-topology Rust client.
 
     The Rust ``RedisRsAdapter`` connects directly to redis-rs in
-    ``__init__``; ``RespAdapterProtocol`` is a structural mixin —
+    ``__init__``; ``RespAdapterProtocol`` is a structural mixin,
     runtime-checkable, contributes no methods.
     """
 
@@ -95,11 +95,11 @@ class RedisRsSentinelAdapter(_RustRedisRsSentinelAdapter, RespAdapterProtocol):
 
 
 class RedisRsPipelineAdapter(_RustRedisRsPipelineAdapter, RespPipelineProtocol):
-    """Pipeline adapter — buffers ops, dispatches via ``pipeline_exec``."""
+    """Pipeline adapter: buffers ops, dispatches via ``pipeline_exec``."""
 
 
 class RedisRsAsyncPipelineAdapter(_RustRedisRsAsyncPipelineAdapter, RespAsyncPipelineProtocol):
-    """Async pipeline adapter — same buffering, awaitable ``execute()``."""
+    """Async pipeline adapter: same buffering, awaitable ``execute()``."""
 
 
 __all__ = [

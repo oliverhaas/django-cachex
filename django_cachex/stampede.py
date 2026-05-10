@@ -13,7 +13,7 @@ from dataclasses import dataclass
 class StampedeConfig:
     # buffer: extra TTL seconds added to the stored expiry so reads can
     #   distinguish "logically expired" from "physically expired".
-    # beta:   XFetch beta — higher values trigger recomputation earlier.
+    # beta:   XFetch beta. Higher values trigger recomputation earlier.
     # delta:  estimated recomputation time in seconds.
     buffer: int = 60
     beta: float = 1.0
@@ -26,7 +26,7 @@ def should_recompute(ttl: int, config: StampedeConfig) -> bool:
     Redis ``TTL`` sentinels are filtered up front: ``-1`` (key has no
     expire) and ``-2`` (key absent) would otherwise both flip to
     "recompute now" because ``ttl - buffer`` is unconditionally
-    negative. ``ttl == 0`` (about-to-expire) still triggers — that's
+    negative. ``ttl == 0`` (about-to-expire) still triggers; that's
     the whole point of the ``buffer``.
     """
     if ttl < 0:
@@ -94,7 +94,7 @@ def make_stampede_config(option: bool | dict | None) -> StampedeConfig | None:
 
     Unknown dict keys are dropped (with a warning) instead of raising
     ``TypeError``. Matches ``resolve_stampede``'s tolerance for typos in
-    per-call overrides — the two were inconsistent before.
+    per-call overrides; the two were inconsistent before.
     """
     if not option:
         return None

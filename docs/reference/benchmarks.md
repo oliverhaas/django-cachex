@@ -24,7 +24,7 @@ to trust.
 - ASGI benchmark spawns `granian` (4 workers), drives 100 concurrent
   `httpx` clients for 20 s against a 6-op view, and samples server RSS
   and `connected_clients` every 5 s.
-- Compressor micro skips the cache path entirely — pure
+- Compressor micro skips the cache path entirely; pure
   `compress` / `decompress` on a 14 KiB pickle of queryset-shaped data.
 
 ## Sync direct
@@ -62,13 +62,13 @@ there, so serializer cost dominates).
 | ormsgpack | 10,780 | 14,474 | 12,417 | 3,476 | 5,276 | 13,680 | 6,261 |
 
 `ormsgpack` and `orjson` (both Rust-cored) edge `pickle` on most
-phases — smaller wire payload outweighs the encoder cost. The
+phases. Smaller wire payload outweighs the encoder cost. The
 pure-Python `json` collapses on `set`/`mset` because the encoder is the
 bottleneck there.
 
 ## Compressors (macro)
 
-`redis-rs` + `pickle` on a 14 KiB queryset-shaped payload — end-to-end
+`redis-rs` + `pickle` on a 14 KiB queryset-shaped payload, end-to-end
 cache ops.
 
 | Compressor | get | get-miss | set | mget | mset | incr | delete | srv-mem KiB |
@@ -119,7 +119,7 @@ overhead Django itself adds.
 | **valkey-glide**    | 1,150 | 1,749 | 1,668 |   983 |   940 | 1,740 | 1,745 |
 | django (builtin)    |   799 | 1,104 | 1,062 |   812 |   765 |   955 | 1,106 |
 
-Django itself caps throughput at ~1k req/s for pure-Python adapters —
+Django itself caps throughput at ~1k req/s for pure-Python adapters.
 the cache stops being the bottleneck. The Rust-cored adapters land
 ~1.7-2× the Python adapters because their per-op overhead is small
 enough that Django's per-request work doesn't fully mask it.
@@ -149,7 +149,7 @@ built-in `RedisCache` `mget`/`mset` collapse to ~190 ops/s under
 
 ## Async concurrent (50 in flight)
 
-`asyncio.gather` of 50 ops at a time — closer to what an ASGI app
+`asyncio.gather` of 50 ops at a time, closer to what an ASGI app
 under load actually generates.
 
 | Adapter | get | get-miss | set | mget | mset | incr | delete | conns peak |
@@ -162,7 +162,7 @@ under load actually generates.
 | **valkey-glide**    |  9,903 | 12,208 |  9,770 | 1,949 | 2,541 | 11,950 | 2,588 | 109 |
 | django (builtin)    |  2,007 |  2,170 |  2,058 |   208 |   206 |  1,058 |   991 | 107 |
 
-This is where the multiplexed Rust transports pay off — `redis-rs`
+This is where the multiplexed Rust transports pay off: `redis-rs`
 peaks at ~10× the Python adapters on single-key phases, `valkey-glide`
 at ~4×. Connection counts plateau (`Δ = 0` across phases on every
 adapter), so this also serves as the connection-leak smoke test.
@@ -187,7 +187,7 @@ req/s is noisy run-to-run on this benchmark; treat the rough buckets
 (~600 / ~400 / ~200) as the signal, not exact ranks. The clearer
 takeaways: both Rust adapters keep the connection count to ~half the
 Python adapters, and Django's built-in `RedisCache` opens 316
-connections — it instantiates a fresh `redis.Redis` per cache call —
+connections (it instantiates a fresh `redis.Redis` per cache call).
 and pays the highest avg latency on the smallest server.
 
 ## Reproducing

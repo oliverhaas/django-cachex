@@ -284,7 +284,7 @@ adapter is configured:
 | `ValkeyGlideCache` (`valkey-glide`) | `glide_sync.GlideClient` |
 
 The four objects expose comparable command surfaces but are not
-interchangeable types — code that pins to one adapter for type-narrowing
+interchangeable types; code that pins to one adapter for type-narrowing
 or vendor-specific calls won't work against the others. For
 adapter-portable code use the cache API directly; reach for
 `get_client()` only as an escape hatch, since it bypasses the configured
@@ -394,13 +394,13 @@ All cache methods are available on the pipeline. Results are returned as a list 
 | `pool_class` | Custom connection pool class (sync) |
 | `async_pool_class` | Custom connection pool class (async) |
 | `parser_class` | Custom RESP parser class |
-| `stampede_prevention` | `True` / `False` / dict (`buffer`, `beta`, `delta`) — see [`StampedeConfig`](#stampedeconfig) |
+| `stampede_prevention` | `True` / `False` / dict (`buffer`, `beta`, `delta`); see [`StampedeConfig`](#stampedeconfig) |
 | `sentinels` | Sentinel server list (for Sentinel backends) |
 | `sentinel_kwargs` | Sentinel configuration |
 
 ### StampedeConfig
 
-`django_cachex.StampedeConfig(buffer=60, beta=1.0, delta=1.0)` — frozen
+`django_cachex.StampedeConfig(buffer=60, beta=1.0, delta=1.0)`, frozen
 dataclass that tunes the TTL-based XFetch stampede-prevention algorithm.
 Pass it to `OPTIONS["stampede_prevention"]` to apply globally, or to the
 `stampede_prevention=` kwarg on `get`/`set`/`get_many`/`set_many`/`add`/
@@ -409,7 +409,7 @@ Pass it to `OPTIONS["stampede_prevention"]` to apply globally, or to the
 | Field | Default | Description |
 |-------|---------|-------------|
 | `buffer` | `60`  | Seconds added to TTL on writes; defines the early-recompute window. |
-| `beta`   | `1.0` | Multiplier on the recompute probability — higher = recompute earlier. |
+| `beta`   | `1.0` | Multiplier on the recompute probability; higher = recompute earlier. |
 | `delta`  | `1.0` | Recompute-cost estimate (seconds); larger = recompute earlier. |
 
 ## Exceptions
@@ -424,4 +424,4 @@ root.
 | `SerializerError` | Serialization or deserialization failed. Triggers the serializer fallback chain. |
 | `NotSupportedError` | Operation is not supported by this backend (e.g. `lpush` on `TieredCache`). |
 | `LockError` | Generic lock failure (couldn't acquire, releasing an unlocked lock, …). |
-| `LockNotOwnedError` | Releasing or extending a lock whose token no longer matches — i.e. the lock expired or was stolen. Subclass of `LockError`. |
+| `LockNotOwnedError` | Releasing or extending a lock whose token no longer matches (i.e. the lock expired or was stolen). Subclass of `LockError`. |

@@ -317,7 +317,7 @@ from django_cachex import (
 )
 ```
 
-Pass ``post_hook=None`` (the default) when no decoding is needed — the result is
+Pass ``post_hook=None`` (the default) when no decoding is needed; the result is
 returned unchanged.
 
 #### Key Prefixing

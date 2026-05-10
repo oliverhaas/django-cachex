@@ -1,4 +1,4 @@
-"""Cachex DatabaseCache — drop-in replacement for Django's DatabaseCache.
+"""Cachex DatabaseCache: drop-in replacement for Django's DatabaseCache.
 
 Extends ``django.core.cache.backends.db.DatabaseCache`` with the cachex
 extension surface (lists, sets, hashes, sorted sets, TTL ops, key scanning,
@@ -15,7 +15,7 @@ Notable design points:
   uses (``pickle.dumps`` → base64 → ``TEXT`` column). No double encoding
   through the public ``set``/``get`` surface.
 - Existing keys preserve their ``expires`` column on in-place mutation;
-  only new rows get a fresh ``expires`` (set to ``datetime.max`` —
+  only new rows get a fresh ``expires`` (set to ``datetime.max``,
   matching Django's "no expiry" sentinel for compound ops).
 
 Usage::
@@ -42,7 +42,7 @@ from django.conf import settings
 from django.core.cache.backends.db import DatabaseCache as DjangoDatabaseCache
 from django.db import connections, models, router, transaction
 
-from django_cachex.cache.base import BaseCachex
+from django_cachex.cache.base import BaseCachex, CachexSupportLevel
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
@@ -109,11 +109,11 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
     compound ops are serialized correctly even under concurrent writers.
 
     Data structures (lists, sets, hashes, sorted sets) are stored as
-    pickled-then-base64 Python objects in the existing ``value`` column —
+    pickled-then-base64 Python objects in the existing ``value`` column;
     no schema changes needed beyond ``createcachetable``.
     """
 
-    _cachex_support: str = "cachex"
+    _cachex_support: CachexSupportLevel = "cachex"
 
     # =========================================================================
     # Connection / table plumbing
@@ -181,7 +181,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         ``(new_value, return_value)`` tuple. If ``new_value`` is ``_DELETE``,
         the row is deleted; otherwise it is upserted. The existing
         ``expires`` is preserved on UPDATE; new rows get ``datetime.max``
-        (no expiry — matches Redis compound-op semantics).
+        (no expiry, matches Redis compound-op semantics).
         """
         conn = self._get_connection(write=True)
         quote = conn.ops.quote_name
@@ -1103,7 +1103,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         return await sync_to_async(self.keys, thread_sensitive=True)(*args, **kwargs)
 
     async def aiter_keys(self, *args: Any, **kwargs: Any) -> Any:
-        # iter_keys is a generator over a list snapshot — materializing once
+        # iter_keys is a generator over a list snapshot, materializing once
         # in the worker thread, then yielding from the coroutine, is fine.
         items = await sync_to_async(lambda: list(self.iter_keys(*args, **kwargs)), thread_sensitive=True)()
         for item in items:

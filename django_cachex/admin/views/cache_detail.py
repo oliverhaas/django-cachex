@@ -87,7 +87,7 @@ def _cache_detail_view(
     cache_config = settings.CACHES.get(cache_name, {})
 
     # ``AttributeError`` and ``NotSupportedError`` mean "this backend
-    # doesn't expose info()" — render the Configuration section from
+    # doesn't expose info()": render the Configuration section from
     # ``settings.CACHES`` and skip the dynamic server/memory/stats sections.
     # Other exceptions (connection drop, etc.) get surfaced as a message.
     raw_info: dict[str, Any] | None = None

@@ -3,12 +3,12 @@
 
 Each operation method overrides ``RespAdapterProtocol`` and calls
 ``glide_sync.GlideClient`` / ``glide.GlideClient`` natively. There is
-no redis-py-shaped intermediary for the operation surface — only
+no redis-py-shaped intermediary for the operation surface, only
 ``encode``/``decode``/``resolve_stampede`` are shared from the base.
 
 The pipeline adapter (``ValkeyGlidePipelineAdapter`` / ``ValkeyGlideAsyncPipelineAdapter``)
 implements ``RespPipelineProtocol`` natively against glide's ``Batch``
-— no redis-py-shaped intermediary on the queueing surface either.
+with no redis-py-shaped intermediary on the queueing surface either.
 
 Standalone and cluster topologies are supported; Sentinel is not exposed
 (``valkey-glide`` itself does not ship a Sentinel client).
@@ -61,6 +61,7 @@ try:
         GlideClusterClient,
         GlideClusterClientConfiguration,
         NodeAddress,
+        RequestError,
     )
     from glide_sync.glide_client import GlideClient  # ty: ignore[unresolved-import]
 except ImportError as _exc:
@@ -89,7 +90,7 @@ _set = set
 # =============================================================================
 # Glide's clients are expensive (each opens at least one TCP connection), and
 # Django's ``asgiref.local.Local`` returns a fresh ``BaseCache`` per asyncio
-# task — under granian + 100 concurrent ``httpx`` clients we'd otherwise
+# task. Under granian + 100 concurrent ``httpx`` clients we'd otherwise
 # build thousands of clients. Mirror :mod:`~django_cachex.adapters.valkey_py`'s
 # ``_async_pools`` registry so adapter instances within the same loop share
 # one client.
@@ -117,7 +118,7 @@ _GLIDE_ASYNC_CLIENTS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[
 )
 # Per-loop async-create locks. Without this, two concurrent tasks on the same
 # loop both miss the registry, both await ``AsyncGlideClient.create``, and the
-# loser's client is GC'd without ``close()`` — leaking a connection.
+# loser's client is GC'd without ``close()``, leaking a connection.
 _GLIDE_ASYNC_LOCKS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = weakref.WeakKeyDictionary()
 
 
@@ -233,7 +234,7 @@ def _decode_xinfo(raw: Any) -> Any:
 
 
 # =============================================================================
-# Pipeline wrappers (redis-py-shaped) — required by django_cachex.adapters.pipeline.Pipeline
+# Pipeline wrappers (redis-py-shaped) for django_cachex.adapters.pipeline.Pipeline
 # =============================================================================
 
 
@@ -851,13 +852,13 @@ class ValkeyGlideAsyncPipelineAdapter(ValkeyGlidePipelineAdapter):
     """Async parallel of ``ValkeyGlidePipelineAdapter``.
 
     Conforms to :class:`RespAsyncPipelineProtocol`. Holds a resolved
-    ``AsyncGlideClient`` — the adapter's ``apipeline()`` is async so it
+    ``AsyncGlideClient``. The adapter's ``apipeline()`` is async so it
     can ``await self.get_async_client()`` before constructing this
     wrapper, removing the lazy-factory dance the v1 design needed.
 
     Inherits every queueing method from the sync adapter (they only
     mutate ``self._batch``) and overrides ``execute`` / ``reset`` to go
-    through the async client. Don't redefine queueing methods here —
+    through the async client. Don't redefine queueing methods here:
     the sync surface already covers ``zrange(withscores=...)``,
     ``xrange(min=...)``, ``hset(mapping=...)``, etc., and any divergence
     risks the same kwargs-rejection regression that prompted this
@@ -953,7 +954,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         """Lazy-init the async client for the running loop and config.
 
         ``async def`` because glide's ``AsyncGlideClient.create`` is itself
-        an async constructor — unlike redis-py's, where the sync helper
+        an async constructor, unlike redis-py's where the sync helper
         gets us a Redis instance whose connection is opened on first use.
         """
         del key, write
@@ -1163,7 +1164,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     def close(self, **kwargs: Any) -> None:
         """No-op. Django fires ``cache.close()`` on every ``request_finished``
-        signal — tearing the glide client down here would force a reconnect
+        signal. Tearing the glide client down here would force a reconnect
         per request."""
 
     # ---- TTL ----
@@ -1194,7 +1195,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def rename(self, src: str, dst: str) -> bool:
         try:
             return self._client().rename(src, dst) == "OK"
-        except Exception as exc:
+        except RequestError as exc:
             if "no such key" in str(exc).lower():
                 msg = f"Key {src!r} not found"
                 raise ValueError(msg) from exc
@@ -1203,7 +1204,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def renamenx(self, src: str, dst: str) -> bool:
         try:
             return bool(self._client().renamenx(src, dst))
-        except Exception as exc:
+        except RequestError as exc:
             if "no such key" in str(exc).lower():
                 msg = f"Key {src!r} not found"
                 raise ValueError(msg) from exc
@@ -1598,7 +1599,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return (_dec_str(key), value)
 
     # =========================================================================
-    # Streams (sync) — via custom_command
+    # Streams (sync) via custom_command
     # =========================================================================
 
     def xadd(self, key: str, fields: Mapping[Any, Any], id: str = "*", **kwargs: Any) -> str:
@@ -1679,7 +1680,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         consumer: str,
         min_idle_time: int,
         entry_ids: Sequence[str],
-        *,
         idle: int | None = None,
         time: int | None = None,
         retrycount: int | None = None,
@@ -1774,7 +1774,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             "consumers": [{"name": _dec_str(c[0]), "pending": int(c[1])} for c in consumers_raw],
         }
 
-    def xinfo_stream(self, key: str, *, full: bool = False) -> Any:
+    def xinfo_stream(self, key: str, full: bool = False) -> Any:
         args: list[Any] = [b"XINFO", b"STREAM", key]
         if full:
             args.append(b"FULL")
@@ -1793,7 +1793,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         key: str,
         group: str,
         entry_id: str = "$",
-        *,
         mkstream: bool = False,
         entries_read: int | None = None,
     ) -> bool:
@@ -1890,7 +1889,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return self._client().custom_command(args)
 
     # =========================================================================
-    # Lock (sync) — inherits from base which uses redis-py-style lock
+    # Lock (sync). Inherits from base which uses redis-py-style lock
     # =========================================================================
 
     def lock(
@@ -2110,7 +2109,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return (await (await self.get_async_client()).flushdb(FlushMode.SYNC)) == "OK"
 
     async def aclose(self, **kwargs: Any) -> None:
-        """No-op. Same rationale as ``close()`` — tearing down the per-loop
+        """No-op. Same rationale as ``close()``: tearing down the per-loop
         async clients here would force a reconnect on every Django request
         cycle."""
 
@@ -2142,7 +2141,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def arename(self, src: str, dst: str) -> bool:
         try:
             return (await (await self.get_async_client()).rename(src, dst)) == "OK"
-        except Exception as exc:
+        except RequestError as exc:
             if "no such key" in str(exc).lower():
                 msg = f"Key {src!r} not found"
                 raise ValueError(msg) from exc
@@ -2151,7 +2150,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def arenamenx(self, src: str, dst: str) -> bool:
         try:
             return bool(await (await self.get_async_client()).renamenx(src, dst))
-        except Exception as exc:
+        except RequestError as exc:
             if "no such key" in str(exc).lower():
                 msg = f"Key {src!r} not found"
                 raise ValueError(msg) from exc
@@ -2652,7 +2651,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         consumer: str,
         min_idle_time: int,
         entry_ids: Sequence[str],
-        *,
         idle: int | None = None,
         time: int | None = None,
         retrycount: int | None = None,
@@ -2717,7 +2715,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         self,
         key: str,
         group: str,
-        *,
         start: str | None = None,
         end: str | None = None,
         count: int | None = None,
@@ -2745,7 +2742,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             "consumers": [{"name": _dec_str(c[0]), "pending": int(c[1])} for c in consumers_raw],
         }
 
-    async def axinfo_stream(self, key: str, *, full: bool = False) -> Any:
+    async def axinfo_stream(self, key: str, full: bool = False) -> Any:
         args: list[Any] = [b"XINFO", b"STREAM", key]
         if full:
             args.append(b"FULL")
@@ -2764,7 +2761,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         key: str,
         group: str,
         entry_id: str = "$",
-        *,
         mkstream: bool = False,
         entries_read: int | None = None,
     ) -> bool:

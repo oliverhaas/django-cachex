@@ -602,7 +602,7 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
 
     # Get value for string keys (cache.get() only works for strings).
     # Decode failures (compressor / serializer mismatch on stale data) must NOT
-    # crash the page — the user still needs to be able to delete the broken key.
+    # crash the page; the user still needs to be able to delete the broken key.
     raw_value = None
     value_is_editable = True
     value_decode_error: str | None = None

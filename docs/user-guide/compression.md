@@ -20,11 +20,11 @@ CACHES = {
 
 | Compressor | Extra |
 |------------|-------|
-| `django_cachex.compressors.zlib.ZlibCompressor` | — (stdlib) |
-| `django_cachex.compressors.gzip.GzipCompressor` | — (stdlib) |
-| `django_cachex.compressors.lzma.LzmaCompressor` | — (stdlib) |
+| `django_cachex.compressors.zlib.ZlibCompressor` | (stdlib) |
+| `django_cachex.compressors.gzip.GzipCompressor` | (stdlib) |
+| `django_cachex.compressors.lzma.LzmaCompressor` | (stdlib) |
 | `django_cachex.compressors.lz4.Lz4Compressor` | `lz4` |
-| `django_cachex.compressors.zstd.ZstdCompressor` | — (stdlib on 3.14+) |
+| `django_cachex.compressors.zstd.ZstdCompressor` | (stdlib on 3.14+) |
 
 Install optional dependencies:
 

@@ -2,7 +2,7 @@
 
 The driver returns raw ``redis::Value`` already converted to Python natives
 (bytes / int / list / dict). The pipeline class applies one of these
-parsers per command to normalize the shape — folding RESP3 maps and RESP2
+parsers per command to normalize the shape: folding RESP3 maps and RESP2
 flat-pair-lists into a consistent representation, coercing bytes scores to
 floats, etc.
 
@@ -49,7 +49,7 @@ def hgetall(v: Any) -> dict[bytes, bytes]:
 
 
 def zset_with_scores(v: Any) -> list[tuple[bytes, float]]:
-    """ZRANGE/ZREVRANGE WITHSCORES — handle RESP3 nested arrays and RESP2 flat lists."""
+    """ZRANGE/ZREVRANGE WITHSCORES: handle RESP3 nested arrays and RESP2 flat lists."""
     if not v:
         return []
     if isinstance(v, dict):
@@ -83,7 +83,7 @@ def stream_entries(v: Any) -> list[tuple[str, dict[str, bytes]]]:
 
 
 def stream_read(v: Any) -> list[tuple[Any, list[tuple[str, dict[str, bytes]]]]] | None:
-    """XREAD/XREADGROUP — list of (stream_key, entries). RESP3 may yield a Map."""
+    """XREAD/XREADGROUP: list of (stream_key, entries). RESP3 may yield a Map."""
     if v is None or v in ([], {}):
         return None
     if isinstance(v, dict):
@@ -99,7 +99,7 @@ def xpending_range(v: Any) -> list[list[Any]]:
 
 
 def xinfo_dict(v: Any) -> dict[str, Any]:
-    """XINFO STREAM — RESP3 Map, RESP2 flat list of alternating k/v."""
+    """XINFO STREAM: RESP3 Map, RESP2 flat list of alternating k/v."""
     if isinstance(v, dict):
         return {(k.decode() if isinstance(k, bytes) else k): val for k, val in v.items()}
     if v is None:

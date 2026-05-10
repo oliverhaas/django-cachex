@@ -3,7 +3,7 @@
 The Rust ``#[pyclass]`` adapter has folded almost all of its post-await
 transforms into the ``AwaitTransform`` enum (see ``async_bridge.rs``).
 What remains here are the coroutines/generators that need genuine
-multi-step Python control flow — async generators, error-translation
+multi-step Python control flow: async generators, error-translation
 re-raises, and the empty short-circuit that needs a ready-resolved
 coroutine.
 
@@ -39,7 +39,7 @@ async def rename_after(awaitable: Awaitable[Any], src: Any) -> bool:
         await awaitable
     except RuntimeError as e:
         if "no such key" in str(e).lower():
-            raise ValueError(f"Key {src!r} not found") from None
+            raise ValueError(f"Key {src!r} not found") from e
         raise
     return True
 
@@ -49,7 +49,7 @@ async def renamenx_after(awaitable: Awaitable[Any], src: Any) -> bool:
         result = await awaitable
     except RuntimeError as e:
         if "no such key" in str(e).lower():
-            raise ValueError(f"Key {src!r} not found") from None
+            raise ValueError(f"Key {src!r} not found") from e
         raise
     return bool(result)
 
@@ -58,7 +58,7 @@ async def renamenx_after(awaitable: Awaitable[Any], src: Any) -> bool:
 # Iterator generators
 #
 # The protocol exposes async generators (``aiter_keys``, ``asscan_iter``,
-# ``adelete_pattern``) that the Rust adapter can't express directly —
+# ``adelete_pattern``) that the Rust adapter can't express directly:
 # PyO3 doesn't have a clean async-generator facility. These helpers do
 # the iteration on the Python side; Rust constructs the generator and
 # returns it. The ``adapter`` argument is the Rust ``RedisRsAdapter``;
@@ -131,7 +131,7 @@ async def adelete_pattern_loop(
     """Stream the SCAN cursor and ``DEL`` matched keys in itersize batches.
 
     Cursor-based iteration so the keyspace is never materialized as a
-    single list — important for keyspaces with millions of matches.
+    single list, important for keyspaces with millions of matches.
     """
     total = 0
     cursor = 0

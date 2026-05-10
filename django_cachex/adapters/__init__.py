@@ -1,4 +1,4 @@
-"""Adapter layer — low-level Redis/Valkey ops per driver.
+"""Adapter layer: low-level Redis/Valkey ops per driver.
 
 Each adapter wraps a specific underlying client library (redis-py,
 valkey-py, our Rust ``redis-rs`` driver, valkey-glide) and exposes the

@@ -66,6 +66,8 @@ from django_cachex.types import KeyType
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
+    from django_cachex.cache.base import CachexSupportLevel
+
 logger = logging.getLogger(__name__)
 
 
@@ -87,7 +89,7 @@ class StreamCache(LocMemCache):
     monitor consumer health, last read age, and stream position.
     """
 
-    _cachex_support: str = "cachex"
+    _cachex_support: CachexSupportLevel = "cachex"
 
     # Type declarations for attributes and methods inherited from LocMemCache.
     if TYPE_CHECKING:
@@ -117,7 +119,7 @@ class StreamCache(LocMemCache):
         self._replay_count: int = options.get("replay", 0)
 
         # LocMemCache uses its ``server`` argument to key its module-level
-        # globals. Use Django's ``LOCATION`` to do the same — multiple
+        # globals. Use Django's ``LOCATION`` to do the same; multiple
         # StreamCache aliases sharing one ``stream_key`` but distinct
         # ``LOCATION``s simulate separate pods within the same process,
         # which is how the test suite exercises the consumer side.
@@ -183,7 +185,7 @@ class StreamCache(LocMemCache):
     ) -> None:
         """Publish a cache mutation to the stream (non-blocking, best-effort).
 
-        ``val`` is the original Python value — the transport cache's serializer
+        ``val`` is the original Python value. The transport cache's serializer
         and compressor handle wire encoding. The single-worker executor
         preserves stream order while keeping the calling thread off the
         network round-trip.
@@ -202,7 +204,7 @@ class StreamCache(LocMemCache):
         except RuntimeError:
             # Executor was shut down (likely from a prior ``__del__`` /
             # ``shutdown`` and a thread is racing the teardown). Drop the
-            # publish — losing the broadcast is preferable to crashing the
+            # publish; losing the broadcast is preferable to crashing the
             # caller. If the cache is still in active use ``_ensure_consumer``
             # will rebuild the executor on the next get/set.
             logger.warning(
@@ -235,7 +237,7 @@ class StreamCache(LocMemCache):
         """Start (or restart) the consumer thread.
 
         Uses double-checked locking. On every call, verifies the thread is
-        actually alive — if it died (e.g. due to ``SystemExit`` or an
+        actually alive. If it died (e.g. due to ``SystemExit`` or an
         unhandled ``BaseException``), it is automatically restarted so the
         pod doesn't silently fall out of sync.
         """
@@ -375,7 +377,7 @@ class StreamCache(LocMemCache):
     def _flush_publishes(self) -> None:
         """Block until all queued publishes have been sent.
 
-        Submits a no-op and waits — when it completes, all prior submits
+        Submits a no-op and waits; when it completes, all prior submits
         have finished since the executor is single-threaded.
         """
         self._publish_executor.submit(lambda: None).result(timeout=5.0)
@@ -413,7 +415,7 @@ class StreamCache(LocMemCache):
         The consumer is parked in ``XREAD BLOCK self._block_timeout`` (ms),
         so the join grace has to outlast one block window. We give it
         ``block_timeout + 1s`` (capped at 10s); if the thread is still
-        alive after that it gets dropped — leaking the daemon thread is
+        alive after that it gets dropped, leaking the daemon thread is
         cheaper than blocking process shutdown.
         """
         if self._consumer_thread is not None:
