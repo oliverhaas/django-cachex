@@ -1,7 +1,7 @@
 """Cache detail view for the django-cachex admin."""
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 from django.contrib import admin, messages
@@ -87,19 +87,18 @@ def _cache_detail_view(
     cache_config = settings.CACHES.get(cache_name, {})
 
     # ``AttributeError`` and ``NotSupportedError`` mean "this backend
-    # doesn't expose info" — render nothing, no scary error. Anything
-    # else is a real failure (connection drop, etc.) and gets surfaced.
-    info_data = None
-    raw_info = None
-    info_unsupported = False
+    # doesn't expose info()" — render the Configuration section from
+    # ``settings.CACHES`` and skip the dynamic server/memory/stats sections.
+    # Other exceptions (connection drop, etc.) get surfaced as a message.
+    raw_info: dict[str, Any] | None = None
     try:
         raw_info = cache.info()
     except AttributeError, NotSupportedError:
-        info_unsupported = True
+        raw_info = None
     except Exception as e:  # noqa: BLE001
         messages.error(request, f"Error retrieving cache info: {e!s}")
-    else:
-        info_data = parse_metadata(cache, cache_config, raw_info)
+
+    info_data = parse_metadata(cache, cache_config, raw_info)
 
     try:
         slowlog_count = max(1, int(request.GET.get("count", 10)))
@@ -128,7 +127,6 @@ def _cache_detail_view(
             "cache_name": cache_name,
             "cache_obj": cache_obj,
             "info_data": info_data,
-            "info_unsupported": info_unsupported,
             "raw_info_json": raw_info_json,
             "slowlog_data": slowlog_data,
             "slowlog_count": slowlog_count,

@@ -47,13 +47,6 @@
     </fieldset>
     {% endif %}
 
-    {% if info_unsupported %}
-    <fieldset class="module aligned info-section">
-        <h2>{% trans 'Configuration' %}</h2>
-        <p style="padding: 1em;">{% trans 'This backend does not expose cache info.' %}</p>
-    </fieldset>
-    {% endif %}
-
     {% if info_data %}
     <!-- Basic Configuration -->
     <fieldset class="module aligned info-section">
