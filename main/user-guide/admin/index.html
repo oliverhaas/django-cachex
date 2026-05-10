@@ -584,10 +584,21 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#using-redisvalkey" class="md-nav__link">
+  <a href="#using-djangos-stock-locmemcache-or-databasecache" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Using Redis/Valkey?
+        Using Django's stock LocMemCache or DatabaseCache?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#using-djangos-stock-redis-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Django's stock Redis backend?
       
     </span>
   </a>
@@ -1254,10 +1265,21 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#using-redisvalkey" class="md-nav__link">
+  <a href="#using-djangos-stock-locmemcache-or-databasecache" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Using Redis/Valkey?
+        Using Django's stock LocMemCache or DatabaseCache?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#using-djangos-stock-redis-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Django's stock Redis backend?
       
     </span>
   </a>
@@ -1417,22 +1439,19 @@
 <tr>
 <td><strong>cachex</strong></td>
 <td>Full Support</td>
-<td>django-cachex backends (<code>ValkeyCache</code>, <code>RedisCache</code>, etc.). All features: key listing, pattern search, TTL inspection, and data type operations.</td>
-</tr>
-<tr>
-<td><strong>wrapped</strong></td>
-<td>Wrapped Support</td>
-<td>Django builtin backends (<code>LocMemCache</code>, <code>DatabaseCache</code>, etc.). Most features work through wrapper compatibility.</td>
+<td>django-cachex backends (<code>ValkeyCache</code>, <code>RedisCache</code>, <code>LocMemCache</code>, <code>DatabaseCache</code>, etc.). All features: key listing, pattern search, TTL inspection, and data type operations.</td>
 </tr>
 <tr>
 <td><strong>limited</strong></td>
 <td>Limited Support</td>
-<td>Custom or unknown backends. Basic operations may work; key listing and advanced features may not be available.</td>
+<td>Stock Django backends (<code>django.core.cache.backends.*</code>) and custom backends. The cache is listed and configurable, but key browsing isn't available because Django's <code>BaseCache</code> doesn't expose key listing.</td>
 </tr>
 </tbody>
 </table>
-<h3 id="using-redisvalkey">Using Redis/Valkey?<a class="headerlink" href="#using-redisvalkey" title="Permanent link">&para;</a></h3>
-<p>The admin works against Django's builtin Redis backend (<code>django.core.cache.backends.redis.RedisCache</code>) at the <strong>limited</strong> support level only. Switch to <code>ValkeyCache</code> / <code>RedisCache</code> for full functionality. See the <a href="../../getting-started/quickstart/">quickstart guide</a> for migration instructions.</p>
+<h3 id="using-djangos-stock-locmemcache-or-databasecache">Using Django's stock LocMemCache or DatabaseCache?<a class="headerlink" href="#using-djangos-stock-locmemcache-or-databasecache" title="Permanent link">&para;</a></h3>
+<p>Switch to <code>django_cachex.cache.LocMemCache</code> / <code>django_cachex.cache.DatabaseCache</code> for full admin support. Both are drop-in replacements for the stock Django classes.</p>
+<h3 id="using-djangos-stock-redis-backend">Using Django's stock Redis backend?<a class="headerlink" href="#using-djangos-stock-redis-backend" title="Permanent link">&para;</a></h3>
+<p>Switch to <code>ValkeyCache</code> / <code>RedisCache</code> for full functionality. See the <a href="../../getting-started/quickstart/">quickstart guide</a> for migration instructions.</p>
 <h2 id="views">Views<a class="headerlink" href="#views" title="Permanent link">&para;</a></h2>
 <h3 id="caches-index">Caches (Index)<a class="headerlink" href="#caches-index" title="Permanent link">&para;</a></h3>
 <p>Lists all configured caches showing name, backend class, location, and support level.</p>
@@ -1452,9 +1471,8 @@
 <thead>
 <tr>
 <th>Feature</th>
-<th>cachex</th>
-<th>LocMemCache</th>
-<th>DatabaseCache</th>
+<th>RESP backends (Valkey/Redis)</th>
+<th>LocMemCache / DatabaseCache</th>
 <th>limited</th>
 </tr>
 </thead>
@@ -1463,33 +1481,28 @@
 <td>List keys</td>
 <td>Yes</td>
 <td>Yes</td>
-<td>Yes</td>
 <td>No</td>
 </tr>
 <tr>
 <td>Get key</td>
 <td>Yes</td>
 <td>Yes</td>
-<td>Yes</td>
-<td>Yes</td>
+<td>No</td>
 </tr>
 <tr>
 <td>Delete key</td>
 <td>Yes</td>
 <td>Yes</td>
-<td>Yes</td>
-<td>Yes</td>
+<td>No</td>
 </tr>
 <tr>
 <td>Edit key</td>
 <td>Yes</td>
 <td>Yes</td>
-<td>Yes</td>
-<td>Yes</td>
+<td>No</td>
 </tr>
 <tr>
 <td>Get TTL</td>
-<td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
 <td>No</td>
@@ -1497,13 +1510,11 @@
 <tr>
 <td>Get type</td>
 <td>Yes</td>
-<td>No</td>
-<td>No</td>
+<td>Limited (no RESP types)</td>
 <td>No</td>
 </tr>
 <tr>
 <td>Cache info</td>
-<td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
 <td>No</td>
@@ -1512,8 +1523,7 @@
 <td>Flush cache</td>
 <td>Yes</td>
 <td>Yes</td>
-<td>Yes</td>
-<td>Varies</td>
+<td>No</td>
 </tr>
 </tbody>
 </table>

@@ -1230,6 +1230,8 @@
 <li>Python 3.14+ (free-threaded supported)</li>
 <li>Django 6.0+</li>
 <li>valkey-py 6.1+ (redis-py 6.0+ also supported)</li>
+<li>Valkey 7.0+ or Redis 6.0+ on the server (the admin's compare-and-swap
+  edits use <code>SET ... KEEPTTL</code>, which lands in Redis 6.0)</li>
 </ul>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <p>Install with pip:</p>
