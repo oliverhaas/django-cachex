@@ -49,6 +49,75 @@ class TestBackend:
             assert hasattr(locmem_cache, name)
 
 
+class TestLiveStorage:
+    """Tagged collections live in ``self._collections`` as long-lived Python
+    objects, not pickled bytes — mutating ops are in-place and reads return
+    snapshots. Verify the contract holds at the boundaries that user code
+    can observe.
+    """
+
+    def test_lrange_returns_independent_copy(self, locmem_cache: LocMemCache):
+        locmem_cache.rpush("k", "a", "b", "c")
+        snapshot = locmem_cache.lrange("k", 0, -1)
+        snapshot.append("MUTATED")
+        # The cache must be insulated from the caller's mutation.
+        assert locmem_cache.lrange("k", 0, -1) == ["a", "b", "c"]
+
+    def test_smembers_returns_independent_copy(self, locmem_cache: LocMemCache):
+        locmem_cache.sadd("k", "a", "b")
+        snapshot = locmem_cache.smembers("k")
+        snapshot.add("MUTATED")
+        assert locmem_cache.smembers("k") == {"a", "b"}
+
+    def test_hgetall_returns_independent_copy(self, locmem_cache: LocMemCache):
+        locmem_cache.hset("k", mapping={"a": 1, "b": 2})
+        snapshot = locmem_cache.hgetall("k")
+        snapshot["c"] = 3
+        assert locmem_cache.hgetall("k") == {"a": 1, "b": 2}
+
+    def test_set_after_collection_overwrites(self, locmem_cache: LocMemCache):
+        # RESP ``SET`` overwrites any prior collection at the key, regardless
+        # of type (mirrors Redis behavior).
+        locmem_cache.lpush("k", "x", "y")
+        assert locmem_cache.type("k") == "list"
+        locmem_cache.set("k", "abc")
+        assert locmem_cache.type("k") == "string"
+        assert locmem_cache.get("k") == "abc"
+
+    def test_has_key_finds_collections(self, locmem_cache: LocMemCache):
+        locmem_cache.lpush("l", "x")
+        locmem_cache.sadd("s", "x")
+        locmem_cache.hset("h", "f", "v")
+        locmem_cache.zadd("z", {"m": 1.0})
+        for k in ("l", "s", "h", "z"):
+            assert locmem_cache.has_key(k) is True
+        assert locmem_cache.has_key("missing") is False
+
+    def test_keys_lists_collections(self, locmem_cache: LocMemCache):
+        locmem_cache.set("opaque", "v")
+        locmem_cache.lpush("alist", "x")
+        locmem_cache.zadd("azset", {"m": 1.0})
+        all_keys = locmem_cache.keys()
+        assert "opaque" in all_keys
+        assert "alist" in all_keys
+        assert "azset" in all_keys
+
+    def test_clear_drops_collections(self, locmem_cache: LocMemCache):
+        locmem_cache.lpush("l", "x")
+        locmem_cache.zadd("z", {"m": 1.0})
+        locmem_cache.clear()
+        assert locmem_cache.type("l") is None
+        assert locmem_cache.type("z") is None
+
+    def test_delete_drops_collection(self, locmem_cache: LocMemCache):
+        locmem_cache.lpush("k", "x")
+        assert locmem_cache.delete("k") is True
+        assert locmem_cache.type("k") is None
+        # Re-creating after delete works (key-type "resets", like Redis).
+        locmem_cache.hset("k", "f", "v")
+        assert locmem_cache.type("k") == "hash"
+
+
 # =============================================================================
 # Keys, TTL, expire, persist, type, info, delete_pattern, iter_keys
 # =============================================================================

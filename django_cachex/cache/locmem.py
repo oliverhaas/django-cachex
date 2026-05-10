@@ -9,8 +9,12 @@ Compared to running ``CachexCompat`` over a plain ``BaseCache``:
 - Compound ops acquire Django's own ``self._lock`` once, instead of
   layering a separate reentrant lock on top of two ``self.get``/``self.set``
   calls. One lock acquire per op, not two.
-- One pickle round-trip per op (read pickled bytes, mutate, write pickled
-  bytes) — no extra serialize/deserialize through the public ``set``/``get``.
+- Tagged RESP collections (``_List``/``_Set``/``_Hash``/``_ZSet``) live as
+  long-lived Python objects in a dedicated ``self._collections`` map;
+  mutations are in-place under the lock, so collection ops avoid the
+  per-call pickle round-trip Django's stock backend pays for opaque
+  ``cache.set()`` values. Ops on opaque (string-typed) values still go
+  through the normal pickled-bytes path in ``self._cache``.
 - Existing keys preserve their TTL automatically (``_expire_info`` is left
   untouched on in-place mutation), avoiding the read-ttl-then-set-with-ttl
   dance.
@@ -33,6 +37,7 @@ import time
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
+from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.cache.backends.locmem import LocMemCache as DjangoLocMemCache
 from sortedcontainers import SortedList  # type: ignore[import-untyped]
 
@@ -185,8 +190,9 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     _cachex_support: str = "cachex"
 
-    # Type-only declarations for attributes/methods Django sets in __init__
-    # but doesn't surface in stubs.
+    # Type-only declarations for attributes Django sets in __init__ but
+    # doesn't surface in stubs. ``_set`` and ``_delete`` are real overrides
+    # below — no stub needed.
     if TYPE_CHECKING:
         _cache: OrderedDict[str, bytes]
         _expire_info: dict[str, float | None]
@@ -195,41 +201,96 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         _cull_frequency: int
 
         def _has_expired(self, key: str) -> bool: ...
-        def _delete(self, key: str) -> bool: ...
-        # Django's lower-level pickled-bytes writer; the public API is ``set``.
-        def _set(self, key: str, value: bytes, timeout: float | None = ...) -> None: ...
+
+    def __init__(self, name: str, params: dict[str, Any]) -> None:
+        super().__init__(name, params)
+        # Live storage for tagged RESP collections (``_List``/``_Set``/
+        # ``_Hash``/``_ZSet``). Kept separate from Django's pickled-bytes
+        # ``self._cache`` so collection ops can mutate in place without a
+        # pickle round-trip; TTL is still tracked via ``self._expire_info``
+        # (shared with ``self._cache``).
+        self._collections: dict[str, Any] = {}
 
     # =========================================================================
     # Native helpers (caller must hold ``self._lock``)
     # =========================================================================
 
     def _native_get(self, internal_key: str) -> Any:
-        """Read and unpickle the value for ``internal_key``, or ``_MISSING``.
+        """Return the live value for ``internal_key``, or ``_MISSING``.
 
-        Caller must hold ``self._lock``. Treats expired keys as missing
-        and evicts them from the dict + expire info.
+        Caller must hold ``self._lock``. Tagged collections come back as
+        the live in-memory object (mutations are visible immediately);
+        opaque values are unpickled from ``self._cache``. Expired keys
+        are evicted from whichever store they live in.
         """
-        if internal_key not in self._cache:
-            return _MISSING
         if self._has_expired(internal_key):
             self._delete(internal_key)
+            return _MISSING
+        if internal_key in self._collections:
+            return self._collections[internal_key]
+        if internal_key not in self._cache:
             return _MISSING
         return pickle.loads(self._cache[internal_key])  # noqa: S301
 
     def _native_write(self, internal_key: str, value: Any) -> None:
-        """Pickle ``value`` and store it for ``internal_key``.
+        """Store ``value`` for ``internal_key``.
 
-        Caller must hold ``self._lock``. Existing keys keep their TTL —
-        we update the dict slot and bump LRU position but leave
-        ``_expire_info`` untouched. New keys get no expiry (matching
-        Redis' compound-op semantics: ``LPUSH`` etc. don't touch TTL).
+        Caller must hold ``self._lock``. Tagged collections (``_List``/
+        ``_Set``/``_Hash``/``_ZSet``) are stored by reference in
+        ``self._collections`` — no pickling, so subsequent in-place mutation
+        through the same reference is visible to future reads. Other values
+        go through the standard pickled-bytes path in ``self._cache``.
+        Existing keys keep their TTL untouched; new keys get no expiry,
+        matching Redis' compound-op semantics (``LPUSH`` etc. don't touch
+        TTL).
         """
+        if isinstance(value, _TAGGED_COLLECTIONS):
+            self._collections[internal_key] = value
+            self._expire_info.setdefault(internal_key, None)
+            return
         pickled = pickle.dumps(value, self.pickle_protocol)
         if internal_key in self._cache:
             self._cache[internal_key] = pickled
             self._cache.move_to_end(internal_key, last=False)
         else:
             self._set(internal_key, pickled, timeout=None)
+
+    # =========================================================================
+    # Django interface overrides — keep ``_collections`` in sync with
+    # Django's ``_cache`` / ``_expire_info`` lifecycle hooks.
+    # =========================================================================
+
+    def _set(self, key: str, value: Any, timeout: Any = DEFAULT_TIMEOUT) -> None:
+        # Opaque ``cache.set()`` overwrites any prior collection at this key,
+        # mirroring Redis ``SET`` (which replaces a list/hash/set/zset key
+        # without complaint). django-stubs treats Django's ``_set``/``_delete``
+        # as private to the concrete subclass and doesn't expose them on the
+        # public type — silence ``attr-defined`` here, the call works at
+        # runtime via the MRO.
+        self._collections.pop(key, None)
+        super()._set(key, value, timeout)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+
+    def _delete(self, key: str) -> bool:
+        had_collection = self._collections.pop(key, None) is not None
+        had_pickled: bool = super()._delete(key)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        if had_collection and not had_pickled:
+            # Django's ``_delete`` only touches ``_expire_info`` when the
+            # key is in ``_cache``; clean up the collection's TTL entry
+            # ourselves.
+            self._expire_info.pop(key, None)
+        return had_collection or had_pickled
+
+    def clear(self) -> None:
+        super().clear()
+        self._collections.clear()
+
+    def has_key(self, key: str, version: int | None = None) -> bool:
+        internal_key = self.make_and_validate_key(key, version=version)
+        with self._lock:
+            if self._has_expired(internal_key):
+                self._delete(internal_key)
+                return False
+            return internal_key in self._cache or internal_key in self._collections
 
     def _internal_key(self, key: str, version: int | None = None) -> str:
         """Resolve a user key (with version) to the internal cache-dict key."""
@@ -246,15 +307,23 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         respective ops) cannot be retrieved through the string ``GET`` API —
         Redis raises ``WRONGTYPE`` and so do we.
         """
-        val = super().get(key, default, version=version)
-        if isinstance(val, _TAGGED_COLLECTIONS):
-            msg = f"WRONGTYPE Key {key!r} does not hold a string value."
-            raise WrongTypeError(msg)
-        return val
+        internal_key = self.make_and_validate_key(key, version=version)
+        with self._lock:
+            if internal_key in self._collections:
+                if self._has_expired(internal_key):
+                    self._delete(internal_key)
+                    return default
+                msg = f"WRONGTYPE Key {key!r} does not hold a string value."
+                raise WrongTypeError(msg)
+        return super().get(key, default, version=version)
 
     # =========================================================================
     # TTL Operations
     # =========================================================================
+
+    def _key_present(self, internal_key: str) -> bool:
+        """Caller holds ``self._lock``. ``True`` if the key is in either store."""
+        return internal_key in self._cache or internal_key in self._collections
 
     def ttl(self, key: str, version: int | None = None) -> int | None:
         """Get the TTL of a key in seconds.
@@ -264,7 +333,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            if internal_key not in self._cache:
+            if not self._key_present(internal_key):
                 return -2
             if self._has_expired(internal_key):
                 self._delete(internal_key)
@@ -282,7 +351,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         else:
             timeout_secs = float(timeout)
         with self._lock:
-            if internal_key not in self._cache or self._has_expired(internal_key):
+            if not self._key_present(internal_key) or self._has_expired(internal_key):
                 if self._has_expired(internal_key):
                     self._delete(internal_key)
                 return False
@@ -293,7 +362,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Remove the TTL from a key. Returns ``True`` if the key existed."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            if internal_key not in self._cache or self._has_expired(internal_key):
+            if not self._key_present(internal_key) or self._has_expired(internal_key):
                 if self._has_expired(internal_key):
                     self._delete(internal_key)
                 return False
@@ -342,7 +411,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """
         wanted_version = str(version if version is not None else self.version)
         with self._lock:
-            internal_keys = list(self._cache)
+            internal_keys = [*self._cache, *self._collections]
         all_keys = []
         for internal_key in internal_keys:
             parts = internal_key.split(":", 2)
@@ -390,11 +459,13 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Get LocMemCache info in a Redis-INFO-like structured format."""
         with self._lock:
             current_time = time.time()
-            key_count = len(self._cache)
+            key_count = len(self._cache) + len(self._collections)
             keys_with_expiry = sum(1 for exp in self._expire_info.values() if exp and exp > current_time)
             try:
                 total_size = sum(_deep_getsizeof(v) for v in self._cache.values())
                 total_size += sum(_deep_getsizeof(k) for k in self._cache)
+                total_size += sum(_deep_getsizeof(v) for v in self._collections.values())
+                total_size += sum(_deep_getsizeof(k) for k in self._collections)
             except Exception:
                 logger.exception("LocMemCache.info(): _deep_getsizeof failed; reporting 0")
                 total_size = 0
@@ -443,19 +514,24 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_list(internal_key)
-            new_list = _List(reversed(values))
-            if current:
-                new_list.extend(current)
-            self._native_write(internal_key, new_list)
-            return len(new_list)
+            if current is None:
+                current = _List(reversed(values))
+                self._native_write(internal_key, current)
+            else:
+                # In-place prepend on the live list — no copy, no rewrite.
+                current[0:0] = reversed(values)
+            return len(current)
 
     def rpush(self, key: str, *values: Any, version: int | None = None) -> int:
         """Append values to the tail of a list."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_list(internal_key) or _List()
-            current.extend(values)
-            self._native_write(internal_key, current)
+            current = self._typed_get_list(internal_key)
+            if current is None:
+                current = _List(values)
+                self._native_write(internal_key, current)
+            else:
+                current.extend(values)
             return len(current)
 
     def lpop(self, key: str, count: int | None = None, version: int | None = None) -> Any | list[Any] | None:
@@ -472,9 +548,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             pop_count = count if count is not None else 1
             popped = list(current[:pop_count])
             del current[:pop_count]
-            if current:
-                self._native_write(internal_key, current)
-            else:
+            if not current:
                 self._delete(internal_key)
             return popped if count is not None else popped[0]
 
@@ -492,9 +566,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             pop_count = count if count is not None else 1
             popped = list(reversed(current[-pop_count:]))
             del current[-pop_count:]
-            if current:
-                self._native_write(internal_key, current)
-            else:
+            if not current:
                 self._delete(internal_key)
             return popped if count is not None else popped[0]
 
@@ -512,7 +584,9 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             end = length + end
         if start >= length or end < start:
             return []
-        return current[start : end + 1]
+        # Slice a list subclass to a plain list — caller can mutate freely
+        # without poisoning the live cached list.
+        return list(current[start : end + 1])
 
     def llen(self, key: str, version: int | None = None) -> int:
         """Return the length of a list."""
@@ -521,43 +595,31 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             current = self._typed_get_list(internal_key)
         return 0 if current is None else len(current)
 
-    def lrem(  # noqa: PLR0912
-        self,
-        key: str,
-        count: int,
-        value: Any,
-        version: int | None = None,
-    ) -> int:
+    def lrem(self, key: str, count: int, value: Any, version: int | None = None) -> int:
         """Remove occurrences of value from a list."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_list(internal_key)
             if not current:
                 return 0
-            removed = 0
-            new_list: _List = _List()
-            if count == 0:
-                new_list.extend(item for item in current if item != value)
-                removed = len(current) - len(new_list)
-            elif count > 0:
-                for item in current:
-                    if item == value and removed < count:
-                        removed += 1
-                    else:
-                        new_list.append(item)
+            length_before = len(current)
+            if count >= 0:
+                # ``count == 0`` removes all matches; positive ``count`` caps
+                # the number of head-side removals.
+                limit = count if count > 0 else length_before
+                indices = [i for i, item in enumerate(current) if item == value][:limit]
             else:
-                abs_count = abs(count)
-                for item in reversed(current):
-                    if item == value and removed < abs_count:
-                        removed += 1
-                    else:
-                        new_list.append(item)
-                new_list.reverse()
-            if removed > 0:
-                if new_list:
-                    self._native_write(internal_key, new_list)
-                else:
-                    self._delete(internal_key)
+                # Negative ``count`` removes from the tail.
+                limit = -count
+                rev_indices = [length_before - 1 - i for i, item in enumerate(reversed(current)) if item == value][
+                    :limit
+                ]
+                indices = sorted(rev_indices)
+            for i in reversed(indices):
+                del current[i]
+            removed = len(indices)
+            if removed and not current:
+                self._delete(internal_key)
             return removed
 
     def ltrim(self, key: str, start: int, end: int, version: int | None = None) -> bool:
@@ -577,9 +639,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 return True
             del current[end + 1 :]
             del current[:start]
-            if current:
-                self._native_write(internal_key, current)
-            else:
+            if not current:
                 self._delete(internal_key)
             return True
 
@@ -608,7 +668,6 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             except IndexError:
                 msg = "index out of range"
                 raise ValueError(msg) from None
-            self._native_write(internal_key, current)
             return True
 
     def linsert(self, key: str, where: str, pivot: Any, value: Any, version: int | None = None) -> int:
@@ -625,7 +684,6 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             if where.upper() == "AFTER":
                 idx += 1
             current.insert(idx, value)
-            self._native_write(internal_key, current)
             return len(current)
 
     def lpos(
