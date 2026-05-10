@@ -1873,12 +1873,22 @@
 <p>Both views use the same cache backend configured in settings.</p>
 <h2 id="other-backends">Other backends<a class="headerlink" href="#other-backends" title="Permanent link">&para;</a></h2>
 <p>The async ext surface (<code>alpush</code>, <code>ahset</code>, <code>azadd</code>, <code>attl</code>, <code>aexpire</code>, …)
-is also available on <code>LocMemCache</code>, <code>DatabaseCache</code>, and any
-<code>CachexCompat</code>-wrapped backend. These adapters don't have a real async
-client underneath, so the calls run their sync implementation under
-<code>sync_to_async</code> — they're safe to <code>await</code> from async views without
-falling back to <code>NotSupportedError</code> and without blocking the event
-loop on the calling thread.</p>
+is also available on <code>LocMemCache</code> and <code>DatabaseCache</code>. The two backends
+take different routes because the underlying work is different:</p>
+<ul>
+<li><strong><code>LocMemCache</code></strong> is in-memory: each <code>a*</code> method calls its sync
+  counterpart directly with no thread offload. There's no I/O to await,
+  so awaiting from an event loop is harmless.</li>
+<li><strong><code>DatabaseCache</code></strong> does real DB queries, so each <code>a*</code> method offloads
+  the sync call via <code>asgiref.sync.sync_to_async</code> (Django's own pattern
+  for <code>BaseCache.aget</code>). Native async DB cursors will replace this path
+  once Django exposes them, without changing the public surface.</li>
+</ul>
+<p><code>CachexCompat</code> (used internally by the admin to wrap stock non-cachex
+backends on the fly) does <strong>not</strong> expose async methods. It's a
+sync-only admin shim. If you need an async ext surface, use a native
+cachex backend (<code>RespCache</code>, <code>LocMemCache</code>, <code>DatabaseCache</code>) or wrap
+your own <code>sync_to_async</code> around the sync calls.</p>
 <h2 id="cluster-and-sentinel">Cluster and Sentinel<a class="headerlink" href="#cluster-and-sentinel" title="Permanent link">&para;</a></h2>
 <p>Async works identically with Cluster and Sentinel backends:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Cluster - async works the same way</span>
