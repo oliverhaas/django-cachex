@@ -339,11 +339,15 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             )
             raw_keys = [row[0] for row in cursor.fetchall()]
         result = []
+        # Anchor the prefix match with a trailing ``:`` so a key_prefix like
+        # ``"cache"`` doesn't claim rows from a sibling prefix like
+        # ``"cache_buster:"``.
+        prefix_match = f"{self.key_prefix}:" if self.key_prefix else ""
         for cache_key in raw_keys:
-            if self.key_prefix and cache_key.startswith(self.key_prefix):
-                without_prefix = cache_key[len(self.key_prefix) :]
-                parts = without_prefix.split(":", 2)
-                result.append(parts[2] if len(parts) >= 3 else without_prefix)
+            if prefix_match and cache_key.startswith(prefix_match):
+                without_prefix = cache_key[len(prefix_match) :]
+                parts = without_prefix.split(":", 1)
+                result.append(parts[1] if len(parts) >= 2 else without_prefix)
             else:
                 parts = cache_key.split(":", 2)
                 result.append(parts[2] if len(parts) >= 3 else cache_key)
@@ -440,12 +444,10 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
 
     def lpop(self, key: str, count: int | None = None, version: int | None = None) -> Any | list[Any] | None:
-        empty: list[Any] | None = [] if count is not None else None
-
         def transform(current: Any) -> tuple[Any, Any | list[Any] | None]:
             existing = self._coerce_list(current)
             if not existing:
-                return _DELETE if existing is not None else _MISSING, empty
+                return _DELETE if existing is not None else _MISSING, None
             n = count if count is not None else 1
             popped = existing[:n]
             remaining = existing[n:]
@@ -454,12 +456,10 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         return self._atomic_compound(self._internal_key(key, version=version), transform)
 
     def rpop(self, key: str, count: int | None = None, version: int | None = None) -> Any | list[Any] | None:
-        empty: list[Any] | None = [] if count is not None else None
-
         def transform(current: Any) -> tuple[Any, Any | list[Any] | None]:
             existing = self._coerce_list(current)
             if not existing:
-                return _DELETE if existing is not None else _MISSING, empty
+                return _DELETE if existing is not None else _MISSING, None
             n = count if count is not None else 1
             popped = list(reversed(existing[-n:]))
             remaining = existing[:-n] if n < len(existing) else []

@@ -1745,7 +1745,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         self,
         key: str,
         group: str,
-        *,
         start: str | None = None,
         end: str | None = None,
         count: int | None = None,
@@ -1902,6 +1901,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         *,
         blocking: bool = True,
         blocking_timeout: float | None = None,
+        thread_local: bool = True,
     ) -> Any:
         return _GlideLock(
             self._client(),
@@ -1910,6 +1910,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             sleep=sleep,
             blocking=blocking,
             blocking_timeout=blocking_timeout,
+            thread_local=thread_local,
         )
 
     # =========================================================================
@@ -2853,6 +2854,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         *,
         blocking: bool = True,
         blocking_timeout: float | None = None,
+        thread_local: bool = True,
     ) -> Any:
         return _AsyncGlideLock(
             self,
@@ -2861,6 +2863,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             sleep=sleep,
             blocking=blocking,
             blocking_timeout=blocking_timeout,
+            thread_local=thread_local,
         )
 
 
@@ -2881,14 +2884,25 @@ _GLIDE_ASYNC_CLUSTER_LOCKS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop,
 
 
 class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
-    """Cluster-mode adapter — wraps ``GlideClusterClient`` instead of standalone.
+    """Cluster-mode adapter, wraps ``GlideClusterClient`` instead of standalone.
 
-    Inherits the full command surface from :class:`ValkeyGlideAdapter`;
-    only the client-construction hooks change. Multi-key operations must
-    hash to a single slot — use ``{tag}`` hash tags on related keys
+    Inherits the full command surface from :class:`ValkeyGlideAdapter`.
+    Only the client-construction hooks change. Multi-key operations must
+    hash to a single slot, use ``{tag}`` hash tags on related keys
     (matches :class:`~django_cachex.cache.resp.RespClusterCache` semantics
     for the other drivers).
     """
+
+    def pipeline(self, *, transaction: bool = True) -> ValkeyGlidePipelineAdapter:
+        """Cluster pipelines can't be atomic across slots, force non-atomic batches."""
+        del transaction
+        return ValkeyGlidePipelineAdapter(self._client(), transaction=False)
+
+    async def apipeline(self, *, transaction: bool = True) -> ValkeyGlideAsyncPipelineAdapter:
+        """Async cluster pipelines can't be atomic across slots."""
+        del transaction
+        client = await self.get_async_client()
+        return ValkeyGlideAsyncPipelineAdapter(client, transaction=False)
 
     def _client(self) -> Any:
         client = _GLIDE_SYNC_CLUSTER_CLIENTS.get(self._config_key)
@@ -3058,6 +3072,7 @@ class _GlideLock:
         sleep: float = 0.1,
         blocking: bool = True,
         blocking_timeout: float | None = None,
+        thread_local: bool = True,
     ) -> None:
         self._client = client
         self._key = key
@@ -3065,8 +3080,26 @@ class _GlideLock:
         self._sleep = sleep
         self._blocking = blocking
         self._blocking_timeout = blocking_timeout
-        self._token: bytes | None = None
         self._initial_token = os.urandom(16).hex().encode()
+        self._token_local: threading.local | None = threading.local() if thread_local else None
+        self._token_shared: bytes | None = None
+
+    @property
+    def _token(self) -> bytes | None:
+        if self._token_local is not None:
+            return getattr(self._token_local, "token", None)
+        return self._token_shared
+
+    @_token.setter
+    def _token(self, value: bytes | None) -> None:
+        if self._token_local is not None:
+            if value is None:
+                if hasattr(self._token_local, "token"):
+                    del self._token_local.token
+            else:
+                self._token_local.token = value
+        else:
+            self._token_shared = value
 
     def acquire(self, *, blocking: bool | None = None, blocking_timeout: float | None = None) -> bool:
         bl = self._blocking if blocking is None else blocking
@@ -3147,6 +3180,7 @@ class _AsyncGlideLock:
         sleep: float = 0.1,
         blocking: bool = True,
         blocking_timeout: float | None = None,
+        thread_local: bool = True,
     ) -> None:
         self._adapter = adapter
         self._key = key
@@ -3154,8 +3188,26 @@ class _AsyncGlideLock:
         self._sleep = sleep
         self._blocking = blocking
         self._blocking_timeout = blocking_timeout
-        self._token: bytes | None = None
         self._initial_token = os.urandom(16).hex().encode()
+        self._token_local: threading.local | None = threading.local() if thread_local else None
+        self._token_shared: bytes | None = None
+
+    @property
+    def _token(self) -> bytes | None:
+        if self._token_local is not None:
+            return getattr(self._token_local, "token", None)
+        return self._token_shared
+
+    @_token.setter
+    def _token(self, value: bytes | None) -> None:
+        if self._token_local is not None:
+            if value is None:
+                if hasattr(self._token_local, "token"):
+                    del self._token_local.token
+            else:
+                self._token_local.token = value
+        else:
+            self._token_shared = value
 
     async def acquire(self, *, blocking: bool | None = None, blocking_timeout: float | None = None) -> bool:
         bl = self._blocking if blocking is None else blocking

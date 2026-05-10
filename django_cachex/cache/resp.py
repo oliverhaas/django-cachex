@@ -49,6 +49,20 @@ def _glob_escape(s: str) -> str:
     return _special_re.sub(r"[\1]", s)
 
 
+def _has_hash_tag(key: str) -> bool:
+    """Return True if ``key`` contains a Redis hash tag (a ``{...}`` with content).
+
+    Cluster slot computation uses the first ``{`` followed by a non-empty
+    ``...}``. ``"foo}bar{baz"`` and ``"foo{}bar"`` don't qualify, even
+    though they contain both braces.
+    """
+    open_idx = key.find("{")
+    if open_idx == -1:
+        return False
+    close_idx = key.find("}", open_idx + 1)
+    return close_idx > open_idx + 1
+
+
 def _load_codec(config: str | type | Any) -> Any:
     """Resolve a serializer/compressor config: dotted-path / class / instance → instance."""
     if isinstance(config, str):
@@ -574,12 +588,14 @@ class RespCache(BaseCachex):
 
         To flush the entire database, use ``cache.flush_db()``.
         """
-        return self.delete_pattern("*") >= 0
+        self.delete_pattern("*")
+        return True
 
     @override
     async def aclear(self) -> bool:  # type: ignore[override]
         """Delete all keys in this cache's namespace asynchronously."""
-        return (await self.adelete_pattern("*")) >= 0
+        await self.adelete_pattern("*")
+        return True
 
     @override
     def close(self, **kwargs: Any) -> None:
@@ -3181,14 +3197,14 @@ class RespClusterCache(RespCache):
         rename hits CROSSSLOT. Reject up front instead of leaving users
         with a runtime cluster error and a half-renamed state.
         """
-        if "{" not in key or "}" not in key:
+        if not _has_hash_tag(key):
             raise NotSupportedError("incr_version (without hash tag)", backend="cluster")
         return super().incr_version(key, delta, version)
 
     @override
     async def aincr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
-        """See :meth:`incr_version` — same hash-tag requirement."""
-        if "{" not in key or "}" not in key:
+        """See :meth:`incr_version`, same hash-tag requirement."""
+        if not _has_hash_tag(key):
             raise NotSupportedError("aincr_version (without hash tag)", backend="cluster")
         return await super().aincr_version(key, delta, version)
 

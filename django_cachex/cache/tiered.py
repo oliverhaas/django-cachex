@@ -258,9 +258,14 @@ class TieredCache(BaseCachex):
         version: int | None = None,
     ) -> list[Any]:
         result = self._l2.set_many(data, timeout, version=version)
+        # ``set_many`` returns the list of keys that L2 failed to write.
+        # Don't propagate those to L1, otherwise readers would hit L1 and
+        # get values that are missing from L2.
+        failed = set(result or ())
         l1_timeout = self._l1_timeout_for_set(timeout)
         for key, value in data.items():
-            self._l1.set(key, value, l1_timeout, version=version)
+            if key not in failed:
+                self._l1.set(key, value, l1_timeout, version=version)
         return result
 
     async def aset_many(
@@ -270,9 +275,11 @@ class TieredCache(BaseCachex):
         version: int | None = None,
     ) -> list[Any]:
         result = await self._l2.aset_many(data, timeout, version=version)
+        failed = set(result or ())
         l1_timeout = self._l1_timeout_for_set(timeout)
         for key, value in data.items():
-            self._l1.set(key, value, l1_timeout, version=version)
+            if key not in failed:
+                self._l1.set(key, value, l1_timeout, version=version)
         return result
 
     # Django's ``BaseCache.delete_many``/``clear`` return ``None``; ``RespCache``

@@ -125,9 +125,14 @@ def _handle_update(request: HttpRequest, cache: Any, cache_name: str, key: str, 
                 missing="Key no longer exists.",
             )
         else:
-            existing_ttl = cache.ttl(key)
-            timeout = existing_ttl if existing_ttl and existing_ttl > 0 else None
-            cache.set(key, new_value, timeout=timeout)
+            # Fallback path used by backends without ``eval_script`` (LocMem,
+            # Database). Use millisecond TTL so we don't round sub-second
+            # precision down on every edit. ``pttl`` returns ``None`` for
+            # no-expiry, ``-2`` for missing key.
+            existing_pttl = cache.pttl(key) if hasattr(cache, "pttl") else None
+            cache.set(key, new_value)
+            if existing_pttl is not None and existing_pttl > 0 and hasattr(cache, "pexpire"):
+                cache.pexpire(key, existing_pttl)
             messages.success(request, "Key updated successfully.")
         return _redirect_to_key(cache_name, key, page)
     except Exception as e:  # noqa: BLE001
@@ -619,13 +624,19 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
                 try:
                     string_sha1 = get_string_sha1(cache, key)
                 except Exception:  # noqa: BLE001
-                    # CAS protection silently downgrades — log so operators
-                    # know an edit will land without conflict detection
-                    # (e.g. cluster routing failure).
+                    # CAS protection downgrades when the server-side fingerprint
+                    # lookup fails (e.g. cluster routing failure). Log for
+                    # post-mortem and warn the operator so they know the next
+                    # update will skip conflict detection.
                     logger.warning(
                         "CAS fingerprint lookup failed for key %r; edit will skip conflict check",
                         key,
                         exc_info=True,
+                    )
+                    messages.warning(
+                        request,
+                        "Conflict detection unavailable for this key. "
+                        "Concurrent edits won't be caught; the next save will overwrite blindly.",
                     )
 
     if value_decode_error is not None:

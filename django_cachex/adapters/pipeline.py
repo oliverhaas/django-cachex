@@ -241,8 +241,7 @@ class Pipeline:
             kwargs["xx"] = True
 
         self._pipeline_adapter.set(nkey, nvalue, **kwargs)
-        # SET returns OK/True on success, None on failure (with NX/XX)
-        # We return True for success, None for failure
+        # SET returns OK/True on success, None on NX/XX miss.
         self._decoders.append(lambda x: True if (x is not None and x != b"" and x is not False) else None)
         return self
 
@@ -1581,11 +1580,8 @@ class Pipeline:
         if pre_hook is not None:
             proc_keys, proc_args = pre_hook(helpers, proc_keys, proc_args)
 
-        # Queue EVAL command using execute_command for cluster compatibility
-        # Note: We use EVAL instead of EVALSHA in pipelines because:
-        # 1. EVALSHA is blocked in Redis Cluster mode pipelines
-        # 2. ClusterPipeline.eval() has a different signature than regular Pipeline.eval()
-        # 3. execute_command works uniformly across both pipeline types
+        # EVAL via execute_command, not EVALSHA: cluster pipelines block EVALSHA
+        # and ClusterPipeline.eval has a different signature than the standalone one.
         self._pipeline_adapter.execute_command("EVAL", script, len(proc_keys), *proc_keys, *proc_args)
 
         if post_hook is not None:
@@ -1636,6 +1632,16 @@ class AsyncPipeline(Pipeline):
         """Exit async context manager, resetting the underlying pipeline."""
         await self._pipeline_adapter.reset()
         self._decoders.clear()
+
+    def __exit__(self, *args: object) -> None:
+        """Block sync ``with`` on an async pipeline.
+
+        ``Pipeline.__exit__`` calls a sync ``reset()``. The async pipeline
+        adapter's ``reset()`` returns a coroutine that would be silently
+        discarded, leaving connection state dangling.
+        """
+        msg = "AsyncPipeline requires 'async with', not 'with'"
+        raise TypeError(msg)
 
     async def execute(self) -> list[Any]:  # type: ignore[override]
         """Execute all queued commands asynchronously and decode the results."""

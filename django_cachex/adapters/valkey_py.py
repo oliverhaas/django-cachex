@@ -3269,17 +3269,19 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         # Collect non-None results
         found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
-        # Stampede filtering: pipeline TTL for all found keys
+        # Stampede filtering: pipeline TTL for found keys with bytes values
+        # (integers bypass stampede, matching the standalone get_many path).
         config = self.resolve_stampede(stampede_prevention)
         if config and found:
-            pipe = client.pipeline()
-            found_keys = list(found.keys())
-            for k in found_keys:
-                pipe.ttl(k)
-            ttls = pipe.execute()
-            for k, ttl in zip(found_keys, ttls, strict=False):
-                if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
-                    del found[k]
+            stampede_keys = [k for k, v in found.items() if isinstance(v, bytes)]
+            if stampede_keys:
+                pipe = client.pipeline()
+                for k in stampede_keys:
+                    pipe.ttl(k)
+                ttls = pipe.execute()
+                for k, ttl in zip(stampede_keys, ttls, strict=False):
+                    if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
+                        del found[k]
 
         return dict(found.items())
 
@@ -3441,17 +3443,19 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         # Collect non-None results
         found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
-        # Stampede filtering: pipeline TTL for all found keys
+        # Stampede filtering: pipeline TTL for found keys with bytes values
+        # (integers bypass stampede, matching the standalone aget_many path).
         config = self.resolve_stampede(stampede_prevention)
         if config and found:
-            pipe = client.pipeline()
-            found_keys = list(found.keys())
-            for k in found_keys:
-                pipe.ttl(k)
-            ttls = await pipe.execute()
-            for k, ttl in zip(found_keys, ttls, strict=False):
-                if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
-                    del found[k]
+            stampede_keys = [k for k, v in found.items() if isinstance(v, bytes)]
+            if stampede_keys:
+                pipe = client.pipeline()
+                for k in stampede_keys:
+                    pipe.ttl(k)
+                ttls = await pipe.execute()
+                for k, ttl in zip(stampede_keys, ttls, strict=False):
+                    if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
+                        del found[k]
 
         return dict(found.items())
 

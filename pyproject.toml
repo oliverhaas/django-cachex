@@ -14,7 +14,7 @@ classifiers = [
   "Framework :: Django :: 6.0",
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
-  "Operating System :: POSIX :: Linux",
+  "Operating System :: OS Independent",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
@@ -78,6 +78,9 @@ dev = [
   "httpx>=0.28,<0.29",
   # Rust I/O driver: workspace member so `uv sync` builds it for tests/benchmarks
   "django-cachex-redis-rs",
+  # Full example — workspace member so its deps (notably celery) survive
+  # ``uv sync``, which the pre-commit hook runs on every commit.
+  "django-cachex-full-example",
 ]
 # valkey-glide ships prebuilt wheels for cp310–cp314 (GIL builds) but has no
 # cp314t free-threaded wheel; the source build needs protoc. Keep it out of
@@ -102,10 +105,11 @@ include = ["django_cachex/**", "README.md", "LICENSE", "pyproject.toml"]
 exclude = ["**/_redis_rs.pyi"]
 
 [tool.uv.workspace]
-members = ["crates/*"]
+members = ["crates/*", "examples/full"]
 
 [tool.uv.sources]
 django-cachex-redis-rs = { workspace = true }
+django-cachex-full-example = { workspace = true }
 
 [tool.ruff]
 target-version = "py314"

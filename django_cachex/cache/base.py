@@ -467,6 +467,8 @@ class BaseCachex(BaseCache):
         wherefrom: str,
         whereto: str,
         version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
     ) -> Any | None:
         """Atomically move an element from one list to another."""
         raise NotSupportedError("lmove", self.__class__.__name__)
@@ -513,6 +515,8 @@ class BaseCachex(BaseCache):
         wherefrom: str = "LEFT",
         whereto: str = "RIGHT",
         version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
     ) -> Any | None:
         """Blocking atomically move element from one list to another."""
         raise NotSupportedError("blmove", self.__class__.__name__)
@@ -574,6 +578,8 @@ class BaseCachex(BaseCache):
         wherefrom: str,
         whereto: str,
         version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
     ) -> Any | None:
         """Async: atomically move an element from one list to another."""
         raise NotSupportedError("almove", self.__class__.__name__)
@@ -620,6 +626,8 @@ class BaseCachex(BaseCache):
         wherefrom: str = "LEFT",
         whereto: str = "RIGHT",
         version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
     ) -> Any | None:
         """Async: blocking atomically move element from one list to another."""
         raise NotSupportedError("ablmove", self.__class__.__name__)
@@ -674,7 +682,15 @@ class BaseCachex(BaseCache):
         """Get all members of a set."""
         raise NotSupportedError("smembers", self.__class__.__name__)
 
-    def smove(self, src: str, dst: str, member: Any, version: int | None = None) -> bool:
+    def smove(
+        self,
+        src: str,
+        dst: str,
+        member: Any,
+        version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
+    ) -> bool:
         """Move member from one set to another."""
         raise NotSupportedError("smove", self.__class__.__name__)
 
@@ -776,7 +792,15 @@ class BaseCachex(BaseCache):
         """Async: get all members of a set."""
         raise NotSupportedError("asmembers", self.__class__.__name__)
 
-    async def asmove(self, src: str, dst: str, member: Any, version: int | None = None) -> bool:
+    async def asmove(
+        self,
+        src: str,
+        dst: str,
+        member: Any,
+        version: int | None = None,
+        version_src: int | None = None,
+        version_dst: int | None = None,
+    ) -> bool:
         """Async: move member from one set to another."""
         raise NotSupportedError("asmove", self.__class__.__name__)
 

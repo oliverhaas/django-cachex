@@ -32,13 +32,16 @@ Different cache backends have different levels of support:
 
 | Badge | Level | Description |
 |-------|-------|-------------|
-| **cachex** | Full Support | django-cachex backends (`ValkeyCache`, `RedisCache`, etc.). All features: key listing, pattern search, TTL inspection, and data type operations. |
-| **wrapped** | Wrapped Support | Django builtin backends (`LocMemCache`, `DatabaseCache`, etc.). Most features work through wrapper compatibility. |
-| **limited** | Limited Support | Custom or unknown backends. Basic operations may work; key listing and advanced features may not be available. |
+| **cachex** | Full Support | django-cachex backends (`ValkeyCache`, `RedisCache`, `LocMemCache`, `DatabaseCache`, etc.). All features: key listing, pattern search, TTL inspection, and data type operations. |
+| **limited** | Limited Support | Stock Django backends (`django.core.cache.backends.*`) and custom backends. The cache is listed and configurable, but key browsing isn't available because Django's `BaseCache` doesn't expose key listing. |
 
-### Using Redis/Valkey?
+### Using Django's stock LocMemCache or DatabaseCache?
 
-The admin works against Django's builtin Redis backend (`django.core.cache.backends.redis.RedisCache`) at the **limited** support level only. Switch to `ValkeyCache` / `RedisCache` for full functionality. See the [quickstart guide](../getting-started/quickstart.md) for migration instructions.
+Switch to `django_cachex.cache.LocMemCache` / `django_cachex.cache.DatabaseCache` for full admin support. Both are drop-in replacements for the stock Django classes.
+
+### Using Django's stock Redis backend?
+
+Switch to `ValkeyCache` / `RedisCache` for full functionality. See the [quickstart guide](../getting-started/quickstart.md) for migration instructions.
 
 ## Views
 
@@ -70,16 +73,16 @@ Create a new cache entry with key name, value (JSON objects/arrays are parsed au
 
 The admin adapts based on backend capabilities:
 
-| Feature | cachex | LocMemCache | DatabaseCache | limited |
-|---------|--------|-------------|---------------|---------|
-| List keys | Yes | Yes | Yes | No |
-| Get key | Yes | Yes | Yes | Yes |
-| Delete key | Yes | Yes | Yes | Yes |
-| Edit key | Yes | Yes | Yes | Yes |
-| Get TTL | Yes | Yes | Yes | No |
-| Get type | Yes | No | No | No |
-| Cache info | Yes | Yes | Yes | No |
-| Flush cache | Yes | Yes | Yes | Varies |
+| Feature | RESP backends (Valkey/Redis) | LocMemCache / DatabaseCache | limited |
+|---------|------------------------------|-----------------------------|---------|
+| List keys | Yes | Yes | No |
+| Get key | Yes | Yes | No |
+| Delete key | Yes | Yes | No |
+| Edit key | Yes | Yes | No |
+| Get TTL | Yes | Yes | No |
+| Get type | Yes | Limited (no RESP types) | No |
+| Cache info | Yes | Yes | No |
+| Flush cache | Yes | Yes | No |
 
 ## Tips
 
