@@ -1275,13 +1275,13 @@ natively against the underlying in-process dict.</p>
   Python <code>list</code> stored via <code>cache.set()</code> is opaque ("string" in RESP
   terms); only values created via <code>lpush</code>/<code>rpush</code> carry the <code>_List</code> tag
   and are accepted by the list typed accessor. Cross-type access raises
-  <code>WrongTypeError</code> (a <code>TypeError</code> subclass) — the same exception the
+  <code>WrongTypeError</code> (a <code>TypeError</code> subclass), the same exception the
   RESP adapters raise after translating their backend's <code>WRONGTYPE</code>
   response.</li>
 <li>Tagged collections (<code>_List</code>/<code>_Set</code>/<code>_Hash</code>/<code>_ZSet</code>) live as long-lived
   Python objects in <code>self._collections</code>, separate from Django's
   pickled-bytes <code>self._cache</code>. Mutations are in-place under the cache
-  lock — no pickle round-trip per op.</li>
+  lock; no pickle round-trip per op.</li>
 <li>Sorted sets carry a <code>sortedcontainers.SortedList</code> sidecar, so
   <code>zrange</code>/<code>zrank</code>/<code>zpopmin</code> are O(log N) instead of the O(N log N)
   re-sort the naive dict-based approach pays.</li>
@@ -1355,7 +1355,7 @@ with a <code>FakeRedis</code> client instead. We benchmarked it; the answer is n
 </tbody>
 </table>
 <p>(Reproduce: <code>python -m django_cachex.benchmarks.locmem_vs_fakeredis</code>
-isn't checked in — it's a one-off; see the commit that introduced this
+isn't checked in; it's a one-off, see the commit that introduced this
 page for the script.)</p>
 <h3 id="what-this-tells-us">What this tells us<a class="headerlink" href="#what-this-tells-us" title="Permanent link">&para;</a></h3>
 <ol>
@@ -1364,7 +1364,7 @@ page for the script.)</p>
    format, fakeredis interpreting it, formatting the response, and
    redis-py deserializing back. Even though everything is in-process,
    the protocol layer dominates.</li>
-<li><strong>fakeredis lands in the same ballpark as Redis on localhost</strong> — it
+<li><strong>fakeredis lands in the same ballpark as Redis on localhost</strong>: it
    behaves like Redis-on-localhost for latency, ~6x slower than a
    container on the same pod.</li>
 <li><strong>Our <code>LocMemCache</code> is ~250-400× faster per single op</strong> than
@@ -1389,8 +1389,8 @@ page for the script.)</p>
 the <code>WRONGTYPE</code> translation, pipelines, scripts) without standing up a
 testcontainer Redis. We currently rely on a real Valkey/Redis container
 for adapter integration tests, which is correct but requires Docker.</p>
-<p>We haven't wired this in — it would be a <code>[testing]</code> extra and a
-fixture, not a runtime dependency — and the testcontainer path is fast
+<p>We haven't wired this in. It would be a <code>[testing]</code> extra and a
+fixture, not a runtime dependency, and the testcontainer path is fast
 enough today (~140 s for the full suite) that the marginal benefit
 hasn't justified the setup. Worth revisiting if a contributor needs to
 work without Docker, or if the suite gets meaningfully larger.</p>

@@ -1359,7 +1359,7 @@ to trust.</p>
 <li>ASGI benchmark spawns <code>granian</code> (4 workers), drives 100 concurrent
   <code>httpx</code> clients for 20 s against a 6-op view, and samples server RSS
   and <code>connected_clients</code> every 5 s.</li>
-<li>Compressor micro skips the cache path entirely — pure
+<li>Compressor micro skips the cache path entirely; pure
   <code>compress</code> / <code>decompress</code> on a 14 KiB pickle of queryset-shaped data.</li>
 </ul>
 <h2 id="sync-direct">Sync direct<a class="headerlink" href="#sync-direct" title="Permanent link">&para;</a></h2>
@@ -1534,11 +1534,11 @@ there, so serializer cost dominates).</p>
 </tbody>
 </table>
 <p><code>ormsgpack</code> and <code>orjson</code> (both Rust-cored) edge <code>pickle</code> on most
-phases — smaller wire payload outweighs the encoder cost. The
+phases. Smaller wire payload outweighs the encoder cost. The
 pure-Python <code>json</code> collapses on <code>set</code>/<code>mset</code> because the encoder is the
 bottleneck there.</p>
 <h2 id="compressors-macro">Compressors (macro)<a class="headerlink" href="#compressors-macro" title="Permanent link">&para;</a></h2>
-<p><code>redis-rs</code> + <code>pickle</code> on a 14 KiB queryset-shaped payload — end-to-end
+<p><code>redis-rs</code> + <code>pickle</code> on a 14 KiB queryset-shaped payload, end-to-end
 cache ops.</p>
 <table>
 <thead>
@@ -1766,7 +1766,7 @@ overhead Django itself adds.</p>
 </tr>
 </tbody>
 </table>
-<p>Django itself caps throughput at ~1k req/s for pure-Python adapters —
+<p>Django itself caps throughput at ~1k req/s for pure-Python adapters.
 the cache stops being the bottleneck. The Rust-cored adapters land
 ~1.7-2× the Python adapters because their per-op overhead is small
 enough that Django's per-request work doesn't fully mask it.</p>
@@ -1867,7 +1867,7 @@ native-async but the Python wrapper is heavier per call. Django's
 built-in <code>RedisCache</code> <code>mget</code>/<code>mset</code> collapse to ~190 ops/s under
 <code>sync_to_async</code>.</p>
 <h2 id="async-concurrent-50-in-flight">Async concurrent (50 in flight)<a class="headerlink" href="#async-concurrent-50-in-flight" title="Permanent link">&para;</a></h2>
-<p><code>asyncio.gather</code> of 50 ops at a time — closer to what an ASGI app
+<p><code>asyncio.gather</code> of 50 ops at a time, closer to what an ASGI app
 under load actually generates.</p>
 <table>
 <thead>
@@ -1963,7 +1963,7 @@ under load actually generates.</p>
 </tr>
 </tbody>
 </table>
-<p>This is where the multiplexed Rust transports pay off — <code>redis-rs</code>
+<p>This is where the multiplexed Rust transports pay off: <code>redis-rs</code>
 peaks at ~10× the Python adapters on single-key phases, <code>valkey-glide</code>
 at ~4×. Connection counts plateau (<code>Δ = 0</code> across phases on every
 adapter), so this also serves as the connection-leak smoke test.</p>
@@ -2053,7 +2053,7 @@ production load.</p>
 (~600 / ~400 / ~200) as the signal, not exact ranks. The clearer
 takeaways: both Rust adapters keep the connection count to ~half the
 Python adapters, and Django's built-in <code>RedisCache</code> opens 316
-connections — it instantiates a fresh <code>redis.Redis</code> per cache call —
+connections (it instantiates a fresh <code>redis.Redis</code> per cache call).
 and pays the highest avg latency on the smallest server.</p>
 <h2 id="reproducing">Reproducing<a class="headerlink" href="#reproducing" title="Permanent link">&para;</a></h2>
 <p>The benchmarks live in <a href="https://github.com/oliverhaas/django-cachex/tree/main/benchmarks"><code>benchmarks/</code></a> and spin up their

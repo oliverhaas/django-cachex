@@ -2448,7 +2448,7 @@ adapter is configured:</p>
 </tbody>
 </table>
 <p>The four objects expose comparable command surfaces but are not
-interchangeable types — code that pins to one adapter for type-narrowing
+interchangeable types; code that pins to one adapter for type-narrowing
 or vendor-specific calls won't work against the others. For
 adapter-portable code use the cache API directly; reach for
 <code>get_client()</code> only as an escape hatch, since it bypasses the configured
@@ -2601,7 +2601,7 @@ returns the adapter's async client.</p>
 </tr>
 <tr>
 <td><code>stampede_prevention</code></td>
-<td><code>True</code> / <code>False</code> / dict (<code>buffer</code>, <code>beta</code>, <code>delta</code>) — see <a href="#stampedeconfig"><code>StampedeConfig</code></a></td>
+<td><code>True</code> / <code>False</code> / dict (<code>buffer</code>, <code>beta</code>, <code>delta</code>); see <a href="#stampedeconfig"><code>StampedeConfig</code></a></td>
 </tr>
 <tr>
 <td><code>sentinels</code></td>
@@ -2614,7 +2614,7 @@ returns the adapter's async client.</p>
 </tbody>
 </table>
 <h3 id="stampedeconfig">StampedeConfig<a class="headerlink" href="#stampedeconfig" title="Permanent link">&para;</a></h3>
-<p><code>django_cachex.StampedeConfig(buffer=60, beta=1.0, delta=1.0)</code> — frozen
+<p><code>django_cachex.StampedeConfig(buffer=60, beta=1.0, delta=1.0)</code>, frozen
 dataclass that tunes the TTL-based XFetch stampede-prevention algorithm.
 Pass it to <code>OPTIONS["stampede_prevention"]</code> to apply globally, or to the
 <code>stampede_prevention=</code> kwarg on <code>get</code>/<code>set</code>/<code>get_many</code>/<code>set_many</code>/<code>add</code>/
@@ -2636,7 +2636,7 @@ Pass it to <code>OPTIONS["stampede_prevention"]</code> to apply globally, or to 
 <tr>
 <td><code>beta</code></td>
 <td><code>1.0</code></td>
-<td>Multiplier on the recompute probability — higher = recompute earlier.</td>
+<td>Multiplier on the recompute probability; higher = recompute earlier.</td>
 </tr>
 <tr>
 <td><code>delta</code></td>
@@ -2678,7 +2678,7 @@ root.</p>
 </tr>
 <tr>
 <td><code>LockNotOwnedError</code></td>
-<td>Releasing or extending a lock whose token no longer matches — i.e. the lock expired or was stolen. Subclass of <code>LockError</code>.</td>
+<td>Releasing or extending a lock whose token no longer matches (i.e. the lock expired or was stolen). Subclass of <code>LockError</code>.</td>
 </tr>
 </tbody>
 </table>

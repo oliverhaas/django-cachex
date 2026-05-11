@@ -1246,11 +1246,11 @@ use, naming the extra you need.</p>
 <h2 id="valkey-glide-adapter-optional">Valkey-Glide adapter (optional)<a class="headerlink" href="#valkey-glide-adapter-optional" title="Permanent link">&para;</a></h2>
 <p>The <code>ValkeyGlideCache</code> backend wraps Valkey's official client,
 <a href="https://github.com/valkey-io/valkey-glide">valkey-glide</a>. It's a Rust core (like <code>redis-rs</code>) but packaged separately
-through PyPI as two distributions — <code>valkey-glide-sync</code> and <code>valkey-glide</code>
-— pulled in together via the <code>valkey-glide</code> extra:</p>
+through PyPI as two distributions, <code>valkey-glide-sync</code> and <code>valkey-glide</code>,
+pulled in together via the <code>valkey-glide</code> extra:</p>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="go">uv add django-cachex[valkey-glide]</span>
 </span></code></pre></div>
-<p>cp314 GIL only — no cp314t (free-threaded) wheels are published yet.
+<p>cp314 GIL only; no cp314t (free-threaded) wheels are published yet.
 Standalone (<code>ValkeyGlideCache</code>) and cluster (<code>ValkeyGlideClusterCache</code>)
 backends are wired up; Sentinel is not exposed (<code>valkey-glide</code> itself does
 not ship a Sentinel client). See the

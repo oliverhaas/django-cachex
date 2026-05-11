@@ -1756,7 +1756,7 @@
 </span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">&quot;h&quot;</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
 </span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">pipe</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
 </span></code></pre></div>
-<p>Queueing methods (<code>set</code>, <code>hset</code>, <code>lpush</code>, ...) stay synchronous; only <code>apipeline()</code> and <code>execute()</code> are awaited. The wrapper's behaviour mirrors the sync <code>pipeline()</code> — see <a href="../../reference/api/#pipelines">Pipelines</a> for the shared command surface.</p>
+<p>Queueing methods (<code>set</code>, <code>hset</code>, <code>lpush</code>, ...) stay synchronous; only <code>apipeline()</code> and <code>execute()</code> are awaited. The wrapper's behaviour mirrors the sync <code>pipeline()</code>; see <a href="../../reference/api/#pipelines">Pipelines</a> for the shared command surface.</p>
 <p><code>apipeline()</code> is <code>async def</code> because the valkey-glide adapter resolves the underlying async client during construction. The <code>await</code> is required even on adapters where the construction is trivial.</p>
 <h2 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
 <h3 id="connection-pool-architecture">Connection Pool Architecture<a class="headerlink" href="#connection-pool-architecture" title="Permanent link">&para;</a></h3>
@@ -1886,7 +1886,7 @@ take different routes because the underlying work is different:</p>
 </ul>
 <p>Stock Django backends (<code>django.core.cache.backends.*</code>) and any other
 non-cachex backend don't get an ext surface from django-cachex. The admin
-shows them with a "limited" badge — configuration only, no key browsing —
+shows them with a "limited" badge (configuration only, no key browsing)
 and recommends switching <code>BACKEND</code> to a cachex equivalent if available.</p>
 <h2 id="cluster-and-sentinel">Cluster and Sentinel<a class="headerlink" href="#cluster-and-sentinel" title="Permanent link">&para;</a></h2>
 <p>Async works identically with Cluster and Sentinel backends:</p>
