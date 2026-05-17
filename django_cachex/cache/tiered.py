@@ -33,7 +33,7 @@ to L1's own ``TIMEOUT`` setting.
 """
 
 from functools import cached_property
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from django.core.cache.backends.base import DEFAULT_TIMEOUT, BaseCache
 from django.core.exceptions import ImproperlyConfigured
@@ -82,10 +82,14 @@ class TieredCache(BaseCachex):
         return caches[self._l1_alias]
 
     @cached_property
-    def _l2(self) -> BaseCache:
+    def _l2(self) -> BaseCachex:
         from django.core.cache import caches
 
-        return caches[self._l2_alias]
+        # TieredCache forwards cachex-only kwargs (``nx``/``xx``/``get``) to
+        # L2; declaring ``BaseCachex`` is what enables that to type-check.
+        # Django's ``caches`` registry is typed as ``BaseCache``; cast to the
+        # cachex shape the tiered contract assumes.
+        return cast("BaseCachex", caches[self._l2_alias])
 
     @property
     def _l1_cap(self) -> float | None:
@@ -116,7 +120,7 @@ class TieredCache(BaseCachex):
     def _get_l2_ttl(self, key: str, version: int | None = None) -> int | None:
         """Try to get L2's remaining TTL for a key. Returns None if unsupported."""
         try:
-            ttl = self._l2.ttl(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            ttl = self._l2.ttl(key, version=version)
             return ttl if isinstance(ttl, int) and ttl > 0 else None
         except AttributeError, NotSupportedError, TypeError:
             return None
@@ -124,7 +128,7 @@ class TieredCache(BaseCachex):
     async def _aget_l2_ttl(self, key: str, version: int | None = None) -> int | None:
         """Try to get L2's remaining TTL for a key asynchronously."""
         try:
-            ttl = await self._l2.attl(key, version=version)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            ttl = await self._l2.attl(key, version=version)
             return ttl if isinstance(ttl, int) and ttl > 0 else None
         except AttributeError, NotSupportedError, TypeError:
             return None
@@ -161,12 +165,15 @@ class TieredCache(BaseCachex):
         value: Any,
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
-        **kwargs: Any,
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        get: bool = False,
     ) -> bool:
         # Django stubs annotate BaseCache.set as returning None; cachex backends
         # actually return bool. bool(None) is False, matching "didn't happen".
-        result = self._l2.set(key, value, timeout, version=version, **kwargs)  # type: ignore[func-returns-value]
-        if result or not (kwargs.get("nx") or kwargs.get("xx")):
+        result = self._l2.set(key, value, timeout, version=version, nx=nx, xx=xx, get=get)
+        if result or not (nx or xx):
             self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
         return bool(result)
 
@@ -176,10 +183,13 @@ class TieredCache(BaseCachex):
         value: Any,
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
-        **kwargs: Any,
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        get: bool = False,
     ) -> bool:
-        result = await self._l2.aset(key, value, timeout, version=version, **kwargs)  # type: ignore[func-returns-value]
-        if result or not (kwargs.get("nx") or kwargs.get("xx")):
+        result = await self._l2.aset(key, value, timeout, version=version, nx=nx, xx=xx, get=get)
+        if result or not (nx or xx):
             self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
         return bool(result)
 

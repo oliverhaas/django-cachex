@@ -35,6 +35,7 @@ import time
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
+from asgiref.sync import sync_to_async
 from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.cache.backends.locmem import LocMemCache as DjangoLocMemCache
 from sortedcontainers import SortedList  # type: ignore[import-untyped]
@@ -53,6 +54,11 @@ if TYPE_CHECKING:
 
 # Sentinel for "key not found" vs "key holds None".
 _MISSING = object()
+
+# Alias for the ``set`` builtin shadowed by the ``set`` method (PEP 649 defers
+# annotations at runtime, but type checkers still resolve them in class scope).
+# Named ``_PySet`` to avoid colliding with ``LocMemCache._set`` (Django hook).
+_PySet = set
 
 
 class _List(list[Any]):
@@ -316,6 +322,69 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 msg = f"WRONGTYPE Key {key!r} does not hold a string value."
                 raise WrongTypeError(msg)
         return super().get(key, default, version=version)
+
+    def set(
+        self,
+        key: str,
+        value: Any,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        get: bool = False,
+    ) -> Any:
+        """Set a value, with optional Redis-style ``nx``/``xx``/``get`` flags.
+
+        With no flags, behaves like Django's ``LocMemCache.set``. ``nx``/``xx``
+        without ``get`` return ``bool`` (whether the write happened). ``get``
+        returns the prior value (or ``None``) regardless of whether the write
+        happened. ``get`` on a key holding a RESP collection raises
+        :class:`~django_cachex.exceptions.WrongTypeError`, mirroring Redis.
+        """
+        if not (nx or xx or get):
+            return super().set(key, value, timeout, version)
+        if nx and xx:
+            msg = "nx and xx are mutually exclusive"
+            raise ValueError(msg)
+        internal_key = self.make_and_validate_key(key, version=version)
+        pickled = pickle.dumps(value, self.pickle_protocol)
+        with self._lock:
+            if self._has_expired(internal_key):
+                self._delete(internal_key)
+            exists = self._key_present(internal_key)
+            prior: Any = None
+            if get and exists:
+                if internal_key in self._collections:
+                    msg = f"WRONGTYPE Key {key!r} does not hold a string value."
+                    raise WrongTypeError(msg)
+                prior = pickle.loads(self._cache[internal_key])  # noqa: S301
+            if (nx and exists) or (xx and not exists):
+                return prior if get else False
+            self._set(internal_key, pickled, timeout)
+            return prior if get else True
+
+    async def aset(
+        self,
+        key: str,
+        value: Any,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        get: bool = False,
+    ) -> Any:
+        """Async: see :meth:`set`. Locmem has no I/O; runs sync under a thread bridge."""
+        return await sync_to_async(self.set, thread_sensitive=True)(
+            key,
+            value,
+            timeout,
+            version,
+            nx=nx,
+            xx=xx,
+            get=get,
+        )
 
     # =========================================================================
     # TTL Operations
@@ -771,14 +840,14 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             current = self._typed_get_set(internal_key)
             return False if current is None else member in current
 
-    def smembers(self, key: str, version: int | None = None) -> set[Any]:
+    def smembers(self, key: str, version: int | None = None) -> _PySet[Any]:
         """Get all members of a set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_set(internal_key)
             return set() if current is None else set(current)
 
-    def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | set[Any] | None:
+    def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | _PySet[Any] | None:
         """Remove and return random member(s) from set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -823,7 +892,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 return [False] * len(members)
             return [m in current for m in members]
 
-    def _collect_sets(self, keys: str | Sequence[str], version: int | None = None) -> list[set[Any]]:
+    def _collect_sets(self, keys: str | Sequence[str], version: int | None = None) -> list[_PySet[Any]]:
         """Read multiple keys' sets under a single lock acquire.
 
         Returns defensive copies so callers can't race against in-place
@@ -835,7 +904,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         with self._lock:
             return [set(self._typed_get_set(ik) or ()) for ik in internal_keys]
 
-    def sdiff(self, keys: str | Sequence[str], version: int | None = None) -> set[Any]:
+    def sdiff(self, keys: str | Sequence[str], version: int | None = None) -> _PySet[Any]:
         """Return the difference between sets."""
         sets = self._collect_sets(keys, version=version)
         if not sets:
@@ -845,7 +914,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             result = result - s
         return result
 
-    def sinter(self, keys: str | Sequence[str], version: int | None = None) -> set[Any]:
+    def sinter(self, keys: str | Sequence[str], version: int | None = None) -> _PySet[Any]:
         """Return the intersection of sets."""
         sets = self._collect_sets(keys, version=version)
         if not sets:
@@ -855,7 +924,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             result = result & s
         return result
 
-    def sunion(self, keys: str | Sequence[str], version: int | None = None) -> set[Any]:
+    def sunion(self, keys: str | Sequence[str], version: int | None = None) -> _PySet[Any]:
         """Return the union of sets."""
         result: set[Any] = set()
         for s in self._collect_sets(keys, version=version):

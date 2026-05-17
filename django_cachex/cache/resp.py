@@ -310,16 +310,15 @@ class RespCache(BaseCachex):
         version: int | None = None,
         *,
         stampede_prevention: bool | StampedeConfig | None = None,
-        **kwargs: Any,
+        nx: bool = False,
+        xx: bool = False,
+        get: bool = False,
     ) -> Any:
         """Set a value in the cache asynchronously.
 
-        Supports nx/xx/get kwargs: nx=True only sets if key doesn't exist,
-        xx=True only sets if key exists, get=True returns the old value.
+        ``nx=True`` only sets if key doesn't exist, ``xx=True`` only sets
+        if key exists, ``get=True`` returns the old value.
         """
-        nx = kwargs.get("nx", False)
-        xx = kwargs.get("xx", False)
-        get = kwargs.get("get", False)
         key = self.make_and_validate_key(key, version=version)
         if nx or xx or get:
             result = await self.adapter.aset_with_flags(
@@ -353,17 +352,17 @@ class RespCache(BaseCachex):
         version: int | None = None,
         *,
         stampede_prevention: bool | StampedeConfig | None = None,
-        **kwargs: Any,
+        nx: bool = False,
+        xx: bool = False,
+        get: bool = False,
     ) -> Any:
         """Set a value in the cache.
 
-        Supports nx/xx/get kwargs: nx=True only sets if key doesn't exist,
-        xx=True only sets if key exists, get=True returns the old value.
-        Returns bool when nx/xx is used, old value when get=True, None otherwise.
+        ``nx=True`` only sets if key doesn't exist, ``xx=True`` only sets
+        if key exists, ``get=True`` returns the old value. Returns ``bool``
+        when ``nx``/``xx`` is used, the old value when ``get=True``, ``None``
+        otherwise.
         """
-        nx = kwargs.get("nx", False)
-        xx = kwargs.get("xx", False)
-        get = kwargs.get("get", False)
         key = self.make_and_validate_key(key, version=version)
         if nx or xx or get:
             result = self.adapter.set_with_flags(

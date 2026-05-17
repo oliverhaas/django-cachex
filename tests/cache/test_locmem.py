@@ -13,6 +13,7 @@ from django.core.cache import caches
 from django.test import override_settings
 
 from django_cachex.cache.locmem import LocMemCache
+from django_cachex.exceptions import WrongTypeError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -47,6 +48,64 @@ class TestBackend:
     def test_locmem_has_extension_methods(self, locmem_cache: LocMemCache):
         for name in ("lpush", "sadd", "hset", "zadd"):
             assert hasattr(locmem_cache, name)
+
+
+class TestSetFlags:
+    """LocMemCache nx/xx/get flag semantics (parity with RespCache)."""
+
+    def test_nx_new_key_writes(self, locmem_cache: LocMemCache):
+        assert locmem_cache.set("k", 1, nx=True) is True
+        assert locmem_cache.get("k") == 1
+
+    def test_nx_existing_key_no_write(self, locmem_cache: LocMemCache):
+        locmem_cache.set("k", "old")
+        assert locmem_cache.set("k", "new", nx=True) is False
+        assert locmem_cache.get("k") == "old"
+
+    def test_xx_missing_key_no_write(self, locmem_cache: LocMemCache):
+        assert locmem_cache.set("k", 1, xx=True) is False
+        assert locmem_cache.get("k") is None
+
+    def test_xx_existing_key_writes(self, locmem_cache: LocMemCache):
+        locmem_cache.set("k", "old")
+        assert locmem_cache.set("k", "new", xx=True) is True
+        assert locmem_cache.get("k") == "new"
+
+    def test_get_missing_returns_none_and_writes(self, locmem_cache: LocMemCache):
+        assert locmem_cache.set("k", "first", get=True) is None
+        assert locmem_cache.get("k") == "first"
+
+    def test_get_existing_returns_prior_and_writes(self, locmem_cache: LocMemCache):
+        locmem_cache.set("k", "old")
+        assert locmem_cache.set("k", "new", get=True) == "old"
+        assert locmem_cache.get("k") == "new"
+
+    def test_nx_and_get_combined(self, locmem_cache: LocMemCache):
+        locmem_cache.set("k", "old")
+        # nx blocks the write, get still returns prior
+        assert locmem_cache.set("k", "new", nx=True, get=True) == "old"
+        assert locmem_cache.get("k") == "old"
+
+    def test_nx_xx_mutually_exclusive(self, locmem_cache: LocMemCache):
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            locmem_cache.set("k", 1, nx=True, xx=True)
+
+    def test_get_on_collection_raises_wrongtype(self, locmem_cache: LocMemCache):
+        locmem_cache.lpush("k", 1, 2, 3)
+        with pytest.raises(WrongTypeError):
+            locmem_cache.set("k", "scalar", get=True)
+
+    @pytest.mark.asyncio
+    async def test_aset_nx(self, locmem_cache: LocMemCache):
+        assert await locmem_cache.aset("k", 1, nx=True) is True
+        assert await locmem_cache.aset("k", 2, nx=True) is False
+        assert locmem_cache.get("k") == 1
+
+    @pytest.mark.asyncio
+    async def test_aset_get(self, locmem_cache: LocMemCache):
+        locmem_cache.set("k", "old")
+        assert await locmem_cache.aset("k", "new", get=True) == "old"
+        assert locmem_cache.get("k") == "new"
 
 
 class TestLiveStorage:

@@ -39,10 +39,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
+from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.cache.backends.db import DatabaseCache as DjangoDatabaseCache
 from django.db import connections, models, router, transaction
 
 from django_cachex.cache.base import BaseCachex, CachexSupportLevel
+from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
@@ -55,6 +57,10 @@ logger = logging.getLogger(__name__)
 # Sentinels for compound-op transforms.
 _MISSING = object()  # current value: row absent (or expired)
 _DELETE = object()  # transform output: drop the row
+
+# Alias for the ``set`` builtin shadowed by the ``set`` method (PEP 649 defers
+# annotations at runtime, but type checkers still resolve them in class scope).
+_set = set
 
 
 def _now() -> datetime:
@@ -223,6 +229,65 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             else:
                 cursor.execute(insert_sql, [internal_key, encoded, _adapt_dt(conn, _no_expiry_dt())])
             return ret
+
+    # =========================================================================
+    # Standard set / aset
+    #
+    # ``nx`` maps to Django's existing ``_base_set("add", ...)`` (INSERT-or-fail
+    # inside ``transaction.atomic``); ``xx`` / ``get`` aren't implementable on
+    # the cache table without extra round trips and aren't currently
+    # supported.
+    # =========================================================================
+
+    def set(
+        self,
+        key: str,
+        value: Any,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        get: bool = False,
+    ) -> Any:
+        """Set a value, optionally with ``nx=True`` for set-if-not-exists.
+
+        ``xx`` and ``get`` raise :class:`NotSupportedError` on this backend.
+        With ``nx=True``, returns ``True`` if the row was inserted, ``False``
+        if a row already existed.
+        """
+        if xx or get:
+            raise NotSupportedError("set with xx/get", self.__class__.__name__)
+        if nx:
+            internal_key = self.make_and_validate_key(key, version=version)
+            # ``_base_set`` is Django's internal hook (private in stubs); accessed
+            # via ``cast`` because the django-stubs surface omits it.
+            return cast("Any", self)._base_set("add", internal_key, value, timeout)
+        return super().set(key, value, timeout, version)
+
+    async def aset(
+        self,
+        key: str,
+        value: Any,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        get: bool = False,
+    ) -> Any:
+        """Async: see :meth:`set`."""
+        if xx or get:
+            raise NotSupportedError("aset with xx/get", self.__class__.__name__)
+        if nx:
+            return await sync_to_async(self.set, thread_sensitive=True)(
+                key,
+                value,
+                timeout,
+                version,
+                nx=True,
+            )
+        return await super().aset(key, value, timeout, version)
 
     # =========================================================================
     # TTL Operations
@@ -602,7 +667,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
     # =========================================================================
 
     @staticmethod
-    def _coerce_set(current: Any) -> set[Any] | None:
+    def _coerce_set(current: Any) -> _set[Any] | None:
         if current is _MISSING:
             return None
         if not isinstance(current, set):
@@ -638,11 +703,11 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         existing = self._coerce_set(self._read(self._internal_key(key, version=version)))
         return False if existing is None else member in existing
 
-    def smembers(self, key: str, version: int | None = None) -> set[Any]:
+    def smembers(self, key: str, version: int | None = None) -> _set[Any]:
         existing = self._coerce_set(self._read(self._internal_key(key, version=version)))
         return set() if existing is None else set(existing)
 
-    def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | set[Any] | None:
+    def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | _set[Any] | None:
         def transform(current: Any) -> tuple[Any, Any]:
             existing = self._coerce_set(current)
             if not existing:
@@ -672,12 +737,12 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             return [False] * len(members)
         return [m in existing for m in members]
 
-    def _collect_sets(self, keys: str | Sequence[str], version: int | None = None) -> list[set[Any]]:
+    def _collect_sets(self, keys: str | Sequence[str], version: int | None = None) -> list[_set[Any]]:
         if isinstance(keys, str):
             keys = [keys]
         return [self._coerce_set(self._read(self._internal_key(k, version=version))) or set() for k in keys]
 
-    def sdiff(self, keys: str | Sequence[str], version: int | None = None) -> set[Any]:
+    def sdiff(self, keys: str | Sequence[str], version: int | None = None) -> _set[Any]:
         sets = self._collect_sets(keys, version=version)
         if not sets:
             return set()
@@ -686,7 +751,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             result = result - s
         return result
 
-    def sinter(self, keys: str | Sequence[str], version: int | None = None) -> set[Any]:
+    def sinter(self, keys: str | Sequence[str], version: int | None = None) -> _set[Any]:
         sets = self._collect_sets(keys, version=version)
         if not sets:
             return set()
@@ -695,8 +760,8 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             result = result & s
         return result
 
-    def sunion(self, keys: str | Sequence[str], version: int | None = None) -> set[Any]:
-        result: set[Any] = set()
+    def sunion(self, keys: str | Sequence[str], version: int | None = None) -> _set[Any]:
+        result: _set[Any] = set()
         for s in self._collect_sets(keys, version=version):
             result |= s
         return result

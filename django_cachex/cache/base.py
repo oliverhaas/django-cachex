@@ -13,12 +13,16 @@ with real implementations; methods left at the default raise
 
 from typing import TYPE_CHECKING, Any, Literal
 
-from django.core.cache.backends.base import BaseCache
+from django.core.cache.backends.base import DEFAULT_TIMEOUT, BaseCache
 
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
 CachexSupportLevel = Literal["cachex", "limited"]
+
+# Alias for the ``set`` builtin shadowed by the ``set`` method (PEP 649 defers
+# annotations at runtime, but type checkers still resolve them in class scope).
+_set = set
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
@@ -43,6 +47,52 @@ class BaseCachex(BaseCache):
     """
 
     _cachex_support: CachexSupportLevel = "limited"
+
+    # =========================================================================
+    # Standard set / aset, widened with ``nx``/``xx``/``get`` flags
+    #
+    # Widens Django's ``BaseCache.set``/``aset`` signature with the
+    # RESP-style flags. Backends that can't honor a flag raise
+    # ``NotSupportedError`` from their override; the default delegates to
+    # the inherited Django implementation when no flag is requested.
+    # =========================================================================
+
+    def set(
+        self,
+        key: str,
+        value: Any,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        get: bool = False,
+    ) -> Any:
+        """Set a value in the cache.
+
+        ``nx=True`` only sets if the key doesn't exist, ``xx=True`` only
+        if it exists, ``get=True`` returns the prior value. Backends that
+        don't support a given flag raise :class:`NotSupportedError`.
+        """
+        if nx or xx or get:
+            raise NotSupportedError("set with nx/xx/get", self.__class__.__name__)
+        return super().set(key, value, timeout, version)
+
+    async def aset(
+        self,
+        key: str,
+        value: Any,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        get: bool = False,
+    ) -> Any:
+        """Async: set a value in the cache. See :meth:`set` for flag semantics."""
+        if nx or xx or get:
+            raise NotSupportedError("aset with nx/xx/get", self.__class__.__name__)
+        return await super().aset(key, value, timeout, version)
 
     # =========================================================================
     # TTL Operations
@@ -646,7 +696,7 @@ class BaseCachex(BaseCache):
         """Get the number of members in a set."""
         raise NotSupportedError("scard", self.__class__.__name__)
 
-    def sdiff(self, keys: str | Sequence[str], version: int | None = None) -> set[Any]:
+    def sdiff(self, keys: str | Sequence[str], version: int | None = None) -> _set[Any]:
         """Return the difference between sets."""
         raise NotSupportedError("sdiff", self.__class__.__name__)
 
@@ -661,7 +711,7 @@ class BaseCachex(BaseCache):
         """Store the difference of sets."""
         raise NotSupportedError("sdiffstore", self.__class__.__name__)
 
-    def sinter(self, keys: str | Sequence[str], version: int | None = None) -> set[Any]:
+    def sinter(self, keys: str | Sequence[str], version: int | None = None) -> _set[Any]:
         """Return the intersection of sets."""
         raise NotSupportedError("sinter", self.__class__.__name__)
 
@@ -680,7 +730,7 @@ class BaseCachex(BaseCache):
         """Check if member is in set."""
         raise NotSupportedError("sismember", self.__class__.__name__)
 
-    def smembers(self, key: str, version: int | None = None) -> set[Any]:
+    def smembers(self, key: str, version: int | None = None) -> _set[Any]:
         """Get all members of a set."""
         raise NotSupportedError("smembers", self.__class__.__name__)
 
@@ -696,7 +746,7 @@ class BaseCachex(BaseCache):
         """Move member from one set to another."""
         raise NotSupportedError("smove", self.__class__.__name__)
 
-    def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | set[Any] | None:
+    def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | _set[Any] | None:
         """Remove and return random member(s) from set."""
         raise NotSupportedError("spop", self.__class__.__name__)
 
@@ -708,7 +758,7 @@ class BaseCachex(BaseCache):
         """Remove members from a set."""
         raise NotSupportedError("srem", self.__class__.__name__)
 
-    def sunion(self, keys: str | Sequence[str], version: int | None = None) -> set[Any]:
+    def sunion(self, keys: str | Sequence[str], version: int | None = None) -> _set[Any]:
         """Return the union of sets."""
         raise NotSupportedError("sunion", self.__class__.__name__)
 
@@ -734,7 +784,7 @@ class BaseCachex(BaseCache):
         match: str | None = None,
         count: int | None = None,
         version: int | None = None,
-    ) -> tuple[int, set[Any]]:
+    ) -> tuple[int, _set[Any]]:
         """Incrementally iterate over set members."""
         raise NotSupportedError("sscan", self.__class__.__name__)
 
@@ -756,7 +806,7 @@ class BaseCachex(BaseCache):
         """Async: get the number of members in a set."""
         raise NotSupportedError("ascard", self.__class__.__name__)
 
-    async def asdiff(self, keys: str | Sequence[str], version: int | None = None) -> set[Any]:
+    async def asdiff(self, keys: str | Sequence[str], version: int | None = None) -> _set[Any]:
         """Async: return the difference between sets."""
         raise NotSupportedError("asdiff", self.__class__.__name__)
 
@@ -771,7 +821,7 @@ class BaseCachex(BaseCache):
         """Async: store the difference of sets."""
         raise NotSupportedError("asdiffstore", self.__class__.__name__)
 
-    async def asinter(self, keys: str | Sequence[str], version: int | None = None) -> set[Any]:
+    async def asinter(self, keys: str | Sequence[str], version: int | None = None) -> _set[Any]:
         """Async: return the intersection of sets."""
         raise NotSupportedError("asinter", self.__class__.__name__)
 
@@ -790,7 +840,7 @@ class BaseCachex(BaseCache):
         """Async: check if member is in set."""
         raise NotSupportedError("asismember", self.__class__.__name__)
 
-    async def asmembers(self, key: str, version: int | None = None) -> set[Any]:
+    async def asmembers(self, key: str, version: int | None = None) -> _set[Any]:
         """Async: get all members of a set."""
         raise NotSupportedError("asmembers", self.__class__.__name__)
 
@@ -806,7 +856,7 @@ class BaseCachex(BaseCache):
         """Async: move member from one set to another."""
         raise NotSupportedError("asmove", self.__class__.__name__)
 
-    async def aspop(self, key: str, count: int | None = None, version: int | None = None) -> Any | set[Any] | None:
+    async def aspop(self, key: str, count: int | None = None, version: int | None = None) -> Any | _set[Any] | None:
         """Async: remove and return random member(s) from set."""
         raise NotSupportedError("aspop", self.__class__.__name__)
 
@@ -818,7 +868,7 @@ class BaseCachex(BaseCache):
         """Async: remove members from a set."""
         raise NotSupportedError("asrem", self.__class__.__name__)
 
-    async def asunion(self, keys: str | Sequence[str], version: int | None = None) -> set[Any]:
+    async def asunion(self, keys: str | Sequence[str], version: int | None = None) -> _set[Any]:
         """Async: return the union of sets."""
         raise NotSupportedError("asunion", self.__class__.__name__)
 
@@ -844,7 +894,7 @@ class BaseCachex(BaseCache):
         match: str | None = None,
         count: int | None = None,
         version: int | None = None,
-    ) -> tuple[int, set[Any]]:
+    ) -> tuple[int, _set[Any]]:
         """Async: incrementally iterate over set members."""
         raise NotSupportedError("asscan", self.__class__.__name__)
 

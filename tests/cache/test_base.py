@@ -68,3 +68,31 @@ class TestBaseCachexUnsupported:
         method = getattr(self.cache, operation)
         with pytest.raises(NotSupportedError):
             method(*args)
+
+
+class TestBaseCachexSetFlags:
+    """``set``/``aset`` default to ``NotSupportedError`` when any flag is set.
+
+    Without flags, the call delegates to ``super().set`` (Django's
+    ``BaseCache``), which raises its own ``NotImplementedError``; only the
+    flag path is the cachex-contract default and is what we cover here.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        class MockExtendedCache(BaseCachex):
+            def __init__(self):
+                super().__init__(params={})
+
+        self.cache = MockExtendedCache()
+
+    @pytest.mark.parametrize("flag", ["nx", "xx", "get"])
+    def test_set_with_flag_raises(self, flag: str):
+        with pytest.raises(NotSupportedError):
+            self.cache.set("k", "v", **{flag: True})
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("flag", ["nx", "xx", "get"])
+    async def test_aset_with_flag_raises(self, flag: str):
+        with pytest.raises(NotSupportedError):
+            await self.cache.aset("k", "v", **{flag: True})
