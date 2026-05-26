@@ -142,3 +142,63 @@ class TestLocalFifoFairness:
         small.release()
 
         assert order == ["big", "small"]
+
+
+class TestLocalAsyncSemaphore:
+    def test_async_acquire_within_capacity(self):
+        import asyncio
+
+        from django_cachex.semaphore import AsyncSemaphore
+
+        async def run():
+            sem = AsyncSemaphore("async", capacity=2)
+            assert await sem.acquire(blocking=False) is True
+            assert await sem.acquire(blocking=False) is True
+            assert await sem.acquire(blocking=False) is False
+            await sem.release()
+            assert await sem.acquire(blocking=False) is True
+
+        asyncio.run(run())
+
+    def test_async_blocking_waits_for_release(self):
+        import asyncio
+
+        from django_cachex.semaphore import AsyncSemaphore
+
+        async def run():
+            holder = AsyncSemaphore("async_block", capacity=1)
+            await holder.acquire(blocking=False)
+
+            waiter = AsyncSemaphore("async_block", capacity=1)
+
+            async def release_soon():
+                await asyncio.sleep(0.05)
+                await holder.release()
+
+            async def wait():
+                return await waiter.acquire(blocking=True, timeout=2)
+
+            results = await asyncio.gather(release_soon(), wait())
+            assert results[1] is True
+            await waiter.release()
+
+        asyncio.run(run())
+
+    def test_async_blocking_timeout_raises(self):
+        import asyncio
+
+        import pytest
+
+        from django_cachex.semaphore import AsyncSemaphore, SemaphoreTimeoutError
+
+        async def run():
+            holder = AsyncSemaphore("async_to", capacity=1)
+            await holder.acquire(blocking=False)
+
+            waiter = AsyncSemaphore("async_to", capacity=1)
+            with pytest.raises(SemaphoreTimeoutError):
+                await waiter.acquire(blocking=True, timeout=0.1)
+
+            await holder.release()
+
+        asyncio.run(run())
