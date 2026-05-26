@@ -120,13 +120,23 @@ def get_user_data(user_id: int) -> dict:
 
 ## Distributed Locking
 
-Prevent concurrent execution of critical sections:
+Prevent concurrent execution of critical sections. `lease` is the TTL of
+the held lock (auto-released if the holder crashes); pass `timeout` to
+`acquire()` for the maximum time to wait before giving up:
 
 ```python
 from django.core.cache import cache
 
-with cache.lock("process-payments", timeout=30):
+with cache.lock("process-payments", lease=30):
     process_pending_payments()
+
+# Or, to bound how long we wait for the lock:
+lock = cache.lock("process-payments", lease=30)
+if lock.acquire(timeout=5):
+    try:
+        process_pending_payments()
+    finally:
+        lock.release()
 ```
 
 ## Development Without a Server

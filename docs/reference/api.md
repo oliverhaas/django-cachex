@@ -296,16 +296,25 @@ returns the adapter's async client.
 ## Lock Interface
 
 ```python
-lock = cache.lock(key, timeout=None, sleep=0.1, blocking=True, blocking_timeout=None)
+lock = cache.lock(key, lease=None, sleep=0.1, blocking=True, timeout=None)
 ```
 
 | Parameter | Description |
 |-----------|-------------|
 | `key` | Lock name |
-| `timeout` | Lock auto-release timeout |
+| `lease` | TTL of the held lock; the lock is auto-released after this many seconds (no auto-release if `None`) |
 | `sleep` | Time between acquire attempts |
 | `blocking` | Wait for lock if held |
-| `blocking_timeout` | Max wait time for lock |
+| `timeout` | Max time `acquire()` will wait before giving up (no upper bound if `None`) |
+
+`acquire()` accepts the same `blocking` / `timeout` arguments to override
+the defaults set on the lock object:
+
+```python
+lock = cache.lock("mylock", lease=30)
+if lock.acquire(timeout=5):  # wait up to 5s
+    ...
+```
 
 Compatible with `threading.Lock`:
 
