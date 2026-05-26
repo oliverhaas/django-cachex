@@ -202,3 +202,35 @@ class TestLocalAsyncSemaphore:
             await holder.release()
 
         asyncio.run(run())
+
+
+class TestLocalCrossContext:
+    def test_sync_release_wakes_async_waiter_on_other_thread(self):
+        import asyncio
+        import threading
+        import time
+
+        from django_cachex.semaphore import AsyncSemaphore, Semaphore
+
+        # Capacity 1, sync holder on the main thread.
+        holder = Semaphore("xthread", capacity=1)
+        holder.acquire(blocking=False)
+
+        wake_result: dict[str, bool] = {}
+
+        def async_waiter_thread() -> None:
+            async def run() -> None:
+                waiter = AsyncSemaphore("xthread", capacity=1)
+                ok = await waiter.acquire(blocking=True, timeout=2)
+                wake_result["ok"] = ok
+                await waiter.release()
+
+            asyncio.run(run())
+
+        t = threading.Thread(target=async_waiter_thread)
+        t.start()
+        time.sleep(0.1)  # let the async waiter enqueue
+        holder.release()
+        t.join(timeout=3)
+
+        assert wake_result == {"ok": True}
