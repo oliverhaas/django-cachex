@@ -56,3 +56,47 @@ class TestLocalWeightedSemaphore:
 
         with pytest.raises(ValueError, match="exceeds capacity"):
             Semaphore("bad_weight", capacity=5, weight=6)
+
+
+class TestLocalBlockingAcquire:
+    def test_blocking_acquire_waits_for_release(self):
+        import threading
+        import time
+
+        from django_cachex.semaphore import Semaphore
+
+        sem_holder = Semaphore("block", capacity=1)
+        assert sem_holder.acquire(blocking=False) is True
+
+        result = {}
+        sem_waiter = Semaphore("block", capacity=1)
+
+        def waiter():
+            t0 = time.monotonic()
+            ok = sem_waiter.acquire(blocking=True, timeout=2)
+            result["ok"] = ok
+            result["elapsed"] = time.monotonic() - t0
+
+        t = threading.Thread(target=waiter)
+        t.start()
+        time.sleep(0.1)
+        sem_holder.release()
+        t.join(timeout=3)
+
+        assert result["ok"] is True
+        assert result["elapsed"] >= 0.1
+        sem_waiter.release()
+
+    def test_blocking_acquire_timeout_raises(self):
+        import pytest
+
+        from django_cachex.semaphore import Semaphore, SemaphoreTimeoutError
+
+        sem_holder = Semaphore("block_to", capacity=1)
+        sem_holder.acquire(blocking=False)
+
+        sem_waiter = Semaphore("block_to", capacity=1)
+        with pytest.raises(SemaphoreTimeoutError):
+            sem_waiter.acquire(blocking=True, timeout=0.1)
+
+        sem_holder.release()

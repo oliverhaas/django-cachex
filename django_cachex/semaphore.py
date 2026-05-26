@@ -16,6 +16,7 @@ are not exposed by name.
 from __future__ import annotations
 
 import threading
+import time
 from collections import deque
 from dataclasses import dataclass, field
 
@@ -84,23 +85,67 @@ class Semaphore:
         self._held = False
 
     def acquire(self, *, blocking: bool = True, timeout: float | None = None) -> bool:
-        with self._state.lock:
-            if self._state.used + self.weight <= self._state.capacity:
-                self._state.used += self.weight
-                self._held = True
-                return True
-        if not blocking:
-            return False
-        msg = "blocking acquire not yet implemented"
-        raise NotImplementedError(msg)
+        if timeout is None:
+            timeout = self.timeout
+        state = self._state
+        event: threading.Event | None = None
+        deadline = None if timeout is None else time.monotonic() + timeout
+
+        while True:
+            with state.lock:
+                head_ok = not state.waiters or state.waiters[0][1] is event
+                if head_ok and state.used + self.weight <= state.capacity:
+                    if event is not None:
+                        # We were at the head of the queue; pop ourselves before admitting.
+                        state.waiters.popleft()
+                    state.used += self.weight
+                    self._held = True
+                    return True
+                if not blocking:
+                    return False
+                if event is None:
+                    event = threading.Event()
+                    state.waiters.append((self.weight, event))
+
+            # Wait outside the state lock.
+            remaining: float | None
+            if deadline is None:
+                remaining = None
+            else:
+                remaining = max(0.0, deadline - time.monotonic())
+                if remaining == 0.0:
+                    self._remove_self_and_notify(event)
+                    msg = f"semaphore {self.name!r} acquire timed out"
+                    raise SemaphoreTimeoutError(msg)
+            event.wait(timeout=remaining)
+            event.clear()
 
     def release(self) -> None:
         if not self._held:
             msg = "Cannot release a semaphore not held by this instance"
             raise SemaphoreError(msg)
-        with self._state.lock:
-            self._state.used -= self.weight
+        state = self._state
+        with state.lock:
+            state.used -= self.weight
             self._held = False
+            self._notify_next(state)
+
+    def _remove_self_and_notify(self, event: threading.Event) -> None:
+        state = self._state
+        with state.lock:
+            state.waiters = deque((w, ev) for (w, ev) in state.waiters if ev is not event)
+            self._notify_next(state)
+
+    @staticmethod
+    def _notify_next(state: _LocalState) -> None:
+        """Wake any head-of-queue waiter whose weight now fits."""
+        if not state.waiters:
+            return
+        weight, event = state.waiters[0]
+        if state.used + weight <= state.capacity:
+            # Trigger the event; the woken waiter pops itself once it re-acquires
+            # the state lock.
+            event.set()
 
 
 class AsyncSemaphore:
