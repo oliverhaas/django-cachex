@@ -234,3 +234,37 @@ class TestLocalCrossContext:
         t.join(timeout=3)
 
         assert wake_result == {"ok": True}
+
+
+class TestLocalCapacityChange:
+    def test_capacity_mismatch_warns_and_updates(self):
+        import warnings
+
+        from django_cachex.semaphore import Semaphore
+
+        # Use a unique name so this test doesn't interfere with the shared
+        # process-wide registry between test runs / other tests.
+        Semaphore("capchange_a", capacity=10)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            sem_b = Semaphore("capchange_a", capacity=20)
+
+        assert len(w) == 1
+        assert issubclass(w[0].category, RuntimeWarning)
+        assert "capacity" in str(w[0].message).lower()
+        # New capacity took effect.
+        assert sem_b._state.capacity == 20
+
+    def test_capacity_unchanged_no_warning(self):
+        import warnings
+
+        from django_cachex.semaphore import Semaphore
+
+        Semaphore("capchange_b", capacity=5)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            Semaphore("capchange_b", capacity=5)
+
+        assert len(w) == 0

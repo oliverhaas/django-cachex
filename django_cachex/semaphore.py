@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+import warnings
 from collections import deque
 from dataclasses import dataclass, field
 
@@ -54,6 +55,19 @@ def _get_state(owner_id: int, name: str, capacity: int) -> _LocalState:
         if state is None:
             state = _LocalState(capacity=capacity)
             _local_registry[key] = state
+            return state
+        if state.capacity != capacity:
+            warnings.warn(
+                (
+                    f"semaphore {name!r}: capacity changed from {state.capacity} "
+                    f"to {capacity}; new value takes effect on next acquire. "
+                    f"In-flight claims are not retroactively rejected."
+                ),
+                RuntimeWarning,
+                stacklevel=3,
+            )
+            with state.lock:
+                state.capacity = capacity
         return state
 
 
