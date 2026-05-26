@@ -137,10 +137,15 @@ class RedisRsAdapter(_RustRedisRsAdapter, RespAdapterProtocol):
         )
 
 
+# Inherit from Python ``RedisRsAdapter`` so cluster mode picks up the
+# Python ``lock()`` / ``alock()`` overrides via MRO (the Rust class only
+# exposes the low-level ``lock_acquire`` / ``lock_release`` primitives).
 class RedisRsClusterAdapter(_RustRedisRsClusterAdapter, RedisRsAdapter):
     """Rust client for Valkey/Redis cluster mode."""
 
 
+# Same MRO rationale as ``RedisRsClusterAdapter``: pick up the Python
+# ``lock()`` / ``alock()`` overrides from ``RedisRsAdapter``.
 class RedisRsSentinelAdapter(_RustRedisRsSentinelAdapter, RedisRsAdapter):
     """Rust client for sentinel-managed Valkey/Redis topologies."""
 

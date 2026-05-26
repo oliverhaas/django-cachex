@@ -3729,57 +3729,12 @@ impl RedisRsAdapter {
         )
     }
 
-    #[pyo3(signature = (key, timeout=None, sleep=0.1, *, blocking=true, blocking_timeout=None, thread_local=true))]
-    fn lock(
-        slf: &Bound<'_, Self>,
-        key: &str,
-        timeout: Option<f64>,
-        sleep: f64,
-        blocking: bool,
-        blocking_timeout: Option<f64>,
-        thread_local: bool,
-    ) -> PyResult<Py<PyAny>> {
-        let py = slf.py();
-        let kwargs = PyDict::new(py);
-        kwargs.set_item("timeout", timeout)?;
-        kwargs.set_item("sleep", sleep)?;
-        kwargs.set_item("blocking", blocking)?;
-        kwargs.set_item("blocking_timeout", blocking_timeout)?;
-        kwargs.set_item("thread_local", thread_local)?;
-        Ok(py
-            .import("django_cachex.lock")?
-            .getattr("Lock")?
-            .call((slf.clone(), key), Some(&kwargs))?
-            .unbind())
-    }
-
-    // ``alock`` is async by Protocol contract; return a pre-resolved
-    // awaitable that delivers the constructed AsyncLock. The lock
-    // itself does its acquire I/O lazily on ``__aenter__`` / ``acquire()``.
-    #[pyo3(signature = (key, timeout=None, sleep=0.1, *, blocking=true, blocking_timeout=None, thread_local=true))]
-    fn alock(
-        slf: &Bound<'_, Self>,
-        key: &str,
-        timeout: Option<f64>,
-        sleep: f64,
-        blocking: bool,
-        blocking_timeout: Option<f64>,
-        thread_local: bool,
-    ) -> PyResult<Py<crate::async_bridge::RedisRsAwaitable>> {
-        let py = slf.py();
-        let kwargs = PyDict::new(py);
-        kwargs.set_item("timeout", timeout)?;
-        kwargs.set_item("sleep", sleep)?;
-        kwargs.set_item("blocking", blocking)?;
-        kwargs.set_item("blocking_timeout", blocking_timeout)?;
-        kwargs.set_item("thread_local", thread_local)?;
-        let lock = py
-            .import("django_cachex.lock")?
-            .getattr("AsyncLock")?
-            .call((slf.clone(), key), Some(&kwargs))?
-            .unbind();
-        await_constant(py, lock)
-    }
+    // ``lock`` / ``alock`` live on the Python wrapper class
+    // (``django_cachex.adapters.redis_rs.RedisRsAdapter``); the Python
+    // override constructs the ``Lock`` / ``AsyncLock`` with the current
+    // ``lease`` / ``timeout`` kwargs. The Rust adapter only exposes the
+    // low-level ``lock_acquire`` / ``lock_release`` / ``lock_extend``
+    // primitives (see above) that those classes call into.
 
     // =====================================================================
     // Phase 4g-3: stream passthroughs + iterators + scan/delete_pattern
