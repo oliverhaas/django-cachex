@@ -84,10 +84,10 @@ class Lock:
         return uuid.uuid4().hex.encode("ascii")
 
     @staticmethod
-    def _ttl_ms(timeout: float | None) -> int | None:
-        if timeout is None:
+    def _ttl_ms(seconds: float | None) -> int | None:
+        if seconds is None:
             return None
-        return max(1, int(timeout * 1000))
+        return max(1, int(seconds * 1000))
 
     @staticmethod
     def _coerce_token(token: bytes | str | Any) -> bytes:
