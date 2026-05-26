@@ -85,12 +85,63 @@ class RedisRsAdapter(_RustRedisRsAdapter, RespAdapterProtocol):
     runtime-checkable, contributes no methods.
     """
 
+    def lock(
+        self,
+        key: str,
+        lease: float | None = None,
+        sleep: float = 0.1,
+        *,
+        blocking: bool = True,
+        timeout: float | None = None,
+        thread_local: bool = True,
+    ) -> Any:
+        """Build a :class:`~django_cachex.lock.Lock` bound to this adapter.
 
-class RedisRsClusterAdapter(_RustRedisRsClusterAdapter, RespAdapterProtocol):
+        Routes to the Python ``Lock`` (which speaks the Rust adapter's
+        ``lock_acquire``/``release``/``extend`` primitives), so we pass
+        our own ``lease``/``timeout`` names straight through.
+        """
+        from django_cachex.lock import Lock
+
+        return Lock(
+            self,
+            key,
+            lease=lease,
+            sleep=sleep,
+            blocking=blocking,
+            timeout=timeout,
+            thread_local=thread_local,
+        )
+
+    async def alock(
+        self,
+        key: str,
+        lease: float | None = None,
+        sleep: float = 0.1,
+        *,
+        blocking: bool = True,
+        timeout: float | None = None,
+        thread_local: bool = True,
+    ) -> Any:
+        """Build an :class:`~django_cachex.lock.AsyncLock` bound to this adapter."""
+        from django_cachex.lock import AsyncLock
+
+        return AsyncLock(
+            self,
+            key,
+            lease=lease,
+            sleep=sleep,
+            blocking=blocking,
+            timeout=timeout,
+            thread_local=thread_local,
+        )
+
+
+class RedisRsClusterAdapter(_RustRedisRsClusterAdapter, RedisRsAdapter):
     """Rust client for Valkey/Redis cluster mode."""
 
 
-class RedisRsSentinelAdapter(_RustRedisRsSentinelAdapter, RespAdapterProtocol):
+class RedisRsSentinelAdapter(_RustRedisRsSentinelAdapter, RedisRsAdapter):
     """Rust client for sentinel-managed Valkey/Redis topologies."""
 
 

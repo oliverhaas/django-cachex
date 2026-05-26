@@ -1895,20 +1895,20 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def lock(
         self,
         key: str,
-        timeout: float | None = None,
+        lease: float | None = None,
         sleep: float = 0.1,
         *,
         blocking: bool = True,
-        blocking_timeout: float | None = None,
+        timeout: float | None = None,
         thread_local: bool = True,
     ) -> Any:
         return _GlideLock(
             self._client(),
             key,
-            timeout=timeout,
+            lease=lease,
             sleep=sleep,
             blocking=blocking,
-            blocking_timeout=blocking_timeout,
+            timeout=timeout,
             thread_local=thread_local,
         )
 
@@ -2845,20 +2845,20 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def alock(
         self,
         key: str,
-        timeout: float | None = None,
+        lease: float | None = None,
         sleep: float = 0.1,
         *,
         blocking: bool = True,
-        blocking_timeout: float | None = None,
+        timeout: float | None = None,
         thread_local: bool = True,
     ) -> Any:
         return _AsyncGlideLock(
             self,
             key,
-            timeout=timeout,
+            lease=lease,
             sleep=sleep,
             blocking=blocking,
-            blocking_timeout=blocking_timeout,
+            timeout=timeout,
             thread_local=thread_local,
         )
 
@@ -3064,18 +3064,18 @@ class _GlideLock:
         client: GlideClient,
         key: str,
         *,
-        timeout: float | None = None,
+        lease: float | None = None,
         sleep: float = 0.1,
         blocking: bool = True,
-        blocking_timeout: float | None = None,
+        timeout: float | None = None,
         thread_local: bool = True,
     ) -> None:
         self._client = client
         self._key = key
-        self._timeout = timeout
+        self._lease = lease
         self._sleep = sleep
         self._blocking = blocking
-        self._blocking_timeout = blocking_timeout
+        self._timeout = timeout
         self._initial_token = os.urandom(16).hex().encode()
         self._token_local: threading.local | None = threading.local() if thread_local else None
         self._token_shared: bytes | None = None
@@ -3097,14 +3097,14 @@ class _GlideLock:
         else:
             self._token_shared = value
 
-    def acquire(self, *, blocking: bool | None = None, blocking_timeout: float | None = None) -> bool:
+    def acquire(self, *, blocking: bool | None = None, timeout: float | None = None) -> bool:
         bl = self._blocking if blocking is None else blocking
-        bt = self._blocking_timeout if blocking_timeout is None else blocking_timeout
+        bt = self._timeout if timeout is None else timeout
         deadline = time.monotonic() + bt if bt else None
 
         kw: dict[str, Any] = {"conditional_set": ConditionalChange.ONLY_IF_DOES_NOT_EXIST}
-        if self._timeout is not None:
-            kw["expiry"] = ExpirySet(ExpiryType.MILLSEC, int(self._timeout * 1000))
+        if self._lease is not None:
+            kw["expiry"] = ExpirySet(ExpiryType.MILLSEC, int(self._lease * 1000))
 
         while True:
             result = self._client.set(self._key, self._initial_token, **kw)
@@ -3172,18 +3172,18 @@ class _AsyncGlideLock:
         adapter: ValkeyGlideAdapter,
         key: str,
         *,
-        timeout: float | None = None,
+        lease: float | None = None,
         sleep: float = 0.1,
         blocking: bool = True,
-        blocking_timeout: float | None = None,
+        timeout: float | None = None,
         thread_local: bool = True,
     ) -> None:
         self._adapter = adapter
         self._key = key
-        self._timeout = timeout
+        self._lease = lease
         self._sleep = sleep
         self._blocking = blocking
-        self._blocking_timeout = blocking_timeout
+        self._timeout = timeout
         self._initial_token = os.urandom(16).hex().encode()
         self._token_local: threading.local | None = threading.local() if thread_local else None
         self._token_shared: bytes | None = None
@@ -3205,15 +3205,15 @@ class _AsyncGlideLock:
         else:
             self._token_shared = value
 
-    async def acquire(self, *, blocking: bool | None = None, blocking_timeout: float | None = None) -> bool:
+    async def acquire(self, *, blocking: bool | None = None, timeout: float | None = None) -> bool:
         bl = self._blocking if blocking is None else blocking
-        bt = self._blocking_timeout if blocking_timeout is None else blocking_timeout
+        bt = self._timeout if timeout is None else timeout
         deadline = time.monotonic() + bt if bt else None
         client = await self._adapter.get_async_client()
 
         kw: dict[str, Any] = {"conditional_set": ConditionalChange.ONLY_IF_DOES_NOT_EXIST}
-        if self._timeout is not None:
-            kw["expiry"] = ExpirySet(ExpiryType.MILLSEC, int(self._timeout * 1000))
+        if self._lease is not None:
+            kw["expiry"] = ExpirySet(ExpiryType.MILLSEC, int(self._lease * 1000))
 
         while True:
             result = await client.set(self._key, self._initial_token, **kw)

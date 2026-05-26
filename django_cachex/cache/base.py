@@ -310,11 +310,11 @@ class BaseCachex(BaseCache):
         self,
         key: str,
         version: int | None = None,
-        timeout: float | None = None,
+        lease: float | None = None,
         sleep: float = 0.1,
         *,
         blocking: bool = True,
-        blocking_timeout: float | None = None,
+        timeout: float | None = None,
         thread_local: bool = True,
     ) -> Any:
         """Return a Lock object for distributed locking."""
@@ -328,11 +328,11 @@ class BaseCachex(BaseCache):
         self,
         key: str,
         version: int | None = None,
-        timeout: float | None = None,
+        lease: float | None = None,
         sleep: float = 0.1,
         *,
         blocking: bool = True,
-        blocking_timeout: float | None = None,
+        timeout: float | None = None,
         thread_local: bool = True,
     ) -> Any:
         """Async: return an async Lock object for distributed locking."""

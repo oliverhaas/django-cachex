@@ -39,11 +39,11 @@ class Lock:
         self,
         adapter: RedisRsAdapter,
         name: str,
-        timeout: float | None = None,
+        lease: float | None = None,
         sleep: float = 0.1,
         *,
         blocking: bool = True,
-        blocking_timeout: float | None = None,
+        timeout: float | None = None,
         thread_local: bool = True,
     ) -> None:
         if sleep <= 0:
@@ -51,10 +51,10 @@ class Lock:
             raise ValueError(msg)
         self._adapter = adapter
         self.name = name
-        self.timeout = timeout
+        self.lease = lease
         self.sleep = sleep
         self.blocking = blocking
-        self.blocking_timeout = blocking_timeout
+        self.timeout = timeout
         self.thread_local = thread_local
 
         self._token_local: threading.local | None = threading.local() if thread_local else None
@@ -126,18 +126,18 @@ class Lock:
         self,
         *,
         blocking: bool | None = None,
-        blocking_timeout: float | None = None,
+        timeout: float | None = None,
         token: bytes | str | None = None,
     ) -> bool:
         if blocking is None:
             blocking = self.blocking
-        if blocking_timeout is None:
-            blocking_timeout = self.blocking_timeout
+        if timeout is None:
+            timeout = self.timeout
 
         new_token = self._coerce_token(token) if token is not None else self._new_token()
-        ttl_ms = self._ttl_ms(self.timeout)
+        ttl_ms = self._ttl_ms(self.lease)
 
-        deadline = time.monotonic() + blocking_timeout if blocking_timeout is not None else None
+        deadline = time.monotonic() + timeout if timeout is not None else None
         while True:
             if self._adapter.lock_acquire(self.name, new_token.decode("ascii"), ttl_ms):
                 self.token = new_token
@@ -209,18 +209,18 @@ class AsyncLock(Lock):
         self,
         *,
         blocking: bool | None = None,
-        blocking_timeout: float | None = None,
+        timeout: float | None = None,
         token: bytes | str | None = None,
     ) -> bool:
         if blocking is None:
             blocking = self.blocking
-        if blocking_timeout is None:
-            blocking_timeout = self.blocking_timeout
+        if timeout is None:
+            timeout = self.timeout
 
         new_token = self._coerce_token(token) if token is not None else self._new_token()
-        ttl_ms = self._ttl_ms(self.timeout)
+        ttl_ms = self._ttl_ms(self.lease)
 
-        deadline = time.monotonic() + blocking_timeout if blocking_timeout is not None else None
+        deadline = time.monotonic() + timeout if timeout is not None else None
         while True:
             ok = await self._adapter.alock_acquire(self.name, new_token.decode("ascii"), ttl_ms)
             if ok:

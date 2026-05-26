@@ -527,21 +527,21 @@ class RespAdapterProtocol(Protocol):
     def lock(
         self,
         key: str,
-        timeout: float | None = None,
+        lease: float | None = None,
         sleep: float = 0.1,
         *,
         blocking: bool = True,
-        blocking_timeout: float | None = None,
+        timeout: float | None = None,
         thread_local: bool = True,
     ) -> Any: ...
     async def alock(
         self,
         key: str,
-        timeout: float | None = None,
+        lease: float | None = None,
         sleep: float = 0.1,
         *,
         blocking: bool = True,
-        blocking_timeout: float | None = None,
+        timeout: float | None = None,
         thread_local: bool = True,
     ) -> Any: ...
     def pipeline(self, *, transaction: bool = True) -> RespPipelineProtocol: ...

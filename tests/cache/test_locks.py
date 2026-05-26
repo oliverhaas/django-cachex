@@ -31,17 +31,30 @@ class TestBasicLockOperations:
         assert cache.has_key("resource_b") is False
 
     def test_lock_context_manager(self, cache: RespCache):
-        lock = cache.lock("ctx_resource", timeout=5)
+        lock = cache.lock("ctx_resource", lease=5)
         with lock:
             assert cache.has_key("ctx_resource") is True
         assert cache.has_key("ctx_resource") is False
+
+    def test_lock_acquire_rejects_old_blocking_timeout(self, cache: RespCache, resp_adapter: str):
+        """blocking_timeout was renamed to timeout; the old name must error.
+
+        Only enforced for adapters that wrap the returned Lock in our own
+        class (redis-rs, valkey-glide). The redis-py / valkey-py adapters
+        return the upstream library's Lock object directly, which still
+        accepts its native ``blocking_timeout`` kwarg.
+        """
+        if resp_adapter in {"redis-py", "valkey-py"}:
+            pytest.skip("Passthrough adapter exposes upstream library Lock with native names")
+        with pytest.raises(TypeError, match="unexpected keyword argument 'blocking_timeout'"):
+            cache.lock("rename_check").acquire(blocking_timeout=1)
 
 
 class TestLockExtend:
     """Tests for extending the TTL of a held lock."""
 
     def test_extend_increases_ttl(self, cache: RespCache):
-        lock = cache.lock("extend_resource", timeout=2)
+        lock = cache.lock("extend_resource", lease=2)
         assert lock.acquire() is True
         try:
             before = cache.pttl("extend_resource")
@@ -65,7 +78,7 @@ class TestLockRelease:
 
         from django_cachex.lock import LockError
 
-        lock = cache.lock("dbl_release_resource", timeout=5)
+        lock = cache.lock("dbl_release_resource", lease=5)
         lock.acquire()
         lock.release()
         # redis-py / valkey-py raise their library's ``LockError``; the Rust

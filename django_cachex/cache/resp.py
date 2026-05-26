@@ -848,21 +848,21 @@ class RespCache(BaseCachex):
         self,
         key: str,
         version: int | None = None,
-        timeout: float | None = None,
+        lease: float | None = None,
         sleep: float = 0.1,
         *,
         blocking: bool = True,
-        blocking_timeout: float | None = None,
+        timeout: float | None = None,
         thread_local: bool = True,
     ) -> Any:
         """Return a Lock object for distributed locking."""
         key = self.make_and_validate_key(key, version=version)
         return self.adapter.lock(
             key,
-            timeout=timeout,
+            lease=lease,
             sleep=sleep,
             blocking=blocking,
-            blocking_timeout=blocking_timeout,
+            timeout=timeout,
             thread_local=thread_local,
         )
 
@@ -870,11 +870,11 @@ class RespCache(BaseCachex):
         self,
         key: str,
         version: int | None = None,
-        timeout: float | None = None,
+        lease: float | None = None,
         sleep: float = 0.1,
         *,
         blocking: bool = True,
-        blocking_timeout: float | None = None,
+        timeout: float | None = None,
         thread_local: bool = True,
     ) -> Any:
         """Return an async Lock object for distributed locking.
@@ -887,10 +887,10 @@ class RespCache(BaseCachex):
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.alock(
             key,
-            timeout=timeout,
+            lease=lease,
             sleep=sleep,
             blocking=blocking,
-            blocking_timeout=blocking_timeout,
+            timeout=timeout,
             thread_local=thread_local,
         )
 

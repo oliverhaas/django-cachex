@@ -1033,42 +1033,54 @@ class ValkeyPyAdapter(RespAdapterProtocol):
     def lock(
         self,
         key: str,
-        timeout: float | None = None,
+        lease: float | None = None,
         sleep: float = 0.1,
         *,
         blocking: bool = True,
-        blocking_timeout: float | None = None,
+        timeout: float | None = None,
         thread_local: bool = True,
     ) -> Any:
-        """Get a distributed lock."""
+        """Get a distributed lock.
+
+        Translates our ``lease``/``timeout`` to redis-py's library names:
+        library ``timeout`` is the held-lock TTL (our ``lease``), library
+        ``blocking_timeout`` is the max wait before acquire gives up
+        (our ``timeout``).
+        """
         client = self.get_client(key, write=True)
         return client.lock(
             key,
-            timeout=timeout,
+            timeout=lease,
             sleep=sleep,
             blocking=blocking,
-            blocking_timeout=blocking_timeout,
+            blocking_timeout=timeout,
             thread_local=thread_local,
         )
 
     async def alock(
         self,
         key: str,
-        timeout: float | None = None,
+        lease: float | None = None,
         sleep: float = 0.1,
         *,
         blocking: bool = True,
-        blocking_timeout: float | None = None,
+        timeout: float | None = None,
         thread_local: bool = True,
     ) -> Any:
-        """Get an async distributed lock."""
+        """Get an async distributed lock.
+
+        Translates our ``lease``/``timeout`` to redis-py's library names:
+        library ``timeout`` is the held-lock TTL (our ``lease``), library
+        ``blocking_timeout`` is the max wait before acquire gives up
+        (our ``timeout``).
+        """
         client = await self.get_async_client(key, write=True)
         return client.lock(
             key,
-            timeout=timeout,
+            timeout=lease,
             sleep=sleep,
             blocking=blocking,
-            blocking_timeout=blocking_timeout,
+            blocking_timeout=timeout,
             thread_local=thread_local,
         )
 
