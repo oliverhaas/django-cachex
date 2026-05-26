@@ -100,3 +100,45 @@ class TestLocalBlockingAcquire:
             sem_waiter.acquire(blocking=True, timeout=0.1)
 
         sem_holder.release()
+
+
+class TestLocalFifoFairness:
+    def test_big_weight_not_starved_by_small(self):
+        """Big waiter at head of queue blocks smaller waiters behind it."""
+        import threading
+        import time
+
+        from django_cachex.semaphore import Semaphore
+
+        # Capacity 10, occupied by a weight-6 holder.
+        holder = Semaphore("fifo", capacity=10, weight=6)
+        assert holder.acquire(blocking=False) is True
+
+        order = []
+        big = Semaphore("fifo", capacity=10, weight=6)
+        small = Semaphore("fifo", capacity=10, weight=2)
+
+        def big_acquire():
+            big.acquire(blocking=True, timeout=2)
+            order.append("big")
+
+        def small_acquire():
+            small.acquire(blocking=True, timeout=2)
+            order.append("small")
+
+        t_big = threading.Thread(target=big_acquire)
+        t_big.start()
+        time.sleep(0.05)  # ensure big enqueues first
+        t_small = threading.Thread(target=small_acquire)
+        t_small.start()
+        time.sleep(0.05)
+
+        # Release the holder; big should win because it is at the head.
+        holder.release()
+        t_big.join(timeout=2)
+        # Now release big; small should win.
+        big.release()
+        t_small.join(timeout=2)
+        small.release()
+
+        assert order == ["big", "small"]
