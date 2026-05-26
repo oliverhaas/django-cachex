@@ -6,10 +6,10 @@ def test_semaphore_module_exports():
         AsyncSemaphore,
         Semaphore,
         SemaphoreError,
-        SemaphoreTimeout,
+        SemaphoreTimeoutError,
     )
 
-    assert issubclass(SemaphoreTimeout, SemaphoreError)
+    assert issubclass(SemaphoreTimeoutError, SemaphoreError)
     # AsyncSemaphore is a sibling of Semaphore, not a subclass, mirroring
     # Lock and AsyncLock.
     assert Semaphore is not AsyncSemaphore

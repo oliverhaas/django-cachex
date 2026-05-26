@@ -20,7 +20,7 @@ class SemaphoreError(Exception):
     """Raised when a semaphore operation fails."""
 
 
-class SemaphoreTimeout(SemaphoreError):  # noqa: N818
+class SemaphoreTimeoutError(SemaphoreError):
     """Raised when ``timeout`` elapses before the caller could acquire."""
 
 
@@ -32,4 +32,4 @@ class AsyncSemaphore:
     """Local in-process async weighted semaphore. Implementation lands in Task 7."""
 
 
-__all__ = ["AsyncSemaphore", "Semaphore", "SemaphoreError", "SemaphoreTimeout"]
+__all__ = ["AsyncSemaphore", "Semaphore", "SemaphoreError", "SemaphoreTimeoutError"]
