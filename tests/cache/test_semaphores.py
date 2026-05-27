@@ -33,6 +33,22 @@ class TestLocalCountingSemaphore:
         sem.release()
         assert sem.acquire(blocking=False) is True
 
+    def test_lease_accepted_and_ignored(self):
+        """Local backend accepts lease for API parity; it has no effect."""
+        import time
+
+        from django_cachex.semaphore import Semaphore
+
+        sem = Semaphore("lease_noop", capacity=1, lease=0.001)
+        assert sem.acquire(blocking=False) is True
+        # Wait past the would-be lease expiry; budget must still be held.
+        time.sleep(0.05)
+        other = Semaphore("lease_noop", capacity=1)
+        assert other.acquire(blocking=False) is False
+        sem.release()
+        assert other.acquire(blocking=False) is True
+        other.release()
+
 
 class TestLocalWeightedSemaphore:
     def test_weight_consumes_capacity(self):
@@ -268,6 +284,36 @@ class TestLocalCapacityChange:
             Semaphore("capchange_b", capacity=5)
 
         assert len(w) == 0
+
+
+class TestLocalAsyncCancellation:
+    def test_cancelled_waiter_does_not_block_queue(self):
+        """A cancelled async acquire must remove itself from the wait queue."""
+        import asyncio
+        import contextlib
+
+        from django_cachex.semaphore import AsyncSemaphore
+
+        async def run() -> None:
+            holder = AsyncSemaphore("cancel_test", capacity=1)
+            await holder.acquire(blocking=False)
+
+            # Park an async waiter, then cancel it.
+            waiter = AsyncSemaphore("cancel_test", capacity=1)
+            task = asyncio.create_task(waiter.acquire(blocking=True, timeout=10))
+            await asyncio.sleep(0.05)  # let it enqueue
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+            # The phantom must be gone; a fresh acquire after release should succeed quickly.
+            fresh = AsyncSemaphore("cancel_test", capacity=1)
+            await holder.release()
+            ok = await fresh.acquire(blocking=True, timeout=1)
+            assert ok is True
+            await fresh.release()
+
+        asyncio.run(run())
 
 
 class TestLocMemSemaphoreIntegration:

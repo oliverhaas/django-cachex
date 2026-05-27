@@ -42,7 +42,7 @@ class _LocalState:
     capacity: int
     used: int = 0
     lock: threading.Lock = field(default_factory=threading.Lock)
-    waiters: deque = field(default_factory=deque)  # FIFO of (weight, _Waiter)
+    waiters: deque[tuple[int, _Waiter]] = field(default_factory=deque)  # FIFO of (weight, _Waiter)
 
 
 # Registry keyed by (owner_id, name). Future tasks pass the cache instance's
@@ -54,6 +54,7 @@ _registry_lock = threading.Lock()
 
 def _get_state(owner_id: int, name: str, capacity: int) -> _LocalState:
     key = (owner_id, name)
+    old_capacity: int | None = None
     with _registry_lock:
         state = _local_registry.get(key)
         if state is None:
@@ -61,18 +62,22 @@ def _get_state(owner_id: int, name: str, capacity: int) -> _LocalState:
             _local_registry[key] = state
             return state
         if state.capacity != capacity:
-            warnings.warn(
-                (
-                    f"semaphore {name!r}: capacity changed from {state.capacity} "
-                    f"to {capacity}; new value takes effect on next acquire. "
-                    f"In-flight claims are not retroactively rejected."
-                ),
-                RuntimeWarning,
-                stacklevel=3,
-            )
+            old_capacity = state.capacity
             with state.lock:
                 state.capacity = capacity
-        return state
+    if old_capacity is not None:
+        # Warn AFTER releasing the registry lock: a user warning handler that
+        # re-enters _get_state would otherwise deadlock on _registry_lock.
+        warnings.warn(
+            (
+                f"semaphore {name!r}: capacity changed from {old_capacity} "
+                f"to {capacity}; new value takes effect on next acquire. "
+                f"In-flight claims are not retroactively rejected."
+            ),
+            RuntimeWarning,
+            stacklevel=3,
+        )
+    return state
 
 
 def _notify_next(state: _LocalState) -> None:
@@ -200,6 +205,10 @@ class Semaphore:
                     self._remove_waiter_and_notify(waiter)
                     msg = f"semaphore {self.name!r} acquire timed out"
                     raise SemaphoreTimeoutError(msg)
+            # No try/except around event.wait() here: threads aren't
+            # cooperatively cancelled like coroutines, so there is no
+            # CancelledError analogue that could leave a phantom waiter
+            # behind. The async path needs that guard; the sync path doesn't.
             waiter.wait_sync(remaining)
             waiter.clear_sync()
 
@@ -267,7 +276,7 @@ class AsyncSemaphore:
         self._state = _get_state(_owner_id, name, capacity)
         self._held = False
 
-    async def acquire(self, *, blocking: bool = True, timeout: float | None = None) -> bool:  # noqa: C901
+    async def acquire(self, *, blocking: bool = True, timeout: float | None = None) -> bool:  # noqa: C901, PLR0912
         if timeout is None:
             timeout = self.timeout
         state = self._state
@@ -298,7 +307,15 @@ class AsyncSemaphore:
                     self._remove_waiter_and_notify(waiter)
                     msg = f"semaphore {self.name!r} acquire timed out"
                     raise SemaphoreTimeoutError(msg)
-            ok = await waiter.wait_async(remaining)
+            try:
+                ok = await waiter.wait_async(remaining)
+            except BaseException:
+                # Cancellation (CancelledError derives from BaseException in
+                # 3.8+) or any other propagating exception must not leave a
+                # phantom reservation at the head of the queue, or smaller
+                # waiters behind it will deadlock.
+                self._remove_waiter_and_notify(waiter)
+                raise
             if not ok:
                 self._remove_waiter_and_notify(waiter)
                 msg = f"semaphore {self.name!r} acquire timed out"
