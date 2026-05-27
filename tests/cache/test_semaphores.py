@@ -447,3 +447,46 @@ class TestRespSemaphoreBlocking:
                 waiter.acquire(blocking=True)
         finally:
             holder.release()
+
+
+class TestRespLeaseReclaim:
+    def test_expired_lease_is_reclaimed_on_next_acquire(self, cache):
+        """A holder that exits without releasing has its budget reclaimed
+        when the next acquirer hits the Lua reap loop."""
+        import time
+
+        # Acquire with a short lease, then DO NOT release (simulates crash).
+        crashed_holder = cache.semaphore("resp_reclaim", capacity=1, lease=0.3)
+        assert crashed_holder.acquire(blocking=False) is True
+
+        # Wait past the lease.
+        time.sleep(0.5)
+
+        # Fresh acquirer should succeed because the expired claim is reaped.
+        fresh = cache.semaphore("resp_reclaim", capacity=1, lease=10)
+        assert fresh.acquire(blocking=False) is True
+        fresh.release()
+
+    def test_expired_lease_reclaimed_under_weight(self, cache):
+        """Weighted budget is correctly restored on reap."""
+        import time
+
+        # Capacity 10, weight-6 holder crashes; capacity should fully free up.
+        crashed = cache.semaphore("resp_reclaim_w", capacity=10, weight=6, lease=0.3)
+        assert crashed.acquire(blocking=False) is True
+
+        time.sleep(0.5)
+
+        # Two new acquirers totaling 10 should both fit now that the 6 is reclaimed.
+        a = cache.semaphore("resp_reclaim_w", capacity=10, weight=6, lease=10)
+        b = cache.semaphore("resp_reclaim_w", capacity=10, weight=4, lease=10)
+        try:
+            assert a.acquire(blocking=False) is True
+            assert b.acquire(blocking=False) is True
+        finally:
+            import contextlib
+
+            with contextlib.suppress(Exception):
+                a.release()
+            with contextlib.suppress(Exception):
+                b.release()
