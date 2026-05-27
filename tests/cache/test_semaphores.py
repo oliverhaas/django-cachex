@@ -268,3 +268,50 @@ class TestLocalCapacityChange:
             Semaphore("capchange_b", capacity=5)
 
         assert len(w) == 0
+
+
+class TestLocMemSemaphoreIntegration:
+    def test_locmem_semaphore_via_cache_factory(self):
+        from django_cachex.cache import LocMemCache
+        from django_cachex.semaphore import Semaphore
+
+        cache = LocMemCache("test-loc-factory", {})
+        sem = cache.semaphore("img", capacity=3, weight=1)
+        assert isinstance(sem, Semaphore)
+        with sem:
+            assert sem._held is True
+        assert sem._held is False
+
+    def test_locmem_semaphore_scoped_per_cache_instance(self):
+        """Two LocMemCache instances do not share semaphore state."""
+        from django_cachex.cache import LocMemCache
+
+        cache_a = LocMemCache("loc-a", {})
+        cache_b = LocMemCache("loc-b", {})
+
+        sem_a = cache_a.semaphore("shared_name", capacity=1)
+        sem_b = cache_b.semaphore("shared_name", capacity=1)
+
+        assert sem_a.acquire(blocking=False) is True
+        # Same name on a different cache instance should NOT see used budget.
+        assert sem_b.acquire(blocking=False) is True
+
+        sem_a.release()
+        sem_b.release()
+
+    def test_locmem_asemaphore_via_cache_factory(self):
+        import asyncio
+
+        from django_cachex.cache import LocMemCache
+        from django_cachex.semaphore import AsyncSemaphore
+
+        cache = LocMemCache("test-aloc-factory", {})
+
+        async def run() -> None:
+            sem = await cache.asemaphore("img", capacity=2)
+            assert isinstance(sem, AsyncSemaphore)
+            async with sem:
+                assert sem._held is True
+            assert sem._held is False
+
+        asyncio.run(run())

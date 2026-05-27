@@ -21,6 +21,10 @@ import time
 import warnings
 from collections import deque
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Self
+
+if TYPE_CHECKING:
+    from types import TracebackType
 
 
 class SemaphoreError(Exception):
@@ -215,6 +219,20 @@ class Semaphore:
             state.waiters = deque((w, ev) for (w, ev) in state.waiters if ev is not waiter)
             _notify_next(state)
 
+    def __enter__(self) -> Self:
+        if not self.acquire():
+            msg = f"could not acquire semaphore {self.name!r}"
+            raise SemaphoreError(msg)
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        self.release()
+
 
 class AsyncSemaphore:
     """Local in-process async weighted semaphore.
@@ -311,6 +329,20 @@ class AsyncSemaphore:
         with state.lock:
             state.waiters = deque((w, ev) for (w, ev) in state.waiters if ev is not waiter)
             _notify_next(state)
+
+    async def __aenter__(self) -> Self:
+        if not await self.acquire():
+            msg = f"could not acquire semaphore {self.name!r}"
+            raise SemaphoreError(msg)
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        await self.release()
 
 
 __all__ = ["AsyncSemaphore", "Semaphore", "SemaphoreError", "SemaphoreTimeoutError"]

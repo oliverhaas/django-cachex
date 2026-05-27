@@ -338,6 +338,32 @@ class BaseCachex(BaseCache):
         """Async: return an async Lock object for distributed locking."""
         raise NotSupportedError("alock", self.__class__.__name__)
 
+    def semaphore(
+        self,
+        key: str,
+        capacity: int,
+        *,
+        weight: int = 1,
+        version: int | None = None,
+        lease: float | None = None,
+        timeout: float | None = None,
+    ) -> Any:
+        """Return a weighted semaphore for concurrency gating."""
+        raise NotSupportedError("semaphore", self.__class__.__name__)
+
+    async def asemaphore(
+        self,
+        key: str,
+        capacity: int,
+        *,
+        weight: int = 1,
+        version: int | None = None,
+        lease: float | None = None,
+        timeout: float | None = None,
+    ) -> Any:
+        """Async: return an async weighted semaphore."""
+        raise NotSupportedError("asemaphore", self.__class__.__name__)
+
     async def apipeline(self, *, transaction: bool = True, version: int | None = None) -> AsyncPipeline:
         """Create an async pipeline for batched operations."""
         raise NotSupportedError("apipeline", self.__class__.__name__)

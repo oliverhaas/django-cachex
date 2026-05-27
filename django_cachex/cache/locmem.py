@@ -1386,6 +1386,66 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             return len(to_remove)
 
     # =========================================================================
+    # Semaphore
+    # =========================================================================
+
+    def semaphore(
+        self,
+        key: str,
+        capacity: int,
+        *,
+        weight: int = 1,
+        version: int | None = None,
+        lease: float | None = None,
+        timeout: float | None = None,
+    ) -> Any:
+        """Return an in-process weighted semaphore scoped to this cache.
+
+        The ``lease`` parameter is accepted for API parity with the RESP
+        backend but is ignored: in-process release on ``__exit__`` is
+        reliable.
+        """
+        from django_cachex.semaphore import Semaphore
+
+        full_key = self.make_and_validate_key(key, version=version)
+        return Semaphore(
+            full_key,
+            capacity=capacity,
+            weight=weight,
+            lease=lease,
+            timeout=timeout,
+            _owner_id=id(self),
+        )
+
+    async def asemaphore(
+        self,
+        key: str,
+        capacity: int,
+        *,
+        weight: int = 1,
+        version: int | None = None,
+        lease: float | None = None,
+        timeout: float | None = None,
+    ) -> Any:
+        """Return an in-process async weighted semaphore scoped to this cache.
+
+        ``async def`` for API parity with RESP backends whose async-client
+        construction is itself async; the local backend doesn't need to
+        await anything, but the signature matches.
+        """
+        from django_cachex.semaphore import AsyncSemaphore
+
+        full_key = self.make_and_validate_key(key, version=version)
+        return AsyncSemaphore(
+            full_key,
+            capacity=capacity,
+            weight=weight,
+            lease=lease,
+            timeout=timeout,
+            _owner_id=id(self),
+        )
+
+    # =========================================================================
     # Async surface
     # =========================================================================
     # LocMemCache is in-memory: no I/O, no thread pool needed. Each ``a*``
