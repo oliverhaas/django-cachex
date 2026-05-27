@@ -352,6 +352,71 @@ if await lock.acquire():
 
 Cluster-mode async locks are unavailable on redis-py / valkey-py because the underlying `EVALSHA` routes to replicas; the Rust adapter handles this internally.
 
+## Semaphore Interface
+
+```python
+sem = cache.semaphore(key, capacity, *, weight=1, version=None, lease=None, timeout=None)
+```
+
+Return a weighted semaphore for concurrency gating. Use as a context manager.
+
+```python
+with cache.semaphore("image-convert", capacity=4):
+    # Up to 4 callers may hold this semaphore concurrently.
+    convert(...)
+
+# Weighted: claim 100 of a 500 budget.
+with cache.semaphore("memory-heavy", weight=100, capacity=500, lease=300):
+    convert_huge(...)
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `key` | Logical name of the semaphore. Callers with the same name share budget. |
+| `capacity` | Total budget. The first caller establishes capacity; subsequent callers passing a different value warn and update it. |
+| `weight` | How much of the capacity this caller claims (default `1`, i.e. counting semaphore). |
+| `version` | Optional cache version namespace. |
+| `lease` | TTL of the held claim in seconds. Required for the RESP backend (auto-reclaim if the holder crashes); accepted but ignored on the local backend. |
+| `timeout` | Max time `acquire()` will wait before raising `SemaphoreTimeoutError`. `None` blocks indefinitely. |
+
+`acquire()` accepts `blocking` and `timeout` to override the defaults set on the semaphore object. `release()` returns the claim to the pool; `extend(seconds)` bumps the TTL on RESP backends for tasks that may legitimately exceed their original lease.
+
+```python
+sem = cache.semaphore("mysem", capacity=4, lease=30)
+if sem.acquire(timeout=5):
+    try:
+        do_work()
+    finally:
+        sem.release()
+```
+
+### Async semaphore
+
+`asemaphore()` is `async def` (parallel to `alock()`):
+
+```python
+# Context manager
+async with await cache.asemaphore("mysem", capacity=4, lease=30):
+    await do_work()
+
+# Manual acquire/release
+sem = await cache.asemaphore("mysem", capacity=4, lease=30)
+if await sem.acquire():
+    try:
+        await do_work()
+    finally:
+        await sem.release()
+```
+
+Sync and async callers on the same cache instance share state for a given name.
+
+Backends:
+
+- **`LocMemCache`** uses an in-process FIFO deque. FIFO fairness is strict within the process; `lease` is accepted but ignored.
+- **RESP backends** (`RedisCache`, `ValkeyCache`, `RedisRsCache`, `ValkeyGlideCache`, ...) use Lua scripts. FIFO fairness is best-effort across processes (head-of-queue check plus jittered polling).
+
+Cluster mode is supported on RESP backends: all keys for one semaphore name carry a `{name}` hash tag so they colocate on the same slot.
+
 ## Pipelines
 
 Batch multiple operations for efficiency. Queueing methods (`set`, `hset`, `lpush`, ...) stay synchronous in both wrappers; only `execute()` performs I/O.

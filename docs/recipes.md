@@ -139,6 +139,42 @@ if lock.acquire(timeout=5):
         lock.release()
 ```
 
+## Gate Memory-Heavy Work With a Weighted Semaphore
+
+When a worker pod has a limited memory budget but multiple task types compete for it, a weighted semaphore lets each caller declare how much it intends to consume. Big tasks block when the budget can't accommodate them; small tasks slip through whenever there's room.
+
+```python
+from django.core.cache import cache
+
+# Stay under 500 MB across all callers; this task uses ~100 MB.
+with cache.semaphore("memory-pool", weight=100, capacity=500, lease=300):
+    convert_huge_image(...)
+```
+
+If `acquire()` should give up after some bounded wait, pass `timeout`:
+
+```python
+from django_cachex import SemaphoreTimeoutError
+
+try:
+    with cache.semaphore(
+        "memory-pool", weight=100, capacity=500, lease=300, timeout=10,
+    ):
+        convert(...)
+except SemaphoreTimeoutError:
+    # Defer to a retry or fall back to a smaller pipeline.
+    ...
+```
+
+For async tasks, use `cache.asemaphore`:
+
+```python
+async with await cache.asemaphore("memory-pool", weight=100, capacity=500, lease=300):
+    await convert_async(...)
+```
+
+On RESP backends, `lease` is required and acts as a TTL on the held claim: if the worker crashes mid-task, the next acquirer reclaims the budget after the lease expires. Use `sem.extend(seconds)` to bump the TTL for tasks that may legitimately exceed their original lease.
+
 ## Development Without a Server
 
 For local development without a running server, use `LocMemCache`:

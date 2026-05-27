@@ -34,6 +34,7 @@
 - **Pipeline parity.** Stream ops, CAS ops, missing key ops (`persist`/`pttl`/`expireat`/etc.), context manager, `zpopmin`/`zpopmax` default `count=1` aligned with the cache API.
 - **Compressors gain a uniform `level=` parameter** (gzip, lz4, zstd join zlib/lzma in exposing it). Defaults match each library's own default.
 - **Serializer/compressor wrappers consolidated.** Subclasses now implement `_dumps`/`_loads` (serializers) or `_compress`/`_decompress` (compressors); the base classes wrap the boilerplate (`SerializerError` / `CompressorError` translation, int-passthrough on loads).
+- **Weighted semaphores.** New `cache.semaphore(name, capacity, *, weight=1, lease=..., timeout=...)` and `cache.asemaphore(...)` for gating concurrent access by a budget (counting or weighted). Backed by an in-process FIFO deque on `LocMemCache` and by Lua scripts on the RESP backends (redis-py, redis-rs, valkey-py, valkey-glide). Cluster mode is supported via `{name}` hash-tag colocation. Sync and async APIs share state per cache instance; lease-based crash reclaim on the RESP backend (no heartbeat). See `docs/recipes.md` for examples.
 
 ### Performance
 
