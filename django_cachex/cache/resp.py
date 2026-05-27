@@ -904,7 +904,12 @@ class RespCache(BaseCachex):
         lease: float,
         timeout: float | None = None,
     ) -> Any:
-        """Return a weighted semaphore backed by Lua scripts on the RESP server."""
+        """Return a weighted semaphore backed by Lua scripts on the RESP server.
+
+        Cluster mode is supported: the three Redis keys per semaphore name
+        all carry a ``{name}`` hash tag so they colocate on one slot, which
+        is what cluster requires for atomic multi-key Lua.
+        """
         from django_cachex.semaphore import RedisSemaphore
 
         full_key = self.make_and_validate_key(key, version=version)
