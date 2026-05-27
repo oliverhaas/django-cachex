@@ -9,9 +9,9 @@ Three Redis keys cooperate per semaphore name (passed as ``KEYS[1..3]``):
 Plus a per-claim TTL key ``{name}:state:claim:<token>`` (string, PEXPIRE = lease_ms)
 that the scripts manage internally.
 
-The ``{name}`` hash-tag prefix is required so all keys for one semaphore land
-on the same cluster slot - though cluster mode itself is rejected at the Python
-layer for v1 (see RespCache.semaphore).
+The ``{name}`` hash-tag prefix colocates all keys for one semaphore on the
+same cluster slot, which is what Redis Cluster requires for atomic multi-key
+Lua. Cluster mode is supported (see ``RespCache.semaphore``).
 """
 
 # ARGV: token, weight, capacity, lease_ms, now_ms

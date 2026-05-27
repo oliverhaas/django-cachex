@@ -371,8 +371,10 @@ class RedisSemaphore:
 
     Constructed by ``cache.semaphore(...)`` on a RESP-backed cache. Tokens
     are random hex strings minted per call. The acquire/release Lua scripts
-    handle budget accounting and queue ordering atomically; cluster mode is
-    rejected at the cache-factory level (see ``RespCache.semaphore``).
+    handle budget accounting and queue ordering atomically. Cluster mode is
+    supported: the three Redis keys per semaphore name share a ``{name}``
+    hash tag so they colocate on one slot, as Redis Cluster requires for
+    atomic multi-key Lua.
     """
 
     def __init__(

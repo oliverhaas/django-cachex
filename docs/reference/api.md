@@ -373,7 +373,7 @@ with cache.semaphore("memory-heavy", weight=100, capacity=500, lease=300):
 | Parameter | Description |
 |-----------|-------------|
 | `key` | Logical name of the semaphore. Callers with the same name share budget. |
-| `capacity` | Total budget. The first caller establishes capacity; subsequent callers passing a different value warn and update it. |
+| `capacity` | Total budget. The first caller establishes capacity. Subsequent callers passing a different value update it on every backend; the local backend additionally emits a `RuntimeWarning` (the RESP backend updates silently). |
 | `weight` | How much of the capacity this caller claims (default `1`, i.e. counting semaphore). |
 | `version` | Optional cache version namespace. |
 | `lease` | TTL of the held claim in seconds. Required for the RESP backend (auto-reclaim if the holder crashes); accepted but ignored on the local backend. |
