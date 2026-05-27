@@ -596,3 +596,17 @@ class TestRespAsyncSemaphore:
                 await holder.release()
 
         asyncio.run(run())
+
+
+def test_top_level_semaphore_exports():
+    """Public names are reachable from the package root."""
+    from django_cachex import (
+        AsyncSemaphore,
+        Semaphore,
+        SemaphoreError,
+        SemaphoreTimeoutError,
+    )
+
+    assert Semaphore is not None
+    assert AsyncSemaphore is not None
+    assert issubclass(SemaphoreTimeoutError, SemaphoreError)
