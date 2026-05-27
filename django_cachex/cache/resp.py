@@ -894,6 +894,29 @@ class RespCache(BaseCachex):
             thread_local=thread_local,
         )
 
+    def semaphore(
+        self,
+        key: str,
+        capacity: int,
+        *,
+        weight: int = 1,
+        version: int | None = None,
+        lease: float,
+        timeout: float | None = None,
+    ) -> Any:
+        """Return a weighted semaphore backed by Lua scripts on the RESP server."""
+        from django_cachex.semaphore import RedisSemaphore
+
+        full_key = self.make_and_validate_key(key, version=version)
+        return RedisSemaphore(
+            self.adapter,
+            full_key,
+            capacity=capacity,
+            weight=weight,
+            lease=lease,
+            timeout=timeout,
+        )
+
     def pipeline(
         self,
         *,

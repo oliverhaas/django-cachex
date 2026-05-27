@@ -16,6 +16,7 @@ are not exposed by name.
 from __future__ import annotations
 
 import asyncio
+import secrets
 import threading
 import time
 import warnings
@@ -362,4 +363,133 @@ class AsyncSemaphore:
         await self.release()
 
 
-__all__ = ["AsyncSemaphore", "Semaphore", "SemaphoreError", "SemaphoreTimeoutError"]
+class RedisSemaphore:
+    """RESP-backed weighted semaphore using Lua scripts via the adapter's eval().
+
+    Constructed by ``cache.semaphore(...)`` on a RESP-backed cache. Tokens
+    are random hex strings minted per call. The acquire/release Lua scripts
+    handle budget accounting and queue ordering atomically; cluster mode is
+    rejected at the cache-factory level (see ``RespCache.semaphore``).
+    """
+
+    def __init__(
+        self,
+        adapter: object,  # RespAdapterProtocol-typed; quoted to avoid cycle
+        name: str,
+        capacity: int,
+        *,
+        weight: int = 1,
+        lease: float,
+        timeout: float | None = None,
+    ) -> None:
+        if capacity <= 0:
+            msg = "capacity must be positive"
+            raise ValueError(msg)
+        if weight <= 0:
+            msg = "weight must be positive"
+            raise ValueError(msg)
+        if weight > capacity:
+            msg = f"weight ({weight}) exceeds capacity ({capacity})"
+            raise ValueError(msg)
+        if lease is None or lease <= 0:
+            msg = "lease must be a positive number of seconds (Redis backend)"
+            raise ValueError(msg)
+        self._adapter = adapter
+        self.name = name
+        self.capacity = capacity
+        self.weight = weight
+        self.lease = lease
+        self.timeout = timeout
+        self._token: str | None = None
+
+    def _keys(self) -> tuple[str, str, str]:
+        """All three keys share a ``{name}`` hash-tag so they land on one slot."""
+        prefix = "{" + self.name + "}"
+        return (f"{prefix}:state", f"{prefix}:claims", f"{prefix}:queue")
+
+    @staticmethod
+    def _decode_status(result: object) -> str:
+        """Lua returns bytes in some clients, str in others; coerce to str."""
+        if isinstance(result, (list, tuple)) and result:
+            first = result[0]
+            if isinstance(first, bytes):
+                return first.decode("ascii")
+            return str(first)
+        if isinstance(result, bytes):
+            return result.decode("ascii")
+        return str(result)
+
+    def acquire(self, *, blocking: bool = True, timeout: float | None = None) -> bool:
+        from django_cachex.cache._semaphore_lua import ACQUIRE_LUA, DEQUEUE_LUA
+
+        if timeout is None:
+            timeout = self.timeout
+        token = self._token or secrets.token_hex(16)
+        self._token = token
+        state_key, claims_key, queue_key = self._keys()
+        lease_ms = max(1, int(self.lease * 1000))
+        deadline = None if timeout is None else time.monotonic() + timeout
+        backoff_ms = 10
+        max_backoff_ms = 500
+
+        while True:
+            now_ms = int(time.time() * 1000)
+            result = self._adapter.eval(
+                ACQUIRE_LUA,
+                3,
+                state_key,
+                claims_key,
+                queue_key,
+                token,
+                str(self.weight),
+                str(self.capacity),
+                str(lease_ms),
+                str(now_ms),
+            )
+            status = self._decode_status(result)
+            if status == "acquired":
+                return True
+            if not blocking:
+                self._adapter.eval(DEQUEUE_LUA, 1, queue_key, token)
+                self._token = None
+                return False
+            if deadline is not None and time.monotonic() >= deadline:
+                self._adapter.eval(DEQUEUE_LUA, 1, queue_key, token)
+                self._token = None
+                msg = f"semaphore {self.name!r} acquire timed out"
+                raise SemaphoreTimeoutError(msg)
+            # Jittered exponential backoff.
+            jitter_ms = secrets.randbelow(max(1, backoff_ms // 2 + 1))
+            sleep_s = (backoff_ms + jitter_ms) / 1000.0
+            if deadline is not None:
+                sleep_s = min(sleep_s, max(0.0, deadline - time.monotonic()))
+            if sleep_s > 0:
+                time.sleep(sleep_s)
+            backoff_ms = min(max_backoff_ms, int(backoff_ms * 1.5))
+
+    def release(self) -> None:
+        from django_cachex.cache._semaphore_lua import RELEASE_LUA
+
+        if self._token is None:
+            msg = "Cannot release a semaphore not held by this instance"
+            raise SemaphoreError(msg)
+        state_key, claims_key, queue_key = self._keys()
+        self._adapter.eval(RELEASE_LUA, 3, state_key, claims_key, queue_key, self._token)
+        self._token = None
+
+    def __enter__(self) -> Self:
+        if not self.acquire():
+            msg = f"could not acquire semaphore {self.name!r}"
+            raise SemaphoreError(msg)
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        self.release()
+
+
+__all__ = ["AsyncSemaphore", "RedisSemaphore", "Semaphore", "SemaphoreError", "SemaphoreTimeoutError"]

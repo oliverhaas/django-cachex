@@ -361,3 +361,89 @@ class TestLocMemSemaphoreIntegration:
             assert sem._held is False
 
         asyncio.run(run())
+
+
+class TestRespSemaphoreNonBlocking:
+    def test_resp_acquire_within_capacity(self, cache):
+        import contextlib
+
+        from django_cachex.semaphore import SemaphoreError
+
+        sem_a = cache.semaphore("resp_nb_a", capacity=2, lease=10)
+        sem_b = cache.semaphore("resp_nb_a", capacity=2, lease=10)
+        sem_c = cache.semaphore("resp_nb_a", capacity=2, lease=10)
+        try:
+            assert sem_a.acquire(blocking=False) is True
+            assert sem_b.acquire(blocking=False) is True
+            assert sem_c.acquire(blocking=False) is False
+        finally:
+            with contextlib.suppress(SemaphoreError):
+                sem_a.release()
+            with contextlib.suppress(SemaphoreError):
+                sem_b.release()
+
+    def test_resp_lease_required(self, cache):
+        import pytest
+
+        with pytest.raises((TypeError, ValueError)):
+            cache.semaphore("resp_missing_lease", capacity=2)
+
+    def test_resp_weight(self, cache):
+        import contextlib
+
+        from django_cachex.semaphore import SemaphoreError
+
+        sem_a = cache.semaphore("resp_w", capacity=10, weight=7, lease=10)
+        sem_b = cache.semaphore("resp_w", capacity=10, weight=4, lease=10)
+        sem_c = cache.semaphore("resp_w", capacity=10, weight=3, lease=10)
+        try:
+            assert sem_a.acquire(blocking=False) is True
+            assert sem_b.acquire(blocking=False) is False  # 7+4 > 10
+            assert sem_c.acquire(blocking=False) is True  # 7+3 == 10
+        finally:
+            with contextlib.suppress(SemaphoreError):
+                sem_a.release()
+            with contextlib.suppress(SemaphoreError):
+                sem_c.release()
+
+
+class TestRespSemaphoreBlocking:
+    def test_resp_blocking_acquire_waits(self, cache):
+        import threading
+        import time
+
+        holder = cache.semaphore("resp_blk", capacity=1, lease=10)
+        holder.acquire(blocking=False)
+
+        result: dict[str, object] = {}
+
+        def waiter_thread() -> None:
+            waiter = cache.semaphore("resp_blk", capacity=1, lease=10, timeout=3)
+            t0 = time.monotonic()
+            ok = waiter.acquire(blocking=True)
+            result["ok"] = ok
+            result["elapsed"] = time.monotonic() - t0
+            waiter.release()
+
+        t = threading.Thread(target=waiter_thread)
+        t.start()
+        time.sleep(0.3)
+        holder.release()
+        t.join(timeout=5)
+
+        assert result["ok"] is True
+        assert result["elapsed"] >= 0.3
+
+    def test_resp_blocking_timeout_raises(self, cache):
+        import pytest
+
+        from django_cachex.semaphore import SemaphoreTimeoutError
+
+        holder = cache.semaphore("resp_blk_to", capacity=1, lease=10)
+        holder.acquire(blocking=False)
+        try:
+            waiter = cache.semaphore("resp_blk_to", capacity=1, lease=10, timeout=0.3)
+            with pytest.raises(SemaphoreTimeoutError):
+                waiter.acquire(blocking=True)
+        finally:
+            holder.release()
