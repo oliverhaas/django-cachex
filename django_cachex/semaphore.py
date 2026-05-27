@@ -28,6 +28,8 @@ from typing import TYPE_CHECKING, Self
 if TYPE_CHECKING:
     from types import TracebackType
 
+    from django_cachex.adapters.protocols import RespAdapterProtocol
+
 
 class SemaphoreError(Exception):
     """Raised when a semaphore operation fails."""
@@ -375,7 +377,7 @@ class RedisSemaphore:
 
     def __init__(
         self,
-        adapter: object,  # RespAdapterProtocol-typed; quoted to avoid cycle
+        adapter: RespAdapterProtocol,
         name: str,
         capacity: int,
         *,
@@ -526,7 +528,7 @@ class RedisAsyncSemaphore:
 
     def __init__(
         self,
-        adapter: object,  # RespAdapterProtocol-typed; quoted to avoid cycle
+        adapter: RespAdapterProtocol,
         name: str,
         capacity: int,
         *,
