@@ -477,6 +477,30 @@ class RedisSemaphore:
         self._adapter.eval(RELEASE_LUA, 3, state_key, claims_key, queue_key, self._token)
         self._token = None
 
+    def extend(self, additional_seconds: float) -> bool:
+        """Bump the lease TTL of the held claim by ``additional_seconds``.
+
+        Returns True if extended, False if the claim isn't ours (already
+        released or reaped).
+        """
+        from django_cachex.cache._semaphore_lua import EXTEND_LUA
+
+        if self._token is None:
+            msg = "Cannot extend a semaphore not held by this instance"
+            raise SemaphoreError(msg)
+        state_key, claims_key, _ = self._keys()
+        additional_ms = max(1, int(additional_seconds * 1000))
+        result = self._adapter.eval(
+            EXTEND_LUA,
+            2,
+            state_key,
+            claims_key,
+            self._token,
+            str(additional_ms),
+        )
+        # Lua returns 0 / 1; coerce to bool.
+        return bool(int(result)) if isinstance(result, (int, bytes, str)) else bool(result)
+
     def __enter__(self) -> Self:
         if not self.acquire():
             msg = f"could not acquire semaphore {self.name!r}"

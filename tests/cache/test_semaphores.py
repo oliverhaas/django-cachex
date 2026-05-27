@@ -490,3 +490,35 @@ class TestRespLeaseReclaim:
                 a.release()
             with contextlib.suppress(Exception):
                 b.release()
+
+
+class TestRespExtend:
+    def test_extend_increases_claim_ttl(self, cache):
+        """Calling extend() bumps the claim TTL key."""
+        holder = cache.semaphore("resp_extend", capacity=1, lease=2)
+        holder.acquire(blocking=False)
+        try:
+            # The Lua script writes raw Redis keys; the semaphore name is
+            # already the prefixed cache key (set by cache.semaphore()), so
+            # the claim TTL key is "{<full_name>}:state:claim:<token>".
+            # Use cache.adapter.pttl to bypass the cache-layer key prefixing.
+            full_name = cache.make_and_validate_key("resp_extend")
+            claim_key = "{" + full_name + "}:state:claim:" + holder._token
+            before = cache.adapter.pttl(claim_key)
+            assert holder.extend(10) is True
+            after = cache.adapter.pttl(claim_key)
+            assert before is not None and after is not None
+            assert after > before
+            assert after > 5_000  # original 2s + 10s extend, well past 5s
+        finally:
+            holder.release()
+
+    def test_extend_on_unowned_returns_false(self, cache):
+        """extend() raises if no token is held."""
+        import pytest
+
+        from django_cachex.semaphore import SemaphoreError
+
+        sem = cache.semaphore("resp_extend_unowned", capacity=1, lease=10)
+        with pytest.raises(SemaphoreError):
+            sem.extend(5)
