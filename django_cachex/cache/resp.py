@@ -922,6 +922,35 @@ class RespCache(BaseCachex):
             timeout=timeout,
         )
 
+    async def asemaphore(
+        self,
+        key: str,
+        capacity: int,
+        *,
+        weight: int = 1,
+        version: int | None = None,
+        lease: float,
+        timeout: float | None = None,
+    ) -> Any:
+        """Return an async weighted semaphore backed by Lua scripts on the RESP server.
+
+        ``async def`` for parity with adapters whose async-client construction is
+        itself async. Use as ``async with await cache.asemaphore(...) as sem:``.
+
+        Cluster mode is supported (see ``semaphore``).
+        """
+        from django_cachex.semaphore import RedisAsyncSemaphore
+
+        full_key = self.make_and_validate_key(key, version=version)
+        return RedisAsyncSemaphore(
+            self.adapter,
+            full_key,
+            capacity=capacity,
+            weight=weight,
+            lease=lease,
+            timeout=timeout,
+        )
+
     def pipeline(
         self,
         *,

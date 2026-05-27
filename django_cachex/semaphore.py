@@ -16,6 +16,7 @@ are not exposed by name.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import secrets
 import threading
 import time
@@ -516,4 +517,172 @@ class RedisSemaphore:
         self.release()
 
 
-__all__ = ["AsyncSemaphore", "RedisSemaphore", "Semaphore", "SemaphoreError", "SemaphoreTimeoutError"]
+class RedisAsyncSemaphore:
+    """Async mirror of :class:`RedisSemaphore`.
+
+    Uses the same Lua scripts; awaits the adapter's ``aeval()``. Constructed
+    by ``cache.asemaphore(...)`` on a RESP-backed cache.
+    """
+
+    def __init__(
+        self,
+        adapter: object,  # RespAdapterProtocol-typed; quoted to avoid cycle
+        name: str,
+        capacity: int,
+        *,
+        weight: int = 1,
+        lease: float,
+        timeout: float | None = None,
+    ) -> None:
+        if capacity <= 0:
+            msg = "capacity must be positive"
+            raise ValueError(msg)
+        if weight <= 0:
+            msg = "weight must be positive"
+            raise ValueError(msg)
+        if weight > capacity:
+            msg = f"weight ({weight}) exceeds capacity ({capacity})"
+            raise ValueError(msg)
+        if lease is None or lease <= 0:
+            msg = "lease must be a positive number of seconds (Redis backend)"
+            raise ValueError(msg)
+        self._adapter = adapter
+        self.name = name
+        self.capacity = capacity
+        self.weight = weight
+        self.lease = lease
+        self.timeout = timeout
+        self._token: str | None = None
+
+    def _keys(self) -> tuple[str, str, str]:
+        """All three keys share a ``{name}`` hash-tag so they land on one slot."""
+        prefix = "{" + self.name + "}"
+        return (f"{prefix}:state", f"{prefix}:claims", f"{prefix}:queue")
+
+    async def acquire(self, *, blocking: bool = True, timeout: float | None = None) -> bool:  # noqa: C901
+        from django_cachex.cache._semaphore_lua import ACQUIRE_LUA, DEQUEUE_LUA
+
+        if timeout is None:
+            timeout = self.timeout
+        token = self._token or secrets.token_hex(16)
+        self._token = token
+        state_key, claims_key, queue_key = self._keys()
+        lease_ms = max(1, int(self.lease * 1000))
+        loop = asyncio.get_running_loop()
+        deadline = None if timeout is None else loop.time() + timeout
+        backoff_ms = 10
+        max_backoff_ms = 500
+
+        async def _dequeue_token() -> None:
+            # Best-effort cleanup of our queue entry on any non-success exit
+            # (timeout raise, cancellation, other failure). Suppress because
+            # we may already be unwinding for a different reason.
+            with contextlib.suppress(Exception):
+                await self._adapter.aeval(DEQUEUE_LUA, 1, queue_key, token)
+
+        while True:
+            now_ms = int(time.time() * 1000)
+            try:
+                result = await self._adapter.aeval(
+                    ACQUIRE_LUA,
+                    3,
+                    state_key,
+                    claims_key,
+                    queue_key,
+                    token,
+                    str(self.weight),
+                    str(self.capacity),
+                    str(lease_ms),
+                    str(now_ms),
+                )
+            except BaseException:
+                # Cancellation mid-eval can leave a queue entry behind that
+                # would silently block subsequent acquires under this name.
+                await _dequeue_token()
+                self._token = None
+                raise
+            status = RedisSemaphore._decode_status(result)
+            if status == "acquired":
+                return True
+            if not blocking:
+                await _dequeue_token()
+                self._token = None
+                return False
+            if deadline is not None and loop.time() >= deadline:
+                await _dequeue_token()
+                self._token = None
+                msg = f"semaphore {self.name!r} acquire timed out"
+                raise SemaphoreTimeoutError(msg)
+            # Jittered exponential backoff.
+            jitter_ms = secrets.randbelow(max(1, backoff_ms // 2 + 1))
+            sleep_s = (backoff_ms + jitter_ms) / 1000.0
+            if deadline is not None:
+                sleep_s = min(sleep_s, max(0.0, deadline - loop.time()))
+            if sleep_s > 0:
+                try:
+                    await asyncio.sleep(sleep_s)
+                except BaseException:
+                    # Cancellation during backoff: drop our queue entry
+                    # so smaller waiters behind us don't deadlock.
+                    await _dequeue_token()
+                    self._token = None
+                    raise
+            backoff_ms = min(max_backoff_ms, int(backoff_ms * 1.5))
+
+    async def release(self) -> None:
+        from django_cachex.cache._semaphore_lua import RELEASE_LUA
+
+        if self._token is None:
+            msg = "Cannot release a semaphore not held by this instance"
+            raise SemaphoreError(msg)
+        state_key, claims_key, queue_key = self._keys()
+        await self._adapter.aeval(RELEASE_LUA, 3, state_key, claims_key, queue_key, self._token)
+        self._token = None
+
+    async def extend(self, additional_seconds: float) -> bool:
+        """Bump the lease TTL of the held claim by ``additional_seconds``.
+
+        Returns True if extended, False if the claim isn't ours (already
+        released or reaped).
+        """
+        from django_cachex.cache._semaphore_lua import EXTEND_LUA
+
+        if self._token is None:
+            msg = "Cannot extend a semaphore not held by this instance"
+            raise SemaphoreError(msg)
+        state_key, claims_key, _ = self._keys()
+        additional_ms = max(1, int(additional_seconds * 1000))
+        result = await self._adapter.aeval(
+            EXTEND_LUA,
+            2,
+            state_key,
+            claims_key,
+            self._token,
+            str(additional_ms),
+        )
+        # Lua returns 0 / 1; coerce to bool.
+        return bool(int(result)) if isinstance(result, (int, bytes, str)) else bool(result)
+
+    async def __aenter__(self) -> Self:
+        if not await self.acquire():
+            msg = f"could not acquire semaphore {self.name!r}"
+            raise SemaphoreError(msg)
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        await self.release()
+
+
+__all__ = [
+    "AsyncSemaphore",
+    "RedisAsyncSemaphore",
+    "RedisSemaphore",
+    "Semaphore",
+    "SemaphoreError",
+    "SemaphoreTimeoutError",
+]

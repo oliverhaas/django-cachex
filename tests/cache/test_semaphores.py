@@ -522,3 +522,77 @@ class TestRespExtend:
         sem = cache.semaphore("resp_extend_unowned", capacity=1, lease=10)
         with pytest.raises(SemaphoreError):
             sem.extend(5)
+
+
+class TestRespAsyncSemaphore:
+    def test_resp_async_acquire(self, cache):
+        import asyncio
+
+        async def run() -> None:
+            sem = await cache.asemaphore("aresp_a", capacity=2, lease=10)
+            async with sem:
+                pass  # held via context manager
+
+        asyncio.run(run())
+
+    def test_resp_async_non_blocking(self, cache):
+        import asyncio
+        import contextlib
+
+        async def run() -> None:
+            a = await cache.asemaphore("aresp_b", capacity=1, lease=10)
+            b = await cache.asemaphore("aresp_b", capacity=1, lease=10)
+            try:
+                assert await a.acquire(blocking=False) is True
+                assert await b.acquire(blocking=False) is False
+            finally:
+                from django_cachex.semaphore import SemaphoreError
+
+                with contextlib.suppress(SemaphoreError):
+                    await a.release()
+
+        asyncio.run(run())
+
+    def test_resp_async_blocking_with_timeout(self, cache):
+        import asyncio
+
+        import pytest
+
+        from django_cachex.semaphore import SemaphoreTimeoutError
+
+        async def run() -> None:
+            holder = await cache.asemaphore("aresp_to", capacity=1, lease=10)
+            await holder.acquire(blocking=False)
+            try:
+                waiter = await cache.asemaphore(
+                    "aresp_to",
+                    capacity=1,
+                    lease=10,
+                    timeout=0.3,
+                )
+                with pytest.raises(SemaphoreTimeoutError):
+                    await waiter.acquire(blocking=True)
+            finally:
+                await holder.release()
+
+        asyncio.run(run())
+
+    def test_resp_async_extend(self, cache):
+        import asyncio
+
+        async def run() -> None:
+            holder = await cache.asemaphore("aresp_ext", capacity=1, lease=2)
+            await holder.acquire(blocking=False)
+            try:
+                full_name = cache.make_and_validate_key("aresp_ext")
+                claim_key = "{" + full_name + "}:state:claim:" + holder._token
+                before = cache.adapter.pttl(claim_key)
+                assert await holder.extend(10) is True
+                after = cache.adapter.pttl(claim_key)
+                assert before is not None and after is not None
+                assert after > before
+                assert after > 5_000
+            finally:
+                await holder.release()
+
+        asyncio.run(run())
