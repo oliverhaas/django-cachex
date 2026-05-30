@@ -384,7 +384,7 @@ class RedisSemaphore:
         capacity: int,
         *,
         weight: int = 1,
-        lease: float,
+        lease: float | None = None,
         timeout: float | None = None,
     ) -> None:
         if capacity <= 0:
@@ -535,7 +535,7 @@ class RedisAsyncSemaphore:
         capacity: int,
         *,
         weight: int = 1,
-        lease: float,
+        lease: float | None = None,
         timeout: float | None = None,
     ) -> None:
         if capacity <= 0:

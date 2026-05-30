@@ -901,7 +901,7 @@ class RespCache(BaseCachex):
         *,
         weight: int = 1,
         version: int | None = None,
-        lease: float,
+        lease: float | None = None,
         timeout: float | None = None,
     ) -> Any:
         """Return a weighted semaphore backed by Lua scripts on the RESP server.
@@ -929,7 +929,7 @@ class RespCache(BaseCachex):
         *,
         weight: int = 1,
         version: int | None = None,
-        lease: float,
+        lease: float | None = None,
         timeout: float | None = None,
     ) -> Any:
         """Return an async weighted semaphore backed by Lua scripts on the RESP server.
