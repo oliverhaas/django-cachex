@@ -209,6 +209,29 @@ class TestKeysAndAdmin:
         assert "alpha" in keys
         assert "beta" in keys
 
+    def test_keys_does_not_double_strip_prefix(self):
+        """User keys starting with KEY_PREFIX must not be re-stripped (I8).
+
+        Django's key format is ``KEY_PREFIX:VERSION:user_key``. After
+        ``split(':', 2)`` ``parts[2]`` is already the user key. A second
+        ``startswith(key_prefix)`` strip would mangle a key like
+        ``myapp:bar`` into ``:bar`` when ``KEY_PREFIX='myapp'``.
+        """
+        config = {
+            "locmem": {
+                "BACKEND": "django_cachex.cache.LocMemCache",
+                "LOCATION": "test-prefix-strip",
+                "KEY_PREFIX": "myapp",
+            },
+        }
+        with override_settings(CACHES=config):
+            cache = caches["locmem"]
+            cache.clear()
+            cache.set("myapp:bar", "v")
+            keys = cache.keys("*")
+            assert "myapp:bar" in keys
+            assert ":bar" not in keys
+
     def test_keys_with_pattern(self, locmem_cache: LocMemCache):
         locmem_cache.set("user:1", "alice")
         locmem_cache.set("user:2", "bob")

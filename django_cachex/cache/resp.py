@@ -3264,6 +3264,43 @@ class RespClusterCache(RespCache):
             raise NotSupportedError("aincr_version (without hash tag)", backend="cluster")
         return await super().aincr_version(key, delta, version)
 
+    @override
+    def lock(
+        self,
+        key: str,
+        version: int | None = None,
+        lease: float | None = None,
+        sleep: float = 0.1,
+        *,
+        blocking: bool = True,
+        timeout: float | None = None,
+        thread_local: bool = True,
+    ) -> Any:
+        """Reject ``lock`` on cluster mode.
+
+        The underlying ``Lock`` implementation runs its release script via
+        ``EVALSHA``, which cluster routes to replicas (read-only). ``release()``
+        then returns an error and the key stays set until its lease expiry.
+        Use :meth:`semaphore` for cluster-safe mutual exclusion: it colocates
+        its keys via ``{name}`` hash tags.
+        """
+        raise NotSupportedError("lock", backend="cluster")
+
+    @override
+    async def alock(
+        self,
+        key: str,
+        version: int | None = None,
+        lease: float | None = None,
+        sleep: float = 0.1,
+        *,
+        blocking: bool = True,
+        timeout: float | None = None,
+        thread_local: bool = True,
+    ) -> Any:
+        """Reject ``alock`` on cluster mode. See :meth:`lock`."""
+        raise NotSupportedError("alock", backend="cluster")
+
 
 class RespSentinelCache(RespCache):
     """Sentinel cache backend base class.

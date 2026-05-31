@@ -53,7 +53,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from functools import cached_property
-from threading import Event, Lock, Thread
+from threading import BoundedSemaphore, Event, Lock, Thread
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from django.core.cache.backends.base import DEFAULT_TIMEOUT, BaseCache
@@ -65,6 +65,7 @@ from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
+    from datetime import timedelta
 
     from django_cachex.cache.base import CachexSupportLevel
 
@@ -143,6 +144,19 @@ class StreamCache(LocMemCache):
         self._publish_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sync-pub")
         self._publish_executor_shutdown = False
 
+        # Bound the publish backlog. ``ThreadPoolExecutor`` uses an unbounded
+        # ``SimpleQueue``, so a writer outpacing XADD throughput would grow
+        # memory until OOM. Gate ``submit`` on a ``BoundedSemaphore``; when
+        # the budget is exhausted the publish is dropped with a warning
+        # rather than blocking the caller. Default cap is 1000 outstanding
+        # broadcasts; tune via OPTIONS["max_pending_publishes"].
+        self._max_pending_publishes: int = options.get("max_pending_publishes", 1000)
+        self._publish_budget = BoundedSemaphore(self._max_pending_publishes)
+        # Shutdown grace for the publish executor. ``ThreadPoolExecutor.shutdown``
+        # offers no native timeout in 3.14, so we cancel pending futures and
+        # join the worker thread ourselves with this bound.
+        self._publish_shutdown_timeout: float = options.get("publish_shutdown_timeout", 5.0)
+
         # Admin display: show stream key and transport alias as location
         self._cachex_location = f"stream:{self._stream_key} [transport: {self._transport_alias}]"
 
@@ -189,7 +203,19 @@ class StreamCache(LocMemCache):
         and compressor handle wire encoding. The single-worker executor
         preserves stream order while keeping the calling thread off the
         network round-trip.
+
+        The pending-publish budget (``_publish_budget``) caps how many
+        broadcasts may be queued at once. When the budget is exhausted the
+        new publish is dropped with a warning, trading durability for
+        bounded memory under sustained write bursts that outpace XADD.
         """
+        if not self._publish_budget.acquire(blocking=False):
+            logger.warning(
+                "StreamCache: publish backlog full (cap=%d); dropping %s broadcast",
+                self._max_pending_publishes,
+                op,
+            )
+            return
         fields: dict[str, Any] = {
             "op": op,
             "pod": self._pod_id,
@@ -207,6 +233,7 @@ class StreamCache(LocMemCache):
             # publish; losing the broadcast is preferable to crashing the
             # caller. If the cache is still in active use ``_ensure_consumer``
             # will rebuild the executor on the next get/set.
+            self._publish_budget.release()
             logger.warning(
                 "StreamCache: publish executor closed; dropping %s broadcast",
                 op,
@@ -227,6 +254,10 @@ class StreamCache(LocMemCache):
                 fields.get("op", "?"),
                 exc_info=True,
             )
+        finally:
+            # Return budget once the broadcast has actually drained.
+            with contextlib.suppress(ValueError):
+                self._publish_budget.release()
 
     # -- Consumer thread --
 
@@ -259,6 +290,10 @@ class StreamCache(LocMemCache):
         if self._publish_executor_shutdown:
             self._publish_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sync-pub")
             self._publish_executor_shutdown = False
+            # Reset the publish budget too: the old semaphore may have been
+            # drained by in-flight futures that ``cancel_futures=True``
+            # rejected without running ``_do_xadd``'s release.
+            self._publish_budget = BoundedSemaphore(self._max_pending_publishes)
         if self._replay_count > 0:
             self._replay_stream(self._replay_count)
         self._stop_event.clear()
@@ -410,13 +445,19 @@ class StreamCache(LocMemCache):
                 return
 
     def shutdown(self) -> None:
-        """Stop the consumer thread and publish executor.
+        """Stop the consumer thread and publish executor with bounded waits.
 
         The consumer is parked in ``XREAD BLOCK self._block_timeout`` (ms),
         so the join grace has to outlast one block window. We give it
         ``block_timeout + 1s`` (capped at 10s); if the thread is still
         alive after that it gets dropped, leaking the daemon thread is
         cheaper than blocking process shutdown.
+
+        The publish executor is bounded by ``_publish_shutdown_timeout``.
+        Pending futures are cancelled up front (``cancel_futures=True``)
+        so a hung transport can't stall ``__del__`` indefinitely. The
+        worker thread is then joined with a timeout; any in-flight XADD
+        that doesn't drain in time is abandoned with a warning.
         """
         if self._consumer_thread is not None:
             self._stop_event.set()
@@ -430,8 +471,24 @@ class StreamCache(LocMemCache):
             self._consumer_thread = None
             self._initialized = False
             self._stop_event.clear()
-        self._publish_executor.shutdown(wait=True, cancel_futures=False)
+        # Drop pending broadcasts and start non-blocking shutdown.
+        self._publish_executor.shutdown(wait=False, cancel_futures=True)
         self._publish_executor_shutdown = True
+        # Bound the wait by joining the executor's worker threads ourselves
+        # so a hung transport can't block forever. ``_threads`` is a private
+        # attribute, but it's the only way to get a bounded join in 3.14.
+        worker_threads = list(getattr(self._publish_executor, "_threads", ()) or ())
+        deadline = time.time() + self._publish_shutdown_timeout
+        for thread in worker_threads:
+            remaining = max(0.0, deadline - time.time())
+            thread.join(timeout=remaining)
+        still_alive = [t for t in worker_threads if t.is_alive()]
+        if still_alive:
+            logger.warning(
+                "StreamCache: publish worker(s) still alive after %.1fs; abandoning %d thread(s)",
+                self._publish_shutdown_timeout,
+                len(still_alive),
+            )
 
     # -- Standard Django cache interface (LocMemCache + stream sync) --
 
@@ -605,8 +662,10 @@ class StreamCache(LocMemCache):
     def persist(self, key: str, version: int | None = None) -> bool:
         return self.touch(key, timeout=None, version=version)
 
-    def expire(self, key: str, timeout: int, version: int | None = None) -> bool:
-        return self.touch(key, timeout=timeout, version=version)
+    def expire(self, key: str, timeout: int | timedelta, version: int | None = None) -> bool:
+        # ``timedelta`` collapses to seconds. ``touch()`` takes float | None.
+        seconds: float = timeout if isinstance(timeout, int) else timeout.total_seconds()
+        return self.touch(key, timeout=seconds, version=version)
 
     def type(self, key: str, version: int | None = None) -> KeyType | None:
         self._ensure_consumer()
@@ -664,9 +723,9 @@ class StreamCache(LocMemCache):
 
     def iter_keys(
         self,
-        pattern: str,
-        itersize: int | None = None,
+        pattern: str = "*",
         version: int | None = None,
+        itersize: int | None = None,
     ) -> Iterator[str]:
         yield from self.keys(pattern, version=version)
 

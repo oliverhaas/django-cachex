@@ -664,3 +664,87 @@ class TestSyncShutdown:
             cache.shutdown()
             assert not cache._consumer_alive()
             _cleanup_globals(stream_key)
+
+    def test_shutdown_bounded_when_transport_hangs(
+        self,
+        redis_container: RedisContainerInfo,
+        resp_adapter: str,
+    ):
+        """``shutdown`` must return within ``publish_shutdown_timeout`` (I6).
+
+        Pin the publish executor with a worker that blocks indefinitely.
+        Without the bounded join, ``shutdown(wait=True)`` would block
+        forever; with it, ``shutdown`` returns within the timeout and
+        logs a warning about the abandoned worker.
+        """
+        import threading
+        import time
+
+        config = _build_sync_config(
+            redis_container.host,
+            redis_container.port,
+            resp_adapter=resp_adapter,
+        )
+        config["default"]["OPTIONS"]["publish_shutdown_timeout"] = 0.5
+        stream_key = config["default"]["OPTIONS"]["stream_key"]
+
+        with override_settings(CACHES=config):
+            cache = caches["default"]
+            cache.set("warm", "v")  # spin up consumer + executor
+            # Park the publish worker on a future that never resolves so the
+            # executor's worker thread can't drain on shutdown.
+            forever = threading.Event()
+            cache._publish_executor.submit(forever.wait)
+            t0 = time.monotonic()
+            cache.shutdown()
+            elapsed = time.monotonic() - t0
+            try:
+                # shutdown_timeout=0.5, plus consumer join grace (block_timeout=100ms + 1s).
+                assert elapsed < 3.0, f"shutdown blocked for {elapsed:.2f}s; bounded join failed"
+            finally:
+                forever.set()
+                _cleanup_globals(stream_key)
+
+    def test_publish_backlog_drops_when_budget_exhausted(
+        self,
+        redis_container: RedisContainerInfo,
+        resp_adapter: str,
+        caplog,
+    ):
+        """Publish budget caps the in-flight queue (I6).
+
+        Set a tiny ``max_pending_publishes`` and park the worker. Once
+        the budget is exhausted, further ``_publish`` calls log a drop
+        warning instead of growing the queue without bound.
+        """
+        import logging
+        import threading
+
+        config = _build_sync_config(
+            redis_container.host,
+            redis_container.port,
+            resp_adapter=resp_adapter,
+        )
+        config["default"]["OPTIONS"]["max_pending_publishes"] = 2
+        config["default"]["OPTIONS"]["publish_shutdown_timeout"] = 0.5
+        stream_key = config["default"]["OPTIONS"]["stream_key"]
+
+        with override_settings(CACHES=config):
+            cache = caches["default"]
+            cache.set("warm", "v")  # boot consumer + executor
+            cache._flush_publishes()  # release the warm submit
+            # Block the worker so subsequent submits stay queued.
+            block_event = threading.Event()
+            cache._publish_executor.submit(block_event.wait)
+            # Fill the budget (2 outstanding) plus one drop.
+            with caplog.at_level(logging.WARNING, logger="django_cachex.cache.stream"):
+                cache._publish("set", key="a", val=1)
+                cache._publish("set", key="b", val=2)
+                cache._publish("set", key="c", val=3)  # should be dropped
+            drop_messages = [r for r in caplog.records if "backlog full" in r.getMessage()]
+            try:
+                assert drop_messages, "expected at least one 'backlog full' warning"
+            finally:
+                block_event.set()
+                cache.shutdown()
+                _cleanup_globals(stream_key)

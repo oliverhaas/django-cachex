@@ -98,18 +98,44 @@ class TieredCache(BaseCachex):
         return cap if cap is not None else self._l1.default_timeout
 
     def _l1_timeout(self, l2_ttl: int | None = None) -> float | None:
-        """Calculate L1 TTL: min(L1 cap, L2's remaining TTL)."""
+        """Calculate L1 TTL: min(L1 cap, L2's remaining TTL).
+
+        When ``l2_ttl`` is unavailable (e.g. ``ttl`` raised ``NotSupported``),
+        fall back to ``min(L1 cap, L2.default_timeout)`` so a long-lived L1
+        cap can't outlive an L2 entry written under L2's own default.
+        """
         cap = self._l1_cap
         if l2_ttl is not None and l2_ttl > 0:
             if cap is not None:
                 return min(cap, l2_ttl)
             return l2_ttl
-        return cap
+        l2_default = self._l2.default_timeout
+        if l2_default is None:
+            return cap
+        if cap is None:
+            return l2_default
+        return min(cap, l2_default)
 
-    def _l1_timeout_for_set(self, timeout: float | None) -> float | None:
-        """Calculate L1 TTL for a set operation given the user-specified timeout."""
+    def _l1_timeout_for_set(self, timeout: float | None) -> float | None:  # noqa: PLR0911
+        """Calculate L1 TTL for a set operation given the user-specified timeout.
+
+        When ``timeout is DEFAULT_TIMEOUT``, L2 resolves the effective TTL
+        against its own ``default_timeout``. L1 must clamp to that bound
+        too; otherwise an L1 with a longer ``default_timeout`` than L2
+        would outlive its L2 entry and serve stale.
+
+        ``timeout is None`` (persistent) is safe: L1 capped finite, L2
+        persistent => L2 always outlives L1.
+        """
         cap = self._l1_cap
-        if timeout is None or timeout is DEFAULT_TIMEOUT:
+        if timeout is DEFAULT_TIMEOUT:
+            l2_default = self._l2.default_timeout
+            if l2_default is None:
+                return cap
+            if cap is None:
+                return l2_default
+            return min(cap, l2_default)
+        if timeout is None:
             return cap
         if timeout <= 0:
             return timeout  # 0 means delete immediately
@@ -437,8 +463,44 @@ class TieredCache(BaseCachex):
         version: int | None = None,
         itersize: int | None = None,
     ) -> int:
-        self._l1.clear()
+        # Targeted L1 invalidation: clearing all of L1 for any pattern is a
+        # footgun (a single ``delete_pattern("user:42:*")`` would evict every
+        # cached entry). Prefer L1.delete_pattern; fall back to iter_keys +
+        # delete; clear() only as the last resort if L1 supports neither.
+        self._invalidate_l1_by_pattern(pattern, version=version)
         return self._delegate("delete_pattern", pattern, version=version, itersize=itersize)
+
+    def _invalidate_l1_by_pattern(self, pattern: str, version: int | None) -> None:
+        """Remove L1 entries matching ``pattern`` without clearing the whole cache."""
+        l1_delete_pattern = getattr(self._l1, "delete_pattern", None)
+        if callable(l1_delete_pattern):
+            try:
+                l1_delete_pattern(pattern, version=version)
+                return
+            except NotSupportedError:
+                pass
+        if self._l1_targeted_delete(pattern, version=version):
+            return
+        # Last resort: L1 supports neither delete_pattern nor iter_keys.
+        self._l1.clear()
+
+    def _l1_targeted_delete(self, pattern: str, version: int | None) -> bool:
+        """Iterate L1 keys matching ``pattern`` and delete each.
+
+        Returns ``True`` if L1 supported ``iter_keys`` (regardless of how
+        many keys matched), ``False`` if the caller should fall back to
+        ``clear()``.
+        """
+        iter_keys = getattr(self._l1, "iter_keys", None)
+        if not callable(iter_keys):
+            return False
+        try:
+            keys = list(iter_keys(pattern, version=version))
+        except NotSupportedError:
+            return False
+        for k in keys:
+            self._l1.delete(k, version=version)
+        return True
 
 
 __all__ = [

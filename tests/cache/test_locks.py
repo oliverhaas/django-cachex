@@ -9,6 +9,28 @@ if TYPE_CHECKING:
     from django_cachex.cache import RespCache
 
 
+@pytest.fixture(autouse=True)
+def _skip_cluster_lock_tests(request: pytest.FixtureRequest) -> None:
+    """Skip cluster from existing lock tests.
+
+    Cluster mode rejects ``lock``/``alock`` outright (release runs
+    ``EVALSHA`` which cluster routes to replicas). Each test class in this
+    module opts out by setting ``cluster_supported = False`` (the default).
+    The cluster-rejection contract itself is verified in
+    :class:`TestClusterLockRejection`, which sets ``cluster_supported = True``.
+    """
+    cls = request.cls
+    if cls is not None and getattr(cls, "cluster_supported", False):
+        return
+    try:
+        client_class = request.getfixturevalue("client_class")
+        sentinel_mode = request.getfixturevalue("sentinel_mode")
+    except pytest.FixtureLookupError:
+        return
+    if client_class == "cluster" and not sentinel_mode:
+        pytest.skip("RespClusterCache rejects lock/alock; see TestClusterLockRejection")
+
+
 class TestBasicLockOperations:
     """Tests for basic lock acquisition and release."""
 
@@ -103,3 +125,36 @@ class TestCrossThreadLockRelease:
         release_thread.join()
 
         assert cache.has_key("shared_resource") is False
+
+
+class TestClusterLockRejection:
+    """``RespClusterCache.lock``/``alock`` rejects cluster mode up front (I9)."""
+
+    cluster_supported = True
+
+    def test_cluster_lock_raises_not_supported(
+        self,
+        cache: RespCache,
+        client_class: str,
+        sentinel_mode: str | bool,
+    ):
+        from django_cachex.exceptions import NotSupportedError
+
+        if client_class != "cluster" or sentinel_mode:
+            pytest.skip("rejection contract only applies to non-sentinel cluster mode")
+        with pytest.raises(NotSupportedError):
+            cache.lock("rejected_resource")
+
+    @pytest.mark.asyncio
+    async def test_cluster_alock_raises_not_supported(
+        self,
+        cache: RespCache,
+        client_class: str,
+        sentinel_mode: str | bool,
+    ):
+        from django_cachex.exceptions import NotSupportedError
+
+        if client_class != "cluster" or sentinel_mode:
+            pytest.skip("rejection contract only applies to non-sentinel cluster mode")
+        with pytest.raises(NotSupportedError):
+            await cache.alock("rejected_resource_async")

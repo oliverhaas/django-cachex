@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from django.core.cache import caches
+from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.exceptions import ImproperlyConfigured
 from django.test import override_settings
 
@@ -340,6 +341,23 @@ class TestAdminDelegation:
         assert l1.get("pat_a") is None
         assert l1.get("pat_b") is None
 
+    def test_delete_pattern_preserves_l1_non_matching(self, tiered_cache: BaseCache):
+        """delete_pattern must invalidate only matching keys in L1 (I7).
+
+        Without targeted deletion the implementation called ``L1.clear()``,
+        evicting every cached entry on any pattern. Verify the matching
+        key is gone but the non-matching key still hits L1.
+        """
+        tiered_cache.set("user:42:profile", "match")
+        tiered_cache.set("session:abc", "keep")
+        l1 = caches["l1"]
+        assert l1.get("user:42:profile") == "match"
+        assert l1.get("session:abc") == "keep"
+
+        tiered_cache.delete_pattern("user:*")
+        assert l1.get("user:42:profile") is None
+        assert l1.get("session:abc") == "keep"
+
     def test_expire_evicts_l1(self, tiered_cache: BaseCache):
         tiered_cache.set("exp_key", "val")
         l1 = caches["l1"]
@@ -381,6 +399,50 @@ class TestTieredCacheConfig:
 
     def test_l1_timeout_from_option(self, tiered_cache: BaseCache):
         assert tiered_cache._l1_cap == L1_TIMEOUT
+
+    def test_l1_timeout_clamped_by_l2_default_on_default_timeout(
+        self,
+        redis_container: RedisContainerInfo,
+    ):
+        """L1 must not outlive L2 when caller passes DEFAULT_TIMEOUT (B3).
+
+        Configure L1 with a long default_timeout (3600s) and L2 with a
+        short one (5s). A ``set()`` with no explicit timeout resolves to
+        each tier's own default. Without the fix L1 stores for 3600s and
+        would serve stale after L2 expires.
+        """
+        options = _get_client_library_options(redis_container.client_library)
+        location = f"redis://{redis_container.host}:{redis_container.port}?db=1"
+        py_adapter = "redis-py" if redis_container.client_library == "redis" else "valkey-py"
+        backend_class = BACKENDS[("default", py_adapter)]
+
+        config = {
+            "l1": {
+                "BACKEND": "django_cachex.cache.LocMemCache",
+                "TIMEOUT": 3600,
+            },
+            "l2": {
+                "BACKEND": backend_class,
+                "LOCATION": location,
+                "TIMEOUT": 5,
+                "OPTIONS": options,
+            },
+            "default": {
+                "BACKEND": "django_cachex.cache.TieredCache",
+                "OPTIONS": {
+                    # No l1_timeout: falls back to L1.default_timeout = 3600.
+                    "tiers": ["l1", "l2"],
+                },
+            },
+        }
+        with override_settings(CACHES=config):
+            cache = caches["default"]
+            assert cache._l1_cap == 3600
+            assert cache._l2.default_timeout == 5
+            # Caller passes DEFAULT_TIMEOUT implicitly (no timeout arg).
+            l1_timeout = cache._l1_timeout_for_set(DEFAULT_TIMEOUT)
+            assert l1_timeout is not None
+            assert l1_timeout <= 5, f"L1 timeout {l1_timeout} would outlive L2 default {cache._l2.default_timeout}"
 
     def test_l1_timeout_fallback_to_l1_default(self, redis_container: RedisContainerInfo):
         options = _get_client_library_options(redis_container.client_library)

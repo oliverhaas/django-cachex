@@ -44,7 +44,7 @@ from django.core.cache.backends.db import DatabaseCache as DjangoDatabaseCache
 from django.db import connections, models, router, transaction
 
 from django_cachex.cache.base import BaseCachex, CachexSupportLevel
-from django_cachex.exceptions import NotSupportedError
+from django_cachex.exceptions import NotSupportedError, WrongTypeError
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
@@ -489,7 +489,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             return None if allow_missing else []
         if not isinstance(current, list):
             msg = "Key does not hold a list value."
-            raise TypeError(msg)
+            raise WrongTypeError(msg)
         return current
 
     def lpush(self, key: str, *values: Any, version: int | None = None) -> int:
@@ -672,7 +672,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             return None
         if not isinstance(current, set):
             msg = "Key does not hold a set value."
-            raise TypeError(msg)
+            raise WrongTypeError(msg)
         return current
 
     def sadd(self, key: str, *members: Any, version: int | None = None) -> int:
@@ -776,7 +776,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             return None
         if not isinstance(current, dict) or not all(isinstance(k, str) for k in current):
             msg = "Key does not hold a hash value."
-            raise TypeError(msg)
+            raise WrongTypeError(msg)
         return current
 
     def hset(  # noqa: C901
@@ -893,7 +893,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             return None
         if not isinstance(current, dict):
             msg = "Key does not hold a sorted set value."
-            raise TypeError(msg)
+            raise WrongTypeError(msg)
         return current
 
     @staticmethod

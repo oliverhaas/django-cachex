@@ -487,10 +487,10 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             if len(parts) >= 3:
                 if parts[1] != wanted_version:
                     continue
-                user_key = parts[2]
-                if self.key_prefix and user_key.startswith(self.key_prefix):
-                    user_key = user_key[len(self.key_prefix) :]
-                all_keys.append(user_key)
+                # ``split(":", 2)`` already isolates the user key in
+                # ``parts[2]``. Stripping ``key_prefix`` again would mangle
+                # legitimate user keys that happen to start with it.
+                all_keys.append(parts[2])
             else:
                 all_keys.append(internal_key)
         if pattern and pattern != "*":

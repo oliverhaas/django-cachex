@@ -12,7 +12,7 @@ from django.core.cache import caches
 from django.core.management import call_command
 from django.test import override_settings
 
-from django_cachex.exceptions import NotSupportedError
+from django_cachex.exceptions import NotSupportedError, WrongTypeError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -73,3 +73,39 @@ class TestSetFlags:
     # "schema is locked" because the in-memory DB has a single connection.
     # The async path adds no logic beyond the bridge; the sync tests above
     # cover the cachex contract.
+
+
+class TestWrongTypeNormalization:
+    """``_coerce_*`` raises :class:`WrongTypeError`, not plain ``TypeError`` (B4).
+
+    Cross-backend code that catches ``WrongTypeError`` must work against
+    DatabaseCache too; raising plain ``TypeError`` previously broke that
+    contract.
+    """
+
+    def test_lpush_on_string_raises_wrongtype(self, db_cache: DatabaseCache):
+        db_cache.set("k", "abc")
+        with pytest.raises(WrongTypeError):
+            db_cache.lpush("k", "x")
+
+    def test_sadd_on_string_raises_wrongtype(self, db_cache: DatabaseCache):
+        db_cache.set("k", "abc")
+        with pytest.raises(WrongTypeError):
+            db_cache.sadd("k", "m")
+
+    def test_hset_on_string_raises_wrongtype(self, db_cache: DatabaseCache):
+        db_cache.set("k", "abc")
+        with pytest.raises(WrongTypeError):
+            db_cache.hset("k", "f", "v")
+
+    def test_zadd_on_string_raises_wrongtype(self, db_cache: DatabaseCache):
+        db_cache.set("k", "abc")
+        with pytest.raises(WrongTypeError):
+            db_cache.zadd("k", {"m": 1.0})
+
+    def test_wrongtype_is_typeerror_subclass(self, db_cache: DatabaseCache):
+        db_cache.set("k", "abc")
+        # Existing call sites that catch the broader TypeError must still
+        # work, since WrongTypeError is a TypeError subclass.
+        with pytest.raises(TypeError):
+            db_cache.lpush("k", "x")
