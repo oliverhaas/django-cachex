@@ -214,6 +214,12 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         # pickle round-trip; TTL is still tracked via ``self._expire_info``
         # (shared with ``self._cache``).
         self._collections: dict[str, Any] = {}
+        # Per-cache semaphore state. Tied to the cache instance's lifetime
+        # so two separate LocMemCache instances do not share semaphore
+        # budgets (and no id()-reuse aliasing across GC'd instances).
+        from django_cachex.semaphore import _SemaphoreRegistry
+
+        self._semaphore_registry = _SemaphoreRegistry()
 
     # =========================================================================
     # Native helpers (caller must hold ``self._lock``)
@@ -1401,6 +1407,10 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     ) -> Any:
         """Return an in-process weighted semaphore scoped to this cache.
 
+        The returned :class:`~django_cachex.semaphore.Semaphore` exposes
+        paired sync/async methods (``acquire``/``aacquire``, ``release``/
+        ``arelease``), so the same instance works from sync or async code.
+
         The ``lease`` parameter is accepted for API parity with the RESP
         backend but is ignored: in-process release on ``__exit__`` is
         reliable.
@@ -1414,7 +1424,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             weight=weight,
             lease=lease,
             timeout=timeout,
-            _owner_id=id(self),
+            _registry=self._semaphore_registry,
         )
 
     async def asemaphore(
@@ -1427,22 +1437,19 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         lease: float | None = None,
         timeout: float | None = None,
     ) -> Any:
-        """Return an in-process async weighted semaphore scoped to this cache.
+        """Async factory for :meth:`semaphore`.
 
-        ``async def`` for API parity with RESP backends whose async-client
-        construction is itself async; the local backend doesn't need to
-        await anything, but the signature matches.
+        ``async def`` for parity with RESP ``asemaphore``; constructs
+        synchronously since the local backend has no async I/O. Use as
+        ``async with await cache.asemaphore(...) as sem:`` in async views.
         """
-        from django_cachex.semaphore import AsyncSemaphore
-
-        full_key = self.make_and_validate_key(key, version=version)
-        return AsyncSemaphore(
-            full_key,
-            capacity=capacity,
+        return self.semaphore(
+            key,
+            capacity,
             weight=weight,
+            version=version,
             lease=lease,
             timeout=timeout,
-            _owner_id=id(self),
         )
 
     # =========================================================================

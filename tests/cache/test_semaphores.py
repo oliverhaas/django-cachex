@@ -3,35 +3,50 @@
 
 def test_semaphore_module_exports():
     from django_cachex.semaphore import (
-        AsyncSemaphore,
+        RespSemaphore,
         Semaphore,
         SemaphoreError,
         SemaphoreTimeoutError,
     )
 
     assert issubclass(SemaphoreTimeoutError, SemaphoreError)
-    # AsyncSemaphore is a sibling of Semaphore, not a subclass, mirroring
-    # Lock and AsyncLock.
-    assert Semaphore is not AsyncSemaphore
+    # Semaphore (local) and RespSemaphore (RESP) are distinct classes; both
+    # expose paired sync/async methods.
+    assert Semaphore is not RespSemaphore
 
 
 class TestLocalCountingSemaphore:
     def test_acquire_within_capacity(self):
         from django_cachex.semaphore import Semaphore
 
-        sem = Semaphore("counting", capacity=2)
-        assert sem.acquire(blocking=False) is True
-        assert sem.acquire(blocking=False) is True
+        sem_a = Semaphore("counting", capacity=2)
+        sem_b = Semaphore("counting", capacity=2)
+        sem_c = Semaphore("counting", capacity=2)
+        assert sem_a.acquire(blocking=False) is True
+        assert sem_b.acquire(blocking=False) is True
         # capacity exhausted
-        assert sem.acquire(blocking=False) is False
+        assert sem_c.acquire(blocking=False) is False
 
     def test_release_returns_capacity(self):
         from django_cachex.semaphore import Semaphore
 
-        sem = Semaphore("counting2", capacity=1)
+        sem_a = Semaphore("counting2", capacity=1)
+        sem_b = Semaphore("counting2", capacity=1)
+        assert sem_a.acquire(blocking=False) is True
+        sem_a.release()
+        assert sem_b.acquire(blocking=False) is True
+
+    def test_double_acquire_raises(self):
+        """One instance holds at most one claim; second acquire raises."""
+        import pytest
+
+        from django_cachex.semaphore import Semaphore, SemaphoreError
+
+        sem = Semaphore("nonreentrant", capacity=2)
         assert sem.acquire(blocking=False) is True
+        with pytest.raises(SemaphoreError, match="already held"):
+            sem.acquire(blocking=False)
         sem.release()
-        assert sem.acquire(blocking=False) is True
 
     def test_lease_accepted_and_ignored(self):
         """Local backend accepts lease for API parity; it has no effect."""
@@ -40,10 +55,10 @@ class TestLocalCountingSemaphore:
         from django_cachex.semaphore import Semaphore
 
         sem = Semaphore("lease_noop", capacity=1, lease=0.001)
+        other = Semaphore("lease_noop", capacity=1)
         assert sem.acquire(blocking=False) is True
         # Wait past the would-be lease expiry; budget must still be held.
         time.sleep(0.05)
-        other = Semaphore("lease_noop", capacity=1)
         assert other.acquire(blocking=False) is False
         sem.release()
         assert other.acquire(blocking=False) is True
@@ -161,61 +176,65 @@ class TestLocalFifoFairness:
 
 
 class TestLocalAsyncSemaphore:
-    def test_async_acquire_within_capacity(self):
+    """The same ``Semaphore`` class now exposes paired sync/async methods."""
+
+    def test_aacquire_within_capacity(self):
         import asyncio
 
-        from django_cachex.semaphore import AsyncSemaphore
+        from django_cachex.semaphore import Semaphore
 
         async def run():
-            sem = AsyncSemaphore("async", capacity=2)
-            assert await sem.acquire(blocking=False) is True
-            assert await sem.acquire(blocking=False) is True
-            assert await sem.acquire(blocking=False) is False
-            await sem.release()
-            assert await sem.acquire(blocking=False) is True
+            sem_a = Semaphore("async", capacity=2)
+            sem_b = Semaphore("async", capacity=2)
+            sem_c = Semaphore("async", capacity=2)
+            assert await sem_a.aacquire(blocking=False) is True
+            assert await sem_b.aacquire(blocking=False) is True
+            assert await sem_c.aacquire(blocking=False) is False
+            await sem_a.arelease()
+            assert await sem_c.aacquire(blocking=False) is True
 
         asyncio.run(run())
 
-    def test_async_blocking_waits_for_release(self):
+    def test_aacquire_blocking_waits_for_release(self):
         import asyncio
 
-        from django_cachex.semaphore import AsyncSemaphore
+        from django_cachex.semaphore import Semaphore
 
         async def run():
-            holder = AsyncSemaphore("async_block", capacity=1)
-            await holder.acquire(blocking=False)
+            holder = Semaphore("async_block", capacity=1)
+            await holder.aacquire(blocking=False)
 
-            waiter = AsyncSemaphore("async_block", capacity=1)
+            waiter = Semaphore("async_block", capacity=1)
 
             async def release_soon():
                 await asyncio.sleep(0.05)
-                await holder.release()
+                await holder.arelease()
 
             async def wait():
-                return await waiter.acquire(blocking=True, timeout=2)
+                return await waiter.aacquire(blocking=True, timeout=2)
 
             results = await asyncio.gather(release_soon(), wait())
             assert results[1] is True
-            await waiter.release()
+            await waiter.arelease()
 
         asyncio.run(run())
 
-    def test_async_blocking_timeout_raises(self):
+    def test_aacquire_blocking_timeout_raises(self):
         import asyncio
 
         import pytest
 
-        from django_cachex.semaphore import AsyncSemaphore, SemaphoreTimeoutError
+        from django_cachex.semaphore import Semaphore, SemaphoreTimeoutError
 
         async def run():
-            holder = AsyncSemaphore("async_to", capacity=1)
-            await holder.acquire(blocking=False)
+            holder = Semaphore("async_to", capacity=1)
+            await holder.aacquire(blocking=False)
 
-            waiter = AsyncSemaphore("async_to", capacity=1)
+            waiter = Semaphore("async_to", capacity=1)
             with pytest.raises(SemaphoreTimeoutError):
-                await waiter.acquire(blocking=True, timeout=0.1)
+                await waiter.aacquire(blocking=True, timeout=0.1)
 
-            await holder.release()
+            await holder.arelease()
 
         asyncio.run(run())
 
@@ -226,7 +245,7 @@ class TestLocalCrossContext:
         import threading
         import time
 
-        from django_cachex.semaphore import AsyncSemaphore, Semaphore
+        from django_cachex.semaphore import Semaphore
 
         # Capacity 1, sync holder on the main thread.
         holder = Semaphore("xthread", capacity=1)
@@ -236,10 +255,10 @@ class TestLocalCrossContext:
 
         def async_waiter_thread() -> None:
             async def run() -> None:
-                waiter = AsyncSemaphore("xthread", capacity=1)
-                ok = await waiter.acquire(blocking=True, timeout=2)
+                waiter = Semaphore("xthread", capacity=1)
+                ok = await waiter.aacquire(blocking=True, timeout=2)
                 wake_result["ok"] = ok
-                await waiter.release()
+                await waiter.arelease()
 
             asyncio.run(run())
 
@@ -258,8 +277,9 @@ class TestLocalCapacityChange:
 
         from django_cachex.semaphore import Semaphore
 
-        # Use a unique name so this test doesn't interfere with the shared
-        # process-wide registry between test runs / other tests.
+        # Distinct names per test avoid cross-test interference in the
+        # default process-wide registry. Cache-attached registries already
+        # isolate by instance.
         Semaphore("capchange_a", capacity=10)
 
         with warnings.catch_warnings(record=True) as w:
@@ -292,26 +312,26 @@ class TestLocalAsyncCancellation:
         import asyncio
         import contextlib
 
-        from django_cachex.semaphore import AsyncSemaphore
+        from django_cachex.semaphore import Semaphore
 
         async def run() -> None:
-            holder = AsyncSemaphore("cancel_test", capacity=1)
-            await holder.acquire(blocking=False)
+            holder = Semaphore("cancel_test", capacity=1)
+            await holder.aacquire(blocking=False)
 
             # Park an async waiter, then cancel it.
-            waiter = AsyncSemaphore("cancel_test", capacity=1)
-            task = asyncio.create_task(waiter.acquire(blocking=True, timeout=10))
+            waiter = Semaphore("cancel_test", capacity=1)
+            task = asyncio.create_task(waiter.aacquire(blocking=True, timeout=10))
             await asyncio.sleep(0.05)  # let it enqueue
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
             # The phantom must be gone; a fresh acquire after release should succeed quickly.
-            fresh = AsyncSemaphore("cancel_test", capacity=1)
-            await holder.release()
-            ok = await fresh.acquire(blocking=True, timeout=1)
+            fresh = Semaphore("cancel_test", capacity=1)
+            await holder.arelease()
+            ok = await fresh.aacquire(blocking=True, timeout=1)
             assert ok is True
-            await fresh.release()
+            await fresh.arelease()
 
         asyncio.run(run())
 
@@ -349,13 +369,13 @@ class TestLocMemSemaphoreIntegration:
         import asyncio
 
         from django_cachex.cache import LocMemCache
-        from django_cachex.semaphore import AsyncSemaphore
+        from django_cachex.semaphore import Semaphore
 
         cache = LocMemCache("test-aloc-factory", {})
 
         async def run() -> None:
             sem = await cache.asemaphore("img", capacity=2)
-            assert isinstance(sem, AsyncSemaphore)
+            assert isinstance(sem, Semaphore)
             async with sem:
                 assert sem._held is True
             assert sem._held is False
@@ -405,6 +425,20 @@ class TestRespSemaphoreNonBlocking:
                 sem_a.release()
             with contextlib.suppress(SemaphoreError):
                 sem_c.release()
+
+    def test_resp_double_acquire_raises(self, cache):
+        """One RespSemaphore instance is non-reentrant."""
+        import pytest
+
+        from django_cachex.semaphore import SemaphoreError
+
+        sem = cache.semaphore("resp_nonreentrant", capacity=2, lease=10)
+        assert sem.acquire(blocking=False) is True
+        try:
+            with pytest.raises(SemaphoreError, match="already held"):
+                sem.acquire(blocking=False)
+        finally:
+            sem.release()
 
 
 class TestRespSemaphoreBlocking:
@@ -469,6 +503,7 @@ class TestRespLeaseReclaim:
 
     def test_expired_lease_reclaimed_under_weight(self, cache):
         """Weighted budget is correctly restored on reap."""
+        import contextlib
         import time
 
         # Capacity 10, weight-6 holder crashes; capacity should fully free up.
@@ -484,8 +519,6 @@ class TestRespLeaseReclaim:
             assert a.acquire(blocking=False) is True
             assert b.acquire(blocking=False) is True
         finally:
-            import contextlib
-
             with contextlib.suppress(Exception):
                 a.release()
             with contextlib.suppress(Exception):
@@ -525,7 +558,10 @@ class TestRespExtend:
 
 
 class TestRespAsyncSemaphore:
-    def test_resp_async_acquire(self, cache):
+    """``cache.asemaphore`` returns the same ``RespSemaphore`` instance; use
+    its ``aacquire``/``arelease``/``aextend`` methods from async code."""
+
+    def test_resp_aacquire(self, cache):
         import asyncio
 
         async def run() -> None:
@@ -535,7 +571,7 @@ class TestRespAsyncSemaphore:
 
         asyncio.run(run())
 
-    def test_resp_async_non_blocking(self, cache):
+    def test_resp_aacquire_non_blocking(self, cache):
         import asyncio
         import contextlib
 
@@ -543,17 +579,17 @@ class TestRespAsyncSemaphore:
             a = await cache.asemaphore("aresp_b", capacity=1, lease=10)
             b = await cache.asemaphore("aresp_b", capacity=1, lease=10)
             try:
-                assert await a.acquire(blocking=False) is True
-                assert await b.acquire(blocking=False) is False
+                assert await a.aacquire(blocking=False) is True
+                assert await b.aacquire(blocking=False) is False
             finally:
                 from django_cachex.semaphore import SemaphoreError
 
                 with contextlib.suppress(SemaphoreError):
-                    await a.release()
+                    await a.arelease()
 
         asyncio.run(run())
 
-    def test_resp_async_blocking_with_timeout(self, cache):
+    def test_resp_aacquire_blocking_with_timeout(self, cache):
         import asyncio
 
         import pytest
@@ -562,7 +598,7 @@ class TestRespAsyncSemaphore:
 
         async def run() -> None:
             holder = await cache.asemaphore("aresp_to", capacity=1, lease=10)
-            await holder.acquire(blocking=False)
+            await holder.aacquire(blocking=False)
             try:
                 waiter = await cache.asemaphore(
                     "aresp_to",
@@ -571,29 +607,29 @@ class TestRespAsyncSemaphore:
                     timeout=0.3,
                 )
                 with pytest.raises(SemaphoreTimeoutError):
-                    await waiter.acquire(blocking=True)
+                    await waiter.aacquire(blocking=True)
             finally:
-                await holder.release()
+                await holder.arelease()
 
         asyncio.run(run())
 
-    def test_resp_async_extend(self, cache):
+    def test_resp_aextend(self, cache):
         import asyncio
 
         async def run() -> None:
             holder = await cache.asemaphore("aresp_ext", capacity=1, lease=2)
-            await holder.acquire(blocking=False)
+            await holder.aacquire(blocking=False)
             try:
                 full_name = cache.make_and_validate_key("aresp_ext")
                 claim_key = "{" + full_name + "}:state:claim:" + holder._token
                 before = cache.adapter.pttl(claim_key)
-                assert await holder.extend(10) is True
+                assert await holder.aextend(10) is True
                 after = cache.adapter.pttl(claim_key)
                 assert before is not None and after is not None
                 assert after > before
                 assert after > 5_000
             finally:
-                await holder.release()
+                await holder.arelease()
 
         asyncio.run(run())
 
@@ -601,12 +637,10 @@ class TestRespAsyncSemaphore:
 def test_top_level_semaphore_exports():
     """Public names are reachable from the package root."""
     from django_cachex import (
-        AsyncSemaphore,
         Semaphore,
         SemaphoreError,
         SemaphoreTimeoutError,
     )
 
     assert Semaphore is not None
-    assert AsyncSemaphore is not None
     assert issubclass(SemaphoreTimeoutError, SemaphoreError)

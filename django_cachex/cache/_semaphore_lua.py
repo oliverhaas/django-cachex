@@ -37,12 +37,13 @@ local used = tonumber(redis.call('HGET', state_key, 'used') or '0')
 local head = redis.call('ZRANGE', queue_key, 0, 0)
 local at_head = (#head == 0) or (head[1] == token)
 
--- Reap expired claims only when needed. The expensive O(N) walk over the
--- claims hash is only required if the apparent 'used' would block admission.
--- Some of that 'used' may belong to crashed holders whose TTL key has
--- expired; reaping recovers that capacity. If we already fit without reaping,
--- skip it entirely. This makes the common case (semaphore not at capacity)
--- O(1) instead of O(N) where N is the number of active claims.
+-- Reap expired claims only when admission is otherwise blocked. The O(N)
+-- walk over the claims hash recovers capacity from crashed holders whose
+-- TTL key has expired. If the caller is at the head AND fits using the
+-- visible 'used' counter, skip the walk entirely (the fast path). When
+-- the caller is NOT at the head, or doesn't fit, the walk still runs;
+-- the head waiter that polls next benefits from the freshly-reaped used
+-- value. Worst case is unchanged O(N), best case is O(1).
 if not (at_head and used + weight <= capacity) then
   local claims = redis.call('HGETALL', claims_key)
   local reaped = 0

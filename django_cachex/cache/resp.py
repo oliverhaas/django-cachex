@@ -908,12 +908,16 @@ class RespCache(BaseCachex):
 
         Cluster mode is supported: the three Redis keys per semaphore name
         all carry a ``{name}`` hash tag so they colocate on one slot, which
-        is what cluster requires for atomic multi-key Lua.
+        is what cluster requires for atomic multi-key Lua. The returned
+        :class:`~django_cachex.semaphore.RespSemaphore` exposes paired
+        sync/async methods (``acquire``/``aacquire``, ``release``/``arelease``,
+        ``extend``/``aextend``), so the same instance works from sync or async
+        code.
         """
-        from django_cachex.semaphore import RedisSemaphore
+        from django_cachex.semaphore import RespSemaphore
 
         full_key = self.make_and_validate_key(key, version=version)
-        return RedisSemaphore(
+        return RespSemaphore(
             self.adapter,
             full_key,
             capacity=capacity,
@@ -932,21 +936,18 @@ class RespCache(BaseCachex):
         lease: float | None = None,
         timeout: float | None = None,
     ) -> Any:
-        """Return an async weighted semaphore backed by Lua scripts on the RESP server.
+        """Async factory for :meth:`semaphore`.
 
-        ``async def`` for parity with adapters whose async-client construction is
-        itself async. Use as ``async with await cache.asemaphore(...) as sem:``.
-
-        Cluster mode is supported (see ``semaphore``).
+        ``async def`` for parity with :meth:`alock` (whose async-client
+        construction may require ``await`` on some adapters). The semaphore
+        itself constructs synchronously; this method exists so callers can use
+        ``async with await cache.asemaphore(...) as sem:`` in async views.
         """
-        from django_cachex.semaphore import RedisAsyncSemaphore
-
-        full_key = self.make_and_validate_key(key, version=version)
-        return RedisAsyncSemaphore(
-            self.adapter,
-            full_key,
-            capacity=capacity,
+        return self.semaphore(
+            key,
+            capacity,
             weight=weight,
+            version=version,
             lease=lease,
             timeout=timeout,
         )

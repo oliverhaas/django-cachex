@@ -27,7 +27,6 @@ from django_cachex.script import (
     keys_only_pre,
 )
 from django_cachex.semaphore import (
-    AsyncSemaphore,
     Semaphore,
     SemaphoreError,
     SemaphoreTimeoutError,
@@ -37,7 +36,6 @@ from django_cachex.stampede import StampedeConfig
 __all__ = [
     "AsyncLock",
     "AsyncPipeline",
-    "AsyncSemaphore",
     "CompressorError",
     "Lock",
     "LockError",

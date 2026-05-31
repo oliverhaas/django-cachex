@@ -1,8 +1,11 @@
 """Distributed lock backed by ``RedisRsAdapter``'s ``lock_*`` primitives.
 
 A token-scoped Redis lock: SET NX with a TTL plus Lua-script release/extend
-that compare the stored token before mutating. Cluster mode is rejected
-because the underlying Lua scripts route to a single hash slot.
+that compare the stored token before mutating. Cluster mode is rejected at
+the ``RespClusterCache`` factory layer, because the Lua-backed adapter
+locks (redis-py, valkey-py, valkey-glide) route ``EVALSHA`` to replicas on
+cluster, breaking ``alock``. The rejection applies uniformly across
+adapters for API consistency.
 """
 
 import asyncio
