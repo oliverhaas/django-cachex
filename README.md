@@ -30,6 +30,7 @@ CACHES = {
 - Hash, list, set, sorted set, and stream operations on the cache object.
 - TTL and pattern helpers (`ttl()`, `expire()`, `keys()`, `delete_pattern()`).
 - Distributed locks: `cache.lock()`.
+- Weighted semaphores: `cache.semaphore()` for budget-based concurrency gating (counting and weighted, in-process and distributed).
 - Lua scripting with automatic key prefixing and value encoding/decoding.
 - Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with fallback chains for safe migrations.
 - Cache stampede prevention (TTL-based XFetch).

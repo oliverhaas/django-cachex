@@ -30,11 +30,11 @@ dependencies = ["Django>=6,<7", "sortedcontainers>=2.4"]
 [project.optional-dependencies]
 valkey-py = ["valkey>=6.1.0,<7"]
 libvalkey = ["valkey[libvalkey]>=6.1.0,<7"]
-redis-py = ["redis>=6,<8"]
-hiredis = ["redis[hiredis]<8,>=6"]
-# Rust I/O driver — separate binary package, prebuilt wheels for Linux x86_64 only
+redis-py = ["redis>=6,<9"]
+hiredis = ["redis[hiredis]<9,>=6"]
+# Rust I/O driver: separate binary package, prebuilt wheels for Linux x86_64 only.
 redis-rs = ["django-cachex-redis-rs==0.3.0"]
-# valkey-glide — Rust-cored Valkey client (sync + async are separate distributions)
+# valkey-glide: Rust-cored Valkey client. Sync and async are separate distributions.
 valkey-glide = ["valkey-glide-sync>=2.3,<3", "valkey-glide>=2.3,<3"]
 # Compressors
 lz4 = ["lz4>=4.4.0"]
@@ -54,7 +54,7 @@ dev = [
   "valkey[libvalkey]==6.1.1",
   "redis[hiredis]==7.4.0",
   "beautifulsoup4==4.14.3",
-  "django-stubs==6.0.4",
+  "django-stubs==6.0.5",
   "djlint==1.36.4",
   "lz4==4.4.5",
   "maturin==1.13.3",
@@ -69,20 +69,20 @@ dev = [
   "pytest-mock==3.15.1",
   "pytest-xdist==3.8.0",
   "pytest==9.0.3",
-  "ruff==0.15.14",
+  "ruff==0.15.15",
   "testcontainers==4.14.2",
-  "ty==0.0.39",
+  "ty==0.0.40",
   "types-docker==7.1.0.20260518",
-  # ASGI benchmark only — granian (real ASGI server) + httpx (load gen)
+  # ASGI benchmark only: granian (real ASGI server) plus httpx (load gen).
   "granian>=2.6,<3",
   "httpx>=0.28,<0.29",
   # Rust I/O driver: workspace member so `uv sync` builds it for tests/benchmarks
   "django-cachex-redis-rs",
-  # Full example — workspace member so its deps (notably celery) survive
+  # Full example: workspace member so its deps (notably celery) survive
   # ``uv sync``, which the pre-commit hook runs on every commit.
   "django-cachex-full-example",
 ]
-# valkey-glide ships prebuilt wheels for cp310–cp314 (GIL builds) but has no
+# valkey-glide ships prebuilt wheels for cp310 through cp314 (GIL builds) but has no
 # cp314t free-threaded wheel; the source build needs protoc. Keep it out of
 # `dev` so `uv sync` works on the cp314t interpreter; opt in via
 # `uv sync --extra valkey-glide` on a GIL build (cp312/cp313/cp314) when
@@ -215,7 +215,7 @@ ignore_missing_imports = true
 module = "testcontainers.*"
 ignore_missing_imports = true
 
-# valkey-glide ships only as an optional install — let mypy skip it when
+# valkey-glide ships only as an optional install; let mypy skip it when
 # absent, and ignore the spike file's many Liskov violations from the
 # Design B overrides until/unless we keep this backend long-term.
 [[tool.mypy.overrides]]
