@@ -235,7 +235,7 @@ jobs:
       - name: Create venv and install both wheels
         run: |
           uv venv --python 3.14t
-          uv pip install --no-deps wheelhouse/django_cachex-*-py3-none-any.whl django asgiref sqlparse
+          uv pip install --no-deps wheelhouse/django_cachex-*-py3-none-any.whl django asgiref sqlparse sortedcontainers
           uv pip install --no-deps wheelhouse/django_cachex_redis_rs-*-cp314-cp314t-*.whl
 
       - name: Verify FT wheel imports
@@ -260,7 +260,7 @@ jobs:
       - name: Create venv and install pure wheel ONLY
         run: |
           uv venv --python 3.14
-          uv pip install --no-deps wheelhouse/django_cachex-*-py3-none-any.whl django asgiref sqlparse
+          uv pip install --no-deps wheelhouse/django_cachex-*-py3-none-any.whl django asgiref sqlparse sortedcontainers
 
       - name: Verify imports succeed and Rust backends raise on use
         run: |
