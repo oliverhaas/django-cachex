@@ -31,27 +31,34 @@ if stored_cap ~= capacity then
   redis.call('HSET', state_key, 'capacity', capacity)
 end
 
--- Reap expired claims: any token in :claims whose TTL key is gone has crashed
--- or exceeded its lease.
 local used = tonumber(redis.call('HGET', state_key, 'used') or '0')
-local claims = redis.call('HGETALL', claims_key)
-local reaped = 0
-for i = 1, #claims, 2 do
-  local t = claims[i]
-  local w = tonumber(claims[i+1])
-  if redis.call('EXISTS', state_key .. ':claim:' .. t) == 0 then
-    redis.call('HDEL', claims_key, t)
-    reaped = reaped + w
-  end
-end
-if reaped > 0 then
-  used = math.max(0, used - reaped)
-  redis.call('HSET', state_key, 'used', used)
-end
 
 -- Head-of-queue check: caller admits only if queue is empty OR caller is at the head.
 local head = redis.call('ZRANGE', queue_key, 0, 0)
 local at_head = (#head == 0) or (head[1] == token)
+
+-- Reap expired claims only when needed. The expensive O(N) walk over the
+-- claims hash is only required if the apparent 'used' would block admission.
+-- Some of that 'used' may belong to crashed holders whose TTL key has
+-- expired; reaping recovers that capacity. If we already fit without reaping,
+-- skip it entirely. This makes the common case (semaphore not at capacity)
+-- O(1) instead of O(N) where N is the number of active claims.
+if not (at_head and used + weight <= capacity) then
+  local claims = redis.call('HGETALL', claims_key)
+  local reaped = 0
+  for i = 1, #claims, 2 do
+    local t = claims[i]
+    local w = tonumber(claims[i+1])
+    if redis.call('EXISTS', state_key .. ':claim:' .. t) == 0 then
+      redis.call('HDEL', claims_key, t)
+      reaped = reaped + w
+    end
+  end
+  if reaped > 0 then
+    used = math.max(0, used - reaped)
+    redis.call('HSET', state_key, 'used', used)
+  end
+end
 
 if at_head and used + weight <= capacity then
   used = used + weight
