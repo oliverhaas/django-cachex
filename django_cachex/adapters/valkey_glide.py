@@ -23,7 +23,7 @@ import weakref
 from typing import TYPE_CHECKING, Any, Self
 from urllib.parse import urlparse
 
-from django_cachex.adapters.protocols import RespAdapterProtocol, RespPipelineProtocol
+from django_cachex.adapters.protocols import RespAdapterProtocol, RespAsyncPipelineProtocol, RespPipelineProtocol
 from django_cachex.adapters.valkey_py import _options_key
 from django_cachex.stampede import (
     StampedeConfig,
@@ -616,12 +616,16 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         self._track(lambda r: _decode_zrange(r, _passthrough, withscores=withscores))
         return self
 
-    def zpopmin(self, key: Any, count: int = 1) -> Self:
+    def zpopmin(self, key: Any, count: int | None = None) -> Self:
+        if count is None:
+            count = 1
         self._batch.zpopmin(key, count)
         self._track(lambda r: _decode_zpop(r, _passthrough))
         return self
 
-    def zpopmax(self, key: Any, count: int = 1) -> Self:
+    def zpopmax(self, key: Any, count: int | None = None) -> Self:
+        if count is None:
+            count = 1
         self._batch.zpopmax(key, count)
         self._track(lambda r: _decode_zpop(r, _passthrough))
         return self
@@ -848,7 +852,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         return None
 
 
-class ValkeyGlideAsyncPipelineAdapter(ValkeyGlidePipelineAdapter):
+class ValkeyGlideAsyncPipelineAdapter(ValkeyGlidePipelineAdapter, RespAsyncPipelineProtocol):
     """Async parallel of ``ValkeyGlidePipelineAdapter``.
 
     Conforms to :class:`RespAsyncPipelineProtocol`. Holds a resolved
@@ -1492,10 +1496,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.extend([b"LIMIT", str(start).encode(), str(num).encode()])
         return _decode_zrange(self._client().custom_command(args), _passthrough, withscores=withscores)
 
-    def zpopmin(self, key: str, count: int = 1) -> list[tuple[Any, float]]:
+    def zpopmin(self, key: str, count: int | None = None) -> list[tuple[Any, float]]:
+        if count is None:
+            count = 1
         return _decode_zpop(self._client().zpopmin(key, count), _passthrough)
 
-    def zpopmax(self, key: str, count: int = 1) -> list[tuple[Any, float]]:
+    def zpopmax(self, key: str, count: int | None = None) -> list[tuple[Any, float]]:
+        if count is None:
+            count = 1
         return _decode_zpop(self._client().zpopmax(key, count), _passthrough)
 
     # =========================================================================
@@ -2455,10 +2463,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             withscores=withscores,
         )
 
-    async def azpopmin(self, key: str, count: int = 1) -> list[tuple[Any, float]]:
+    async def azpopmin(self, key: str, count: int | None = None) -> list[tuple[Any, float]]:
+        if count is None:
+            count = 1
         return _decode_zpop(await (await self.get_async_client()).zpopmin(key, count), _passthrough)
 
-    async def azpopmax(self, key: str, count: int = 1) -> list[tuple[Any, float]]:
+    async def azpopmax(self, key: str, count: int | None = None) -> list[tuple[Any, float]]:
+        if count is None:
+            count = 1
         return _decode_zpop(await (await self.get_async_client()).zpopmax(key, count), _passthrough)
 
     # =========================================================================

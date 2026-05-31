@@ -72,7 +72,10 @@ def stream_entry(entry: Any) -> tuple[str, dict[str, bytes]]:
         d = {}
     else:
         flat = list(fields)
-        d = {(flat[i].decode() if isinstance(flat[i], bytes) else flat[i]): flat[i + 1] for i in range(0, len(flat), 2)}
+        d = {
+            (flat[i].decode() if isinstance(flat[i], bytes) else flat[i]): flat[i + 1]
+            for i in range(0, len(flat) - 1, 2)
+        }
     return (eid, d)
 
 
@@ -105,7 +108,9 @@ def xinfo_dict(v: Any) -> dict[str, Any]:
     if v is None:
         return {}
     flat = list(v)
-    return {(flat[i].decode() if isinstance(flat[i], bytes) else flat[i]): flat[i + 1] for i in range(0, len(flat), 2)}
+    return {
+        (flat[i].decode() if isinstance(flat[i], bytes) else flat[i]): flat[i + 1] for i in range(0, len(flat) - 1, 2)
+    }
 
 
 def xinfo_dict_list(v: Any) -> list[dict[str, Any]]:
