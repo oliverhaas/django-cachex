@@ -304,8 +304,17 @@ def _add_cas_fingerprints(cache: Any, key: str, key_type: str | None, result: di
 
                     hash_sha1s = get_hash_field_sha1s(cache, key)
                 result["field_entries"] = [(field, value, hash_sha1s.get(field, "")) for field, value in fields.items()]
-    except Exception:  # noqa: BLE001, S110
-        pass
+    except Exception:  # noqa: BLE001
+        # Graceful degradation: CAS protection is best-effort. Mirror the
+        # warning emitted by ``_key_detail_view`` (key_detail.py) so the
+        # operator knows the next update will skip conflict detection,
+        # rather than silently swallowing the failure here.
+        logger.warning(
+            "CAS fingerprint collection failed for key %r (type=%s); edits will skip conflict checks",
+            key,
+            key_type,
+            exc_info=True,
+        )
 
 
 def get_size(cache: Any, key: str, key_type: str | None = None) -> int | None:

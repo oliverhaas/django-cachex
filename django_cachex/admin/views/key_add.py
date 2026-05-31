@@ -25,12 +25,16 @@ def _key_add_view(
     config: ViewConfig,
 ) -> HttpResponse:
     """View for adding a new cache key - collects key name and type, then redirects to key_detail."""
+    # Mirror ``_key_detail_view``: check the permission up front so users
+    # without ``add_key`` get a 403 on GET instead of filling in the form
+    # and being rejected on submit.
+    if not request.user.has_perm("django_cachex.add_key"):  # ty: ignore[unresolved-attribute]
+        raise PermissionDenied
+
     help_active = show_help(request, "key_add", config.help_messages)
     cache = get_cache(cache_name)
 
     if request.method == "POST":
-        if not request.user.has_perm("django_cachex.add_key"):  # ty: ignore[unresolved-attribute]
-            raise PermissionDenied
         key_name = request.POST.get("key", "").strip()
         key_type = request.POST.get("type", KeyType.STRING).strip()
 

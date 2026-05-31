@@ -23,6 +23,7 @@ from django.utils.translation import gettext_lazy as _
 
 from django_cachex.admin.helpers import get_cache, get_size
 from django_cachex.admin.models import Cache, Key
+from django_cachex.cache.resp import RespClusterCache
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
@@ -261,14 +262,14 @@ class CacheAdminMixin:
         level = obj.support_level
         if level == "cachex":
             style = "background:#dcfce7;color:#15803d;"
-            title = "Full support \u2014 django-cachex backend"
+            title = "Full support (django-cachex backend)"
         else:
             style = "background:#f3f4f6;color:#374151;"
             hint = obj.cachex_upgrade_hint
             if hint:
-                title = f"Limited \u2014 admin shows configuration only. Switch to {hint} for browsing."
+                title = f"Limited: admin shows configuration only. Switch to {hint} for browsing."
             else:
-                title = "Limited \u2014 admin shows configuration only. Non-cachex backend doesn't expose key listing."
+                title = "Limited: admin shows configuration only. Non-cachex backend doesn't expose key listing."
         return format_html(
             '<span style="{}padding:2px 8px;border-radius:4px;'
             'font-size:11px;font-weight:600;text-transform:uppercase" '
@@ -478,7 +479,7 @@ class KeyAdminMixin:
     # QuerySet / search
     # ------------------------------------------------------------------
 
-    def get_queryset(self, request: HttpRequest) -> KeyQuerySet:
+    def get_queryset(self, request: HttpRequest) -> KeyQuerySet:  # noqa: C901
         cache_name = request.GET.get("cache") or next(iter(settings.CACHES))
         search_query = request.GET.get("q", "").strip()
         type_filter = request.GET.get("type", "").strip().lower()
@@ -498,6 +499,19 @@ class KeyAdminMixin:
             pattern = "*"
 
         cache = get_cache(cache_name)
+
+        # Cluster mode rejects SCAN: per-node cursors aren't combinable into a
+        # single int we can hand back to the paginator. Show a clear message
+        # up-front instead of letting the adapter raise ``NotSupportedError``
+        # with a generic "key listing" string.
+        if isinstance(cache, RespClusterCache):
+            messages.info(
+                request,
+                f"Key browsing is not supported on cluster cache '{cache_name}'. "
+                "Use FLUSHDB or per-node SCAN against individual primaries instead.",
+            )
+            return KeyQuerySet([], cache_name)
+
         try:
             # SCAN's COUNT is a hint; Redis may return fewer matching keys
             # per call.  Loop up to 5 times, but stop early once we have at
@@ -583,7 +597,12 @@ class KeyAdminMixin:
 
         # Handle "Clear cache" POST action
         if request.method == "POST" and request.POST.get("action") == "clear_cache":
-            if not self.has_change_permission(request):  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            # ``clear_cache`` wipes every key for the current version, which is
+            # the same blast radius as the danger-zone actions on the cache
+            # detail view. Gate it on ``change_cache`` (the docs-advertised
+            # permission for cache mutation) rather than ``change_key`` so the
+            # two paths can't diverge.
+            if not request.user.has_perm("django_cachex.change_cache"):  # ty: ignore[unresolved-attribute]
                 from django.core.exceptions import PermissionDenied
 
                 raise PermissionDenied

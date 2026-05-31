@@ -2376,6 +2376,175 @@ class TestPermissionViewAccess:
         assert admin_client.get(_key_add_url("default")).status_code == 200
 
 
+class TestClearCachePermission:
+    """The ``clear_cache`` POST action wipes every key for the current
+    version of a cache. It must require ``change_cache`` (the same
+    permission as the danger-zone actions on the cache detail view), not
+    ``change_key``: the two paths have equivalent blast radius, so they
+    can't be gated on different permissions.
+    """
+
+    def test_change_key_only_cannot_clear_cache(self, db, test_cache):
+        """Regression: ``change_key`` alone must NOT permit ``clear_cache``."""
+        from django.contrib.auth.models import Permission, User
+
+        staff_user = User.objects.create_user(
+            username="staff_change_key_only",
+            password="password",  # noqa: S106
+            is_staff=True,
+        )
+        perm = Permission.objects.get(
+            codename="change_key",
+            content_type__app_label="django_cachex",
+        )
+        staff_user.user_permissions.add(perm)
+        staff_user = User.objects.get(pk=staff_user.pk)
+
+        client = Client()
+        client.force_login(staff_user)
+
+        test_cache.set("preserved_key", "value")
+
+        response = client.post(
+            _key_list_url("default"),
+            {"action": "clear_cache", "cache_name": "default"},
+        )
+
+        # Permission denied at view level -> 403, and the cache must be untouched.
+        assert response.status_code == 403
+        assert test_cache.get("preserved_key") == "value"
+
+    def test_change_cache_permits_clear_cache(self, db, test_cache):
+        """Sanity check: ``change_cache`` is the right gate."""
+        from django.contrib.auth.models import Permission, User
+
+        staff_user = User.objects.create_user(
+            username="staff_change_cache",
+            password="password",  # noqa: S106
+            is_staff=True,
+        )
+        for codename in ("view_key", "change_cache"):
+            perm = Permission.objects.get(
+                codename=codename,
+                content_type__app_label="django_cachex",
+            )
+            staff_user.user_permissions.add(perm)
+        staff_user = User.objects.get(pk=staff_user.pk)
+
+        client = Client()
+        client.force_login(staff_user)
+
+        test_cache.set("doomed_key", "value")
+
+        response = client.post(
+            _key_list_url("default"),
+            {"action": "clear_cache", "cache_name": "default"},
+        )
+
+        # Redirect back to the key list on success.
+        assert response.status_code == 302
+        assert test_cache.get("doomed_key") is None
+
+
+class TestKeyAddPermissionOnGet:
+    """``add_view`` must reject GET for users without ``add_key`` so they
+    don't see the form, fill it in, and only then hit PermissionDenied on
+    submit. Mirrors the change view's behaviour.
+    """
+
+    def test_staff_without_add_perm_denied_on_get(self, db, test_cache):
+        from django.contrib.auth.models import Permission, User
+
+        staff_user = User.objects.create_user(
+            username="staff_view_key_only",
+            password="password",  # noqa: S106
+            is_staff=True,
+        )
+        # view_key grants module access but NOT add_key.
+        perm = Permission.objects.get(
+            codename="view_key",
+            content_type__app_label="django_cachex",
+        )
+        staff_user.user_permissions.add(perm)
+        staff_user = User.objects.get(pk=staff_user.pk)
+
+        client = Client()
+        client.force_login(staff_user)
+
+        response = client.get(_key_add_url("default"))
+        assert response.status_code == 403
+
+
+class TestClusterAdminQuerysetGraceful:
+    """When the configured cache is a cluster, the admin key-listing path
+    must NOT try to SCAN: cluster SCAN cursors are per-node dicts that
+    aren't JSON-serializable as ints, and ``RespClusterCache``'s adapter
+    raises ``NotSupportedError`` for ``scan()`` regardless. Render an
+    empty queryset with a clear, cluster-specific info message instead.
+    """
+
+    def test_cluster_cache_renders_empty_with_info_message(self, rf, mocker, test_cache):
+        """Regression: cluster cache short-circuits SCAN with a clear message.
+
+        ``test_cache`` only ensures ``CACHES`` is configured with a
+        ``default`` entry so ``Cache.get_by_name`` resolves; the cache
+        instance returned to ``get_queryset`` is a cluster mock.
+        """
+        del test_cache  # only needed for the CACHES override side effect
+        from unittest.mock import MagicMock
+
+        from django.contrib.admin import site
+        from django.contrib.auth.models import User
+        from django.contrib.messages.storage.base import BaseStorage
+
+        from django_cachex.admin.models import Key
+        from django_cachex.cache.resp import RespClusterCache
+
+        # Fake cluster cache: isinstance-compatible without needing a real
+        # cluster, mirroring the cluster fixture's use of MagicMock in
+        # tests/cache/test_cluster_client.py.
+        fake_cluster = MagicMock(spec=RespClusterCache)
+
+        # Patch ``get_cache`` so ``get_queryset`` sees the cluster mock.
+        mocker.patch("django_cachex.admin.queryset.get_cache", return_value=fake_cluster)
+
+        # In-memory message storage that doesn't need session middleware.
+        class _InMemoryStorage(BaseStorage):
+            def __init__(self, request):
+                super().__init__(request)
+                self._queued: list = []
+
+            def _get(self, *args, **kwargs):
+                return self._queued, True
+
+            def _store(self, messages, response, *args, **kwargs):
+                self._queued.extend(messages)
+                return []
+
+            def add(self, level, message, extra_tags=""):
+                from django.contrib.messages.storage.base import Message
+
+                self._queued.append(Message(level, message, extra_tags=extra_tags))
+
+        key_admin = site._registry[Key]
+
+        request = rf.get(_key_list_url("default"))
+        request.user = User(is_superuser=True, is_staff=True)
+        request._messages = _InMemoryStorage(request)
+        request._cachex_cursor = 0
+        request._cachex_count = 100
+
+        qs = key_admin.get_queryset(request)
+
+        # Empty result, no exception, no attempt to call cache.scan.
+        assert len(qs) == 0
+        fake_cluster.scan.assert_not_called()
+
+        # A user-visible info message must have been emitted.
+        msgs = [str(m.message) for m in request._messages._queued]
+        assert any("cluster" in m.lower() for m in msgs), msgs
+
+
 class TestUndecodableValueResilience:
     """Admin must not crash on keys whose stored value can't be decoded.
 

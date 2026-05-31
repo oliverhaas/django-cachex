@@ -238,13 +238,13 @@
             <div class="danger-action">
                 <div>
                     <strong>{% trans 'Flush database' %}</strong>
-                    <p class="help">{% trans 'Execute FLUSHDB. Removes ALL keys in the Redis database, not just those belonging to this cache. Only safe if this cache has a dedicated database.' %}</p>
+                    <p class="help">{% trans "Execute FLUSHDB. Removes every key on the primary you're connected to (single-node only; flushing a cluster requires per-node FLUSHDB). Affects all keys on that primary, not just those belonging to this cache." %}</p>
                 </div>
                 <form method="post" style="flex-shrink: 0;">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="flush_db">
                     <button type="submit" class="button delete-btn"
-                        onclick="return confirm('FLUSH the entire Redis database for \'{{ cache_name|escapejs }}\'?\n\nThis removes ALL keys in the database, including those from other applications.\n\nThis cannot be undone.');">
+                        onclick="return confirm('FLUSH the Redis database for \'{{ cache_name|escapejs }}\'?\n\nThis removes every key on the primary you are connected to, including keys from other applications. On a cluster only the targeted primary is flushed; flushing a cluster requires per-node FLUSHDB.\n\nThis cannot be undone.');">
                         {% trans 'Flush database' %}
                     </button>
                 </form>
