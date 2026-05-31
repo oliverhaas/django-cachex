@@ -70,11 +70,29 @@ else:
                     "Windows amd64 (cp314, cp314t).",
                 ) from _RUST_IMPORT_ERROR
 
-        _RustRedisRsAdapter = _MissingRustExtension
-        _RustRedisRsAsyncPipelineAdapter = _MissingRustExtension
-        _RustRedisRsClusterAdapter = _MissingRustExtension
-        _RustRedisRsPipelineAdapter = _MissingRustExtension
-        _RustRedisRsSentinelAdapter = _MissingRustExtension
+        # The Python wrappers below (RedisRsClusterAdapter, RedisRsSentinelAdapter)
+        # inherit from BOTH the Rust base and the Python RedisRsAdapter. If every
+        # Rust name aliased the same _MissingRustExtension class, the resulting
+        # MRO would have _MissingRustExtension appearing both as a direct base
+        # and as a transitive base via RedisRsAdapter, which C3 linearization
+        # rejects. Mirror the real Rust class hierarchy (cluster/sentinel extend
+        # the base adapter) with distinct subclasses so module import still
+        # succeeds when the Rust extension is missing; instantiation still
+        # raises ImportError through the shared __init__.
+        class _RustRedisRsAdapter(_MissingRustExtension):  # type: ignore[no-redef]
+            pass
+
+        class _RustRedisRsAsyncPipelineAdapter(_MissingRustExtension):  # type: ignore[no-redef]
+            pass
+
+        class _RustRedisRsClusterAdapter(_RustRedisRsAdapter):  # type: ignore[no-redef]
+            pass
+
+        class _RustRedisRsPipelineAdapter(_MissingRustExtension):  # type: ignore[no-redef]
+            pass
+
+        class _RustRedisRsSentinelAdapter(_RustRedisRsAdapter):  # type: ignore[no-redef]
+            pass
 
 
 class RedisRsAdapter(_RustRedisRsAdapter, RespAdapterProtocol):
