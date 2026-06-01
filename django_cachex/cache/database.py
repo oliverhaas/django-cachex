@@ -63,6 +63,16 @@ _DELETE = object()  # transform output: drop the row
 _set = set
 
 
+class _ZSet(dict[Any, float]):
+    """Marker subclass tagging a stored sorted set.
+
+    Sorted sets and hashes are both persisted as plain dicts, so ``type()``
+    cannot tell them apart by structure. Tagging zsets (pickle preserves the
+    subclass) lets ``type()`` report ``ZSET`` rather than misreporting
+    ``HASH``, matching ``LocMemCache``'s tagged collections.
+    """
+
+
 def _now() -> datetime:
     """Current time, microseconds truncated to match Django's stored precision."""
     tz = UTC if settings.USE_TZ else None
@@ -370,6 +380,8 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             return KeyType.LIST
         if isinstance(value, set):
             return KeyType.SET
+        if isinstance(value, _ZSet):
+            return KeyType.ZSET
         if isinstance(value, dict) and all(isinstance(k, str) for k in value):
             return KeyType.HASH
         return KeyType.STRING
@@ -888,13 +900,16 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
     # =========================================================================
 
     @staticmethod
-    def _coerce_zset(current: Any) -> dict[Any, float] | None:
+    def _coerce_zset(current: Any) -> _ZSet | None:
         if current is _MISSING:
             return None
         if not isinstance(current, dict):
             msg = "Key does not hold a sorted set value."
             raise WrongTypeError(msg)
-        return current
+        # Normalize to the tagged subclass so the stored value (and ``type()``)
+        # can tell a sorted set apart from a hash. Plain-dict rows written
+        # before this tag existed are upgraded on the next write.
+        return current if isinstance(current, _ZSet) else _ZSet(current)
 
     @staticmethod
     def _sorted_members(zset: dict[Any, float]) -> list[tuple[Any, float]]:
@@ -913,7 +928,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         version: int | None = None,
     ) -> int:
         def transform(current: Any) -> tuple[Any, int]:
-            existing = self._coerce_zset(current) or {}
+            existing = self._coerce_zset(current) or _ZSet()
             changed = 0
             for member, score in mapping.items():
                 exists = member in existing
@@ -1041,7 +1056,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
     def zincrby(self, key: str, amount: float, member: Any, version: int | None = None) -> float:
         def transform(current: Any) -> tuple[Any, float]:
-            existing = self._coerce_zset(current) or {}
+            existing = self._coerce_zset(current) or _ZSet()
             existing[member] = existing.get(member, 0.0) + amount
             return existing, existing[member]
 

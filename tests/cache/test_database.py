@@ -13,6 +13,7 @@ from django.core.management import call_command
 from django.test import override_settings
 
 from django_cachex.exceptions import NotSupportedError, WrongTypeError
+from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -109,3 +110,21 @@ class TestWrongTypeNormalization:
         # work, since WrongTypeError is a TypeError subclass.
         with pytest.raises(TypeError):
             db_cache.lpush("k", "x")
+
+
+class TestTypeDetection:
+    """``type()`` tells a sorted set apart from a hash even though both are
+    stored as dicts (regression: zsets were misreported as ``HASH``)."""
+
+    def test_zset_reports_zset(self, db_cache: DatabaseCache):
+        db_cache.zadd("zk", {"a": 1.0, "b": 2.0})
+        assert db_cache.type("zk") == KeyType.ZSET
+
+    def test_zset_with_string_members_reports_zset(self, db_cache: DatabaseCache):
+        # String members structurally resemble a hash; the tag disambiguates.
+        db_cache.zadd("zs", {"x": 1.0})
+        assert db_cache.type("zs") == KeyType.ZSET
+
+    def test_hash_reports_hash(self, db_cache: DatabaseCache):
+        db_cache.hset("hk", "field", "value")
+        assert db_cache.type("hk") == KeyType.HASH
