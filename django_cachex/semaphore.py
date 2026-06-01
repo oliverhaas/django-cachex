@@ -16,8 +16,6 @@ Re-acquiring before releasing raises :class:`SemaphoreError`. Create a new
 instance per acquire/release lifecycle, the same way :class:`Lock` is used.
 """
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 import secrets
@@ -28,13 +26,15 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
 
+from django_cachex.exceptions import CachexError
+
 if TYPE_CHECKING:
     from types import TracebackType
 
     from django_cachex.adapters.protocols import RespAdapterProtocol
 
 
-class SemaphoreError(Exception):
+class SemaphoreError(CachexError):
     """Raised when a semaphore operation fails."""
 
 
@@ -53,6 +53,9 @@ class _LocalState:
     capacity: int
     used: int = 0
     lock: threading.Lock = field(default_factory=threading.Lock)
+    # ``_Waiter`` is defined below; the forward reference resolves without
+    # quoting because Python 3.14 defers annotation evaluation (PEP 649), so
+    # @dataclass records the field without resolving the name at class creation.
     waiters: OrderedDict[_Waiter, int] = field(default_factory=OrderedDict)
 
 
@@ -240,6 +243,12 @@ class Semaphore:
                         state.waiters.pop(waiter)
                     state.used += self.weight
                     self._held = True
+                    # A single release can free capacity for several queued
+                    # waiters, but each release only wakes the current head.
+                    # Now that we have taken our share, wake the next head if
+                    # it also fits, otherwise smaller waiters behind us would
+                    # block until an unrelated release.
+                    _notify_next(state)
                     return True
                 if not blocking:
                     return False
@@ -295,6 +304,10 @@ class Semaphore:
                         state.waiters.pop(waiter)
                     state.used += self.weight
                     self._held = True
+                    # Cascade the wake: a single release can free room for more
+                    # than one waiter, so hand off to the next head now that we
+                    # have taken our share (see the sync ``acquire`` for why).
+                    _notify_next(state)
                     return True
                 if not blocking:
                     return False

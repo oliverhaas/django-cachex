@@ -6,8 +6,8 @@ Three Redis keys cooperate per semaphore name (passed as ``KEYS[1..3]``):
   2. ``{name}:claims`` - hash mapping ``token`` -> ``weight``.
   3. ``{name}:queue`` - sorted set, score = enqueue timestamp (ms), member = ``token``.
 
-Plus a per-claim TTL key ``{name}:state:claim:<token>`` (string, PEXPIRE = lease_ms)
-that the scripts manage internally.
+Plus a per-claim TTL key ``{name}:state:claim:<token>`` (a string set with a
+``PX`` TTL of lease_ms) that the scripts manage internally.
 
 The ``{name}`` hash-tag prefix colocates all keys for one semaphore on the
 same cluster slot, which is what Redis Cluster requires for atomic multi-key
@@ -108,10 +108,16 @@ local additional_ms = tonumber(ARGV[2])
 if redis.call('HEXISTS', claims_key, token) == 0 then
   return 0
 end
+-- The claim hash entry is the source of truth for ownership; the TTL key is
+-- just the liveness signal the reaper checks. If the TTL key already expired
+-- (PTTL < 0) the holder is still the owner (not yet reaped), so re-establish
+-- the lease with SET rather than PEXPIRE: PEXPIRE cannot recreate a missing
+-- key, so it would silently no-op and leave the claim unprotected while still
+-- reporting success.
 local ttl_key = state_key .. ':claim:' .. token
 local current = redis.call('PTTL', ttl_key)
 if current < 0 then current = 0 end
-redis.call('PEXPIRE', ttl_key, current + additional_ms)
+redis.call('SET', ttl_key, '1', 'PX', current + additional_ms)
 return 1
 """
 

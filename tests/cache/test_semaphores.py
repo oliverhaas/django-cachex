@@ -175,6 +175,59 @@ class TestLocalFifoFairness:
         assert order == ["big", "small"]
 
 
+class TestLocalCascadeWake:
+    def test_one_release_wakes_every_fitting_waiter(self):
+        """A single release that frees capacity for several queued waiters
+        wakes all of them promptly via cascade, not just the head.
+
+        Regression: a weight-3 holder releasing into three unit waiters used to
+        wake only the head; the trailing waiters then sat parked until their own
+        acquire timeout elapsed, at which point the retry loop happened to find
+        free capacity and admitted them anyway. The boolean outcome is therefore
+        identical with or without the fix, so this test asserts on the cascade
+        *latency*: without the fix the trailing waiters admit only at their
+        multi-second timeout; with it they admit within milliseconds.
+        """
+        import threading
+        import time
+
+        from django_cachex.semaphore import Semaphore, SemaphoreTimeoutError
+
+        waiter_timeout = 5.0
+        holder = Semaphore("cascade", capacity=3, weight=3)
+        assert holder.acquire(blocking=False) is True
+
+        results: dict[int, bool] = {}
+        waiters = [Semaphore("cascade", capacity=3, weight=1) for _ in range(3)]
+
+        def acquire(idx: int, sem: Semaphore) -> None:
+            try:
+                results[idx] = sem.acquire(blocking=True, timeout=waiter_timeout)
+            except SemaphoreTimeoutError:
+                results[idx] = False
+
+        threads = [threading.Thread(target=acquire, args=(i, w)) for i, w in enumerate(waiters)]
+        for t in threads:
+            t.start()
+        time.sleep(0.1)  # let all three enqueue before capacity frees
+
+        # Releasing the weight-3 holder frees all three units at once.
+        t0 = time.monotonic()
+        holder.release()
+        for t in threads:
+            t.join(timeout=waiter_timeout + 1)
+        elapsed = time.monotonic() - t0
+
+        # All three fit in the freed capacity and must be admitted...
+        assert results == {0: True, 1: True, 2: True}
+        # ...by cascade, near-instantly. Without the fix the trailing waiters
+        # admit only at their ``waiter_timeout`` expiry, so bounding the gap well
+        # below that distinguishes a real cascade from a retry-on-timeout.
+        assert elapsed < 1.5, f"waiters not cascaded promptly: {elapsed:.2f}s"
+        for w in waiters:
+            w.release()
+
+
 class TestLocalAsyncSemaphore:
     """The same ``Semaphore`` class now exposes paired sync/async methods."""
 
