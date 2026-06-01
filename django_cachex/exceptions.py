@@ -37,15 +37,23 @@ except ImportError:
 _main_exceptions = tuple(_exception_list)
 
 
-class CompressorError(Exception):
+class CachexError(Exception):
+    """Base class for every exception raised by django-cachex.
+
+    Catch this to handle any library error in one place; catch a specific
+    subclass when you need to react to one failure mode.
+    """
+
+
+class CompressorError(CachexError):
     """Raised when compression or decompression fails. Triggers the client's compressor fallback."""
 
 
-class SerializerError(Exception):
+class SerializerError(CachexError):
     """Raised when serialization or deserialization fails. Triggers the client's serializer fallback."""
 
 
-class NotSupportedError(Exception):
+class NotSupportedError(CachexError):
     """Raised when an operation is not supported by the cache backend."""
 
     def __init__(self, operation: str, backend: str | None = None) -> None:
@@ -57,13 +65,14 @@ class NotSupportedError(Exception):
         super().__init__(msg)
 
 
-class WrongTypeError(TypeError):
+class WrongTypeError(CachexError, TypeError):
     """Raised when an operation is applied to a key holding the wrong RESP type.
 
     Mirrors Redis ``WRONGTYPE Operation against a key holding the wrong kind
-    of value``. Subclasses :class:`TypeError` so existing ``except TypeError``
-    callers keep working while new code can catch this specifically across
-    backends (LocMem, redis-py, valkey-py, valkey-glide, redis-rs).
+    of value``. Subclasses both :class:`CachexError` and :class:`TypeError`,
+    so ``except CachexError`` and existing ``except TypeError`` callers both
+    keep working while new code can catch this specifically across backends
+    (LocMem, redis-py, valkey-py, valkey-glide, redis-rs).
     """
 
 

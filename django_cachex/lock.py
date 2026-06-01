@@ -14,6 +14,8 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any, Self
 
+from django_cachex.exceptions import CachexError
+
 if TYPE_CHECKING:
     from types import TracebackType
 
@@ -23,7 +25,7 @@ if TYPE_CHECKING:
     from django_cachex.adapters.redis_rs import RedisRsAdapter
 
 
-class LockError(Exception):
+class LockError(CachexError):
     """Raised when a lock operation fails."""
 
 

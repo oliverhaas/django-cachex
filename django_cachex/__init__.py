@@ -13,6 +13,7 @@ except PackageNotFoundError:
 
 from django_cachex.adapters.pipeline import AsyncPipeline, Pipeline
 from django_cachex.exceptions import (
+    CachexError,
     CompressorError,
     NotSupportedError,
     SerializerError,
@@ -36,6 +37,7 @@ from django_cachex.stampede import StampedeConfig
 __all__ = [
     "AsyncLock",
     "AsyncPipeline",
+    "CachexError",
     "CompressorError",
     "Lock",
     "LockError",
