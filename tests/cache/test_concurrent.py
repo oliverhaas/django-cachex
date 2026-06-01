@@ -37,7 +37,7 @@ def fast_thread_switching() -> Iterator[None]:
     Default is 5ms; we drop to 1µs so the interpreter switches threads far
     more aggressively. This dramatically increases the chance of catching
     GET-then-SET races within the iteration budget. No-op on free-threaded
-    Python (3.14t) — but ops still interleave naturally there.
+    Python (3.14t), but ops still interleave naturally there.
     """
     old = sys.getswitchinterval()
     sys.setswitchinterval(1e-6)
@@ -79,7 +79,7 @@ def test_locmem_lpush_concurrent_no_data_loss(
     locmem_cache: LocMemCache,
     fast_thread_switching: None,
 ) -> None:
-    """Every lpush'd value must survive — no GET-then-SET overwrites."""
+    """Every lpush'd value must survive; no GET-then-SET overwrites."""
     key = "lpush-race"
 
     def worker(tid: int) -> None:
@@ -145,7 +145,7 @@ def test_locmem_zincrby_concurrent_conservation(
 
 
 # =============================================================================
-# Redis backend smoke tests — same shape on the existing `cache` fixture
+# Redis backend smoke tests: same shape on the existing `cache` fixture
 # (default / cluster / sentinel / sentinel_opts x py / rust drivers).
 # These exercise native server-side atomic commands and should always pass.
 # =============================================================================

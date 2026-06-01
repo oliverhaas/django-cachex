@@ -30,7 +30,7 @@ SERIALIZERS = {
 
 # Available cache backends keyed by (topology, resp_adapter).
 #
-# ``valkey-glide`` ships standalone + cluster clients only — no Sentinel
+# ``valkey-glide`` ships standalone + cluster clients only. No Sentinel
 # client exists upstream, so its sentinel row is omitted. The matrix-level
 # ``cache`` fixture skips the missing combos automatically.
 BACKENDS = {
@@ -193,7 +193,7 @@ def build_sentinel_cache_config(
 
     client_library = ADAPTER_IMAGES[resp_adapter][1]
     if resp_adapter in PY_INTERNAL_ADAPTERS:
-        # Sentinel uses SentinelConnectionPool by default — drop pool_class.
+        # Sentinel uses SentinelConnectionPool by default, so drop pool_class.
         lib_options = _get_client_library_options(client_library, native_parser)
         lib_options.pop("pool_class", None)
         base_options.update(lib_options)

@@ -25,7 +25,7 @@ from tests.fixtures import (
 
 # Tests that probe redis-py-specific internals (connection pools, parser
 # class, _lib wiring). They hardcode ``redis.Redis``, ``redis.ConnectionPool``,
-# etc. — so they only run for the redis-py adapter.
+# etc., so they only run for the redis-py adapter.
 _REDIS_PY_INTERNALS_TEST_FILES: frozenset[str] = frozenset(
     {
         "test_internals.py",

@@ -24,7 +24,7 @@ def _key_add_view(
     cache_name: str,
     config: ViewConfig,
 ) -> HttpResponse:
-    """View for adding a new cache key - collects key name and type, then redirects to key_detail."""
+    """Collect a new key's name and type, then redirect to key_detail."""
     # Mirror ``_key_detail_view``: check the permission up front so users
     # without ``add_key`` get a 403 on GET instead of filling in the form
     # and being rejected on submit.

@@ -100,7 +100,7 @@ class TestRedisCacheInternals:
     def test_serializer_dumps(self, cache: RespCache):
         """Test serialization: integers stay as-is, bools/strings become bytes.
 
-        Note: We test via the encode() method which handles the integer optimization.
+        We test via the encode() method which handles the integer optimization.
         Django's test checks _serializer.dumps() but our architecture uses encode().
         """
         # Integers are stored directly (no serialization overhead)
@@ -286,7 +286,7 @@ class TestConnectionCleanup:
             del caches["default"]
 
     def test_close_is_noop(self, cache: RespCache):
-        """Test close() is a no-op — pools persist after close."""
+        """Test close() is a no-op: pools persist after close."""
         # Create a pool first
         pool = cache.adapter._get_connection_pool(write=True)
         assert 0 in cache.adapter._pools
@@ -298,7 +298,7 @@ class TestConnectionCleanup:
 
     @pytest.mark.asyncio
     async def test_aclose_is_noop(self, cache: RespCache):
-        """Test aclose() is a no-op — async pools persist after aclose."""
+        """Test aclose() is a no-op: async pools persist after aclose."""
         if cache.adapter._async_pool_class is None:
             pytest.skip("Async not supported for this client type")
 
@@ -335,7 +335,7 @@ class TestConnectionCleanup:
         # First client (the one Django gave us) opens a pool.
         original_pool = cache.adapter._get_async_connection_pool(write=True)
 
-        # Build a fresh client with the same servers + options — this is what
+        # Build a fresh client with the same servers + options. This is what
         # Django's per-task Local does on every request.
         cls = type(cache.adapter)
         fresh_client = cls(cache.adapter._servers, **cache.adapter._options)
@@ -343,7 +343,7 @@ class TestConnectionCleanup:
         # The fresh client must reuse the same pool from the module registry.
         fresh_pool = fresh_client._get_async_connection_pool(write=True)
         assert fresh_pool is original_pool, (
-            "Fresh per-task client created a new pool — process-wide registry not working."
+            "Fresh per-task client created a new pool; process-wide registry not working."
         )
 
         # And one more independent instance, just to be sure.
@@ -497,7 +497,7 @@ class TestConnectionCleanup:
             loop.run_until_complete(async_work())
             loop.close()
 
-            # 3. Back to sync — should still work fine
+            # 3. Back to sync, should still work fine
             assert cache.get("wsgi_key") == "wsgi_value"
             cache.delete("wsgi_key")
 

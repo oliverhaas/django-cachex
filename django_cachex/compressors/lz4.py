@@ -6,11 +6,11 @@ from django_cachex.compressors.base import BaseCompressor
 class Lz4Compressor(BaseCompressor):
     """LZ4 compressor with configurable compression level.
 
-    ``level`` maps to ``lz4.frame.compress(compression_level=...)``. Note
-    that for LZ4 frame, ``level=0`` selects the default fast mode (not "no
-    compression"). Higher values trade CPU for ratio; the practical cap is
-    around 12 (``LZ4HC_CLEVEL_MAX``). If you want to disable compression,
-    do not configure this compressor at all.
+    ``level`` maps to ``lz4.frame.compress(compression_level=...)``. For LZ4
+    frame, ``level=0`` selects the default fast mode, not "no compression".
+    Higher values trade CPU for ratio; the practical cap is around 12
+    (``LZ4HC_CLEVEL_MAX``). To disable compression, do not configure this
+    compressor at all.
     """
 
     level: int = 0

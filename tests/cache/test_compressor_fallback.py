@@ -161,7 +161,7 @@ class TestDecompressFallback:
         from django_cachex.exceptions import CompressorError
 
         cache = _make_cache(compressor=["django_cachex.compressors.gzip.GzipCompressor"])
-        # Plain data that isn't gzip — the only configured compressor fails.
+        # Plain data that isn't gzip; the only configured compressor fails.
         data = b"Plain uncompressed data"
         with pytest.raises(CompressorError):
             cache._decompress(data)

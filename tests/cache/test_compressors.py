@@ -56,7 +56,7 @@ class TestCompressorRoundtrip:
 
 
 class TestMinLength:
-    """Test min_length behavior - data below threshold is not compressed."""
+    """Test min_length behavior: data below threshold is not compressed."""
 
     def test_small_data_returned_as_is(self, compressor):
         result = compressor.compress(SMALL_DATA)

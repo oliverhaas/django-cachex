@@ -448,7 +448,7 @@ class TestKeyListView:
         response = admin_client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        # Both cache names appear as filter options — that's enough to prove the filter rendered.
+        # Both cache names appear as filter options, which proves the filter rendered.
         assert "?cache=default" in content
         assert "?cache=local" in content
 
@@ -1961,7 +1961,7 @@ class TestCacheDetailView:
         assert response.status_code == 200
         content = response.content.decode()
         # change_form.html renders <h2>Slow Log</h2> when slowlog_data is truthy
-        # (always — get_slowlog returns a dict even when empty).
+        # (always: get_slowlog returns a dict even when empty).
         assert "<h2>Slow Log</h2>" in content
 
     def test_cache_detail_count_parameter(self, admin_client: Client, test_cache):
@@ -1985,7 +1985,7 @@ class TestCacheAdmin:
         assert response.status_code == 200
 
     def test_has_add_permission_returns_false(self, admin_user, test_cache):
-        """CacheAdmin should not allow adding new cache entries — even for a superuser."""
+        """CacheAdmin should not allow adding new cache entries, even for a superuser."""
         from django.contrib.admin import site
         from django.test import RequestFactory
 
@@ -1999,7 +1999,7 @@ class TestCacheAdmin:
         assert cache_admin.has_add_permission(request) is False
 
     def test_has_delete_permission_returns_false(self, admin_user, test_cache):
-        """CacheAdmin should not allow deleting cache entries — even for a superuser."""
+        """CacheAdmin should not allow deleting cache entries, even for a superuser."""
         from django.contrib.admin import site
         from django.test import RequestFactory
 
@@ -2614,5 +2614,5 @@ class TestUndecodableValueResilience:
         response = admin_client.get(_key_list_url("default"))
 
         assert response.status_code == 200
-        # Broken key still appears in the list — operator needs to see it to delete it.
+        # Broken key still appears in the list; operator needs to see it to delete it.
         assert self.BROKEN_KEY in response.content.decode()

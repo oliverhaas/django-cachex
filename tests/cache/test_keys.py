@@ -58,7 +58,7 @@ class TestVersionOperations:
 
 
 class TestRenameOperations:
-    # Note: Use {slot}: prefix to ensure both keys hash to same cluster slot
+    # Use {slot}: prefix to ensure both keys hash to same cluster slot
 
     def test_rename(self, cache: RespCache):
         cache.set("{slot}:src", "value1")

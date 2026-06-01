@@ -110,7 +110,7 @@ class TestSetFlags:
 
 class TestLiveStorage:
     """Tagged collections live in ``self._collections`` as long-lived Python
-    objects, not pickled bytes — mutating ops are in-place and reads return
+    objects, not pickled bytes. Mutating ops are in-place and reads return
     snapshots. Verify the contract holds at the boundaries that user code
     can observe.
     """
@@ -325,7 +325,7 @@ class TestKeysAndAdmin:
         assert locmem_cache.type("k") == "zset"
 
     def test_type_opaque_python_list_is_string(self, locmem_cache: LocMemCache):
-        # A plain Python list stored via ``cache.set()`` is opaque to RESP —
+        # A plain Python list stored via ``cache.set()`` is opaque to RESP:
         # ``type()`` reports STRING and list ops would WRONGTYPE on it.
         locmem_cache.set("k", [1, 2, 3])
         assert locmem_cache.type("k") == "string"

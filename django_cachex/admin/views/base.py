@@ -47,7 +47,7 @@ _TEMPLATE_PREFIX = "admin/django_cachex"
 
 
 class ViewConfig:
-    """Per-admin context passed into cache admin views (just help messages today)."""
+    """Per-admin context passed into cache admin views (help messages today)."""
 
     def __init__(self, help_messages: dict[str, str] | None = None) -> None:
         self.help_messages = help_messages or {}
@@ -68,7 +68,7 @@ def show_help(
     view_name: str,
     help_messages: dict[str, str],
 ) -> bool:
-    """Check if help was requested and show message if so. Returns True if help shown."""
+    """Show the help message when requested. Returns True if help was shown."""
     if request.GET.get("help"):
         help_text = help_messages.get(view_name, "")
         if help_text:

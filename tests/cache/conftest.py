@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
     from tests.fixtures.containers import RedisContainerInfo
 
-L1_TIMEOUT = 2  # seconds — short L1 cap for testing
+L1_TIMEOUT = 2  # seconds; short L1 cap for testing
 
 
 def _build_tiered_config(host: str, port: int, client_library: str = "redis") -> dict:

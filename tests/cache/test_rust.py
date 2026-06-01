@@ -3,7 +3,7 @@
 The basic CRUD / hash / list / set / zset / TTL surface is already covered
 by the parametrized ``cache`` fixture (which runs every test in
 ``test_basic.py`` & friends against ``driver=rust``). This file is
-limited to behavior specific to the Rust adapter — lock semantics that
+limited to behavior specific to the Rust adapter: lock semantics that
 the Lua scripts don't support, INFO section filtering, RENAME error
 translation, EVAL ARGV encoding, etc.
 """
@@ -90,6 +90,6 @@ def test_eval_bool_arg_encoded_as_int(rust_cache):
 
 
 def test_hincrbyfloat_returns_running_total(rust_cache):
-    """HINCRBYFLOAT goes via Lua eval — the running total must accumulate."""
+    """HINCRBYFLOAT goes via Lua eval; the running total must accumulate."""
     assert rust_cache.hincrbyfloat("h", "f", 1.5) == 1.5
     assert rust_cache.hincrbyfloat("h", "f", 2.25) == 3.75

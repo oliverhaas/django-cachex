@@ -858,7 +858,7 @@ class TestPipelineReuse:
         results1 = pipe.execute()
         assert results1 == [True, "val1"]
 
-        # Second batch on the same pipeline — must not crash
+        # Second batch on the same pipeline must not crash
         pipe.set("reuse_b", "val2")
         pipe.get("reuse_b")
         results2 = pipe.execute()

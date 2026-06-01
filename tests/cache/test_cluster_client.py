@@ -389,7 +389,7 @@ class TestRedisClusterAdapter:
         assert result == 3  # 2 + 1 = 3 total deleted
 
     def test_close_is_noop(self):
-        """Test close() is a no-op — cluster persists after close."""
+        """close() is a no-op; cluster persists after close."""
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
         mock_cluster_cls.return_value = mock_cluster
@@ -406,7 +406,7 @@ class TestRedisClusterAdapter:
 
     @pytest.mark.asyncio
     async def test_aclose_is_noop(self):
-        """Test aclose() is a no-op — async cluster persists after aclose."""
+        """aclose() is a no-op; async cluster persists after aclose."""
         mock_cluster_cls = MagicMock()
         mock_async_cluster = AsyncMock()
 

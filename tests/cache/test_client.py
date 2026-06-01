@@ -19,7 +19,7 @@ def cache_client(cache: RespCache):
 
 class TestClientClose:
     def test_close_is_noop(self, cache_client: RespAdapterProtocol):
-        """Test close() is a no-op — pools persist after close."""
+        """close() is a no-op; pools persist after close."""
         # Create a pool first by accessing it
         pool = cache_client._get_connection_pool(write=True)
         assert 0 in cache_client._pools

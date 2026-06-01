@@ -326,8 +326,8 @@ class TestHashFieldSHA1sFor:
 
     def test_empty_fields_list(self, test_cache: RespCache):
         # Empty fields list short-circuits regardless of hash content; this
-        # test exists to lock that in (NOT to test against a missing key —
-        # see test_nonexistent_key for that).
+        # test exists to lock that in (NOT to test against a missing key.
+        # See test_nonexistent_key for that).
         test_cache.hset("hash_key", "f1", "v1")
         sha1s = get_hash_field_sha1s_for(test_cache, "hash_key", [])
         assert sha1s == {}

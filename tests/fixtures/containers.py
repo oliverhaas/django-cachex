@@ -294,8 +294,8 @@ def _resolve_image(request: pytest.FixtureRequest) -> tuple[str, str]:
     """Resolve (image, client_library) from the active fixtures.
 
     Resolution order:
-    1. ``resp_images`` opt-in (parametrized image set) — wins if requested.
-    2. ``resp_adapter`` — each adapter has a single home image (Valkey for
+    1. ``resp_images`` opt-in (parametrized image set) wins if requested.
+    2. ``resp_adapter``: each adapter has a single home image (Valkey for
        everything except redis-py).
     3. Default image.
     """

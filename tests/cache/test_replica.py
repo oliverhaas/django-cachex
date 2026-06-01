@@ -27,7 +27,7 @@ def wait_for_replication(
     """Wait for keys to replicate with expected values.
 
     Uses polling with small sleeps rather than a fixed large sleep
-    to handle replication lag efficiently. Works for single keys or
+    to handle replication lag. Works for single keys or
     multiple keys via get_many.
 
     Args:

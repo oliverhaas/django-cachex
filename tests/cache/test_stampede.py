@@ -343,8 +343,8 @@ class TestShouldRecomputeEdgeCases:
         Using -expovariate(1.0) avoids domain errors entirely.
         """
         config = StampedeConfig(buffer=60, delta=1.0, beta=1.0)
-        # Run many iterations — before the fix, one in ~9 quadrillion calls
-        # would crash. With expovariate, it never crashes.
+        # Before the fix, one in ~9 quadrillion calls would crash.
+        # With expovariate, it never crashes.
         for _ in range(10_000):
             result = should_recompute(350, config)
             assert isinstance(result, bool)
