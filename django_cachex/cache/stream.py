@@ -504,6 +504,13 @@ class StreamCache(LocMemCache):
         version: int | None = None,
         **kwargs: Any,
     ) -> bool:
+        # Conditional (nx/xx) and read-prior (get) writes need atomic
+        # check-and-set, which eventual, last-writer-wins replication cannot
+        # provide. Reject them rather than silently ignoring the flag, the same
+        # way ``add``/``incr``/``decr`` do. Use the transport cache for these.
+        for flag in ("nx", "xx", "get"):
+            if kwargs.get(flag):
+                raise NotSupportedError(f"set(..., {flag}=True)", "StreamCache")
         self._ensure_consumer()
         made_key = self.make_and_validate_key(key, version=version)
         pickled = pickle.dumps(value, self.pickle_protocol)

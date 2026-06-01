@@ -213,6 +213,15 @@ class TestSyncBasicOps:
         with pytest.raises(NotSupportedError):
             stream_cache.add("add_key", "first")
 
+    def test_set_conditional_flags_raise_not_supported(self, stream_cache: BaseCache):
+        # nx/xx/get need atomic check-and-set, which last-writer-wins
+        # replication can't provide, so they are rejected rather than ignored.
+        for flag in ("nx", "xx", "get"):
+            with pytest.raises(NotSupportedError):
+                stream_cache.set("flagged", "v", **{flag: True})
+        # Falsy flags are still accepted (plain write).
+        assert stream_cache.set("flagged", "v", nx=False, xx=False, get=False) is True
+
     def test_has_key(self, stream_cache: BaseCache):
         stream_cache.set("exists", 1)
         assert stream_cache.has_key("exists") is True
@@ -400,7 +409,7 @@ class TestSyncCrossInstance:
     ):
         pod1, _pod2 = stream_pair
         pod1.set("imm", "instant")
-        # No drain needed — writer has the value locally
+        # No drain needed: writer has the value locally
         assert pod1.get("imm") == "instant"
 
     def test_various_types_propagate(self, stream_pair: tuple[StreamCache, StreamCache]):
@@ -581,7 +590,7 @@ class TestSyncReplay:
             producer._flush_publishes()
             producer.shutdown()
 
-            # Consumer starts fresh with REPLAY=100 — should warm from stream
+            # Consumer starts fresh with REPLAY=100, should warm from stream
             consumer = caches["consumer"]
             assert consumer.get("replay_a") == "alpha"
             assert consumer.get("replay_b") == "beta"
@@ -640,7 +649,7 @@ class TestSyncReplay:
             producer.shutdown()
 
             consumer = caches["consumer"]
-            # No replay — consumer starts empty
+            # No replay: consumer starts empty
             assert consumer.get("no_replay_key") is None
             consumer.shutdown()
 
