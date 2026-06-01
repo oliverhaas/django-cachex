@@ -9,7 +9,7 @@ from django.conf import settings
 from django.core.cache import caches
 from django.utils.translation import gettext_lazy as _
 
-from django_cachex.exceptions import NotSupportedError
+from django_cachex.exceptions import CompressorError, NotSupportedError, SerializerError
 from django_cachex.types import KeyType
 from django_cachex.utils import _deep_getsizeof
 
@@ -106,7 +106,6 @@ def parse_metadata(
     Pure parsing; does not call ``cache.info()`` itself, so the caller can fetch
     once and reuse the same payload for both metadata display and raw JSON dump.
     """
-    # Get location from config
     location = cache_config.get("LOCATION", "")
     if isinstance(location, list):
         location = ", ".join(location)
@@ -305,10 +304,9 @@ def _add_cas_fingerprints(cache: Any, key: str, key_type: str | None, result: di
                     hash_sha1s = get_hash_field_sha1s(cache, key)
                 result["field_entries"] = [(field, value, hash_sha1s.get(field, "")) for field, value in fields.items()]
     except Exception:  # noqa: BLE001
-        # Graceful degradation: CAS protection is best-effort. Mirror the
-        # warning emitted by ``_key_detail_view`` (key_detail.py) so the
-        # operator knows the next update will skip conflict detection,
-        # rather than silently swallowing the failure here.
+        # CAS protection is best-effort. Mirror the warning emitted by
+        # ``_key_detail_view`` (key_detail.py) so the operator knows the
+        # next update will skip conflict detection.
         logger.warning(
             "CAS fingerprint collection failed for key %r (type=%s); edits will skip conflict checks",
             key,
@@ -339,8 +337,6 @@ def get_size(cache: Any, key: str, key_type: str | None = None) -> int | None:
         # Fallback: compute Python object size (e.g. LocMemCache). Decode
         # failures for stale data must not break the size column, return None
         # so the row still renders and the user can delete the broken key.
-        from django_cachex.exceptions import CompressorError, SerializerError
-
         try:
             value = cache.get(key)
         except CompressorError, SerializerError:

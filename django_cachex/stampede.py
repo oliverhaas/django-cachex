@@ -5,8 +5,11 @@ TTL drives a probabilistic early-recompute decision so a single client
 refreshes the value before all clients see a miss simultaneously.
 """
 
+import logging
 import random
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,9 +105,7 @@ def make_stampede_config(option: bool | dict | None) -> StampedeConfig | None:
         known = {k: v for k, v in option.items() if k in _STAMPEDE_FIELDS}
         unknown = sorted(set(option) - set(_STAMPEDE_FIELDS))
         if unknown:
-            import logging
-
-            logging.getLogger(__name__).warning(
+            logger.warning(
                 "stampede_prevention: ignoring unknown keys %s (valid: %s)",
                 unknown,
                 _STAMPEDE_FIELDS,
