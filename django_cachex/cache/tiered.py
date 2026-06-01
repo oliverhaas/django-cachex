@@ -185,25 +185,55 @@ class TieredCache(BaseCachex):
         self._l1.set(key, val, self._l1_timeout(l2_ttl), version=version)
         return val
 
-    def set(  # type: ignore[override]
-        self,
-        key: str,
-        value: Any,
-        timeout: float | None = DEFAULT_TIMEOUT,
-        version: int | None = None,
-        *,
-        nx: bool = False,
-        xx: bool = False,
-        get: bool = False,
-    ) -> bool:
-        # Django stubs annotate BaseCache.set as returning None; cachex backends
-        # actually return bool. bool(None) is False, matching "didn't happen".
-        result = self._l2.set(key, value, timeout, version=version, nx=nx, xx=xx, get=get)
-        if result or not (nx or xx):
-            self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
-        return bool(result)
+    @staticmethod
+    def _l2_write_happened(result: Any, *, nx: bool, xx: bool, get: bool) -> bool:
+        """Whether the L2 ``set`` definitely wrote, given its return value.
 
-    async def aset(  # type: ignore[override]
+        Without ``get``, ``nx``/``xx`` return a success bool and a plain set
+        always writes. With ``get`` the L2 return is the prior value, not a
+        success flag, so success is inferred from the conditional: an
+        unconditional ``get`` always writes; ``nx`` writes only when the key was
+        absent and ``xx`` only when it existed. A ``None`` prior under ``nx``/
+        ``xx`` is ambiguous (an absent key and a cached ``None`` both decode to
+        ``None``); :meth:`_sync_l1_after_set` handles that case separately, so
+        this predicate may assume a non-``None`` prior there.
+        """
+        if get:
+            if nx:
+                return result is None
+            if xx:
+                return result is not None
+            return True
+        if nx or xx:
+            return bool(result)
+        return True
+
+    def _sync_l1_after_set(
+        self,
+        key: str,
+        value: Any,
+        timeout: float | None,
+        version: int | None,
+        result: Any,
+        *,
+        nx: bool,
+        xx: bool,
+        get: bool,
+    ) -> None:
+        """Reconcile L1 with the outcome of an L2 ``set``.
+
+        Mirror the new value into L1 when the write definitely landed. For a
+        conditional write with ``get=True`` whose returned prior value is
+        ``None`` we cannot tell an absent key from a key holding a cached
+        ``None``, so we invalidate L1 instead of guessing, forcing a coherent
+        re-read from L2.
+        """
+        if get and (nx or xx) and result is None:
+            self._l1.delete(key, version=version)
+        elif self._l2_write_happened(result, nx=nx, xx=xx, get=get):
+            self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
+
+    def set(
         self,
         key: str,
         value: Any,
@@ -213,11 +243,28 @@ class TieredCache(BaseCachex):
         nx: bool = False,
         xx: bool = False,
         get: bool = False,
-    ) -> bool:
+    ) -> Any:
+        # Proxy the L2 return verbatim (prior value when ``get=True``, else the
+        # nx/xx success bool, or ``None`` for a plain set) so the ``get=`` flag
+        # contract is honored, then reconcile L1 with the actual write outcome.
+        result = self._l2.set(key, value, timeout, version=version, nx=nx, xx=xx, get=get)
+        self._sync_l1_after_set(key, value, timeout, version, result, nx=nx, xx=xx, get=get)
+        return result
+
+    async def aset(
+        self,
+        key: str,
+        value: Any,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        get: bool = False,
+    ) -> Any:
         result = await self._l2.aset(key, value, timeout, version=version, nx=nx, xx=xx, get=get)
-        if result or not (nx or xx):
-            self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
-        return bool(result)
+        self._sync_l1_after_set(key, value, timeout, version, result, nx=nx, xx=xx, get=get)
+        return result
 
     def add(
         self,

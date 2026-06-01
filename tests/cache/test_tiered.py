@@ -18,6 +18,30 @@ if TYPE_CHECKING:
     from tests.fixtures.containers import RedisContainerInfo
 
 
+class TestTieredL2WriteDetection:
+    """Unit coverage for the L1-population gate, including the nx/xx + get
+    combinations that decide L1/L2 coherence, without needing a Redis 7 L2."""
+
+    def test_write_happened_matrix(self):
+        from django_cachex.cache.tiered import TieredCache
+
+        w = TieredCache._l2_write_happened
+        # Plain set always writes (L2 returns None).
+        assert w(None, nx=False, xx=False, get=False) is True
+        # nx/xx without get return a success bool.
+        assert w(True, nx=True, xx=False, get=False) is True
+        assert w(False, nx=True, xx=False, get=False) is False
+        assert w(True, nx=False, xx=True, get=False) is True
+        assert w(False, nx=False, xx=True, get=False) is False
+        # With get, the L2 return is the prior value; success is inferred from
+        # the conditional flag so a rejected write never lands in L1.
+        assert w("old", nx=False, xx=False, get=True) is True  # unconditional get
+        assert w(None, nx=True, xx=False, get=True) is True  # nx wrote (key was absent)
+        assert w("old", nx=True, xx=False, get=True) is False  # nx rejected (key existed)
+        assert w("old", nx=False, xx=True, get=True) is True  # xx wrote (key existed)
+        assert w(None, nx=False, xx=True, get=True) is False  # xx rejected (key absent)
+
+
 class TestTieredBasicOps:
     """Basic cache operations work correctly through tiered cache."""
 
@@ -100,6 +124,13 @@ class TestTieredBasicOps:
         assert result is False
         assert tiered_cache.get("nx_existing") == "original"
 
+    def test_set_get_returns_prior_value(self, tiered_cache: BaseCache):
+        # ``get=True`` must surface the prior value, not a coerced bool.
+        tiered_cache.delete("getk")
+        assert tiered_cache.set("getk", "first", get=True) is None
+        assert tiered_cache.set("getk", "second", get=True) == "first"
+        assert tiered_cache.get("getk") == "second"
+
     def test_versioned_keys(self, tiered_cache: BaseCache):
         tiered_cache.set("vkey", "v1", version=1)
         tiered_cache.set("vkey", "v2", version=2)
@@ -167,7 +198,7 @@ class TestL1Behavior:
         l2 = self._get_l2()
         l1 = self._get_l1()
 
-        # Set in L2 with very short TTL (1 second — shorter than L1's 2s default)
+        # Set in L2 with very short TTL (1 second, shorter than L1's 2s default)
         l2.set("short_ttl", "val", timeout=1)
 
         # Clear L1 so get() will populate from L2
@@ -465,7 +496,7 @@ class TestTieredCacheConfig:
                 "BACKEND": "django_cachex.cache.TieredCache",
                 "OPTIONS": {
                     "tiers": ["l1", "l2"],
-                    # No L1_TIMEOUT — should fall back to L1's TIMEOUT (42)
+                    # No L1_TIMEOUT: should fall back to L1's TIMEOUT (42)
                 },
             },
         }
