@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (June 2026)
 
 ### Breaking changes
 
@@ -46,7 +46,7 @@
 - `LocMemCache.lpush`/`sadd`/`hset`/`hincrby`/`zadd`/etc. no longer lose updates under concurrent threads (#62).
 - `delete_pattern` batches deletes to bound peak memory on broad patterns.
 - `clear()` is now prefix/version-scoped instead of `FLUSHDB`. The old behavior is available as `flush_db()`.
-- Compressor `decompress` methods catch all exceptions and re-raise as `CompressorError`.
+- Compressor `compress` and `decompress` methods catch all exceptions and re-raise as `CompressorError`.
 - Several cluster correctness fixes (script loading on replicas, set_many `timeout=0`).
 
 ---

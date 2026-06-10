@@ -1,6 +1,6 @@
 [project]
 name = "django-cachex-redis-rs"
-version = "0.3.0"
+version = "0.4.0"
 description = "Rust adapter (PyO3 + tokio + redis-rs) for django-cachex"
 readme = "README.md"
 license = { text = "MIT" }

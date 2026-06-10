@@ -419,7 +419,7 @@ wheels = [
 
 [[package]]
 name = "django-cachex"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "django" },
@@ -564,7 +564,7 @@ requires-dist = [
 
 [[package]]
 name = "django-cachex-redis-rs"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "crates/django-cachex-redis-rs" }
 
 [[package]]

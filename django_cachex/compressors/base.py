@@ -21,7 +21,10 @@ class BaseCompressor:
 
     def compress(self, data: bytes) -> bytes:
         if len(data) > self.min_length:
-            return self._compress(data)
+            try:
+                return self._compress(data)
+            except Exception as e:
+                raise CompressorError from e
         return data
 
     def decompress(self, data: bytes) -> bytes:

@@ -1,9 +1,9 @@
 [project]
 name = "django-cachex"
-version = "0.3.0"
+version = "0.4.0"
 description = "Full featured Valkey and Redis cache backend for Django"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 requires-python = ">=3.14"
 keywords = ["django", "valkey", "redis", "cache", "backend"]
 authors = [{ name = "Oliver Haas", email = "ohaas@e1plus.de" }]
@@ -13,7 +13,6 @@ classifiers = [
   "Framework :: Django",
   "Framework :: Django :: 6.0",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
@@ -33,7 +32,7 @@ libvalkey = ["valkey[libvalkey]>=6.1.0,<7"]
 redis-py = ["redis>=6,<9"]
 hiredis = ["redis[hiredis]<9,>=6"]
 # Rust I/O driver: separate binary package, prebuilt wheels for Linux x86_64 only.
-redis-rs = ["django-cachex-redis-rs==0.3.0"]
+redis-rs = ["django-cachex-redis-rs==0.4.0"]
 # valkey-glide: Rust-cored Valkey client. Sync and async are separate distributions.
 valkey-glide = ["valkey-glide-sync>=2.3,<3", "valkey-glide>=2.3,<3"]
 # Compressors
