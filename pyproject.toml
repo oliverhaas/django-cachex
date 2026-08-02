@@ -51,10 +51,10 @@ Changelog = "https://oliverhaas.github.io/django-cachex/reference/changelog/"
 [dependency-groups]
 dev = [
   "valkey[libvalkey]==6.1.1",
-  "redis[hiredis]==8.0.1",
+  "redis[hiredis]==8.1.0",
   "beautifulsoup4==4.15.0",
   "django-stubs==6.0.7",
-  "djlint==1.42.3",
+  "djlint==1.43.1",
   "lz4==4.4.5",
   "maturin==1.14.1",
   "msgpack==1.2.1",
@@ -70,8 +70,8 @@ dev = [
   "pytest==9.1.1",
   "ruff==0.16.0",
   "testcontainers==4.15.0",
-  "ty==0.0.63",
-  "types-docker==7.2.0.20260724",
+  "ty==0.0.65",
+  "types-docker==7.2.0.20260728",
   # ASGI benchmark only: granian (real ASGI server) plus httpx (load gen).
   "granian>=2.6,<3",
   "httpx>=0.28,<0.29",
