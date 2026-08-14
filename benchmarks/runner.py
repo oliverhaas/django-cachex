@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
 
-# Workload sizing — kept here so all phases share the knob.
+# Workload sizing, kept here so all phases share the knob.
 N_OPS = 1000
 K_RUNS = 10
 WARMUP_KEYS = 100
@@ -127,7 +127,7 @@ class AsgiResult:
 
 @dataclass
 class MicroResult:
-    """Pure compress/decompress numbers — no adapter, no network, no Django."""
+    """Pure compress/decompress numbers: no adapter, no network, no Django."""
 
     compressor_id: str
     input_bytes: int
@@ -177,7 +177,7 @@ def build_caches(
 
 
 def _build_payload() -> dict[str, Any]:
-    # ~150 bytes pickled — small enough that serializer cost dominates over network.
+    # ~150 bytes pickled, small enough that serializer cost dominates over network.
     return {
         "id": 12345,
         "name": "benchmark-item",
@@ -189,7 +189,7 @@ def _build_payload() -> dict[str, Any]:
 
 
 def _build_payload_large() -> list[dict[str, Any]]:
-    # ~14 KiB pickled — queryset-shaped, well above the 256 B compression
+    # ~14 KiB pickled and queryset-shaped, well above the 256 B compression
     # threshold. Used for compressor benchmarks where a small payload would
     # bypass compression entirely.
     return [
@@ -335,7 +335,8 @@ def _open_info_client(location: str) -> redis.Redis:
 
     Used regardless of the cache backend under test, so backends without an
     ``info()`` method (Django's built-in ``RedisCache``) still report memory
-    and connection metrics. Works against Valkey too — same RESP protocol.
+    and connection metrics. Works against Valkey too, which speaks the same
+    RESP protocol.
     """
     return redis.Redis.from_url(location)
 
@@ -513,7 +514,7 @@ def run_request_cycle_benchmark(
     ``request_started`` / ``request_finished`` signals).
 
     Throughput is reported in ops/sec on the same scale as ``run_benchmark``,
-    so the two are directly comparable — the gap is the per-request overhead
+    so the two are directly comparable. The gap is the per-request overhead
     Django itself adds when cache work happens inside a view.
     """
     from benchmarks import urls as benchmark_urls
@@ -601,7 +602,7 @@ def _total_rss_kb(parent_pid: int) -> float:
     if ps is None:
         return total
     try:
-        result = subprocess.run(  # noqa: S603 — args are constants, no user input
+        result = subprocess.run(  # noqa: S603 (args are constants, no user input)
             [ps, "--ppid", str(parent_pid), "-o", "rss="],
             capture_output=True,
             text=True,
@@ -629,7 +630,7 @@ def _wait_for_port(host: str, port: int, timeout_s: float = 15.0) -> bool:
     return False
 
 
-def run_asgi_benchmark(  # noqa: C901, PLR0915 — orchestrates many phases in one function for readability
+def run_asgi_benchmark(  # noqa: C901, PLR0915 (orchestrates many phases in one function for readability)
     adapter: AdapterConfig,
     serializer: SerializerConfig,
     location: str,
@@ -647,12 +648,12 @@ def run_asgi_benchmark(  # noqa: C901, PLR0915 — orchestrates many phases in o
     ASGI server, hit it with a configurable number of concurrent HTTP
     clients for a fixed duration, sample peak server RSS and Valkey/Redis
     ``connected_clients`` along the way. The view does six async cache ops
-    per request — get / aget_many / aset / aset (large) / aincr / aget
-    (large) — to exercise the full backend surface in one workload.
+    per request: get / aget_many / aset / aset (large) / aincr / aget
+    (large). That exercises the full backend surface in one workload.
 
     Latency simulation (e.g. ``tc qdisc add dev eth0 root netem delay 1ms``)
     is the missing ingredient versus django-vcache's claims about
-    `RedisCache` connection growth — without RTT, sync_to_async threads
+    `RedisCache` connection growth. Without RTT, sync_to_async threads
     finish too quickly to pile up. Run this benchmark inside a Docker
     container with ``--cap-add NET_ADMIN`` and apply ``netem`` against the
     Valkey/Redis interface to reproduce vcache's numbers.
@@ -672,7 +673,7 @@ def run_asgi_benchmark(  # noqa: C901, PLR0915 — orchestrates many phases in o
     info_client = _open_info_client(location)
     info_client.flushdb()
 
-    proc = subprocess.Popen(  # noqa: S603 — args are sys.executable + constants
+    proc = subprocess.Popen(  # noqa: S603 (args are sys.executable + constants)
         [
             sys.executable,
             "-m",
@@ -891,7 +892,7 @@ def run_async_benchmark(
 ) -> BenchmarkResult:
     """Async equivalent of ``run_benchmark``.
 
-    ``concurrency=1`` is serial async — every ``aget`` is awaited before the
+    ``concurrency=1`` is serial async: every ``aget`` is awaited before the
     next is issued, giving a one-to-one comparison with the sync benchmark
     (the gap reveals overhead of the async path: native ``aget`` vs
     ``sync_to_async`` fallback).
@@ -925,7 +926,7 @@ def run_compressor_micro(
 ) -> MicroResult | None:
     """Pure compress/decompress throughput on the large benchmark payload.
 
-    No adapter, no Django, no network — just the algorithm against a fixed
+    No adapter, no Django, and no network: just the algorithm against a fixed
     blob. Returns None for the no-compression baseline.
     """
     if compressor.dotted_path is None:
@@ -1061,7 +1062,7 @@ def format_asgi_table(results: Iterable[AsgiResult]) -> str:
 
 
 def format_micro_table(results: Iterable[MicroResult]) -> str:
-    """Table of compressor micro results — absolute MB/s plus output ratio."""
+    """Table of compressor micro results: absolute MB/s plus output ratio."""
     results = list(results)
     if not results:
         return "(no micro results)"

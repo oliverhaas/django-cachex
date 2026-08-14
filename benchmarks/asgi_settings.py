@@ -3,9 +3,9 @@
 Reads CACHES from environment variables so the parent benchmark process can
 parametrize the backend without writing per-adapter settings modules:
 
-- ``BENCH_CACHE_BACKEND`` — dotted path of the cache backend class.
-- ``BENCH_CACHE_LOCATION`` — Redis/Valkey URL.
-- ``BENCH_CACHE_OPTIONS_JSON`` — optional, JSON-encoded ``OPTIONS`` dict.
+- ``BENCH_CACHE_BACKEND``: dotted path of the cache backend class.
+- ``BENCH_CACHE_LOCATION``: Redis/Valkey URL.
+- ``BENCH_CACHE_OPTIONS_JSON``: optional, JSON-encoded ``OPTIONS`` dict.
 """
 
 import json

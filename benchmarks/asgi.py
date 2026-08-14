@@ -1,4 +1,4 @@
-"""ASGI entrypoint for the ASGI benchmark — granian imports this."""
+"""ASGI entrypoint for the ASGI benchmark, imported by granian."""
 
 import os
 

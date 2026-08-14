@@ -7,11 +7,11 @@
 // Now reduced to the cross-cutting helpers ``adapter.rs`` uses:
 //   * Connection-config types (``ClientCacheOpts``, ``TlsOpts``) and
 //     the ``make_*`` factories that translate Python OPTIONS into them.
-//   * Error classification — ``classify``, ``to_py_err``,
-//     ``is_connection_error`` — splits Redis errors into
+//   * Error classification (``classify``, ``to_py_err``,
+//     ``is_connection_error``), which splits Redis errors into
 //     ``ConnectionError`` (retryable / transport-level) vs
 //     ``RuntimeError`` (server-side).
-//   * ``IntoRawResult`` + ``From`` impls — converts every typed
+//   * ``IntoRawResult`` + ``From`` impls, which convert every typed
 //     ``RedisResult<T>`` into a ``RawResult`` variant for the
 //     awaitable bridge.
 //   * Sync-side conversion helpers (``py_redis_value``,
@@ -48,8 +48,8 @@ pub(crate) fn to_py_err(e: redis::RedisError) -> PyErr {
     }
 }
 
-/// Server returned ``WRONGTYPE`` — applying a command to a key whose type
-/// doesn't match (e.g. ``LPUSH`` on a key that holds a string).
+/// Server returned ``WRONGTYPE``, meaning a command was applied to a key
+/// whose type doesn't match (e.g. ``LPUSH`` on a key that holds a string).
 pub(crate) fn is_wrongtype(e: &redis::RedisError) -> bool {
     matches!(e.code(), Some("WRONGTYPE"))
 }

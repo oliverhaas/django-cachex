@@ -77,7 +77,7 @@ fn url_with_resp3(url: &str) -> String {
     if url.contains("protocol=") {
         return url.to_string();
     }
-    // Handle fragment (#...) — query params must come before it.
+    // Handle fragment (#...). Query params must come before it.
     let (base, fragment) = match url.split_once('#') {
         Some((b, f)) => (b, Some(f)),
         None => (url, None),
@@ -89,7 +89,7 @@ fn url_with_resp3(url: &str) -> String {
     }
 }
 
-/// Config for blocking operations — no response timeout since BLMOVE/BLMPOP
+/// Config for blocking operations. No response timeout, since BLMOVE/BLMPOP
 /// intentionally wait for data (possibly minutes). Never has caching.
 fn blocking_conn_manager_config() -> ConnectionManagerConfig {
     ConnectionManagerConfig::new()
@@ -176,11 +176,11 @@ impl SentinelConn {
     }
 }
 
-/// Inner connection enum — one per connection type.
+/// Inner connection enum, one per connection type.
 /// All methods for individual Redis commands live here.
 ///
 /// Public so [`Conn`] can expose it as the target of its [`Deref`]
-/// impls — non-blocking commands resolve straight to the inner without
+/// impls. Non-blocking commands then resolve straight to the inner without
 /// per-method passthroughs. Crate is a `cdylib`, so the "public" boundary
 /// is just the PyO3 surface; this type is still effectively internal.
 #[derive(Clone)]
@@ -794,7 +794,7 @@ impl ConnInner {
 }
 
 // =========================================================================
-// Connection config — stored for lazy blocking connection creation
+// Connection config, stored for lazy blocking connection creation
 // =========================================================================
 
 #[derive(Clone)]
@@ -821,7 +821,7 @@ impl ConnInner {
             Self::Standard(c) => c.get_cache_statistics(),
             Self::Cluster(_) => None, // cluster connection doesn't expose this yet
             Self::Sentinel(s) => {
-                // Can't block here — return None if lock is contested.
+                // Can't block here, so return None if lock is contested.
                 s.inner.try_read().ok().and_then(|c| c.get_cache_statistics())
             }
         }
@@ -829,13 +829,13 @@ impl ConnInner {
 }
 
 // =========================================================================
-// Conn — public wrapper with separate regular + blocking connections
+// Conn: public wrapper with separate regular + blocking connections
 // =========================================================================
 
 /// Public connection handle. Uses one connection for regular (fast) ops and
 /// a lazily-created second connection for blocking ops (BLMOVE, BLMPOP).
 ///
-/// Redis processes commands sequentially per connection — a BLMOVE with a
+/// Redis processes commands sequentially per connection, so a BLMOVE with a
 /// 1-second timeout blocks ALL other commands multiplexed on that connection.
 /// The separate blocking connection prevents this head-of-line blocking.
 #[derive(Clone)]
@@ -849,8 +849,7 @@ pub struct Conn {
 // `conn.X(args).await` auto-resolve to `conn.regular.X(args).await` without
 // hand-written passthroughs for every command. Blocking commands (BLMOVE,
 // BL{POP,RPOP,MPOP}) bypass this by being defined as inherent methods on
-// `Conn` — inherent methods take precedence over `Deref`-resolved
-// ones.
+// `Conn`, which take precedence over `Deref`-resolved ones.
 impl std::ops::Deref for Conn {
     type Target = ConnInner;
     fn deref(&self) -> &Self::Target {
@@ -915,7 +914,7 @@ impl Conn {
             .cloned()
     }
 
-    // === Regular ops — delegate to self.regular ===
+    // === Regular ops: delegate to self.regular ===
 
     pub async fn get_bytes(&mut self, key: &str) -> RedisResult<Option<Vec<u8>>> {
         self.regular.get_bytes(key).await
@@ -1071,7 +1070,7 @@ impl Conn {
         self.regular.cache_statistics()
     }
 
-    // === Blocking ops — use separate connection ===
+    // === Blocking ops: use separate connection ===
 
     pub async fn blmove(
         &mut self,
@@ -1329,8 +1328,8 @@ impl ConnInner {
         dispatch_cmd!(self, cmd)
     }
 
-    /// On Cluster, KEYS only hits one master and returns that node's keys —
-    /// callers needing a full-cluster scan should fan out themselves or use
+    /// On Cluster, KEYS only hits one master and returns that node's keys.
+    /// Callers needing a full-cluster scan should fan out themselves or use
     /// `scan_all` (which has the same single-node limitation here, mirroring
     /// vcache's behavior; documented for both).
     pub async fn keys(&mut self, pattern: &str) -> RedisResult<Vec<String>> {
@@ -2028,8 +2027,8 @@ impl ConnInner {
     ///
     /// `block_ms` adds the BLOCK option. The caller is responsible for routing
     /// blocking variants through the dedicated blocking connection (see
-    /// `Conn::xread`) — head-of-line blocking on the multiplexed
-    /// connection would otherwise stall every other command.
+    /// `Conn::xread`). Head-of-line blocking on the multiplexed connection
+    /// would otherwise stall every other command.
     pub async fn xread(
         &mut self,
         keys: &[String],

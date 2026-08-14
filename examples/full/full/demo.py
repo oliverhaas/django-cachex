@@ -31,7 +31,7 @@ def pipeline_demo(request: HttpRequest) -> JsonResponse:
 
 
 async def async_demo(request: HttpRequest) -> JsonResponse:
-    """Read/write through the async surface — only useful under ASGI."""
+    """Read/write through the async surface (only useful under ASGI)."""
     cache = caches["default"]
     await cache.aset("demo:async", "hello")
     value = await cache.aget("demo:async")

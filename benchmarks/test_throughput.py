@@ -2,16 +2,16 @@
 
 Parametrized tests:
 
-- ``test_adapters_sync`` — fixed pickle serializer, varies the adapter.
+- ``test_adapters_sync`` fixes the pickle serializer and varies the adapter.
   Isolates the adapter/parser/connection stack.
-- ``test_serializers`` — fixed redis-rs adapter, varies the serializer.
+- ``test_serializers`` fixes the redis-rs adapter and varies the serializer.
   Isolates serializer cost (adapter overhead is minimal at that point).
-- ``test_compressors_macro`` — fixed redis-rs + pickle, varies the
+- ``test_compressors_macro`` fixes redis-rs + pickle and varies the
   compressor on a large payload. End-to-end ops/sec showing the compress
   cost vs network savings tradeoff in real cache calls.
-- ``test_compressors_micro`` — pure compress/decompress in-process, no
-  adapter or container. Reports ratio and MB/s for each compressor.
-- ``test_adapters_request_cycle`` — same shape as ``test_adapters_sync`` but
+- ``test_compressors_micro`` runs pure compress/decompress in-process, with
+  no adapter or container. Reports ratio and MB/s for each compressor.
+- ``test_adapters_request_cycle`` has the same shape as ``test_adapters_sync`` but
   every cache op is wrapped in a real Django request cycle (URL resolve,
   middleware, view dispatch, signals). Direct comparison reveals the
   per-request overhead Django adds on top of the cache call itself.
@@ -41,7 +41,7 @@ from benchmarks.runner import (
 
 ASYNC_CONCURRENCY = 50
 
-# ASGI benchmark knobs — kept short by default so the suite stays runnable
+# ASGI benchmark knobs, kept short by default so the suite stays runnable
 # in CI; bump these manually for hero numbers.
 ASGI_DURATION_S = 20
 ASGI_CONCURRENCY = 100
@@ -145,7 +145,7 @@ def test_adapters_request_cycle(adapter, server_url, results, capsys) -> None:
 
 @pytest.mark.parametrize("adapter", ADAPTER_CONFIGS, ids=lambda c: c.id)
 def test_adapters_asgi(adapter, server_url, asgi_results, capsys) -> None:
-    """Full-stack ASGI benchmark — granian + httpx + 6 cache ops per request.
+    """Full-stack ASGI benchmark with granian + httpx and 6 cache ops per request.
 
     Mirrors django-vcache's ``bench_compare.py`` shape so numbers are
     directly comparable. To reproduce vcache's connection-leak claim
