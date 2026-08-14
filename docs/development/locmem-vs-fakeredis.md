@@ -59,9 +59,9 @@ page for the script.)
    format, fakeredis interpreting it, formatting the response, and
    redis-py deserializing back. Even though everything is in-process,
    the protocol layer dominates.
-2. **fakeredis lands in the same ballpark as Redis on localhost**: it
-   behaves like Redis-on-localhost for latency, ~6x slower than a
-   container on the same pod.
+2. **fakeredis is slower than real Redis on localhost.** At ~620 µs per
+   op it runs ~6x behind a container on the same pod (~100 µs), landing
+   between local Redis and a cross-AZ ElastiCache round-trip.
 3. **Our `LocMemCache` is ~250-400× faster per single op** than
    fakeredis, and the gap widens with N for collection-spanning ops
    (`hgetall`, `lrange 0..-1`) where fakeredis's internal data

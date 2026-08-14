@@ -179,12 +179,12 @@ Execute Lua scripts with optional key prefixing and value encoding/decoding:
 
 ```python
 result = cache.eval_script(
-    script,           # Lua script source code
-    keys=(),          # KEYS to pass to script
-    args=(),          # ARGV to pass to script
-    pre_hook=None,    # Pre-processing hook: (helpers, keys, args) -> (keys, args)
-    post_hook=None,   # Post-processing hook: (helpers, result) -> result
-    version=None,     # Key version for prefixing
+    script,  # Lua script source code
+    keys=(),  # KEYS to pass to script
+    args=(),  # ARGV to pass to script
+    pre_hook=None,  # Pre-processing hook: (helpers, keys, args) -> (keys, args)
+    post_hook=None,  # Post-processing hook: (helpers, result) -> result
+    version=None,  # Key version for prefixing
 )
 ```
 
@@ -461,7 +461,6 @@ All cache methods are available on the pipeline. Results are returned as a list 
 |--------|-------------|
 | `serializer` | Serializer class or list for fallback |
 | `compressor` | Compressor class or list for fallback |
-| `min_length` | Skip compression for payloads below this byte count (default `15`) |
 | `password` | Server password |
 | `socket_connect_timeout` | Connection timeout |
 | `socket_timeout` | Read/write timeout |
@@ -488,14 +487,18 @@ Pass it to `OPTIONS["stampede_prevention"]` to apply globally, or to the
 
 ## Exceptions
 
-All raised from `django_cachex.exceptions` and re-exported at the package
-root.
+All importable from the package root (`django_cachex`). Every exception
+subclasses `CachexError`, so one `except CachexError` handles any library
+failure.
 
 | Exception | Description |
 |-----------|-------------|
+| `CachexError` | Base class for every exception raised by django-cachex. |
 | `WrongTypeError` | Operation applied to a key holding the wrong RESP type (subclass of `TypeError`). Mirrors Redis ``WRONGTYPE``; raised consistently across LocMem, redis-py, valkey-py, valkey-glide, and the Rust adapter. |
 | `CompressorError` | Compression or decompression failed. Triggers the configured compressor fallback chain. |
 | `SerializerError` | Serialization or deserialization failed. Triggers the serializer fallback chain. |
 | `NotSupportedError` | Operation is not supported by this backend (e.g. `lpush` on `TieredCache`). |
-| `LockError` | Generic lock failure (couldn't acquire, releasing an unlocked lock, …). |
-| `LockNotOwnedError` | Releasing or extending a lock whose token no longer matches (i.e. the lock expired or was stolen). Subclass of `LockError`. |
+| `LockError` | A lock operation failed (couldn't acquire, releasing an unlocked lock, ...). |
+| `LockNotOwnedError` | Releasing or extending a lock the caller no longer owns (expired or stolen). Subclass of `LockError`. |
+| `SemaphoreError` | A semaphore operation failed (e.g. re-acquiring before release). |
+| `SemaphoreTimeoutError` | `timeout` elapsed before the semaphore could be acquired. Subclass of `SemaphoreError`. |

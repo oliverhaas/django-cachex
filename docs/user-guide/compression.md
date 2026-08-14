@@ -11,9 +11,37 @@ CACHES = {
         "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
             "compressor": "django_cachex.compressors.zstd.ZstdCompressor",
-        }
+        },
     }
 }
+```
+
+## Minimum Size
+
+`min_length` is a constructor argument of the compressor, not a cache `OPTIONS`
+key. It defaults to `256`, so payloads at or below 256 bytes are stored
+uncompressed. Raise the threshold by configuring a compressor instance instead
+of a dotted path:
+
+```python
+from django_cachex.compressors.zstd import ZstdCompressor
+
+CACHES = {
+    "default": {
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
+        "OPTIONS": {
+            "compressor": ZstdCompressor(min_length=1024),
+        },
+    }
+}
+```
+
+A subclass works too, and stays configurable by dotted path:
+
+```python
+class LargeOnlyZstdCompressor(ZstdCompressor):
+    min_length = 1024
 ```
 
 ## Available Compressors

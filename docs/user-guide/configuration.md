@@ -200,12 +200,16 @@ etc.) the same way.
 
 ```python
 "OPTIONS": {
-    # For Valkey with libvalkey
-    "parser_class": "valkey.connection.LibvalkeyParser",
-    # For Redis with hiredis
-    # "parser_class": "redis.connection.HiredisParser",
+    # Dotted path or class; defaults to the driver's DefaultParser
+    "parser_class": "valkey.connection.DefaultParser",  # or "redis.connection.DefaultParser"
 }
 ```
+
+You rarely need to set this. When omitted, the driver's `DefaultParser`
+is used, which resolves to the C-accelerated parser when `libvalkey`
+(Valkey) or `hiredis` (Redis) is installed and to the pure-Python RESP
+parser otherwise. To get the C parser, install the `libvalkey` or
+`hiredis` extra; no `parser_class` setting is required.
 
 ### Cache stampede prevention
 

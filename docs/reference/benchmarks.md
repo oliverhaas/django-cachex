@@ -119,10 +119,10 @@ overhead Django itself adds.
 | **valkey-glide**    | 1,150 | 1,749 | 1,668 |   983 |   940 | 1,740 | 1,745 |
 | django (builtin)    |   799 | 1,104 | 1,062 |   812 |   765 |   955 | 1,106 |
 
-Django itself caps throughput at ~1k req/s for pure-Python adapters.
-the cache stops being the bottleneck. The Rust-cored adapters land
-~1.7-2× the Python adapters because their per-op overhead is small
-enough that Django's per-request work doesn't fully mask it.
+Django's per-request work caps the pure-Python adapters at ~1k req/s;
+at that point the cache is no longer the bottleneck. The Rust-cored
+adapters still land ~1.7-2× higher because their per-op overhead is
+small enough that Django's per-request work doesn't fully mask it.
 
 ## Async serial
 
@@ -186,9 +186,9 @@ production load.
 req/s is noisy run-to-run on this benchmark; treat the rough buckets
 (~600 / ~400 / ~200) as the signal, not exact ranks. The clearer
 takeaways: both Rust adapters keep the connection count to ~half the
-Python adapters, and Django's built-in `RedisCache` opens 316
-connections (it instantiates a fresh `redis.Redis` per cache call).
-and pays the highest avg latency on the smallest server.
+Python adapters, while Django's built-in `RedisCache` opens 316
+connections (it instantiates a fresh `redis.Redis` per cache call) and
+pays the highest average latency and the largest RSS.
 
 ## Reproducing
 

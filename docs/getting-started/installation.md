@@ -9,8 +9,14 @@
 
 ## Install with uv
 
+The base package pulls in no client driver; pick the extra that matches your setup:
+
 ```console
-uv add django-cachex
+# For Valkey
+uv add django-cachex[valkey-py]
+
+# For Redis
+uv add django-cachex[redis-py]
 ```
 
 ## Install with libvalkey/hiredis
