@@ -50,6 +50,69 @@ class TestBackend:
             assert hasattr(locmem_cache, name)
 
 
+class TestSharedLocation:
+    """Instances with the same LOCATION share all state, matching Django's
+    module-level ``_caches`` registry (Django creates one backend instance
+    per thread).
+    """
+
+    def test_collections_shared_between_instances(self):
+        # Regression: ``_collections`` was per-instance, so a second handle
+        # on the same LOCATION saw an empty keyspace for collection types.
+        a = LocMemCache("shared-collections", {})
+        b = LocMemCache("shared-collections", {})
+        a.clear()
+        a.rpush("l", 1, 2)
+        a.sadd("s", "x")
+        a.hset("h", "f", "v")
+        a.zadd("z", {"m": 1.5})
+        assert b.lrange("l", 0, -1) == [1, 2]
+        assert b.smembers("s") == {"x"}
+        assert b.hget("h", "f") == "v"
+        assert b.zscore("z", "m") == 1.5
+        b.srem("s", "x")
+        assert a.has_key("s") is False
+
+    def test_semaphore_registry_shared_between_instances(self):
+        # Regression: each instance built its own registry, splitting the
+        # semaphore budget across handles on the same LOCATION.
+        a = LocMemCache("shared-semaphores", {})
+        b = LocMemCache("shared-semaphores", {})
+        assert a._semaphore_registry is b._semaphore_registry
+
+
+class TestCulling:
+    """MAX_ENTRIES/CULL_FREQUENCY apply to collection keys as well as to the
+    pickled-bytes store, following Django's locmem culling approach.
+    """
+
+    def test_collection_writes_respect_max_entries(self):
+        # Regression: collection keys were never culled.
+        cache = LocMemCache("cull-collections", {"OPTIONS": {"MAX_ENTRIES": 5, "CULL_FREQUENCY": 2}})
+        cache.clear()
+        for i in range(20):
+            cache.sadd(f"k{i}", "x")
+        assert len(cache._cache) + len(cache._collections) <= 5
+
+    def test_mixed_writes_respect_max_entries(self):
+        cache = LocMemCache("cull-mixed", {"OPTIONS": {"MAX_ENTRIES": 5, "CULL_FREQUENCY": 2}})
+        cache.clear()
+        for i in range(10):
+            cache.set(f"s{i}", i)
+            cache.rpush(f"l{i}", i)
+        assert len(cache._cache) + len(cache._collections) <= 5
+        # Culled keys must not leak TTL entries.
+        assert len(cache._expire_info) == len(cache._cache) + len(cache._collections)
+
+    def test_cull_frequency_zero_clears_collections_too(self):
+        cache = LocMemCache("cull-zero", {"OPTIONS": {"MAX_ENTRIES": 3, "CULL_FREQUENCY": 0}})
+        cache.clear()
+        for i in range(4):
+            cache.sadd(f"k{i}", "x")
+        # The write at capacity clears everything, then inserts one key.
+        assert len(cache._cache) + len(cache._collections) == 1
+
+
 class TestSetFlags:
     """LocMemCache nx/xx/get flag semantics (parity with RespCache)."""
 
@@ -232,6 +295,38 @@ class TestKeysAndAdmin:
             assert "myapp:bar" in keys
             assert ":bar" not in keys
 
+    def test_keys_with_colon_in_key_prefix(self):
+        # Regression: keys() assumed a colon-free prefix and silently
+        # dropped every key when KEY_PREFIX itself contained a colon.
+        config = {
+            "locmem": {
+                "BACKEND": "django_cachex.cache.LocMemCache",
+                "LOCATION": "test-colon-prefix",
+                "KEY_PREFIX": "app:v2",
+            },
+        }
+        with override_settings(CACHES=config):
+            cache = caches["locmem"]
+            cache.clear()
+            cache.set("plain", "v")
+            cache.sadd("aset", "x")
+            cache.set("other", "v", version=2)
+            assert cache.keys() == ["aset", "plain"]
+            assert cache.keys(version=2) == ["other"]
+
+    def test_keys_key_starting_with_colon(self, locmem_cache: LocMemCache):
+        locmem_cache.set(":leading", "v")
+        assert locmem_cache.keys() == [":leading"]
+        assert locmem_cache.keys(":lead*") == [":leading"]
+
+    def test_keys_excludes_expired_entries(self, locmem_cache: LocMemCache):
+        # Regression: expired-but-not-yet-culled entries were listed.
+        locmem_cache.set("gone", "v", timeout=-1)
+        locmem_cache.rpush("gone-list", "x")
+        locmem_cache.expire("gone-list", -1)
+        locmem_cache.set("alive", "v")
+        assert locmem_cache.keys() == ["alive"]
+
     def test_keys_with_pattern(self, locmem_cache: LocMemCache):
         locmem_cache.set("user:1", "alice")
         locmem_cache.set("user:2", "bob")
@@ -291,6 +386,17 @@ class TestKeysAndAdmin:
 
     def test_persist_missing_key(self, locmem_cache: LocMemCache):
         assert locmem_cache.persist("nonexistent") is False
+
+    def test_incr_missing_key_raises_valueerror(self, locmem_cache: LocMemCache):
+        with pytest.raises(ValueError, match="not found"):
+            locmem_cache.incr("missing")
+
+    def test_incr_on_collection_raises_wrongtype(self, locmem_cache: LocMemCache):
+        # Regression: Django's inherited incr read ``_cache`` directly and
+        # raised KeyError for a live key held in ``_collections``.
+        locmem_cache.sadd("k", "a")
+        with pytest.raises(WrongTypeError):
+            locmem_cache.incr("k")
 
     def test_info_returns_dict(self, locmem_cache: LocMemCache):
         locmem_cache.set("key1", "value1")
@@ -418,6 +524,12 @@ class TestListOps:
         locmem_cache.rpush("k", 1, 2, 3, 4)
         assert locmem_cache.rpop("k", count=2) == [4, 3]
         assert locmem_cache.lrange("k", 0, -1) == [1, 2]
+
+    def test_rpop_count_zero_pops_nothing(self, locmem_cache: LocMemCache):
+        # Regression: count=0 sliced ``[-0:]`` and popped the whole list.
+        locmem_cache.rpush("k", 1, 2, 3)
+        assert locmem_cache.rpop("k", count=0) == []
+        assert locmem_cache.lrange("k", 0, -1) == [1, 2, 3]
 
     def test_rpop_empty(self, locmem_cache: LocMemCache):
         assert locmem_cache.rpop("missing") is None
@@ -609,6 +721,11 @@ class TestSetOps:
         with pytest.raises(TypeError):
             locmem_cache.sadd("k", "c")
 
+    def test_sadd_no_members_creates_nothing(self, locmem_cache: LocMemCache):
+        # Regression: an empty write registered a phantom empty set.
+        assert locmem_cache.sadd("k") == 0
+        assert locmem_cache.has_key("k") is False
+
     def test_srem(self, locmem_cache: LocMemCache):
         locmem_cache.sadd("k", "a", "b", "c")
         assert locmem_cache.srem("k", "b") == 1
@@ -795,6 +912,11 @@ class TestHashOps:
         with pytest.raises(ValueError, match="even number"):
             locmem_cache.hset("k", items=["a", 1, "b"])
 
+    def test_hset_no_fields_creates_nothing(self, locmem_cache: LocMemCache):
+        # Regression: an empty write registered a phantom empty hash.
+        assert locmem_cache.hset("k", mapping={}) == 0
+        assert locmem_cache.has_key("k") is False
+
     def test_hdel_removes_field(self, locmem_cache: LocMemCache):
         locmem_cache.hset("k", mapping={"a": 1, "b": 2, "c": 3})
         assert locmem_cache.hdel("k", "b") == 1
@@ -910,6 +1032,29 @@ class TestHashOps:
         locmem_cache.hset("k", mapping={"score": 2.5})
         assert locmem_cache.hincrbyfloat("k", "score", 0.5) == pytest.approx(3.0)
 
+    def test_hincrbyfloat_int_field(self, locmem_cache: LocMemCache):
+        locmem_cache.hset("k", "f", 2)
+        assert locmem_cache.hincrbyfloat("k", "f", 0.5) == pytest.approx(2.5)
+
+    def test_hincrby_non_integer_field_raises(self, locmem_cache: LocMemCache):
+        locmem_cache.hset("k", "f", "abc")
+        with pytest.raises(ValueError, match="not an integer"):
+            locmem_cache.hincrby("k", "f", 1)
+        assert locmem_cache.hget("k", "f") == "abc"
+
+    def test_hincrby_float_field_raises(self, locmem_cache: LocMemCache):
+        # Redis rejects HINCRBY on a float value; int() would truncate it.
+        locmem_cache.hset("k", "f", 3.5)
+        with pytest.raises(ValueError, match="not an integer"):
+            locmem_cache.hincrby("k", "f", 1)
+        assert locmem_cache.hget("k", "f") == 3.5
+
+    def test_hincrbyfloat_non_numeric_field_raises(self, locmem_cache: LocMemCache):
+        locmem_cache.hset("k", "f", "abc")
+        with pytest.raises(ValueError, match="not a float"):
+            locmem_cache.hincrbyfloat("k", "f", 1.0)
+        assert locmem_cache.hget("k", "f") == "abc"
+
     def test_hash_ops_preserve_ttl(self, locmem_cache: LocMemCache):
         locmem_cache.hset("k", mapping={"a": 1})
         locmem_cache.expire("k", 3600)
@@ -967,6 +1112,20 @@ class TestSortedSetOps:
         assert locmem_cache.zscore("k", "a") == 5.0
         locmem_cache.zadd("k", {"a": 1.0}, lt=True)
         assert locmem_cache.zscore("k", "a") == 1.0
+
+    def test_zadd_xx_on_missing_key_creates_nothing(self, locmem_cache: LocMemCache):
+        # Regression: an all-filtered write registered a phantom empty zset.
+        assert locmem_cache.zadd("k", {"a": 1.0}, xx=True) == 0
+        assert locmem_cache.has_key("k") is False
+
+    def test_zadd_mixed_member_types_with_equal_str(self, locmem_cache: LocMemCache):
+        # Regression: score ties fell back to comparing raw members and
+        # raised TypeError for 1 vs "1" (equal str, incomparable types).
+        locmem_cache.zadd("k", {1: 1.0, "1": 1.0})
+        assert locmem_cache.zcard("k") == 2
+        assert set(locmem_cache.zrange("k", 0, -1)) == {1, "1"}
+        assert locmem_cache.zrem("k", 1) == 1
+        assert locmem_cache.zrange("k", 0, -1) == ["1"]
 
     def test_zcard_missing(self, locmem_cache: LocMemCache):
         assert locmem_cache.zcard("missing") == 0
@@ -1116,6 +1275,12 @@ class TestSortedSetOps:
     def test_zpopmax_with_count(self, locmem_cache: LocMemCache):
         locmem_cache.zadd("k", {"a": 1.0, "b": 2.0, "c": 3.0})
         assert locmem_cache.zpopmax("k", count=2) == [("c", 3.0), ("b", 2.0)]
+
+    def test_zpopmax_count_zero_pops_nothing(self, locmem_cache: LocMemCache):
+        # Regression: count=0 sliced ``[-0:]`` and popped the whole zset.
+        locmem_cache.zadd("k", {"a": 1.0, "b": 2.0})
+        assert locmem_cache.zpopmax("k", count=0) == []
+        assert locmem_cache.zcard("k") == 2
 
     def test_zpopmax_missing_key(self, locmem_cache: LocMemCache):
         assert locmem_cache.zpopmax("missing") == []
