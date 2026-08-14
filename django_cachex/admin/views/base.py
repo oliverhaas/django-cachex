@@ -5,7 +5,9 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from django.contrib import messages
+from django.contrib.admin.utils import quote
 from django.urls import reverse
+from django.utils.http import urlencode
 
 from django_cachex.admin.models import Key
 
@@ -26,16 +28,18 @@ def cache_list_url() -> str:
 
 
 def key_list_url(cache_name: str) -> str:
-    return reverse("admin:django_cachex_key_changelist") + f"?cache={cache_name}"
+    return reverse("admin:django_cachex_key_changelist") + "?" + urlencode({"cache": cache_name})
 
 
 def key_detail_url(cache_name: str, key: str) -> str:
+    # The admin's ``quote``/``unquote`` pair round-trips '/', ':', '%', and
+    # '_XX' sequences losslessly, matching ``ChangeList.url_for_result``.
     pk = Key.make_pk(cache_name, key)
-    return reverse("admin:django_cachex_key_change", args=[pk])
+    return reverse("admin:django_cachex_key_change", args=[quote(pk)])
 
 
 def key_add_url(cache_name: str) -> str:
-    return reverse("admin:django_cachex_key_add") + f"?cache={cache_name}"
+    return reverse("admin:django_cachex_key_add") + "?" + urlencode({"cache": cache_name})
 
 
 # =============================================================================
