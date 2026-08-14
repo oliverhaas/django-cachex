@@ -29,6 +29,11 @@ These provide C-based parsers that improve protocol parsing throughput on the ho
 
 ## Rust I/O driver (optional)
 
+!!! warning "Experimental"
+    The Rust I/O driver is experimental: interfaces and behavior may
+    change, and it has seen less production testing than the
+    redis-py/valkey-py paths.
+
 The `RedisRsCache` backends are powered by an
 opt-in native extension built on PyO3 + tokio + [redis-rs]. It ships as
 a separate package, `django-cachex-redis-rs`, so users who only want the
@@ -54,6 +59,11 @@ use, naming the extra you need.
 [redis-rs]: https://github.com/redis-rs/redis-rs
 
 ## Valkey-Glide adapter (optional)
+
+!!! warning "Experimental"
+    The valkey-glide adapter is experimental: interfaces and behavior may
+    change, and it has seen less production testing than the
+    redis-py/valkey-py paths.
 
 The `ValkeyGlideCache` backend wraps Valkey's official client,
 [valkey-glide]. It's a Rust core (like `redis-rs`) but packaged separately
