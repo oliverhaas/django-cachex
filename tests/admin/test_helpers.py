@@ -1,8 +1,114 @@
 """Tests for admin helper functions."""
 
+from typing import Any
+
 import pytest
 
 from django_cachex.admin.helpers import PAGE_SIZE, _paginate
+from django_cachex.admin.views.key_detail import _set_preserving_ttl
+from django_cachex.exceptions import NotSupportedError
+
+_DEFAULT = object()
+
+
+class _FakeCache:
+    """Records the timeout an admin edit would write.
+
+    Subclasses model the TTL surface of one real backend family; the three
+    disagree on how no-expiry is reported and on whether ``pexpire`` exists.
+    """
+
+    def __init__(self, remaining: Any):
+        self._remaining = remaining
+        self.set_timeout: Any = _DEFAULT
+        self.pexpire_ms: int | None = None
+
+    def set(self, key: str, value: Any, timeout: Any = _DEFAULT) -> None:
+        del key, value
+        self.set_timeout = timeout
+
+
+class _RespCache(_FakeCache):
+    """RESP adapters normalize no-expiry to ``None`` and offer ``pexpire``."""
+
+    def pttl(self, key: str) -> int | None:
+        del key
+        return self._remaining
+
+    def pexpire(self, key: str, timeout: int) -> None:
+        del key
+        self.pexpire_ms = timeout
+
+
+class _StreamCache(_FakeCache):
+    """StreamCache reports no-expiry as ``-1`` and has no ``pexpire``."""
+
+    def pttl(self, key: str) -> int:
+        del key
+        return self._remaining
+
+
+class _LocMemCache(_FakeCache):
+    """LocMem/Database have no ``pttl``, and their ``ttl`` is whole seconds."""
+
+    def pttl(self, key: str) -> int:
+        raise NotSupportedError("pttl", type(self).__name__)
+
+    def ttl(self, key: str) -> int:
+        del key
+        return self._remaining
+
+
+class TestSetPreservingTtl:
+    """Editing a value in the admin must not change when the key expires."""
+
+    def test_resp_persistent_key_stays_persistent(self):
+        cache = _RespCache(None)
+        _set_preserving_ttl(cache, "k", "v")
+        assert cache.set_timeout is None
+
+    def test_stream_persistent_key_stays_persistent(self):
+        cache = _StreamCache(-1)
+        _set_preserving_ttl(cache, "k", "v")
+        assert cache.set_timeout is None
+
+    def test_locmem_persistent_key_stays_persistent(self):
+        cache = _LocMemCache(-1)
+        _set_preserving_ttl(cache, "k", "v")
+        assert cache.set_timeout is None
+
+    def test_missing_key_gets_the_default_timeout(self):
+        cache = _RespCache(-2)
+        _set_preserving_ttl(cache, "k", "v")
+        assert cache.set_timeout is _DEFAULT
+
+    def test_sub_second_precision_is_restored_via_pexpire(self):
+        cache = _RespCache(1500)
+        _set_preserving_ttl(cache, "k", "v")
+        assert cache.set_timeout == 2
+        assert cache.pexpire_ms == 1500
+
+    def test_whole_second_ttl_needs_no_pexpire(self):
+        cache = _RespCache(3600_000)
+        _set_preserving_ttl(cache, "k", "v")
+        assert cache.set_timeout == 3600
+        assert cache.pexpire_ms is None
+
+    def test_ttl_survives_a_backend_without_pexpire(self):
+        cache = _StreamCache(3600_500)
+        _set_preserving_ttl(cache, "k", "v")
+        assert cache.set_timeout == 3601
+
+    def test_locmem_seconds_ttl_is_carried_over(self):
+        cache = _LocMemCache(3600)
+        _set_preserving_ttl(cache, "k", "v")
+        assert cache.set_timeout == 3600
+
+    def test_expiring_key_is_not_promoted_to_the_default_timeout(self):
+        # LocMem floors ttl(), so a key with under a second left reads as 0.
+        cache = _LocMemCache(0)
+        _set_preserving_ttl(cache, "k", "v")
+        assert cache.set_timeout == 1
 
 
 class TestPaginate:

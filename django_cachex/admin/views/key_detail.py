@@ -3,6 +3,7 @@
 import contextlib
 import json
 import logging
+import math
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -26,7 +27,7 @@ from django_cachex.admin.views.base import (
     key_list_url,
     show_help,
 )
-from django_cachex.exceptions import CompressorError, SerializerError
+from django_cachex.exceptions import CompressorError, NotSupportedError, SerializerError
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
@@ -83,6 +84,34 @@ def _apply_cas_result(
         messages.error(request, missing)
 
 
+def _set_preserving_ttl(cache: Any, key: str, value: Any) -> None:
+    """Write ``value`` without disturbing the key's expiry.
+
+    The backends disagree on how they report no-expiry: the RESP adapters
+    normalize it to ``None``, the pure-Python ones return ``-1`` like Redis.
+    ``-2`` means the key is gone. Prefer ``pttl`` so sub-second expiries are
+    not rounded away, and fall back to ``ttl`` on backends without it.
+    """
+    for method, scale in (("pttl", 1), ("ttl", 1000)):
+        try:
+            raw = getattr(cache, method)(key)
+        except AttributeError, NotSupportedError:
+            continue
+        if raw is None or raw == -1:
+            cache.set(key, value, timeout=None)
+        elif raw < 0:
+            break
+        else:
+            # Round up: backends without pexpire keep whatever the write said.
+            remaining_ms = raw * scale
+            cache.set(key, value, timeout=max(1, math.ceil(remaining_ms / 1000)))
+            if remaining_ms % 1000:
+                with contextlib.suppress(AttributeError, NotSupportedError):
+                    cache.pexpire(key, remaining_ms)
+        return
+    cache.set(key, value)
+
+
 def _report_pop(request: HttpRequest, result: Any, *, on_empty: str, kind: str) -> None:
     """Render a success/error message for a pop-style operation."""
     if not result:
@@ -125,14 +154,7 @@ def _handle_update(request: HttpRequest, cache: Any, cache_name: str, key: str, 
                 missing="Key no longer exists.",
             )
         else:
-            # Fallback path used by backends without ``eval_script`` (LocMem,
-            # Database). Use millisecond TTL so we don't round sub-second
-            # precision down on every edit. ``pttl`` returns ``None`` for
-            # no-expiry, ``-2`` for missing key.
-            existing_pttl = cache.pttl(key) if hasattr(cache, "pttl") else None
-            cache.set(key, new_value)
-            if existing_pttl is not None and existing_pttl > 0 and hasattr(cache, "pexpire"):
-                cache.pexpire(key, existing_pttl)
+            _set_preserving_ttl(cache, key, new_value)
             messages.success(request, "Key updated successfully.")
         return _redirect_to_key(cache_name, key, page)
     except Exception as e:  # noqa: BLE001
@@ -620,24 +642,24 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
                 "You can still delete the key.",
             )
         else:
-            if hasattr(cache, "eval_script"):
-                try:
-                    string_sha1 = get_string_sha1(cache, key)
-                except Exception:  # noqa: BLE001
-                    # CAS protection downgrades when the server-side fingerprint
-                    # lookup fails (e.g. cluster routing failure). Log for
-                    # post-mortem and warn the operator so they know the next
-                    # update will skip conflict detection.
-                    logger.warning(
-                        "CAS fingerprint lookup failed for key %r; edit will skip conflict check",
-                        key,
-                        exc_info=True,
-                    )
-                    messages.warning(
-                        request,
-                        "Conflict detection unavailable for this key. "
-                        "Concurrent edits won't be caught; the next save will overwrite blindly.",
-                    )
+            try:
+                string_sha1 = get_string_sha1(cache, key)
+            except AttributeError, NotSupportedError:
+                # No server-side scripting (LocMem, Database, stock backends):
+                # edit via plain set() without conflict detection.
+                pass
+            except Exception:
+                # Downgrade rather than block the edit page on lookup failure.
+                logger.warning(
+                    "CAS fingerprint lookup failed for key %r; edit will skip conflict check",
+                    key,
+                    exc_info=True,
+                )
+                messages.warning(
+                    request,
+                    "Conflict detection unavailable for this key. "
+                    "Concurrent edits won't be caught; the next save will overwrite blindly.",
+                )
 
     if value_decode_error is not None:
         value_display = f"<value cannot be decoded: {value_decode_error}>"

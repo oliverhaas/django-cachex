@@ -196,8 +196,9 @@ def get_type_data(
 
     result = _fetch_type_data(cache, key, key_type, page=page)
 
-    # Add SHA1 fingerprints for CAS (compare-and-swap) protection.
-    if result and hasattr(cache, "eval_script"):
+    # SHA1 fingerprints for CAS protection; backends without scripting
+    # support are handled inside.
+    if result:
         _add_cas_fingerprints(cache, key, key_type, result)
 
     return result
@@ -303,7 +304,11 @@ def _add_cas_fingerprints(cache: Any, key: str, key_type: str | None, result: di
 
                     hash_sha1s = get_hash_field_sha1s(cache, key)
                 result["field_entries"] = [(field, value, hash_sha1s.get(field, "")) for field, value in fields.items()]
-    except Exception:  # noqa: BLE001
+    except AttributeError, NotSupportedError:
+        # No server-side scripting (LocMem, Database, stock backends):
+        # render without CAS fingerprints.
+        return
+    except Exception:
         # CAS protection is best-effort. Mirror the warning emitted by
         # ``_key_detail_view`` (key_detail.py) so the operator knows the
         # next update will skip conflict detection.
