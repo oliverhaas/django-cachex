@@ -70,6 +70,18 @@ class TieredCache(BaseCachex):
                 f"TieredCache requires OPTIONS['tiers'] with exactly 2 cache aliases, e.g. ['l1', 'l2']. Got: {tiers!r}"
             )
             raise ImproperlyConfigured(msg)
+        if "KEY_PREFIX" in options:
+            msg = (
+                "TieredCache does not apply OPTIONS['KEY_PREFIX']; each tier "
+                "prefixes its own keys. Set KEY_PREFIX on the tier cache aliases instead."
+            )
+            raise ImproperlyConfigured(msg)
+        if params.get("KEY_PREFIX"):
+            msg = (
+                "TieredCache does not apply KEY_PREFIX; each tier prefixes its "
+                "own keys. Set KEY_PREFIX on the tier cache aliases instead."
+            )
+            raise ImproperlyConfigured(msg)
         self._l1_alias: str = tiers[0]
         self._l2_alias: str = tiers[1]
         # L1 TTL cap: explicit option or fall back to L1's own default_timeout
@@ -85,10 +97,8 @@ class TieredCache(BaseCachex):
     def _l2(self) -> BaseCachex:
         from django.core.cache import caches
 
-        # TieredCache forwards cachex-only kwargs (``nx``/``xx``/``get``) to
-        # L2; declaring ``BaseCachex`` is what enables that to type-check.
-        # Django's ``caches`` registry is typed as ``BaseCache``; cast to the
-        # cachex shape the tiered contract assumes.
+        # Cast the ``BaseCache``-typed registry entry to the cachex shape;
+        # cachex-only APIs still guard at runtime, so a stock L2 works.
         return cast("BaseCachex", caches[self._l2_alias])
 
     @property
@@ -233,6 +243,51 @@ class TieredCache(BaseCachex):
         elif self._l2_write_happened(result, nx=nx, xx=xx, get=get):
             self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
 
+    def _l2_set(
+        self,
+        key: str,
+        value: Any,
+        timeout: float | None,
+        version: int | None,
+        *,
+        nx: bool,
+        xx: bool,
+        get: bool,
+    ) -> Any:
+        """Run the L2 write, degrading when L2 is a stock Django backend.
+
+        Stock ``BaseCache.set`` accepts no ``nx``/``xx``/``get`` kwargs, so
+        forwarding them would raise ``TypeError``: ``nx`` is emulated via
+        ``add``, ``xx``/``get`` raise, and a plain set drops the flag kwargs.
+        """
+        if isinstance(self._l2, BaseCachex):
+            return self._l2.set(key, value, timeout, version=version, nx=nx, xx=xx, get=get)
+        if xx or get:
+            raise NotSupportedError("set with xx/get", type(self._l2).__name__)
+        if nx:
+            return self._l2.add(key, value, timeout, version=version)
+        return self._l2.set(key, value, timeout, version=version)
+
+    async def _al2_set(
+        self,
+        key: str,
+        value: Any,
+        timeout: float | None,
+        version: int | None,
+        *,
+        nx: bool,
+        xx: bool,
+        get: bool,
+    ) -> Any:
+        """Async twin of :meth:`_l2_set`."""
+        if isinstance(self._l2, BaseCachex):
+            return await self._l2.aset(key, value, timeout, version=version, nx=nx, xx=xx, get=get)
+        if xx or get:
+            raise NotSupportedError("aset with xx/get", type(self._l2).__name__)
+        if nx:
+            return await self._l2.aadd(key, value, timeout, version=version)
+        return await self._l2.aset(key, value, timeout, version=version)
+
     def set(
         self,
         key: str,
@@ -247,7 +302,7 @@ class TieredCache(BaseCachex):
         # Proxy the L2 return verbatim (prior value when ``get=True``, else the
         # nx/xx success bool, or ``None`` for a plain set) so the ``get=`` flag
         # contract is honored, then reconcile L1 with the actual write outcome.
-        result = self._l2.set(key, value, timeout, version=version, nx=nx, xx=xx, get=get)
+        result = self._l2_set(key, value, timeout, version, nx=nx, xx=xx, get=get)
         self._sync_l1_after_set(key, value, timeout, version, result, nx=nx, xx=xx, get=get)
         return result
 
@@ -262,7 +317,7 @@ class TieredCache(BaseCachex):
         xx: bool = False,
         get: bool = False,
     ) -> Any:
-        result = await self._l2.aset(key, value, timeout, version=version, nx=nx, xx=xx, get=get)
+        result = await self._al2_set(key, value, timeout, version, nx=nx, xx=xx, get=get)
         self._sync_l1_after_set(key, value, timeout, version, result, nx=nx, xx=xx, get=get)
         return result
 

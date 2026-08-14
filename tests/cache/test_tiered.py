@@ -9,10 +9,13 @@ from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.exceptions import ImproperlyConfigured
 from django.test import override_settings
 
+from django_cachex.exceptions import NotSupportedError
 from tests.cache.conftest import L1_TIMEOUT
 from tests.fixtures.cache import BACKENDS, _get_client_library_options
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from django.core.cache.backends.base import BaseCache
 
     from tests.fixtures.containers import RedisContainerInfo
@@ -428,6 +431,68 @@ class TestTieredCacheConfig:
         with override_settings(CACHES=config), pytest.raises(ImproperlyConfigured, match="tiers"):
             caches["default"].get("test")
 
+    def test_key_prefix_in_options_rejected(self):
+        """OPTIONS['KEY_PREFIX'] is never applied to either tier, so silently
+        accepting it would store unprefixed keys; init must reject it."""
+        config = {
+            "l1": {
+                "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            },
+            "l2": {
+                "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            },
+            "default": {
+                "BACKEND": "django_cachex.cache.TieredCache",
+                "OPTIONS": {
+                    "tiers": ["l1", "l2"],
+                    "KEY_PREFIX": "myapp",
+                },
+            },
+        }
+        with override_settings(CACHES=config), pytest.raises(ImproperlyConfigured, match="KEY_PREFIX"):
+            caches["default"].get("test")
+
+    def test_key_prefix_top_level_rejected(self):
+        """A top-level KEY_PREFIX is never applied either, so two tiered aliases
+        meant to be namespaced apart would silently collide; init must reject it."""
+        config = {
+            "l1": {
+                "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            },
+            "l2": {
+                "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            },
+            "default": {
+                "BACKEND": "django_cachex.cache.TieredCache",
+                "KEY_PREFIX": "myapp",
+                "OPTIONS": {
+                    "tiers": ["l1", "l2"],
+                },
+            },
+        }
+        with override_settings(CACHES=config), pytest.raises(ImproperlyConfigured, match="KEY_PREFIX"):
+            caches["default"].get("test")
+
+    def test_empty_key_prefix_accepted(self):
+        """An unset or empty KEY_PREFIX is the Django default and must not raise."""
+        config = {
+            "l1": {
+                "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            },
+            "l2": {
+                "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            },
+            "default": {
+                "BACKEND": "django_cachex.cache.TieredCache",
+                "KEY_PREFIX": "",
+                "OPTIONS": {
+                    "tiers": ["l1", "l2"],
+                },
+            },
+        }
+        with override_settings(CACHES=config):
+            assert caches["default"].get("test") is None
+
     def test_l1_timeout_from_option(self, tiered_cache: BaseCache):
         assert tiered_cache._l1_cap == L1_TIMEOUT
 
@@ -511,6 +576,67 @@ class TestTieredCacheConfig:
         from django_cachex.cache.locmem import LocMemCache
 
         assert LocMemCache._cachex_support == "cachex"
+
+
+class TestTieredStockDjangoL2:
+    """L2 as a stock Django backend, whose ``set`` takes no nx/xx/get kwargs.
+
+    Regression: the flag kwargs were forwarded unconditionally, so any
+    ``set()`` against a stock L2 raised ``TypeError`` at runtime.
+    """
+
+    @pytest.fixture
+    def stock_tiered(self) -> Iterator[BaseCache]:
+        config = {
+            "l1": {
+                "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                "LOCATION": "tiered-stock-l1",
+            },
+            "l2": {
+                "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                "LOCATION": "tiered-stock-l2",
+            },
+            "default": {
+                "BACKEND": "django_cachex.cache.TieredCache",
+                "OPTIONS": {
+                    "tiers": ["l1", "l2"],
+                    "l1_timeout": L1_TIMEOUT,
+                },
+            },
+        }
+        with override_settings(CACHES=config):
+            cache = caches["default"]
+            cache.clear()
+            yield cache
+            cache.clear()
+
+    def test_plain_set_get_roundtrip(self, stock_tiered: BaseCache):
+        stock_tiered.set("sk", "sv")
+        assert stock_tiered.get("sk") == "sv"
+        assert caches["l2"].get("sk") == "sv"
+
+    def test_set_nx_emulated_via_add(self, stock_tiered: BaseCache):
+        assert stock_tiered.set("nxk", "first", nx=True) is True
+        assert stock_tiered.set("nxk", "second", nx=True) is False
+        assert stock_tiered.get("nxk") == "first"
+        # L1 only mirrors the write that landed.
+        assert caches["l1"].get("nxk") == "first"
+
+    def test_set_xx_raises_not_supported(self, stock_tiered: BaseCache):
+        with pytest.raises(NotSupportedError):
+            stock_tiered.set("xxk", "v", xx=True)
+
+    def test_set_get_flag_raises_not_supported(self, stock_tiered: BaseCache):
+        with pytest.raises(NotSupportedError):
+            stock_tiered.set("gk", "v", get=True)
+
+    @pytest.mark.asyncio
+    async def test_aset_plain_and_nx(self, stock_tiered: BaseCache):
+        await stock_tiered.aset("ask", "av")
+        assert await stock_tiered.aget("ask") == "av"
+        assert await stock_tiered.aset("ask", "other", nx=True) is False
+        with pytest.raises(NotSupportedError):
+            await stock_tiered.aset("ask", "v", get=True)
 
 
 class TestTieredSetManyOrdering:
