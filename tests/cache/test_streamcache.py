@@ -437,6 +437,56 @@ class TestSyncCrossInstance:
         pod1._drain()
         assert pod1.get("from2") == "b"
 
+    def test_concurrent_set_keeps_stream_in_local_write_order(
+        self,
+        stream_cache: BaseCache,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Regression: ``set`` enqueued its broadcast after releasing ``_lock``,
+        so two racing writers could publish in the opposite order of their
+        local writes and replaying consumers converged to the stale value.
+        """
+        import threading
+
+        cache = stream_cache
+        cache.set("warm", 1)  # boot consumer + publish executor
+        made_key = cache.make_key("race")
+        real_publish = cache._publish
+        first_publish_entered = threading.Event()
+        second_set_done = threading.Event()
+
+        def stalled_publish(op: str, **kwargs) -> None:
+            if op == "set" and kwargs.get("key") == made_key and not first_publish_entered.is_set():
+                first_publish_entered.set()
+                # The window the bug needed; with broadcasts enqueued under
+                # ``_lock`` the second ``set`` is blocked and this times out.
+                second_set_done.wait(0.5)
+            real_publish(op, **kwargs)
+
+        monkeypatch.setattr(cache, "_publish", stalled_publish)
+
+        def writer1() -> None:
+            cache.set("race", "v1")
+
+        def writer2() -> None:
+            first_publish_entered.wait(2.0)
+            cache.set("race", "v2")
+            second_set_done.set()
+
+        t1 = threading.Thread(target=writer1)
+        t2 = threading.Thread(target=writer2)
+        t1.start()
+        t2.start()
+        t1.join(5.0)
+        t2.join(5.0)
+        cache._flush_publishes()
+
+        entries = cache._transport.xrevrange(cache._stream_key, count=50)
+        race_vals = [f.get("val") for _id, f in entries if f.get("op") == "set" and f.get("key") == made_key]
+        assert race_vals, "expected set broadcasts for the contested key"
+        # The newest stream entry must agree with the writer's local state.
+        assert race_vals[0] == cache.get("race")
+
 
 # =============================================================================
 # Cull tests
@@ -486,6 +536,15 @@ class TestSyncAdmin:
         stream_cache.set("other", 3)
         result = stream_cache.keys("wc_*")
         assert len(result) == 2
+
+    def test_keys_respects_version(self, stream_cache: BaseCache):
+        # Regression: keys() listed entries across all versions, leaking
+        # other versions' keys (raw internal form) into the result.
+        stream_cache.set("ver_a", 1, version=1)
+        stream_cache.set("ver_b", 2, version=2)
+        assert stream_cache.keys() == ["ver_a"]
+        assert stream_cache.keys(version=2) == ["ver_b"]
+        assert stream_cache.keys("ver_*", version=2) == ["ver_b"]
 
     def test_info(self, stream_cache: BaseCache):
         stream_cache.set("info_key", "val")

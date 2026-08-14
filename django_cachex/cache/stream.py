@@ -86,6 +86,15 @@ class StreamCache(LocMemCache):
     semantics (atomic check-and-set, atomic increment) can't be provided
     with eventual consistency. Use the transport cache directly for these.
 
+    Write-ordering guarantee: every mutating operation holds the local lock
+    across both the local update and the enqueue of its stream broadcast,
+    and a single-worker executor performs the XADDs in enqueue order, so a
+    pod's stream entries appear in the same order its local writes were
+    applied. Consumers replaying the stream therefore converge to the
+    writer's final state. Broadcasts remain best-effort: an entry is
+    dropped when the publish backlog is full or the transport errors, so
+    the stream is a replication feed, not a durable log.
+
     The consumer thread is restarted if it dies; use ``info()["sync"]`` to
     monitor consumer health, last read age, and stream position.
     """
@@ -202,7 +211,8 @@ class StreamCache(LocMemCache):
         ``val`` is the original Python value. The transport cache's serializer
         and compressor handle wire encoding. The single-worker executor
         preserves stream order while keeping the calling thread off the
-        network round-trip.
+        network round-trip. Mutators call this while holding ``self._lock``
+        so broadcasts are enqueued in local write order.
 
         The pending-publish budget (``_publish_budget``) caps how many
         broadcasts may be queued at once. When the budget is exhausted the
@@ -248,7 +258,7 @@ class StreamCache(LocMemCache):
                 maxlen=self._maxlen,
                 approximate=True,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning(
                 "StreamCache: Failed to publish %s to stream",
                 fields.get("op", "?"),
@@ -325,7 +335,7 @@ class StreamCache(LocMemCache):
                 len(entries),
                 self._stream_key,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning("StreamCache: stream replay failed", exc_info=True)
 
     def _consumer_loop(self) -> None:
@@ -347,13 +357,13 @@ class StreamCache(LocMemCache):
                             self._last_id = entry_id
                             try:
                                 self._apply_message(fields)
-                            except Exception:  # noqa: BLE001
+                            except Exception:
                                 logger.warning(
                                     "StreamCache: Failed to apply message %s, skipping",
                                     self._last_id,
                                     exc_info=True,
                                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 if not self._stop_event.is_set():
                     logger.warning(
                         "StreamCache: Consumer error, retrying in 1s",
@@ -514,10 +524,12 @@ class StreamCache(LocMemCache):
         self._ensure_consumer()
         made_key = self.make_and_validate_key(key, version=version)
         pickled = pickle.dumps(value, self.pickle_protocol)
+        # Publish under the lock: out-of-order broadcasts would make replaying
+        # consumers converge to a stale value.
         with self._lock:
             self._set(made_key, pickled, timeout)
-        exp_time = self._expire_info.get(made_key)
-        self._publish("set", key=made_key, val=value, exp=exp_time)
+            exp_time = self._expire_info.get(made_key)
+            self._publish("set", key=made_key, val=value, exp=exp_time)
         return True
 
     def add(self, key: str, value: Any, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
@@ -528,7 +540,7 @@ class StreamCache(LocMemCache):
         made_key = self.make_and_validate_key(key, version=version)
         with self._lock:
             existed = self._delete(made_key)
-        self._publish("delete", key=made_key)
+            self._publish("delete", key=made_key)
         return existed
 
     def get_many(self, keys: Iterable[str], version: int | None = None) -> dict[str, Any]:
@@ -561,8 +573,8 @@ class StreamCache(LocMemCache):
                 made_keys.append(mk)
                 if self._delete(mk):
                     deleted += 1
-        if made_keys:
-            self._publish("delete_many", keys="\x00".join(made_keys))
+            if made_keys:
+                self._publish("delete_many", keys="\x00".join(made_keys))
         return deleted
 
     def has_key(self, key: str, version: int | None = None) -> bool:
@@ -605,13 +617,17 @@ class StreamCache(LocMemCache):
                 return False
             exp_time = self.get_backend_timeout(timeout)
             self._expire_info[made_key] = exp_time
-        self._publish("touch", key=made_key, exp=exp_time)
+            self._publish("touch", key=made_key, exp=exp_time)
         return True
 
     def clear(self) -> bool:  # type: ignore[override]
         self._ensure_consumer()
-        super().clear()
-        self._publish("clear")
+        # Inlines ``LocMemCache.clear`` (which takes the non-reentrant lock
+        # itself) so the broadcast is enqueued under the same lock hold.
+        with self._lock:
+            self._cache.clear()
+            self._expire_info.clear()
+            self._publish("clear")
         return True
 
     def close(self, **kwargs: Any) -> None:
@@ -630,13 +646,17 @@ class StreamCache(LocMemCache):
 
     def keys(self, pattern: str = "*", version: int | None = None) -> list[str]:
         self._ensure_consumer()
+        v = self.version if version is None else version
+        prefix = self.key_prefix
+        version_prefix = f"{prefix}:{v}:" if prefix else f":{v}:"
         user_keys: list[str] = []
         with self._lock:
             for internal_key in list(self._cache.keys()):
+                if not internal_key.startswith(version_prefix):
+                    continue
                 if self._has_expired(internal_key):
                     continue
-                user_key = self.reverse_key(internal_key)
-                user_keys.append(user_key)
+                user_keys.append(internal_key[len(version_prefix) :])
         if pattern and pattern != "*":
             user_keys = [k for k in user_keys if fnmatch.fnmatch(k, pattern)]
         user_keys.sort()
