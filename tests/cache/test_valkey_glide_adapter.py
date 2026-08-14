@@ -28,9 +28,7 @@ def _adapter(mocker):
     return adapter, client
 
 
-# -----------------------------------------------------------------------------
-# zadd GT/LT forwarding
-# -----------------------------------------------------------------------------
+# ------------------------------------------------------ zadd GT/LT forwarding
 
 
 def test_zadd_forwards_gt_flag(mocker):
@@ -66,9 +64,7 @@ def test_pipeline_zadd_forwards_gt_flag(mocker):
     assert pipe._batch.commands[-1][1] == [b"ZADD", "k", b"GT", b"2.0", b"m"]
 
 
-# -----------------------------------------------------------------------------
-# Pipeline stream command coverage
-# -----------------------------------------------------------------------------
+# ------------------------------------------- Pipeline stream command coverage
 
 # A method left to the protocol's ``...`` stub enqueues nothing while
 # satisfying attribute lookup, desyncing the per-command decoder queue.
@@ -171,9 +167,7 @@ def test_pipeline_xadd_exact_maxlen(mocker):
     assert pipe._batch.commands[-1][1] == [b"XADD", "s", b"MAXLEN", b"5", "*", "f", b"v"]
 
 
-# -----------------------------------------------------------------------------
-# Lock token and blocking timeout
-# -----------------------------------------------------------------------------
+# -------------------------------------------- Lock token and blocking timeout
 
 
 def test_lock_generates_fresh_token_per_acquire(mocker):
@@ -245,9 +239,7 @@ def test_async_lock_blocking_timeout_zero_tries_once(mocker):
     assert client.set.await_count == 1
 
 
-# -----------------------------------------------------------------------------
-# URL / OPTIONS to glide config
-# -----------------------------------------------------------------------------
+# ---------------------------------------------- URL / OPTIONS to glide config
 
 
 def test_config_kwargs_parses_url_tls_auth_db():
@@ -308,9 +300,7 @@ def test_sync_client_applies_config_kwargs(mocker):
     assert kwargs["credentials"].password == "secret"
 
 
-# -----------------------------------------------------------------------------
-# xpending IDLE placement
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------- xpending IDLE placement
 
 
 def test_xpending_range_places_idle_before_range(mocker):
@@ -328,9 +318,7 @@ def test_xpending_summary_ignores_idle(mocker):
     assert client.custom_command.call_args[0][0] == [b"XPENDING", "k", "g"]
 
 
-# -----------------------------------------------------------------------------
-# sscan cursor normalization
-# -----------------------------------------------------------------------------
+# ------------------------------------------------- sscan cursor normalization
 
 
 def test_sscan_returns_int_cursor(mocker):
@@ -342,9 +330,7 @@ def test_sscan_returns_int_cursor(mocker):
     assert members == {b"a", b"b"}
 
 
-# -----------------------------------------------------------------------------
-# slowlog_get normalization
-# -----------------------------------------------------------------------------
+# -------------------------------------------------- slowlog_get normalization
 
 
 def test_slowlog_get_returns_normalized_dicts(mocker):
