@@ -4,6 +4,10 @@ import gzip
 import zlib
 from typing import Any
 
+import pytest
+
+from django_cachex.exceptions import SerializerError
+
 
 class TestDefaultClientCompressorConfig:
     """Tests for DefaultClient compressor configuration handling."""
@@ -55,6 +59,41 @@ class TestDefaultClientCompressorConfig:
             cache.set("test_key", "test_value" * 100)
             assert cache.get("test_key") == "test_value" * 100
             cache.delete("test_key")
+
+    def test_small_and_large_value_roundtrip(self, redis_container):
+        """Values at or below min_length are stored uncompressed and must still read back.
+
+        Regression: _decompress used to raise CompressorError for any payload
+        the configured compressor couldn't decompress, which broke every
+        small value when a compressor was configured.
+        """
+        from django.test import override_settings
+
+        host, port = redis_container.host, redis_container.port
+
+        caches = {
+            "default": {
+                "BACKEND": "django_cachex.cache.RedisCache",
+                "LOCATION": f"redis://{host}:{port}?db=13",
+                "OPTIONS": {
+                    "compressor": "django_cachex.compressors.zlib.ZlibCompressor",
+                },
+            },
+        }
+
+        with override_settings(CACHES=caches):
+            from django.core.cache import cache
+
+            # Serialized form is below the 256-byte min_length: stored raw.
+            cache.set("small_key", "tiny")
+            assert cache.get("small_key") == "tiny"
+
+            # Above min_length: stored compressed.
+            cache.set("large_key", "test_value" * 100)
+            assert cache.get("large_key") == "test_value" * 100
+
+            cache.delete("small_key")
+            cache.delete("large_key")
 
     def test_migration_scenario(self, redis_container):
         from django.test import override_settings
@@ -149,29 +188,20 @@ class TestDecompressFallback:
         # gzip will fail, zlib should succeed
         assert cache._decompress(zlib_data) == data
 
-    def test_decompress_raises_when_all_compressors_fail(self):
-        """When every configured compressor fails, _decompress raises CompressorError.
+    def test_decompress_returns_raw_when_all_compressors_fail(self):
+        """When every configured compressor fails, _decompress returns the raw bytes.
 
-        Symmetric with _deserialize, which also raises on all-fail. Callers
-        that want to tolerate raw payloads should keep the previously-used
-        compressor at the end of the fallback chain (or omit compressors).
+        compress() stores payloads at or below min_length uncompressed, so
+        the read path must hand raw bytes through to the deserializer
+        instead of raising CompressorError.
         """
-        import pytest
-
-        from django_cachex.exceptions import CompressorError
-
         cache = _make_cache(compressor=["django_cachex.compressors.gzip.GzipCompressor"])
         # Plain data that isn't gzip; the only configured compressor fails.
         data = b"Plain uncompressed data"
-        with pytest.raises(CompressorError):
-            cache._decompress(data)
+        assert cache._decompress(data) == data
 
-    def test_decompress_raises_after_full_chain_fails(self):
-        """_decompress walks the full chain before raising; raises when none succeed."""
-        import pytest
-
-        from django_cachex.exceptions import CompressorError
-
+    def test_decompress_returns_raw_after_full_chain_fails(self):
+        """_decompress walks the full chain and falls back to raw bytes when none succeed."""
         cache = _make_cache(
             compressor=[
                 "django_cachex.compressors.gzip.GzipCompressor",
@@ -180,10 +210,29 @@ class TestDecompressFallback:
         )
         # Looks like gzip (magic bytes) but isn't valid; zlib also fails.
         fake_gzip = b"\x1f\x8bNot actually valid gzip data"
-        with pytest.raises(CompressorError):
-            cache._decompress(fake_gzip)
+        assert cache._decompress(fake_gzip) == fake_gzip
+
+    def test_decode_corrupt_payload_raises_serializer_error(self):
+        """A genuinely corrupt payload still fails on read, from the deserializer.
+
+        The raw-bytes fallback in _decompress must not turn corruption into
+        a silent success: bytes that no compressor and no serializer accept
+        surface as SerializerError.
+        """
+        cache = _make_cache(compressor=["django_cachex.compressors.gzip.GzipCompressor"])
+        # Gzip magic bytes with an invalid stream, well above min_length;
+        # not valid pickle either.
+        corrupt = b"\x1f\x8b" + b"\xff" * 300
+        with pytest.raises(SerializerError):
+            cache.decode(corrupt)
 
     def test_decompress_with_no_compressors_returns_raw(self):
         cache = _make_cache(compressor=None)
+        data = b"Plain uncompressed data"
+        assert cache._decompress(data) == data
+
+    def test_empty_compressor_list_means_no_compression(self):
+        cache = _make_cache(compressor=[])
+        assert cache._compressors == []
         data = b"Plain uncompressed data"
         assert cache._decompress(data) == data

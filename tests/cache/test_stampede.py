@@ -156,6 +156,54 @@ class TestStampedeExtendedTTL:
         assert ttl is None  # No expiry
 
 
+class TestStampedeTouch:
+    """touch() must apply the same TTL buffer as set().
+
+    Regression: touch() stored the raw timeout while set() stored
+    timeout + buffer, so a touched key lost its buffer and became
+    immediately eligible for recompute (or expired early).
+    """
+
+    def test_touch_reapplies_buffer(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_touch", "val", timeout=300)
+        # Shrink TTL below buffer → logically expired
+        stampede_cache.expire("sp_touch", 50)
+
+        assert stampede_cache.touch("sp_touch", timeout=300) is True
+        ttl = stampede_cache.ttl("sp_touch")
+        assert ttl is not None
+        assert 300 < ttl <= 360  # 300 + 60 buffer, same as set()
+        # Logically fresh again after the touch
+        assert stampede_cache.get("sp_touch") == "val"
+
+    def test_touch_short_timeout_stays_logically_alive(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_touch_short", "val", timeout=300)
+
+        # timeout=50 is below the 60s buffer; without the buffer the key
+        # would be logically expired the moment it was touched.
+        assert stampede_cache.touch("sp_touch_short", timeout=50) is True
+        ttl = stampede_cache.ttl("sp_touch_short")
+        assert ttl is not None
+        assert 50 < ttl <= 110
+        assert stampede_cache.get("sp_touch_short") == "val"
+
+    def test_touch_none_makes_persistent(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_touch_none", "val", timeout=300)
+        assert stampede_cache.touch("sp_touch_none", timeout=None) is True
+        assert stampede_cache.ttl("sp_touch_none") is None
+
+    @pytest.mark.asyncio
+    async def test_atouch_reapplies_buffer(self, stampede_cache: RespCache):
+        await stampede_cache.aset("asp_touch", "val", timeout=300)
+        await stampede_cache.aexpire("asp_touch", 50)
+
+        assert await stampede_cache.atouch("asp_touch", timeout=300) is True
+        ttl = await stampede_cache.attl("asp_touch")
+        assert ttl is not None
+        assert 300 < ttl <= 360
+        assert await stampede_cache.aget("asp_touch") == "val"
+
+
 class TestStampedeGetMany:
     """Batch get operations with stampede prevention."""
 
@@ -283,6 +331,14 @@ class TestStampedeOverride:
         ttl = stampede_cache.ttl("sp_ovr_set")
         assert ttl is not None
         assert ttl <= 300  # No buffer added
+
+    def test_false_skips_buffer_on_touch(self, stampede_cache: RespCache):
+        """stampede_prevention=False on touch() should not add buffer to TTL."""
+        stampede_cache.set("sp_ovr_touch", "val", timeout=300)
+        assert stampede_cache.touch("sp_ovr_touch", timeout=200, stampede_prevention=False) is True
+        ttl = stampede_cache.ttl("sp_ovr_touch")
+        assert ttl is not None
+        assert ttl <= 200  # No buffer added
 
     def test_false_on_get_many(self, stampede_cache: RespCache):
         """stampede_prevention=False on get_many() should return logically expired values."""

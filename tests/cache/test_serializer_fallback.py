@@ -5,6 +5,7 @@ import pickle
 from typing import Any
 
 import pytest
+from django.core.exceptions import ImproperlyConfigured
 
 from django_cachex.exceptions import SerializerError
 from django_cachex.serializers.json import JsonSerializer
@@ -47,6 +48,11 @@ class TestDefaultClientSerializerConfig:
         assert len(cache._serializers) == 2
         assert cache._serializers[0].__class__.__name__ == "JsonSerializer"
         assert cache._serializers[1].__class__.__name__ == "PickleSerializer"
+
+    def test_empty_serializer_list_rejected_at_init(self):
+        """An empty serializer list fails at construction, not at first use."""
+        with pytest.raises(ImproperlyConfigured):
+            _make_cache(serializer=[])
 
     def test_migration_scenario(self, redis_container):
         """Test a realistic migration scenario from pickle to JSON."""
