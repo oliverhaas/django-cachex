@@ -3,9 +3,9 @@
 One class per backend, each exposing paired sync/async methods to match the
 rest of the project's convention (``foo``/``afoo``):
 
-- :class:`Semaphore`: in-process, used by ``LocMemCache``. State lives in the
-  cache's own ``_SemaphoreRegistry``; standalone instances share a
-  process-wide registry.
+- :class:`Semaphore`: in-process, used by ``LocMemCache``. State lives in a
+  ``_SemaphoreRegistry`` shared by every cache with the same LOCATION;
+  standalone instances share a process-wide registry.
 - :class:`RespSemaphore`: backed by Lua scripts dispatched through any
   ``RespAdapterProtocol`` (redis-py, redis-rs, valkey-py, valkey-glide).
   Constructed by ``cache.semaphore(...)`` / ``cache.asemaphore(...)`` and not
@@ -60,13 +60,14 @@ class _LocalState:
 
 
 class _SemaphoreRegistry:
-    """Per-cache (or process-wide) registry of :class:`_LocalState` by name.
+    """Per-LOCATION (or process-wide) registry of :class:`_LocalState` by name.
 
     Replaces the old ``id(cache)``-keyed module-level dict, which could alias
     between a GC'd cache instance and a newly-created one if Python reused
-    the address. Each :class:`~django_cachex.cache.LocMemCache` owns one
-    registry; standalone :class:`Semaphore` instances share the module-level
-    ``_DEFAULT_REGISTRY``.
+    the address. Registries are keyed by cache LOCATION, so every
+    :class:`~django_cachex.cache.LocMemCache` configured for the same
+    LOCATION shares one; standalone :class:`Semaphore` instances share the
+    module-level ``_DEFAULT_REGISTRY``.
     """
 
     def __init__(self) -> None:
@@ -224,10 +225,7 @@ class Semaphore:
 
     # ------------------------------------------------------------------ sync
 
-    def acquire(self, *, blocking: bool = True, timeout: float | None = None) -> bool:
-        if self._held:
-            msg = f"semaphore {self.name!r} already held by this instance"
-            raise SemaphoreError(msg)
+    def acquire(self, *, blocking: bool = True, timeout: float | None = None) -> bool:  # noqa: C901
         if timeout is None:
             timeout = self.timeout
         state = self._state
@@ -236,6 +234,14 @@ class Semaphore:
 
         while True:
             with state.lock:
+                # Same critical section as the admit below, so a racing thread
+                # cannot see a stale ``_held`` and claim twice.
+                if self._held:
+                    if waiter is not None:
+                        state.waiters.pop(waiter, None)
+                        _notify_next(state)
+                    msg = f"semaphore {self.name!r} already held by this instance"
+                    raise SemaphoreError(msg)
                 head_ok = not state.waiters or next(iter(state.waiters)) is waiter
                 if head_ok and state.used + self.weight <= state.capacity:
                     if waiter is not None:
@@ -274,11 +280,13 @@ class Semaphore:
             waiter.clear_sync()
 
     def release(self) -> None:
-        if not self._held:
-            msg = "Cannot release a semaphore not held by this instance"
-            raise SemaphoreError(msg)
         state = self._state
         with state.lock:
+            # Checked under state.lock: two threads racing release() on the
+            # same instance must not both pass and double-decrement ``used``.
+            if not self._held:
+                msg = "Cannot release a semaphore not held by this instance"
+                raise SemaphoreError(msg)
             state.used -= self.weight
             self._held = False
             _notify_next(state)
@@ -286,9 +294,6 @@ class Semaphore:
     # ----------------------------------------------------------------- async
 
     async def aacquire(self, *, blocking: bool = True, timeout: float | None = None) -> bool:  # noqa: C901, PLR0912
-        if self._held:
-            msg = f"semaphore {self.name!r} already held by this instance"
-            raise SemaphoreError(msg)
         if timeout is None:
             timeout = self.timeout
         state = self._state
@@ -298,6 +303,13 @@ class Semaphore:
 
         while True:
             with state.lock:
+                # Same critical section as the admit below; see ``acquire``.
+                if self._held:
+                    if waiter is not None:
+                        state.waiters.pop(waiter, None)
+                        _notify_next(state)
+                    msg = f"semaphore {self.name!r} already held by this instance"
+                    raise SemaphoreError(msg)
                 head_ok = not state.waiters or next(iter(state.waiters)) is waiter
                 if head_ok and state.used + self.weight <= state.capacity:
                     if waiter is not None:
@@ -392,6 +404,11 @@ class Semaphore:
         await self.arelease()
 
 
+# Waiter heartbeat TTL; ACQUIRE_LUA reaps queue entries whose key expired.
+# Must exceed the poll backoff cap so a live waiter is never reaped.
+_WAITER_TTL_MS = 5_000
+
+
 class RespSemaphore:
     """RESP-backed weighted semaphore using Lua scripts via the adapter's
     ``eval()`` / ``aeval()``.
@@ -436,51 +453,72 @@ class RespSemaphore:
         self.lease = lease
         self.timeout = timeout
         self._token: str | None = None
+        self._claim_lock = threading.Lock()
         prefix = "{" + name + "}"
         self._state_key = f"{prefix}:state"
         self._claims_key = f"{prefix}:claims"
         self._queue_key = f"{prefix}:queue"
 
+    def _claim(self) -> str:
+        """Check and mint in one critical section so racing threads cannot both claim."""
+        with self._claim_lock:
+            if self._token is not None:
+                msg = f"semaphore {self.name!r} already held by this instance"
+                raise SemaphoreError(msg)
+            token = secrets.token_hex(16)
+            self._token = token
+        return token
+
     # ------------------------------------------------------------------ sync
 
-    def acquire(self, *, blocking: bool = True, timeout: float | None = None) -> bool:
+    def acquire(self, *, blocking: bool = True, timeout: float | None = None) -> bool:  # noqa: C901
         from django_cachex.cache._semaphore_lua import ACQUIRE_LUA, DEQUEUE_LUA
 
-        if self._token is not None:
-            msg = f"semaphore {self.name!r} already held by this instance"
-            raise SemaphoreError(msg)
         if timeout is None:
             timeout = self.timeout
-        token = secrets.token_hex(16)
-        self._token = token
+        token = self._claim()
         lease_ms = max(1, int(self.lease * 1000))
         deadline = None if timeout is None else time.monotonic() + timeout
         backoff_ms = 10
         max_backoff_ms = 500
 
+        def _dequeue_token() -> None:
+            # Best-effort queue cleanup on any non-success exit; suppress
+            # because we may already be unwinding.
+            with contextlib.suppress(Exception):
+                self._adapter.eval(DEQUEUE_LUA, 1, self._queue_key, token)
+
         while True:
             now_ms = int(time.time() * 1000)
-            result = self._adapter.eval(
-                ACQUIRE_LUA,
-                3,
-                self._state_key,
-                self._claims_key,
-                self._queue_key,
-                token,
-                str(self.weight),
-                str(self.capacity),
-                str(lease_ms),
-                str(now_ms),
-            )
-            status = _decode_status(result)
+            try:
+                result = self._adapter.eval(
+                    ACQUIRE_LUA,
+                    3,
+                    self._state_key,
+                    self._claims_key,
+                    self._queue_key,
+                    token,
+                    str(self.weight),
+                    str(self.capacity),
+                    str(lease_ms),
+                    str(now_ms),
+                    str(_WAITER_TTL_MS),
+                )
+                status = _decode_status(result)
+            except BaseException:
+                # KeyboardInterrupt must not leave our queue entry behind: a
+                # dead head blocks acquirers until the liveness TTL expires.
+                _dequeue_token()
+                self._token = None
+                raise
             if status == "acquired":
                 return True
             if not blocking:
-                self._adapter.eval(DEQUEUE_LUA, 1, self._queue_key, token)
+                _dequeue_token()
                 self._token = None
                 return False
             if deadline is not None and time.monotonic() >= deadline:
-                self._adapter.eval(DEQUEUE_LUA, 1, self._queue_key, token)
+                _dequeue_token()
                 self._token = None
                 msg = f"semaphore {self.name!r} acquire timed out"
                 raise SemaphoreTimeoutError(msg)
@@ -490,7 +528,12 @@ class RespSemaphore:
             if deadline is not None:
                 sleep_s = min(sleep_s, max(0.0, deadline - time.monotonic()))
             if sleep_s > 0:
-                time.sleep(sleep_s)
+                try:
+                    time.sleep(sleep_s)
+                except BaseException:
+                    _dequeue_token()
+                    self._token = None
+                    raise
             backoff_ms = min(max_backoff_ms, int(backoff_ms * 1.5))
 
     def release(self) -> None:
@@ -536,13 +579,11 @@ class RespSemaphore:
     async def aacquire(self, *, blocking: bool = True, timeout: float | None = None) -> bool:  # noqa: C901
         from django_cachex.cache._semaphore_lua import ACQUIRE_LUA, DEQUEUE_LUA
 
-        if self._token is not None:
-            msg = f"semaphore {self.name!r} already held by this instance"
-            raise SemaphoreError(msg)
         if timeout is None:
             timeout = self.timeout
-        token = secrets.token_hex(16)
-        self._token = token
+        # ``_claim`` holds a plain lock across no awaits, so the sync and async
+        # paths can share it without blocking the loop.
+        token = self._claim()
         lease_ms = max(1, int(self.lease * 1000))
         loop = asyncio.get_running_loop()
         deadline = None if timeout is None else loop.time() + timeout
@@ -570,12 +611,13 @@ class RespSemaphore:
                     str(self.capacity),
                     str(lease_ms),
                     str(now_ms),
+                    str(_WAITER_TTL_MS),
                 )
+                status = _decode_status(result)
             except BaseException:
                 await _dequeue_token()
                 self._token = None
                 raise
-            status = _decode_status(result)
             if status == "acquired":
                 return True
             if not blocking:
