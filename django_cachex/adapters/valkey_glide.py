@@ -2111,8 +2111,16 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         if num is not None:
             args.append(str(num).encode())
         raw = self._client().custom_command(args)
+        # Reshape each row into the dict form the other adapters return.
         return [
-            _normalize_slowlog_entry(entry)
+            {
+                "id": entry[0],
+                "start_time": entry[1],
+                "duration": entry[2],
+                "command": [_dec_str(arg) for arg in (entry[3] or [])],
+                "client_address": _dec_str(entry[4]) if len(entry) > 4 else None,
+                "client_name": _dec_str(entry[5]) if len(entry) > 5 else None,
+            }
             for entry in (raw or [])
             if isinstance(entry, (list, tuple)) and len(entry) >= 4
         ]
@@ -3266,18 +3274,6 @@ def _decode_zpop(result: Any, decoder: Any) -> list[tuple[Any, float]]:
         return [(decoder(m), float(s)) for m, s in result.items()]
     # list shape
     return [(decoder(m), float(s)) for m, s in result]
-
-
-def _normalize_slowlog_entry(entry: Sequence[Any]) -> dict[str, Any]:
-    """Reshape a raw SLOWLOG GET row into the dict form the other adapters return."""
-    return {
-        "id": entry[0],
-        "start_time": entry[1],
-        "duration": entry[2],
-        "command": [_dec_str(arg) for arg in (entry[3] or [])],
-        "client_address": _dec_str(entry[4]) if len(entry) > 4 else None,
-        "client_name": _dec_str(entry[5]) if len(entry) > 5 else None,
-    }
 
 
 def _parse_info(raw: bytes | str) -> dict[str, Any]:

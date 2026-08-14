@@ -3111,14 +3111,6 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
 
         return pool
 
-    def _sentinel_fleet_key(self) -> tuple[Any, ...]:
-        """Hashable identity of the sentinel fleet this adapter talks to."""
-        sentinels = self._options.get("sentinels") or ()
-        return (
-            tuple(tuple(entry) for entry in sentinels),
-            _options_key(self._options.get("sentinel_kwargs") or {}),
-        )
-
     def _get_async_sentinel(self) -> Any:
         """Get or create an async sentinel instance for the current event loop."""
         loop = asyncio.get_running_loop()
@@ -3174,12 +3166,14 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
 
         # The key must be stable across adapter instances (asgiref hands each
         # task a fresh one), so the fleet stands in for its sentinel manager.
+        sentinels = self._options.get("sentinels") or ()
         key = (
             self._async_sentinel_pool_class,
             clean_url,
             service_name,
             is_master,
-            self._sentinel_fleet_key(),
+            tuple(tuple(entry) for entry in sentinels),
+            _options_key(self._options.get("sentinel_kwargs") or {}),
             _options_key(pool_options),
             index,
         )
