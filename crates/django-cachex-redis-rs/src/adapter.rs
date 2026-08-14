@@ -639,6 +639,22 @@ fn timeout_to_ttl(timeout: Option<i64>) -> Option<u64> {
     timeout.map(|t| if t < 0 { 0 } else { t as u64 })
 }
 
+/// Whether a flagged ``SET`` actually wrote the key: with GET the old value
+/// tells the story (NX writes on Nil, XX on non-Nil), without it OK vs Nil.
+fn set_with_flags_executed(reply: &redis::Value, nx: bool, xx: bool, get: bool) -> bool {
+    if get {
+        if nx {
+            matches!(reply, redis::Value::Nil)
+        } else if xx {
+            !matches!(reply, redis::Value::Nil)
+        } else {
+            true
+        }
+    } else {
+        matches!(reply, redis::Value::Okay | redis::Value::SimpleString(_))
+    }
+}
+
 // =========================================================================
 // RedisRsAdapter — high-level cachex adapter, subclassable from Python
 // =========================================================================
@@ -1402,17 +1418,17 @@ impl RedisRsAdapter {
         let nvalue = value.into_bytes();
         let cfg = &slf.borrow().stampede_config;
         let actual = call_get_timeout_with_buffer(py, timeout, cfg, stampede_prevention)?;
-        if actual == Some(0) {
-            // ``timeout=0`` short-circuit: GET branch returns None (no value
-            // to fetch); NX/XX branch returns False.
-            return Ok(if get { py.None() } else { false.into_pyobject(py)?.to_owned().into_any().unbind() });
-        }
-        let ttl = timeout_to_ttl(actual);
-        let r: Result<redis::Value, _> = adapter_sync!(
-            slf,
-            conn,
-            conn.set_with_flags(&key, nvalue, ttl, nx, xx, get).await
-        );
+        // timeout=0 means expire immediately: run the SET unexpired so the
+        // nx/xx/get semantics still apply, then delete when it executed.
+        let zero = actual == Some(0);
+        let ttl = if zero { None } else { timeout_to_ttl(actual) };
+        let r: Result<redis::Value, _> = adapter_sync!(slf, conn, {
+            let reply = conn.set_with_flags(&key, nvalue, ttl, nx, xx, get).await?;
+            if zero && set_with_flags_executed(&reply, nx, xx, get) {
+                conn.del(&key).await?;
+            }
+            Ok(reply)
+        });
         let result = r.map_err(crate::client::to_py_err)?;
         if get {
             // SET ... GET: ``Nil`` → None, otherwise the prior value bytes.
@@ -1446,15 +1462,8 @@ impl RedisRsAdapter {
         let nvalue = value.into_bytes();
         let cfg = &slf.borrow().stampede_config;
         let actual = call_get_timeout_with_buffer(py, timeout, cfg, stampede_prevention)?;
-        if actual == Some(0) {
-            let value: Py<PyAny> = if get {
-                py.None()
-            } else {
-                false.into_pyobject(py)?.to_owned().into_any().unbind()
-            };
-            return await_constant(py, value);
-        }
-        let ttl = timeout_to_ttl(actual);
+        let zero = actual == Some(0);
+        let ttl = if zero { None } else { timeout_to_ttl(actual) };
         let transform = if get {
             crate::async_bridge::AwaitTransform::SetWithFlagsGet
         } else {
@@ -1464,7 +1473,15 @@ impl RedisRsAdapter {
             slf, conn,
             {
                 use crate::client::IntoRawResult;
-                conn.set_with_flags(&key, nvalue, ttl, nx, xx, get).await.into_raw_result()
+                let result: redis::RedisResult<redis::Value> = async {
+                    let reply = conn.set_with_flags(&key, nvalue, ttl, nx, xx, get).await?;
+                    if zero && set_with_flags_executed(&reply, nx, xx, get) {
+                        conn.del(&key).await?;
+                    }
+                    Ok(reply)
+                }
+                .await;
+                result.into_raw_result()
             };
             transform
         )
