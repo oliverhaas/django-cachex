@@ -42,13 +42,14 @@ jobs:
           - "3.14"
         django-version:
           - "6.0"
+          - "6.1"
         client-library-version:
           - "latest"
 
         include:
           # Pre-release client libraries (redis-py master, valkey-py main)
           - python-version: "3.14"
-            django-version: "6.0"
+            django-version: "6.1"
             client-library-version: "dev"
 
           # Pre-release Django
@@ -84,6 +85,10 @@ jobs:
 
       - name: Run backend tests
         run: uv run pytest tests/cache/ -n auto
+        env:
+          # Guard against pyc write races on first concurrent import
+          # (intermittent xdist collection ImportError on fresh checkouts).
+          PYTHONDONTWRITEBYTECODE: "1"
 
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.14' && matrix.django-version == '6.0' && matrix.client-library-version == 'latest'
@@ -94,6 +99,10 @@ jobs:
 
   test-admin:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        django-version: ["6.0", "6.1"]
     steps:
       - uses: actions/checkout@v7
 
@@ -106,11 +115,33 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
 
-      - name: Install Django
-        run: uv pip install "Django~=6.0.0"
+      - name: Install Django ${{ matrix.django-version }}
+        run: uv pip install "Django~=${{ matrix.django-version }}.0"
 
       - name: Run admin tests
         run: uv run pytest tests/admin/ -n auto
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+
+  test-glide-adapter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      # glide ships no free-threaded wheel, so this runs on GIL cp314 only.
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --group dev --extra valkey-glide
+
+      - name: Run glide adapter tests
+        run: uv run pytest tests/cache/test_valkey_glide_adapter.py
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
 
   build-pure-wheel:
     name: Build pure-Python wheel (django-cachex)
@@ -166,7 +197,7 @@ jobs:
           CIBW_BUILD: ${{ matrix.cibw_build }}
           CIBW_ENABLE: cpython-freethreading
           CIBW_ARCHS: ${{ matrix.cibw_archs }}
-          # Linux builds run inside manylinux containers — install Rust there.
+          # Linux builds run inside manylinux containers, so install Rust there.
           # macOS and Windows runners have rustup preinstalled.
           CIBW_BEFORE_ALL_LINUX: |
             curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
@@ -210,6 +241,8 @@ jobs:
 
       - name: Run cache tests against built wheels
         run: uv run --no-sync pytest tests/cache/ -n auto
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
 
   smoke-test-wheel-freethreaded:
     name: Smoke-test cp314t rust wheel
@@ -239,7 +272,7 @@ jobs:
           uv pip install --no-deps wheelhouse/django_cachex_redis_rs-*-cp314-cp314t-*.whl
 
       - name: Verify FT wheel imports
-        run: uv run --no-sync python -c "import sys; from django_cachex.adapters import _redis_rs; assert not sys._is_gil_enabled(), 'GIL is enabled — not running on free-threaded build'; print('OK', _redis_rs, sys.version)"
+        run: uv run --no-sync python -c "import sys; from django_cachex.adapters import _redis_rs; assert not sys._is_gil_enabled(), 'GIL is enabled, not running on free-threaded build'; print('OK', _redis_rs, sys.version)"
 
   smoke-test-pure-only:
     name: Smoke-test opt-out (pure wheel only, no rust package)
