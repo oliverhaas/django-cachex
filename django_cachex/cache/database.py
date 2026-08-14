@@ -41,7 +41,7 @@ from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.cache.backends.db import DatabaseCache as DjangoDatabaseCache
-from django.db import connections, models, router, transaction
+from django.db import IntegrityError, connections, models, router, transaction
 
 from django_cachex.cache.base import BaseCachex, CachexSupportLevel
 from django_cachex.exceptions import NotSupportedError, WrongTypeError
@@ -58,6 +58,9 @@ logger = logging.getLogger(__name__)
 _MISSING = object()  # current value: row absent (or expired)
 _DELETE = object()  # transform output: drop the row
 
+# How often a compound op redoes its read-modify-write after losing an insert race.
+_INSERT_RACE_ATTEMPTS = 3
+
 # Alias for the ``set`` builtin shadowed by the ``set`` method (PEP 649 defers
 # annotations at runtime, but type checkers still resolve them in class scope).
 _set = set
@@ -71,6 +74,15 @@ class _ZSet(dict[Any, float]):
     subclass) lets ``type()`` report ``ZSET`` rather than misreporting
     ``HASH``, matching ``LocMemCache``'s tagged collections.
     """
+
+
+def _as_score(value: Any) -> float:
+    """Coerce a sorted-set score the way Redis parses one."""
+    try:
+        return float(value)
+    except TypeError, ValueError:
+        msg = "value is not a valid float"
+        raise ValueError(msg) from None
 
 
 def _now() -> datetime:
@@ -185,7 +197,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             return _MISSING
         return self._decode_value(raw_value, conn)
 
-    def _atomic_compound(
+    def _atomic_compound(  # noqa: C901
         self,
         internal_key: str,
         transform: Callable[[Any], tuple[Any, Any]],
@@ -195,9 +207,15 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         ``transform(current_value)`` receives the deserialized stored value
         (or ``_MISSING`` for absent/expired rows) and returns a
         ``(new_value, return_value)`` tuple. If ``new_value`` is ``_DELETE``,
-        the row is deleted; otherwise it is upserted. The existing
-        ``expires`` is preserved on UPDATE; new rows get ``datetime.max``
-        (no expiry, matches Redis compound-op semantics).
+        the row is deleted; if it is ``_MISSING``, nothing is written;
+        otherwise it is upserted. The existing ``expires`` is preserved on
+        UPDATE; new rows get ``datetime.max`` (no expiry, matches Redis
+        compound-op semantics) and trigger the same MAX_ENTRIES cull check
+        as Django's ``_base_set``.
+
+        Losing the insert race against a concurrent writer re-runs the whole
+        read-modify-write against the row they committed, so their value is
+        merged rather than clobbered.
         """
         conn = self._get_connection(write=True)
         quote = conn.ops.quote_name
@@ -216,29 +234,47 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         )
         db = router.db_for_write(self.cache_model_class)
         with transaction.atomic(using=db), conn.cursor() as cursor:
-            cursor.execute(select_sql, [internal_key])
-            row = cursor.fetchone()
-            row_exists = False
-            current: Any = _MISSING
-            if row is not None:
-                raw_value, raw_expires = row
-                expires_dt = _normalize_expires(raw_expires, conn)
-                if expires_dt is not None and expires_dt > _now():
-                    current = self._decode_value(raw_value, conn)
-                    row_exists = True
-                else:
-                    cursor.execute(delete_sql, [internal_key])
-            new_value, ret = transform(current)
-            if new_value is _DELETE:
+            for attempt in range(_INSERT_RACE_ATTEMPTS):
+                cursor.execute(select_sql, [internal_key])
+                row = cursor.fetchone()
+                row_exists = False
+                current: Any = _MISSING
+                if row is not None:
+                    raw_value, raw_expires = row
+                    expires_dt = _normalize_expires(raw_expires, conn)
+                    if expires_dt is not None and expires_dt > _now():
+                        current = self._decode_value(raw_value, conn)
+                        row_exists = True
+                    else:
+                        cursor.execute(delete_sql, [internal_key])
+                new_value, ret = transform(current)
+                if new_value is _DELETE:
+                    if row_exists:
+                        cursor.execute(delete_sql, [internal_key])
+                    return ret
+                if new_value is _MISSING:
+                    return ret
+                encoded = self._encode_value(new_value)
                 if row_exists:
-                    cursor.execute(delete_sql, [internal_key])
+                    cursor.execute(update_sql, [encoded, internal_key])
+                    return ret
+                cursor.execute(f"SELECT COUNT(*) FROM {table}")  # noqa: S608
+                num = cursor.fetchone()[0]
+                if num > self._max_entries:
+                    cast("Any", self)._cull(db, cursor, _now(), num)
+                try:
+                    # Savepoint so a lost insert race doesn't poison the outer
+                    # transaction on backends that abort on IntegrityError.
+                    with transaction.atomic(using=db):
+                        cursor.execute(insert_sql, [internal_key, encoded, _adapt_dt(conn, _no_expiry_dt())])
+                except IntegrityError:
+                    # A concurrent writer created the row between our SELECT and
+                    # INSERT; redo the read-modify-write against their value.
+                    if attempt == _INSERT_RACE_ATTEMPTS - 1:
+                        raise
+                    continue
                 return ret
-            encoded = self._encode_value(new_value)
-            if row_exists:
-                cursor.execute(update_sql, [encoded, internal_key])
-            else:
-                cursor.execute(insert_sql, [internal_key, encoded, _adapt_dt(conn, _no_expiry_dt())])
-            return ret
+        return None
 
     # =========================================================================
     # Standard set / aset
@@ -402,15 +438,19 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         conn = self._get_connection()
         quote = conn.ops.quote_name
         table = quote(self._get_table_name())
-        # Always anchor the SQL pattern to ``KEY_PREFIX:VERSION:`` so the
-        # LIKE only matches the requested version; otherwise ``pattern="*"``
-        # or unrelated prefixes leak through.
+        # Anchor to ``KEY_PREFIX:VERSION:`` so ``pattern="*"`` can't leak
+        # other versions or prefixes.
         prefixed = self.make_key(pattern or "*", version=version)
-        sql_pattern = prefixed.replace("*", "%").replace("?", "_")
+        # prep_for_like_query escapes literal ``%``/``_``/``\`` per vendor;
+        # glob wildcards are translated only after that.
+        sql_pattern = conn.ops.prep_for_like_query(prefixed).replace("*", "%").replace("?", "_")
+        # ``operators`` is set per vendor on the concrete wrapper; the
+        # django-stubs surface omits it, hence the ``cast``.
+        like_clause = cast("Any", conn).operators["contains"]
         with conn.cursor() as cursor:
             cursor.execute(
                 f"SELECT {quote('cache_key')} FROM {table} "  # noqa: S608
-                f"WHERE {quote('cache_key')} LIKE %s AND {quote('expires')} > %s "
+                f"WHERE {quote('cache_key')} {like_clause} AND {quote('expires')} > %s "
                 f"ORDER BY {quote('cache_key')}",
                 [sql_pattern, _adapt_dt(conn, _now())],
             )
@@ -538,6 +578,10 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             if not existing:
                 return _DELETE if existing is not None else _MISSING, None
             n = count if count is not None else 1
+            if n == 0:
+                # ``existing[-0:]`` would be the whole list; Redis pops
+                # nothing and returns an empty array for ``count=0``.
+                return _MISSING, []
             popped = list(reversed(existing[-n:]))
             remaining = existing[:-n] if n < len(existing) else []
             return (remaining or _DELETE), (popped if count is not None else popped[0])
@@ -882,7 +926,13 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
     def hincrby(self, key: str, field: str, amount: int = 1, version: int | None = None) -> int:
         def transform(current: Any) -> tuple[Any, int]:
             existing = self._coerce_hash(current) or {}
-            existing[field] = int(existing.get(field, 0)) + amount
+            value = existing.get(field, 0)
+            if isinstance(value, bool) or not isinstance(value, int):
+                msg = "hash value is not an integer"
+                # ValueError, not TypeError: mirrors Redis's HINCRBY error,
+                # matching the ValueError convention of ``lset``.
+                raise ValueError(msg)  # noqa: TRY004
+            existing[field] = value + amount
             return existing, existing[field]
 
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
@@ -890,7 +940,11 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
     def hincrbyfloat(self, key: str, field: str, amount: float = 1.0, version: int | None = None) -> float:
         def transform(current: Any) -> tuple[Any, float]:
             existing = self._coerce_hash(current) or {}
-            existing[field] = float(existing.get(field, 0)) + amount
+            value = existing.get(field, 0)
+            if isinstance(value, bool) or not isinstance(value, int | float):
+                msg = "hash value is not a float"
+                raise ValueError(msg)  # noqa: TRY004
+            existing[field] = float(value) + amount
             return existing, existing[field]
 
         return cast("float", self._atomic_compound(self._internal_key(key, version=version), transform))
@@ -927,10 +981,12 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         lt: bool = False,
         version: int | None = None,
     ) -> int:
+        scored = {member: _as_score(score) for member, score in mapping.items()}
+
         def transform(current: Any) -> tuple[Any, int]:
             existing = self._coerce_zset(current) or _ZSet()
             changed = 0
-            for member, score in mapping.items():
+            for member, score in scored.items():
                 exists = member in existing
                 if nx and exists:
                     continue
@@ -1055,9 +1111,11 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
 
     def zincrby(self, key: str, amount: float, member: Any, version: int | None = None) -> float:
+        delta = _as_score(amount)
+
         def transform(current: Any) -> tuple[Any, float]:
             existing = self._coerce_zset(current) or _ZSet()
-            existing[member] = existing.get(member, 0.0) + amount
+            existing[member] = existing.get(member, 0.0) + delta
             return existing, existing[member]
 
         return cast("float", self._atomic_compound(self._internal_key(key, version=version), transform))
