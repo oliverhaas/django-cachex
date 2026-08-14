@@ -6,9 +6,9 @@
 
 - **Python 3.14+ required.** Dropped support for 3.12 and 3.13. The package now ships on cp314 and cp314t (free-threaded) wheels.
 - **Django 6.0+ required.** Dropped support for Django 5.2.
-- **`LocMemCache` data structures use tagged subclasses.** Lists, sets, hashes, sorted sets, and streams are stored as dedicated subclasses (`_List`, `_Set`, `_Hash`, `_ZSet`, `_Stream`) rather than plain Python types, and cross-type access raises `WrongTypeError` instead of silently coercing, matching real Valkey/Redis ``WRONGTYPE`` semantics.
+- **`LocMemCache` data structures use tagged subclasses.** Lists, sets, hashes, and sorted sets are stored as dedicated subclasses (`_List`, `_Set`, `_Hash`, `_ZSet`) rather than plain Python types, and cross-type access raises `WrongTypeError` instead of silently coercing, matching real Valkey/Redis ``WRONGTYPE`` semantics.
 - **`LocMemCache` bypasses pickle for tagged collections.** Mutations happen in place; the prior copy-on-read/copy-on-write contract no longer holds. Code that relied on getting a detached snapshot from `cache.get()` for these types now sees the live structure.
-- **`StreamCache` wire format changed.** Stream entries now flow through the transport's serializer + compressor pipeline instead of raw pickle. Pods running the new code cannot read entries written by older pods on the same stream; coordinate the rollout (drain or rotate `STREAM_KEY`).
+- **`StreamCache` wire format changed.** Stream entries now flow through the transport's serializer + compressor pipeline instead of raw pickle. Pods running the new code cannot read entries written by older pods on the same stream; coordinate the rollout (drain or rotate `stream_key`).
 - **`hmset` removed.** Use `hset(key, mapping=...)` or `hset(key, items=...)` (flat key-value list, matching redis-py/valkey-py).
 - **`django_cachex.unfold` removed.** The django-unfold theme variant of the admin is gone, along with the `[unfold]` extra and `examples/unfold/`. Plain `django_cachex.admin` remains. Unfold support may return as a thin theme override once the core admin app stabilises.
 - **Lock parameters renamed.** `cache.lock(timeout=...)` is now `cache.lock(lease=...)` (TTL of the held lock); `lock.acquire(blocking_timeout=...)` is now `lock.acquire(timeout=...)` (max wait). The old `blocking_timeout` kwarg raises `TypeError`; the constructor's new `timeout=` kwarg means "max wait" rather than "TTL". No deprecation shim. This aligns the lock API with the upcoming `cache.semaphore(...)` primitive.
@@ -48,6 +48,23 @@
 - `clear()` is now prefix/version-scoped instead of `FLUSHDB`. The old behavior is available as `flush_db()`.
 - Compressor `compress` and `decompress` methods catch all exceptions and re-raise as `CompressorError`.
 - Several cluster correctness fixes (script loading on replicas, set_many `timeout=0`).
+- Fixed a crash when reading values small enough to have skipped compression (at or below the compressor's `min_length`).
+- Admin cache/key changelists are compatible with Django 6.1.
+- Semaphore waiters abandoned by crashed or cancelled callers are reaped instead of blocking the queue.
+- valkey-glide: `zadd` forwards the `gt`/`lt` flags, and pipelines support the stream commands.
+- `TieredCache.set` forwards `nx`/`xx` to L2.
+- `set(..., timeout=0)` deletes the key across all backends, matching Django's cache contract.
+- `LocMemCache` aliases sharing a `LOCATION` share one store, matching Django's builtin behavior.
+- Admin: backend capability probes fail gracefully, and key URLs are quoted so keys with special characters open correctly.
+- CI runs the test matrix against Django 6.1 in addition to 6.0.
+- Dependabot automerge waits for every workflow run on the PR head to succeed before merging.
+- `reverse_key()` handles a `KEY_PREFIX` containing colons, so `keys()`, `iter_keys()`, `scan()`, and the blocking list pops return user keys instead of raw internal ones.
+- `DatabaseCache` compound ops (`rpush`, `sadd`, `zadd`, `hset`, ...) that lose the insert race against a concurrent writer now merge with the committed row instead of overwriting it.
+- `LocMemCache.hincrby`/`hincrbyfloat` reject non-numeric stored values with the same error as the server instead of truncating them.
+- `TieredCache` rejects `KEY_PREFIX` in the standard top-level slot as well as in `OPTIONS`; it was silently ignored before.
+- Sentinel: async connection pools are keyed by sentinel fleet, so two aliases sharing a service name no longer alias onto one pool.
+- Semaphores: concurrent `acquire()` on one `RespSemaphore` instance can no longer double-claim and leak a slot until the lease expires.
+- Admin: editing a key preserves its TTL and persistence instead of resetting it to the default timeout. Covers every backend, including those that report no-expiry as `-1` rather than `None` (`StreamCache`) and those without `pexpire` (`StreamCache`, `TieredCache`).
 
 ---
 
