@@ -619,7 +619,6 @@ class TestTieredStockDjangoL2:
         assert stock_tiered.set("nxk", "first", nx=True) is True
         assert stock_tiered.set("nxk", "second", nx=True) is False
         assert stock_tiered.get("nxk") == "first"
-        # L1 only mirrors the write that landed.
         assert caches["l1"].get("nxk") == "first"
 
     def test_set_xx_raises_not_supported(self, stock_tiered: BaseCache):

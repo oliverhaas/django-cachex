@@ -173,7 +173,6 @@ class TestStampedeTouch:
         ttl = stampede_cache.ttl("sp_touch")
         assert ttl is not None
         assert 300 < ttl <= 360  # 300 + 60 buffer, same as set()
-        # Logically fresh again after the touch
         assert stampede_cache.get("sp_touch") == "val"
 
     def test_touch_short_timeout_stays_logically_alive(self, stampede_cache: RespCache):
