@@ -9,12 +9,12 @@ CACHES = {
     "default": {
         "BACKEND": "django_cachex.cache.ValkeyCache",  # or RedisCache
         "LOCATION": "valkey://127.0.0.1:6379/1",
-        "TIMEOUT": 300,              # Default timeout in seconds
-        "KEY_PREFIX": "myapp",       # Prefix for all keys
-        "VERSION": 1,                # Key version number
+        "TIMEOUT": 300,  # Default timeout in seconds
+        "KEY_PREFIX": "myapp",  # Prefix for all keys
+        "VERSION": 1,  # Key version number
         "OPTIONS": {
             # See options below
-        }
+        },
     }
 }
 ```
@@ -320,7 +320,7 @@ CACHES = {
             "sentinel_kwargs": {
                 "password": "sentinel-password",
             },
-        }
+        },
     }
 }
 ```
@@ -347,7 +347,7 @@ CACHES = {
 ### Special Values
 
 ```python
-cache.set("key", "value", timeout=0)     # Delete immediately
+cache.set("key", "value", timeout=0)  # Delete immediately
 cache.set("key", "value", timeout=None)  # Never expires
 ```
 
@@ -394,14 +394,12 @@ CACHES = {
         "OPTIONS": {
             # Serialization
             "serializer": "django_cachex.serializers.pickle.PickleSerializer",
-
             # Compression
             "compressor": "django_cachex.compressors.zstd.ZstdCompressor",
-
             # Connection pool
             "socket_connect_timeout": 5,
             "socket_timeout": 5,
-        }
+        },
     }
 }
 ```

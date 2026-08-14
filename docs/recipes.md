@@ -45,6 +45,7 @@ Simple rate limiter using sorted sets:
 import time
 from django.core.cache import cache
 
+
 def is_rate_limited(user_id: str, limit: int = 100, window: int = 60) -> bool:
     """Check if user has exceeded rate limit.
 
@@ -98,13 +99,16 @@ Invalidate entire cache groups by incrementing version:
 ```python
 from django.core.cache import cache
 
+
 def get_user_cache_version(user_id: int) -> int:
     """Get current cache version for a user."""
     return cache.get(f"user:{user_id}:version", 1)
 
+
 def invalidate_user_cache(user_id: int) -> None:
     """Invalidate all cached data for a user."""
     cache.incr(f"user:{user_id}:version")
+
 
 def get_user_data(user_id: int) -> dict:
     """Get user data with versioned caching."""
@@ -158,7 +162,11 @@ from django_cachex import SemaphoreTimeoutError
 
 try:
     with cache.semaphore(
-        "memory-pool", weight=100, capacity=500, lease=300, timeout=10,
+        "memory-pool",
+        weight=100,
+        capacity=500,
+        lease=300,
+        timeout=10,
     ):
         convert(...)
 except SemaphoreTimeoutError:

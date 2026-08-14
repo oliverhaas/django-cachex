@@ -11,7 +11,7 @@ CACHES = {
         "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
             "serializer": "django_cachex.serializers.json.JsonSerializer",
-        }
+        },
     }
 }
 ```
@@ -24,7 +24,7 @@ CACHES = {
 from django.core.cache import cache
 
 cache.set("foo", "value", timeout=25)
-cache.ttl("foo")      # Returns 25
+cache.ttl("foo")  # Returns 25
 cache.ttl("missing")  # Returns -2 (key doesn't exist)
 ```
 
@@ -245,7 +245,7 @@ from django.core.cache import cache
 
 # Push elements
 cache.lpush("queue", "first")  # Prepend (left)
-cache.rpush("queue", "last")   # Append (right)
+cache.rpush("queue", "last")  # Append (right)
 
 # Pop elements
 cache.lpop("queue")  # Remove and return first
@@ -310,10 +310,10 @@ Scripts support `pre_hook` (transform keys/args before execution) and `post_hook
 
 ```python
 from django_cachex import (
-    keys_only_pre,      # Prefix keys, leave args unchanged
-    full_encode_pre,    # Prefix keys AND encode args (serialize values)
-    decode_single_post, # Decode a single returned value
-    decode_list_post,   # Decode a list of returned values
+    keys_only_pre,  # Prefix keys, leave args unchanged
+    full_encode_pre,  # Prefix keys AND encode args (serialize values)
+    decode_single_post,  # Decode a single returned value
+    decode_list_post,  # Decode a list of returned values
 )
 ```
 
@@ -365,11 +365,13 @@ Create custom hooks with `ScriptHelpers`:
 ```python
 from django_cachex import ScriptHelpers
 
+
 def my_pre(helpers: ScriptHelpers, keys, args):
     # First arg is a secondary key, rest are values
     processed_args = [helpers.make_key(args[0], helpers.version)]
     processed_args.extend(helpers.encode_values(args[1:]))
     return helpers.make_keys(keys), processed_args
+
 
 def my_post(helpers: ScriptHelpers, result):
     # Result is [count, list_of_values]
@@ -377,6 +379,7 @@ def my_post(helpers: ScriptHelpers, result):
         "count": result[0],
         "values": helpers.decode_values(result[1]) if result[1] else [],
     }
+
 
 result = cache.eval_script("...", pre_hook=my_pre, post_hook=my_post)
 ```
