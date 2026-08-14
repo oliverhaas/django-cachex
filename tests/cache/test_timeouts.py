@@ -69,6 +69,37 @@ class TestSetWithTimeout:
         cache.set("preserve_me", "changed", timeout=-1, nx=True)
         assert cache.get("preserve_me") == "original"
 
+    def test_zero_timeout_with_xx_removes_existing_value(self, cache: RespCache):
+        # Regression: timeout=0 with xx was a no-op that left stale data behind.
+        cache.set("xx_zero", "stale", timeout=None)
+        result = cache.set("xx_zero", "new", timeout=0, xx=True)
+        assert result is True
+        assert cache.get("xx_zero") is None
+
+    def test_zero_timeout_with_xx_on_missing_key_fails(self, cache: RespCache):
+        cache.delete("xx_zero_missing")
+        result = cache.set("xx_zero_missing", "value", timeout=0, xx=True)
+        assert result is False
+        assert cache.get("xx_zero_missing") is None
+
+    def test_zero_timeout_with_nx_on_missing_key_reports_success(self, cache: RespCache):
+        cache.delete("nx_zero")
+        result = cache.set("nx_zero", "value", timeout=0, nx=True)
+        assert result is True
+        assert cache.get("nx_zero") is None
+
+    def test_zero_timeout_with_nx_preserves_existing(self, cache: RespCache):
+        cache.set("nx_zero_existing", "original", timeout=None)
+        result = cache.set("nx_zero_existing", "changed", timeout=0, nx=True)
+        assert result is False
+        assert cache.get("nx_zero_existing") == "original"
+
+    def test_zero_timeout_with_get_returns_old_value_and_expires(self, cache: RespCache):
+        cache.set("get_zero", "old", timeout=None)
+        result = cache.set("get_zero", "new", timeout=0, get=True)
+        assert result == "old"
+        assert cache.get("get_zero") is None
+
     def test_subsecond_float_timeout_is_accepted(self, cache: RespCache):
         # Sub-second float timeout must be accepted (not raise). Whether the
         # key has already expired by the time we read is a race we don't
@@ -308,6 +339,28 @@ class TestAsyncSetWithTimeout:
         await cache.aset("apreserve_me", "original", timeout=None)
         await cache.aset("apreserve_me", "changed", timeout=-1, nx=True)
         assert await cache.aget("apreserve_me") == "original"
+
+    @pytest.mark.asyncio
+    async def test_azero_timeout_with_xx_removes_existing_value(self, cache: RespCache):
+        # Regression: timeout=0 with xx was a no-op that left stale data behind.
+        await cache.aset("axx_zero", "stale", timeout=None)
+        result = await cache.aset("axx_zero", "new", timeout=0, xx=True)
+        assert result is True
+        assert await cache.aget("axx_zero") is None
+
+    @pytest.mark.asyncio
+    async def test_azero_timeout_with_nx_preserves_existing(self, cache: RespCache):
+        await cache.aset("anx_zero_existing", "original", timeout=None)
+        result = await cache.aset("anx_zero_existing", "changed", timeout=0, nx=True)
+        assert result is False
+        assert await cache.aget("anx_zero_existing") == "original"
+
+    @pytest.mark.asyncio
+    async def test_azero_timeout_with_get_returns_old_value_and_expires(self, cache: RespCache):
+        await cache.aset("aget_zero", "old", timeout=None)
+        result = await cache.aset("aget_zero", "new", timeout=0, get=True)
+        assert result == "old"
+        assert await cache.aget("aget_zero") is None
 
     @pytest.mark.asyncio
     async def test_asubsecond_float_timeout_is_accepted(self, cache: RespCache):
