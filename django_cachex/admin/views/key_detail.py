@@ -93,9 +93,11 @@ def _set_preserving_ttl(cache: Any, key: str, value: Any) -> None:
     not rounded away, and fall back to ``ttl`` on backends without it.
     """
     for method, scale in (("pttl", 1), ("ttl", 1000)):
+        if (read_ttl := getattr(cache, method, None)) is None:
+            continue
         try:
-            raw = getattr(cache, method)(key)
-        except AttributeError, NotSupportedError:
+            raw = read_ttl(key)
+        except NotSupportedError:
             continue
         if raw is None or raw == -1:
             cache.set(key, value, timeout=None)
@@ -105,9 +107,9 @@ def _set_preserving_ttl(cache: Any, key: str, value: Any) -> None:
             # Round up: backends without pexpire keep whatever the write said.
             remaining_ms = raw * scale
             cache.set(key, value, timeout=max(1, math.ceil(remaining_ms / 1000)))
-            if remaining_ms % 1000:
-                with contextlib.suppress(AttributeError, NotSupportedError):
-                    cache.pexpire(key, remaining_ms)
+            if remaining_ms % 1000 and (pexpire := getattr(cache, "pexpire", None)) is not None:
+                with contextlib.suppress(NotSupportedError):
+                    pexpire(key, remaining_ms)
         return
     cache.set(key, value)
 
@@ -642,24 +644,25 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
                 "You can still delete the key.",
             )
         else:
-            try:
-                string_sha1 = get_string_sha1(cache, key)
-            except AttributeError, NotSupportedError:
-                # No server-side scripting (LocMem, Database, stock backends):
-                # edit via plain set() without conflict detection.
-                pass
-            except Exception:
-                # Downgrade rather than block the edit page on lookup failure.
-                logger.warning(
-                    "CAS fingerprint lookup failed for key %r; edit will skip conflict check",
-                    key,
-                    exc_info=True,
-                )
-                messages.warning(
-                    request,
-                    "Conflict detection unavailable for this key. "
-                    "Concurrent edits won't be caught; the next save will overwrite blindly.",
-                )
+            if hasattr(cache, "eval_script"):
+                try:
+                    string_sha1 = get_string_sha1(cache, key)
+                except NotSupportedError:
+                    # BaseCachex declares eval_script and raises, so LocMem and
+                    # Database reach here rather than failing the hasattr probe.
+                    pass
+                except Exception:
+                    # Downgrade rather than block the edit page on lookup failure.
+                    logger.warning(
+                        "CAS fingerprint lookup failed for key %r; edit will skip conflict check",
+                        key,
+                        exc_info=True,
+                    )
+                    messages.warning(
+                        request,
+                        "Conflict detection unavailable for this key. "
+                        "Concurrent edits won't be caught; the next save will overwrite blindly.",
+                    )
 
     if value_decode_error is not None:
         value_display = f"<value cannot be decoded: {value_decode_error}>"
