@@ -477,7 +477,9 @@ All cache methods are available on the pipeline. Results are returned as a list 
 dataclass that tunes the TTL-based XFetch stampede-prevention algorithm.
 Pass it to `OPTIONS["stampede_prevention"]` to apply globally, or to the
 `stampede_prevention=` kwarg on `get`/`set`/`get_many`/`set_many`/`add`/
-`get_or_set` for per-call overrides.
+`touch`/`get_or_set`, and their `a`-prefixed async counterparts, for
+per-call overrides. `touch` uses it to decide whether the refreshed TTL
+gets the buffer added back.
 
 | Field | Default | Description |
 |-------|---------|-------------|

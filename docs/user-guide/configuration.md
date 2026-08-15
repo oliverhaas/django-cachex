@@ -229,7 +229,7 @@ Probabilistic early recompute (XFetch) to avoid thundering-herd recompute when a
 }
 ```
 
-Per-call overrides accept the same shapes via the `stampede_prevention=` keyword on `get`/`set`/`add`/`get_or_set`/`get_many`/`set_many`.
+Per-call overrides accept the same shapes via the `stampede_prevention=` keyword on `get`/`set`/`add`/`touch`/`get_or_set`/`get_many`/`set_many`, and on their `a`-prefixed async counterparts. On `touch` the keyword decides whether the refreshed TTL gets the buffer added back, so it should match what the original write used.
 
 ### Choosing an adapter
 
@@ -380,6 +380,30 @@ CACHES = {
     }
 }
 ```
+
+### Reverse Key Function
+
+```python
+def my_reverse_key_func(key):
+    return key.split(":", 2)[2]
+
+CACHES = {
+    "default": {
+        ...
+        "REVERSE_KEY_FUNCTION": "myapp.cache.my_reverse_key_func",
+    }
+}
+```
+
+The inverse of `KEY_FUNCTION`: it takes the full internal key and returns the user key. Dotted path or callable, same as `KEY_FUNCTION`. Reach for it when a custom `KEY_FUNCTION` makes the default `prefix:version:` stripping wrong; the default handles a `KEY_PREFIX` containing colons on its own.
+
+Only `reverse_key()` consults it, so it changes what `keys()`, `iter_keys()`, `scan()` and the blocking list pops (`blpop`, `brpop`) hand back, plus their async counterparts. Stored keys are untouched.
+
+!!! warning "RESP backends only"
+    `LocMemCache`, `DatabaseCache` and `StreamCache` strip the prefix
+    themselves and ignore `REVERSE_KEY_FUNCTION`. `TieredCache` forwards
+    `reverse_key()` to its L2 tier, so it belongs on the L2 alias rather
+    than the tiered one.
 
 ## Complete Example
 
