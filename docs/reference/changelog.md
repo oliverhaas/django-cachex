@@ -16,11 +16,12 @@
 - **`LzmaCompressor` constructor `preset=` renamed to `level=`** for consistency with the other compressors. All compressors now accept `level=` (mapped to the underlying library's native parameter).
 - **`PickleSerializer` no longer raises `ImproperlyConfigured` for `protocol > pickle.HIGHEST_PROTOCOL`**. Pickle's own `ValueError` is now surfaced at the first `dumps` call, wrapped as `SerializerError` (with the pickle exception as `__cause__`).
 - **`CachexCompat` removed.** The mixin class that emulated the cachex ext surface on top of an arbitrary `BaseCache` is gone, along with the admin's "wrapped" support tier. Django's `BaseCache` and the stock backends (`LocMemCache`, `RedisCache`, `DatabaseCache`, `FileBasedCache`, `MemcachedCache`, `DummyCache`) deliberately don't expose key listing, so the wrap couldn't drive the admin's browse views meaningfully. Use `django_cachex.cache.LocMemCache` / `DatabaseCache` (drop-in replacements) for full admin support; non-cachex backends now show as "limited" (configuration only).
+- **Cluster `LOCATION` with a database number now raises on the redis-py and valkey-py cluster backends.** Those two are built with the driver's `from_url()`, which rejects a non-zero `db` in the URL path or query (`RedisClusterException` / `ValkeyClusterException`). The old code read only host and port off the URL, so `redis://host:6379/1` connected to db 0 without complaint. Cluster has no `SELECT`, so the number was never honored; drop it from `LOCATION`. `ValkeyGlideClusterCache` and `RedisRsClusterCache` still ignore it silently.
 
 ### New features
 
-- **Rust I/O driver.** Optional native driver built on PyO3 + tokio + redis-rs, shipped as a separate `django-cachex-redis-rs` package. Opt in via the `redis-rs` extra (`pip install django-cachex[redis-rs]`); without it, only the pure-Python backends are pulled in and the `RedisRsCache` classes raise a clean `ImportError` on first use. Set `BACKEND` to one of `RedisRsCache`, `RedisRsClusterCache`, or `RedisRsSentinelCache`. Sync and async share one tokio runtime; async dodges the threadpool round-trip.
-- **`valkey-glide` adapter.** Optional Rust-cored client from the Valkey project. Opt in via the `valkey-glide` extra. Standalone (`ValkeyGlideCache`) and cluster (`ValkeyGlideClusterCache`) topologies are exposed; Sentinel is not (`valkey-glide` itself does not ship a Sentinel client).
+- **Rust I/O driver (experimental).** Optional native driver built on PyO3 + tokio + redis-rs, shipped as a separate `django-cachex-redis-rs` package. Interfaces and behavior may change, and it has seen less production testing than the redis-py/valkey-py paths. Opt in via the `redis-rs` extra (`pip install django-cachex[redis-rs]`); without it, only the pure-Python backends are pulled in and the `RedisRsCache` classes raise a clean `ImportError` on first use. Set `BACKEND` to one of `RedisRsCache`, `RedisRsClusterCache`, or `RedisRsSentinelCache`. Sync and async share one tokio runtime; async dodges the threadpool round-trip.
+- **`valkey-glide` adapter (experimental).** Optional Rust-cored client from the Valkey project. Interfaces and behavior may change, and it has seen less production testing than the redis-py/valkey-py paths. Opt in via the `valkey-glide` extra. Standalone (`ValkeyGlideCache`) and cluster (`ValkeyGlideClusterCache`) topologies are exposed; Sentinel is not (`valkey-glide` itself does not ship a Sentinel client).
 - **`WrongTypeError` exception.** Backends now translate Redis ``WRONGTYPE`` responses into a single `django_cachex.WrongTypeError` (subclass of `TypeError`) so user code can catch one exception across LocMem, redis-py, valkey-py, valkey-glide, and the Rust adapter.
 - **Async ext methods on LocMem and Database.** The full async data-structure surface (`alpush`, `ahset`, `azadd`, `attl`, `aexpire`, ...) is now available on `LocMemCache` (direct sync calls; in-memory, so no I/O to offload) and `DatabaseCache` (via ``sync_to_async``, the same path Django uses for ``BaseCache.aget``). They no longer raise `NotSupportedError` from async views.
 - **`StreamCache` backend.** Stream-synchronized in-memory cache: reads are local, writes broadcast over a Redis Stream, a daemon thread on each pod consumes the stream and applies remote changes. Read-heavy, write-light, eventually consistent.
@@ -51,20 +52,30 @@
 - Fixed a crash when reading values small enough to have skipped compression (at or below the compressor's `min_length`).
 - Admin cache/key changelists are compatible with Django 6.1.
 - Semaphore waiters abandoned by crashed or cancelled callers are reaped instead of blocking the queue.
-- valkey-glide: `zadd` forwards the `gt`/`lt` flags, and pipelines support the stream commands.
-- `TieredCache.set` forwards `nx`/`xx` to L2.
+- valkey-glide: connection options reach the client instead of being reduced to host and port. The TLS scheme (`rediss`/`valkeys`) or `use_tls`/`ssl`, credentials from the URL or `OPTIONS`, the database index (standalone only), `request_timeout`, and `client_name` are all applied; `zadd` forwards the `gt`/`lt` flags, and pipelines support the stream commands.
+- `TieredCache.set` forwards `nx`/`xx` to L2, and an L2 that is a stock Django backend no longer raises `TypeError`: `nx` falls back to `add()`, `xx`/`get` raise `NotSupportedError`, and a plain set drops the flags.
 - `set(..., timeout=0)` deletes the key across all backends, matching Django's cache contract.
-- `LocMemCache` aliases sharing a `LOCATION` share one store, matching Django's builtin behavior.
+- `LocMemCache` aliases sharing a `LOCATION` share one store, including the tagged collections and the semaphore budgets, matching Django's builtin behavior.
 - Admin: backend capability probes fail gracefully, and key URLs are quoted so keys with special characters open correctly.
 - CI runs the test matrix against Django 6.1 in addition to 6.0.
 - Dependabot automerge waits for every workflow run on the PR head to succeed before merging.
 - `reverse_key()` handles a `KEY_PREFIX` containing colons, so `keys()`, `iter_keys()`, `scan()`, and the blocking list pops return user keys instead of raw internal ones.
 - `DatabaseCache` compound ops (`rpush`, `sadd`, `zadd`, `hset`, ...) that lose the insert race against a concurrent writer now merge with the committed row instead of overwriting it.
-- `LocMemCache.hincrby`/`hincrbyfloat` reject non-numeric stored values with the same error as the server instead of truncating them.
+- `LocMemCache` and `DatabaseCache` `hincrby`/`hincrbyfloat` reject non-numeric stored values with the same error as the server instead of truncating them.
 - `TieredCache` rejects `KEY_PREFIX` in the standard top-level slot as well as in `OPTIONS`; it was silently ignored before.
 - Sentinel: async connection pools are keyed by sentinel fleet, so two aliases sharing a service name no longer alias onto one pool.
 - Semaphores: concurrent `acquire()` on one `RespSemaphore` instance can no longer double-claim and leak a slot until the lease expires.
 - Admin: editing a key preserves its TTL and persistence instead of resetting it to the default timeout. Covers every backend, including those that report no-expiry as `-1` rather than `None` (`StreamCache`) and those without `pexpire` (`StreamCache`, `TieredCache`).
+- `StreamCache` enqueues each broadcast while still holding the local write lock, so a pod's stream entries carry the order its writes were applied and replaying consumers converge on the writer's final value instead of an older one. `keys()` is scoped to the cache's own prefix and version.
+- Pipelines discard their queued decoders when `execute()` raises, so a reused pipeline no longer decodes the next batch against a stale, misaligned decoder list. `AsyncPipeline` rejects a sync `with` at entry rather than after the block has run.
+- The redis-py and valkey-py cluster backends are built from the full server URL through the driver's `from_url()`, so the TLS scheme, credentials, and query parameters survive; only the host and port were read before. The async Sentinel pool cache is also keyed on the sentinel fleet rather than the manager's `id()`, so the per-task adapters asgiref creates share one pool instead of each opening its own.
+- `encode()` passes through exact `int` values only. `int` subclasses (`IntEnum`, `IntFlag`) now go through the serializer, so they come back as their own type instead of as plain ints.
+- `touch()`/`atouch()` apply the stampede buffer to the TTL they write and accept a per-call `stampede_prevention=`. Touching a key under stampede prevention no longer strips the buffer and pushes every reader into a recompute.
+- `DatabaseCache` key scans escape SQL `LIKE` metacharacters per database vendor, so a `KEY_PREFIX` or pattern containing `%`, `_`, or a backslash no longer matches unrelated rows.
+- `DatabaseCache.zadd`/`zincrby` reject a non-numeric score with `ValueError` before writing, matching the server, instead of storing a value that breaks later range queries.
+- `MAX_ENTRIES` culling covers the whole store: `LocMemCache` counts its tagged collections alongside the pickled entries and evicts them, and `DatabaseCache` compound ops (`rpush`, `sadd`, `hset`, ...) run the same cull check as a plain `set()` when they insert a new row.
+- `LocMemCache` collection edge cases: `keys()` scopes to the requested version and skips expired-but-not-yet-culled entries, `incr()` on a collection key raises `WrongTypeError` instead of `KeyError`, and `sadd`/`hset`/`zadd` no longer leave an empty key behind when the call adds nothing (`zadd` where `nx`/`xx` skip every member, `sadd`/`hset` called with no members or fields).
+- `rpop(count=0)` on `LocMemCache` and `DatabaseCache`, and `zpopmax(count=0)` on `LocMemCache`, return an empty list instead of draining the whole collection.
 
 ---
 
