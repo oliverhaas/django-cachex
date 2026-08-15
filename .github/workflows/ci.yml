@@ -138,8 +138,12 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev --extra valkey-glide
 
-      - name: Run glide adapter tests
-        run: uv run pytest tests/cache/test_valkey_glide_adapter.py
+      # The cache fixtures skip an adapter whose client library is missing
+      # (_adapter_library_available in tests/fixtures/cache.py), and no other
+      # job installs the glide extra, so this is the only place the shared
+      # suite reaches the glide adapter.
+      - name: Run backend tests with the glide adapter
+        run: uv run pytest tests/cache/ -n auto
         env:
           PYTHONDONTWRITEBYTECODE: "1"
 
