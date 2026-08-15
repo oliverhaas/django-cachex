@@ -9,7 +9,7 @@ default_language_version:
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: check-ast
       - id: check-case-conflict
@@ -52,6 +52,15 @@ repos:
       - id: ruff-format
         name: ruff-format
         entry: uv run ruff format
+        language: system
+        pass_filenames: false
+      # `-` makes djLint take its file list from `files` in [tool.djlint]; it
+      # ignores anything pre-commit would append, so don't pass filenames.
+      # PYTHON_GIL=1 because djLint's compiled module initialises unsafely on
+      # the free-threaded build and dies with a NameError on _LINE_PATTERN.
+      - id: djlint
+        name: djlint
+        entry: env PYTHON_GIL=1 uv run djlint - --lint
         language: system
         pass_filenames: false
 
