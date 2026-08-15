@@ -61,6 +61,11 @@ def _build_sync_config(
     }
 
 
+def _custom_key_func(key: str, prefix: str, version: int) -> str:
+    """KEY_FUNCTION whose layout no hand-built ``prefix:version:`` guess matches."""
+    return f"{prefix}#{version}#{key}"
+
+
 def _cleanup_globals(stream_key: str) -> None:
     """Remove module-level globals for a stream key."""
     _caches.pop(stream_key, None)
@@ -545,6 +550,30 @@ class TestSyncAdmin:
         assert stream_cache.keys() == ["ver_a"]
         assert stream_cache.keys(version=2) == ["ver_b"]
         assert stream_cache.keys("ver_*", version=2) == ["ver_b"]
+
+    def test_keys_with_custom_key_function(self, redis_container: RedisContainerInfo, resp_adapter: str):
+        # Regression: keys() and reverse_key() hand-built "prefix:version:",
+        # so a KEY_FUNCTION with another layout made keys() return nothing.
+        if not _adapter_library_available(resp_adapter):
+            pytest.skip(f"{resp_adapter} library not installed")
+        config = _build_sync_config(
+            redis_container.host,
+            redis_container.port,
+            resp_adapter=resp_adapter,
+        )
+        config["default"]["KEY_FUNCTION"] = "tests.cache.test_streamcache._custom_key_func"
+        stream_key = config["default"]["OPTIONS"]["stream_key"]
+
+        with override_settings(CACHES=config):
+            cache = caches["default"]
+            cache.set("kf_a", 1)
+            cache.set("kf_b", 2)
+            assert cache.make_key("kf_a") == "#1#kf_a"
+            assert cache.keys() == ["kf_a", "kf_b"]
+            assert cache.keys("kf_a*") == ["kf_a"]
+            assert cache.reverse_key(cache.make_key("kf_a")) == "kf_a"
+            cache.shutdown()
+            _cleanup_globals(stream_key)
 
     def test_info(self, stream_cache: BaseCache):
         stream_cache.set("info_key", "val")

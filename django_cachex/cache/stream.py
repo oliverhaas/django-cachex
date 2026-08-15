@@ -636,27 +636,31 @@ class StreamCache(LocMemCache):
     # -- Admin methods (local implementations for fast reads) --
 
     def reverse_key(self, key: str) -> str:
-        """Strip prefix:version: to get the user-visible key."""
-        prefix = self.key_prefix
-        # Key format: "prefix:version:user_key" or ":version:user_key"
-        expected_prefix = f":{self.version}:" if not prefix else f"{prefix}:{self.version}:"
-        if key.startswith(expected_prefix):
-            return key[len(expected_prefix) :]
-        return key
+        """Strip the ``make_key`` prefix to get the user-visible key.
+
+        The prefix is the one ``make_key`` builds for this cache's version,
+        so keys round-trip whatever ``KEY_PREFIX``/``KEY_FUNCTION`` produce;
+        anything not carrying it is returned unchanged.
+        """
+        return key.removeprefix(self.make_key(""))
 
     def keys(self, pattern: str = "*", version: int | None = None) -> list[str]:
+        """List user keys matching ``pattern`` (Redis-style glob).
+
+        Internal keys are matched against the exact prefix ``make_key``
+        produces for the requested ``version`` (default: this cache's
+        ``self.version``) and stripped back to user keys, so results
+        round-trip through the same key pipeline writes use, whatever
+        ``KEY_PREFIX``/``KEY_FUNCTION`` produce. Expired but not-yet-culled
+        entries are excluded.
+        """
         self._ensure_consumer()
-        v = self.version if version is None else version
-        prefix = self.key_prefix
-        version_prefix = f"{prefix}:{v}:" if prefix else f":{v}:"
-        user_keys: list[str] = []
+        prefix = self.make_key("", version=version)
         with self._lock:
-            for internal_key in list(self._cache.keys()):
-                if not internal_key.startswith(version_prefix):
-                    continue
-                if self._has_expired(internal_key):
-                    continue
-                user_keys.append(internal_key[len(version_prefix) :])
+            internal_keys = [k for k in self._cache if not self._has_expired(k)]
+        user_keys = [
+            internal_key.removeprefix(prefix) for internal_key in internal_keys if internal_key.startswith(prefix)
+        ]
         if pattern and pattern != "*":
             user_keys = [k for k in user_keys if fnmatch.fnmatch(k, pattern)]
         user_keys.sort()
@@ -757,12 +761,15 @@ class StreamCache(LocMemCache):
         yield from self.keys(pattern, version=version)
 
     def make_pattern(self, pattern: str, version: int | None = None) -> str:
-        """Make a key pattern with the cache prefix."""
-        prefix = self.key_prefix
+        """Make a key pattern with the cache prefix.
+
+        Routed through ``key_func`` so a custom ``KEY_FUNCTION`` produces a
+        pattern that matches its own keys. Unlike the RESP backends the prefix
+        is not glob-escaped: matching here is ``fnmatch`` over user keys that
+        have already had the prefix stripped.
+        """
         v = version if version is not None else self.version
-        if not prefix:
-            return f":{v}:{pattern}"
-        return f"{prefix}:{v}:{pattern}"
+        return self.key_func(pattern, self.key_prefix, v)
 
     def delete_pattern(
         self,
