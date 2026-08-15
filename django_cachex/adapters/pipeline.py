@@ -1640,18 +1640,11 @@ class AsyncPipeline(Pipeline):
     def __enter__(self) -> Self:
         """Block sync ``with`` on an async pipeline before any commands queue.
 
-        Failing here instead of at ``__exit__`` keeps the error next to the
-        offending ``with`` statement rather than after the block ran.
-        """
-        msg = "AsyncPipeline requires 'async with', not 'with'"
-        raise TypeError(msg)
-
-    def __exit__(self, *args: object) -> None:
-        """Block sync ``with`` on an async pipeline.
-
-        ``Pipeline.__exit__`` calls a sync ``reset()``. The async pipeline
-        adapter's ``reset()`` returns a coroutine that would be silently
-        discarded, leaving connection state dangling.
+        The inherited ``Pipeline.__exit__`` calls a sync ``reset()``; on an
+        async adapter that returns a coroutine which would be silently
+        discarded, leaving connection state dangling. Failing at ``__enter__``
+        keeps the error next to the offending ``with`` statement rather than
+        after the block ran.
         """
         msg = "AsyncPipeline requires 'async with', not 'with'"
         raise TypeError(msg)
