@@ -11,6 +11,15 @@ if TYPE_CHECKING:
     from django_cachex.cache import RespCache
 
 
+def assert_ttl_seconds(actual: int | None, expected: int) -> None:
+    """Assert a whole-second TTL, allowing the second a slow round-trip can shave off.
+
+    Redis rounds TTL to the nearest second, so once more than 500ms has passed
+    since the write it reports ``expected - 1``.
+    """
+    assert actual in (expected - 1, expected)
+
+
 class TestSetWithTimeout:
     """Tests for set() with timeout parameter."""
 
@@ -113,7 +122,7 @@ class TestTTLOperations:
 
     def test_ttl_returns_remaining_seconds(self, cache: RespCache):
         cache.set("ttl_check", "data", 10)
-        assert pytest.approx(cache.ttl("ttl_check")) == 10
+        assert_ttl_seconds(cache.ttl("ttl_check"), 10)
 
     def test_ttl_returns_none_for_persistent_key(self, cache: RespCache):
         cache.set("no_expiry", "permanent", timeout=None)
@@ -177,7 +186,7 @@ class TestExpireOperations:
     def test_expire_sets_ttl(self, cache: RespCache):
         cache.set("to_expire", "data", timeout=None)
         assert cache.expire("to_expire", 20) is True
-        assert pytest.approx(cache.ttl("to_expire")) == 20
+        assert_ttl_seconds(cache.ttl("to_expire"), 20)
 
     def test_expire_on_missing_key_returns_false(self, cache: RespCache):
         assert cache.expire("ghost_key", 20) is False
@@ -373,7 +382,7 @@ class TestAsyncTimeouts:
     @pytest.mark.asyncio
     async def test_attl_returns_remaining_seconds(self, cache: RespCache):
         cache.set("attl_check", "data", 10)
-        assert pytest.approx(await cache.attl("attl_check")) == 10
+        assert_ttl_seconds(await cache.attl("attl_check"), 10)
 
     @pytest.mark.asyncio
     async def test_attl_returns_none_for_persistent_key(self, cache: RespCache):
@@ -435,7 +444,7 @@ class TestAsyncTimeouts:
     async def test_aexpire_sets_ttl(self, cache: RespCache):
         cache.set("aexpire_key", "data", timeout=None)
         assert await cache.aexpire("aexpire_key", 20) is True
-        assert pytest.approx(cache.ttl("aexpire_key")) == 20
+        assert_ttl_seconds(cache.ttl("aexpire_key"), 20)
 
     @pytest.mark.asyncio
     async def test_aexpire_on_missing_key_returns_false(self, cache: RespCache):
