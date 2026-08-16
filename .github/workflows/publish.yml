@@ -66,8 +66,9 @@ jobs:
         with:
           package-dir: crates/django-cachex-redis-rs
         env:
+          # No CIBW_ENABLE: cibuildwheel 4.0 dropped the cpython-freethreading
+          # group and builds 3.14t whenever CIBW_BUILD asks for it.
           CIBW_BUILD: ${{ matrix.cibw_build }}
-          CIBW_ENABLE: cpython-freethreading
           CIBW_ARCHS: ${{ matrix.cibw_archs }}
           CIBW_BEFORE_ALL_LINUX: |
             curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
