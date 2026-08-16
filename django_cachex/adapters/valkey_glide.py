@@ -16,6 +16,7 @@ Standalone and cluster topologies are supported; Sentinel is not exposed
 
 import asyncio
 import datetime
+import inspect
 import os
 import threading
 import time
@@ -25,6 +26,7 @@ from urllib.parse import parse_qs, urlparse
 
 from django_cachex.adapters.protocols import RespAdapterProtocol, RespAsyncPipelineProtocol, RespPipelineProtocol
 from django_cachex.adapters.valkey_py import _options_key
+from django_cachex.exceptions import maybe_wrap_wrongtype
 from django_cachex.stampede import (
     StampedeConfig,
     get_timeout_with_buffer,
@@ -85,6 +87,69 @@ def _check_installed() -> None:
 # Alias for the `set` builtin shadowed by the `set` method (PEP 649 defers
 # annotations at runtime, but type checkers still resolve them in class scope).
 _set = set
+
+
+# =============================================================================
+# WRONGTYPE translation
+# =============================================================================
+# :mod:`~django_cachex.adapters.valkey_py` patches ``execute_command`` to
+# normalize WRONGTYPE responses. Glide's clients are Rust-backed and expose one
+# method per command with no such seam, so wrap the whole client instead: every
+# command, and every ``exec`` of a batch built from it, goes through one place.
+
+
+async def _await_translated(awaitable: Any) -> Any:
+    try:
+        return await awaitable
+    except RequestError as exc:
+        wrapped = maybe_wrap_wrongtype(exc)
+        if wrapped is exc:
+            raise
+        raise wrapped from exc
+
+
+def _translating(fn: Any) -> Any:
+    def call(*args: Any, **kwargs: Any) -> Any:
+        try:
+            result = fn(*args, **kwargs)
+        except RequestError as exc:
+            wrapped = maybe_wrap_wrongtype(exc)
+            if wrapped is exc:
+                raise
+            raise wrapped from exc
+        # The async client's methods are coroutine functions, so the error
+        # surfaces on await rather than on call.
+        return _await_translated(result) if inspect.isawaitable(result) else result
+
+    return call
+
+
+class _WrongTypeClient:
+    """Forward every attribute to a glide client, translating WRONGTYPE responses.
+
+    Callables come back wrapped (cached per name, since command methods are
+    looked up on every operation); everything else passes through untouched.
+    """
+
+    __slots__ = ("_glide_client", "_wrappers")
+
+    def __init__(self, client: Any) -> None:
+        self._glide_client = client
+        self._wrappers: dict[str, Any] = {}
+
+    def __getattr__(self, name: str) -> Any:
+        wrapper = self._wrappers.get(name)
+        if wrapper is not None:
+            return wrapper
+        attr = getattr(self._glide_client, name)
+        if not callable(attr):
+            return attr
+        wrapper = _translating(attr)
+        self._wrappers[name] = wrapper
+        return wrapper
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self._glide_client!r})"
 
 
 # =============================================================================
@@ -1146,7 +1211,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
                     addresses=[NodeAddress(u.hostname or "localhost", u.port or 6379)],
                     **_glide_config_kwargs(self._servers, self._options, credentials_cls=ServerCredentials),
                 )
-                client = GlideClient.create(cfg)
+                client = _WrongTypeClient(GlideClient.create(cfg))
                 _GLIDE_SYNC_CLIENTS[self._config_key] = client
         return client
 
@@ -1182,7 +1247,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
                     addresses=[AsyncNodeAddress(u.hostname or "localhost", u.port or 6379)],
                     **_glide_config_kwargs(self._servers, self._options, credentials_cls=AsyncServerCredentials),
                 )
-                client = await AsyncGlideClient.create(cfg)
+                client = _WrongTypeClient(await AsyncGlideClient.create(cfg))
                 sub[self._config_key] = client
         return client
 
@@ -3172,7 +3237,7 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
                         include_database=False,
                     ),
                 )
-                client = GlideClusterClient.create(cfg)
+                client = _WrongTypeClient(GlideClusterClient.create(cfg))
                 _GLIDE_SYNC_CLUSTER_CLIENTS[self._config_key] = client
         return client
 
@@ -3202,7 +3267,7 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
                         include_database=False,
                     ),
                 )
-                client = await AsyncGlideClusterClient.create(cfg)
+                client = _WrongTypeClient(await AsyncGlideClusterClient.create(cfg))
                 sub[self._config_key] = client
         return client
 
