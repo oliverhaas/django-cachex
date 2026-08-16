@@ -14,6 +14,7 @@ from django_cachex.adapters.protocols import (
     RespAsyncPipelineProtocol,
     RespPipelineProtocol,
 )
+from django_cachex.exceptions import NotSupportedError
 
 # The native ``_redis_rs`` extension ships in the optional
 # ``django-cachex-redis-rs`` binary package. When only the pure wheel is
@@ -100,8 +101,18 @@ class RedisRsAdapter(_RustRedisRsAdapter, RespAdapterProtocol):
 
     The Rust ``RedisRsAdapter`` connects directly to redis-rs in
     ``__init__``; ``RespAdapterProtocol`` is a structural mixin,
-    runtime-checkable, contributes no methods.
+    runtime-checkable. It sits last in the MRO, so any command the Rust
+    class does not define resolves to the protocol's ``...`` body and
+    returns ``None`` rather than raising. Override such gaps explicitly.
     """
+
+    def slowlog_get(self, count: int = 10) -> list[dict[str, Any]]:
+        """Reject SLOWLOG GET, which the Rust adapter does not implement."""
+        raise NotSupportedError("slowlog_get", backend="redis-rs")
+
+    def slowlog_len(self) -> int:
+        """Reject SLOWLOG LEN, which the Rust adapter does not implement."""
+        raise NotSupportedError("slowlog_len", backend="redis-rs")
 
     def lock(
         self,
