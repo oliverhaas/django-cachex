@@ -668,6 +668,16 @@ class TestKeyDetailView:
         assert response.status_code == 302
         assert "cache=default" in response.url
 
+    def test_key_detail_unconfigured_cache_redirects(self, admin_client: Client):
+        """Regression: change_view only checked for an empty cache name, so an
+        alias missing from CACHES reached get_cache() and raised ValueError
+        instead of redirecting the way add_view does.
+        """
+        url = _key_detail_url("no-such-cache", "somekey")
+        response = admin_client.get(url)
+        assert response.status_code == 302
+        assert response.url == reverse("admin:django_cachex_cache_changelist")
+
     def test_locmem_key_detail_has_no_conflict_warning(
         self,
         admin_client: Client,
@@ -2194,6 +2204,34 @@ class TestCacheDetailView:
         url = _cache_detail_url("default")
         response = client.get(url)
         assert response.status_code == 302
+
+    def test_cache_detail_follows_changelist_link_for_underscore_alias(
+        self,
+        admin_client: Client,
+    ):
+        """Regression: admin quoting escapes ``_`` as ``_5F``, so the changelist
+        row links to ``my_5Fcache``. change_view used to pass that through raw
+        and report the alias as missing.
+        """
+        caches_config = {
+            "my_cache": {
+                "BACKEND": "django_cachex.cache.LocMemCache",
+                "LOCATION": "underscore-alias",
+            },
+        }
+        with override_settings(CACHES=caches_config):
+            changelist = admin_client.get(
+                reverse("admin:django_cachex_cache_changelist"),
+            )
+            assert changelist.status_code == 200
+
+            url = _cache_detail_url("my_cache")
+            assert "my_5Fcache" in url
+            assert f'href="{url}"' in changelist.content.decode()
+
+            detail = admin_client.get(url)
+            assert detail.status_code == 200
+            assert "not found" not in detail.content.decode()
 
     def test_cache_detail_shows_cache_name(self, admin_client: Client, test_cache):
         url = _cache_detail_url("default")

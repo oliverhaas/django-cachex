@@ -238,6 +238,13 @@ class KeyAdmin(KeyAdminMixin, _KeyBase):  # type: ignore[misc]
                 reverse("admin:django_cachex_cache_changelist"),
             )
 
+        # get_cache() raises on an unconfigured alias, so check first like add_view.
+        if Cache.get_by_name(cache_name) is None:
+            messages.error(request, f"Cache '{cache_name}' not found.")
+            return HttpResponseRedirect(
+                reverse("admin:django_cachex_cache_changelist"),
+            )
+
         return _key_detail_view(request, cache_name, key_name, self._get_config())
 
     def add_view(
