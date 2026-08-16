@@ -17,6 +17,7 @@ from django_cachex.adapters.valkey_glide import (
     _AsyncGlideLock,
     _glide_config_kwargs,
     _GlideLock,
+    _WrongTypeClient,
 )
 
 
@@ -363,3 +364,37 @@ def test_slowlog_get_empty(mocker):
     adapter, client = _adapter(mocker)
     client.custom_command.return_value = None
     assert adapter.slowlog_get() == []
+
+
+# ------------------------------------------------- WRONGTYPE proxy dunders
+
+
+def test_wrongtype_client_supports_sync_with(mocker):
+    """Regression: dunders resolve on the type, so __getattr__ never saw
+    __enter__/__exit__ and ``with cache.get_client()`` raised TypeError even
+    though hasattr() reported the methods as present.
+    """
+    inner = mocker.MagicMock()
+    proxy = _WrongTypeClient(inner)
+
+    with proxy as entered:
+        assert entered is proxy
+
+    inner.__enter__.assert_called_once()
+    inner.__exit__.assert_called_once()
+
+
+def test_wrongtype_client_supports_async_with(mocker):
+    inner = mocker.MagicMock()
+    inner.__aenter__ = mocker.AsyncMock()
+    inner.__aexit__ = mocker.AsyncMock()
+    proxy = _WrongTypeClient(inner)
+
+    async def run():
+        async with proxy as entered:
+            assert entered is proxy
+
+    asyncio.run(run())
+
+    inner.__aenter__.assert_awaited_once()
+    inner.__aexit__.assert_awaited_once()

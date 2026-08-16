@@ -151,6 +151,23 @@ class _WrongTypeClient:
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._glide_client!r})"
 
+    # Python looks dunders up on the type, so __getattr__ never sees them and
+    # ``with client:`` would fail even though the wrapped client supports it.
+
+    def __enter__(self) -> Any:
+        self._glide_client.__enter__()
+        return self
+
+    def __exit__(self, *args: object) -> Any:
+        return self._glide_client.__exit__(*args)
+
+    async def __aenter__(self) -> Any:
+        await self._glide_client.__aenter__()
+        return self
+
+    async def __aexit__(self, *args: object) -> Any:
+        return await self._glide_client.__aexit__(*args)
+
 
 # =============================================================================
 # Process-wide client registries
