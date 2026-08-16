@@ -46,6 +46,7 @@ if TYPE_CHECKING:
 # raises at backend instantiation time with an actionable message rather
 # than at module import time.
 try:
+    from glide import ClusterScanCursor as AsyncClusterScanCursor  # ty: ignore[unresolved-import]
     from glide import GlideClient as AsyncGlideClient  # ty: ignore[unresolved-import]
     from glide import GlideClientConfiguration as AsyncGlideClientConfiguration  # ty: ignore[unresolved-import]
     from glide import GlideClusterClient as AsyncGlideClusterClient  # ty: ignore[unresolved-import]
@@ -56,6 +57,7 @@ try:
     from glide import ServerCredentials as AsyncServerCredentials  # ty: ignore[unresolved-import]
     from glide_sync import (  # ty: ignore[unresolved-import]
         Batch,
+        ClusterScanCursor,
         ConditionalChange,
         ExpirySet,
         ExpiryType,
@@ -64,6 +66,7 @@ try:
         GlideClusterClient,
         GlideClusterClientConfiguration,
         NodeAddress,
+        ObjectType,
         RequestError,
         ServerCredentials,
     )
@@ -262,6 +265,17 @@ def _enc(v: Any) -> bytes | str:
     if isinstance(v, (int, float)):
         return str(v).encode()
     return v
+
+
+def _object_type(name: str | None) -> Any:
+    """Map a RESP type name to glide's ``ObjectType``, which SCAN requires."""
+    # Glide reads ``type.value`` off the argument, so the plain string the
+    # protocol carries has to be looked up first. An unknown name yields no
+    # TYPE filter rather than raising.
+    if name is None:
+        return None
+    wanted = name.lower()
+    return next((t for t in ObjectType if t.value.lower() == wanted), None)
 
 
 def _enc_list(values: Iterable[Any]) -> list[bytes | str]:
@@ -1501,7 +1515,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         count: int | None = None,
         _type: str | None = None,
     ) -> tuple[int, list[str]]:
-        result = self._client().scan(_enc(cursor), match=match, count=count, type=_type)
+        result = self._client().scan(_enc(cursor), match=match, count=count, type=_object_type(_type))
         return int(_dec_str(result[0])), _dec_keys(result[1])
 
     def iter_keys(self, pattern: str, itersize: int | None = None) -> Iterable[str]:
@@ -2479,7 +2493,8 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         count: int | None = None,
         _type: str | None = None,
     ) -> tuple[int, list[str]]:
-        result = await (await self.get_async_client()).scan(_enc(cursor), match=match, count=count, type=_type)
+        client = await self.get_async_client()
+        result = await client.scan(_enc(cursor), match=match, count=count, type=_object_type(_type))
         return int(_dec_str(result[0])), _dec_keys(result[1])
 
     async def aiter_keys(self, pattern: str, itersize: int | None = None):
@@ -3204,8 +3219,8 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
     """Cluster-mode adapter, wraps ``GlideClusterClient`` instead of standalone.
 
     Inherits the full command surface from :class:`ValkeyGlideAdapter`.
-    Only the client-construction hooks change. Multi-key operations must
-    hash to a single slot, use ``{tag}`` hash tags on related keys
+    Only the client-construction hooks and SCAN change. Multi-key operations
+    must hash to a single slot, use ``{tag}`` hash tags on related keys
     (matches :class:`~django_cachex.cache.resp.RespClusterCache` semantics
     for the other drivers).
     """
@@ -3220,6 +3235,57 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
         del transaction
         client = await self.get_async_client()
         return ValkeyGlideAsyncPipelineAdapter(client, transaction=False)
+
+    # ---- scan ----
+    # A cluster has no single global cursor: glide keeps per-node progress in a
+    # ``ClusterScanCursor`` object, which can't round-trip through the int
+    # cursor the adapter protocol carries. So drive the cursor loop here and
+    # report a finished scan, making one ``scan()`` return every matching key.
+    # The Rust adapter reports cluster scans the same way (``scan_one``).
+
+    def _scan_keys(self, match: str | None, count: int | None, _type: str | None) -> Iterable[str]:
+        client = self._client()
+        cursor = ClusterScanCursor()
+        object_type = _object_type(_type)
+        while not cursor.is_finished():
+            cursor, keys = client.scan(cursor, match=match, count=count, type=object_type)
+            yield from _dec_keys(keys)
+
+    def scan(
+        self,
+        cursor: int = 0,
+        match: str | None = None,
+        count: int | None = None,
+        _type: str | None = None,
+    ) -> tuple[int, list[str]]:
+        del cursor  # Only ever 0: the previous call consumed the whole keyspace.
+        return 0, list(self._scan_keys(match, count, _type))
+
+    def iter_keys(self, pattern: str, itersize: int | None = None) -> Iterable[str]:
+        return self._scan_keys(pattern, itersize, None)
+
+    async def _ascan_keys(self, match: str | None, count: int | None, _type: str | None):
+        client = await self.get_async_client()
+        cursor = AsyncClusterScanCursor()
+        object_type = _object_type(_type)
+        while not cursor.is_finished():
+            cursor, keys = await client.scan(cursor, match=match, count=count, type=object_type)
+            for key in keys:
+                yield _dec_str(key)
+
+    async def ascan(
+        self,
+        cursor: int = 0,
+        match: str | None = None,
+        count: int | None = None,
+        _type: str | None = None,
+    ) -> tuple[int, list[str]]:
+        del cursor
+        return 0, [key async for key in self._ascan_keys(match, count, _type)]
+
+    async def aiter_keys(self, pattern: str, itersize: int | None = None):
+        async for key in self._ascan_keys(pattern, itersize, None):
+            yield key
 
     def _client(self) -> Any:
         client = _GLIDE_SYNC_CLUSTER_CLIENTS.get(self._config_key)
