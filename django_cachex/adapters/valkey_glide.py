@@ -3233,10 +3233,8 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
         client = await self.get_async_client()
         return ValkeyGlideAsyncPipelineAdapter(client, transaction=False)
 
-    # ---- scan ----
-    # Glide keeps per-node scan progress in a ``ClusterScanCursor``, which can't
-    # round-trip through the int cursor the protocol carries, so drive the loop
-    # here and report one finished scan (as the Rust adapter's ``scan_one`` does).
+    # A ``ClusterScanCursor`` can't round-trip through the protocol's int cursor,
+    # so drive the loop here and report one finished scan.
 
     def _scan_keys(self, match: str | None, count: int | None, _type: str | None) -> Iterable[str]:
         client = self._client()
