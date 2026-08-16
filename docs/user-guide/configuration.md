@@ -41,7 +41,7 @@ All backends live in `django_cachex.cache`.
     and it has seen less production testing than the redis-py/valkey-py
     backends.
 
-Same wire-level features as the Python driver, dispatched through the optional `django-cachex-redis-rs` extension (PyO3 + tokio + redis-rs). Sync and async share one tokio runtime, so async paths skip the asgiref threadpool round-trip. Install via the `redis-rs` extra.
+Nearly the same wire-level feature set as the Python driver, dispatched through the optional `django-cachex-redis-rs` extension (PyO3 + tokio + redis-rs). `slowlog_get` and `slowlog_len` are the exceptions and raise `NotSupportedError`. Sync and async share one tokio runtime, so async paths skip the asgiref threadpool round-trip. Install via the `redis-rs` extra.
 
 | Backend | Description |
 |---------|-------------|

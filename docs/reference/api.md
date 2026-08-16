@@ -82,14 +82,16 @@ Set operations for unordered collections of unique elements:
 | `spop(key, count=None)` | Remove and return random member(s) |
 | `srandmember(key, count=None)` | Get random member(s) without removing |
 | `smove(src, dst, member)` | Move member between sets |
-| `sdiff(*keys)` | Get difference of sets |
-| `sdiffstore(dest, *keys)` | Store difference of sets |
-| `sinter(*keys)` | Get intersection of sets |
-| `sinterstore(dest, *keys)` | Store intersection of sets |
-| `sunion(*keys)` | Get union of sets |
-| `sunionstore(dest, *keys)` | Store union of sets |
+| `sdiff(keys)` | Get difference of sets |
+| `sdiffstore(dest, keys)` | Store difference of sets |
+| `sinter(keys)` | Get intersection of sets |
+| `sinterstore(dest, keys)` | Store intersection of sets |
+| `sunion(keys)` | Get union of sets |
+| `sunionstore(dest, keys)` | Store union of sets |
 | `sscan(key, cursor=0, ...)` | Incrementally iterate set members |
 | `sscan_iter(key, ...)` | Iterate over set members using SSCAN |
+
+`keys` on the multi-key set operations takes a single key or a sequence of them, not varargs. `sdiff(["a", "b"])`, not `sdiff("a", "b")`: the second positional argument is `version`.
 
 ### Sorted Set Methods
 
@@ -134,9 +136,11 @@ List operations for ordered, indexable collections:
 | `lpos(key, value, ...)` | Find element position in list |
 | `linsert(key, where, pivot, value)` | Insert value before or after pivot |
 | `lmove(src, dst, wherefrom, whereto)` | Atomically move element between lists |
-| `blpop(*keys, timeout=0)` | Blocking pop from head of list |
-| `brpop(*keys, timeout=0)` | Blocking pop from tail of list |
+| `blpop(keys, timeout=0)` | Blocking pop from head of list |
+| `brpop(keys, timeout=0)` | Blocking pop from tail of list |
 | `blmove(src, dst, timeout, ...)` | Blocking move between lists |
+
+`blpop` and `brpop` take `keys` the same way: one key or a sequence, followed by `timeout`.
 
 ### Stream Methods
 
@@ -144,24 +148,24 @@ Append-only log structure with consumer groups:
 
 | Method | Description |
 |--------|-------------|
-| `xadd(key, fields, *, id="*", maxlen=None, ...)` | Append an entry, returning its ID |
+| `xadd(key, fields, entry_id="*", maxlen=None, ...)` | Append an entry, returning its ID |
 | `xlen(key)` | Number of entries in the stream |
 | `xrange(key, min="-", max="+", count=None)` | Range of entries (forward) |
 | `xrevrange(key, max="+", min="-", count=None)` | Range of entries (reverse) |
 | `xread(streams, count=None, block=None)` | Read new entries from one or more streams |
-| `xtrim(key, *, maxlen=None, minid=None, approximate=True)` | Cap stream length |
+| `xtrim(key, maxlen=None, approximate=True, minid=None, ...)` | Cap stream length |
 | `xdel(key, *entry_ids)` | Delete entries by ID |
 | `xinfo_stream(key, full=False)` | Stream metadata |
 | `xinfo_groups(key)` | Consumer group metadata |
 | `xinfo_consumers(key, group)` | Per-consumer metadata for a group |
-| `xgroup_create(key, group, id="$", mkstream=False)` | Create a consumer group |
+| `xgroup_create(key, group, entry_id="$", mkstream=False)` | Create a consumer group |
 | `xgroup_destroy(key, group)` | Drop a consumer group |
-| `xgroup_setid(key, group, id)` | Re-anchor a consumer group's read position |
+| `xgroup_setid(key, group, entry_id)` | Re-anchor a consumer group's read position |
 | `xgroup_delconsumer(key, group, consumer)` | Drop a consumer from a group |
 | `xreadgroup(group, consumer, streams, count=None, block=None)` | Read entries as a group consumer |
 | `xack(key, group, *entry_ids)` | Acknowledge processed entries |
 | `xpending(key, group, ...)` | Inspect pending (unacked) entries |
-| `xclaim(key, group, consumer, min_idle_time, *entry_ids, ...)` | Claim pending entries |
+| `xclaim(key, group, consumer, min_idle_time, entry_ids, ...)` | Claim pending entries |
 | `xautoclaim(key, group, consumer, min_idle_time, ...)` | Auto-claim entries idle longer than threshold |
 
 All methods have an `a*` async counterpart (e.g. `axadd`, `axreadgroup`).
@@ -350,7 +354,7 @@ if await lock.acquire():
         await lock.release()
 ```
 
-Cluster-mode async locks are unavailable on redis-py / valkey-py because the underlying `EVALSHA` routes to replicas; the Rust adapter handles this internally.
+Cluster mode rejects `lock()` and `alock()` on every adapter: the release script runs via `EVALSHA`, which cluster routes to replicas, so `release()` would fail and the key would stay set until its lease expired. Both raise `NotSupportedError`. Use `semaphore()` instead, which colocates its keys under a `{name}` hash tag.
 
 ## Semaphore Interface
 
@@ -401,12 +405,17 @@ async with await cache.asemaphore("mysem", capacity=4, lease=30):
 
 # Manual acquire/release
 sem = await cache.asemaphore("mysem", capacity=4, lease=30)
-if await sem.acquire():
+if await sem.aacquire():
     try:
         await do_work()
     finally:
-        await sem.release()
+        await sem.arelease()
 ```
+
+The awaitable methods are `aacquire()` and `arelease()`. `acquire()` and
+`release()` are the sync pair and are still present on the same object, so
+`await sem.acquire()` runs the sync acquire and then raises `TypeError` on the
+returned `bool`, leaving the claim held until its lease expires.
 
 Sync and async callers on the same cache instance share state for a given name.
 
@@ -442,7 +451,7 @@ async with await cache.apipeline() as pipe:
 
 `apipeline()` is `async def` so adapters whose async-client construction is itself awaitable (e.g. valkey-glide) can resolve the client before returning the wrapper. Queueing methods stay synchronous; only `apipeline()` and `execute()` need to be awaited.
 
-All cache methods are available on the pipeline. Results are returned as a list in the same order as the commands.
+Single-key commands are available on the pipeline. The multi-key helpers (`set_many`, `get_many`, `delete_many`), the read-modify-write helpers (`get_or_set`, `add`, `touch`, `has_key`), and the scanning helpers (`keys`, `scan`, `delete_pattern`, `clear`) are not: queue their underlying commands instead. Results are returned as a list in the same order as the commands.
 
 ## Clearing keys
 

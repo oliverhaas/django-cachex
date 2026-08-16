@@ -20,7 +20,7 @@ cache.sadd("{user:123}:followers", "alice", "bob")
 cache.sadd("{user:123}:following", "charlie")
 
 # Multi-key operations now work
-cache.sdiff("{user:123}:followers", "{user:123}:following")
+cache.sdiff(["{user:123}:followers", "{user:123}:following"])
 ```
 
 Use hash tags when you need:

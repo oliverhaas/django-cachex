@@ -10,8 +10,9 @@ namespace. Install via the `redis-rs` extra on the main package:
 pip install django-cachex[redis-rs]
 ```
 
-Prebuilt wheels are published for Linux x86_64 (cp314, cp314t). On other
-platforms there's no wheel, so pip will try to build from source
+Prebuilt wheels are published for Linux x86_64, Linux aarch64, macOS
+arm64, and Windows amd64, on both cp314 and cp314t (free-threaded). On
+other platforms there's no wheel, so pip will try to build from source
 (requires the Rust toolchain) or fail clearly.
 
 The pure-Python `django-cachex` package is fully usable on its own; this
