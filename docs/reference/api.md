@@ -14,7 +14,7 @@ All standard Django cache methods are supported:
 | `delete(key)` | Delete a key |
 | `touch(key, timeout=DEFAULT)` | Update timeout on a key |
 | `get_many(keys)` | Get multiple values |
-| `set_many(mapping, timeout=DEFAULT)` | Set multiple values |
+| `set_many(data, timeout=DEFAULT)` | Set multiple values |
 | `delete_many(keys)` | Delete multiple keys |
 | `get_or_set(key, default, timeout=DEFAULT)` | Get value or set default |
 | `clear()` | Clear the cache |
@@ -101,17 +101,17 @@ Sorted set operations for scored, ordered collections:
 |--------|-------------|
 | `zadd(key, mapping, *, nx, xx, ch, gt, lt)` | Add member(s) with scores |
 | `zcard(key)` | Get number of members |
-| `zcount(key, min, max)` | Count members with scores in range |
+| `zcount(key, min_score, max_score)` | Count members with scores in range |
 | `zincrby(key, amount, member)` | Increment member's score |
 | `zrange(key, start, end, ...)` | Get members by index range |
 | `zrevrange(key, start, end, ...)` | Get members by index range (descending) |
-| `zrangebyscore(key, min, max, ...)` | Get members by score range |
-| `zrevrangebyscore(key, max, min, ...)` | Get members by score range (descending) |
+| `zrangebyscore(key, min_score, max_score, ...)` | Get members by score range |
+| `zrevrangebyscore(key, max_score, min_score, ...)` | Get members by score range (descending) |
 | `zrank(key, member)` | Get member's rank (ascending) |
 | `zrevrank(key, member)` | Get member's rank (descending) |
 | `zrem(key, *members)` | Remove member(s) |
 | `zremrangebyrank(key, start, end)` | Remove members by rank range |
-| `zremrangebyscore(key, min, max)` | Remove members by score range |
+| `zremrangebyscore(key, min_score, max_score)` | Remove members by score range |
 | `zscore(key, member)` | Get member's score |
 | `zmscore(key, *members)` | Get multiple members' scores |
 | `zpopmin(key, count=1)` | Remove and return members with lowest scores |
@@ -150,8 +150,8 @@ Append-only log structure with consumer groups:
 |--------|-------------|
 | `xadd(key, fields, entry_id="*", maxlen=None, ...)` | Append an entry, returning its ID |
 | `xlen(key)` | Number of entries in the stream |
-| `xrange(key, min="-", max="+", count=None)` | Range of entries (forward) |
-| `xrevrange(key, max="+", min="-", count=None)` | Range of entries (reverse) |
+| `xrange(key, start="-", end="+", count=None)` | Range of entries (forward) |
+| `xrevrange(key, end="+", start="-", count=None)` | Range of entries (reverse) |
 | `xread(streams, count=None, block=None)` | Read new entries from one or more streams |
 | `xtrim(key, maxlen=None, approximate=True, minid=None, ...)` | Cap stream length |
 | `xdel(key, *entry_ids)` | Delete entries by ID |
