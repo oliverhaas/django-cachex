@@ -95,8 +95,6 @@ _set = set
 # =============================================================================
 # WRONGTYPE translation
 # =============================================================================
-# Glide's Rust-backed clients have no ``execute_command`` seam for the patch
-# :mod:`~django_cachex.adapters.valkey_py` uses, so wrap the client instead.
 
 
 async def _await_translated(awaitable: Any) -> Any:
@@ -128,8 +126,9 @@ def _translating(fn: Any) -> Any:
 class _WrongTypeClient:
     """Forward every attribute to a glide client, translating WRONGTYPE responses.
 
-    Callables come back wrapped (cached per name, since command methods are
-    looked up on every operation); everything else passes through untouched.
+    Glide's Rust-backed clients have no ``execute_command`` seam for the patch
+    :mod:`~django_cachex.adapters.valkey_py` uses, so wrap the client instead.
+    Callables come back wrapped (cached per name); anything else passes through.
     """
 
     __slots__ = ("_glide_client", "_wrappers")
