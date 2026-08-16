@@ -95,10 +95,8 @@ _set = set
 # =============================================================================
 # WRONGTYPE translation
 # =============================================================================
-# :mod:`~django_cachex.adapters.valkey_py` patches ``execute_command`` to
-# normalize WRONGTYPE responses. Glide's clients are Rust-backed and expose one
-# method per command with no such seam, so wrap the whole client instead: every
-# command, and every ``exec`` of a batch built from it, goes through one place.
+# Glide's Rust-backed clients have no ``execute_command`` seam for the patch
+# :mod:`~django_cachex.adapters.valkey_py` uses, so wrap the client instead.
 
 
 async def _await_translated(awaitable: Any) -> Any:
