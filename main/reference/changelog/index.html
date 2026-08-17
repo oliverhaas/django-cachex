@@ -945,15 +945,43 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#040-june-2026" class="md-nav__link">
+  <a href="#unreleased" class="md-nav__link">
     <span class="md-ellipsis">
       
-        0.4.0 (June 2026)
+        Unreleased
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="0.4.0 (June 2026)">
+    <nav class="md-nav" aria-label="Unreleased">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#040-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.0 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.0 (August 2026)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -990,7 +1018,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#fixes" class="md-nav__link">
+  <a href="#fixes_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixes
@@ -1382,15 +1410,43 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#040-june-2026" class="md-nav__link">
+  <a href="#unreleased" class="md-nav__link">
     <span class="md-ellipsis">
       
-        0.4.0 (June 2026)
+        Unreleased
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="0.4.0 (June 2026)">
+    <nav class="md-nav" aria-label="Unreleased">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#040-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.0 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.0 (August 2026)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1427,7 +1483,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#fixes" class="md-nav__link">
+  <a href="#fixes_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixes
@@ -1708,7 +1764,13 @@
 
 
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
-<h2 id="040-june-2026">0.4.0 (June 2026)<a class="headerlink" href="#040-june-2026" title="Permanent link">&para;</a></h2>
+<h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="fixes">Fixes<a class="headerlink" href="#fixes" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Semaphore <code>release()</code> and <code>extend()</code> no longer act on a token they don't own.</strong> Both re-read <code>self._token</code> after their "not held" guard, so a racing re-acquire on the same instance could install a new token in between; the command then ran against that live claim, and <code>release()</code> cleared the field to <code>None</code>. The token is now snapshotted under the same lock <code>_claim()</code> uses, and <code>release()</code> clears it only if it is still the one it entered with.</li>
+<li><strong>RESP semaphores no longer wedge when Redis evicts their bookkeeping.</strong> The reaper only ever adjusted the <code>used</code> counter by a delta, so losing the claims hash to <code>maxmemory</code> eviction left <code>used</code> pinned at capacity with nothing left to subtract and every later acquire failing forever. Losing the state hash instead made <code>used</code> read zero and admitted past capacity. <code>used</code> is now derived from the surviving claims during the walk the reaper already performs, which costs no extra round trip and self-heals both directions.</li>
+</ul>
+<h2 id="040-august-2026">0.4.0 (August 2026)<a class="headerlink" href="#040-august-2026" title="Permanent link">&para;</a></h2>
 <h3 id="breaking-changes">Breaking changes<a class="headerlink" href="#breaking-changes" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Python 3.14+ required.</strong> Dropped support for 3.12 and 3.13. The package now ships on cp314 and cp314t (free-threaded) wheels.</li>
@@ -1749,7 +1811,7 @@
 <li><strong><code>LocMemCache</code> sorted sets are O(log N).</strong> Sorted-set operations now back the underlying dict with a <code>sortedcontainers.SortedList</code> sidecar for O(log N) insertion, deletion, and rank queries; previous implementation was O(N log N) per write. Adds <code>sortedcontainers&gt;=2.4</code> as a runtime dependency.</li>
 <li><strong><code>LocMemCache</code> skips pickle for tagged collections.</strong> Tagged subclasses are mutated in place; reads and writes no longer round-trip through pickle for list/set/hash/zset/stream types.</li>
 </ul>
-<h3 id="fixes">Fixes<a class="headerlink" href="#fixes" title="Permanent link">&para;</a></h3>
+<h3 id="fixes_1">Fixes<a class="headerlink" href="#fixes_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>LocMemCache.lpush</code>/<code>sadd</code>/<code>hset</code>/<code>hincrby</code>/<code>zadd</code>/etc. no longer lose updates under concurrent threads (#62).</li>
 <li><code>delete_pattern</code> batches deletes to bound peak memory on broad patterns.</li>
