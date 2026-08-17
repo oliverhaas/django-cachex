@@ -37,7 +37,10 @@ if stored_cap ~= capacity then
   redis.call('HSET', state_key, 'capacity', capacity)
 end
 
-local used = tonumber(redis.call('HGET', state_key, 'used') or '0')
+-- A missing 'used' field can't be trusted as zero: claims may still be live
+-- and only the walk below can tell. Costs no extra call to notice.
+local raw_used = redis.call('HGET', state_key, 'used')
+local used = tonumber(raw_used or '0')
 
 -- Head-of-queue check: caller admits only if queue is empty OR caller is at the head.
 local head = redis.call('ZRANGE', queue_key, 0, 0)
@@ -50,19 +53,30 @@ local at_head = (#head == 0) or (head[1] == token)
 -- fast path). When the caller is NOT at the head, or doesn't fit, the walk
 -- still runs; the head waiter that polls next benefits from the
 -- freshly-reaped used value. Worst case is unchanged O(N), best case is O(1).
-if not (at_head and used + weight <= capacity) then
+if raw_used == false or not (at_head and used + weight <= capacity) then
+  -- Derive 'used' from the surviving claims rather than subtracting a delta.
+  -- The walk already visits every claim, so this costs nothing extra and it
+  -- self-heals when 'used' and the claims hash disagree. Eviction under
+  -- maxmemory is how they diverge: lose the claims hash and a delta-only
+  -- reaper has nothing left to subtract, so 'used' stays pinned at capacity
+  -- and every later acquire fails forever. Lose the state hash instead and
+  -- 'used' reads 0, over-admitting past capacity, which is why a missing
+  -- counter forces the walk even when the fast path would have admitted.
+  -- ACQUIRE and RELEASE always write counter and claims together, so the
+  -- live sum is the authoritative value whenever the two disagree.
   local claims = redis.call('HGETALL', claims_key)
-  local reaped = 0
+  local live = 0
   for i = 1, #claims, 2 do
     local t = claims[i]
     local w = tonumber(claims[i+1])
     if redis.call('EXISTS', state_key .. ':claim:' .. t) == 0 then
       redis.call('HDEL', claims_key, t)
-      reaped = reaped + w
+    else
+      live = live + w
     end
   end
-  if reaped > 0 then
-    used = math.max(0, used - reaped)
+  if live ~= used then
+    used = live
     redis.call('HSET', state_key, 'used', used)
   end
   -- Reap dead waiters: a queue entry whose liveness key has expired belongs

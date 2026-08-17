@@ -948,6 +948,37 @@ class TestRespTokenSnapshot:
         assert seen == ["original-token"]
 
 
+class TestRespEvictedState:
+    def test_evicted_claims_hash_does_not_wedge(self, cache):
+        # Regression: 'used' was only ever adjusted by a delta, so losing the
+        # claims hash to maxmemory eviction left it pinned at capacity with
+        # nothing left to reap, and every later acquire failed forever.
+        holder = cache.semaphore("resp_evicted", capacity=1, lease=60)
+        assert holder.acquire(blocking=False) is True
+
+        full_name = cache.make_and_validate_key("resp_evicted")
+        prefix = "{" + full_name + "}"
+        cache.adapter.delete(f"{prefix}:claims")
+        cache.adapter.delete(f"{prefix}:state:claim:{holder._token}")
+
+        fresh = cache.semaphore("resp_evicted", capacity=1, lease=60)
+        assert fresh.acquire(blocking=False) is True
+        fresh.release()
+
+    def test_evicted_state_hash_does_not_over_admit(self, cache):
+        # The mirror case: losing the counter makes 'used' read 0, which would
+        # admit past capacity until the live claims are summed back up.
+        holder = cache.semaphore("resp_evicted_state", capacity=1, lease=60)
+        assert holder.acquire(blocking=False) is True
+
+        full_name = cache.make_and_validate_key("resp_evicted_state")
+        cache.adapter.delete("{" + full_name + "}:state")
+
+        fresh = cache.semaphore("resp_evicted_state", capacity=1, lease=60)
+        assert fresh.acquire(blocking=False) is False
+        holder.release()
+
+
 class TestRespExtend:
     def test_extend_increases_claim_ttl(self, cache):
         """Calling extend() bumps the claim TTL key."""
