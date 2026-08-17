@@ -11,6 +11,7 @@ django-cachex implements Django's async cache methods (`aget`, `aset`, `adelete`
 ```python
 from django.core.cache import cache
 
+
 # Async views (ASGI)
 async def my_view(request):
     # Read
@@ -59,10 +60,10 @@ django-cachex extended methods also have async versions, called directly on the 
 
 ```python
 # TTL operations
-ttl = await cache.attl(key)             # Get TTL in seconds
-pttl = await cache.apttl(key)           # Get TTL in milliseconds
-await cache.aexpire(key, timeout=60)    # Set expiration
-await cache.apersist(key)               # Remove expiration
+ttl = await cache.attl(key)  # Get TTL in seconds
+pttl = await cache.apttl(key)  # Get TTL in milliseconds
+await cache.aexpire(key, timeout=60)  # Set expiration
+await cache.apersist(key)  # Remove expiration
 
 # Key operations
 keys = await cache.akeys("pattern:*")
@@ -173,6 +174,7 @@ def sync_function():
         # Creates 100 connection pools!
         asyncio.run(cache.aget(f"key:{i}"))
 
+
 # BAD: sync_to_async may create temporary event loops
 @sync_to_async
 def wrapped_function():
@@ -204,7 +206,7 @@ CACHES = {
         "OPTIONS": {
             # Custom async pool class (import path or class)
             "async_pool_class": "myapp.pools.CustomAsyncConnectionPool",
-        }
+        },
     }
 }
 ```
@@ -215,7 +217,12 @@ CACHES = {
 await cache.aclose()
 ```
 
-Closes the async connection pool for the current event loop. Sync pools remain open.
+`aclose()` exists for Django API compatibility but is a no-op, as is
+`close()`: pools live for the lifetime of the process. Django fires
+`close()` on every `request_finished` signal, and tearing pools down
+there would force a reconnect per request. Async pools are released
+automatically when their event loop is garbage collected (they live in
+a `WeakKeyDictionary` keyed by loop).
 
 ## Mixed Sync/Async Usage
 
@@ -224,15 +231,17 @@ A single backend works for both sync and async code:
 ```python
 from django.core.cache import cache
 
+
 # Sync code path
 def sync_view(request):
-    value = cache.get("key")           # Uses sync pool
+    value = cache.get("key")  # Uses sync pool
     cache.set("key", "value")
     return HttpResponse(value)
 
+
 # Async code path
 async def async_view(request):
-    value = await cache.aget("key")    # Uses async pool
+    value = await cache.aget("key")  # Uses async pool
     await cache.aset("key", "value")
     return JsonResponse({"value": value})
 ```
@@ -268,6 +277,7 @@ async def cluster_example():
     await cache.aset("key", "value")
     await cache.aget_many(["key1", "key2", "key3"])
 
+
 # Sentinel - async works the same way
 async def sentinel_example():
     await cache.aset("key", "value")
@@ -290,6 +300,7 @@ CACHES = {
 from django.core.cache import cache
 from django.http import JsonResponse
 
+
 async def user_profile(request, user_id):
     cache_key = f"user:{user_id}:profile"
 
@@ -303,11 +314,13 @@ async def user_profile(request, user_id):
 
     return JsonResponse(profile)
 
+
 async def leaderboard(request):
     # Get top 10 from sorted set (descending by score)
     top_players = await cache.azrevrange(
         "game:leaderboard",
-        0, 9,
+        0,
+        9,
         withscores=True,
     )
 

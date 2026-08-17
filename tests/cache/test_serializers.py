@@ -138,22 +138,46 @@ class TestOrjsonSerializer:
             serializer.dumps({"x": object()})
 
 
-def _reverse_key(key: str) -> str:
-    """Reverse a made key back to original (strip version:prefix:)."""
-    parts = key.split(":", 2)
-    if len(parts) == 3:
-        return parts[2]
-    return key
+def _make_cache(*, key_prefix: str = ""):
+    """Construct a :class:`RedisCache` purely to exercise ``reverse_key``.
+
+    The cache's ``adapter`` property is lazy, so no connection is opened.
+    """
+    from django_cachex.cache import RedisCache
+
+    return RedisCache(server="redis://localhost:6379/0", params={"KEY_PREFIX": key_prefix})
 
 
 class TestDefaultReverseKey:
     def test_basic_key_reversal(self):
-        # Format: version:key_prefix:key
-        assert _reverse_key("1:myprefix:mykey") == "mykey"
+        cache = _make_cache(key_prefix="myprefix")
+        assert cache.reverse_key(cache.make_key("mykey")) == "mykey"
 
     def test_key_with_colons(self):
         # Key itself can contain colons
-        assert _reverse_key("1:prefix:key:with:colons") == "key:with:colons"
+        cache = _make_cache(key_prefix="prefix")
+        assert cache.reverse_key("prefix:1:key:with:colons") == "key:with:colons"
 
     def test_empty_prefix(self):
-        assert _reverse_key("1::mykey") == "mykey"
+        cache = _make_cache()
+        assert cache.reverse_key(":1:mykey") == "mykey"
+        assert cache.reverse_key(cache.make_key("mykey")) == "mykey"
+
+    def test_colon_in_key_prefix(self):
+        # Regression: partitioning on the first colon never matched a
+        # KEY_PREFIX that contained one, so keys came back unreversed.
+        cache = _make_cache(key_prefix="app:v2")
+        assert cache.make_key("foo") == "app:v2:1:foo"
+        assert cache.reverse_key(cache.make_key("foo")) == "foo"
+        assert cache.reverse_key(cache.make_key("key:with:colons")) == "key:with:colons"
+
+    def test_unmatched_prefix_returned_unchanged(self):
+        # A key made by some other cache must not lose its leading segments.
+        cache = _make_cache(key_prefix="myprefix")
+        assert cache.reverse_key("otherprefix:1:mykey") == "otherprefix:1:mykey"
+
+    def test_key_without_layout_returned_unchanged(self):
+        cache = _make_cache(key_prefix="myprefix")
+        assert cache.reverse_key("plainkey") == "plainkey"
+        # Prefix matches but there is no version:key remainder.
+        assert cache.reverse_key("myprefix:1") == "myprefix:1"

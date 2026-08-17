@@ -196,7 +196,8 @@ def get_type_data(
 
     result = _fetch_type_data(cache, key, key_type, page=page)
 
-    # Add SHA1 fingerprints for CAS (compare-and-swap) protection.
+    # CAS fingerprints are hashed server-side, so backends without scripting
+    # (stock Django, LocMem, Database) get no conflict detection.
     if result and hasattr(cache, "eval_script"):
         _add_cas_fingerprints(cache, key, key_type, result)
 
@@ -303,7 +304,11 @@ def _add_cas_fingerprints(cache: Any, key: str, key_type: str | None, result: di
 
                     hash_sha1s = get_hash_field_sha1s(cache, key)
                 result["field_entries"] = [(field, value, hash_sha1s.get(field, "")) for field, value in fields.items()]
-    except Exception:  # noqa: BLE001
+    except NotSupportedError:
+        # ``BaseCachex`` declares ``eval_script`` and raises, so LocMem and
+        # Database land here: render without CAS fingerprints.
+        return
+    except Exception:
         # CAS protection is best-effort. Mirror the warning emitted by
         # ``_key_detail_view`` (key_detail.py) so the operator knows the
         # next update will skip conflict detection.
@@ -327,13 +332,14 @@ def get_size(cache: Any, key: str, key_type: str | None = None) -> int | None:
         return None
 
     def _string_size() -> int | None:
-        # Use STRLEN via raw client when available
-        try:
-            client = cache.get_client(write=False)
-            full_key = cache.make_key(key)
-            return client.strlen(full_key)
-        except NotSupportedError, AttributeError:
-            pass
+        # STRLEN over the raw client measures the stored bytes. Stock Django
+        # backends have no get_client; BaseCachex declares it and raises.
+        if hasattr(cache, "get_client"):
+            try:
+                client = cache.get_client(write=False)
+                return client.strlen(cache.make_key(key))
+            except NotSupportedError:
+                pass
         # Fallback: compute Python object size (e.g. LocMemCache). Decode
         # failures for stale data must not break the size column, return None
         # so the row still renders and the user can delete the broken key.

@@ -158,3 +158,30 @@ class TestClusterLockRejection:
             pytest.skip("rejection contract only applies to non-sentinel cluster mode")
         with pytest.raises(NotSupportedError):
             await cache.alock("rejected_resource_async")
+
+
+class TestAsyncLockSyncContextManager:
+    """AsyncLock must reject sync ``with`` rather than silently not locking."""
+
+    @pytest.mark.asyncio
+    async def test_sync_with_raises_type_error(
+        self,
+        cache: RespCache,
+        client_class: str,
+        sentinel_mode: str | bool,
+    ):
+        # Regression: AsyncLock inherited Lock.__enter__, which truthy-tests
+        # self.acquire(). On AsyncLock that is a coroutine and always truthy,
+        # so the body ran having never issued the SET NX, holding no lock and
+        # raising nothing.
+        if client_class == "cluster" and not sentinel_mode:
+            pytest.skip("cluster rejects alock() outright")
+
+        # redis-py and valkey-py hand back their own async lock, which already
+        # rejects sync ``with`` in its own words, so assert the contract (a
+        # TypeError before the body runs) rather than one backend's wording.
+        lock = await cache.alock("sync_with_guard")
+        entered = False
+        with pytest.raises(TypeError), lock:
+            entered = True
+        assert not entered

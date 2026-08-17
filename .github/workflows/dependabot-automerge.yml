@@ -10,9 +10,41 @@ jobs:
   automerge:
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
+    timeout-minutes: 30
     steps:
-      - name: Enable auto-merge
-        run: gh pr merge --auto --squash "$PR_URL"
+      # Without required status checks on main, `gh pr merge --auto` merges
+      # immediately, red CI included. Wait for every workflow run on this PR
+      # head instead, and merge only once they have all succeeded.
+      #
+      # Poll check suites, not check runs: a `needs:`-gated job gets no check
+      # run until its dependencies finish, so a poll landing in that gap sees
+      # nothing pending and merges before the wheel tests have even started.
+      # A suite stays in progress across the gap. This job's own suite is
+      # excluded so it does not wait on itself forever.
+      - name: Wait for CI
+        run: |
+          sha=$(gh pr view "$PR_URL" --json headRefOid --jq .headRefOid)
+          own=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .check_suite_id)
+          while true; do
+            suites=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/check-suites?per_page=100" \
+              --jq "[.check_suites[] | select(.id != $own) | {status, conclusion}]" || true)
+            [ -n "$suites" ] || suites='[]'
+            bad=$(jq -c '[.[] | select(.conclusion != null and ([.conclusion] | inside(["success", "neutral", "skipped"]) | not))]' <<<"$suites")
+            if [ "$(jq 'length' <<<"$bad")" -gt 0 ]; then
+              echo "CI did not pass: $bad"
+              exit 1
+            fi
+            if [ "$(jq 'length' <<<"$suites")" -gt 0 ] && [ "$(jq '[.[] | select(.status != "completed")] | length' <<<"$suites")" -eq 0 ]; then
+              break
+            fi
+            sleep 30
+          done
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge
+        run: gh pr merge --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -11,7 +11,7 @@ CACHES = {
         "LOCATION": "valkey://127.0.0.1:6379/1",
         "OPTIONS": {
             "serializer": "django_cachex.serializers.json.JsonSerializer",
-        }
+        },
     }
 }
 ```
@@ -88,19 +88,19 @@ Specify a list of serializers to safely migrate between formats. The first is us
 
 ## Custom Serializers
 
-Implement `dumps` and `loads` methods, raising `SerializerError` on failure:
+Subclass `BaseSerializer` and implement `_dumps` and `_loads`. The base
+class wraps any exception they raise in `SerializerError` (which triggers
+the fallback chain) and passes plain ints through `loads` unchanged, so
+`incr()` results don't need re-decoding:
 
 ```python
 from django_cachex.serializers.base import BaseSerializer
-from django_cachex.exceptions import SerializerError
+
 
 class MySerializer(BaseSerializer):
-    def dumps(self, value):
-        return my_encode(value)
+    def _dumps(self, obj):
+        return my_encode(obj)  # must return bytes
 
-    def loads(self, value):
-        try:
-            return my_decode(value)
-        except MyDecodeError as e:
-            raise SerializerError from e
+    def _loads(self, data):
+        return my_decode(data)
 ```

@@ -9,12 +9,12 @@ CACHES = {
     "default": {
         "BACKEND": "django_cachex.cache.ValkeyCache",  # or RedisCache
         "LOCATION": "valkey://127.0.0.1:6379/1",
-        "TIMEOUT": 300,              # Default timeout in seconds
-        "KEY_PREFIX": "myapp",       # Prefix for all keys
-        "VERSION": 1,                # Key version number
+        "TIMEOUT": 300,  # Default timeout in seconds
+        "KEY_PREFIX": "myapp",  # Prefix for all keys
+        "VERSION": 1,  # Key version number
         "OPTIONS": {
             # See options below
-        }
+        },
     }
 }
 ```
@@ -36,7 +36,12 @@ All backends live in `django_cachex.cache`.
 
 ### Valkey / Redis (Rust driver)
 
-Same wire-level features as the Python driver, dispatched through the optional `django-cachex-redis-rs` extension (PyO3 + tokio + redis-rs). Sync and async share one tokio runtime, so async paths skip the asgiref threadpool round-trip. Install via the `redis-rs` extra.
+!!! warning "Experimental"
+    The Rust driver is experimental: interfaces and behavior may change,
+    and it has seen less production testing than the redis-py/valkey-py
+    backends.
+
+Nearly the same wire-level feature set as the Python driver, dispatched through the optional `django-cachex-redis-rs` extension (PyO3 + tokio + redis-rs). `slowlog_get` and `slowlog_len` are the exceptions and raise `NotSupportedError`. Sync and async share one tokio runtime, so async paths skip the asgiref threadpool round-trip. Install via the `redis-rs` extra.
 
 | Backend | Description |
 |---------|-------------|
@@ -45,6 +50,11 @@ Same wire-level features as the Python driver, dispatched through the optional `
 | `RedisRsClusterCache` | Cluster sharding |
 
 ### Valkey-Glide
+
+!!! warning "Experimental"
+    The valkey-glide adapter is experimental: interfaces and behavior may
+    change, and it has seen less production testing than the
+    redis-py/valkey-py backends.
 
 Valkey's official client library, bundled as `valkey-glide`. Async-first; cachex wraps the async client transparently. Install via the `valkey-glide` extra.
 
@@ -190,12 +200,16 @@ etc.) the same way.
 
 ```python
 "OPTIONS": {
-    # For Valkey with libvalkey
-    "parser_class": "valkey.connection.LibvalkeyParser",
-    # For Redis with hiredis
-    # "parser_class": "redis.connection.HiredisParser",
+    # Dotted path or class; defaults to the driver's DefaultParser
+    "parser_class": "valkey.connection.DefaultParser",  # or "redis.connection.DefaultParser"
 }
 ```
+
+You rarely need to set this. When omitted, the driver's `DefaultParser`
+is used, which resolves to the C-accelerated parser when `libvalkey`
+(Valkey) or `hiredis` (Redis) is installed and to the pure-Python RESP
+parser otherwise. To get the C parser, install the `libvalkey` or
+`hiredis` extra; no `parser_class` setting is required.
 
 ### Cache stampede prevention
 
@@ -215,7 +229,7 @@ Probabilistic early recompute (XFetch) to avoid thundering-herd recompute when a
 }
 ```
 
-Per-call overrides accept the same shapes via the `stampede_prevention=` keyword on `get`/`set`/`add`/`get_or_set`/`get_many`/`set_many`.
+Per-call overrides accept the same shapes via the `stampede_prevention=` keyword on `get`/`set`/`add`/`touch`/`get_or_set`/`get_many`/`set_many`, and on their `a`-prefixed async counterparts. On `touch` the keyword decides whether the refreshed TTL gets the buffer added back, so it should match what the original write used.
 
 ### Choosing an adapter
 
@@ -306,7 +320,7 @@ CACHES = {
             "sentinel_kwargs": {
                 "password": "sentinel-password",
             },
-        }
+        },
     }
 }
 ```
@@ -333,7 +347,7 @@ CACHES = {
 ### Special Values
 
 ```python
-cache.set("key", "value", timeout=0)     # Delete immediately
+cache.set("key", "value", timeout=0)  # Delete immediately
 cache.set("key", "value", timeout=None)  # Never expires
 ```
 
@@ -367,6 +381,30 @@ CACHES = {
 }
 ```
 
+### Reverse Key Function
+
+```python
+def my_reverse_key_func(key):
+    return key.split(":", 2)[2]
+
+CACHES = {
+    "default": {
+        ...
+        "REVERSE_KEY_FUNCTION": "myapp.cache.my_reverse_key_func",
+    }
+}
+```
+
+The inverse of `KEY_FUNCTION`: it takes the full internal key and returns the user key. Dotted path or callable, same as `KEY_FUNCTION`. Reach for it when a custom `KEY_FUNCTION` makes the default `prefix:version:` stripping wrong; the default handles a `KEY_PREFIX` containing colons on its own.
+
+Only `reverse_key()` consults it, so it changes what `keys()`, `iter_keys()`, `scan()` and the blocking list pops (`blpop`, `brpop`) hand back, plus their async counterparts. Stored keys are untouched.
+
+!!! warning "RESP backends only"
+    `LocMemCache`, `DatabaseCache` and `StreamCache` strip the prefix
+    themselves and ignore `REVERSE_KEY_FUNCTION`. `TieredCache` forwards
+    `reverse_key()` to its L2 tier, so it belongs on the L2 alias rather
+    than the tiered one.
+
 ## Complete Example
 
 ```python
@@ -380,14 +418,12 @@ CACHES = {
         "OPTIONS": {
             # Serialization
             "serializer": "django_cachex.serializers.pickle.PickleSerializer",
-
             # Compression
             "compressor": "django_cachex.compressors.zstd.ZstdCompressor",
-
             # Connection pool
             "socket_connect_timeout": 5,
             "socket_timeout": 5,
-        }
+        },
     }
 }
 ```

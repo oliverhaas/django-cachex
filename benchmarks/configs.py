@@ -13,7 +13,7 @@ class AdapterConfig:
     id: str
     backend: str
     options: dict
-    server: str  # "redis" or "valkey" — picks which container URL to use
+    server: str  # either "redis" or "valkey", picking which container URL to use
 
 
 @dataclass(frozen=True)
@@ -29,7 +29,7 @@ class CompressorConfig:
 
 
 # Adapters we want to compare. The "server" field decides which container URL
-# the runner connects to — we keep redis-py paired with redis-server and
+# the runner connects to. We keep redis-py paired with redis-server and
 # valkey-py paired with valkey-server because that's the natural pairing.
 ADAPTER_CONFIGS: tuple[AdapterConfig, ...] = (
     AdapterConfig(
@@ -82,7 +82,7 @@ ADAPTER_CONFIGS: tuple[AdapterConfig, ...] = (
     ),
     # Django's official built-in Redis cache backend (added in Django 4.0,
     # `django.core.cache.backends.redis.RedisCache`). Not to be confused with
-    # the third-party `jazzband/django-redis` package — that one ships under
+    # the third-party `jazzband/django-redis` package, which ships under
     # `django_redis.cache.RedisCache` and is unrelated.
     #
     # Useful as an external reference point: its `get_client()` instantiates

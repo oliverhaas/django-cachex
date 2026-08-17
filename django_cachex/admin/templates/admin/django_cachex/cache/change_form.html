@@ -26,7 +26,7 @@
     <ul class="object-tools">
         {% if cache_obj.support_level == "cachex" %}
         <li>
-            <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}">{% trans 'List Keys' %}</a>
+            <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name|urlencode }}">{% trans 'List Keys' %}</a>
         </li>
         {% endif %}
         <li>

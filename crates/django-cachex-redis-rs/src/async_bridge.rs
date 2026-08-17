@@ -5,7 +5,7 @@
 // https://gitlab.com/glitchtip/django-vcache/-/blob/main/src/async_bridge.rs
 //
 // Keep this file in lockstep with upstream. If you want to diverge,
-// open a discussion first — the design (5-poll busy-yield, OnceLock
+// open a discussion first. The design (5-poll busy-yield, OnceLock
 // runtime with PID fork detection, oneshot channel + watcher task) is
 // the load-bearing part and must not drift accidentally.
 
@@ -71,11 +71,11 @@ fn init_or_fork_runtime(pid: u32) -> &'static Runtime {
 }
 
 // =========================================================================
-// Result types — Rust-native, no GIL needed to construct
+// Result types: Rust-native, no GIL needed to construct
 // =========================================================================
 
 pub enum RawResult {
-    /// Successful operation with no return value — renders as Python None.
+    /// Successful operation with no return value. Renders as Python None.
     Nil,
     OptBytes(Option<Vec<u8>>),
     Bool(bool),
@@ -91,7 +91,7 @@ pub enum RawResult {
     StringList(Vec<String>),
     /// Field/value pairs for HGETALL/HMSET-style results (bytes value).
     BytesPairs(Vec<(Vec<u8>, Vec<u8>)>),
-    /// Key/value pairs for `aget_many` post-stampede-filter — surfaces as
+    /// Key/value pairs for `aget_many` post-stampede-filter. Surfaces as
     /// a Python ``dict[str, bytes]``.
     StringBytesPairs(Vec<(String, Vec<u8>)>),
     /// Member/score pairs for ZRANGE WITHSCORES, ZPOPMIN/MAX.
@@ -107,15 +107,15 @@ pub enum RawResult {
     /// Used for EVAL/EVALSHA, INFO, CLIENT LIST, and other commands whose
     /// return shape varies enough that a typed variant doesn't help.
     Value(redis::Value),
-    /// XRANGE / XREVRANGE / XCLAIM (no JUSTID) — typed as
+    /// XRANGE / XREVRANGE / XCLAIM (no JUSTID), typed as
     /// ``list[tuple[str, dict[str, bytes]]]``; see :mod:`stream_decode`.
     StreamEntries(redis::Value),
-    /// XREAD / XREADGROUP — typed as
+    /// XREAD / XREADGROUP, typed as
     /// ``dict[str, list[tuple[str, dict[str, bytes]]]] | None``.
     StreamRead(redis::Value),
-    /// XCLAIM with ``JUSTID`` — typed as ``list[str]``.
+    /// XCLAIM with ``JUSTID``, typed as ``list[str]``.
     XClaimJustId(redis::Value),
-    /// XAUTOCLAIM — typed as
+    /// XAUTOCLAIM, typed as
     /// ``tuple[str, list[tuple[str, dict[str, bytes]]] | list[str], list[str]]``.
     /// Bool is the ``justid`` flag the call was issued with.
     Xautoclaim(redis::Value, bool),
@@ -158,7 +158,7 @@ fn redis_value_to_py(py: Python<'_>, v: redis::Value) -> PyResult<Py<PyAny>> {
             Ok(dict.into_any().unbind())
         }
         redis::Value::Set(items) => {
-            // Redis sets via RESP3 — return as list to preserve order; Python can `set(...)` if needed.
+            // Redis sets via RESP3. Return as list to preserve order; Python can `set(...)` if needed.
             let py_items: Vec<Py<PyAny>> = items
                 .into_iter()
                 .map(|item| redis_value_to_py(py, item))
@@ -180,7 +180,7 @@ fn redis_value_to_py(py: Python<'_>, v: redis::Value) -> PyResult<Py<PyAny>> {
         redis::Value::ServerError(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
             "{e:?}"
         ))),
-        // redis::Value is marked non_exhaustive — fall back to the Debug repr.
+        // redis::Value is marked non_exhaustive, so fall back to the Debug repr.
         other => Ok(PyString::new(py, &format!("{other:?}")).into_any().unbind()),
     }
 }
@@ -305,9 +305,9 @@ impl RawResult {
 }
 
 // =========================================================================
-// RedisRsAwaitable — deferred-callback async bridge
+// RedisRsAwaitable: deferred-callback async bridge
 //
-// The tokio task sends its result via a oneshot channel — no GIL needed.
+// The tokio task sends its result via a oneshot channel, so no GIL is needed.
 //
 // __next__ polls try_recv(). For fast local operations, the result is
 // usually ready on the first call → zero overhead, identical to the old
@@ -333,7 +333,7 @@ struct DoneCallback {
     context: Option<Py<PyAny>>,
 }
 
-/// Callback-mode state — only allocated when an operation doesn't resolve
+/// Callback-mode state, only allocated when an operation doesn't resolve
 /// within the busy-yield window (5 polls). Most fast ops never need this,
 /// so keeping it boxed avoids bloating every RedisRsAwaitable allocation.
 struct CallbackState {
@@ -342,11 +342,11 @@ struct CallbackState {
     result_slot: Arc<Mutex<Option<Result<RawResult, ()>>>>,
 }
 
-/// Post-await value transform — applied between `RawResult::into_py` and
+/// Post-await value transform, applied between `RawResult::into_py` and
 /// delivery to the Python consumer. Replaces a stack of single-purpose
 /// Python `async def` wrappers from `django_cachex.adapters._async_helpers`.
 ///
-/// The transforms here are pure value reshapes — they do NOT touch the
+/// The transforms here are pure value reshapes. They do NOT touch the
 /// connection or perform I/O. Multi-step async (e.g. stampede TTL probes)
 /// stays in Python coroutines because it needs further awaits.
 #[derive(Clone, Copy, Debug)]
@@ -384,7 +384,7 @@ pub enum AwaitTransform {
     /// nested `[[m, s], ...]` (RESP3) or flat `[m, s, m, s, ...]` (RESP2)
     /// and returns `[(m, float(s)), ...]`.
     DecodeZrangeWithScores,
-    /// ZREVRANGEBYSCORE WITHSCORES decoding — always flat
+    /// ZREVRANGEBYSCORE WITHSCORES decoding, always flat
     /// `[m, s, m, s, ...]` → `[(m, float(s)), ...]`.
     DecodeZrevrangebyscoreWithScores,
     /// XINFO STREAM flat-pair → dict (`adapter::parse_xinfo_pairs`).
@@ -411,9 +411,9 @@ pub struct RedisRsAwaitable {
     rx: Option<oneshot::Receiver<RawResult>>,
     /// Post-await transform applied to the resolved value before delivery.
     transform: AwaitTransform,
-    /// Successful result value — stored for result() after StopIteration delivery.
+    /// Successful result value, stored for result() after StopIteration delivery.
     value: Option<Py<PyAny>>,
-    /// Error exception object — raised by result() for the Task to propagate.
+    /// Error exception object, raised by result() for the Task to propagate.
     error: Option<Py<PyAny>>,
     /// Whether we have a stored result (value or error).
     resolved: bool,
@@ -423,7 +423,7 @@ pub struct RedisRsAwaitable {
     _asyncio_future_blocking: bool,
     /// Number of times __next__ has been called without a result.
     polls: u8,
-    /// Callback mode state — allocated lazily on 6th poll miss.
+    /// Callback mode state, allocated lazily on 6th poll miss.
     cb: Option<Box<CallbackState>>,
 }
 
@@ -671,12 +671,12 @@ impl RedisRsAwaitable {
     fn __next__(slf: Py<Self>, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let mut this = slf.borrow_mut(py);
 
-        // Cancelled — raise CancelledError.
+        // Cancelled: raise CancelledError.
         if this.cancelled {
             return Err(cancelled_error(py));
         }
 
-        // Already resolved — re-deliver stored result.
+        // Already resolved: re-deliver stored result.
         if this.resolved {
             if let Some(ref exc) = this.error {
                 return Err(PyErr::from_value(exc.bind(py).clone()));
@@ -750,7 +750,7 @@ impl RedisRsAwaitable {
         this.polls += 1;
 
         if this.polls <= 5 {
-            // Busy-yield for up to 5 iterations — covers nearly all fast ops
+            // Busy-yield for up to 5 iterations. This covers nearly all fast ops
             // (sub-ms driver operations resolve within 1-3 event loop ticks).
             // Callback mode has high fixed cost (get_running_loop + watcher
             // spawn + spawn_blocking + GIL acquisition), so busy-yield is

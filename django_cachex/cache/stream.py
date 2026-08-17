@@ -86,6 +86,15 @@ class StreamCache(LocMemCache):
     semantics (atomic check-and-set, atomic increment) can't be provided
     with eventual consistency. Use the transport cache directly for these.
 
+    Write-ordering guarantee: every mutating operation holds the local lock
+    across both the local update and the enqueue of its stream broadcast,
+    and a single-worker executor performs the XADDs in enqueue order, so a
+    pod's stream entries appear in the same order its local writes were
+    applied. Consumers replaying the stream therefore converge to the
+    writer's final state. Broadcasts remain best-effort: an entry is
+    dropped when the publish backlog is full or the transport errors, so
+    the stream is a replication feed, not a durable log.
+
     The consumer thread is restarted if it dies; use ``info()["sync"]`` to
     monitor consumer health, last read age, and stream position.
     """
@@ -202,7 +211,8 @@ class StreamCache(LocMemCache):
         ``val`` is the original Python value. The transport cache's serializer
         and compressor handle wire encoding. The single-worker executor
         preserves stream order while keeping the calling thread off the
-        network round-trip.
+        network round-trip. Mutators call this while holding ``self._lock``
+        so broadcasts are enqueued in local write order.
 
         The pending-publish budget (``_publish_budget``) caps how many
         broadcasts may be queued at once. When the budget is exhausted the
@@ -248,7 +258,7 @@ class StreamCache(LocMemCache):
                 maxlen=self._maxlen,
                 approximate=True,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning(
                 "StreamCache: Failed to publish %s to stream",
                 fields.get("op", "?"),
@@ -325,7 +335,7 @@ class StreamCache(LocMemCache):
                 len(entries),
                 self._stream_key,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning("StreamCache: stream replay failed", exc_info=True)
 
     def _consumer_loop(self) -> None:
@@ -347,13 +357,13 @@ class StreamCache(LocMemCache):
                             self._last_id = entry_id
                             try:
                                 self._apply_message(fields)
-                            except Exception:  # noqa: BLE001
+                            except Exception:
                                 logger.warning(
                                     "StreamCache: Failed to apply message %s, skipping",
                                     self._last_id,
                                     exc_info=True,
                                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 if not self._stop_event.is_set():
                     logger.warning(
                         "StreamCache: Consumer error, retrying in 1s",
@@ -514,10 +524,12 @@ class StreamCache(LocMemCache):
         self._ensure_consumer()
         made_key = self.make_and_validate_key(key, version=version)
         pickled = pickle.dumps(value, self.pickle_protocol)
+        # Publish under the lock: out-of-order broadcasts would make replaying
+        # consumers converge to a stale value.
         with self._lock:
             self._set(made_key, pickled, timeout)
-        exp_time = self._expire_info.get(made_key)
-        self._publish("set", key=made_key, val=value, exp=exp_time)
+            exp_time = self._expire_info.get(made_key)
+            self._publish("set", key=made_key, val=value, exp=exp_time)
         return True
 
     def add(self, key: str, value: Any, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
@@ -528,7 +540,7 @@ class StreamCache(LocMemCache):
         made_key = self.make_and_validate_key(key, version=version)
         with self._lock:
             existed = self._delete(made_key)
-        self._publish("delete", key=made_key)
+            self._publish("delete", key=made_key)
         return existed
 
     def get_many(self, keys: Iterable[str], version: int | None = None) -> dict[str, Any]:
@@ -561,8 +573,8 @@ class StreamCache(LocMemCache):
                 made_keys.append(mk)
                 if self._delete(mk):
                     deleted += 1
-        if made_keys:
-            self._publish("delete_many", keys="\x00".join(made_keys))
+            if made_keys:
+                self._publish("delete_many", keys="\x00".join(made_keys))
         return deleted
 
     def has_key(self, key: str, version: int | None = None) -> bool:
@@ -605,13 +617,17 @@ class StreamCache(LocMemCache):
                 return False
             exp_time = self.get_backend_timeout(timeout)
             self._expire_info[made_key] = exp_time
-        self._publish("touch", key=made_key, exp=exp_time)
+            self._publish("touch", key=made_key, exp=exp_time)
         return True
 
     def clear(self) -> bool:  # type: ignore[override]
         self._ensure_consumer()
-        super().clear()
-        self._publish("clear")
+        # Inlines ``LocMemCache.clear`` (which takes the non-reentrant lock
+        # itself) so the broadcast is enqueued under the same lock hold.
+        with self._lock:
+            self._cache.clear()
+            self._expire_info.clear()
+            self._publish("clear")
         return True
 
     def close(self, **kwargs: Any) -> None:
@@ -620,23 +636,31 @@ class StreamCache(LocMemCache):
     # -- Admin methods (local implementations for fast reads) --
 
     def reverse_key(self, key: str) -> str:
-        """Strip prefix:version: to get the user-visible key."""
-        prefix = self.key_prefix
-        # Key format: "prefix:version:user_key" or ":version:user_key"
-        expected_prefix = f":{self.version}:" if not prefix else f"{prefix}:{self.version}:"
-        if key.startswith(expected_prefix):
-            return key[len(expected_prefix) :]
-        return key
+        """Strip the ``make_key`` prefix to get the user-visible key.
+
+        The prefix is the one ``make_key`` builds for this cache's version,
+        so keys round-trip whatever ``KEY_PREFIX``/``KEY_FUNCTION`` produce;
+        anything not carrying it is returned unchanged.
+        """
+        return key.removeprefix(self.make_key(""))
 
     def keys(self, pattern: str = "*", version: int | None = None) -> list[str]:
+        """List user keys matching ``pattern`` (Redis-style glob).
+
+        Internal keys are matched against the exact prefix ``make_key``
+        produces for the requested ``version`` (default: this cache's
+        ``self.version``) and stripped back to user keys, so results
+        round-trip through the same key pipeline writes use, whatever
+        ``KEY_PREFIX``/``KEY_FUNCTION`` produce. Expired but not-yet-culled
+        entries are excluded.
+        """
         self._ensure_consumer()
-        user_keys: list[str] = []
+        prefix = self.make_key("", version=version)
         with self._lock:
-            for internal_key in list(self._cache.keys()):
-                if self._has_expired(internal_key):
-                    continue
-                user_key = self.reverse_key(internal_key)
-                user_keys.append(user_key)
+            internal_keys = [k for k in self._cache if not self._has_expired(k)]
+        user_keys = [
+            internal_key.removeprefix(prefix) for internal_key in internal_keys if internal_key.startswith(prefix)
+        ]
         if pattern and pattern != "*":
             user_keys = [k for k in user_keys if fnmatch.fnmatch(k, pattern)]
         user_keys.sort()
@@ -737,12 +761,15 @@ class StreamCache(LocMemCache):
         yield from self.keys(pattern, version=version)
 
     def make_pattern(self, pattern: str, version: int | None = None) -> str:
-        """Make a key pattern with the cache prefix."""
-        prefix = self.key_prefix
+        """Make a key pattern with the cache prefix.
+
+        Routed through ``key_func`` so a custom ``KEY_FUNCTION`` produces a
+        pattern that matches its own keys. Unlike the RESP backends the prefix
+        is not glob-escaped: matching here is ``fnmatch`` over user keys that
+        have already had the prefix stripped.
+        """
         v = version if version is not None else self.version
-        if not prefix:
-            return f":{v}:{pattern}"
-        return f"{prefix}:{v}:{pattern}"
+        return self.key_func(pattern, self.key_prefix, v)
 
     def delete_pattern(
         self,

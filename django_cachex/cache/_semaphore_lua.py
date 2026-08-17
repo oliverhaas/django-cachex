@@ -6,15 +6,20 @@ Three Redis keys cooperate per semaphore name (passed as ``KEYS[1..3]``):
   2. ``{name}:claims`` - hash mapping ``token`` -> ``weight``.
   3. ``{name}:queue`` - sorted set, score = enqueue timestamp (ms), member = ``token``.
 
-Plus a per-claim TTL key ``{name}:state:claim:<token>`` (a string set with a
-``PX`` TTL of lease_ms) that the scripts manage internally.
+Plus per-token TTL keys the scripts manage internally:
+
+  - ``{name}:state:claim:<token>`` - claim lease (``PX`` lease_ms); expiry
+    marks the holder dead so its weight can be reaped.
+  - ``{name}:queue:waiter:<token>`` - waiter liveness heartbeat (``PX``
+    waiter_ttl_ms, refreshed on every acquire poll); expiry marks the waiter
+    dead so its queue entry can be reaped.
 
 The ``{name}`` hash-tag prefix colocates all keys for one semaphore on the
 same cluster slot, which is what Redis Cluster requires for atomic multi-key
 Lua. Cluster mode is supported (see ``RespCache.semaphore``).
 """
 
-# ARGV: token, weight, capacity, lease_ms, now_ms
+# ARGV: token, weight, capacity, lease_ms, now_ms, waiter_ttl_ms
 ACQUIRE_LUA = r"""
 local state_key = KEYS[1]
 local claims_key = KEYS[2]
@@ -24,6 +29,7 @@ local weight = tonumber(ARGV[2])
 local capacity = tonumber(ARGV[3])
 local lease_ms = tonumber(ARGV[4])
 local now_ms = tonumber(ARGV[5])
+local waiter_ttl_ms = tonumber(ARGV[6])
 
 -- Sync capacity: caller's value wins (capacity-at-call-site).
 local stored_cap = tonumber(redis.call('HGET', state_key, 'capacity') or '0')
@@ -37,13 +43,13 @@ local used = tonumber(redis.call('HGET', state_key, 'used') or '0')
 local head = redis.call('ZRANGE', queue_key, 0, 0)
 local at_head = (#head == 0) or (head[1] == token)
 
--- Reap expired claims only when admission is otherwise blocked. The O(N)
--- walk over the claims hash recovers capacity from crashed holders whose
--- TTL key has expired. If the caller is at the head AND fits using the
--- visible 'used' counter, skip the walk entirely (the fast path). When
--- the caller is NOT at the head, or doesn't fit, the walk still runs;
--- the head waiter that polls next benefits from the freshly-reaped used
--- value. Worst case is unchanged O(N), best case is O(1).
+-- Reap expired claims and dead waiters only when admission is otherwise
+-- blocked. The O(N) walk over the claims hash recovers capacity from
+-- crashed holders whose TTL key has expired. If the caller is at the head
+-- AND fits using the visible 'used' counter, skip the walk entirely (the
+-- fast path). When the caller is NOT at the head, or doesn't fit, the walk
+-- still runs; the head waiter that polls next benefits from the
+-- freshly-reaped used value. Worst case is unchanged O(N), best case is O(1).
 if not (at_head and used + weight <= capacity) then
   local claims = redis.call('HGETALL', claims_key)
   local reaped = 0
@@ -59,6 +65,24 @@ if not (at_head and used + weight <= capacity) then
     used = math.max(0, used - reaped)
     redis.call('HSET', state_key, 'used', used)
   end
+  -- Reap dead waiters: a queue entry whose liveness key has expired belongs
+  -- to a waiter that crashed (or stalled past the TTL) after enqueueing.
+  -- Left in place it would hold the head slot forever and block every later
+  -- acquirer. A reaped-but-alive waiter re-enqueues at the tail on its next
+  -- poll, so the worst case for a stalled process is a lost queue position.
+  local queued = redis.call('ZRANGE', queue_key, 0, -1)
+  local dropped = false
+  for i = 1, #queued do
+    local t = queued[i]
+    if t ~= token and redis.call('EXISTS', queue_key .. ':waiter:' .. t) == 0 then
+      redis.call('ZREM', queue_key, t)
+      dropped = true
+    end
+  end
+  if dropped then
+    head = redis.call('ZRANGE', queue_key, 0, 0)
+    at_head = (#head == 0) or (head[1] == token)
+  end
 end
 
 if at_head and used + weight <= capacity then
@@ -67,13 +91,15 @@ if at_head and used + weight <= capacity then
   redis.call('HSET', claims_key, token, weight)
   redis.call('SET', state_key .. ':claim:' .. token, '1', 'PX', lease_ms)
   redis.call('ZREM', queue_key, token)
+  redis.call('DEL', queue_key .. ':waiter:' .. token)
   return {'acquired', used, capacity}
 end
 
--- Not admitted: enqueue if not already in queue.
+-- Not admitted: enqueue if not already in queue; refresh liveness either way.
 if redis.call('ZSCORE', queue_key, token) == false then
   redis.call('ZADD', queue_key, now_ms, token)
 end
+redis.call('SET', queue_key .. ':waiter:' .. token, '1', 'PX', waiter_ttl_ms)
 return {'queued', used, capacity}
 """
 
@@ -127,5 +153,6 @@ DEQUEUE_LUA = r"""
 local queue_key = KEYS[1]
 local token = ARGV[1]
 redis.call('ZREM', queue_key, token)
+redis.call('DEL', queue_key .. ':waiter:' .. token)
 return 1
 """

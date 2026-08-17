@@ -7,7 +7,7 @@ from django.contrib import admin, messages
 from django.contrib.admin.utils import unquote
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseRedirect
-from django.urls import path, reverse
+from django.urls import reverse
 from django.utils.safestring import mark_safe
 
 from .models import Cache, Key
@@ -80,18 +80,6 @@ class CacheAdmin(CacheAdminMixin, _CacheBase):  # type: ignore[misc]
     ) -> bool:
         return False
 
-    def get_urls(self) -> list:
-        """Add custom URL patterns."""
-        urls = super().get_urls()
-        custom_urls = [
-            path(
-                "<path:object_id>/change/",
-                self.admin_site.admin_view(self.change_view),
-                name="django_cachex_cache_change",
-            ),
-        ]
-        return custom_urls + urls
-
     def _get_config(self) -> ViewConfig:
         return ViewConfig(help_messages=self._cachex_help_messages)
 
@@ -105,7 +93,7 @@ class CacheAdmin(CacheAdminMixin, _CacheBase):  # type: ignore[misc]
         """Display cache details (info + slowlog combined)."""
         if not self.has_view_or_change_permission(request):
             raise PermissionDenied
-        return _cache_detail_view(request, object_id, self._get_config())
+        return _cache_detail_view(request, unquote(object_id), self._get_config())
 
 
 @admin.register(Key)
@@ -228,18 +216,6 @@ class KeyAdmin(KeyAdminMixin, _KeyBase):  # type: ignore[misc]
         ),
     }
 
-    def get_urls(self) -> list:
-        """Add custom URL patterns for key operations."""
-        urls = super().get_urls()
-        custom_urls = [
-            path(
-                "<path:object_id>/change/",
-                self.admin_site.admin_view(self.change_view),
-                name="django_cachex_key_change",
-            ),
-        ]
-        return custom_urls + urls
-
     def _get_config(self) -> ViewConfig:
         return ViewConfig(help_messages=self._cachex_help_messages)
 
@@ -258,6 +234,13 @@ class KeyAdmin(KeyAdminMixin, _KeyBase):  # type: ignore[misc]
 
         if not cache_name:
             messages.error(request, "Invalid key identifier.")
+            return HttpResponseRedirect(
+                reverse("admin:django_cachex_cache_changelist"),
+            )
+
+        # get_cache() raises on an unconfigured alias, so check first like add_view.
+        if Cache.get_by_name(cache_name) is None:
+            messages.error(request, f"Cache '{cache_name}' not found.")
             return HttpResponseRedirect(
                 reverse("admin:django_cachex_cache_changelist"),
             )

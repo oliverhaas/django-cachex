@@ -13,13 +13,13 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDateTime, PyDelta, PyDeltaAccess, PyDict};
 
 // =========================================================================
-// Argument types — names mirror redis-py's ``redis.typing`` for vocabulary
+// Argument types. Names mirror redis-py's ``redis.typing`` for vocabulary
 // consistency. Each derives ``FromPyObject`` so PyO3 raises ``TypeError``
 // for invalid input shapes, replacing the old runtime-polymorphism helpers
 // (``value_to_bytes`` / ``to_seconds`` / ``to_unix`` / ...).
 // =========================================================================
 
-/// ``int | timedelta`` — TTL inputs to EXPIRE / PEXPIRE / TOUCH / SET ... EX.
+/// ``int | timedelta``: TTL inputs to EXPIRE / PEXPIRE / TOUCH / SET ... EX.
 /// Matches redis-py's ``ExpiryT``; cachex narrows the int side to a signed
 /// integer (negative timeouts collapse to "delete immediately" elsewhere).
 #[derive(FromPyObject)]
@@ -56,7 +56,7 @@ impl ExpiryT<'_> {
     }
 }
 
-/// ``int | datetime`` — absolute expiry inputs to EXPIREAT / PEXPIREAT.
+/// ``int | datetime``: absolute expiry inputs to EXPIREAT / PEXPIREAT.
 /// Matches redis-py's ``AbsExpiryT``.
 #[derive(FromPyObject)]
 pub(crate) enum AbsExpiryT<'py> {
@@ -89,7 +89,7 @@ impl AbsExpiryT<'_> {
     }
 }
 
-/// ``bytes | int`` — values written to / matched against Redis. Matches
+/// ``bytes | int``: values written to / matched against Redis. Matches
 /// redis-py's ``EncodableT`` *vocabulary*; cachex narrows the actual set
 /// of accepted Python types because the cache layer's serializer always
 /// produces ``bytes`` and ``INCR`` expects ints. The int branch encodes
@@ -111,7 +111,7 @@ impl EncodableT {
     }
 }
 
-/// Sync command — resolve connection (cached after first call), release the
+/// Sync command: resolve connection (cached after first call), release the
 /// GIL, block on the tokio runtime. Returns the raw redis-rs result; caller
 /// uses `.map_err(crate::client::to_py_err)` to convert.
 macro_rules! adapter_sync {
@@ -123,13 +123,13 @@ macro_rules! adapter_sync {
     }};
 }
 
-/// Async command — resolve connection (cached after first call), spawn the
+/// Async command: resolve connection (cached after first call), spawn the
 /// op on the tokio runtime, return an awaitable. Body must produce a
 /// `RawResult` (use `.into_raw_result()` from `crate::client::IntoRawResult`).
 ///
 /// Two forms:
-/// - `adapter_async!(slf, conn, body)` — no post-await transform.
-/// - `adapter_async!(slf, conn, body; Transform::Variant)` — apply transform
+/// - `adapter_async!(slf, conn, body)`: no post-await transform.
+/// - `adapter_async!(slf, conn, body; Transform::Variant)`: apply transform
 ///   to the resolved value (e.g., `ToBool`, `NormalizeTtl`) before delivery.
 ///   Replaces the older Python `_async_helpers` coroutine wrap pattern.
 macro_rules! adapter_async {
@@ -152,7 +152,7 @@ macro_rules! adapter_async {
 }
 
 // =========================================================================
-// Helpers — Python value conversions used by adapter methods
+// Helpers for Python value conversions used by adapter methods
 // =========================================================================
 
 /// Coerce ``KeyT`` (str | bytes | int) to a Rust ``String``.
@@ -434,7 +434,7 @@ pub(crate) fn parse_xinfo_pairs_list<'py>(py: Python<'py>, raw: &Bound<'py, PyAn
     Ok(out.into_any().unbind())
 }
 
-/// Coerce a Python value to ``i64`` via the builtin ``int(...)`` — tolerates
+/// Coerce a Python value to ``i64`` via the builtin ``int(...)``, which tolerates
 /// ``int``, ``bytes`` (b"123"), and ``str``. Used by the XPENDING decoders
 /// where Redis returns numeric fields as bulk strings depending on protocol.
 fn to_py_int(value: &Bound<'_, PyAny>) -> PyResult<i64> {
@@ -566,7 +566,7 @@ fn await_constant(
 }
 
 // =========================================================================
-// Stampede helpers — call into ``django_cachex.stampede``
+// Stampede helpers that call into ``django_cachex.stampede``
 // =========================================================================
 //
 // Stampede math (XFetch decision, config merging, buffer arithmetic) lives
@@ -634,13 +634,29 @@ fn call_should_recompute<'py>(
 
 /// Convert ``Option<i64>`` timeout to the driver's ``Option<u64>`` ttl arg
 /// (clamping negatives to ``Some(0)`` for parity with Python's redis-py
-/// behavior — ``timeout <= 0`` means "delete").
+/// behavior, where ``timeout <= 0`` means "delete").
 fn timeout_to_ttl(timeout: Option<i64>) -> Option<u64> {
     timeout.map(|t| if t < 0 { 0 } else { t as u64 })
 }
 
+/// Whether a flagged ``SET`` actually wrote the key: with GET the old value
+/// tells the story (NX writes on Nil, XX on non-Nil), without it OK vs Nil.
+fn set_with_flags_executed(reply: &redis::Value, nx: bool, xx: bool, get: bool) -> bool {
+    if get {
+        if nx {
+            matches!(reply, redis::Value::Nil)
+        } else if xx {
+            !matches!(reply, redis::Value::Nil)
+        } else {
+            true
+        }
+    } else {
+        matches!(reply, redis::Value::Okay | redis::Value::SimpleString(_))
+    }
+}
+
 // =========================================================================
-// RedisRsAdapter — high-level cachex adapter, subclassable from Python
+// RedisRsAdapter: high-level cachex adapter, subclassable from Python
 // =========================================================================
 
 /// Captured connection config so the adapter can re-connect on demand
@@ -740,7 +756,7 @@ impl AdapterConnConfig {
 
     /// Resolve a ``Conn`` for this config, sharing one across all adapter
     /// instances in the process (per-config). Django ASGI under granian
-    /// instantiates a fresh adapter per asyncio task — without this cache
+    /// instantiates a fresh adapter per asyncio task. Without this cache,
     /// every task would build its own multiplexed transport, exploding
     /// the upstream connection count.
     async fn connect_cached(&self) -> Result<crate::connection::Conn, String> {
@@ -787,7 +803,7 @@ fn standard_config_from_options(
     })
 }
 
-/// Build the adapter-side ``Cluster`` config — every server in the list
+/// Build the adapter-side ``Cluster`` config. Every server in the list
 /// is a cluster node URL.
 fn cluster_config_from_options(
     py: Python<'_>,
@@ -969,7 +985,7 @@ impl RedisRsAdapter {
 
     /// Cross-driver convenience: ``cache.get_client()`` returns "the
     /// underlying client object" for tests / debugging. For the redis-rs
-    /// adapter, that's the adapter itself — its command surface mirrors
+    /// adapter, that's the adapter itself. Its command surface mirrors
     /// the redis-py client closely enough for shared cross-driver tests.
     /// ``key`` and ``write`` are accepted for signature parity with the
     /// other adapters (sentinel/cluster route by key) but ignored here.
@@ -1022,7 +1038,7 @@ impl RedisRsAdapter {
 
     // ``apipeline`` is async by Protocol contract; return a pre-resolved
     // awaitable that delivers the constructed pipeline wrapper. Construction
-    // itself is sync — buffering the commands needs no I/O.
+    // itself is sync, since buffering the commands needs no I/O.
     #[pyo3(signature = (*, transaction = true))]
     fn apipeline(
         slf: &Bound<'_, Self>,
@@ -1044,7 +1060,7 @@ impl RedisRsAdapter {
     //
     // ``pipeline_exec`` / ``apipeline_exec`` execute a buffered list of
     // commands in one round trip. Called from the ``RedisRsPipelineAdapter``
-    // pyclass (see ``pipeline.rs``) — the pipeline holds an adapter
+    // pyclass (see ``pipeline.rs``). The pipeline holds an adapter
     // reference and dispatches to these methods on ``execute()``.
     // =====================================================================
 
@@ -1077,7 +1093,7 @@ impl RedisRsAdapter {
     // =====================================================================
     // Lock primitives
     //
-    // Distributed lock built on Lua scripts — atomic acquire / release /
+    // Distributed lock built on Lua scripts: atomic acquire / release /
     // extend keyed by an adapter-owned token. Called from the Python
     // ``Lock`` / ``AsyncLock`` wrappers (see ``django_cachex.lock``); the
     // wrappers handle blocking, retry, and context-manager semantics on
@@ -1166,7 +1182,7 @@ impl RedisRsAdapter {
     // =====================================================================
 
     /// Resolve a per-call ``stampede_prevention`` override against the
-    /// instance config — returns the effective ``StampedeConfig`` or ``None``.
+    /// instance config, returning the effective ``StampedeConfig`` or ``None``.
     /// Used by :class:`RespCache` to decide whether the per-call buffer applies.
     #[pyo3(signature = (stampede_prevention=None))]
     fn resolve_stampede(
@@ -1203,7 +1219,7 @@ impl RedisRsAdapter {
         let cfg = &slf.borrow().stampede_config;
         let actual = call_get_timeout_with_buffer(py, timeout, cfg, stampede_prevention)?;
         if actual == Some(0) {
-            // ``timeout=0`` is "set then immediately delete" — used by Django
+            // ``timeout=0`` is "set then immediately delete", used by Django
             // backends to express "keys with non-positive timeout expire now."
             let set: bool = adapter_sync!(slf, conn, conn.set_nx(&key, nvalue, None).await)
                 .map_err(crate::client::to_py_err)?;
@@ -1402,17 +1418,17 @@ impl RedisRsAdapter {
         let nvalue = value.into_bytes();
         let cfg = &slf.borrow().stampede_config;
         let actual = call_get_timeout_with_buffer(py, timeout, cfg, stampede_prevention)?;
-        if actual == Some(0) {
-            // ``timeout=0`` short-circuit: GET branch returns None (no value
-            // to fetch); NX/XX branch returns False.
-            return Ok(if get { py.None() } else { false.into_pyobject(py)?.to_owned().into_any().unbind() });
-        }
-        let ttl = timeout_to_ttl(actual);
-        let r: Result<redis::Value, _> = adapter_sync!(
-            slf,
-            conn,
-            conn.set_with_flags(&key, nvalue, ttl, nx, xx, get).await
-        );
+        // timeout=0 means expire immediately: run the SET unexpired so the
+        // nx/xx/get semantics still apply, then delete when it executed.
+        let zero = actual == Some(0);
+        let ttl = if zero { None } else { timeout_to_ttl(actual) };
+        let r: Result<redis::Value, _> = adapter_sync!(slf, conn, {
+            let reply = conn.set_with_flags(&key, nvalue, ttl, nx, xx, get).await?;
+            if zero && set_with_flags_executed(&reply, nx, xx, get) {
+                conn.del(&key).await?;
+            }
+            Ok(reply)
+        });
         let result = r.map_err(crate::client::to_py_err)?;
         if get {
             // SET ... GET: ``Nil`` → None, otherwise the prior value bytes.
@@ -1446,15 +1462,8 @@ impl RedisRsAdapter {
         let nvalue = value.into_bytes();
         let cfg = &slf.borrow().stampede_config;
         let actual = call_get_timeout_with_buffer(py, timeout, cfg, stampede_prevention)?;
-        if actual == Some(0) {
-            let value: Py<PyAny> = if get {
-                py.None()
-            } else {
-                false.into_pyobject(py)?.to_owned().into_any().unbind()
-            };
-            return await_constant(py, value);
-        }
-        let ttl = timeout_to_ttl(actual);
+        let zero = actual == Some(0);
+        let ttl = if zero { None } else { timeout_to_ttl(actual) };
         let transform = if get {
             crate::async_bridge::AwaitTransform::SetWithFlagsGet
         } else {
@@ -1464,7 +1473,15 @@ impl RedisRsAdapter {
             slf, conn,
             {
                 use crate::client::IntoRawResult;
-                conn.set_with_flags(&key, nvalue, ttl, nx, xx, get).await.into_raw_result()
+                let result: redis::RedisResult<redis::Value> = async {
+                    let reply = conn.set_with_flags(&key, nvalue, ttl, nx, xx, get).await?;
+                    if zero && set_with_flags_executed(&reply, nx, xx, get) {
+                        conn.del(&key).await?;
+                    }
+                    Ok(reply)
+                }
+                .await;
+                result.into_raw_result()
             };
             transform
         )
@@ -1494,7 +1511,7 @@ impl RedisRsAdapter {
         let resolved = call_resolve_stampede(py, cfg, stampede_prevention)?;
         if !resolved.is_none() && !out.is_empty() {
             // All present entries are bytes (MGET semantics); apply stampede
-            // check to each. Per-key TTL roundtrip — same shape as before.
+            // check to each. Per-key TTL roundtrip, same shape as before.
             let present_keys: Vec<String> = out
                 .keys()
                 .iter()
@@ -1629,7 +1646,7 @@ impl RedisRsAdapter {
     //
     // All methods dispatch through the driver's Python-exposed methods
     // (`call_method1`). One method-lookup per call vs. typed inherent
-    // calls — but the driver's `#[pymethods]` are private to its module,
+    // calls, but the driver's `#[pymethods]` are private to its module,
     // and Python dispatch keeps the adapter independent of changes in
     // the driver's Rust API surface.
     // =====================================================================
@@ -1664,7 +1681,7 @@ impl RedisRsAdapter {
         })
     }
 
-    /// Redis-py-style alias for ``has_key`` — kept so cross-driver tests
+    /// Redis-py-style alias for ``has_key``, kept so cross-driver tests
     /// that use ``cache.get_client().exists(...)`` work against the
     /// adapter (which is what ``get_client()`` returns here).
     fn exists(slf: &Bound<'_, Self>, key: &str) -> PyResult<bool> {
@@ -3502,8 +3519,8 @@ impl RedisRsAdapter {
     #[pyo3(signature = (**_kwargs))]
     fn close(&self, _kwargs: Option<&Bound<'_, PyDict>>) {
         // No-op. Django fires ``cache.close()`` on every ``request_finished``
-        // signal as a request-cycle cleanup hook, not a shutdown call —
-        // dropping the multiplexed connection here would force a reconnect
+        // signal as a request-cycle cleanup hook, not a shutdown call.
+        // Dropping the multiplexed connection here would force a reconnect
         // per request and saturate the server with TCP handshakes.
     }
 
@@ -3533,8 +3550,8 @@ impl RedisRsAdapter {
 
     // ``arename`` / ``arenamenx`` wrap the inner awaitable in a Python
     // coroutine (``rename_after``) that re-raises ``ERR no such key`` as
-    // ``ValueError``. The wrapped value is a coroutine — return type stays
-    // ``Py<PyAny>``.
+    // ``ValueError``. The wrapped value is a coroutine, so the return type
+    // stays ``Py<PyAny>``.
     fn arename(
         slf: &Bound<'_, Self>,
         src: &str,
@@ -4017,8 +4034,8 @@ impl RedisRsAdapter {
             .unbind())
     }
 
-    // ``aiter_keys`` returns a Python async generator (``ascan_iter_loop``)
-    // — not an awaitable — so the return type is genuinely ``Py<PyAny>``.
+    // ``aiter_keys`` returns a Python async generator (``ascan_iter_loop``),
+    // not an awaitable, so the return type is genuinely ``Py<PyAny>``.
     #[pyo3(signature = (pattern, itersize=None))]
     fn aiter_keys(
         slf: &Bound<'_, Self>,
@@ -4110,8 +4127,8 @@ impl RedisRsAdapter {
         Ok(total)
     }
 
-    // ``adelete_pattern`` returns a Python coroutine — not an awaitable —
-    // so the return type is genuinely ``Py<PyAny>``.
+    // ``adelete_pattern`` returns a Python coroutine, not an awaitable, so
+    // the return type is genuinely ``Py<PyAny>``.
     #[pyo3(signature = (pattern, itersize=None))]
     fn adelete_pattern(
         slf: &Bound<'_, Self>,
@@ -4254,8 +4271,8 @@ impl RedisRsAdapter {
                 conn.hset(&key, &f, &v).await.into_raw_result()
             });
         }
-        // Multi-field: HLEN before, HMSET, HLEN after — return diff. The
-        // cachex contract for multi-field hset is "count of *new* fields",
+        // Multi-field: HLEN before, HMSET, HLEN after, then return the diff.
+        // The cachex contract for multi-field hset is "count of *new* fields",
         // not the OK return that HMSET produces.
         adapter_async!(slf, conn, {
             let before: i64 = match conn.hlen(&key).await {

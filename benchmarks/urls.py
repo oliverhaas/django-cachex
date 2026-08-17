@@ -2,8 +2,8 @@
 
 Each view does exactly one cache operation matching one of the seven
 benchmark phases. The runner drives them via ``django.test.Client``, which
-exercises the full WSGI handler — middleware, URL resolution, request/response
-construction, ``request_started`` / ``request_finished`` signals — so the
+exercises the full WSGI handler (middleware, URL resolution, request/response
+construction, ``request_started`` / ``request_finished`` signals), so the
 numbers reflect what a real Django request paying for the same cache work
 looks like, not just the cache call in isolation.
 """
@@ -21,7 +21,7 @@ _PAYLOAD: Any = _build_payload()
 
 def set_payload_kind(kind: str) -> None:
     """Set the payload used by ``set`` / ``mset`` views. Called once per benchmark run."""
-    global _PAYLOAD  # noqa: PLW0603 — module-level state intentional for benchmark setup
+    global _PAYLOAD  # noqa: PLW0603 (module-level state intentional for benchmark setup)
     _PAYLOAD = _build_payload_large() if kind == "large" else _build_payload()
 
 
@@ -87,7 +87,7 @@ async def bench_seed(_request: Any) -> HttpResponse:
 
 
 async def bench_mixed(_request: Any) -> HttpResponse:
-    """Six async cache ops per request — matches django-vcache's workload."""
+    """Six async cache ops per request, matching django-vcache's workload."""
     await cache.aget("bench:s1")  # 1. small get
     await cache.aget_many(["bench:s1", "bench:s2", "bench:s3"])  # 2. batch get
     await cache.aset("bench:s1", _BENCH_SMALL, 300)  # 3. small set

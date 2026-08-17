@@ -196,9 +196,22 @@ class AsyncLock(Lock):
 
     Mirrors redis-py's async ``Lock`` API. The ``# type: ignore[override]``
     comments below all stem from the same fact: the sync→async signature
-    change is intentional and not expressible to the type checker. Sync
-    context-manager (``__enter__``) intentionally absent.
+    change is intentional and not expressible to the type checker.
     """
+
+    def __enter__(self) -> Self:
+        """Block sync ``with`` on an async lock before the body runs.
+
+        The inherited ``Lock.__enter__`` truthy-tests ``self.acquire()``, which
+        here is a coroutine and therefore always truthy: the body would run
+        having never issued the ``SET NX``, holding no lock and reporting no
+        error. Failing here keeps the error at the offending ``with``.
+        """
+        msg = "AsyncLock requires 'async with', not 'with'"
+        raise TypeError(msg)
+
+    def __exit__(self, *args: object) -> None:
+        """Unreachable: ``__enter__`` always raises. Present so the pair matches."""
 
     async def locked(self) -> bool:  # type: ignore[override]
         return await self._adapter.ahas_key(self.name)

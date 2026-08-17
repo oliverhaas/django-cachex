@@ -975,3 +975,61 @@ class TestAsyncPipeline:
             pipe.set("apipe_ctx", "v")
             results = await pipe.execute()
         assert results == [True]
+
+    @pytest.mark.asyncio
+    async def test_apipeline_sync_with_raises_type_error_on_enter(self, cache: RespCache):
+        # Regression: sync ``with`` only failed at __exit__, after the block ran.
+        pipe = await cache.apipeline()
+        with pytest.raises(TypeError, match="async with"):
+            pipe.__enter__()
+
+    @pytest.mark.asyncio
+    async def test_apipeline_failed_execute_does_not_leak_decoders(self, cache: RespCache):
+        # Regression: a failed execute() left stale decoders behind, which
+        # misaligned against the batch queued next on the same wrapper.
+        pipe = await cache.apipeline()
+        pipe.set("adecoder_leak", "v1")
+        real_adapter = pipe._pipeline_adapter
+
+        class FailingAdapter:
+            async def execute(self) -> list:
+                # The driver pipeline discards its queue when execute fails.
+                await real_adapter.reset()
+                msg = "simulated execute failure"
+                raise RuntimeError(msg)
+
+        pipe._pipeline_adapter = FailingAdapter()
+        with pytest.raises(RuntimeError, match="simulated execute failure"):
+            await pipe.execute()
+
+        pipe._pipeline_adapter = real_adapter
+        pipe.set("adecoder_leak_after", "ok")
+        assert await pipe.execute() == [True]
+        assert await cache.aget("adecoder_leak_after") == "ok"
+
+
+class TestPipelineErrorRecovery:
+    """The wrapper stays usable after a failed execute()."""
+
+    def test_pipeline_failed_execute_does_not_leak_decoders(self, cache: RespCache):
+        # Regression: a failed execute() left stale decoders behind, which
+        # misaligned against the batch queued next on the same wrapper.
+        pipe = cache.pipeline()
+        pipe.set("decoder_leak", "v1")
+        real_adapter = pipe._pipeline_adapter
+
+        class FailingAdapter:
+            def execute(self) -> list:
+                # The driver pipeline discards its queue when execute fails.
+                real_adapter.reset()
+                msg = "simulated execute failure"
+                raise RuntimeError(msg)
+
+        pipe._pipeline_adapter = FailingAdapter()
+        with pytest.raises(RuntimeError, match="simulated execute failure"):
+            pipe.execute()
+
+        pipe._pipeline_adapter = real_adapter
+        pipe.set("decoder_leak_after", "ok")
+        assert pipe.execute() == [True]
+        assert cache.get("decoder_leak_after") == "ok"

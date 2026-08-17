@@ -6,7 +6,8 @@ have the parametrization of the main test suite.
 
 from typing import TYPE_CHECKING
 
-from django.test import Client
+from django.contrib.admin.utils import quote
+from django.test import Client, override_settings
 from django.urls import reverse
 
 from django_cachex.admin.models import Key
@@ -22,7 +23,7 @@ def _cache_list_url() -> str:
 
 def _cache_detail_url(cache_name: str) -> str:
     """Get URL for cache detail (admin change view)."""
-    return reverse("admin:django_cachex_cache_change", args=[cache_name])
+    return reverse("admin:django_cachex_cache_change", args=[quote(cache_name)])
 
 
 def _key_list_url(cache_name: str) -> str:
@@ -243,6 +244,77 @@ class TestKeyListView:
         assert test_cache.get("bulk:delete:1") is None
         assert test_cache.get("bulk:delete:2") is None
         assert test_cache.get("bulk:keep") == "value3"
+
+    def test_key_list_bulk_delete_underscore_hex_key(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+    ):
+        """Regression: filter(pk__in) admin-unquoted the raw checkbox pks, so
+        a key containing an ``_XX`` sequence was mangled (``_2F`` -> ``/``)
+        and the wrong key was targeted.
+        """
+        test_cache.set("weird_2Fkey", "value")
+
+        response = admin_client.post(
+            _key_list_url("default"),
+            {
+                "action": "delete_selected_keys",
+                "_selected_action": [Key.make_pk("default", "weird_2Fkey")],
+            },
+        )
+        assert response.status_code == 302
+        assert test_cache.get("weird_2Fkey") is None
+
+    def test_key_list_bulk_delete_reports_failures(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+    ):
+        """Regression: per-key exceptions were swallowed, so a failed bulk
+        delete reported nothing and looked like success.
+        """
+        test_cache.set("bulk:mixed:ok", "value")
+
+        response = admin_client.post(
+            _key_list_url("default"),
+            {
+                "action": "delete_selected_keys",
+                "_selected_action": [
+                    Key.make_pk("default", "bulk:mixed:ok"),
+                    # get_cache() raises for unconfigured caches.
+                    Key.make_pk("no_such_cache", "bulk:mixed:broken"),
+                ],
+            },
+            follow=True,
+        )
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Successfully deleted 1 key(s)" in content
+        assert "Failed to delete 1 key(s)" in content
+        assert test_cache.get("bulk:mixed:ok") is None
+
+    def test_key_list_count_param_capped(
+        self,
+        admin_client: Client,
+        mocker,
+        test_cache: RespCache,
+    ):
+        """Regression: ``?count=`` was uncapped, letting a single changelist
+        request drive one SCAN call over the whole keyspace.
+        """
+        from unittest.mock import MagicMock
+
+        from django_cachex.admin.queryset import MAX_SCAN_COUNT
+
+        fake = MagicMock()
+        fake.scan.return_value = (0, [])
+        mocker.patch("django_cachex.admin.queryset.get_cache", return_value=fake)
+
+        response = admin_client.get(_key_list_url("default") + "&count=999999")
+        assert response.status_code == 200
+        _, kwargs = fake.scan.call_args
+        assert kwargs["count"] == MAX_SCAN_COUNT
 
     def test_key_list_shows_string_keys(
         self,
@@ -480,6 +552,35 @@ class TestKeyListView:
         # Should default to "default" (first cache in settings.CACHES)
         assert "Keys in" in content
 
+    def test_key_list_cache_links_are_admin_quoted(self, admin_client: Client):
+        """Regression: the breadcrumb and 'Cache Details' links passed the raw
+        cache name to {% url %}, so change_view's unquote() turned an ``_XX``
+        name like ``shard_25`` into ``shard%`` and 404-redirected.
+        """
+        caches_config = {
+            "default": {
+                "BACKEND": "django_cachex.cache.LocMemCache",
+                "LOCATION": "quote-links-default",
+            },
+            "shard_25": {
+                "BACKEND": "django_cachex.cache.LocMemCache",
+                "LOCATION": "quote-links-shard",
+            },
+        }
+        with override_settings(CACHES=caches_config):
+            response = admin_client.get(_key_list_url("shard_25"))
+            assert response.status_code == 200
+            content = response.content.decode()
+
+            quoted_url = _cache_detail_url("shard_25")
+            raw_url = reverse("admin:django_cachex_cache_change", args=["shard_25"])
+            assert f'href="{quoted_url}"' in content
+            assert raw_url not in content
+
+            detail = admin_client.get(quoted_url)
+            assert detail.status_code == 200
+            assert "not found" not in detail.content.decode()
+
 
 class TestKeyDetailView:
     """Tests for the key detail view."""
@@ -566,6 +667,35 @@ class TestKeyDetailView:
         # Should redirect to key list with error message
         assert response.status_code == 302
         assert "cache=default" in response.url
+
+    def test_key_detail_unconfigured_cache_redirects(self, admin_client: Client):
+        """Regression: change_view only checked for an empty cache name, so an
+        alias missing from CACHES reached get_cache() and raised ValueError
+        instead of redirecting the way add_view does.
+        """
+        url = _key_detail_url("no-such-cache", "somekey")
+        response = admin_client.get(url)
+        assert response.status_code == 302
+        assert response.url == reverse("admin:django_cachex_cache_changelist")
+
+    def test_locmem_key_detail_has_no_conflict_warning(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+    ):
+        """Regression: hasattr(cache, "eval_script") is always true (BaseCachex
+        raising stub), so every LocMem key detail page warned that conflict
+        detection is unavailable. Missing scripting support is the expected
+        fallback, not warning-worthy.
+        """
+        from django.core.cache import caches
+
+        caches["local"].set("locmem:detail", "value")
+
+        url = _key_detail_url("local", "locmem:detail")
+        response = admin_client.get(url)
+        assert response.status_code == 200
+        assert "Conflict detection unavailable" not in response.content.decode()
 
     def test_stream_key_detail(
         self,
@@ -1151,6 +1281,156 @@ class TestKeyOperations:
 
         # Verify value was updated
         assert test_cache.get("edit:me") == "new value"
+
+    def test_edit_key_value_on_locmem_backend(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+    ):
+        """Regression: LocMem has no real pttl(), only BaseCachex's raising
+        stub, so hasattr-gated TTL preservation blew up and the edit was
+        rejected with an error instead of falling back to a plain set().
+        """
+        from django.core.cache import caches
+
+        local = caches["local"]
+        local.set("edit:locmem", "old value")
+
+        url = _key_detail_url("local", "edit:locmem")
+        response = admin_client.post(
+            url,
+            {"action": "update", "value": "new value"},
+        )
+        assert response.status_code == 302
+        assert local.get("edit:locmem") == "new value"
+
+    def test_edit_key_value_on_locmem_preserves_existing_ttl(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+    ):
+        """Regression: LocMem raises on pttl(), so the edit fell through to a
+        plain set() and silently reset the key's TTL to the default timeout.
+        """
+        from django.core.cache import caches
+
+        local = caches["local"]
+        local.set("edit:locmem:ttl", "old value", timeout=3600)
+
+        url = _key_detail_url("local", "edit:locmem:ttl")
+        response = admin_client.post(
+            url,
+            {"action": "update", "value": "new value"},
+        )
+        assert response.status_code == 302
+        assert local.get("edit:locmem:ttl") == "new value"
+        assert local.ttl("edit:locmem:ttl") > 3000
+
+    def test_edit_key_value_on_locmem_preserves_persistent_key(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+    ):
+        """Regression: without pttl(), a persistent LocMem key was stamped with
+        the default timeout and started expiring.
+        """
+        from django.core.cache import caches
+
+        local = caches["local"]
+        local.set("edit:locmem:persistent", "old value", timeout=None)
+
+        url = _key_detail_url("local", "edit:locmem:persistent")
+        response = admin_client.post(
+            url,
+            {"action": "update", "value": "new value"},
+        )
+        assert response.status_code == 302
+        assert local.get("edit:locmem:persistent") == "new value"
+        assert local.ttl("edit:locmem:persistent") == -1
+
+    def test_edit_key_value_on_stream_preserves_persistent_key(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+        stream_alias: str,
+    ):
+        """Regression: StreamCache reports no-expiry as pttl() == -1, not None,
+        so a persistent key was stamped with the default timeout.
+        """
+        from django.core.cache import caches
+
+        stream = caches[stream_alias]
+        stream.set("edit:stream:persistent", "old value", timeout=None)
+
+        url = _key_detail_url(stream_alias, "edit:stream:persistent")
+        response = admin_client.post(
+            url,
+            {"action": "update", "value": "new value"},
+        )
+        assert response.status_code == 302
+        assert stream.get("edit:stream:persistent") == "new value"
+        assert stream.ttl("edit:stream:persistent") == -1
+
+    def test_edit_key_value_on_stream_preserves_existing_ttl(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+        stream_alias: str,
+    ):
+        """Regression: StreamCache has pttl() but no pexpire(), so restoring the
+        TTL after the write was suppressed and the default timeout stuck.
+        """
+        from django.core.cache import caches
+
+        stream = caches[stream_alias]
+        stream.set("edit:stream:ttl", "old value", timeout=3600)
+
+        url = _key_detail_url(stream_alias, "edit:stream:ttl")
+        response = admin_client.post(
+            url,
+            {"action": "update", "value": "new value"},
+        )
+        assert response.status_code == 302
+        assert stream.get("edit:stream:ttl") == "new value"
+        assert stream.ttl("edit:stream:ttl") > 3000
+
+    def test_edit_key_value_preserves_persistent_key(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+    ):
+        """Regression: editing a key without TTL stamped it with the default
+        timeout, silently making a persistent key expire.
+        """
+        test_cache.set("edit:persistent", "old value", timeout=None)
+
+        url = _key_detail_url("default", "edit:persistent")
+        response = admin_client.post(
+            url,
+            {"action": "update", "value": "new value"},
+        )
+        assert response.status_code == 302
+        assert test_cache.get("edit:persistent") == "new value"
+        ttl = test_cache.ttl("edit:persistent")
+        assert ttl is None or ttl == -1
+
+    def test_edit_key_value_preserves_existing_ttl(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+    ):
+        test_cache.set("edit:with:ttl", "old value", timeout=600)
+
+        url = _key_detail_url("default", "edit:with:ttl")
+        response = admin_client.post(
+            url,
+            {"action": "update", "value": "new value"},
+        )
+        assert response.status_code == 302
+        assert test_cache.get("edit:with:ttl") == "new value"
+        ttl = test_cache.ttl("edit:with:ttl")
+        assert ttl is not None
+        assert 590 <= ttl <= 600
 
     def test_list_lrem(
         self,
@@ -1925,6 +2205,34 @@ class TestCacheDetailView:
         response = client.get(url)
         assert response.status_code == 302
 
+    def test_cache_detail_follows_changelist_link_for_underscore_alias(
+        self,
+        admin_client: Client,
+    ):
+        """Regression: admin quoting escapes ``_`` as ``_5F``, so the changelist
+        row links to ``my_5Fcache``. change_view used to pass that through raw
+        and report the alias as missing.
+        """
+        caches_config = {
+            "my_cache": {
+                "BACKEND": "django_cachex.cache.LocMemCache",
+                "LOCATION": "underscore-alias",
+            },
+        }
+        with override_settings(CACHES=caches_config):
+            changelist = admin_client.get(
+                reverse("admin:django_cachex_cache_changelist"),
+            )
+            assert changelist.status_code == 200
+
+            url = _cache_detail_url("my_cache")
+            assert "my_5Fcache" in url
+            assert f'href="{url}"' in changelist.content.decode()
+
+            detail = admin_client.get(url)
+            assert detail.status_code == 200
+            assert "not found" not in detail.content.decode()
+
     def test_cache_detail_shows_cache_name(self, admin_client: Client, test_cache):
         url = _cache_detail_url("default")
         response = admin_client.get(url)
@@ -1972,6 +2280,39 @@ class TestCacheDetailView:
             assert response.status_code == 200
 
 
+class TestKeyPkRoundTrip:
+    """The composite pk and the detail URL built from it must round-trip
+    losslessly for any cache name and key name.
+    """
+
+    def test_make_pk_parse_pk_roundtrip_plain(self):
+        assert Key.parse_pk(Key.make_pk("default", "user:1")) == ("default", "user:1")
+
+    def test_make_pk_parse_pk_roundtrip_colon_in_cache_name(self):
+        """Regression: parse_pk split on the first colon, so a cache name
+        containing ':' donated its tail to the key name.
+        """
+        assert Key.parse_pk(Key.make_pk("tier:hot", "user:1")) == ("tier:hot", "user:1")
+
+    def test_key_detail_url_roundtrips_special_characters(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+    ):
+        """Regression: key names went into detail URLs without the admin's pk
+        quoting, so keys with '/', ' ', '%', ':' or ``_XX`` sequences broke
+        the link or resolved to a different key.
+        """
+        from django_cachex.admin.views.base import key_detail_url
+
+        for key in ("a/b c%d:e", "literal_2Funderscore"):
+            test_cache.set(key, "value")
+            response = admin_client.get(key_detail_url("default", key))
+            assert response.status_code == 200, key
+            assert response.context["key"] == key
+            assert response.context["cache_name"] == "default"
+
+
 class TestCacheAdmin:
     """Tests for the CacheAdmin class."""
 
@@ -1983,6 +2324,17 @@ class TestCacheAdmin:
 
         # Should return 200 (changelist_view is the cache list now)
         assert response.status_code == 200
+
+    def test_querysets_declare_total_ordering(self):
+        """Regression: Django 6.1 ChangeList reads queryset.totally_ordered.
+
+        Both duck-typed querysets must expose it or every changelist view
+        crashes with AttributeError in django/contrib/admin/views/main.py.
+        """
+        from django_cachex.admin.queryset import CacheQuerySet, KeyQuerySet
+
+        assert CacheQuerySet([]).totally_ordered is True
+        assert KeyQuerySet([], "default").totally_ordered is True
 
     def test_has_add_permission_returns_false(self, admin_user, test_cache):
         """CacheAdmin should not allow adding new cache entries, even for a superuser."""
@@ -2131,6 +2483,60 @@ class TestCacheAdmin:
         assert cache_admin.has_change_permission(request) is True
         # change_cache also grants view (Django default behavior)
         assert cache_admin.has_view_permission(request) is True
+
+    def test_keys_link_urlencodes_cache_name(self, test_cache):
+        """Regression: the ?cache= query parameter was string-concatenated,
+        so cache names containing '&' or spaces produced broken links.
+        """
+        from django.conf import settings
+        from django.contrib.admin import site
+        from django.test import override_settings
+
+        from django_cachex.admin.models import Cache
+
+        weird = "we ird&name"
+        caches_config = {
+            **settings.CACHES,
+            weird: {
+                "BACKEND": "django_cachex.cache.LocMemCache",
+                "LOCATION": "keys-link-urlencode-test",
+            },
+        }
+        with override_settings(CACHES=caches_config):
+            cache_obj = Cache.get_by_name(weird)
+            assert cache_obj is not None
+            html = site._registry[Cache].keys_link(cache_obj)
+        assert "cache=we+ird%26name" in html
+
+
+class TestKeyAdminGetActions:
+    """``get_actions`` must satisfy Django 6.1's ``action_location``
+    deprecation check while still running on Django 6.0.
+    """
+
+    def test_get_actions_emits_no_deprecation_warning(self, rf, admin_user, test_cache):
+        """Regression: the override lacked the ``action_location`` parameter,
+        so Django 6.1's shim emitted RemovedInDjango70Warning on every
+        changelist request.
+        """
+        import warnings
+
+        from django.contrib.admin import site
+        from django.utils.deprecation import RemovedInDjango70Warning
+
+        key_admin = site._registry[Key]
+        request = rf.get(reverse("admin:django_cachex_key_changelist"))
+        request.user = admin_user
+
+        # Django 6.1 routes through a shim that warns when get_actions()
+        # lacks the action_location parameter; Django 6.0 has no shim.
+        shim = getattr(key_admin, "_get_actions_with_action_location", key_admin.get_actions)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RemovedInDjango70Warning)
+            actions = shim(request)
+
+        assert "delete_selected" not in actions
+        assert "delete_selected_keys" in actions
 
 
 class TestKeyAdminPermissions:
@@ -2560,8 +2966,7 @@ class TestUndecodableValueResilience:
         """Write garbage bytes directly to Redis under the cache's key prefix.
 
         Bypasses the cache's serializer/compressor pipeline so reading via
-        cache.get() will raise SerializerError (or CompressorError, depending
-        on what's configured).
+        cache.get() will raise SerializerError.
         """
         client = test_cache.get_client(write=True)
         full_key = test_cache.make_key(TestUndecodableValueResilience.BROKEN_KEY)

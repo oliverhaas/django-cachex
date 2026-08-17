@@ -14,7 +14,7 @@ All standard Django cache methods are supported:
 | `delete(key)` | Delete a key |
 | `touch(key, timeout=DEFAULT)` | Update timeout on a key |
 | `get_many(keys)` | Get multiple values |
-| `set_many(mapping, timeout=DEFAULT)` | Set multiple values |
+| `set_many(data, timeout=DEFAULT)` | Set multiple values |
 | `delete_many(keys)` | Delete multiple keys |
 | `get_or_set(key, default, timeout=DEFAULT)` | Get value or set default |
 | `clear()` | Clear the cache |
@@ -82,14 +82,16 @@ Set operations for unordered collections of unique elements:
 | `spop(key, count=None)` | Remove and return random member(s) |
 | `srandmember(key, count=None)` | Get random member(s) without removing |
 | `smove(src, dst, member)` | Move member between sets |
-| `sdiff(*keys)` | Get difference of sets |
-| `sdiffstore(dest, *keys)` | Store difference of sets |
-| `sinter(*keys)` | Get intersection of sets |
-| `sinterstore(dest, *keys)` | Store intersection of sets |
-| `sunion(*keys)` | Get union of sets |
-| `sunionstore(dest, *keys)` | Store union of sets |
+| `sdiff(keys)` | Get difference of sets |
+| `sdiffstore(dest, keys)` | Store difference of sets |
+| `sinter(keys)` | Get intersection of sets |
+| `sinterstore(dest, keys)` | Store intersection of sets |
+| `sunion(keys)` | Get union of sets |
+| `sunionstore(dest, keys)` | Store union of sets |
 | `sscan(key, cursor=0, ...)` | Incrementally iterate set members |
 | `sscan_iter(key, ...)` | Iterate over set members using SSCAN |
+
+`keys` on the multi-key set operations takes a single key or a sequence of them, not varargs. `sdiff(["a", "b"])`, not `sdiff("a", "b")`: the second positional argument is `version`.
 
 ### Sorted Set Methods
 
@@ -99,17 +101,17 @@ Sorted set operations for scored, ordered collections:
 |--------|-------------|
 | `zadd(key, mapping, *, nx, xx, ch, gt, lt)` | Add member(s) with scores |
 | `zcard(key)` | Get number of members |
-| `zcount(key, min, max)` | Count members with scores in range |
+| `zcount(key, min_score, max_score)` | Count members with scores in range |
 | `zincrby(key, amount, member)` | Increment member's score |
 | `zrange(key, start, end, ...)` | Get members by index range |
 | `zrevrange(key, start, end, ...)` | Get members by index range (descending) |
-| `zrangebyscore(key, min, max, ...)` | Get members by score range |
-| `zrevrangebyscore(key, max, min, ...)` | Get members by score range (descending) |
+| `zrangebyscore(key, min_score, max_score, ...)` | Get members by score range |
+| `zrevrangebyscore(key, max_score, min_score, ...)` | Get members by score range (descending) |
 | `zrank(key, member)` | Get member's rank (ascending) |
 | `zrevrank(key, member)` | Get member's rank (descending) |
 | `zrem(key, *members)` | Remove member(s) |
 | `zremrangebyrank(key, start, end)` | Remove members by rank range |
-| `zremrangebyscore(key, min, max)` | Remove members by score range |
+| `zremrangebyscore(key, min_score, max_score)` | Remove members by score range |
 | `zscore(key, member)` | Get member's score |
 | `zmscore(key, *members)` | Get multiple members' scores |
 | `zpopmin(key, count=1)` | Remove and return members with lowest scores |
@@ -134,9 +136,11 @@ List operations for ordered, indexable collections:
 | `lpos(key, value, ...)` | Find element position in list |
 | `linsert(key, where, pivot, value)` | Insert value before or after pivot |
 | `lmove(src, dst, wherefrom, whereto)` | Atomically move element between lists |
-| `blpop(*keys, timeout=0)` | Blocking pop from head of list |
-| `brpop(*keys, timeout=0)` | Blocking pop from tail of list |
+| `blpop(keys, timeout=0)` | Blocking pop from head of list |
+| `brpop(keys, timeout=0)` | Blocking pop from tail of list |
 | `blmove(src, dst, timeout, ...)` | Blocking move between lists |
+
+`blpop` and `brpop` take `keys` the same way: one key or a sequence, followed by `timeout`.
 
 ### Stream Methods
 
@@ -144,24 +148,24 @@ Append-only log structure with consumer groups:
 
 | Method | Description |
 |--------|-------------|
-| `xadd(key, fields, *, id="*", maxlen=None, ...)` | Append an entry, returning its ID |
+| `xadd(key, fields, entry_id="*", maxlen=None, ...)` | Append an entry, returning its ID |
 | `xlen(key)` | Number of entries in the stream |
-| `xrange(key, min="-", max="+", count=None)` | Range of entries (forward) |
-| `xrevrange(key, max="+", min="-", count=None)` | Range of entries (reverse) |
+| `xrange(key, start="-", end="+", count=None)` | Range of entries (forward) |
+| `xrevrange(key, end="+", start="-", count=None)` | Range of entries (reverse) |
 | `xread(streams, count=None, block=None)` | Read new entries from one or more streams |
-| `xtrim(key, *, maxlen=None, minid=None, approximate=True)` | Cap stream length |
+| `xtrim(key, maxlen=None, approximate=True, minid=None, ...)` | Cap stream length |
 | `xdel(key, *entry_ids)` | Delete entries by ID |
 | `xinfo_stream(key, full=False)` | Stream metadata |
 | `xinfo_groups(key)` | Consumer group metadata |
 | `xinfo_consumers(key, group)` | Per-consumer metadata for a group |
-| `xgroup_create(key, group, id="$", mkstream=False)` | Create a consumer group |
+| `xgroup_create(key, group, entry_id="$", mkstream=False)` | Create a consumer group |
 | `xgroup_destroy(key, group)` | Drop a consumer group |
-| `xgroup_setid(key, group, id)` | Re-anchor a consumer group's read position |
+| `xgroup_setid(key, group, entry_id)` | Re-anchor a consumer group's read position |
 | `xgroup_delconsumer(key, group, consumer)` | Drop a consumer from a group |
 | `xreadgroup(group, consumer, streams, count=None, block=None)` | Read entries as a group consumer |
 | `xack(key, group, *entry_ids)` | Acknowledge processed entries |
 | `xpending(key, group, ...)` | Inspect pending (unacked) entries |
-| `xclaim(key, group, consumer, min_idle_time, *entry_ids, ...)` | Claim pending entries |
+| `xclaim(key, group, consumer, min_idle_time, entry_ids, ...)` | Claim pending entries |
 | `xautoclaim(key, group, consumer, min_idle_time, ...)` | Auto-claim entries idle longer than threshold |
 
 All methods have an `a*` async counterpart (e.g. `axadd`, `axreadgroup`).
@@ -179,12 +183,12 @@ Execute Lua scripts with optional key prefixing and value encoding/decoding:
 
 ```python
 result = cache.eval_script(
-    script,           # Lua script source code
-    keys=(),          # KEYS to pass to script
-    args=(),          # ARGV to pass to script
-    pre_hook=None,    # Pre-processing hook: (helpers, keys, args) -> (keys, args)
-    post_hook=None,   # Post-processing hook: (helpers, result) -> result
-    version=None,     # Key version for prefixing
+    script,  # Lua script source code
+    keys=(),  # KEYS to pass to script
+    args=(),  # ARGV to pass to script
+    pre_hook=None,  # Pre-processing hook: (helpers, keys, args) -> (keys, args)
+    post_hook=None,  # Post-processing hook: (helpers, result) -> result
+    version=None,  # Key version for prefixing
 )
 ```
 
@@ -350,7 +354,7 @@ if await lock.acquire():
         await lock.release()
 ```
 
-Cluster-mode async locks are unavailable on redis-py / valkey-py because the underlying `EVALSHA` routes to replicas; the Rust adapter handles this internally.
+Cluster mode rejects `lock()` and `alock()` on every adapter: the release script runs via `EVALSHA`, which cluster routes to replicas, so `release()` would fail and the key would stay set until its lease expired. Both raise `NotSupportedError`. Use `semaphore()` instead, which colocates its keys under a `{name}` hash tag.
 
 ## Semaphore Interface
 
@@ -401,12 +405,17 @@ async with await cache.asemaphore("mysem", capacity=4, lease=30):
 
 # Manual acquire/release
 sem = await cache.asemaphore("mysem", capacity=4, lease=30)
-if await sem.acquire():
+if await sem.aacquire():
     try:
         await do_work()
     finally:
-        await sem.release()
+        await sem.arelease()
 ```
+
+The awaitable methods are `aacquire()` and `arelease()`. `acquire()` and
+`release()` are the sync pair and are still present on the same object, so
+`await sem.acquire()` runs the sync acquire and then raises `TypeError` on the
+returned `bool`, leaving the claim held until its lease expires.
 
 Sync and async callers on the same cache instance share state for a given name.
 
@@ -442,7 +451,7 @@ async with await cache.apipeline() as pipe:
 
 `apipeline()` is `async def` so adapters whose async-client construction is itself awaitable (e.g. valkey-glide) can resolve the client before returning the wrapper. Queueing methods stay synchronous; only `apipeline()` and `execute()` need to be awaited.
 
-All cache methods are available on the pipeline. Results are returned as a list in the same order as the commands.
+Single-key commands are available on the pipeline. The multi-key helpers (`set_many`, `get_many`, `delete_many`), the read-modify-write helpers (`get_or_set`, `add`, `touch`, `has_key`), and the scanning helpers (`keys`, `scan`, `delete_pattern`, `clear`) are not: queue their underlying commands instead. Results are returned as a list in the same order as the commands.
 
 ## Clearing keys
 
@@ -461,7 +470,6 @@ All cache methods are available on the pipeline. Results are returned as a list 
 |--------|-------------|
 | `serializer` | Serializer class or list for fallback |
 | `compressor` | Compressor class or list for fallback |
-| `min_length` | Skip compression for payloads below this byte count (default `15`) |
 | `password` | Server password |
 | `socket_connect_timeout` | Connection timeout |
 | `socket_timeout` | Read/write timeout |
@@ -478,7 +486,9 @@ All cache methods are available on the pipeline. Results are returned as a list 
 dataclass that tunes the TTL-based XFetch stampede-prevention algorithm.
 Pass it to `OPTIONS["stampede_prevention"]` to apply globally, or to the
 `stampede_prevention=` kwarg on `get`/`set`/`get_many`/`set_many`/`add`/
-`get_or_set` for per-call overrides.
+`touch`/`get_or_set`, and their `a`-prefixed async counterparts, for
+per-call overrides. `touch` uses it to decide whether the refreshed TTL
+gets the buffer added back.
 
 | Field | Default | Description |
 |-------|---------|-------------|
@@ -488,14 +498,18 @@ Pass it to `OPTIONS["stampede_prevention"]` to apply globally, or to the
 
 ## Exceptions
 
-All raised from `django_cachex.exceptions` and re-exported at the package
-root.
+All importable from the package root (`django_cachex`). Every exception
+subclasses `CachexError`, so one `except CachexError` handles any library
+failure.
 
 | Exception | Description |
 |-----------|-------------|
+| `CachexError` | Base class for every exception raised by django-cachex. |
 | `WrongTypeError` | Operation applied to a key holding the wrong RESP type (subclass of `TypeError`). Mirrors Redis ``WRONGTYPE``; raised consistently across LocMem, redis-py, valkey-py, valkey-glide, and the Rust adapter. |
 | `CompressorError` | Compression or decompression failed. Triggers the configured compressor fallback chain. |
 | `SerializerError` | Serialization or deserialization failed. Triggers the serializer fallback chain. |
 | `NotSupportedError` | Operation is not supported by this backend (e.g. `lpush` on `TieredCache`). |
-| `LockError` | Generic lock failure (couldn't acquire, releasing an unlocked lock, …). |
-| `LockNotOwnedError` | Releasing or extending a lock whose token no longer matches (i.e. the lock expired or was stolen). Subclass of `LockError`. |
+| `LockError` | A lock operation failed (couldn't acquire, releasing an unlocked lock, ...). |
+| `LockNotOwnedError` | Releasing or extending a lock the caller no longer owns (expired or stolen). Subclass of `LockError`. |
+| `SemaphoreError` | A semaphore operation failed (e.g. re-acquiring before release). |
+| `SemaphoreTimeoutError` | `timeout` elapsed before the semaphore could be acquired. Subclass of `SemaphoreError`. |

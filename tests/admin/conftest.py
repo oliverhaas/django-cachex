@@ -62,6 +62,41 @@ def admin_client(admin_user) -> Client:
 
 
 @pytest.fixture
+def stream_alias(test_cache):
+    """Add a StreamCache alias broadcasting over the default cache.
+
+    StreamCache has its own TTL surface (``pttl`` returns -1 for no expiry, no
+    ``pexpire`` at all), which the admin views have to handle.
+    """
+    import uuid
+
+    from django.conf import settings
+    from django.core.cache import caches
+    from django.core.cache.backends.locmem import _caches, _expire_info, _locks
+
+    location = f"admin-test-stream-{uuid.uuid4().hex[:8]}"
+    config = {
+        **settings.CACHES,
+        "stream": {
+            "BACKEND": "django_cachex.cache.StreamCache",
+            "LOCATION": location,
+            "OPTIONS": {
+                "transport": "default",
+                "stream_key": f"admin:sync:{uuid.uuid4().hex[:8]}",
+                "block_timeout": 100,
+            },
+        },
+    }
+    with override_settings(CACHES=config):
+        caches.close_all()
+        yield "stream"
+        caches["stream"].shutdown()
+        for registry in (_caches, _expire_info, _locks):
+            registry.pop(location, None)
+    caches.close_all()
+
+
+@pytest.fixture
 def test_cache(db, redis_container):
     """Provide a cache backend for testing admin views.
 

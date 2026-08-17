@@ -15,13 +15,14 @@ A drop-in replacement for Django's built-in Redis cache, plus:
 - Hash, list, set, sorted set, and stream operations on the cache object.
 - TTL and pattern helpers (`ttl()`, `expire()`, `keys()`, `delete_pattern()`).
 - Distributed locks: `cache.lock()`.
+- Weighted semaphores: `cache.semaphore()` for budget-based concurrency gating (counting and weighted, in-process and distributed).
 - Lua scripting with automatic key prefixing and value encoding/decoding.
 - Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with fallback chains for safe migrations.
 - Cache stampede prevention (TTL-based XFetch).
 - Two composite backends: `StreamCache` (cross-pod stream-synchronized in-memory cache) and `TieredCache` (L1/L2 with TTL propagation).
 - Django `LocMemCache` and `DatabaseCache` extensions with the same data-structure ops and admin support.
-- Optional Rust I/O driver (PyO3 + tokio + redis-rs) behind the same `RespCache` API. Free-threaded CPython (3.14t) supported.
-- Optional `valkey-glide` adapter: Valkey's official Rust-cored client, exposed as `ValkeyGlideCache`.
+- Optional Rust I/O driver (PyO3 + tokio + redis-rs) behind the same `RespCache` API. Free-threaded CPython (3.14t) supported. Experimental.
+- Optional `valkey-glide` adapter: Valkey's official Rust-cored client, exposed as `ValkeyGlideCache`. Experimental.
 - Django admin UI for browsing keys, inspecting values, editing, and flushing.
 
 ## Requirements

@@ -12,11 +12,11 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.admin import ShowFacets
-from django.contrib.admin.utils import unquote
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
+from django.utils.http import urlencode
 from django.utils.safestring import mark_safe
 from django.utils.timesince import timeuntil
 from django.utils.translation import gettext_lazy as _
@@ -55,6 +55,7 @@ class CacheQuerySet:
 
     model = Cache
     ordered = True
+    totally_ordered = True  # read by ChangeList since Django 6.1
     db = "default"
 
     def __init__(self, data: list[Cache] | None = None):
@@ -283,7 +284,7 @@ class CacheAdminMixin:
     def keys_link(self, obj: Cache) -> str:
         if obj.support_level != "cachex":
             return mark_safe('<span style="color:#9ca3af">-</span>')
-        url = reverse("admin:django_cachex_key_changelist") + f"?cache={obj.name}"
+        url = reverse("admin:django_cachex_key_changelist") + "?" + urlencode({"cache": obj.name})
         return format_html('<a href="{}">{}</a>', url, _("List Keys"))
 
 
@@ -292,6 +293,10 @@ class CacheAdminMixin:
 # ======================================================================
 
 KEY_TYPES = tuple(KeyType)
+
+# Cap for the user-supplied ``?count=`` SCAN hint; uncapped, one changelist
+# request could walk the whole keyspace in a single blocking SCAN.
+MAX_SCAN_COUNT = 1000
 
 # Inline styles for type badges (theme-agnostic)
 _TYPE_STYLES: dict[str, str] = {
@@ -314,6 +319,7 @@ class KeyQuerySet:
 
     model = Key
     ordered = True
+    totally_ordered = True  # read by ChangeList since Django 6.1
     db = "default"
 
     def __init__(
@@ -365,12 +371,17 @@ class KeyQuerySet:
         return self._data[key]
 
     def filter(self, *args: Any, **kwargs: Any) -> KeyQuerySet:
-        """Filter keys. pk__in builds Key objects from composite PKs directly."""
+        """Filter keys. pk__in builds Key objects from composite PKs directly.
+
+        The pk values come from the action checkboxes, which carry the raw
+        ``str(obj.pk)``: no admin ``unquote()`` here, or keys containing
+        ``_XX`` sequences would be mangled.
+        """
         clone = self._clone()
         if "pk__in" in kwargs:
             data = []
             for pk in kwargs["pk__in"]:
-                cache_name, key_name = Key.parse_pk(unquote(str(pk)))
+                cache_name, key_name = Key.parse_pk(str(pk))
                 if cache_name:
                     data.append(Key.from_cache_key(cache_name, key_name))
             clone._data = data
@@ -469,9 +480,16 @@ class KeyAdminMixin:
     show_facets = ShowFacets.NEVER
     show_full_result_count: ClassVar[bool] = False
 
-    def get_actions(self, request: HttpRequest) -> dict:
-        """Remove Django's built-in delete_selected (KeyQuerySet doesn't support it)."""
-        actions = super().get_actions(request)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+    def get_actions(self, request: HttpRequest, action_location: Any = None) -> dict:
+        """Remove Django's built-in delete_selected (KeyQuerySet doesn't support it).
+
+        ``action_location`` must appear literally in the signature: Django
+        6.1's deprecation shim inspects it via ``get_func_args`` and emits
+        ``RemovedInDjango70Warning`` when absent. Django 6.0 calls without
+        it, so it is forwarded only when given.
+        """
+        kwargs = {} if action_location is None else {"action_location": action_location}
+        actions = super().get_actions(request, **kwargs)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
         actions.pop("delete_selected", None)
         return actions
 
@@ -613,7 +631,7 @@ class KeyAdminMixin:
             except Exception as exc:  # noqa: BLE001
                 messages.error(request, f"Error clearing cache: {exc}")
             return HttpResponseRedirect(
-                reverse("admin:django_cachex_key_changelist") + f"?cache={cache_name}",
+                reverse("admin:django_cachex_key_changelist") + "?" + urlencode({"cache": cache_name}),
             )
 
         # Help handling
@@ -630,7 +648,7 @@ class KeyAdminMixin:
         except ValueError, TypeError:
             cursor = 0
         try:
-            count = max(1, int(request.GET.get("count", 100)))
+            count = min(MAX_SCAN_COUNT, max(1, int(request.GET.get("count", 100))))
         except ValueError, TypeError:
             count = 100
         request._cachex_cursor = cursor  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
@@ -651,13 +669,20 @@ class KeyAdminMixin:
     @admin.action(description=_("Delete selected keys"), permissions=["delete"])
     def delete_selected_keys(self, request: HttpRequest, queryset: KeyQuerySet) -> None:
         deleted = 0
+        errors: list[str] = []
         for key_obj in queryset:
-            with contextlib.suppress(Exception):
+            try:
                 cache = get_cache(key_obj.cache_name)
                 cache.delete(key_obj.key_name)
                 deleted += 1
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"'{key_obj.key_name}': {exc}")
         if deleted:
             messages.success(request, f"Successfully deleted {deleted} key(s).")
+        if errors:
+            shown = "; ".join(errors[:3])
+            more = f" (+{len(errors) - 3} more)" if len(errors) > 3 else ""
+            messages.error(request, f"Failed to delete {len(errors)} key(s): {shown}{more}")
 
     # ------------------------------------------------------------------
     # Display columns

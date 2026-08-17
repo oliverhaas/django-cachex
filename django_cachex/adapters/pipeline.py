@@ -70,9 +70,13 @@ class Pipeline:
 
     def execute(self) -> list[Any]:
         """Execute all queued commands and decode the results."""
-        results = self._pipeline_adapter.execute()
         decoders = self._decoders
-        self._decoders = []
+        try:
+            results = self._pipeline_adapter.execute()
+        finally:
+            # The driver pipeline discards its queue on error; stale decoders
+            # would misalign against the next batch.
+            self._decoders = []
         decoded = []
         for result, decoder in zip(results, decoders, strict=True):
             decoded.append(decoder(result))
@@ -1633,21 +1637,27 @@ class AsyncPipeline(Pipeline):
         await self._pipeline_adapter.reset()
         self._decoders.clear()
 
-    def __exit__(self, *args: object) -> None:
-        """Block sync ``with`` on an async pipeline.
+    def __enter__(self) -> Self:
+        """Block sync ``with`` on an async pipeline before any commands queue.
 
-        ``Pipeline.__exit__`` calls a sync ``reset()``. The async pipeline
-        adapter's ``reset()`` returns a coroutine that would be silently
-        discarded, leaving connection state dangling.
+        The inherited ``Pipeline.__exit__`` calls a sync ``reset()``; on an
+        async adapter that returns a coroutine which would be silently
+        discarded, leaving connection state dangling. Failing at ``__enter__``
+        keeps the error next to the offending ``with`` statement rather than
+        after the block ran.
         """
         msg = "AsyncPipeline requires 'async with', not 'with'"
         raise TypeError(msg)
 
     async def execute(self) -> list[Any]:  # type: ignore[override]
         """Execute all queued commands asynchronously and decode the results."""
-        results = await self._pipeline_adapter.execute()
         decoders = self._decoders
-        self._decoders = []
+        try:
+            results = await self._pipeline_adapter.execute()
+        finally:
+            # The driver pipeline discards its queue on error; stale decoders
+            # would misalign against the next batch.
+            self._decoders = []
         return [decoder(result) for result, decoder in zip(results, decoders, strict=True)]
 
 

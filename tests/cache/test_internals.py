@@ -7,6 +7,7 @@ Reference: https://github.com/django/django/blob/main/tests/cache/tests.py
 """
 
 import asyncio
+import enum
 import gc
 import weakref
 from typing import TYPE_CHECKING
@@ -21,6 +22,12 @@ from django_cachex.adapters import RedisPyAdapter
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
     from tests.fixtures.containers import RedisContainerInfo
+
+
+class _Priority(enum.IntEnum):
+    # Module level so pickle can resolve it by qualname.
+    LOW = 1
+    HIGH = 3
 
 
 class TestRedisCacheInternals:
@@ -111,6 +118,34 @@ class TestRedisCacheInternals:
 
         # Strings are serialized to bytes
         assert isinstance(cache.encode("abc"), bytes)
+
+    def test_encode_serializes_int_subclasses(self, cache: RespCache):
+        """Only exact int passes through; IntEnum is serialized so its type survives.
+
+        Regression: isinstance-based dispatch stored IntEnum members as bare
+        ints, so they came back as plain int.
+        """
+        encoded = cache.encode(_Priority.HIGH)
+        assert isinstance(encoded, bytes)
+        assert cache.decode(encoded) is _Priority.HIGH
+
+    def test_bool_roundtrip(self, cache: RespCache):
+        cache.set("internals_bool_true", True)
+        assert cache.get("internals_bool_true") is True
+        cache.set("internals_bool_false", False)
+        assert cache.get("internals_bool_false") is False
+
+    def test_int_enum_roundtrip(self, cache: RespCache):
+        cache.set("internals_enum", _Priority.HIGH)
+        result = cache.get("internals_enum")
+        assert result is _Priority.HIGH
+        assert type(result) is _Priority
+
+    def test_plain_int_roundtrip(self, cache: RespCache):
+        cache.set("internals_int", 123)
+        result = cache.get("internals_int")
+        assert result == 123
+        assert type(result) is int
 
     def test_redis_pool_options(self, redis_container: RedisContainerInfo):
         from contextlib import suppress

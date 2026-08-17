@@ -1,5 +1,11 @@
 """Tests for the semaphore primitive (local + RESP backends)."""
 
+import threading
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 
 def test_semaphore_module_exports():
     from django_cachex.semaphore import (
@@ -330,9 +336,8 @@ class TestLocalCapacityChange:
 
         from django_cachex.semaphore import Semaphore
 
-        # Distinct names per test avoid cross-test interference in the
-        # default process-wide registry. Cache-attached registries already
-        # isolate by instance.
+        # Distinct names avoid interference in the process-wide registry;
+        # cache-attached registries isolate by LOCATION.
         Semaphore("capchange_a", capacity=10)
 
         with warnings.catch_warnings(record=True) as w:
@@ -385,6 +390,108 @@ class TestLocalAsyncCancellation:
             ok = await fresh.aacquire(blocking=True, timeout=1)
             assert ok is True
             await fresh.arelease()
+
+        asyncio.run(run())
+
+
+class _RendezvousLock:
+    """Stand-in for ``_LocalState.lock`` holding the first ``parties`` entries
+    until all of them arrive, so every thread is provably past any check that
+    sits outside the lock. A barrier in the test body cannot do this: under the
+    GIL the first thread through it finishes the whole method uninterrupted."""
+
+    def __init__(self, real: Any, parties: int = 2):
+        self._real = real
+        self._barrier = threading.Barrier(parties)
+        self._remaining = parties
+        self._guard = threading.Lock()
+
+    def __enter__(self) -> Any:
+        with self._guard:
+            wait = self._remaining > 0
+            self._remaining -= 1
+        if wait:
+            self._barrier.wait(timeout=10)
+        return self._real.__enter__()
+
+    def __exit__(self, *exc_info: object) -> Any:
+        return self._real.__exit__(*exc_info)
+
+
+def _race(target: Callable[[], bool], parties: int = 2) -> list[bool]:
+    """Run ``target`` in ``parties`` threads, recording True for each caller
+    that was let through and False for each that was rejected."""
+    from django_cachex.semaphore import SemaphoreError
+
+    outcomes: list[bool] = []
+    lock = threading.Lock()
+
+    def attempt() -> None:
+        try:
+            result = target()
+        except SemaphoreError:
+            result = False
+        with lock:
+            outcomes.append(bool(result))
+
+    threads = [threading.Thread(target=attempt) for _ in range(parties)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+    return outcomes
+
+
+class TestLocalConcurrentMisuse:
+    """Sharing one instance across threads is misuse, but it must corrupt
+    nothing: the shared budget stays consistent and the loser raises."""
+
+    def test_concurrent_release_releases_once(self):
+        # Regression: the held check ran outside the state lock, letting
+        # racing release() calls double-decrement the shared budget.
+        from django_cachex.semaphore import Semaphore
+
+        sem = Semaphore("race_release", capacity=1)
+        assert sem.acquire(blocking=False) is True
+        sem._state.lock = _RendezvousLock(sem._state.lock)
+
+        def release() -> bool:
+            sem.release()
+            return True
+
+        outcomes = _race(release)
+        assert outcomes.count(True) == 1, outcomes
+        assert sem._state.used == 0
+
+    def test_concurrent_acquire_admits_once(self):
+        # Regression: the held check ran outside the state lock, letting
+        # racing acquire() calls both admit and permanently leak budget.
+        from django_cachex.semaphore import Semaphore
+
+        sem = Semaphore("race_acquire", capacity=2)
+        sem._state.lock = _RendezvousLock(sem._state.lock)
+
+        outcomes = _race(lambda: sem.acquire(blocking=False))
+        assert outcomes.count(True) == 1, outcomes
+        assert sem._state.used == 1
+        sem.release()
+        assert sem._state.used == 0
+
+    def test_double_aacquire_raises(self):
+        """The held check relocated into the locked loop still rejects
+        re-acquiring a held instance on the async path."""
+        import asyncio
+
+        import pytest
+
+        from django_cachex.semaphore import Semaphore, SemaphoreError
+
+        async def run() -> None:
+            sem = Semaphore("race_aacquire", capacity=2)
+            assert await sem.aacquire(blocking=False) is True
+            with pytest.raises(SemaphoreError, match="already held"):
+                await sem.aacquire(blocking=False)
+            await sem.arelease()
 
         asyncio.run(run())
 
@@ -576,6 +683,214 @@ class TestRespLeaseReclaim:
                 a.release()
             with contextlib.suppress(Exception):
                 b.release()
+
+
+class TestRespQueueReap:
+    def test_stale_queue_entry_reaped_on_acquire(self, cache):
+        # Regression: a crashed waiter's queue entry sat at the head forever;
+        # acquire now reaps entries whose liveness key expired.
+        full_name = cache.make_and_validate_key("resp_queue_reap")
+        queue_key = "{" + full_name + "}:queue"
+        # A dead waiter: queue entry present, liveness key absent.
+        cache.adapter.zadd(queue_key, {b"dead-token": 1.0})
+
+        fresh = cache.semaphore("resp_queue_reap", capacity=1, lease=10)
+        assert fresh.acquire(blocking=False) is True
+        fresh.release()
+        assert cache.adapter.zscore(queue_key, b"dead-token") is None
+
+    def test_stale_queue_entry_reaped_on_aacquire(self, cache):
+        import asyncio
+
+        async def run() -> None:
+            full_name = cache.make_and_validate_key("aresp_queue_reap")
+            queue_key = "{" + full_name + "}:queue"
+            cache.adapter.zadd(queue_key, {b"dead-token": 1.0})
+
+            fresh = await cache.asemaphore("aresp_queue_reap", capacity=1, lease=10)
+            assert await fresh.aacquire(blocking=False) is True
+            await fresh.arelease()
+            assert cache.adapter.zscore(queue_key, b"dead-token") is None
+
+        asyncio.run(run())
+
+    def test_live_waiter_not_reaped(self, cache):
+        """A queued waiter that polls (refreshing its liveness key) keeps its
+        queue position; a later non-blocking acquirer is not admitted past it."""
+        import threading
+        import time
+
+        holder = cache.semaphore("resp_live_waiter", capacity=1, lease=10)
+        assert holder.acquire(blocking=False) is True
+
+        result: dict[str, object] = {}
+        may_release = threading.Event()
+
+        def waiter_thread() -> None:
+            waiter = cache.semaphore("resp_live_waiter", capacity=1, lease=10, timeout=5)
+            result["ok"] = waiter.acquire(blocking=True)
+            # Keep the slot until the jumper has had its turn. Releasing here
+            # would hand the jumper a legitimately free slot whenever the
+            # waiter's poll lands between holder.release() and the assert.
+            may_release.wait(10)
+            waiter.release()
+
+        t = threading.Thread(target=waiter_thread)
+        t.start()
+        time.sleep(0.3)  # let the waiter enqueue and heartbeat
+
+        # The queued (live) waiter holds the head slot, so a non-blocking
+        # acquire must not jump the queue even once capacity frees up. Whether
+        # or not the waiter has been admitted yet, the jumper is refused.
+        jumper = cache.semaphore("resp_live_waiter", capacity=1, lease=10)
+        holder.release()
+        assert jumper.acquire(blocking=False) is False
+
+        may_release.set()
+        t.join(timeout=10)
+        assert result["ok"] is True
+
+
+class TestRespAcquireInterrupted:
+    def test_interrupted_blocking_acquire_dequeues(self, cache):
+        # Regression: KeyboardInterrupt between enqueue and admit leaked the
+        # queue entry, blocking later acquirers on a full semaphore.
+        import pytest
+
+        from django_cachex.cache._semaphore_lua import ACQUIRE_LUA
+
+        class InterruptSecondAcquire:
+            """Delegate to the real adapter, but raise on the second ACQUIRE
+            poll (after the first has enqueued the token)."""
+
+            def __init__(self, inner) -> None:
+                self._inner = inner
+                self._acquire_calls = 0
+
+            def eval(self, script, numkeys, *args):
+                if script == ACQUIRE_LUA:
+                    self._acquire_calls += 1
+                    if self._acquire_calls == 2:
+                        raise KeyboardInterrupt
+                return self._inner.eval(script, numkeys, *args)
+
+        holder = cache.semaphore("resp_interrupt", capacity=1, lease=10)
+        assert holder.acquire(blocking=False) is True
+
+        waiter = cache.semaphore("resp_interrupt", capacity=1, lease=10)
+        waiter._adapter = InterruptSecondAcquire(cache.adapter)
+        with pytest.raises(KeyboardInterrupt):
+            waiter.acquire(blocking=True, timeout=5)
+
+        assert waiter._token is None
+        full_name = cache.make_and_validate_key("resp_interrupt")
+        queue_key = "{" + full_name + "}:queue"
+        assert cache.adapter.zcard(queue_key) == 0
+
+        # With the queue entry cleaned up, a fresh acquire succeeds as soon
+        # as the holder releases (no phantom head to wait out).
+        holder.release()
+        fresh = cache.semaphore("resp_interrupt", capacity=1, lease=10)
+        assert fresh.acquire(blocking=False) is True
+        fresh.release()
+
+
+class TestRespConcurrentMisuse:
+    """Sharing one RespSemaphore across threads is misuse, but it must not
+    double-claim the server-side budget: the loser raises."""
+
+    def test_concurrent_acquire_claims_once(self, monkeypatch):
+        # Regression: the held check ran outside any lock, so two threads both
+        # minted a token, both were admitted, and one claim leaked.
+        import contextlib
+        import secrets
+        import threading
+
+        from django_cachex.cache._semaphore_lua import ACQUIRE_LUA, RELEASE_LUA
+        from django_cachex.semaphore import RespSemaphore, SemaphoreError
+
+        class StubAdapter:
+            """Emulates the acquire/release Lua fast path with local accounting."""
+
+            def __init__(self, capacity):
+                self.capacity = capacity
+                self.used = 0
+                self.claims = {}
+                self.lock = threading.Lock()
+
+            def eval(self, script, numkeys, *args):
+                if script not in (ACQUIRE_LUA, RELEASE_LUA):
+                    return 0
+                token = args[3]
+                with self.lock:
+                    if script == RELEASE_LUA:
+                        self.used -= self.claims.pop(token, 0)
+                        return [b"released", self.used, 0]
+                    weight = int(args[4])
+                    if self.used + weight <= self.capacity:
+                        self.used += weight
+                        self.claims[token] = weight
+                        return [b"acquired", self.used, self.capacity]
+                    return [b"queued", self.used, self.capacity]
+
+        adapter = StubAdapter(capacity=2)
+        # Capacity 2 with weight 1: a double claim would be admitted twice.
+        sem = RespSemaphore(adapter, "resp_race", capacity=2, lease=10)
+
+        barrier = threading.Barrier(2)
+        real_token_hex = secrets.token_hex
+
+        def barrier_token_hex(nbytes=None):
+            # Both threads meet here only if both got past the held check;
+            # once the claim is locked the second never mints and this times out.
+            with contextlib.suppress(threading.BrokenBarrierError):
+                barrier.wait(timeout=0.25)
+            return real_token_hex(nbytes)
+
+        monkeypatch.setattr(secrets, "token_hex", barrier_token_hex)
+
+        outcomes = []
+
+        def attempt():
+            try:
+                outcomes.append(sem.acquire(blocking=False))
+            except SemaphoreError:
+                outcomes.append(False)
+
+        first = threading.Thread(target=attempt)
+        second = threading.Thread(target=attempt)
+        first.start()
+        second.start()
+        first.join()
+        second.join()
+
+        assert outcomes.count(True) == 1, outcomes
+        assert adapter.used == 1
+        assert len(adapter.claims) == 1
+        # The winner holds the only claim, so its release frees the budget.
+        sem.release()
+        assert adapter.used == 0
+        assert adapter.claims == {}
+
+    def test_double_aacquire_raises(self, cache):
+        """The claim lock is shared with the async path, which still rejects
+        re-acquiring a held instance."""
+        import asyncio
+
+        import pytest
+
+        from django_cachex.semaphore import SemaphoreError
+
+        async def run() -> None:
+            sem = await cache.asemaphore("resp_race_aacquire", capacity=2, lease=10)
+            assert await sem.aacquire(blocking=False) is True
+            try:
+                with pytest.raises(SemaphoreError, match="already held"):
+                    await sem.aacquire(blocking=False)
+            finally:
+                await sem.arelease()
+
+        asyncio.run(run())
 
 
 class TestRespExtend:

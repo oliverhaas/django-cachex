@@ -80,7 +80,7 @@ The admin adapts based on backend capabilities:
 | Delete key | Yes | Yes | No |
 | Edit key | Yes | Yes | No |
 | Get TTL | Yes | Yes | No |
-| Get type | Yes | Limited (no RESP types) | No |
+| Get type | Yes | Yes (no stream type) | No |
 | Cache info | Yes | Yes | No |
 | Flush cache | Yes | Yes | No |
 

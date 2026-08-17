@@ -3,7 +3,7 @@
 //
 // The shape of each command on the wire is ``(name, args)``. Per-command
 // parsers (Python callables in ``django_cachex.adapters._pipeline_parsers``)
-// normalize the response shape — RESP2 flat lists → dicts, bytes → float,
+// normalize the response shape: RESP2 flat lists → dicts, bytes → float,
 // stream entries → ``(id, fields)`` tuples, etc.
 //
 // Sync ``execute()`` resolves to ``list[Any]`` directly. Async
@@ -1932,7 +1932,7 @@ impl RedisRsAsyncPipelineAdapter {
     }
 }
 
-// Silence unused-import warnings — PyTuple is used via cast paths in extension.
+// Silence unused-import warnings. PyTuple is used via cast paths in extension.
 const _: fn() = || {
     let _ = std::marker::PhantomData::<PyTuple>;
 };

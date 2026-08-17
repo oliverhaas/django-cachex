@@ -11,6 +11,15 @@ if TYPE_CHECKING:
     from django_cachex.cache import RespCache
 
 
+def assert_ttl_seconds(actual: int | None, expected: int) -> None:
+    """Assert a whole-second TTL, allowing the second a slow round-trip can shave off.
+
+    Redis rounds TTL to the nearest second, so once more than 500ms has passed
+    since the write it reports ``expected - 1``.
+    """
+    assert actual in (expected - 1, expected)
+
+
 class TestSetWithTimeout:
     """Tests for set() with timeout parameter."""
 
@@ -69,6 +78,37 @@ class TestSetWithTimeout:
         cache.set("preserve_me", "changed", timeout=-1, nx=True)
         assert cache.get("preserve_me") == "original"
 
+    def test_zero_timeout_with_xx_removes_existing_value(self, cache: RespCache):
+        # Regression: timeout=0 with xx was a no-op that left stale data behind.
+        cache.set("xx_zero", "stale", timeout=None)
+        result = cache.set("xx_zero", "new", timeout=0, xx=True)
+        assert result is True
+        assert cache.get("xx_zero") is None
+
+    def test_zero_timeout_with_xx_on_missing_key_fails(self, cache: RespCache):
+        cache.delete("xx_zero_missing")
+        result = cache.set("xx_zero_missing", "value", timeout=0, xx=True)
+        assert result is False
+        assert cache.get("xx_zero_missing") is None
+
+    def test_zero_timeout_with_nx_on_missing_key_reports_success(self, cache: RespCache):
+        cache.delete("nx_zero")
+        result = cache.set("nx_zero", "value", timeout=0, nx=True)
+        assert result is True
+        assert cache.get("nx_zero") is None
+
+    def test_zero_timeout_with_nx_preserves_existing(self, cache: RespCache):
+        cache.set("nx_zero_existing", "original", timeout=None)
+        result = cache.set("nx_zero_existing", "changed", timeout=0, nx=True)
+        assert result is False
+        assert cache.get("nx_zero_existing") == "original"
+
+    def test_zero_timeout_with_get_returns_old_value_and_expires(self, cache: RespCache):
+        cache.set("get_zero", "old", timeout=None)
+        result = cache.set("get_zero", "new", timeout=0, get=True)
+        assert result == "old"
+        assert cache.get("get_zero") is None
+
     def test_subsecond_float_timeout_is_accepted(self, cache: RespCache):
         # Sub-second float timeout must be accepted (not raise). Whether the
         # key has already expired by the time we read is a race we don't
@@ -82,7 +122,7 @@ class TestTTLOperations:
 
     def test_ttl_returns_remaining_seconds(self, cache: RespCache):
         cache.set("ttl_check", "data", 10)
-        assert pytest.approx(cache.ttl("ttl_check")) == 10
+        assert_ttl_seconds(cache.ttl("ttl_check"), 10)
 
     def test_ttl_returns_none_for_persistent_key(self, cache: RespCache):
         cache.set("no_expiry", "permanent", timeout=None)
@@ -146,7 +186,7 @@ class TestExpireOperations:
     def test_expire_sets_ttl(self, cache: RespCache):
         cache.set("to_expire", "data", timeout=None)
         assert cache.expire("to_expire", 20) is True
-        assert pytest.approx(cache.ttl("to_expire")) == 20
+        assert_ttl_seconds(cache.ttl("to_expire"), 20)
 
     def test_expire_on_missing_key_returns_false(self, cache: RespCache):
         assert cache.expire("ghost_key", 20) is False
@@ -310,6 +350,28 @@ class TestAsyncSetWithTimeout:
         assert await cache.aget("apreserve_me") == "original"
 
     @pytest.mark.asyncio
+    async def test_azero_timeout_with_xx_removes_existing_value(self, cache: RespCache):
+        # Regression: timeout=0 with xx was a no-op that left stale data behind.
+        await cache.aset("axx_zero", "stale", timeout=None)
+        result = await cache.aset("axx_zero", "new", timeout=0, xx=True)
+        assert result is True
+        assert await cache.aget("axx_zero") is None
+
+    @pytest.mark.asyncio
+    async def test_azero_timeout_with_nx_preserves_existing(self, cache: RespCache):
+        await cache.aset("anx_zero_existing", "original", timeout=None)
+        result = await cache.aset("anx_zero_existing", "changed", timeout=0, nx=True)
+        assert result is False
+        assert await cache.aget("anx_zero_existing") == "original"
+
+    @pytest.mark.asyncio
+    async def test_azero_timeout_with_get_returns_old_value_and_expires(self, cache: RespCache):
+        await cache.aset("aget_zero", "old", timeout=None)
+        result = await cache.aset("aget_zero", "new", timeout=0, get=True)
+        assert result == "old"
+        assert await cache.aget("aget_zero") is None
+
+    @pytest.mark.asyncio
     async def test_asubsecond_float_timeout_is_accepted(self, cache: RespCache):
         await cache.aset("atiny_ttl", "value", timeout=0.00001)
 
@@ -320,7 +382,7 @@ class TestAsyncTimeouts:
     @pytest.mark.asyncio
     async def test_attl_returns_remaining_seconds(self, cache: RespCache):
         cache.set("attl_check", "data", 10)
-        assert pytest.approx(await cache.attl("attl_check")) == 10
+        assert_ttl_seconds(await cache.attl("attl_check"), 10)
 
     @pytest.mark.asyncio
     async def test_attl_returns_none_for_persistent_key(self, cache: RespCache):
@@ -382,7 +444,7 @@ class TestAsyncTimeouts:
     async def test_aexpire_sets_ttl(self, cache: RespCache):
         cache.set("aexpire_key", "data", timeout=None)
         assert await cache.aexpire("aexpire_key", 20) is True
-        assert pytest.approx(cache.ttl("aexpire_key")) == 20
+        assert_ttl_seconds(cache.ttl("aexpire_key"), 20)
 
     @pytest.mark.asyncio
     async def test_aexpire_on_missing_key_returns_false(self, cache: RespCache):

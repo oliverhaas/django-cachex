@@ -12,6 +12,7 @@ classifiers = [
   "Environment :: Web Environment",
   "Framework :: Django",
   "Framework :: Django :: 6.0",
+  "Framework :: Django :: 6.1",
   "Intended Audience :: Developers",
   "Operating System :: OS Independent",
   "Programming Language :: Python",
@@ -31,7 +32,8 @@ valkey-py = ["valkey>=6.1.0,<7"]
 libvalkey = ["valkey[libvalkey]>=6.1.0,<7"]
 redis-py = ["redis>=6,<9"]
 hiredis = ["redis[hiredis]<9,>=6"]
-# Rust I/O driver: separate binary package, prebuilt wheels for Linux x86_64 only.
+# Rust I/O driver: separate binary package, prebuilt wheels for Linux x86_64/aarch64,
+# macOS arm64, and Windows amd64 (cp314 and cp314t).
 redis-rs = ["django-cachex-redis-rs==0.4.0"]
 # valkey-glide: Rust-cored Valkey client. Sync and async are separate distributions.
 valkey-glide = ["valkey-glide-sync>=2.3,<3", "valkey-glide>=2.3,<3"]
@@ -124,6 +126,7 @@ ignore = [
   "ARG002",   # Unused args: API compat (key in get_client), stub classes (*args, **kwargs)
   "ASYNC109", # timeout param is cache TTL, not asyncio.timeout
   "COM812",   # Conflicts with ruff-format
+  "CPY",      # No per-file copyright notices in this project
   "D",        # Docstrings - will add incrementally
   "E501",     # Line length handled by config
   "EM",       # Exception strings inline are fine
@@ -131,6 +134,7 @@ ignore = [
   "PERF203",  # try/except in loop is fine here
   "PLC0415",  # Dynamic imports intentional
   "PLR0913",  # Too many args - Redis commands have many options (zadd, lock, lpos, blmove)
+  "PLR0917",  # Too many positional args - same rationale as PLR0913
   "PLR2004",  # Magic values like -2 for TTL are Redis-documented return codes
   "SLF001",   # Private member access needed for Cache/CacheClient delegation
   "TRY003",   # Long exception messages are helpful for debugging
@@ -176,6 +180,16 @@ suppress-none-returning = true # Don't require -> None on functions
   "INP001", # Standalone scripts, not a package
   "T201",   # print() is the output mechanism
 ]
+
+[tool.djlint]
+# djLint reads this list instead of stdin when the source argument is `-`, which
+# is how the pre-commit hook invokes it.
+files = ["django_cachex/admin/templates"]
+# The admin templates extend Django's own admin, which emits `&rsaquo;` in
+# breadcrumbs (H023), and they carry inline styles rather than ship a stylesheet
+# the host project would have to collect (H021).
+ignore = "H021,H023"
+profile = "django"
 
 [tool.mypy]
 python_version = "3.14"

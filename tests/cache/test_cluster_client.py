@@ -39,19 +39,19 @@ class TestRedisClusterAdapter:
     def test_get_client_creates_cluster(self):
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
-        mock_cluster_cls.return_value = mock_cluster
+        mock_cluster_cls.from_url.return_value = mock_cluster
 
         client = setup_cluster_client(mock_cluster_cls)
 
         result = client.get_client()
 
         assert result == mock_cluster
-        mock_cluster_cls.assert_called_once()
+        mock_cluster_cls.from_url.assert_called_once()
 
     def test_get_client_caches_cluster(self):
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
-        mock_cluster_cls.return_value = mock_cluster
+        mock_cluster_cls.from_url.return_value = mock_cluster
 
         client = setup_cluster_client(mock_cluster_cls)
 
@@ -59,7 +59,7 @@ class TestRedisClusterAdapter:
         result2 = client.get_client()
 
         assert result1 is result2
-        assert mock_cluster_cls.call_count == 1
+        assert mock_cluster_cls.from_url.call_count == 1
 
     def test_group_keys_by_slot(self):
         client = setup_cluster_client()
@@ -92,7 +92,7 @@ class TestRedisClusterAdapter:
 
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
-        mock_cluster_cls.return_value = mock_cluster
+        mock_cluster_cls.from_url.return_value = mock_cluster
 
         client = setup_cluster_client(mock_cluster_cls)
         client._serializers = [MagicMock()]
@@ -133,7 +133,7 @@ class TestRedisClusterAdapter:
     def test_delete_many_groups_by_slot(self):
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
-        mock_cluster_cls.return_value = mock_cluster
+        mock_cluster_cls.from_url.return_value = mock_cluster
 
         client = setup_cluster_client(mock_cluster_cls)
 
@@ -161,7 +161,7 @@ class TestRedisClusterAdapter:
         """Test delete_many with keys in the same slot uses single delete."""
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
-        mock_cluster_cls.return_value = mock_cluster
+        mock_cluster_cls.from_url.return_value = mock_cluster
 
         client = setup_cluster_client(mock_cluster_cls)
 
@@ -181,7 +181,7 @@ class TestRedisClusterAdapter:
     def test_clear_flushes_all_primaries(self):
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
-        mock_cluster_cls.return_value = mock_cluster
+        mock_cluster_cls.from_url.return_value = mock_cluster
         mock_cluster_cls.PRIMARIES = "primaries"
 
         client = setup_cluster_client(mock_cluster_cls)
@@ -195,7 +195,7 @@ class TestRedisClusterAdapter:
     def test_keys_scans_all_primaries(self):
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
-        mock_cluster_cls.return_value = mock_cluster
+        mock_cluster_cls.from_url.return_value = mock_cluster
         mock_cluster_cls.PRIMARIES = "primaries"
 
         client = setup_cluster_client(mock_cluster_cls)
@@ -228,7 +228,7 @@ class TestRedisClusterAdapter:
     def test_keys_empty_result(self):
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
-        mock_cluster_cls.return_value = mock_cluster
+        mock_cluster_cls.from_url.return_value = mock_cluster
         mock_cluster_cls.PRIMARIES = "primaries"
 
         client = setup_cluster_client(mock_cluster_cls)
@@ -248,7 +248,7 @@ class TestRedisClusterAdapter:
     def test_iter_keys_scans_all_primaries(self):
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
-        mock_cluster_cls.return_value = mock_cluster
+        mock_cluster_cls.from_url.return_value = mock_cluster
         mock_cluster_cls.PRIMARIES = "primaries"
 
         client = setup_cluster_client(mock_cluster_cls)
@@ -284,7 +284,7 @@ class TestRedisClusterAdapter:
     def test_iter_keys_with_itersize(self):
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
-        mock_cluster_cls.return_value = mock_cluster
+        mock_cluster_cls.from_url.return_value = mock_cluster
         mock_cluster_cls.PRIMARIES = "primaries"
 
         client = setup_cluster_client(mock_cluster_cls)
@@ -306,7 +306,7 @@ class TestRedisClusterAdapter:
     def test_delete_pattern_deletes_across_primaries(self):
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
-        mock_cluster_cls.return_value = mock_cluster
+        mock_cluster_cls.from_url.return_value = mock_cluster
         mock_cluster_cls.PRIMARIES = "primaries"
 
         client = setup_cluster_client(mock_cluster_cls)
@@ -339,7 +339,7 @@ class TestRedisClusterAdapter:
     def test_delete_pattern_empty_result(self):
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
-        mock_cluster_cls.return_value = mock_cluster
+        mock_cluster_cls.from_url.return_value = mock_cluster
         mock_cluster_cls.PRIMARIES = "primaries"
 
         client = setup_cluster_client(mock_cluster_cls)
@@ -360,7 +360,7 @@ class TestRedisClusterAdapter:
     def test_delete_pattern_groups_by_slot(self):
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
-        mock_cluster_cls.return_value = mock_cluster
+        mock_cluster_cls.from_url.return_value = mock_cluster
         mock_cluster_cls.PRIMARIES = "primaries"
 
         client = setup_cluster_client(mock_cluster_cls)
@@ -392,7 +392,7 @@ class TestRedisClusterAdapter:
         """close() is a no-op; cluster persists after close."""
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
-        mock_cluster_cls.return_value = mock_cluster
+        mock_cluster_cls.from_url.return_value = mock_cluster
 
         client = setup_cluster_client(mock_cluster_cls)
         # Create the cluster instance

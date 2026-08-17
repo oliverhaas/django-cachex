@@ -20,7 +20,7 @@ cache.sadd("{user:123}:followers", "alice", "bob")
 cache.sadd("{user:123}:following", "charlie")
 
 # Multi-key operations now work
-cache.sdiff("{user:123}:followers", "{user:123}:following")
+cache.sdiff(["{user:123}:followers", "{user:123}:following"])
 ```
 
 Use hash tags when you need:
@@ -30,11 +30,9 @@ Use hash tags when you need:
 - Transactions across multiple keys
 
 ```python
-# Group related keys
-"{user:123}:profile"
-"{user:123}:settings"
-"{order:456}:items"
-"{order:456}:status"
+# Group related keys: one hash tag per slot
+user_keys = ["{user:123}:profile", "{user:123}:settings"]
+order_keys = ["{order:456}:items", "{order:456}:status"]
 ```
 
 !!! warning "Avoid Hot Spots"

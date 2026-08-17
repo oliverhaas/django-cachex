@@ -5,6 +5,10 @@ repo_url: https://github.com/oliverhaas/django-cachex
 repo_name: oliverhaas/django-cachex
 edit_uri: edit/main/docs/
 
+# Internal planning notes, not part of the published site.
+exclude_docs: |
+  superpowers/
+
 theme:
   name: material
   palette:

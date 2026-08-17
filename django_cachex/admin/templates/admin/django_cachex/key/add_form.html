@@ -15,7 +15,7 @@
 <div class="breadcrumbs">
     <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
     &rsaquo; <a href="{% url 'admin:django_cachex_cache_changelist' %}">{% trans 'Caches' %}</a>
-    &rsaquo; <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}">{{ cache_name }}</a>
+    &rsaquo; <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name|urlencode }}">{{ cache_name }}</a>
     &rsaquo; {% trans 'Add Key' %}
 </div>
 {% endblock %}
@@ -25,7 +25,7 @@
     <!-- Object tools -->
     <ul class="object-tools">
         <li>
-            <a href="?cache={{ cache_name }}{% if not help_active %}&help=1{% endif %}">{% trans 'Help' %}</a>
+            <a href="?cache={{ cache_name|urlencode }}{% if not help_active %}&help=1{% endif %}">{% trans 'Help' %}</a>
         </li>
     </ul>
 
@@ -67,7 +67,7 @@
 
         <div class="submit-row">
             <input type="submit" value="{% trans 'Continue' %}" class="default" name="_continue">
-            <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name }}" class="closelink" style="margin-left: auto; text-decoration: none;">{% trans 'Back' %}</a>
+            <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name|urlencode }}" class="closelink" style="margin-left: auto; text-decoration: none;">{% trans 'Back' %}</a>
         </div>
     </form>
 </div>

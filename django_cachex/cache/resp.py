@@ -17,6 +17,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Any, cast, override
 
 from django.core.cache.backends.base import DEFAULT_TIMEOUT
+from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
 
 if TYPE_CHECKING:
@@ -103,8 +104,7 @@ class RespCache(BaseCachex):
 
         self._options = params.get("OPTIONS", {})
 
-        # ``REVERSE_KEY_FUNCTION`` lives at the top level alongside Django's
-        # ``KEY_FUNCTION`` is same shape, mirror semantics.
+        # Top-level like Django's ``KEY_FUNCTION``; dotted path or callable.
         reverse_key_func = params.get("REVERSE_KEY_FUNCTION")
         if reverse_key_func is not None:
             if isinstance(reverse_key_func, str):
@@ -138,6 +138,9 @@ class RespCache(BaseCachex):
         if config is None:
             config = "django_cachex.serializers.pickle.PickleSerializer"
         items: list = config if isinstance(config, list) else [config]
+        if not items:
+            msg = "OPTIONS['serializer'] must not be an empty list; configure at least one serializer or omit it"
+            raise ImproperlyConfigured(msg)
         return [_load_codec(item) for item in items]
 
     @staticmethod
@@ -150,21 +153,18 @@ class RespCache(BaseCachex):
     def _decompress(self, value: bytes) -> bytes:
         """Decompress with fallback support for multiple compressors.
 
-        Returns ``value`` unchanged when no compressors are configured.
-        Raises ``CompressorError`` if every configured compressor fails. To
-        accept uncompressed payloads alongside compressed ones (e.g.
-        mid-migration), keep the previously-used compressor at the end of
-        the fallback chain.
+        Returns ``value`` unchanged when no compressors are configured or
+        when every configured compressor fails: ``compress()`` stores
+        payloads at or below ``min_length`` uncompressed, so those raw
+        bytes must fall through to the deserializer. Genuinely corrupt
+        data then surfaces as a ``SerializerError`` there.
         """
-        if not self._compressors:
-            return value
-        last_error: CompressorError | None = None
         for compressor in self._compressors:
             try:
                 return compressor.decompress(value)
-            except CompressorError as e:
-                last_error = e
-        raise last_error if last_error is not None else CompressorError("decompression failed")
+            except CompressorError:
+                continue
+        return value
 
     def _deserialize(self, value: bytes) -> Any:
         """Deserialize with fallback support for multiple serializers."""
@@ -180,8 +180,10 @@ class RespCache(BaseCachex):
         raise SerializerError("No serializers configured")
 
     def encode(self, value: Any) -> bytes | int:
-        """Encode a value for storage (serialize + compress). Plain ints pass through unchanged."""
-        if isinstance(value, bool) or not isinstance(value, int):
+        """Encode a value for storage (serialize + compress). Exact ints pass through unchanged."""
+        # Not isinstance(): bool and int subclasses (IntEnum, IntFlag) go
+        # through the serializer so they round-trip with their type intact.
+        if type(value) is not int:
             value = self._serializers[0].dumps(value)
             if self._compressors:
                 return self._compressors[0].compress(value)
@@ -219,13 +221,22 @@ class RespCache(BaseCachex):
         return self.key_func(pattern, escaped_prefix, ver)
 
     def reverse_key(self, key: str) -> str:
-        """Reverse a made key back to original (strip prefix:version:)."""
+        """Reverse a made key back to original (strip prefix:version:).
+
+        Segments are only stripped when the key matches this cache's
+        ``prefix:version:key`` layout, so a ``key_prefix`` containing colons
+        still round-trips; anything else is returned unchanged rather than
+        losing unrelated leading segments.
+        """
         if self._reverse_key_func is not None:
             return self._reverse_key_func(key)
-        parts = key.split(":", 2)
-        if len(parts) == 3:
-            return parts[2]
-        return key
+        prefix = f"{self.key_prefix}:"
+        if not key.startswith(prefix):
+            return key
+        _version, sep, original = key.removeprefix(prefix).partition(":")
+        if not sep:
+            return key
+        return original
 
     # =========================================================================
     # Core Cache Operations (Django's BaseCache interface)
@@ -387,16 +398,37 @@ class RespCache(BaseCachex):
         return None
 
     @override
-    def touch(self, key: str, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
-        """Update the timeout on a key."""
+    def touch(
+        self,
+        key: str,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
+    ) -> bool:
+        """Update the timeout on a key.
+
+        With stampede prevention active, the stored TTL gets the same
+        buffer that ``set()`` applies, keeping the logical remaining TTL
+        intact.
+        """
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.touch(key, self.get_backend_timeout(timeout))
+        timeout_s = self.adapter.get_timeout_with_buffer(self.get_backend_timeout(timeout), stampede_prevention)
+        return self.adapter.touch(key, timeout_s)
 
     @override
-    async def atouch(self, key: str, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
+    async def atouch(
+        self,
+        key: str,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
+    ) -> bool:
         """Update the timeout on a key asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.atouch(key, self.get_backend_timeout(timeout))
+        timeout_s = self.adapter.get_timeout_with_buffer(self.get_backend_timeout(timeout), stampede_prevention)
+        return await self.adapter.atouch(key, timeout_s)
 
     @override
     def delete(self, key: str, version: int | None = None) -> bool:

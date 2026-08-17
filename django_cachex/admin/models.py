@@ -1,4 +1,5 @@
 from typing import Any
+from urllib.parse import quote, unquote
 
 from django.conf import settings
 from django.core.cache import InvalidCacheBackendError
@@ -131,15 +132,20 @@ class Key(models.Model):
 
     @classmethod
     def make_pk(cls, cache_name: str, key_name: str) -> str:
-        """Create a primary key from cache name and key name."""
-        return f"{cache_name}:{key_name}"
+        """Create a primary key from cache name and key name.
+
+        The cache name is percent-encoded so a ``:`` in it can't be confused
+        with the separator; key names may contain ``:`` freely because
+        ``parse_pk`` splits on the first separator only.
+        """
+        return f"{quote(cache_name, safe='')}:{key_name}"
 
     @classmethod
     def parse_pk(cls, pk: str) -> tuple[str, str]:
         """Parse a primary key into (cache_name, key_name)."""
         parts = pk.split(":", 1)
         if len(parts) == 2:
-            return parts[0], parts[1]
+            return unquote(parts[0]), parts[1]
         return "", pk
 
     @classmethod
