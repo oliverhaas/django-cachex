@@ -4,6 +4,7 @@
 
 ### Fixes
 
+- **Admin warnings and field errors are readable in dark mode.** The key detail page's complex-value notice inlined light-theme colors and set no foreground, so dark mode drew `.help`'s near-white text on pale yellow. It now uses the admin's own `messagelist` warning styling, which follows the active theme. The add form's client-side field errors hardcoded the light-theme error red for the same reason and now take `--error-fg`.
 - **Semaphore `release()` and `extend()` no longer act on a token they don't own.** Both re-read `self._token` after their "not held" guard, so a racing re-acquire on the same instance could install a new token in between; the command then ran against that live claim, and `release()` cleared the field to `None`. The token is now snapshotted under the same lock `_claim()` uses, and `release()` clears it only if it is still the one it entered with.
 - **RESP semaphores no longer wedge when Redis evicts their bookkeeping.** The reaper only ever adjusted the `used` counter by a delta, so losing the claims hash to `maxmemory` eviction left `used` pinned at capacity with nothing left to subtract and every later acquire failing forever. Losing the state hash instead made `used` read zero and admitted past capacity. `used` is now derived from the surviving claims during the walk the reaper already performs, which costs no extra round trip and self-heals both directions.
 

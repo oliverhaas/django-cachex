@@ -1,9 +1,9 @@
 {% load i18n %}
 <!-- String Value Editor (default for string type or when type data not available) -->
 <fieldset class="module aligned">
-    <h2>{% trans 'Value' %}{% if value_is_editable %} <span class="quiet" style="font-weight: normal; font-size: 0.85em;">(JSON)</span>{% else %} <span class="quiet" style="font-weight: normal; font-size: 0.85em; color: #c4820e;">({% trans 'read-only' %})</span>{% endif %}</h2>
+    <h2>{% trans 'Value' %}{% if value_is_editable %} <span class="quiet" style="font-weight: normal; font-size: 0.85em;">(JSON)</span>{% else %} <span class="quiet" style="font-weight: normal; font-size: 0.85em;">({% trans 'read-only' %})</span>{% endif %}</h2>
     {% if not value_is_editable %}
-    <div class="help" style="margin-bottom: 10px; padding: 8px; background: #fef3cd; border: 1px solid #ffc107; border-radius: 4px;">
+    <div class="warningnote">
         <strong>{% trans 'Complex object detected.' %}</strong>
         {% trans 'This value cannot be safely edited because it is not JSON-serializable. It may contain Python objects like datetime, bytes, or custom classes.' %}
     </div>

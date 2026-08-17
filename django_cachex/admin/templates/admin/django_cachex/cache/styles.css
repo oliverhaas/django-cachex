@@ -166,6 +166,12 @@
     display: block;
 }
 
+/* Client-side validation errors, created by the add-form script */
+.error-message {
+    margin-top: 5px;
+    color: var(--error-fg);
+}
+
 /* Monospace text for code-like textareas */
 #id_value,
 #id_list_values,

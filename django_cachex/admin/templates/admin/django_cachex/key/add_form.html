@@ -89,8 +89,6 @@
             if (existing) existing.remove();
             const errorDiv = document.createElement('div');
             errorDiv.className = 'error-message';
-            errorDiv.style.color = '#ba2121';
-            errorDiv.style.marginTop = '5px';
             errorDiv.textContent = message;
             row.querySelector('div').appendChild(errorDiv);
         }

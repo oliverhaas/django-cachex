@@ -4,6 +4,7 @@ These tests use simple fixtures from the local conftest that don't
 have the parametrization of the main test suite.
 """
 
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from django.contrib.admin.utils import quote
@@ -1026,6 +1027,28 @@ class TestKeyDetailView:
 
         # Should show JSON indicator somewhere
         assert "JSON" in content
+
+    def test_read_only_warning_uses_theme_aware_styling(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+    ):
+        """The complex-value warning must theme with the admin, not hardcode colors.
+
+        Hardcoded light-theme colors rendered as white-on-pale-yellow in dark
+        mode, so the warning was unreadable exactly when it mattered.
+        """
+        test_cache.set("nonjson:datetime", datetime(2026, 8, 14, tzinfo=UTC))
+
+        url = _key_detail_url("default", "nonjson:datetime")
+        response = admin_client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+
+        assert "Complex object detected." in content
+        assert 'class="warningnote"' in content
+        for hardcoded in ("#fef3cd", "#ffc107", "#c4820e"):
+            assert hardcoded not in content
 
 
 class TestKeyAddView:
