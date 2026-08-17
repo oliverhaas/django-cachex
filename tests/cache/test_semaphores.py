@@ -893,6 +893,61 @@ class TestRespConcurrentMisuse:
         asyncio.run(run())
 
 
+class TestRespTokenSnapshot:
+    """release()/extend() must act on the token they entered with."""
+
+    def test_release_spares_a_racing_reacquire(self):
+        # Regression: release() re-read self._token after its guard, so a
+        # racing re-acquire could install a new token in between. RELEASE then
+        # ran against that live claim and cleared the field to None.
+        from django_cachex.semaphore import RespSemaphore
+
+        seen: list[str] = []
+
+        class SwappingAdapter:
+            """Re-acquires while the RELEASE call is in flight."""
+
+            def __init__(self) -> None:
+                self.sem: Any = None
+
+            def eval(self, script, numkeys, *args):
+                seen.append(args[3])
+                self.sem._token = "racing-token"
+                return [b"released", 0, 0]
+
+        adapter = SwappingAdapter()
+        sem = RespSemaphore(adapter, "resp_token_race", capacity=1, lease=10)
+        adapter.sem = sem
+        sem._token = "original-token"
+
+        sem.release()
+
+        assert seen == ["original-token"]
+        assert sem._token == "racing-token"
+
+    def test_extend_uses_entry_token(self):
+        from django_cachex.semaphore import RespSemaphore
+
+        seen: list[str] = []
+
+        class SwappingAdapter:
+            def __init__(self) -> None:
+                self.sem: Any = None
+
+            def eval(self, script, numkeys, *args):
+                seen.append(args[2])
+                self.sem._token = "racing-token"
+                return 1
+
+        adapter = SwappingAdapter()
+        sem = RespSemaphore(adapter, "resp_token_race_extend", capacity=1, lease=10)
+        adapter.sem = sem
+        sem._token = "original-token"
+
+        assert sem.extend(1) is True
+        assert seen == ["original-token"]
+
+
 class TestRespExtend:
     def test_extend_increases_claim_ttl(self, cache):
         """Calling extend() bumps the claim TTL key."""

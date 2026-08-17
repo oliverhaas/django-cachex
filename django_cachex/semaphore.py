@@ -469,6 +469,26 @@ class RespSemaphore:
             self._token = token
         return token
 
+    def _held_token(self, verb: str) -> str:
+        """Snapshot the held token so the command can't act on a newer one.
+
+        Reading ``self._token`` again at the call site let a racing thread
+        install a fresh token in between, so the command ran against a claim
+        this instance no longer owned.
+        """
+        with self._claim_lock:
+            token = self._token
+            if token is None:
+                msg = f"Cannot {verb} a semaphore not held by this instance"
+                raise SemaphoreError(msg)
+        return token
+
+    def _clear_token(self, token: str) -> None:
+        """Drop our claim unless a racing acquire already replaced it."""
+        with self._claim_lock:
+            if self._token == token:
+                self._token = None
+
     # ------------------------------------------------------------------ sync
 
     def acquire(self, *, blocking: bool = True, timeout: float | None = None) -> bool:  # noqa: C901
@@ -539,18 +559,16 @@ class RespSemaphore:
     def release(self) -> None:
         from django_cachex.cache._semaphore_lua import RELEASE_LUA
 
-        if self._token is None:
-            msg = "Cannot release a semaphore not held by this instance"
-            raise SemaphoreError(msg)
+        token = self._held_token("release")
         self._adapter.eval(
             RELEASE_LUA,
             3,
             self._state_key,
             self._claims_key,
             self._queue_key,
-            self._token,
+            token,
         )
-        self._token = None
+        self._clear_token(token)
 
     def extend(self, additional_seconds: float) -> bool:
         """Bump the lease TTL of the held claim by ``additional_seconds``.
@@ -560,16 +578,14 @@ class RespSemaphore:
         """
         from django_cachex.cache._semaphore_lua import EXTEND_LUA
 
-        if self._token is None:
-            msg = "Cannot extend a semaphore not held by this instance"
-            raise SemaphoreError(msg)
+        token = self._held_token("extend")
         additional_ms = max(1, int(additional_seconds * 1000))
         result = self._adapter.eval(
             EXTEND_LUA,
             2,
             self._state_key,
             self._claims_key,
-            self._token,
+            token,
             str(additional_ms),
         )
         return bool(result)
@@ -646,33 +662,29 @@ class RespSemaphore:
     async def arelease(self) -> None:
         from django_cachex.cache._semaphore_lua import RELEASE_LUA
 
-        if self._token is None:
-            msg = "Cannot release a semaphore not held by this instance"
-            raise SemaphoreError(msg)
+        token = self._held_token("release")
         await self._adapter.aeval(
             RELEASE_LUA,
             3,
             self._state_key,
             self._claims_key,
             self._queue_key,
-            self._token,
+            token,
         )
-        self._token = None
+        self._clear_token(token)
 
     async def aextend(self, additional_seconds: float) -> bool:
         """Async mirror of :meth:`extend`."""
         from django_cachex.cache._semaphore_lua import EXTEND_LUA
 
-        if self._token is None:
-            msg = "Cannot extend a semaphore not held by this instance"
-            raise SemaphoreError(msg)
+        token = self._held_token("extend")
         additional_ms = max(1, int(additional_seconds * 1000))
         result = await self._adapter.aeval(
             EXTEND_LUA,
             2,
             self._state_key,
             self._claims_key,
-            self._token,
+            token,
             str(additional_ms),
         )
         return bool(result)
