@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.4.0 (June 2026)
+## Unreleased
+
+### Fixes
+
+- **Semaphore `release()` and `extend()` no longer act on a token they don't own.** Both re-read `self._token` after their "not held" guard, so a racing re-acquire on the same instance could install a new token in between; the command then ran against that live claim, and `release()` cleared the field to `None`. The token is now snapshotted under the same lock `_claim()` uses, and `release()` clears it only if it is still the one it entered with.
+- **RESP semaphores no longer wedge when Redis evicts their bookkeeping.** The reaper only ever adjusted the `used` counter by a delta, so losing the claims hash to `maxmemory` eviction left `used` pinned at capacity with nothing left to subtract and every later acquire failing forever. Losing the state hash instead made `used` read zero and admitted past capacity. `used` is now derived from the surviving claims during the walk the reaper already performs, which costs no extra round trip and self-heals both directions.
+
+## 0.4.0 (August 2026)
 
 ### Breaking changes
 
