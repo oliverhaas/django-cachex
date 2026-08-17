@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -31,7 +31,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -1766,10 +1766,10 @@ overhead Django itself adds.</p>
 </tr>
 </tbody>
 </table>
-<p>Django itself caps throughput at ~1k req/s for pure-Python adapters.
-the cache stops being the bottleneck. The Rust-cored adapters land
-~1.7-2× the Python adapters because their per-op overhead is small
-enough that Django's per-request work doesn't fully mask it.</p>
+<p>Django's per-request work caps the pure-Python adapters at ~1k req/s;
+at that point the cache is no longer the bottleneck. The Rust-cored
+adapters still land ~1.7-2× higher because their per-op overhead is
+small enough that Django's per-request work doesn't fully mask it.</p>
 <h2 id="async-serial">Async serial<a class="headerlink" href="#async-serial" title="Permanent link">&para;</a></h2>
 <p>One <code>await cache.aget(...)</code> at a time, no <code>gather</code>. Direct comparison
 with sync; the gap is asyncio loop overhead (and <code>sync_to_async</code> for
@@ -2052,9 +2052,9 @@ production load.</p>
 <p>req/s is noisy run-to-run on this benchmark; treat the rough buckets
 (~600 / ~400 / ~200) as the signal, not exact ranks. The clearer
 takeaways: both Rust adapters keep the connection count to ~half the
-Python adapters, and Django's built-in <code>RedisCache</code> opens 316
-connections (it instantiates a fresh <code>redis.Redis</code> per cache call).
-and pays the highest avg latency on the smallest server.</p>
+Python adapters, while Django's built-in <code>RedisCache</code> opens 316
+connections (it instantiates a fresh <code>redis.Redis</code> per cache call) and
+pays the highest average latency and the largest RSS.</p>
 <h2 id="reproducing">Reproducing<a class="headerlink" href="#reproducing" title="Permanent link">&para;</a></h2>
 <p>The benchmarks live in <a href="https://github.com/oliverhaas/django-cachex/tree/main/benchmarks"><code>benchmarks/</code></a> and spin up their
 own Redis + Valkey containers via <code>testcontainers</code>, so a Docker daemon
@@ -2123,7 +2123,7 @@ claims.</p>
       <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.sections", "navigation.expand", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
-      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>

@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -31,7 +31,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -1713,9 +1713,9 @@
 <ul>
 <li><strong>Python 3.14+ required.</strong> Dropped support for 3.12 and 3.13. The package now ships on cp314 and cp314t (free-threaded) wheels.</li>
 <li><strong>Django 6.0+ required.</strong> Dropped support for Django 5.2.</li>
-<li><strong><code>LocMemCache</code> data structures use tagged subclasses.</strong> Lists, sets, hashes, sorted sets, and streams are stored as dedicated subclasses (<code>_List</code>, <code>_Set</code>, <code>_Hash</code>, <code>_ZSet</code>, <code>_Stream</code>) rather than plain Python types, and cross-type access raises <code>WrongTypeError</code> instead of silently coercing, matching real Valkey/Redis <code>WRONGTYPE</code> semantics.</li>
+<li><strong><code>LocMemCache</code> data structures use tagged subclasses.</strong> Lists, sets, hashes, and sorted sets are stored as dedicated subclasses (<code>_List</code>, <code>_Set</code>, <code>_Hash</code>, <code>_ZSet</code>) rather than plain Python types, and cross-type access raises <code>WrongTypeError</code> instead of silently coercing, matching real Valkey/Redis <code>WRONGTYPE</code> semantics.</li>
 <li><strong><code>LocMemCache</code> bypasses pickle for tagged collections.</strong> Mutations happen in place; the prior copy-on-read/copy-on-write contract no longer holds. Code that relied on getting a detached snapshot from <code>cache.get()</code> for these types now sees the live structure.</li>
-<li><strong><code>StreamCache</code> wire format changed.</strong> Stream entries now flow through the transport's serializer + compressor pipeline instead of raw pickle. Pods running the new code cannot read entries written by older pods on the same stream; coordinate the rollout (drain or rotate <code>STREAM_KEY</code>).</li>
+<li><strong><code>StreamCache</code> wire format changed.</strong> Stream entries now flow through the transport's serializer + compressor pipeline instead of raw pickle. Pods running the new code cannot read entries written by older pods on the same stream; coordinate the rollout (drain or rotate <code>stream_key</code>).</li>
 <li><strong><code>hmset</code> removed.</strong> Use <code>hset(key, mapping=...)</code> or <code>hset(key, items=...)</code> (flat key-value list, matching redis-py/valkey-py).</li>
 <li><strong><code>django_cachex.unfold</code> removed.</strong> The django-unfold theme variant of the admin is gone, along with the <code>[unfold]</code> extra and <code>examples/unfold/</code>. Plain <code>django_cachex.admin</code> remains. Unfold support may return as a thin theme override once the core admin app stabilises.</li>
 <li><strong>Lock parameters renamed.</strong> <code>cache.lock(timeout=...)</code> is now <code>cache.lock(lease=...)</code> (TTL of the held lock); <code>lock.acquire(blocking_timeout=...)</code> is now <code>lock.acquire(timeout=...)</code> (max wait). The old <code>blocking_timeout</code> kwarg raises <code>TypeError</code>; the constructor's new <code>timeout=</code> kwarg means "max wait" rather than "TTL". No deprecation shim. This aligns the lock API with the upcoming <code>cache.semaphore(...)</code> primitive.</li>
@@ -1723,11 +1723,12 @@
 <li><strong><code>LzmaCompressor</code> constructor <code>preset=</code> renamed to <code>level=</code></strong> for consistency with the other compressors. All compressors now accept <code>level=</code> (mapped to the underlying library's native parameter).</li>
 <li><strong><code>PickleSerializer</code> no longer raises <code>ImproperlyConfigured</code> for <code>protocol &gt; pickle.HIGHEST_PROTOCOL</code></strong>. Pickle's own <code>ValueError</code> is now surfaced at the first <code>dumps</code> call, wrapped as <code>SerializerError</code> (with the pickle exception as <code>__cause__</code>).</li>
 <li><strong><code>CachexCompat</code> removed.</strong> The mixin class that emulated the cachex ext surface on top of an arbitrary <code>BaseCache</code> is gone, along with the admin's "wrapped" support tier. Django's <code>BaseCache</code> and the stock backends (<code>LocMemCache</code>, <code>RedisCache</code>, <code>DatabaseCache</code>, <code>FileBasedCache</code>, <code>MemcachedCache</code>, <code>DummyCache</code>) deliberately don't expose key listing, so the wrap couldn't drive the admin's browse views meaningfully. Use <code>django_cachex.cache.LocMemCache</code> / <code>DatabaseCache</code> (drop-in replacements) for full admin support; non-cachex backends now show as "limited" (configuration only).</li>
+<li><strong>Cluster <code>LOCATION</code> with a database number now raises on the redis-py and valkey-py cluster backends.</strong> Those two are built with the driver's <code>from_url()</code>, which rejects a non-zero <code>db</code> in the URL path or query (<code>RedisClusterException</code> / <code>ValkeyClusterException</code>). The old code read only host and port off the URL, so <code>redis://host:6379/1</code> connected to db 0 without complaint. Cluster has no <code>SELECT</code>, so the number was never honored; drop it from <code>LOCATION</code>. <code>ValkeyGlideClusterCache</code> and <code>RedisRsClusterCache</code> still ignore it silently.</li>
 </ul>
 <h3 id="new-features">New features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Rust I/O driver.</strong> Optional native driver built on PyO3 + tokio + redis-rs, shipped as a separate <code>django-cachex-redis-rs</code> package. Opt in via the <code>redis-rs</code> extra (<code>pip install django-cachex[redis-rs]</code>); without it, only the pure-Python backends are pulled in and the <code>RedisRsCache</code> classes raise a clean <code>ImportError</code> on first use. Set <code>BACKEND</code> to one of <code>RedisRsCache</code>, <code>RedisRsClusterCache</code>, or <code>RedisRsSentinelCache</code>. Sync and async share one tokio runtime; async dodges the threadpool round-trip.</li>
-<li><strong><code>valkey-glide</code> adapter.</strong> Optional Rust-cored client from the Valkey project. Opt in via the <code>valkey-glide</code> extra. Standalone (<code>ValkeyGlideCache</code>) and cluster (<code>ValkeyGlideClusterCache</code>) topologies are exposed; Sentinel is not (<code>valkey-glide</code> itself does not ship a Sentinel client).</li>
+<li><strong>Rust I/O driver (experimental).</strong> Optional native driver built on PyO3 + tokio + redis-rs, shipped as a separate <code>django-cachex-redis-rs</code> package. Interfaces and behavior may change, and it has seen less production testing than the redis-py/valkey-py paths. Opt in via the <code>redis-rs</code> extra (<code>pip install django-cachex[redis-rs]</code>); without it, only the pure-Python backends are pulled in and the <code>RedisRsCache</code> classes raise a clean <code>ImportError</code> on first use. Set <code>BACKEND</code> to one of <code>RedisRsCache</code>, <code>RedisRsClusterCache</code>, or <code>RedisRsSentinelCache</code>. Sync and async share one tokio runtime; async dodges the threadpool round-trip.</li>
+<li><strong><code>valkey-glide</code> adapter (experimental).</strong> Optional Rust-cored client from the Valkey project. Interfaces and behavior may change, and it has seen less production testing than the redis-py/valkey-py paths. Opt in via the <code>valkey-glide</code> extra. Standalone (<code>ValkeyGlideCache</code>) and cluster (<code>ValkeyGlideClusterCache</code>) topologies are exposed; Sentinel is not (<code>valkey-glide</code> itself does not ship a Sentinel client).</li>
 <li><strong><code>WrongTypeError</code> exception.</strong> Backends now translate Redis <code>WRONGTYPE</code> responses into a single <code>django_cachex.WrongTypeError</code> (subclass of <code>TypeError</code>) so user code can catch one exception across LocMem, redis-py, valkey-py, valkey-glide, and the Rust adapter.</li>
 <li><strong>Async ext methods on LocMem and Database.</strong> The full async data-structure surface (<code>alpush</code>, <code>ahset</code>, <code>azadd</code>, <code>attl</code>, <code>aexpire</code>, ...) is now available on <code>LocMemCache</code> (direct sync calls; in-memory, so no I/O to offload) and <code>DatabaseCache</code> (via <code>sync_to_async</code>, the same path Django uses for <code>BaseCache.aget</code>). They no longer raise <code>NotSupportedError</code> from async views.</li>
 <li><strong><code>StreamCache</code> backend.</strong> Stream-synchronized in-memory cache: reads are local, writes broadcast over a Redis Stream, a daemon thread on each pod consumes the stream and applies remote changes. Read-heavy, write-light, eventually consistent.</li>
@@ -1755,6 +1756,33 @@
 <li><code>clear()</code> is now prefix/version-scoped instead of <code>FLUSHDB</code>. The old behavior is available as <code>flush_db()</code>.</li>
 <li>Compressor <code>compress</code> and <code>decompress</code> methods catch all exceptions and re-raise as <code>CompressorError</code>.</li>
 <li>Several cluster correctness fixes (script loading on replicas, set_many <code>timeout=0</code>).</li>
+<li>Fixed a crash when reading values small enough to have skipped compression (at or below the compressor's <code>min_length</code>).</li>
+<li>Admin cache/key changelists are compatible with Django 6.1.</li>
+<li>Semaphore waiters abandoned by crashed or cancelled callers are reaped instead of blocking the queue.</li>
+<li>valkey-glide: connection options reach the client instead of being reduced to host and port. The TLS scheme (<code>rediss</code>/<code>valkeys</code>) or <code>use_tls</code>/<code>ssl</code>, credentials from the URL or <code>OPTIONS</code>, the database index (standalone only), <code>request_timeout</code>, and <code>client_name</code> are all applied; <code>zadd</code> forwards the <code>gt</code>/<code>lt</code> flags, and pipelines support the stream commands.</li>
+<li><code>TieredCache.set</code> forwards <code>nx</code>/<code>xx</code> to L2, and an L2 that is a stock Django backend no longer raises <code>TypeError</code>: <code>nx</code> falls back to <code>add()</code>, <code>xx</code>/<code>get</code> raise <code>NotSupportedError</code>, and a plain set drops the flags.</li>
+<li><code>set(..., timeout=0)</code> deletes the key across all backends, matching Django's cache contract.</li>
+<li><code>LocMemCache</code> aliases sharing a <code>LOCATION</code> share one store, including the tagged collections and the semaphore budgets, matching Django's builtin behavior.</li>
+<li>Admin: backend capability probes fail gracefully, and key URLs are quoted so keys with special characters open correctly.</li>
+<li>CI runs the test matrix against Django 6.1 in addition to 6.0.</li>
+<li>Dependabot automerge waits for every workflow run on the PR head to succeed before merging.</li>
+<li><code>reverse_key()</code> handles a <code>KEY_PREFIX</code> containing colons, so <code>keys()</code>, <code>iter_keys()</code>, <code>scan()</code>, and the blocking list pops return user keys instead of raw internal ones.</li>
+<li><code>DatabaseCache</code> compound ops (<code>rpush</code>, <code>sadd</code>, <code>zadd</code>, <code>hset</code>, ...) that lose the insert race against a concurrent writer now merge with the committed row instead of overwriting it.</li>
+<li><code>LocMemCache</code> and <code>DatabaseCache</code> <code>hincrby</code>/<code>hincrbyfloat</code> reject non-numeric stored values with the same error as the server instead of truncating them.</li>
+<li><code>TieredCache</code> rejects <code>KEY_PREFIX</code> in the standard top-level slot as well as in <code>OPTIONS</code>; it was silently ignored before.</li>
+<li>Sentinel: async connection pools are keyed by sentinel fleet, so two aliases sharing a service name no longer alias onto one pool.</li>
+<li>Semaphores: concurrent <code>acquire()</code> on one <code>RespSemaphore</code> instance can no longer double-claim and leak a slot until the lease expires.</li>
+<li>Admin: editing a key preserves its TTL and persistence instead of resetting it to the default timeout. Covers every backend, including those that report no-expiry as <code>-1</code> rather than <code>None</code> (<code>StreamCache</code>) and those without <code>pexpire</code> (<code>StreamCache</code>, <code>TieredCache</code>).</li>
+<li><code>StreamCache</code> enqueues each broadcast while still holding the local write lock, so a pod's stream entries carry the order its writes were applied and replaying consumers converge on the writer's final value instead of an older one. <code>keys()</code> is scoped to the cache's own prefix and version.</li>
+<li>Pipelines discard their queued decoders when <code>execute()</code> raises, so a reused pipeline no longer decodes the next batch against a stale, misaligned decoder list. <code>AsyncPipeline</code> rejects a sync <code>with</code> at entry rather than after the block has run.</li>
+<li>The redis-py and valkey-py cluster backends are built from the full server URL through the driver's <code>from_url()</code>, so the TLS scheme, credentials, and query parameters survive; only the host and port were read before. The async Sentinel pool cache is also keyed on the sentinel fleet rather than the manager's <code>id()</code>, so the per-task adapters asgiref creates share one pool instead of each opening its own.</li>
+<li><code>encode()</code> passes through exact <code>int</code> values only. <code>int</code> subclasses (<code>IntEnum</code>, <code>IntFlag</code>) now go through the serializer, so they come back as their own type instead of as plain ints.</li>
+<li><code>touch()</code>/<code>atouch()</code> apply the stampede buffer to the TTL they write and accept a per-call <code>stampede_prevention=</code>. Touching a key under stampede prevention no longer strips the buffer and pushes every reader into a recompute.</li>
+<li><code>DatabaseCache</code> key scans escape SQL <code>LIKE</code> metacharacters per database vendor, so a <code>KEY_PREFIX</code> or pattern containing <code>%</code>, <code>_</code>, or a backslash no longer matches unrelated rows.</li>
+<li><code>DatabaseCache.zadd</code>/<code>zincrby</code> reject a non-numeric score with <code>ValueError</code> before writing, matching the server, instead of storing a value that breaks later range queries.</li>
+<li><code>MAX_ENTRIES</code> culling covers the whole store: <code>LocMemCache</code> counts its tagged collections alongside the pickled entries and evicts them, and <code>DatabaseCache</code> compound ops (<code>rpush</code>, <code>sadd</code>, <code>hset</code>, ...) run the same cull check as a plain <code>set()</code> when they insert a new row.</li>
+<li><code>LocMemCache</code> collection edge cases: <code>keys()</code> scopes to the requested version and skips expired-but-not-yet-culled entries, <code>incr()</code> on a collection key raises <code>WrongTypeError</code> instead of <code>KeyError</code>, and <code>sadd</code>/<code>hset</code>/<code>zadd</code> no longer leave an empty key behind when the call adds nothing (<code>zadd</code> where <code>nx</code>/<code>xx</code> skip every member, <code>sadd</code>/<code>hset</code> called with no members or fields).</li>
+<li><code>rpop(count=0)</code> on <code>LocMemCache</code> and <code>DatabaseCache</code>, and <code>zpopmax(count=0)</code> on <code>LocMemCache</code>, return an empty list instead of draining the whole collection.</li>
 </ul>
 <hr />
 <h2 id="030-february-2026">0.3.0 (February 2026)<a class="headerlink" href="#030-february-2026" title="Permanent link">&para;</a></h2>
@@ -1957,7 +1985,7 @@
       <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.sections", "navigation.expand", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
-      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>
