@@ -724,10 +724,15 @@ class TestRespQueueReap:
         assert holder.acquire(blocking=False) is True
 
         result: dict[str, object] = {}
+        may_release = threading.Event()
 
         def waiter_thread() -> None:
             waiter = cache.semaphore("resp_live_waiter", capacity=1, lease=10, timeout=5)
             result["ok"] = waiter.acquire(blocking=True)
+            # Keep the slot until the jumper has had its turn. Releasing here
+            # would hand the jumper a legitimately free slot whenever the
+            # waiter's poll lands between holder.release() and the assert.
+            may_release.wait(10)
             waiter.release()
 
         t = threading.Thread(target=waiter_thread)
@@ -735,11 +740,13 @@ class TestRespQueueReap:
         time.sleep(0.3)  # let the waiter enqueue and heartbeat
 
         # The queued (live) waiter holds the head slot, so a non-blocking
-        # acquire must not jump the queue even once capacity frees up.
+        # acquire must not jump the queue even once capacity frees up. Whether
+        # or not the waiter has been admitted yet, the jumper is refused.
         jumper = cache.semaphore("resp_live_waiter", capacity=1, lease=10)
         holder.release()
         assert jumper.acquire(blocking=False) is False
 
+        may_release.set()
         t.join(timeout=10)
         assert result["ok"] is True
 
