@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 (August 2026)
 
 ### Fixes
 
