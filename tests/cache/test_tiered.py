@@ -235,6 +235,24 @@ class TestL1Behavior:
         assert l1.get("gm2") == "b"
         assert l1.get("gm3") == "c"
 
+    def test_get_many_batches_l2_ttl_lookups(self, tiered_cache: BaseCache, mocker):
+        """L1 repopulation must not cost one TTL round trip per key.
+
+        The per-key ``_get_l2_ttl`` is the fallback for an L2 that can't
+        pipeline; a RESP L2 has to take the batched path instead.
+        """
+        tiered_cache.set_many({"bt1": "a", "bt2": "b", "bt3": "c"})
+        l1 = self._get_l1()
+        for key in ("bt1", "bt2", "bt3"):
+            l1.delete(key)
+
+        per_key = mocker.spy(type(tiered_cache), "_get_l2_ttl")
+        result = tiered_cache.get_many(["bt1", "bt2", "bt3"])
+
+        assert result == {"bt1": "a", "bt2": "b", "bt3": "c"}
+        assert per_key.call_count == 0
+        assert l1.get("bt2") == "b"
+
     def test_delete_evicts_from_l1(self, tiered_cache: BaseCache):
         """delete() removes from both L1 and L2."""
         tiered_cache.set("del_l1", "val")

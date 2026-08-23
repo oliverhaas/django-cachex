@@ -169,6 +169,53 @@ class TieredCache(BaseCachex):
         except AttributeError, NotSupportedError, TypeError:
             return None
 
+    @staticmethod
+    def _normalize_ttls(keys: list[str], results: list[Any]) -> dict[str, int | None] | None:
+        """Pair pipelined TTL results with their keys, or ``None`` if they don't line up."""
+        if len(results) != len(keys):
+            return None
+        return {key: ttl if isinstance(ttl, int) and ttl > 0 else None for key, ttl in zip(keys, results, strict=True)}
+
+    def _get_l2_ttls(self, keys: list[str], version: int | None = None) -> dict[str, int | None]:
+        """Get L2's remaining TTL for several keys, batched into one round trip.
+
+        ``get_many`` would otherwise pay one ``TTL`` call per key on top of the
+        ``MGET``, which is the opposite of what a tier is for. Pipelining is
+        best-effort: an L2 without it (stock Django backends, LocMem) falls
+        back to the per-key path.
+        """
+        pipeline = getattr(self._l2, "pipeline", None)
+        if callable(pipeline):
+            try:
+                with pipeline() as pipe:
+                    for key in keys:
+                        pipe.ttl(key, version=version)
+                    results = pipe.execute()
+            except AttributeError, NotSupportedError, TypeError:
+                pass
+            else:
+                ttls = self._normalize_ttls(keys, results)
+                if ttls is not None:
+                    return ttls
+        return {key: self._get_l2_ttl(key, version=version) for key in keys}
+
+    async def _aget_l2_ttls(self, keys: list[str], version: int | None = None) -> dict[str, int | None]:
+        """Async twin of :meth:`_get_l2_ttls`."""
+        apipeline = getattr(self._l2, "apipeline", None)
+        if callable(apipeline):
+            try:
+                async with await apipeline() as pipe:
+                    for key in keys:
+                        pipe.ttl(key, version=version)
+                    results = await pipe.execute()
+            except AttributeError, NotSupportedError, TypeError:
+                pass
+            else:
+                ttls = self._normalize_ttls(keys, results)
+                if ttls is not None:
+                    return ttls
+        return {key: await self._aget_l2_ttl(key, version=version) for key in keys}
+
     # =========================================================================
     # Standard Django cache interface
     # =========================================================================
@@ -365,9 +412,9 @@ class TieredCache(BaseCachex):
         if not missed_keys:
             return l1_results
         l2_results = self._l2.get_many(missed_keys, version=version)
+        l2_ttls = self._get_l2_ttls(list(l2_results), version=version)
         for key, val in l2_results.items():
-            l2_ttl = self._get_l2_ttl(key, version=version)
-            self._l1.set(key, val, self._l1_timeout(l2_ttl), version=version)
+            self._l1.set(key, val, self._l1_timeout(l2_ttls.get(key)), version=version)
         l1_results.update(l2_results)
         return l1_results
 
@@ -383,9 +430,9 @@ class TieredCache(BaseCachex):
         if not missed_keys:
             return l1_results
         l2_results = await self._l2.aget_many(missed_keys, version=version)
+        l2_ttls = await self._aget_l2_ttls(list(l2_results), version=version)
         for key, val in l2_results.items():
-            l2_ttl = await self._aget_l2_ttl(key, version=version)
-            self._l1.set(key, val, self._l1_timeout(l2_ttl), version=version)
+            self._l1.set(key, val, self._l1_timeout(l2_ttls.get(key)), version=version)
         l1_results.update(l2_results)
         return l1_results
 
