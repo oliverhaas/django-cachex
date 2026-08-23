@@ -260,6 +260,19 @@ For passwords with special characters, pass via OPTIONS:
 }
 ```
 
+`username` also works as an OPTIONS key, which is what you want when the ACL
+user name contains characters that would need URL-escaping:
+
+```python
+"LOCATION": "valkey://127.0.0.1:6379/1",
+"OPTIONS": {
+    "username": "app@service",
+    "password": "password",
+}
+```
+
+`OPTIONS` wins over the URL for both `username` and `password`.
+
 ## SSL/TLS
 
 ### Basic SSL

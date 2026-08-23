@@ -28,6 +28,7 @@ All backends live in `django_cachex.cache`. See the [configuration reference](..
 | Backend | Description |
 |---------|-------------|
 | `ValkeyGlideCache` | valkey-glide (opt-in via `valkey-glide` extra; experimental) |
+| `ValkeyGlideClusterCache` | Cluster sharding via valkey-glide (same extra; experimental) |
 | `LocMemCache` | Drop-in replacement for Django's `LocMemCache` |
 | `DatabaseCache` | Drop-in replacement for Django's `DatabaseCache` |
 | `StreamCache` | In-memory cache synchronized via a Redis Stream |
