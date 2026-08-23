@@ -147,6 +147,33 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: "1"
 
+  test-freethreaded:
+    name: Test on free-threaded CPython (3.14t)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      # The package advertises free-threading support in its classifiers and
+      # README, so the suite has to actually run with the GIL disabled.
+      - name: Set up Python
+        run: uv python install 3.14t
+
+      # No --extra orjson: it has no cp314t wheel and building it from source
+      # needs a Rust toolchain. The serializer tests skip when it's absent.
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Report GIL state
+        run: uv run python -c "import sys; print('gil_enabled =', sys._is_gil_enabled())"
+
+      - name: Run backend tests
+        run: uv run pytest tests/cache/ -n auto
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+
   build-pure-wheel:
     name: Build pure-Python wheel (django-cachex)
     runs-on: ubuntu-latest
