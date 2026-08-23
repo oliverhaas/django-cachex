@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Improvements
+
+- **`TieredCache.get_many` batches its L2 TTL lookups.** Repopulating L1 issued one `TTL` call per key on top of the `MGET`, so a 100-key miss cost 101 round trips against the very tier it exists to spare. The TTLs now go through a single pipeline, falling back to the per-key path for an L2 that can't pipeline (stock Django backends, LocMem).
+- **The sdist no longer ships example and benchmark files.** `README.md` and `pyproject.toml` were unanchored globs in the hatch config, so they matched at any depth and pulled in `examples/*/README.md`, `examples/full/pyproject.toml` and `benchmarks/README.md`.
+- **The `username` connection option is documented.** It works as an `OPTIONS` key on every adapter and takes precedence over the URL, which matters when an ACL user name would need URL-escaping.
+- **Free-threaded CPython is verified in CI again.** The only cp314t job went out with the redis-rs wheels, leaving the free-threading classifier and the README's support claim unchecked. The cache suite now runs on 3.14t.
+
+### Fixes
+
+- **`django_cachex.adapters._pipeline_parsers` removed.** Nothing imported it; it existed so the Rust pipeline could resolve the parsers by name, and it kept shipping in the wheel after that driver was dropped.
+- **`version` and `PackageNotFoundError` no longer leak into `django_cachex`'s namespace.** They were reachable as `django_cachex.version` purely because of how `__version__` is computed.
+- **The admin key-size lookup logs its failures.** It swallowed every exception and returned `None`, unlike the sibling helpers that log, so a broken key showed a blank size with nothing in the log to explain it.
+
 ## 0.5.0 (August 2026)
 
 ### Breaking changes
