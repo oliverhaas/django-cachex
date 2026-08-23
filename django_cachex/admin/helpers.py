@@ -366,7 +366,8 @@ def get_size(cache: Any, key: str, key_type: str | None = None) -> int | None:
 
         method = size_methods.get(key_type)
         return method() if method else None
-    except Exception:  # noqa: BLE001
+    except Exception:
+        logger.exception("get_size: size lookup failed for key %r (type=%s)", key, key_type)
         return None
 
 
