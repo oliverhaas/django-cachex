@@ -1,6 +1,6 @@
 [package]
 name = "django-cachex-redis-rs"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 description = "Rust adapter for django-cachex"
 license = "MIT"
