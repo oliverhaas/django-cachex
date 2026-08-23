@@ -21,15 +21,16 @@
 </ol>
 {% endblock %}
 
+{% block object-tools %}
+<ul class="object-tools">
+    <li>
+        <a href="?{% if not help_active %}help=1{% endif %}">{% trans 'Help' %}</a>
+    </li>
+</ul>
+{% endblock %}
+
 {% block content %}
 <div id="content-main">
-    <!-- Object tools -->
-    <ul class="object-tools">
-        <li>
-            <a href="?{% if not help_active %}help=1{% endif %}">{% trans 'Help' %}</a>
-        </li>
-    </ul>
-
     <!-- Key Information -->
     <fieldset class="module aligned">
         <h2>{% trans 'Key Information' %}</h2>

@@ -20,20 +20,21 @@
 </ol>
 {% endblock %}
 
+{% block object-tools %}
+<ul class="object-tools">
+    {% if cache_obj.support_level == "cachex" %}
+    <li>
+        <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name|urlencode }}">{% trans 'List Keys' %}</a>
+    </li>
+    {% endif %}
+    <li>
+        <a href="?{% if not help_active %}help=1{% endif %}">{% trans 'Help' %}</a>
+    </li>
+</ul>
+{% endblock %}
+
 {% block content %}
 <div id="content-main">
-    <!-- Object tools -->
-    <ul class="object-tools">
-        {% if cache_obj.support_level == "cachex" %}
-        <li>
-            <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name|urlencode }}">{% trans 'List Keys' %}</a>
-        </li>
-        {% endif %}
-        <li>
-            <a href="?{% if not help_active %}help=1{% endif %}">{% trans 'Help' %}</a>
-        </li>
-    </ul>
-
     {% if cache_obj.support_level != "cachex" %}
     <fieldset class="module aligned info-section">
         <h2>{% trans 'Limited backend' %}</h2>

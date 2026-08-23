@@ -20,15 +20,16 @@
 </ol>
 {% endblock %}
 
+{% block object-tools %}
+<ul class="object-tools">
+    <li>
+        <a href="?cache={{ cache_name|urlencode }}{% if not help_active %}&help=1{% endif %}">{% trans 'Help' %}</a>
+    </li>
+</ul>
+{% endblock %}
+
 {% block content %}
 <div id="content-main">
-    <!-- Object tools -->
-    <ul class="object-tools">
-        <li>
-            <a href="?cache={{ cache_name|urlencode }}{% if not help_active %}&help=1{% endif %}">{% trans 'Help' %}</a>
-        </li>
-    </ul>
-
     <!-- Add Key Form -->
     <form method="post" id="key-form">
         {% csrf_token %}
