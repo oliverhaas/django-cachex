@@ -172,18 +172,58 @@
     color: var(--error-fg);
 }
 
-/* Monospace text for code-like textareas */
+/* ===== VALUE INPUTS ===== */
+/* Shared textarea for every value, item and member editor. Height comes from
+   the rows attribute, which differs per context; width fills the container. */
 /* border-box: admin textareas carry a 1px border and 8px of side padding, which
    would otherwise sit outside the 100% width and clip the right edge */
-#id_value,
-#id_list_values,
-#id_set_members,
-#id_hash_value,
-#id_zset_value {
-    font-family: var(--font-family-monospace);
+.cachex-value-input {
     width: 100%;
     box-sizing: border-box;
-    min-height: 200px;
+    resize: vertical;
+}
+
+/* The admin's fieldset.monospace rule covers textareas only, but the hash field
+   name and the zset score sit next to one and should read the same. */
+fieldset.monospace input.cachex-value-input {
+    font-family: var(--font-family-monospace);
+}
+
+/* Submit row under a value textarea */
+.cachex-value-actions {
+    margin-top: 10px;
+}
+
+/* Field-name input above a value textarea. A <p> wrapper would pick up the
+   admin's .aligned padding-left and sit indented against the textarea. */
+.cachex-name-row {
+    margin-bottom: 6px;
+}
+
+.cachex-name-row input {
+    width: 20em;
+    max-width: 100%;
+}
+
+/* In an entry table the stacked buttons are taller than a two-row field, so let
+   the field grow to the row height rather than leaving a gap under it. The 1px
+   cell height is the usual table trick: a percentage height on the child only
+   resolves once the cell itself has a specified one, and content still wins. */
+.cachex-entry-table tbody td {
+    height: 1px;
+}
+
+.cachex-entry-table td textarea.cachex-value-input {
+    height: 100%;
+}
+
+/* Row actions sit beside the value in a table row, stacked so that two buttons
+   line up with the value field instead of widening the row. */
+.cachex-row-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: stretch;
 }
 
 /* ===== NOTES ===== */

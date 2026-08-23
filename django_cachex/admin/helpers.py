@@ -1,6 +1,5 @@
 """Helper functions for cache admin views."""
 
-import json
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -204,22 +203,18 @@ def get_type_data(
     return result
 
 
-def _format_value(value: Any) -> str:
-    """Format a cache value for display: JSON for round-trippable values, repr() otherwise.
+def _format_entry(value: Any) -> tuple[str, bool]:
+    """Format one container entry as (display_string, editable).
 
-    Uses the same approach as format_value_for_display() for string keys:
-    JSON-serializes anything that round-trips cleanly, so types are distinguishable
-    (e.g. 42 vs "42", null vs "null").
+    Shares ``format_value_for_display`` with the string editor so containers and
+    strings agree on what is round-trippable. Entries that fall back to repr()
+    are marked non-editable: submitting the repr back would store the repr text.
     """
-    if value is None:
-        return "null"
-    try:
-        serialized = json.dumps(value, indent=2, ensure_ascii=False)
-        if json.loads(serialized) == value:
-            return serialized
-    except TypeError, ValueError, OverflowError:
-        pass
-    return repr(value)
+    # Imported lazily: views.base is reachable from views/__init__, which
+    # imports the modules that import this one.
+    from django_cachex.admin.views.base import format_value_for_display
+
+    return format_value_for_display(value)
 
 
 def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> dict[str, Any]:  # noqa: PLR0911
@@ -231,19 +226,25 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
                 pagination = _paginate(length, page)
                 start = pagination["start_index"]
                 stop = pagination["end_index"] - 1  # LRANGE stop is inclusive
-                items = [_format_value(i) for i in cache.lrange(key, start, stop)]
-                # Pre-build item_entries with offset-aware indices (CAS overwrites with SHA1s)
-                item_entries = [(start + i, item, "") for i, item in enumerate(items)]
-                return {"items": items, "length": length, "pagination": pagination, "item_entries": item_entries}
+                # Every entry carries an empty SHA1 slot that CAS fills in later, so
+                # the template sees the same tuple shape on backends without scripting.
+                item_entries = []
+                for i, raw in enumerate(cache.lrange(key, start, stop)):
+                    item, editable = _format_entry(raw)
+                    item_entries.append((start + i, item, "", editable))
+                return {"length": length, "pagination": pagination, "item_entries": item_entries}
             case KeyType.HASH:
-                fields = {str(k): _format_value(v) for k, v in cache.hgetall(key).items()}
+                fields = {str(k): v for k, v in cache.hgetall(key).items()}
                 length = len(fields)
                 pagination = _paginate(length, page)
                 s, e = pagination["start_index"], pagination["end_index"]
-                sliced = dict(list(fields.items())[s:e])
-                return {"fields": sliced, "length": length, "pagination": pagination}
+                field_entries = []
+                for field, raw in list(fields.items())[s:e]:
+                    value, editable = _format_entry(raw)
+                    field_entries.append((field, value, "", editable))
+                return {"length": length, "pagination": pagination, "field_entries": field_entries}
             case KeyType.SET:
-                members = sorted(_format_value(m) for m in cache.smembers(key))
+                members = sorted(_format_entry(m) for m in cache.smembers(key))
                 length = len(members)
                 pagination = _paginate(length, page)
                 s, e = pagination["start_index"], pagination["end_index"]
@@ -253,7 +254,10 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
                 pagination = _paginate(length, page)
                 start = pagination["start_index"]
                 stop = pagination["end_index"] - 1  # ZRANGE stop is inclusive
-                zset_members = [(_format_value(m), s) for m, s in cache.zrange(key, start, stop, withscores=True)]
+                zset_members = []
+                for raw, score in cache.zrange(key, start, stop, withscores=True):
+                    member, editable = _format_entry(raw)
+                    zset_members.append((member, score, editable))
                 return {"members": zset_members, "length": length, "pagination": pagination}
             case KeyType.STREAM if hasattr(cache, "xrange"):
                 length = cache.xlen(key)
@@ -288,22 +292,23 @@ def _add_cas_fingerprints(cache: Any, key: str, key_type: str | None, result: di
                     from django_cachex.admin.cas import get_list_sha1s
 
                     list_sha1s = get_list_sha1s(cache, key)
-                items = result.get("items", [])
-                offset = pagination["start_index"] if pagination else 0
                 result["item_entries"] = [
-                    (offset + i, item, list_sha1s[i] if i < len(list_sha1s) else "") for i, item in enumerate(items)
+                    (index, item, list_sha1s[i] if i < len(list_sha1s) else "", editable)
+                    for i, (index, item, _, editable) in enumerate(result.get("item_entries", []))
                 ]
             case KeyType.HASH:
-                fields = result.get("fields", {})
-                if pagination and fields:
+                entries = result.get("field_entries", [])
+                if pagination and entries:
                     from django_cachex.admin.cas import get_hash_field_sha1s_for
 
-                    hash_sha1s = get_hash_field_sha1s_for(cache, key, list(fields.keys()))
+                    hash_sha1s = get_hash_field_sha1s_for(cache, key, [field for field, *_ in entries])
                 else:
                     from django_cachex.admin.cas import get_hash_field_sha1s
 
                     hash_sha1s = get_hash_field_sha1s(cache, key)
-                result["field_entries"] = [(field, value, hash_sha1s.get(field, "")) for field, value in fields.items()]
+                result["field_entries"] = [
+                    (field, value, hash_sha1s.get(field, ""), editable) for field, value, _, editable in entries
+                ]
     except NotSupportedError:
         # ``BaseCachex`` declares ``eval_script`` and raises, so LocMem and
         # Database land here: render without CAS fingerprints.

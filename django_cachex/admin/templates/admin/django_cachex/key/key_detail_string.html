@@ -1,6 +1,6 @@
 {% load i18n %}
 <!-- String Value Editor (default for string type or when type data not available) -->
-<fieldset class="module aligned">
+<fieldset class="module aligned monospace">
     <h2>{% trans 'Value' %}{% if value_is_editable %} <span class="quiet" style="font-weight: normal; font-size: 0.85em;">(JSON)</span>{% else %} <span class="quiet" style="font-weight: normal; font-size: 0.85em;">({% trans 'read-only' %})</span>{% endif %}</h2>
     {% if not value_is_editable %}
     <div class="warningnote">
@@ -15,15 +15,9 @@
         <div class="form-row">
             <div>
                 <label for="id_value" class="{% if not value_is_editable %}readonly{% endif %}">{% trans 'Value:' %}</label>
-                <textarea
-                    id="id_value"
-                    name="value"
-                    rows="12"
-                    class="vLargeTextField"
-                    {% if not value_is_editable %}readonly{% endif %}
-                >{{ value_display }}</textarea>
+                {% include "admin/django_cachex/key/key_detail_value_input.html#value-input" with name="value" value=value_display rows=12 field_id="id_value" editable=value_is_editable only %}
                 {% if value_is_editable %}
-                <div style="margin-top: 10px;">
+                <div class="cachex-value-actions">
                     <button type="submit" class="button btn-small">{% trans 'Update' %}</button>
                 </div>
                 {% endif %}

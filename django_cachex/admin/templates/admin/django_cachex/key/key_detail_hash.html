@@ -1,41 +1,50 @@
 {% load i18n %}
+{% with input_tpl="admin/django_cachex/key/key_detail_value_input.html#value-input" %}
 <!-- Hash Operations -->
-<fieldset class="module aligned">
+<fieldset class="module aligned monospace">
     <h2>{% trans 'Operations' %}</h2>
     <div class="form-row">
-        <label>{% trans 'Set Field:' %}</label>
-        <form method="post" style="display: inline;">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="hset">
-            <input type="text" name="field" placeholder="{% trans 'field' %}" style="width: 100px;">
-            <input type="text" name="field_value" placeholder="{% trans 'value' %}" style="width: 150px;">
-            <button type="submit" class="button btn-small">{% trans 'Set' %}</button>
-        </form>
+        <div>
+            <label for="id_hset_value">{% trans 'Set Field:' %}</label>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="hset">
+                <div class="cachex-name-row"><input type="text" name="field" placeholder="{% trans 'field' %}" class="vTextField"></div>
+                {% include input_tpl with name="field_value" rows=4 field_id="id_hset_value" placeholder=_("value") editable=True only %}
+                <div class="cachex-value-actions">
+                    <button type="submit" class="button btn-small">{% trans 'Set' %}</button>
+                </div>
+            </form>
+        </div>
     </div>
 </fieldset>
 <!-- Hash Fields -->
-<fieldset class="module aligned">
+<fieldset class="module aligned monospace">
     <h2>{% trans 'Hash Fields' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
     {% if type_data.field_entries %}
     <div class="results">
-        <table id="result_list" style="width: 100%;">
+        <table id="result_list" class="cachex-entry-table" style="width: 100%;">
             <thead>
                 <tr>
-                    <th scope="col">{% trans 'Field' %}</th>
+                    <th scope="col" style="width: 25%;">{% trans 'Field' %}</th>
                     <th scope="col">{% trans 'Value' %}</th>
-                    <th scope="col" style="width: 150px;">{% trans 'Actions' %}</th>
+                    <th scope="col" style="width: 110px;">{% trans 'Actions' %}</th>
                 </tr>
             </thead>
             <tbody>
-                {% for field, value, sha1 in type_data.field_entries %}
+                {% for field, value, sha1, editable in type_data.field_entries %}
                 <tr class="{% cycle 'row1' 'row2' %}">
-                    <td><code>{{ field }}</code></td>
+                    <td><input type="text" name="new_field" value="{{ field }}" class="cachex-value-input" form="hash-update-{{ forloop.counter0 }}"{% if not editable %} readonly title="{% trans 'Not JSON-serializable, so this row cannot be edited safely.' %}"{% endif %}></td>
+                    <td>{% include input_tpl with name="field_value" value=value rows=2 form_id="hash-update-" row_index=forloop.counter0 editable=editable only %}</td>
                     <td>
-                        <textarea name="field_value" class="vTextField" form="hash-update-{{ forloop.counter0 }}" style="field-sizing: content; width: 100%; box-sizing: border-box; min-height: 1.5em; max-height: 15em; overflow-y: auto; resize: vertical;">{{ value }}</textarea>
-                    </td>
-                    <td>
-                        <button type="submit" form="hash-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
-                        <button type="submit" form="hash-delete-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Delete this field?' %}');">{% trans 'Delete' %}</button>
+                        <div class="cachex-row-actions">
+                            {% if editable %}
+                            <button type="submit" form="hash-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
+                            {% else %}
+                            <button type="button" class="button btn-small" disabled title="{% trans 'Not JSON-serializable, so this value cannot be edited safely.' %}">{% trans 'Update' %}</button>
+                            {% endif %}
+                            <button type="submit" form="hash-delete-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Delete this field?' %}');">{% trans 'Delete' %}</button>
+                        </div>
                     </td>
                 </tr>
                 {% endfor %}
@@ -43,50 +52,12 @@
         </table>
     </div>
     <!-- Forms for hash operations (outside table for valid HTML) -->
-    {% for field, value, sha1 in type_data.field_entries %}
+    {% for field, value, sha1, editable in type_data.field_entries %}
     <form id="hash-update-{{ forloop.counter0 }}" method="post" style="display: none;">
         {% csrf_token %}
-        <input type="hidden" name="action" value="hset">
+        <input type="hidden" name="action" value="hupdate">
         <input type="hidden" name="field" value="{{ field }}">
         {% if sha1 %}<input type="hidden" name="original_sha1" value="{{ sha1 }}">{% endif %}
-    </form>
-    <form id="hash-delete-{{ forloop.counter0 }}" method="post" style="display: none;">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="hdel">
-        <input type="hidden" name="field" value="{{ field }}">
-    </form>
-    {% endfor %}
-    {% elif type_data.fields %}
-    <div class="results">
-        <table id="result_list" style="width: 100%;">
-            <thead>
-                <tr>
-                    <th scope="col">{% trans 'Field' %}</th>
-                    <th scope="col">{% trans 'Value' %}</th>
-                    <th scope="col" style="width: 150px;">{% trans 'Actions' %}</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for field, value in type_data.fields.items %}
-                <tr class="{% cycle 'row1' 'row2' %}">
-                    <td><code>{{ field }}</code></td>
-                    <td>
-                        <textarea name="field_value" class="vTextField" form="hash-update-{{ forloop.counter0 }}" style="field-sizing: content; width: 100%; box-sizing: border-box; min-height: 1.5em; max-height: 15em; overflow-y: auto; resize: vertical;">{{ value }}</textarea>
-                    </td>
-                    <td>
-                        <button type="submit" form="hash-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
-                        <button type="submit" form="hash-delete-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Delete this field?' %}');">{% trans 'Delete' %}</button>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% for field, value in type_data.fields.items %}
-    <form id="hash-update-{{ forloop.counter0 }}" method="post" style="display: none;">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="hset">
-        <input type="hidden" name="field" value="{{ field }}">
     </form>
     <form id="hash-delete-{{ forloop.counter0 }}" method="post" style="display: none;">
         {% csrf_token %}
@@ -99,3 +70,4 @@
     {% endif %}
     {% include "admin/django_cachex/key/key_detail_pagination.html" %}
 </fieldset>
+{% endwith %}

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.2 (August 2026)
+
+### Improvements
+
+- **Every value input in the key admin is the same textarea.** Push, add and set-field forms were single-line `<input type="text">` fields 100 to 150px wide, so a multi-line JSON value could not be typed into them at all. They are now four-row textareas laid out like the string editor. Item, field and member rows use a two-row version of the same field, with their buttons stacked beside it so a row stays compact. The field is one Django template partial (`{% partialdef value-input %}`), and the fieldsets carry the admin's own `monospace` class instead of five ad-hoc font declarations.
+- **Sorted set members and set members can be edited.** Both rendered as static `<code>`, so a typo in a member meant remove-and-re-add by hand. Renaming adds the new member before dropping the old one, so an interrupted request leaves a visible duplicate rather than losing the member.
+- **Hash field names can be edited.** They rendered as static `<code>` for the same reason. Redis has no `HRENAME`, so the rename runs `HSET` plus `HDEL` inside the existing compare-and-swap script: one round trip, atomic, and still refused if the value changed since page load. It also refuses to overwrite a field name that is already in use.
+
+### Fixes
+
+- **Container entries that are not JSON-serializable are read-only.** They display as `repr()`, and nothing stopped that text from being submitted back, which stored the repr string over the real value. Their Update and Remove buttons are now disabled, matching the guard the string editor already had.
+- **`xadd` parses its value like every other handler.** It was the one action that stored the submitted text raw, so a stream entry could not hold a number, list or dict the way a list item or hash field can.
+- **The string editor strips surrounding whitespace.** Every container handler already did; the string path did not, so a stray newline changed the stored value.
+
 ## 0.4.1 (August 2026)
 
 ### Fixes

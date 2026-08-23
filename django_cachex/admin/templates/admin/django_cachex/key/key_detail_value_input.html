@@ -1,0 +1,18 @@
+{% load i18n %}
+{% comment %}
+Shared value textarea for every editor on the key detail page.
+
+Parameters:
+  name         POST field name (required)
+  value        current text
+  rows         visible rows: 12 for the string editor, 4 for the operations
+               forms, 2 for the compact rows in a member/item table
+  form_id      id of the out-of-table <form> the field belongs to; in a table
+               it is a prefix that row_index completes
+  row_index    row number appended to form_id, for per-row forms
+  field_id     id attribute, for a <label for="...">
+  placeholder  placeholder text
+  editable     always pass explicitly: False renders the field read-only,
+               which is what a value that is not JSON-serializable needs
+{% endcomment %}
+{% partialdef value-input %}<textarea{% if field_id %} id="{{ field_id }}"{% endif %} name="{{ name }}" rows="{{ rows|default:2 }}" class="cachex-value-input"{% if form_id %} form="{{ form_id }}{{ row_index }}"{% endif %}{% if placeholder %} placeholder="{{ placeholder }}"{% endif %}{% if not editable %} readonly title="{% trans 'Not JSON-serializable, so this is a Python repr() and cannot be edited safely.' %}"{% endif %}>{{ value }}</textarea>{% endpartialdef %}

@@ -1,15 +1,20 @@
 {% load i18n %}
+{% with input_tpl="admin/django_cachex/key/key_detail_value_input.html#value-input" %}
 <!-- Set Operations -->
-<fieldset class="module aligned">
+<fieldset class="module aligned monospace">
     <h2>{% trans 'Operations' %}</h2>
     <div class="form-row">
-        <label>{% trans 'Add:' %}</label>
-        <form method="post" style="display: inline;">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="sadd">
-            <input type="text" name="member" placeholder="{% trans 'member' %}" style="width: 150px;">
-            <button type="submit" class="button btn-small">{% trans 'Add' %}</button>
-        </form>
+        <div>
+            <label for="id_sadd_member">{% trans 'Add:' %}</label>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="sadd">
+                {% include input_tpl with name="member" rows=4 field_id="id_sadd_member" placeholder=_("member") editable=True only %}
+                <div class="cachex-value-actions">
+                    <button type="submit" class="button btn-small">{% trans 'Add' %}</button>
+                </div>
+            </form>
+        </div>
     </div>
     <div class="form-row">
         <label>{% trans 'Pop:' %}</label>
@@ -22,36 +27,53 @@
     </div>
 </fieldset>
 <!-- Set Members -->
-<fieldset class="module aligned">
+<fieldset class="module aligned monospace">
     <h2>{% trans 'Set Members' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
     {% if type_data.members %}
     <div class="results">
-        <table id="result_list" style="width: 100%;">
+        <table id="result_list" class="cachex-entry-table" style="width: 100%;">
             <thead>
                 <tr>
                     <th scope="col">{% trans 'Member' %}</th>
-                    <th scope="col" style="width: 80px;">{% trans 'Actions' %}</th>
+                    <th scope="col" style="width: 110px;">{% trans 'Actions' %}</th>
                 </tr>
             </thead>
             <tbody>
-                {% for member in type_data.members %}
+                {% for member, editable in type_data.members %}
                 <tr class="{% cycle 'row1' 'row2' %}">
-                    <td><code>{{ member }}</code></td>
+                    <td>{% include input_tpl with name="new_member" value=member rows=2 form_id="set-update-" row_index=forloop.counter0 editable=editable only %}</td>
                     <td>
-                        <form method="post" style="display: inline;">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="srem">
-                            <input type="hidden" name="member" value="{{ member }}">
-                            <button type="submit" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Remove this member?' %}');">{% trans 'Remove' %}</button>
-                        </form>
+                        <div class="cachex-row-actions">
+                            {% if editable %}
+                            <button type="submit" form="set-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
+                            <button type="submit" form="set-remove-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Remove this member?' %}');">{% trans 'Remove' %}</button>
+                            {% else %}
+                            <button type="button" class="button btn-small" disabled title="{% trans 'Not JSON-serializable, so this member cannot be edited or matched for removal.' %}">{% trans 'Update' %}</button>
+                            <button type="button" class="button delete-btn btn-small" disabled title="{% trans 'Not JSON-serializable, so this member cannot be edited or matched for removal.' %}">{% trans 'Remove' %}</button>
+                            {% endif %}
+                        </div>
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
+    <!-- Forms for set operations (outside table for valid HTML) -->
+    {% for member, editable in type_data.members %}
+    <form id="set-update-{{ forloop.counter0 }}" method="post" style="display: none;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="supdate">
+        <input type="hidden" name="member" value="{{ member }}">
+    </form>
+    <form id="set-remove-{{ forloop.counter0 }}" method="post" style="display: none;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="srem">
+        <input type="hidden" name="member" value="{{ member }}">
+    </form>
+    {% endfor %}
     {% else %}
     <p class="quiet" style="padding: 10px;">{% trans 'Set is empty.' %}</p>
     {% endif %}
     {% include "admin/django_cachex/key/key_detail_pagination.html" %}
 </fieldset>
+{% endwith %}

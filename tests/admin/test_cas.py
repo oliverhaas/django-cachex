@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from django_cachex.admin.cas import (
+    cas_rename_hash_field,
     cas_update_hash_field,
     cas_update_list_element,
     cas_update_string,
@@ -176,6 +177,55 @@ class TestCASHashFieldUpdate:
         result = cas_update_hash_field(test_cache, "cas_hash", "f1", sha1s["f1"], "new_v1")
         assert result == 1
         assert test_cache.hget("cas_hash", "f2") == "v2"
+
+
+class TestCASHashFieldRename:
+    """Redis has no HRENAME, so the script does HSET plus HDEL atomically."""
+
+    def test_success(self, test_cache: RespCache):
+        test_cache.hset("cas_rename", "old", "original")
+        sha1s = get_hash_field_sha1s(test_cache, "cas_rename")
+
+        result = cas_rename_hash_field(test_cache, "cas_rename", "old", "new", sha1s["old"], "updated")
+        assert result == 1
+        assert test_cache.hgetall("cas_rename") == {"new": "updated"}
+
+    def test_conflict(self, test_cache: RespCache):
+        test_cache.hset("cas_rename", "old", "original")
+        sha1s = get_hash_field_sha1s(test_cache, "cas_rename")
+
+        test_cache.hset("cas_rename", "old", "modified_by_other")
+
+        result = cas_rename_hash_field(test_cache, "cas_rename", "old", "new", sha1s["old"], "mine")
+        assert result == 0
+        assert test_cache.hgetall("cas_rename") == {"old": "modified_by_other"}
+
+    def test_field_gone(self, test_cache: RespCache):
+        test_cache.hset("cas_rename", "old", "original")
+        sha1s = get_hash_field_sha1s(test_cache, "cas_rename")
+
+        test_cache.hdel("cas_rename", "old")
+
+        result = cas_rename_hash_field(test_cache, "cas_rename", "old", "new", sha1s["old"], "updated")
+        assert result == -1
+
+    def test_target_name_taken(self, test_cache: RespCache):
+        test_cache.hset("cas_rename", "old", "original")
+        test_cache.hset("cas_rename", "taken", "keep me")
+        sha1s = get_hash_field_sha1s(test_cache, "cas_rename")
+
+        result = cas_rename_hash_field(test_cache, "cas_rename", "old", "taken", sha1s["old"], "updated")
+        assert result == -2
+        assert test_cache.hgetall("cas_rename") == {"old": "original", "taken": "keep me"}
+
+    def test_other_fields_unaffected(self, test_cache: RespCache):
+        test_cache.hset("cas_rename", "old", "v1")
+        test_cache.hset("cas_rename", "f2", "v2")
+        sha1s = get_hash_field_sha1s(test_cache, "cas_rename")
+
+        result = cas_rename_hash_field(test_cache, "cas_rename", "old", "new", sha1s["old"], "v1")
+        assert result == 1
+        assert test_cache.hgetall("cas_rename") == {"new": "v1", "f2": "v2"}
 
 
 class TestCASZsetScoreUpdate:

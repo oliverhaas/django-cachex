@@ -2022,6 +2022,143 @@ class TestKeyOperations:
         assert any("Trimmed" in m for m in messages), f"Expected trim success message, got: {messages}"
 
 
+class TestContainerValueInputs:
+    """Every value editor shares one textarea partial and one parsing contract."""
+
+    def test_operations_forms_use_the_shared_textarea(self, admin_client: Client, test_cache: RespCache):
+        """Push/add inputs were single-line text fields, so multi-line JSON was unenterable."""
+        test_cache.lpush("inputs:list", "a")
+
+        response = admin_client.get(_key_detail_url("default", "inputs:list"))
+        content = response.content.decode()
+
+        for field_id in ("id_lpush_value", "id_rpush_value"):
+            assert f'id="{field_id}" name="value" rows="4" class="cachex-value-input"' in content
+
+    def test_item_rows_use_the_shared_textarea(self, admin_client: Client, test_cache: RespCache):
+        test_cache.rpush("inputs:rows", "a", "b")
+
+        response = admin_client.get(_key_detail_url("default", "inputs:rows"))
+        content = response.content.decode()
+
+        assert 'name="value" rows="2" class="cachex-value-input" form="list-update-0"' in content
+        assert 'name="value" rows="2" class="cachex-value-input" form="list-update-1"' in content
+
+    def test_zset_member_is_editable(self, admin_client: Client, test_cache: RespCache):
+        """Members used to render as static <code>, so only the score could be changed."""
+        test_cache.zadd("inputs:zset", {"alpha": 1.0})
+
+        response = admin_client.get(_key_detail_url("default", "inputs:zset"))
+        content = response.content.decode()
+
+        assert 'name="new_member" rows="2" class="cachex-value-input" form="zset-update-0"' in content
+        assert 'name="action" value="zupdate"' in content
+
+    def test_non_serializable_entry_is_read_only(self, admin_client: Client, test_cache: RespCache):
+        """A repr() rendering cannot be submitted back: it would store the repr text."""
+        test_cache.rpush("inputs:repr", datetime(2026, 8, 21, tzinfo=UTC))
+
+        response = admin_client.get(_key_detail_url("default", "inputs:repr"))
+        content = response.content.decode()
+
+        assert "readonly" in content
+        assert "datetime.datetime(2026, 8, 21" in content
+        assert content.count("disabled") >= 2
+
+    def test_zset_member_can_be_renamed(self, admin_client: Client, test_cache: RespCache):
+        test_cache.zadd("inputs:rename", {"alpha": 1.0})
+
+        response = admin_client.post(
+            _key_detail_url("default", "inputs:rename"),
+            {"action": "zupdate", "member": '"alpha"', "new_member": '"beta"', "score_value": "3.5"},
+        )
+        assert response.status_code == 302
+        assert test_cache.zrange("inputs:rename", 0, -1, withscores=True) == [("beta", 3.5)]
+
+    def test_zset_score_only_edit_keeps_the_member(self, admin_client: Client, test_cache: RespCache):
+        test_cache.zadd("inputs:score", {"alpha": 1.0})
+
+        response = admin_client.post(
+            _key_detail_url("default", "inputs:score"),
+            {"action": "zupdate", "member": '"alpha"', "new_member": '"alpha"', "score_value": "9"},
+        )
+        assert response.status_code == 302
+        assert test_cache.zrange("inputs:score", 0, -1, withscores=True) == [("alpha", 9.0)]
+
+    def test_set_member_can_be_replaced(self, admin_client: Client, test_cache: RespCache):
+        test_cache.sadd("inputs:set", "alpha")
+
+        response = admin_client.post(
+            _key_detail_url("default", "inputs:set"),
+            {"action": "supdate", "member": '"alpha"', "new_member": '"beta"'},
+        )
+        assert response.status_code == 302
+        assert test_cache.smembers("inputs:set") == {"beta"}
+
+    def test_xadd_parses_json_like_every_other_value(self, admin_client: Client, test_cache: RespCache):
+        """xadd was the one handler that stored its value as a raw string."""
+        response = admin_client.post(
+            _key_detail_create_url("default", "inputs:stream", "string"),
+            {"action": "xadd", "field": "payload", "field_value": "42"},
+        )
+        assert response.status_code == 302
+
+        entries = test_cache.xrange("inputs:stream")
+        assert entries[0][1] == {"payload": 42}
+
+    def test_hash_field_is_renameable(self, admin_client: Client, test_cache: RespCache):
+        """Field names used to render as static <code>, so only the value could be changed."""
+        test_cache.hset("inputs:hash", "field1", "a")
+
+        response = admin_client.get(_key_detail_url("default", "inputs:hash"))
+        content = response.content.decode()
+
+        assert 'name="new_field" value="field1" class="cachex-value-input" form="hash-update-0"' in content
+        assert 'name="action" value="hupdate"' in content
+
+    def test_hash_field_can_be_renamed(self, admin_client: Client, test_cache: RespCache):
+        test_cache.hset("inputs:hrename", "old", "a")
+
+        response = admin_client.post(
+            _key_detail_url("default", "inputs:hrename"),
+            {"action": "hupdate", "field": "old", "new_field": "new", "field_value": '"b"'},
+        )
+        assert response.status_code == 302
+        assert test_cache.hgetall("inputs:hrename") == {"new": "b"}
+
+    def test_hash_rename_refuses_to_clobber_an_existing_field(self, admin_client: Client, test_cache: RespCache):
+        test_cache.hset("inputs:hclobber", "old", "a")
+        test_cache.hset("inputs:hclobber", "taken", "b")
+
+        response = admin_client.post(
+            _key_detail_url("default", "inputs:hclobber"),
+            {"action": "hupdate", "field": "old", "new_field": "taken", "field_value": '"c"'},
+        )
+        assert response.status_code == 302
+        assert test_cache.hgetall("inputs:hclobber") == {"old": "a", "taken": "b"}
+
+    def test_hash_value_only_edit_keeps_the_field(self, admin_client: Client, test_cache: RespCache):
+        test_cache.hset("inputs:hvalue", "field1", "a")
+
+        response = admin_client.post(
+            _key_detail_url("default", "inputs:hvalue"),
+            {"action": "hupdate", "field": "field1", "new_field": "field1", "field_value": '"b"'},
+        )
+        assert response.status_code == 302
+        assert test_cache.hgetall("inputs:hvalue") == {"field1": "b"}
+
+    def test_string_update_strips_surrounding_whitespace(self, admin_client: Client, test_cache: RespCache):
+        """Every container handler stripped; the string editor did not."""
+        test_cache.set("inputs:string", "old")
+
+        response = admin_client.post(
+            _key_detail_url("default", "inputs:string"),
+            {"action": "update", "value": '  "new"  '},
+        )
+        assert response.status_code == 302
+        assert test_cache.get("inputs:string") == "new"
+
+
 class TestFlushCache:
     """Tests for flush cache functionality."""
 

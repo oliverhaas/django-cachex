@@ -1,24 +1,33 @@
 {% load i18n %}
+{% with input_tpl="admin/django_cachex/key/key_detail_value_input.html#value-input" %}
 <!-- List Operations -->
-<fieldset class="module aligned">
+<fieldset class="module aligned monospace">
     <h2>{% trans 'Operations' %}</h2>
     <div class="form-row">
-        <label>{% trans 'Push Left:' %}</label>
-        <form method="post" style="display: inline;">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="lpush">
-            <input type="text" name="value" placeholder="{% trans 'value' %}" style="width: 120px;">
-            <button type="submit" class="button btn-small">{% trans 'Push' %}</button>
-        </form>
+        <div>
+            <label for="id_lpush_value">{% trans 'Push Left:' %}</label>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="lpush">
+                {% include input_tpl with name="value" rows=4 field_id="id_lpush_value" placeholder=_("value") editable=True only %}
+                <div class="cachex-value-actions">
+                    <button type="submit" class="button btn-small">{% trans 'Push' %}</button>
+                </div>
+            </form>
+        </div>
     </div>
     <div class="form-row">
-        <label>{% trans 'Push Right:' %}</label>
-        <form method="post" style="display: inline;">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="rpush">
-            <input type="text" name="value" placeholder="{% trans 'value' %}" style="width: 120px;">
-            <button type="submit" class="button btn-small">{% trans 'Push' %}</button>
-        </form>
+        <div>
+            <label for="id_rpush_value">{% trans 'Push Right:' %}</label>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="rpush">
+                {% include input_tpl with name="value" rows=4 field_id="id_rpush_value" placeholder=_("value") editable=True only %}
+                <div class="cachex-value-actions">
+                    <button type="submit" class="button btn-small">{% trans 'Push' %}</button>
+                </div>
+            </form>
+        </div>
     </div>
     <div class="form-row">
         <label>{% trans 'Pop Left:' %}</label>
@@ -50,78 +59,56 @@
     </div>
 </fieldset>
 <!-- List Items -->
-<fieldset class="module aligned">
+<fieldset class="module aligned monospace">
     <h2>{% trans 'List Items' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
     {% if type_data.item_entries %}
     <div class="results">
-        <table id="result_list" style="width: 100%;">
+        <table id="result_list" class="cachex-entry-table" style="width: 100%;">
             <thead>
                 <tr>
                     <th scope="col" style="width: 60px;">{% trans 'Index' %}</th>
                     <th scope="col">{% trans 'Value' %}</th>
-                    <th scope="col" style="width: 150px;">{% trans 'Actions' %}</th>
+                    <th scope="col" style="width: 110px;">{% trans 'Actions' %}</th>
                 </tr>
             </thead>
             <tbody>
-                {% for index, item, sha1 in type_data.item_entries %}
+                {% for index, item, sha1, editable in type_data.item_entries %}
                 <tr class="{% cycle 'row1' 'row2' %}">
                     <td class="quiet">{{ index }}</td>
+                    <td>{% include input_tpl with name="value" value=item rows=2 form_id="list-update-" row_index=forloop.counter0 editable=editable only %}</td>
                     <td>
-                        <textarea name="value" class="vTextField" form="list-update-{{ forloop.counter0 }}" style="field-sizing: content; width: 100%; box-sizing: border-box; min-height: 1.5em; max-height: 15em; overflow-y: auto; resize: vertical;">{{ item }}</textarea>
-                    </td>
-                    <td>
-                        <button type="submit" form="list-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
-                        <form method="post" style="display: inline;">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="lrem">
-                            <input type="hidden" name="value" value="{{ item }}">
-                            <button type="submit" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Remove this item?' %}');">{% trans 'Remove' %}</button>
-                        </form>
+                        <div class="cachex-row-actions">
+                            {% if editable %}
+                            <button type="submit" form="list-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
+                            <button type="submit" form="list-remove-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Remove this item?' %}');">{% trans 'Remove' %}</button>
+                            {% else %}
+                            <button type="button" class="button btn-small" disabled title="{% trans 'Not JSON-serializable, so this item cannot be edited or matched for removal.' %}">{% trans 'Update' %}</button>
+                            <button type="button" class="button delete-btn btn-small" disabled title="{% trans 'Not JSON-serializable, so this item cannot be edited or matched for removal.' %}">{% trans 'Remove' %}</button>
+                            {% endif %}
+                        </div>
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-    <!-- Forms for list update operations (outside table for valid HTML) -->
-    {% for index, item, sha1 in type_data.item_entries %}
+    <!-- Forms for list operations (outside table for valid HTML) -->
+    {% for index, item, sha1, editable in type_data.item_entries %}
     <form id="list-update-{{ forloop.counter0 }}" method="post" style="display: none;">
         {% csrf_token %}
         <input type="hidden" name="action" value="lset">
         <input type="hidden" name="index" value="{{ index }}">
         {% if sha1 %}<input type="hidden" name="original_sha1" value="{{ sha1 }}">{% endif %}
     </form>
+    <form id="list-remove-{{ forloop.counter0 }}" method="post" style="display: none;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="lrem">
+        <input type="hidden" name="value" value="{{ item }}">
+    </form>
     {% endfor %}
-    {% elif type_data.items %}
-    <div class="results">
-        <table id="result_list" style="width: 100%;">
-            <thead>
-                <tr>
-                    <th scope="col" style="width: 60px;">{% trans 'Index' %}</th>
-                    <th scope="col">{% trans 'Value' %}</th>
-                    <th scope="col" style="width: 80px;">{% trans 'Actions' %}</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in type_data.items %}
-                <tr class="{% cycle 'row1' 'row2' %}">
-                    <td class="quiet">{{ forloop.counter0 }}</td>
-                    <td style="word-break: break-all; max-height: 15em; overflow-y: auto;"><code>{{ item }}</code></td>
-                    <td>
-                        <form method="post" style="display: inline;">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="lrem">
-                            <input type="hidden" name="value" value="{{ item }}">
-                            <button type="submit" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Remove this item?' %}');">{% trans 'Remove' %}</button>
-                        </form>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
     {% else %}
     <p class="quiet" style="padding: 10px;">{% trans 'List is empty.' %}</p>
     {% endif %}
     {% include "admin/django_cachex/key/key_detail_pagination.html" %}
 </fieldset>
+{% endwith %}

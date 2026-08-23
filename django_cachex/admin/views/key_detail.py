@@ -13,6 +13,7 @@ from django.shortcuts import redirect, render
 from django.utils import timezone
 
 from django_cachex.admin.cas import (
+    cas_rename_hash_field,
     cas_update_hash_field,
     cas_update_list_element,
     cas_update_string,
@@ -65,6 +66,10 @@ def _parse_json_or_str(value: str) -> Any:
     with contextlib.suppress(json.JSONDecodeError, ValueError):
         return json.loads(value)
     return value
+
+
+# Extra CAS result, returned only by the hash field rename script.
+_CAS_NAME_TAKEN = -2
 
 
 def _apply_cas_result(
@@ -144,7 +149,7 @@ def _handle_delete(request: HttpRequest, cache: Any, cache_name: str, key: str, 
 
 def _handle_update(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse | None:
     try:
-        new_value = _parse_json_or_str(request.POST.get("value", ""))
+        new_value = _parse_json_or_str(request.POST.get("value", "").strip())
         original_sha1 = request.POST.get("original_sha1", "").strip()
         if original_sha1 and hasattr(cache, "eval_script"):
             cas_result = cas_update_string(cache, key, original_sha1, new_value)
@@ -342,6 +347,29 @@ def _handle_srem(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
     return _redirect_to_key(cache_name, key, page)
 
 
+def _handle_supdate(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
+    """Rewrite one set member. Sets have no in-place update, so add then remove."""
+    raw_old = request.POST.get("member", "").strip()
+    raw_new = request.POST.get("new_member", "").strip()
+    if not raw_new:
+        messages.error(request, "Member is required.")
+        return _redirect_to_key(cache_name, key, page)
+    member = _parse_json_or_str(raw_old)
+    new_member = _parse_json_or_str(raw_new)
+    if new_member == member:
+        messages.info(request, "Member unchanged.")
+        return _redirect_to_key(cache_name, key, page)
+    try:
+        # Add before removing: an interruption leaves a visible duplicate
+        # rather than dropping the member entirely.
+        cache.sadd(key, new_member)
+        cache.srem(key, member)
+        messages.success(request, f"Replaced '{member}' with '{new_member}'.")
+    except Exception as e:  # noqa: BLE001
+        messages.error(request, str(e))
+    return _redirect_to_key(cache_name, key, page)
+
+
 def _handle_spop(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
     count = _parse_count(request, "pop_count")
     try:
@@ -374,6 +402,47 @@ def _handle_hset(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         else:
             cache.hset(key, field, value)
             messages.success(request, f"Set field '{field}'.")
+    except Exception as e:  # noqa: BLE001
+        messages.error(request, str(e))
+    return _redirect_to_key(cache_name, key, page)
+
+
+def _handle_hupdate(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
+    """Update one hash row: its value, its field name, or both."""
+    field = request.POST.get("field", "").strip()
+    new_field = request.POST.get("new_field", "").strip()
+    if not new_field:
+        messages.error(request, "Field name is required.")
+        return _redirect_to_key(cache_name, key, page)
+    if new_field == field:
+        # Value-only edit: reuse the CAS-protected path.
+        return _handle_hset(request, cache, cache_name, key, page)
+    value = _parse_json_or_str(request.POST.get("field_value", "").strip())
+    try:
+        original_sha1 = request.POST.get("original_sha1", "").strip()
+        if original_sha1 and hasattr(cache, "eval_script"):
+            cas_result = cas_rename_hash_field(cache, key, field, new_field, original_sha1, value)
+            if cas_result == _CAS_NAME_TAKEN:
+                messages.error(request, f"Field '{new_field}' already exists.")
+            else:
+                _apply_cas_result(
+                    request,
+                    cas_result,
+                    success=f"Renamed field '{field}' to '{new_field}'.",
+                    conflict=(
+                        f"Conflict: field '{field}' was modified since you loaded the page. "
+                        "Please refresh and try again."
+                    ),
+                    missing=f"Field '{field}' no longer exists.",
+                )
+        elif cache.hexists(key, new_field):
+            messages.error(request, f"Field '{new_field}' already exists.")
+        else:
+            # Write the new field before dropping the old one, so an interruption
+            # leaves a visible duplicate rather than losing the value.
+            cache.hset(key, new_field, value)
+            cache.hdel(key, field)
+            messages.success(request, f"Renamed field '{field}' to '{new_field}'.")
     except Exception as e:  # noqa: BLE001
         messages.error(request, str(e))
     return _redirect_to_key(cache_name, key, page)
@@ -447,6 +516,35 @@ def _handle_zrem(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
     return _redirect_to_key(cache_name, key, page)
 
 
+def _handle_zupdate(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
+    """Update one sorted-set row: its score, its member text, or both."""
+    raw_old = request.POST.get("member", "").strip()
+    raw_new = request.POST.get("new_member", "").strip()
+    score_str = request.POST.get("score_value", "").strip()
+    if not (raw_new and score_str):
+        messages.error(request, "Member and score are required.")
+        return _redirect_to_key(cache_name, key, page)
+    member = _parse_json_or_str(raw_old)
+    new_member = _parse_json_or_str(raw_new)
+    if new_member == member:
+        # Score-only edit: reuse the CAS-protected path.
+        return _handle_zadd(request, cache, cache_name, key, page)
+    try:
+        score = float(score_str)
+    except ValueError:
+        messages.error(request, "Score must be a number.")
+        return _redirect_to_key(cache_name, key, page)
+    try:
+        # Add before removing, so an interruption leaves a visible duplicate
+        # rather than dropping the member entirely.
+        cache.zadd(key, {new_member: score})
+        cache.zrem(key, member)
+        messages.success(request, f"Renamed '{member}' to '{new_member}' (score {score}).")
+    except Exception as e:  # noqa: BLE001
+        messages.error(request, str(e))
+    return _redirect_to_key(cache_name, key, page)
+
+
 def _handle_zpop(
     request: HttpRequest,
     cache: Any,
@@ -487,7 +585,7 @@ def _handle_xadd(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         messages.error(request, "Field name and value are required.")
         return _redirect_to_key(cache_name, key, page)
     try:
-        entry_id = cache.xadd(key, {field: field_value})
+        entry_id = cache.xadd(key, {field: _parse_json_or_str(field_value)})
         messages.success(request, f"Added entry {entry_id}.")
     except Exception as e:  # noqa: BLE001
         messages.error(request, str(e))
@@ -543,13 +641,16 @@ _POST_HANDLERS: dict[str, Callable[[HttpRequest, Any, str, str, int], HttpRespon
     # Set
     "sadd": _handle_sadd,
     "srem": _handle_srem,
+    "supdate": _handle_supdate,
     "spop": _handle_spop,
     # Hash
     "hset": _handle_hset,
+    "hupdate": _handle_hupdate,
     "hdel": _handle_hdel,
     # Sorted set
     "zadd": _handle_zadd,
     "zrem": _handle_zrem,
+    "zupdate": _handle_zupdate,
     "zpopmin": _handle_zpopmin,
     "zpopmax": _handle_zpopmax,
     # Stream

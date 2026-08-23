@@ -1,16 +1,21 @@
 {% load i18n %}
+{% with input_tpl="admin/django_cachex/key/key_detail_value_input.html#value-input" %}
 <!-- Stream Operations -->
-<fieldset class="module aligned">
+<fieldset class="module aligned monospace">
     <h2>{% trans 'Operations' %}</h2>
     <div class="form-row">
-        <label>{% trans 'Add Entry:' %}</label>
-        <form method="post" style="display: inline;">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="xadd">
-            <input type="text" name="field" placeholder="{% trans 'field' %}" style="width: 100px;">
-            <input type="text" name="field_value" placeholder="{% trans 'value' %}" style="width: 150px;">
-            <button type="submit" class="button btn-small">{% trans 'Add' %}</button>
-        </form>
+        <div>
+            <label for="id_xadd_value">{% trans 'Add Entry:' %}</label>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="xadd">
+                <div class="cachex-name-row"><input type="text" name="field" placeholder="{% trans 'field' %}" class="vTextField"></div>
+                {% include input_tpl with name="field_value" rows=4 field_id="id_xadd_value" placeholder=_("value") editable=True only %}
+                <div class="cachex-value-actions">
+                    <button type="submit" class="button btn-small">{% trans 'Add' %}</button>
+                </div>
+            </form>
+        </div>
     </div>
     <div class="form-row">
         <label>{% trans 'Trim:' %}</label>
@@ -23,11 +28,11 @@
     </div>
 </fieldset>
 <!-- Stream Entries -->
-<fieldset class="module aligned">
+<fieldset class="module aligned monospace">
     <h2>{% trans 'Stream Entries' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
     {% if type_data.entries %}
     <div class="results">
-        <table id="result_list" style="width: 100%;">
+        <table id="result_list" class="cachex-entry-table" style="width: 100%;">
             <thead>
                 <tr>
                     <th scope="col" style="width: 180px;">{% trans 'Entry ID' %}</th>
@@ -58,3 +63,4 @@
     {% endif %}
     {% include "admin/django_cachex/key/key_detail_pagination.html" %}
 </fieldset>
+{% endwith %}

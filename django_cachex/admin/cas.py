@@ -8,6 +8,7 @@ Each CAS function returns:
     1: success (value matched, update applied)
     0: conflict (value changed since page load)
    -1: gone (key/field/index no longer exists)
+   -2: target name already taken (hash field rename only)
 """
 
 from typing import TYPE_CHECKING, Any
@@ -89,6 +90,16 @@ if redis.sha1hex(v) == ARGV[2] then
     return 1
 end
 return 0
+"""
+
+_CAS_HASH_RENAME = """\
+local v = redis.call('HGET', KEYS[1], ARGV[1])
+if v == false then return -1 end
+if redis.sha1hex(v) ~= ARGV[3] then return 0 end
+if redis.call('HEXISTS', KEYS[1], ARGV[2]) == 1 then return -2 end
+redis.call('HSET', KEYS[1], ARGV[2], ARGV[4])
+redis.call('HDEL', KEYS[1], ARGV[1])
+return 1
 """
 
 _CAS_ZSET_SCORE_UPDATE = """\
@@ -239,6 +250,31 @@ def cas_update_hash_field(
         _CAS_HASH_UPDATE,
         keys=[key],
         args=[field, expected_sha1, encoded],
+        pre_hook=keys_only_pre,
+    )
+
+
+def cas_rename_hash_field(
+    cache: RespCache,
+    key: str,
+    field: str,
+    new_field: str,
+    expected_sha1: str,
+    new_value: Any,
+) -> int:
+    """Atomically move a hash field to a new name if its value hasn't changed.
+
+    Redis has no HRENAME, so a rename is HSET plus HDEL. Running the pair in a
+    script keeps it atomic and costs a single round trip.
+
+    Returns:
+        1 = success, 0 = conflict, -1 = field gone, -2 = new name already taken.
+    """
+    encoded = cache.encode(new_value)
+    return cache.eval_script(
+        _CAS_HASH_RENAME,
+        keys=[key],
+        args=[field, new_field, expected_sha1, encoded],
         pre_hook=keys_only_pre,
     )
 
