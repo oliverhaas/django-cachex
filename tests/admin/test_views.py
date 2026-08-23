@@ -3199,7 +3199,6 @@ class TestBreadcrumbs:
         assert crumbs.count("<li") == len(trail)
         for label in trail:
             assert label in crumbs
-        # The final crumb is the current page and must be marked for screen readers.
         assert 'aria-current="page"' in crumbs
 
     def test_key_list_breadcrumbs(self, admin_client: Client, test_cache):
