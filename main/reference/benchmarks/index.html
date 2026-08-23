@@ -1348,7 +1348,7 @@ to trust.</p>
 <li>CPython 3.14.2 (GIL build)</li>
 <li>Django 6.0</li>
 <li>Redis 8 / Valkey 8 in local Docker, paired natively per adapter
-  (<code>redis-py</code> → redis, <code>valkey-py</code> / <code>redis-rs</code> / <code>valkey-glide</code> → valkey, <code>django (builtin)</code> → redis)</li>
+  (<code>redis-py</code> → redis, <code>valkey-py</code> / <code>valkey-glide</code> → valkey, <code>django (builtin)</code> → redis)</li>
 </ul>
 <h2 id="what-the-workload-does">What the workload does<a class="headerlink" href="#what-the-workload-does" title="Permanent link">&para;</a></h2>
 <ul>
@@ -1425,26 +1425,15 @@ request, no asyncio.</p>
 <td style="text-align: right;">48</td>
 </tr>
 <tr>
-<td><strong>redis-rs</strong></td>
-<td style="text-align: right;"><strong>9,366</strong></td>
-<td style="text-align: right;"><strong>13,631</strong></td>
-<td style="text-align: right;"><strong>11,354</strong></td>
-<td style="text-align: right;"><strong>2,852</strong></td>
-<td style="text-align: right;"><strong>4,322</strong></td>
-<td style="text-align: right;"><strong>13,875</strong></td>
-<td style="text-align: right;"><strong>6,232</strong></td>
-<td style="text-align: right;"><strong>29</strong></td>
-</tr>
-<tr>
 <td><strong>valkey-glide</strong></td>
-<td style="text-align: right;">7,110</td>
-<td style="text-align: right;">8,821</td>
-<td style="text-align: right;">6,887</td>
-<td style="text-align: right;">1,928</td>
-<td style="text-align: right;">1,844</td>
-<td style="text-align: right;">9,076</td>
-<td style="text-align: right;">3,980</td>
-<td style="text-align: right;">29</td>
+<td style="text-align: right;"><strong>7,110</strong></td>
+<td style="text-align: right;"><strong>8,821</strong></td>
+<td style="text-align: right;"><strong>6,887</strong></td>
+<td style="text-align: right;"><strong>1,928</strong></td>
+<td style="text-align: right;"><strong>1,844</strong></td>
+<td style="text-align: right;"><strong>9,076</strong></td>
+<td style="text-align: right;"><strong>3,980</strong></td>
+<td style="text-align: right;"><strong>29</strong></td>
 </tr>
 <tr>
 <td>django (builtin)</td>
@@ -1459,14 +1448,12 @@ request, no asyncio.</p>
 </tr>
 </tbody>
 </table>
-<p><code>redis-rs</code> is ~4× the fastest pure-Python adapter on single-key ops and
-uses ~2-4× less Python memory. <code>valkey-glide</code> lands second on
-single-key phases and matches <code>redis-rs</code> on memory. The C parsers
-(<code>hiredis</code>, <code>libvalkey</code>) shave Python memory in half on their
-respective adapters but only move throughput by a few percent.</p>
+<p><code>valkey-glide</code> is ~2.5× the fastest pure-Python adapter on single-key
+ops and uses ~2-4× less Python memory. The C parsers (<code>hiredis</code>,
+<code>libvalkey</code>) shave Python memory in half on their respective adapters
+but only move throughput by a few percent.</p>
 <h2 id="serializers">Serializers<a class="headerlink" href="#serializers" title="Permanent link">&para;</a></h2>
-<p><code>redis-rs</code> adapter, varying the serializer (adapter overhead is smallest
-there, so serializer cost dominates).</p>
+<p><code>valkey-py+libvalkey</code> adapter, varying the serializer.</p>
 <table>
 <thead>
 <tr>
@@ -1483,63 +1470,66 @@ there, so serializer cost dominates).</p>
 <tbody>
 <tr>
 <td>pickle</td>
-<td style="text-align: right;">9,618</td>
-<td style="text-align: right;">13,776</td>
-<td style="text-align: right;">11,228</td>
-<td style="text-align: right;">2,859</td>
-<td style="text-align: right;">4,373</td>
-<td style="text-align: right;">13,218</td>
-<td style="text-align: right;">6,129</td>
+<td style="text-align: right;">2,502</td>
+<td style="text-align: right;">2,732</td>
+<td style="text-align: right;">2,578</td>
+<td style="text-align: right;">1,565</td>
+<td style="text-align: right;">1,249</td>
+<td style="text-align: right;">2,771</td>
+<td style="text-align: right;">1,328</td>
 </tr>
 <tr>
 <td>json</td>
-<td style="text-align: right;">9,420</td>
-<td style="text-align: right;">14,004</td>
-<td style="text-align: right;">7,910</td>
-<td style="text-align: right;">2,454</td>
-<td style="text-align: right;">1,867</td>
-<td style="text-align: right;">13,970</td>
-<td style="text-align: right;">6,021</td>
+<td style="text-align: right;">2,464</td>
+<td style="text-align: right;">2,783</td>
+<td style="text-align: right;">2,361</td>
+<td style="text-align: right;">1,419</td>
+<td style="text-align: right;">898</td>
+<td style="text-align: right;">2,846</td>
+<td style="text-align: right;">1,348</td>
 </tr>
 <tr>
 <td>msgpack</td>
-<td style="text-align: right;">9,985</td>
-<td style="text-align: right;">13,951</td>
-<td style="text-align: right;">11,535</td>
-<td style="text-align: right;">3,251</td>
-<td style="text-align: right;">4,873</td>
-<td style="text-align: right;">13,465</td>
-<td style="text-align: right;">6,163</td>
+<td style="text-align: right;">2,459</td>
+<td style="text-align: right;">2,726</td>
+<td style="text-align: right;">2,609</td>
+<td style="text-align: right;">1,653</td>
+<td style="text-align: right;">1,165</td>
+<td style="text-align: right;">2,831</td>
+<td style="text-align: right;">1,344</td>
 </tr>
 <tr>
 <td>orjson</td>
-<td style="text-align: right;">10,178</td>
-<td style="text-align: right;">14,119</td>
-<td style="text-align: right;">12,328</td>
-<td style="text-align: right;">3,513</td>
-<td style="text-align: right;">5,245</td>
-<td style="text-align: right;">14,080</td>
-<td style="text-align: right;">6,194</td>
+<td style="text-align: right;">2,542</td>
+<td style="text-align: right;">2,757</td>
+<td style="text-align: right;">2,647</td>
+<td style="text-align: right;">1,750</td>
+<td style="text-align: right;">1,301</td>
+<td style="text-align: right;">2,857</td>
+<td style="text-align: right;">1,362</td>
 </tr>
 <tr>
 <td>ormsgpack</td>
-<td style="text-align: right;">10,780</td>
-<td style="text-align: right;">14,474</td>
-<td style="text-align: right;">12,417</td>
-<td style="text-align: right;">3,476</td>
-<td style="text-align: right;">5,276</td>
-<td style="text-align: right;">13,680</td>
-<td style="text-align: right;">6,261</td>
+<td style="text-align: right;">2,550</td>
+<td style="text-align: right;">2,792</td>
+<td style="text-align: right;">2,632</td>
+<td style="text-align: right;">1,742</td>
+<td style="text-align: right;">1,290</td>
+<td style="text-align: right;">2,884</td>
+<td style="text-align: right;">1,360</td>
 </tr>
 </tbody>
 </table>
-<p><code>ormsgpack</code> and <code>orjson</code> (both Rust-cored) edge <code>pickle</code> on most
-phases. Smaller wire payload outweighs the encoder cost. The
-pure-Python <code>json</code> collapses on <code>set</code>/<code>mset</code> because the encoder is the
+<p>The single-key phases are adapter-bound: <code>get</code>, <code>get-miss</code>, <code>incr</code> and
+<code>delete</code> land within a few percent of each other whatever the serializer,
+because the Python transport costs more than any encoder does. The
+serializer shows up on the batch phases, where payload size is multiplied
+by ten: <code>orjson</code> and <code>ormsgpack</code> (both Rust-cored) run <code>mset</code> ~4% ahead of
+<code>pickle</code> and ~45% ahead of <code>json</code>, whose pure-Python encoder is the
 bottleneck there.</p>
 <h2 id="compressors-macro">Compressors (macro)<a class="headerlink" href="#compressors-macro" title="Permanent link">&para;</a></h2>
-<p><code>redis-rs</code> + <code>pickle</code> on a 14 KiB queryset-shaped payload, end-to-end
-cache ops.</p>
+<p><code>valkey-py+libvalkey</code> + <code>pickle</code> on a 14 KiB queryset-shaped payload,
+end-to-end cache ops.</p>
 <table>
 <thead>
 <tr>
@@ -1557,76 +1547,77 @@ cache ops.</p>
 <tbody>
 <tr>
 <td>none</td>
-<td style="text-align: right;">2,808</td>
-<td style="text-align: right;">12,825</td>
-<td style="text-align: right;">7,504</td>
-<td style="text-align: right;">312</td>
-<td style="text-align: right;">1,802</td>
-<td style="text-align: right;">13,928</td>
-<td style="text-align: right;">6,238</td>
-<td style="text-align: right;">1,266</td>
+<td style="text-align: right;">1,577</td>
+<td style="text-align: right;">2,711</td>
+<td style="text-align: right;">2,342</td>
+<td style="text-align: right;">291</td>
+<td style="text-align: right;">990</td>
+<td style="text-align: right;">2,785</td>
+<td style="text-align: right;">1,349</td>
+<td style="text-align: right;">1,268</td>
 </tr>
 <tr>
 <td>zlib</td>
-<td style="text-align: right;">2,725</td>
-<td style="text-align: right;">13,188</td>
-<td style="text-align: right;">4,428</td>
-<td style="text-align: right;">299</td>
-<td style="text-align: right;">722</td>
-<td style="text-align: right;">13,282</td>
-<td style="text-align: right;">6,049</td>
-<td style="text-align: right;">167</td>
+<td style="text-align: right;">1,544</td>
+<td style="text-align: right;">2,770</td>
+<td style="text-align: right;">1,902</td>
+<td style="text-align: right;">286</td>
+<td style="text-align: right;">531</td>
+<td style="text-align: right;">2,841</td>
+<td style="text-align: right;">1,347</td>
+<td style="text-align: right;">166</td>
 </tr>
 <tr>
 <td>gzip</td>
-<td style="text-align: right;">2,618</td>
-<td style="text-align: right;">13,531</td>
-<td style="text-align: right;">4,084</td>
-<td style="text-align: right;">288</td>
-<td style="text-align: right;">638</td>
-<td style="text-align: right;">13,893</td>
-<td style="text-align: right;">6,200</td>
-<td style="text-align: right;">165</td>
+<td style="text-align: right;">1,479</td>
+<td style="text-align: right;">2,753</td>
+<td style="text-align: right;">1,825</td>
+<td style="text-align: right;">272</td>
+<td style="text-align: right;">486</td>
+<td style="text-align: right;">2,864</td>
+<td style="text-align: right;">1,354</td>
+<td style="text-align: right;">166</td>
 </tr>
 <tr>
 <td>lzma</td>
-<td style="text-align: right;">2,526</td>
-<td style="text-align: right;">13,359</td>
-<td style="text-align: right;">807</td>
-<td style="text-align: right;">281</td>
-<td style="text-align: right;">89</td>
-<td style="text-align: right;">12,977</td>
-<td style="text-align: right;">6,022</td>
-<td style="text-align: right;">167</td>
+<td style="text-align: right;">1,466</td>
+<td style="text-align: right;">2,765</td>
+<td style="text-align: right;">646</td>
+<td style="text-align: right;">265</td>
+<td style="text-align: right;">83</td>
+<td style="text-align: right;">2,878</td>
+<td style="text-align: right;">1,362</td>
+<td style="text-align: right;">163</td>
 </tr>
 <tr>
 <td>lz4</td>
-<td style="text-align: right;">2,829</td>
-<td style="text-align: right;">13,415</td>
-<td style="text-align: right;">7,581</td>
-<td style="text-align: right;">310</td>
-<td style="text-align: right;">1,763</td>
-<td style="text-align: right;">13,342</td>
-<td style="text-align: right;">6,218</td>
-<td style="text-align: right;">234</td>
+<td style="text-align: right;">1,571</td>
+<td style="text-align: right;">2,773</td>
+<td style="text-align: right;">2,338</td>
+<td style="text-align: right;">290</td>
+<td style="text-align: right;">958</td>
+<td style="text-align: right;">2,879</td>
+<td style="text-align: right;">1,380</td>
+<td style="text-align: right;">233</td>
 </tr>
 <tr>
 <td>zstd</td>
-<td style="text-align: right;">2,765</td>
-<td style="text-align: right;">13,035</td>
-<td style="text-align: right;">6,398</td>
-<td style="text-align: right;">302</td>
-<td style="text-align: right;">1,399</td>
-<td style="text-align: right;">14,050</td>
-<td style="text-align: right;">6,196</td>
-<td style="text-align: right;">165</td>
+<td style="text-align: right;">1,564</td>
+<td style="text-align: right;">2,782</td>
+<td style="text-align: right;">2,248</td>
+<td style="text-align: right;">285</td>
+<td style="text-align: right;">833</td>
+<td style="text-align: right;">2,889</td>
+<td style="text-align: right;">1,400</td>
+<td style="text-align: right;">166</td>
 </tr>
 </tbody>
 </table>
-<p>Server-memory tells the trade-off: <code>lz4</code> keeps <code>set</code> throughput in the
-same ballpark as <code>none</code> while shrinking the working set ~5×; <code>zstd</code> is
-the densest of the cheap options. <code>lzma</code> is too slow for hot paths;
-reach for it only on rarely-written, memory-constrained data.</p>
+<p>Server-memory tells the trade-off: <code>lz4</code> keeps <code>set</code> throughput level
+with <code>none</code> while shrinking the working set ~5.4×; <code>zstd</code> is the densest
+of the cheap options, at ~4% off <code>none</code> on <code>set</code>. <code>lzma</code> is too slow for
+hot paths (<code>set</code> drops to a quarter, <code>mset</code> to a twelfth); reach for it
+only on rarely-written, memory-constrained data.</p>
 <h2 id="compressors-micro">Compressors (micro)<a class="headerlink" href="#compressors-micro" title="Permanent link">&para;</a></h2>
 <p>Pure compress/decompress on the same 14 KiB payload. No adapter, no
 network.</p>
@@ -1735,24 +1726,14 @@ overhead Django itself adds.</p>
 <td style="text-align: right;">1,238</td>
 </tr>
 <tr>
-<td><strong>redis-rs</strong></td>
-<td style="text-align: right;"><strong>1,343</strong></td>
-<td style="text-align: right;"><strong>1,960</strong></td>
-<td style="text-align: right;"><strong>1,887</strong></td>
-<td style="text-align: right;"><strong>1,206</strong></td>
-<td style="text-align: right;"><strong>1,417</strong></td>
-<td style="text-align: right;"><strong>1,905</strong></td>
-<td style="text-align: right;"><strong>1,928</strong></td>
-</tr>
-<tr>
 <td><strong>valkey-glide</strong></td>
-<td style="text-align: right;">1,150</td>
-<td style="text-align: right;">1,749</td>
-<td style="text-align: right;">1,668</td>
-<td style="text-align: right;">983</td>
-<td style="text-align: right;">940</td>
-<td style="text-align: right;">1,740</td>
-<td style="text-align: right;">1,745</td>
+<td style="text-align: right;"><strong>1,150</strong></td>
+<td style="text-align: right;"><strong>1,749</strong></td>
+<td style="text-align: right;"><strong>1,668</strong></td>
+<td style="text-align: right;"><strong>983</strong></td>
+<td style="text-align: right;"><strong>940</strong></td>
+<td style="text-align: right;"><strong>1,740</strong></td>
+<td style="text-align: right;"><strong>1,745</strong></td>
 </tr>
 <tr>
 <td>django (builtin)</td>
@@ -1767,9 +1748,9 @@ overhead Django itself adds.</p>
 </tbody>
 </table>
 <p>Django's per-request work caps the pure-Python adapters at ~1k req/s;
-at that point the cache is no longer the bottleneck. The Rust-cored
-adapters still land ~1.7-2× higher because their per-op overhead is
-small enough that Django's per-request work doesn't fully mask it.</p>
+at that point the cache is no longer the bottleneck. <code>valkey-glide</code>
+still lands ~1.4-1.8× higher because its per-op overhead is small
+enough that Django's per-request work doesn't fully mask it.</p>
 <h2 id="async-serial">Async serial<a class="headerlink" href="#async-serial" title="Permanent link">&para;</a></h2>
 <p>One <code>await cache.aget(...)</code> at a time, no <code>gather</code>. Direct comparison
 with sync; the gap is asyncio loop overhead (and <code>sync_to_async</code> for
@@ -1829,24 +1810,14 @@ backends without native async).</p>
 <td style="text-align: right;">1,026</td>
 </tr>
 <tr>
-<td><strong>redis-rs</strong></td>
-<td style="text-align: right;"><strong>6,510</strong></td>
-<td style="text-align: right;"><strong>8,099</strong></td>
-<td style="text-align: right;"><strong>7,310</strong></td>
-<td style="text-align: right;"><strong>2,362</strong></td>
-<td style="text-align: right;"><strong>3,503</strong></td>
-<td style="text-align: right;"><strong>8,187</strong></td>
-<td style="text-align: right;"><strong>3,772</strong></td>
-</tr>
-<tr>
-<td>valkey-glide</td>
-<td style="text-align: right;">3,251</td>
-<td style="text-align: right;">3,634</td>
-<td style="text-align: right;">3,291</td>
-<td style="text-align: right;">1,640</td>
-<td style="text-align: right;">1,634</td>
-<td style="text-align: right;">3,680</td>
-<td style="text-align: right;">1,735</td>
+<td><strong>valkey-glide</strong></td>
+<td style="text-align: right;"><strong>3,251</strong></td>
+<td style="text-align: right;"><strong>3,634</strong></td>
+<td style="text-align: right;"><strong>3,291</strong></td>
+<td style="text-align: right;"><strong>1,640</strong></td>
+<td style="text-align: right;"><strong>1,634</strong></td>
+<td style="text-align: right;"><strong>3,680</strong></td>
+<td style="text-align: right;"><strong>1,735</strong></td>
 </tr>
 <tr>
 <td>django (builtin)</td>
@@ -1860,12 +1831,10 @@ backends without native async).</p>
 </tr>
 </tbody>
 </table>
-<p><code>redis-rs</code> runs ~3-4× the C-parser Python adapters on every phase
-because its async path skips the <code>sync_to_async</code> round-trip the Python
-adapters make on top of their sync transports. <code>valkey-glide</code> is also
-native-async but the Python wrapper is heavier per call. Django's
-built-in <code>RedisCache</code> <code>mget</code>/<code>mset</code> collapse to ~190 ops/s under
-<code>sync_to_async</code>.</p>
+<p><code>valkey-glide</code> runs ~1.6-1.9× the C-parser Python adapters on every
+phase because its async path skips the <code>sync_to_async</code> round-trip the
+Python adapters make on top of their sync transports. Django's built-in
+<code>RedisCache</code> <code>mget</code>/<code>mset</code> collapse to ~190 ops/s under <code>sync_to_async</code>.</p>
 <h2 id="async-concurrent-50-in-flight">Async concurrent (50 in flight)<a class="headerlink" href="#async-concurrent-50-in-flight" title="Permanent link">&para;</a></h2>
 <p><code>asyncio.gather</code> of 50 ops at a time, closer to what an ASGI app
 under load actually generates.</p>
@@ -1929,25 +1898,14 @@ under load actually generates.</p>
 <td style="text-align: right;">108</td>
 </tr>
 <tr>
-<td><strong>redis-rs</strong></td>
-<td style="text-align: right;"><strong>21,354</strong></td>
-<td style="text-align: right;"><strong>35,524</strong></td>
-<td style="text-align: right;"><strong>28,350</strong></td>
-<td style="text-align: right;"><strong>2,372</strong></td>
-<td style="text-align: right;"><strong>6,347</strong></td>
-<td style="text-align: right;"><strong>37,786</strong></td>
-<td style="text-align: right;"><strong>5,764</strong></td>
-<td style="text-align: right;">108</td>
-</tr>
-<tr>
 <td><strong>valkey-glide</strong></td>
-<td style="text-align: right;">9,903</td>
-<td style="text-align: right;">12,208</td>
-<td style="text-align: right;">9,770</td>
-<td style="text-align: right;">1,949</td>
-<td style="text-align: right;">2,541</td>
-<td style="text-align: right;">11,950</td>
-<td style="text-align: right;">2,588</td>
+<td style="text-align: right;"><strong>9,903</strong></td>
+<td style="text-align: right;"><strong>12,208</strong></td>
+<td style="text-align: right;"><strong>9,770</strong></td>
+<td style="text-align: right;"><strong>1,949</strong></td>
+<td style="text-align: right;"><strong>2,541</strong></td>
+<td style="text-align: right;"><strong>11,950</strong></td>
+<td style="text-align: right;"><strong>2,588</strong></td>
 <td style="text-align: right;">109</td>
 </tr>
 <tr>
@@ -1963,10 +1921,10 @@ under load actually generates.</p>
 </tr>
 </tbody>
 </table>
-<p>This is where the multiplexed Rust transports pay off: <code>redis-rs</code>
-peaks at ~10× the Python adapters on single-key phases, <code>valkey-glide</code>
-at ~4×. Connection counts plateau (<code>Δ = 0</code> across phases on every
-adapter), so this also serves as the connection-leak smoke test.</p>
+<p>This is where the Rust-cored transport pays off: <code>valkey-glide</code> peaks
+at ~4-5× the Python adapters on single-key phases. Connection counts
+plateau (<code>Δ = 0</code> across phases on every adapter), so this also serves as
+the connection-leak smoke test.</p>
 <h2 id="asgi-full-stack">ASGI full-stack<a class="headerlink" href="#asgi-full-stack" title="Permanent link">&para;</a></h2>
 <p>Granian (4 workers) + httpx (100 concurrent, 20 s) hitting a view that
 does six async cache ops per request. Closest shape to a real
@@ -2021,15 +1979,6 @@ production load.</p>
 <td style="text-align: right;">216</td>
 </tr>
 <tr>
-<td>redis-rs</td>
-<td style="text-align: right;">423</td>
-<td style="text-align: right;">235.6</td>
-<td style="text-align: right;">1,752.0</td>
-<td style="text-align: right;">428</td>
-<td style="text-align: right;">115</td>
-<td style="text-align: right;">115</td>
-</tr>
-<tr>
 <td>valkey-glide</td>
 <td style="text-align: right;">324</td>
 <td style="text-align: right;">306.0</td>
@@ -2051,7 +2000,7 @@ production load.</p>
 </table>
 <p>req/s is noisy run-to-run on this benchmark; treat the rough buckets
 (~600 / ~400 / ~200) as the signal, not exact ranks. The clearer
-takeaways: both Rust adapters keep the connection count to ~half the
+takeaways: <code>valkey-glide</code> keeps the connection count to ~half the
 Python adapters, while Django's built-in <code>RedisCache</code> opens 316
 connections (it instantiates a fresh <code>redis.Redis</code> per cache call) and
 pays the highest average latency and the largest RSS.</p>

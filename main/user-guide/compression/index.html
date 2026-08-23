@@ -1396,15 +1396,15 @@ Throughput factor is normalized to <strong>no compression</strong>, so the table
 </tr>
 <tr>
 <td><code>zlib</code></td>
-<td style="text-align: center;">0.70×</td>
+<td style="text-align: center;">0.81×</td>
 </tr>
 <tr>
 <td><code>gzip</code></td>
-<td style="text-align: center;">0.65×</td>
+<td style="text-align: center;">0.76×</td>
 </tr>
 <tr>
 <td><code>lzma</code></td>
-<td style="text-align: center;"><strong>0.26×</strong></td>
+<td style="text-align: center;"><strong>0.37×</strong></td>
 </tr>
 <tr>
 <td><code>lz4</code></td>
@@ -1412,21 +1412,21 @@ Throughput factor is normalized to <strong>no compression</strong>, so the table
 </tr>
 <tr>
 <td><code>zstd</code></td>
-<td style="text-align: center;"><strong>0.90×</strong></td>
+<td style="text-align: center;"><strong>0.94×</strong></td>
 </tr>
 </tbody>
 </table>
 <p>Picking guide:</p>
 <ul>
-<li><code>zstd</code>: same ratio as <code>lzma</code> at ~60× the compress speed, and only ~10 % slower end-to-end than no compression at all. Default choice if available.</li>
-<li><code>lz4</code>: pick when CPU is the bottleneck and a ~40 % larger payload is acceptable. End-to-end throughput is statistically indistinguishable from no compression while still cutting payload size 6×.</li>
-<li><code>lzma</code>: pick only when output size matters more than write latency. Even then, <code>zstd</code> is usually a better trade now (same ratio, ~3× faster end-to-end).</li>
+<li><code>zstd</code>: same ratio as <code>lzma</code> at ~60× the compress speed, and only ~6 % slower end-to-end than no compression at all. Default choice if available.</li>
+<li><code>lz4</code>: pick when CPU is the bottleneck and a ~40 % larger payload is acceptable. End-to-end throughput is statistically indistinguishable from no compression while still cutting payload size ~5×.</li>
+<li><code>lzma</code>: pick only when output size matters more than write latency. Even then, <code>zstd</code> is usually a better trade now (same ratio, ~2.5× faster end-to-end).</li>
 <li><code>zlib</code> / <code>gzip</code>: nearly identical. Pick <code>zlib</code> unless you need gzip's framing for an external consumer.</li>
 <li>No compression: sets the throughput ceiling but stores ~8× more server memory. Outside narrow latency-critical paths, compression almost always wins.</li>
 </ul>
 <p>¹ Compressed size as a percentage of the input (~14 KiB pickled queryset-shaped payload).
 ² Absolute compress/decompress throughput in a tight loop (200 ops × 20 runs, median, single core). Numbers are hardware-dependent; use the ratios between rows, not the absolute values. Real-world impact also depends on payload compressibility (text/JSON compresses ~10×; already-compressed bytes barely shrink).
-³ Geometric mean of <code>get</code>/<code>set</code>/<code>mget</code>/<code>mset</code> ops/sec end-to-end via Django cache → <code>redis-rs</code> adapter → localhost Valkey, normalized to running without a compressor. Reproduce with the <a href="https://github.com/oliverhaas/django-cachex/tree/main/benchmarks">benchmarks</a> harness.</p>
+³ Geometric mean of <code>get</code>/<code>set</code>/<code>mget</code>/<code>mset</code> ops/sec end-to-end via Django cache → <code>valkey-py+libvalkey</code> adapter → localhost Valkey, normalized to running without a compressor. Reproduce with the <a href="https://github.com/oliverhaas/django-cachex/tree/main/benchmarks">benchmarks</a> harness.</p>
 <h2 id="fallback-for-migration">Fallback for Migration<a class="headerlink" href="#fallback-for-migration" title="Permanent link">&para;</a></h2>
 <p>Specify a list of compressors to safely migrate between formats. The first is used for writing, all are tried for reading:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>

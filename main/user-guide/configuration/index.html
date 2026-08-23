@@ -556,17 +556,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#valkey-redis-rust-driver" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Valkey / Redis (Rust driver)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#valkey-glide" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1520,17 +1509,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#valkey-redis-rust-driver" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Valkey / Redis (Rust driver)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#valkey-glide" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1968,36 +1946,6 @@
 </tr>
 </tbody>
 </table>
-<h3 id="valkey-redis-rust-driver">Valkey / Redis (Rust driver)<a class="headerlink" href="#valkey-redis-rust-driver" title="Permanent link">&para;</a></h3>
-<div class="admonition warning">
-<p class="admonition-title">Experimental</p>
-<p>The Rust driver is experimental: interfaces and behavior may change,
-and it has seen less production testing than the redis-py/valkey-py
-backends.</p>
-</div>
-<p>Nearly the same wire-level feature set as the Python driver, dispatched through the optional <code>django-cachex-redis-rs</code> extension (PyO3 + tokio + redis-rs). <code>slowlog_get</code> and <code>slowlog_len</code> are the exceptions and raise <code>NotSupportedError</code>. Sync and async share one tokio runtime, so async paths skip the asgiref threadpool round-trip. Install via the <code>redis-rs</code> extra.</p>
-<table>
-<thead>
-<tr>
-<th>Backend</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>RedisRsCache</code></td>
-<td>Standard connection (Valkey or Redis, protocol-compatible)</td>
-</tr>
-<tr>
-<td><code>RedisRsSentinelCache</code></td>
-<td>Sentinel high availability</td>
-</tr>
-<tr>
-<td><code>RedisRsClusterCache</code></td>
-<td>Cluster sharding</td>
-</tr>
-</tbody>
-</table>
 <h3 id="valkey-glide">Valkey-Glide<a class="headerlink" href="#valkey-glide" title="Permanent link">&para;</a></h3>
 <div class="admonition warning">
 <p class="admonition-title">Experimental</p>
@@ -2248,10 +2196,6 @@ selected by your <code>BACKEND</code>. Each cache class has a fixed adapter:</p>
 <tr>
 <td><code>django_cachex.cache.ValkeyCache</code></td>
 <td>valkey-py</td>
-</tr>
-<tr>
-<td><code>django_cachex.cache.RedisRsCache</code></td>
-<td>Rust driver</td>
 </tr>
 <tr>
 <td><code>django_cachex.cache.ValkeyGlideCache</code></td>

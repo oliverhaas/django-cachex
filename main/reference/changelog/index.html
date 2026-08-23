@@ -945,6 +945,34 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#050-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.5.0 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.5.0 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#042-august-2026" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1024,7 +1052,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#breaking-changes" class="md-nav__link">
+  <a href="#breaking-changes_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Breaking changes
@@ -1449,6 +1477,34 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#050-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.5.0 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.5.0 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#042-august-2026" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1528,7 +1584,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#breaking-changes" class="md-nav__link">
+  <a href="#breaking-changes_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Breaking changes
@@ -1842,6 +1898,12 @@
 
 
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
+<h2 id="050-august-2026">0.5.0 (August 2026)<a class="headerlink" href="#050-august-2026" title="Permanent link">&para;</a></h2>
+<h3 id="breaking-changes">Breaking changes<a class="headerlink" href="#breaking-changes" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>The <code>redis-rs</code> backends are gone.</strong> <code>RedisRsCache</code>, <code>RedisRsSentinelCache</code> and <code>RedisRsClusterCache</code>, the <code>django_cachex.adapters.redis_rs</code> module, the <code>redis-rs</code> extra and the <code>django-cachex-redis-rs</code> companion package have all been removed. The Rust driver was never published to PyPI, so no released install can break; switch to <code>ValkeyCache</code>, <code>RedisCache</code> or <code>ValkeyGlideCache</code>. A standalone <a href="https://github.com/oliverhaas/redis-rs-py">redis-rs-py</a> binding is in progress and cachex may grow an adapter for it once that package stands on its own.</li>
+<li><strong><code>django_cachex.Lock</code> and <code>django_cachex.AsyncLock</code> removed.</strong> They existed only to wrap the Rust driver's raw lock commands. <code>cache.lock()</code> is unchanged on every remaining backend, and <code>LockError</code> / <code>LockNotOwnedError</code> are still the exceptions it raises.</li>
+</ul>
 <h2 id="042-august-2026">0.4.2 (August 2026)<a class="headerlink" href="#042-august-2026" title="Permanent link">&para;</a></h2>
 <h3 id="improvements">Improvements<a class="headerlink" href="#improvements" title="Permanent link">&para;</a></h3>
 <ul>
@@ -1864,7 +1926,7 @@
 <li><strong>RESP semaphores no longer wedge when Redis evicts their bookkeeping.</strong> The reaper only ever adjusted the <code>used</code> counter by a delta, so losing the claims hash to <code>maxmemory</code> eviction left <code>used</code> pinned at capacity with nothing left to subtract and every later acquire failing forever. Losing the state hash instead made <code>used</code> read zero and admitted past capacity. <code>used</code> is now derived from the surviving claims during the walk the reaper already performs, which costs no extra round trip and self-heals both directions.</li>
 </ul>
 <h2 id="040-august-2026">0.4.0 (August 2026)<a class="headerlink" href="#040-august-2026" title="Permanent link">&para;</a></h2>
-<h3 id="breaking-changes">Breaking changes<a class="headerlink" href="#breaking-changes" title="Permanent link">&para;</a></h3>
+<h3 id="breaking-changes_1">Breaking changes<a class="headerlink" href="#breaking-changes_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Python 3.14+ required.</strong> Dropped support for 3.12 and 3.13. The package now ships on cp314 and cp314t (free-threaded) wheels.</li>
 <li><strong>Django 6.0+ required.</strong> Dropped support for Django 5.2.</li>

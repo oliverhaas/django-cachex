@@ -2496,10 +2496,6 @@ adapter is configured:</p>
 <td><code>redis.Redis</code></td>
 </tr>
 <tr>
-<td><code>RedisRsCache</code> (<code>redis-rs</code>)</td>
-<td><code>django_cachex.adapters.RedisRsAdapter</code> (the adapter is its own multiplexed client)</td>
-</tr>
-<tr>
 <td><code>ValkeyGlideCache</code> (<code>valkey-glide</code>)</td>
 <td><code>glide_sync.GlideClient</code></td>
 </tr>
@@ -2656,7 +2652,7 @@ returned <code>bool</code>, leaving the claim held until its lease expires.</p>
 <p>Backends:</p>
 <ul>
 <li><strong><code>LocMemCache</code></strong> uses an in-process FIFO deque. FIFO fairness is strict within the process; <code>lease</code> is accepted but ignored.</li>
-<li><strong>RESP backends</strong> (<code>RedisCache</code>, <code>ValkeyCache</code>, <code>RedisRsCache</code>, <code>ValkeyGlideCache</code>, ...) use Lua scripts. FIFO fairness is best-effort across processes (head-of-queue check plus jittered polling).</li>
+<li><strong>RESP backends</strong> (<code>RedisCache</code>, <code>ValkeyCache</code>, <code>ValkeyGlideCache</code>, ...) use Lua scripts. FIFO fairness is best-effort across processes (head-of-queue check plus jittered polling).</li>
 </ul>
 <p>Cluster mode is supported on RESP backends: all keys for one semaphore name carry a <code>{name}</code> hash tag so they colocate on the same slot.</p>
 <h2 id="pipelines">Pipelines<a class="headerlink" href="#pipelines" title="Permanent link">&para;</a></h2>
@@ -2804,7 +2800,7 @@ failure.</p>
 </tr>
 <tr>
 <td><code>WrongTypeError</code></td>
-<td>Operation applied to a key holding the wrong RESP type (subclass of <code>TypeError</code>). Mirrors Redis <code>WRONGTYPE</code>; raised consistently across LocMem, redis-py, valkey-py, valkey-glide, and the Rust adapter.</td>
+<td>Operation applied to a key holding the wrong RESP type (subclass of <code>TypeError</code>). Mirrors Redis <code>WRONGTYPE</code>; raised consistently across LocMem, redis-py, valkey-py, and valkey-glide.</td>
 </tr>
 <tr>
 <td><code>CompressorError</code></td>
