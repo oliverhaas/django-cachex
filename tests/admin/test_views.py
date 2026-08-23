@@ -3181,3 +3181,56 @@ class TestUndecodableValueResilience:
         assert response.status_code == 200
         # Broken key still appears in the list; operator needs to see it to delete it.
         assert self.BROKEN_KEY in response.content.decode()
+
+
+class TestBreadcrumbs:
+    """Breadcrumb markup must match what Django's admin CSS styles.
+
+    Django 6.1 renders breadcrumbs as ``<ol class="breadcrumbs"><li>...</li></ol>``
+    and every rule in ``admin/css/base.css`` is scoped to ``ol.breadcrumbs``.
+    An override emitting the pre-6.1 ``<div class="breadcrumbs">`` markup renders
+    completely unstyled.
+    """
+
+    def _assert_breadcrumbs(self, content: str, *, trail: list[str]) -> None:
+        assert '<ol class="breadcrumbs">' in content
+        assert '<div class="breadcrumbs">' not in content
+        crumbs = content.split('<ol class="breadcrumbs">')[1].split("</ol>", maxsplit=1)[0]
+        assert crumbs.count("<li") == len(trail)
+        for label in trail:
+            assert label in crumbs
+        # The final crumb is the current page and must be marked for screen readers.
+        assert 'aria-current="page"' in crumbs
+
+    def test_key_list_breadcrumbs(self, admin_client: Client, test_cache):
+        response = admin_client.get(_key_list_url("default"))
+        assert response.status_code == 200
+        self._assert_breadcrumbs(
+            response.content.decode(),
+            trail=["Home", "Caches", "default", "Keys"],
+        )
+
+    def test_cache_detail_breadcrumbs(self, admin_client: Client, test_cache):
+        response = admin_client.get(_cache_detail_url("default"))
+        assert response.status_code == 200
+        self._assert_breadcrumbs(
+            response.content.decode(),
+            trail=["Home", "Caches", "default"],
+        )
+
+    def test_key_detail_breadcrumbs(self, admin_client: Client, test_cache: RespCache):
+        test_cache.set("crumb-key", "value")
+        response = admin_client.get(_key_detail_url("default", "crumb-key"))
+        assert response.status_code == 200
+        self._assert_breadcrumbs(
+            response.content.decode(),
+            trail=["Home", "Caches", "default", "crumb-key"],
+        )
+
+    def test_key_add_breadcrumbs(self, admin_client: Client, test_cache):
+        response = admin_client.get(_key_add_url("default"))
+        assert response.status_code == 200
+        self._assert_breadcrumbs(
+            response.content.decode(),
+            trail=["Home", "Caches", "default", "Add Key"],
+        )

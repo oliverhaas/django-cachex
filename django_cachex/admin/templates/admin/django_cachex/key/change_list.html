@@ -2,12 +2,12 @@
 {% load i18n admin_urls %}
 
 {% block breadcrumbs %}
-<div class="breadcrumbs">
-    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
-    &rsaquo; <a href="{% url 'admin:django_cachex_cache_changelist' %}">{% trans 'Caches' %}</a>
-    &rsaquo; <a href="{% url 'admin:django_cachex_cache_change' cache_name|admin_urlquote %}">{{ cache_name }}</a>
-    &rsaquo; {% trans 'Keys' %}
-</div>
+<ol class="breadcrumbs">
+    <li><a href="{% url 'admin:index' %}">{% trans 'Home' %}</a></li>
+    <li><a href="{% url 'admin:django_cachex_cache_changelist' %}">{% trans 'Caches' %}</a></li>
+    <li><a href="{% url 'admin:django_cachex_cache_change' cache_name|admin_urlquote %}">{{ cache_name }}</a></li>
+    <li aria-current="page">{% trans 'Keys' %}</li>
+</ol>
 {% endblock %}
 
 {% block object-tools %}

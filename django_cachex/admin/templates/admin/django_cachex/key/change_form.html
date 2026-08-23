@@ -13,12 +13,12 @@
 {% block bodyclass %}{{ block.super }} app-django_cachex model-key change-form{% endblock %}
 
 {% block breadcrumbs %}
-<div class="breadcrumbs">
-    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
-    &rsaquo; <a href="{% url 'admin:django_cachex_cache_changelist' %}">{% trans 'Caches' %}</a>
-    &rsaquo; <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name|urlencode }}">{{ cache_name }}</a>
-    &rsaquo; {{ key }}
-</div>
+<ol class="breadcrumbs">
+    <li><a href="{% url 'admin:index' %}">{% trans 'Home' %}</a></li>
+    <li><a href="{% url 'admin:django_cachex_cache_changelist' %}">{% trans 'Caches' %}</a></li>
+    <li><a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name|urlencode }}">{{ cache_name }}</a></li>
+    <li aria-current="page">{{ key }}</li>
+</ol>
 {% endblock %}
 
 {% block content %}
