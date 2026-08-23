@@ -49,3 +49,6 @@ __all__ = [
     "full_encode_pre",
     "keys_only_pre",
 ]
+
+# Keep the metadata helpers out of ``django_cachex``'s public namespace.
+del PackageNotFoundError, version
