@@ -11,7 +11,7 @@ The logic is intentionally verbose so developers can see what's happening.
 
 # ruff: noqa: T201, BLE001
 # T201: print statements are intentional for visibility
-# BLE001: broad exception catching is intentional for robustness
+# BLE001: seed data is best-effort; any failure must not block startup
 
 from django.conf import settings
 from django.core.cache import caches

@@ -384,7 +384,7 @@ class TestStampedeOverride:
 
 
 # =============================================================================
-# Robustness tests for XFetch algorithm
+# Edge-case tests for the XFetch algorithm
 # =============================================================================
 
 

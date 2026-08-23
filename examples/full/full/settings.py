@@ -1,7 +1,7 @@
 """
 Django settings for full example project.
 
-Comprehensive setup showcasing ALL supported cache backends:
+Setup covering every supported cache backend:
 - Standalone: Valkey, Redis
 - Cluster: Redis Cluster (6 nodes)
 - Sentinel: Redis Sentinel (1 master + 2 replicas + 3 sentinels)

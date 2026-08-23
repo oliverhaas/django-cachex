@@ -7,7 +7,7 @@ between restarts). See startup.py for the population logic.
 
 # ruff: noqa: T201, BLE001
 # T201: print statements are intentional for visibility
-# BLE001: broad exception catching is intentional for robustness
+# BLE001: seed data is best-effort; any failure must not block startup
 
 from django.apps import AppConfig
 
