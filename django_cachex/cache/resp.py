@@ -136,7 +136,7 @@ class RespCache(BaseCachex):
     def _create_serializers(config: Any) -> list[Any]:
         if config is None:
             config = "django_cachex.serializers.pickle.PickleSerializer"
-        items: list = config if isinstance(config, list) else [config]
+        items: list[Any] = config if isinstance(config, list) else [config]
         if not items:
             msg = "OPTIONS['serializer'] must not be an empty list; configure at least one serializer or omit it"
             raise ImproperlyConfigured(msg)
@@ -146,7 +146,7 @@ class RespCache(BaseCachex):
     def _create_compressors(config: Any) -> list[Any]:
         if config is None:
             return []
-        items: list = config if isinstance(config, list) else [config]
+        items: list[Any] = config if isinstance(config, list) else [config]
         return [_load_codec(item) for item in items]
 
     def _decompress(self, value: bytes) -> bytes:
@@ -557,7 +557,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
         *,
         stampede_prevention: bool | StampedeConfig | None = None,
-    ) -> list:
+    ) -> list[Any]:
         """Set multiple values."""
         if not data:
             return []
@@ -575,7 +575,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
         *,
         stampede_prevention: bool | StampedeConfig | None = None,
-    ) -> list:
+    ) -> list[Any]:
         """Set multiple values asynchronously."""
         if not data:
             return []

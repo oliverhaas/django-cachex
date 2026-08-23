@@ -8,6 +8,7 @@ refreshes the value before all clients see a miss simultaneously.
 import logging
 import random
 from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ def get_timeout_with_buffer(
 _STAMPEDE_FIELDS = ("buffer", "beta", "delta")
 
 
-def make_stampede_config(option: bool | dict | None) -> StampedeConfig | None:
+def make_stampede_config(option: bool | dict[str, Any] | None) -> StampedeConfig | None:
     """Build a ``StampedeConfig`` from an adapter ``stampede_prevention`` option.
 
     Unknown dict keys are dropped (with a warning) instead of raising

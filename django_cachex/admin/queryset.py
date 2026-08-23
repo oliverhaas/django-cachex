@@ -129,7 +129,7 @@ class SupportLevelFilter(admin.SimpleListFilter):
     def lookups(
         self,
         request: HttpRequest,
-        model_admin: admin.ModelAdmin,
+        model_admin: admin.ModelAdmin[Any],
     ) -> list[tuple[str, str]]:
         return [
             ("cachex", "cachex"),
@@ -409,7 +409,7 @@ class CacheFilter(admin.SimpleListFilter):
     def lookups(
         self,
         request: HttpRequest,
-        model_admin: admin.ModelAdmin,
+        model_admin: admin.ModelAdmin[Any],
     ) -> list[tuple[str, str]]:
         return [(name, name) for name in settings.CACHES]
 
@@ -445,7 +445,7 @@ class TypeFilter(admin.SimpleListFilter):
     def lookups(
         self,
         request: HttpRequest,
-        model_admin: admin.ModelAdmin,
+        model_admin: admin.ModelAdmin[Any],
     ) -> list[tuple[str, str]]:
         return [(t, t) for t in KeyType]
 
@@ -480,7 +480,7 @@ class KeyAdminMixin:
     show_facets = ShowFacets.NEVER
     show_full_result_count: ClassVar[bool] = False
 
-    def get_actions(self, request: HttpRequest, action_location: Any = None) -> dict:
+    def get_actions(self, request: HttpRequest, action_location: Any = None) -> dict[str, Any]:
         """Remove Django's built-in delete_selected (KeyQuerySet doesn't support it).
 
         ``action_location`` must appear literally in the signature: Django

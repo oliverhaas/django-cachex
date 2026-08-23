@@ -42,7 +42,7 @@ class Cache(models.Model):
         return None
 
     @property
-    def config(self) -> dict:
+    def config(self) -> dict[str, Any]:
         """Get the cache configuration dict."""
         return dict(settings.CACHES.get(self.name, {}))
 

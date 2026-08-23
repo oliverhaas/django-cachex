@@ -188,6 +188,15 @@ show_error_context = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 warn_unreachable = false
+disallow_any_generics = true
+no_implicit_optional = true
+strict_equality = true
+# warn_return_any stays off: the adapter layer's job is wrapping driver calls
+# that are untyped at the source, so it fires ~67 times on `return client.cmd(...)`
+# and every silencing cast would assert a type nothing actually checks.
+# disallow_untyped_defs stays off too: ruff's ANN rules already require
+# annotations, and django-stubs' `Model.pk` types the admin models' pk setters
+# in a way that rejects the correct `-> None`.
 
 [tool.django-stubs]
 django_settings_module = "tests.settings.base"

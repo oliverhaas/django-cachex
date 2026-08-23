@@ -709,7 +709,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         timeout: int | None,
         *,
         stampede_prevention: bool | StampedeConfig | None = None,
-    ) -> list:
+    ) -> list[Any]:
         """Set multiple values. timeout=0 deletes keys, None sets without expiry."""
         if not data:
             return []
@@ -736,7 +736,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         timeout: int | None,
         *,
         stampede_prevention: bool | StampedeConfig | None = None,
-    ) -> list:
+    ) -> list[Any]:
         """Set multiple values asynchronously."""
         if not data:
             return []
@@ -3343,7 +3343,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         timeout: int | None,
         *,
         stampede_prevention: bool | StampedeConfig | None = None,
-    ) -> list:
+    ) -> list[Any]:
         """Set multiple values, handling cross-slot keys."""
         if not data:
             return []
@@ -3517,7 +3517,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         timeout: int | None,
         *,
         stampede_prevention: bool | StampedeConfig | None = None,
-    ) -> list:
+    ) -> list[Any]:
         """Set multiple values asynchronously, handling cross-slot keys."""
         if not data:
             return []

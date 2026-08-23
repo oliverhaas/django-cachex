@@ -141,7 +141,7 @@ class Pipeline:
         """Decode sorted set members with scores."""
         return [(self._cache.decode(member), score) for member, score in value]
 
-    def _make_zset_decoder(self, *, withscores: bool) -> Callable[[list[tuple[bytes, float]]], list]:
+    def _make_zset_decoder(self, *, withscores: bool) -> Callable[[list[tuple[bytes, float]]], list[Any]]:
         """Create decoder based on whether scores are included."""
         if withscores:
             return self._decode_zset_with_scores
@@ -1529,7 +1529,7 @@ class Pipeline:
         self,
         *,
         justid: bool,
-    ) -> Callable[[Any], tuple[str, list, list[str]]]:
+    ) -> Callable[[Any], tuple[str, list[Any], list[str]]]:
         """Create decoder for XAUTOCLAIM result.
 
         redis-py returns different formats based on justid:
@@ -1537,7 +1537,7 @@ class Pipeline:
         - justid=True:  [id1, id2, ...] (flat list of claimed IDs)
         """
 
-        def decode(result: Any) -> tuple[str, list, list[str]]:
+        def decode(result: Any) -> tuple[str, list[Any], list[str]]:
             if justid:
                 # redis-py returns flat list of claimed IDs (strips next_id/deleted)
                 claimed = [r.decode() if isinstance(r, bytes) else r for r in result]
