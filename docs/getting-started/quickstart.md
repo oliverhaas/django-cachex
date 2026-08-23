@@ -27,7 +27,6 @@ All backends live in `django_cachex.cache`. See the [configuration reference](..
 
 | Backend | Description |
 |---------|-------------|
-| `RedisRsCache` / `RedisRsSentinelCache` / `RedisRsClusterCache` | Rust driver (opt-in via `redis-rs` extra; experimental) |
 | `ValkeyGlideCache` | valkey-glide (opt-in via `valkey-glide` extra; experimental) |
 | `LocMemCache` | Drop-in replacement for Django's `LocMemCache` |
 | `DatabaseCache` | Drop-in replacement for Django's `DatabaseCache` |

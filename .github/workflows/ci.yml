@@ -167,55 +167,9 @@ jobs:
           name: wheels-pure
           path: wheelhouse/*
 
-  build-rust-wheels:
-    name: Build Rust wheels (${{ matrix.label }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            label: linux-x86_64
-            cibw_archs: x86_64
-            cibw_build: cp314-manylinux_x86_64 cp314t-manylinux_x86_64
-          - os: ubuntu-24.04-arm
-            label: linux-aarch64
-            cibw_archs: aarch64
-            cibw_build: cp314-manylinux_aarch64 cp314t-manylinux_aarch64
-          - os: macos-14
-            label: macos-arm64
-            cibw_archs: arm64
-            cibw_build: cp314-macosx_arm64 cp314t-macosx_arm64
-          - os: windows-latest
-            label: windows-amd64
-            cibw_archs: AMD64
-            cibw_build: cp314-win_amd64 cp314t-win_amd64
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Build wheels
-        uses: pypa/cibuildwheel@v4.2
-        with:
-          package-dir: crates/django-cachex-redis-rs
-        env:
-          # No CIBW_ENABLE: cibuildwheel 4.0 dropped the cpython-freethreading
-          # group and builds 3.14t whenever CIBW_BUILD asks for it.
-          CIBW_BUILD: ${{ matrix.cibw_build }}
-          CIBW_ARCHS: ${{ matrix.cibw_archs }}
-          # Linux builds run inside manylinux containers, so install Rust there.
-          # macOS and Windows runners have rustup preinstalled.
-          CIBW_BEFORE_ALL_LINUX: |
-            curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
-          CIBW_ENVIRONMENT_LINUX: PATH="$HOME/.cargo/bin:$PATH"
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: wheels-rust-${{ matrix.label }}
-          path: wheelhouse/*.whl
-
   test-wheel:
-    name: Test wheels (pure + rust on cp314)
-    needs: [build-pure-wheel, build-rust-wheels]
+    name: Test wheel (pure)
+    needs: build-pure-wheel
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -223,11 +177,6 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: wheels-pure
-          path: wheelhouse
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: wheels-rust-linux-x86_64
           path: wheelhouse
 
       - name: Install uv
@@ -239,48 +188,16 @@ jobs:
       - name: Install dev dependencies (without project)
         run: uv sync --group dev --no-install-project
 
-      - name: Install both wheels (opt-in path)
-        run: |
-          uv pip install --no-deps wheelhouse/django_cachex-*-py3-none-any.whl
-          uv pip install --no-deps wheelhouse/django_cachex_redis_rs-*-cp314-cp314-*.whl
+      - name: Install the wheel
+        run: uv pip install --no-deps wheelhouse/django_cachex-*-py3-none-any.whl
 
-      - name: Run cache tests against built wheels
+      - name: Run cache tests against the built wheel
         run: uv run --no-sync pytest tests/cache/ -n auto
         env:
           PYTHONDONTWRITEBYTECODE: "1"
 
-  smoke-test-wheel-freethreaded:
-    name: Smoke-test cp314t rust wheel
-    needs: [build-pure-wheel, build-rust-wheels]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: wheels-pure
-          path: wheelhouse
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: wheels-rust-linux-x86_64
-          path: wheelhouse
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-
-      - name: Set up free-threaded Python
-        run: uv python install 3.14t
-
-      - name: Create venv and install both wheels
-        run: |
-          uv venv --python 3.14t
-          uv pip install --no-deps wheelhouse/django_cachex-*-py3-none-any.whl django asgiref sqlparse sortedcontainers
-          uv pip install --no-deps wheelhouse/django_cachex_redis_rs-*-cp314-cp314t-*.whl
-
-      - name: Verify FT wheel imports
-        run: uv run --no-sync python -c "import sys; from django_cachex.adapters import _redis_rs; assert not sys._is_gil_enabled(), 'GIL is enabled, not running on free-threaded build'; print('OK', _redis_rs, sys.version)"
-
-  smoke-test-pure-only:
-    name: Smoke-test opt-out (pure wheel only, no rust package)
+  smoke-test-minimal-install:
+    name: Smoke-test minimal install (no client library)
     needs: build-pure-wheel
     runs-on: ubuntu-latest
     steps:
@@ -295,27 +212,16 @@ jobs:
       - name: Set up Python
         run: uv python install 3.14
 
-      - name: Create venv and install pure wheel ONLY
+      - name: Create venv and install the wheel without any client library
         run: |
           uv venv --python 3.14
           uv pip install --no-deps wheelhouse/django_cachex-*-py3-none-any.whl django asgiref sqlparse sortedcontainers
 
-      - name: Verify imports succeed and Rust backends raise on use
+      - name: Verify imports succeed without redis-py or valkey-py installed
         run: |
           uv run --no-sync python -c "
           import django_cachex
           import django_cachex.cache, django_cachex.adapters
-          from django_cachex.cache import RedisRsCache, ValkeyCache
-          try:
-              from django_cachex.adapters import _redis_rs
-              raise SystemExit('FAIL: _redis_rs present in pure-only install')
-          except ImportError:
-              pass
-          rust = RedisRsCache(server='valkey://localhost:6379/0', params={'OPTIONS': {}})
-          try:
-              rust.get('foo')
-              raise SystemExit('FAIL: rust backend should have raised')
-          except ImportError as e:
-              assert 'Rust driver is not available' in str(e), e
-          print('OK: opt-out path works')
+          from django_cachex.cache import RedisCache, ValkeyCache
+          print('OK: package imports with no client library installed')
           "

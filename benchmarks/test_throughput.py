@@ -4,9 +4,9 @@ Parametrized tests:
 
 - ``test_adapters_sync`` fixes the pickle serializer and varies the adapter.
   Isolates the adapter/parser/connection stack.
-- ``test_serializers`` fixes the redis-rs adapter and varies the serializer.
-  Isolates serializer cost (adapter overhead is minimal at that point).
-- ``test_compressors_macro`` fixes redis-rs + pickle and varies the
+- ``test_serializers`` fixes the valkey-py+libvalkey adapter and varies the
+  serializer. Isolates serializer cost.
+- ``test_compressors_macro`` fixes valkey-py+libvalkey + pickle and varies the
   compressor on a large payload. End-to-end ops/sec showing the compress
   cost vs network savings tradeoff in real cache calls.
 - ``test_compressors_micro`` runs pure compress/decompress in-process, with
@@ -63,10 +63,10 @@ def test_adapters_sync(adapter, server_url, results, capsys) -> None:
 
 @pytest.mark.parametrize("serializer", SERIALIZER_CONFIGS, ids=lambda c: c.id)
 def test_serializers(serializer, server_url, results, capsys) -> None:
-    rust_adapter = ADAPTER_BY_ID["redis-rs"]
-    location = server_url(rust_adapter.server)
+    adapter = ADAPTER_BY_ID["valkey-py+libvalkey"]
+    location = server_url(adapter.server)
 
-    result = run_benchmark(rust_adapter, serializer, location)
+    result = run_benchmark(adapter, serializer, location)
     results.add(result)
 
     with capsys.disabled():
@@ -76,12 +76,12 @@ def test_serializers(serializer, server_url, results, capsys) -> None:
 
 @pytest.mark.parametrize("compressor", COMPRESSOR_CONFIGS, ids=lambda c: c.id)
 def test_compressors_macro(compressor, server_url, results, capsys) -> None:
-    rust_adapter = ADAPTER_BY_ID["redis-rs"]
+    adapter = ADAPTER_BY_ID["valkey-py+libvalkey"]
     pickle_serializer = SERIALIZER_BY_ID["pickle"]
-    location = server_url(rust_adapter.server)
+    location = server_url(adapter.server)
 
     result = run_benchmark(
-        rust_adapter,
+        adapter,
         pickle_serializer,
         location,
         compressor=compressor,

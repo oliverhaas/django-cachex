@@ -8,8 +8,6 @@ implementation, one per driver:
 - :class:`~django_cachex.adapters.valkey_py.ValkeyPyPipelineAdapter` /
   :class:`~django_cachex.adapters.redis_py.RedisPyPipelineAdapter`: wrap a
   redis-py / valkey-py / cluster ``Pipeline`` object.
-- :class:`~django_cachex.adapters.redis_rs.RedisRsPipelineAdapter`:
-  buffers RESP wire commands for the Rust driver's ``pipeline_exec``.
 - :class:`~django_cachex.adapters.valkey_glide.ValkeyGlidePipelineAdapter`:
   drives ``valkey-glide``'s ``Batch``.
 
@@ -1606,8 +1604,8 @@ class Pipeline:
 class AsyncPipeline(Pipeline):
     """Async sibling of :class:`Pipeline`: same chainable API, awaitable ``execute()``.
 
-    Driver async pipelines (``redis.asyncio`` ``Pipeline``, glide async ``Batch``,
-    redis-rs ``apipeline_exec``) all expose the same chainable command surface
+    Driver async pipelines (``redis.asyncio`` ``Pipeline``, glide async ``Batch``)
+    all expose the same chainable command surface
     as their sync counterparts; only execution does I/O. So this subclass
     inherits every queueing method from :class:`Pipeline` and only overrides
     the lifecycle (``__aenter__/__aexit__``) and ``execute()`` to be async.

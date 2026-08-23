@@ -1,10 +1,4 @@
 from importlib.metadata import PackageNotFoundError, version
-from pkgutil import extend_path
-
-# Extend the package path so the optional django-cachex-redis-rs binary package
-# (which ships ``adapters/_redis_rs*`` files into this namespace) is
-# discovered when both packages are installed side by side.
-__path__ = extend_path(__path__, __name__)
 
 try:
     __version__ = version("django-cachex")
@@ -19,7 +13,7 @@ from django_cachex.exceptions import (
     SerializerError,
     WrongTypeError,
 )
-from django_cachex.lock import AsyncLock, Lock, LockError, LockNotOwnedError
+from django_cachex.lock import LockError, LockNotOwnedError
 from django_cachex.script import (
     ScriptHelpers,
     decode_list_post,
@@ -35,11 +29,9 @@ from django_cachex.semaphore import (
 from django_cachex.stampede import StampedeConfig
 
 __all__ = [
-    "AsyncLock",
     "AsyncPipeline",
     "CachexError",
     "CompressorError",
-    "Lock",
     "LockError",
     "LockNotOwnedError",
     "NotSupportedError",

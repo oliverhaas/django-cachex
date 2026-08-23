@@ -33,37 +33,6 @@ uv add django-cachex[hiredis]
 
 These provide C-based parsers that improve protocol parsing throughput on the hot read path.
 
-## Rust I/O driver (optional)
-
-!!! warning "Experimental"
-    The Rust I/O driver is experimental: interfaces and behavior may
-    change, and it has seen less production testing than the
-    redis-py/valkey-py paths.
-
-The `RedisRsCache` backends are powered by an
-opt-in native extension built on PyO3 + tokio + [redis-rs]. It ships as
-a separate package, `django-cachex-redis-rs`, so users who only want the
-pure-Python backends never carry the binary.
-
-```console
-# Pure Python (default; no Rust binary)
-uv add django-cachex[valkey-py]
-
-# With the Rust I/O driver
-uv add django-cachex[valkey-py,redis-rs]
-```
-
-Prebuilt `django-cachex-redis-rs` wheels are published for Linux x86_64,
-Linux aarch64, macOS arm64, and Windows amd64 on both cp314 and cp314t.
-On other platforms pip will try to build from source, which needs the
-Rust toolchain. Drop the `redis-rs` extra to avoid that.
-
-When the binary isn't installed, `RedisRsCache`
-classes are still importable but raise a clean `ImportError` on first
-use, naming the extra you need.
-
-[redis-rs]: https://github.com/redis-rs/redis-rs
-
 ## Valkey-Glide adapter (optional)
 
 !!! warning "Experimental"
@@ -72,8 +41,8 @@ use, naming the extra you need.
     redis-py/valkey-py paths.
 
 The `ValkeyGlideCache` backend wraps Valkey's official client,
-[valkey-glide]. It's a Rust core (like `redis-rs`) but packaged separately
-through PyPI as two distributions, `valkey-glide-sync` and `valkey-glide`,
+[valkey-glide]. It has a Rust core, packaged through PyPI as two
+distributions, `valkey-glide-sync` and `valkey-glide`,
 pulled in together via the `valkey-glide` extra:
 
 ```console

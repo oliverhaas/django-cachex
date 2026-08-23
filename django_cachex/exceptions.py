@@ -72,7 +72,7 @@ class WrongTypeError(CachexError, TypeError):
     of value``. Subclasses both :class:`CachexError` and :class:`TypeError`,
     so ``except CachexError`` and existing ``except TypeError`` callers both
     keep working while new code can catch this specifically across backends
-    (LocMem, redis-py, valkey-py, valkey-glide, redis-rs).
+    (LocMem, redis-py, valkey-py, valkey-glide).
     """
 
 

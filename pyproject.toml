@@ -32,9 +32,6 @@ valkey-py = ["valkey>=6.1.0,<7"]
 libvalkey = ["valkey[libvalkey]>=6.1.0,<7"]
 redis-py = ["redis>=6,<9"]
 hiredis = ["redis[hiredis]<9,>=6"]
-# Rust I/O driver: separate binary package, prebuilt wheels for Linux x86_64/aarch64,
-# macOS arm64, and Windows amd64 (cp314 and cp314t).
-redis-rs = ["django-cachex-redis-rs==0.4.2"]
 # valkey-glide: Rust-cored Valkey client. Sync and async are separate distributions.
 valkey-glide = ["valkey-glide-sync>=2.3,<3", "valkey-glide>=2.3,<3"]
 # Compressors
@@ -58,7 +55,6 @@ dev = [
   "django-stubs==6.1.0",
   "djlint==1.44.2",
   "lz4==4.4.5",
-  "maturin==1.14.1",
   "msgpack==1.2.1",
   "ormsgpack==1.12.2",
   "mypy==2.3.0",
@@ -77,8 +73,6 @@ dev = [
   # ASGI benchmark only: granian (real ASGI server) plus httpx (load gen).
   "granian>=2.6,<3",
   "httpx>=0.28,<0.29",
-  # Rust I/O driver: workspace member so `uv sync` builds it for tests/benchmarks
-  "django-cachex-redis-rs",
   # Full example: workspace member so its deps (notably celery) survive
   # ``uv sync``, which the pre-commit hook runs on every commit.
   "django-cachex-full-example",
@@ -96,20 +90,14 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["django_cachex"]
-# _redis_rs.pyi is the type stub for the optional Rust extension. It lives
-# alongside django_cachex source so type checkers find it during dev, but
-# it ships with the django-cachex-redis-rs binary package, not this one.
-exclude = ["**/_redis_rs.pyi"]
 
 [tool.hatch.build.targets.sdist]
 include = ["django_cachex/**", "README.md", "LICENSE", "pyproject.toml"]
-exclude = ["**/_redis_rs.pyi"]
 
 [tool.uv.workspace]
-members = ["crates/*", "examples/full"]
+members = ["examples/full"]
 
 [tool.uv.sources]
-django-cachex-redis-rs = { workspace = true }
 django-cachex-full-example = { workspace = true }
 
 [tool.ruff]

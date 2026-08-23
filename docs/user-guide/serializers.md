@@ -42,7 +42,7 @@ on read), **✗** raises `SerializerError` on `dumps`.
 
 | Type | pickle | json (Django) | msgpack | orjson | ormsgpack |
 |------|:------:|:-------------:|:-------:|:------:|:---------:|
-| **Throughput vs pickle**¹ | **1.00×** | **0.72×** | **1.06×** | **1.10×** | **1.13×** |
+| **Throughput vs pickle**¹ | **1.00×** | **0.88×** | **0.99×** | **1.05×** | **1.05×** |
 | JSON primitives (`str`, `int`, `float`, `bool`, `None`, `list`, `dict`) | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `bytes` | ✓ | ✗ | ✓ | ✗ | ✓ |
 | `tuple` | ✓ | ~ list | ~ list | ~ list | ~ list |
@@ -55,7 +55,7 @@ on read), **✗** raises `SerializerError` on `dumps`.
 | `dataclass` instance | ✓ | ✗ | ✗ | ~ dict | ~ dict |
 | `Enum` | ✓ | ✗ | ✗ | ~ value | ~ value |
 
-¹ End-to-end Django cache → `redis-rs` adapter → localhost Valkey,
+¹ End-to-end Django cache → `valkey-py+libvalkey` adapter → localhost Valkey,
 ~150 B payload, geometric mean of `get`/`set`/`mget`/`mset` ops/sec.
 Real network or larger payloads dampen the spread. Reproduce with the
 [benchmarks](https://github.com/oliverhaas/django-cachex/tree/main/benchmarks) harness.

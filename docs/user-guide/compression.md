@@ -88,23 +88,23 @@ Throughput factor is normalized to **no compression**, so the table reads
 | Compressor | Throughput vs no-compression³ |
 |------------|:-----------------------------:|
 | no compression | 1.00×                     |
-| `zlib`         | 0.70×                     |
-| `gzip`         | 0.65×                     |
-| `lzma`         | **0.26×**                 |
+| `zlib`         | 0.81×                     |
+| `gzip`         | 0.76×                     |
+| `lzma`         | **0.37×**                 |
 | `lz4`          | **0.99×**                 |
-| `zstd`         | **0.90×**                 |
+| `zstd`         | **0.94×**                 |
 
 Picking guide:
 
-- `zstd`: same ratio as `lzma` at ~60× the compress speed, and only ~10 % slower end-to-end than no compression at all. Default choice if available.
-- `lz4`: pick when CPU is the bottleneck and a ~40 % larger payload is acceptable. End-to-end throughput is statistically indistinguishable from no compression while still cutting payload size 6×.
-- `lzma`: pick only when output size matters more than write latency. Even then, `zstd` is usually a better trade now (same ratio, ~3× faster end-to-end).
+- `zstd`: same ratio as `lzma` at ~60× the compress speed, and only ~6 % slower end-to-end than no compression at all. Default choice if available.
+- `lz4`: pick when CPU is the bottleneck and a ~40 % larger payload is acceptable. End-to-end throughput is statistically indistinguishable from no compression while still cutting payload size ~5×.
+- `lzma`: pick only when output size matters more than write latency. Even then, `zstd` is usually a better trade now (same ratio, ~2.5× faster end-to-end).
 - `zlib` / `gzip`: nearly identical. Pick `zlib` unless you need gzip's framing for an external consumer.
 - No compression: sets the throughput ceiling but stores ~8× more server memory. Outside narrow latency-critical paths, compression almost always wins.
 
 ¹ Compressed size as a percentage of the input (~14 KiB pickled queryset-shaped payload).
 ² Absolute compress/decompress throughput in a tight loop (200 ops × 20 runs, median, single core). Numbers are hardware-dependent; use the ratios between rows, not the absolute values. Real-world impact also depends on payload compressibility (text/JSON compresses ~10×; already-compressed bytes barely shrink).
-³ Geometric mean of `get`/`set`/`mget`/`mset` ops/sec end-to-end via Django cache → `redis-rs` adapter → localhost Valkey, normalized to running without a compressor. Reproduce with the [benchmarks](https://github.com/oliverhaas/django-cachex/tree/main/benchmarks) harness.
+³ Geometric mean of `get`/`set`/`mget`/`mset` ops/sec end-to-end via Django cache → `valkey-py+libvalkey` adapter → localhost Valkey, normalized to running without a compressor. Reproduce with the [benchmarks](https://github.com/oliverhaas/django-cachex/tree/main/benchmarks) harness.
 
 ## Fallback for Migration
 

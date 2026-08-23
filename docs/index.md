@@ -21,7 +21,6 @@ A drop-in replacement for Django's built-in Redis cache, plus:
 - Cache stampede prevention (TTL-based XFetch).
 - Two composite backends: `StreamCache` (cross-pod stream-synchronized in-memory cache) and `TieredCache` (L1/L2 with TTL propagation).
 - Django `LocMemCache` and `DatabaseCache` extensions with the same data-structure ops and admin support.
-- Optional Rust I/O driver (PyO3 + tokio + redis-rs) behind the same `RespCache` API. Free-threaded CPython (3.14t) supported. Experimental.
 - Optional `valkey-glide` adapter: Valkey's official Rust-cored client, exposed as `ValkeyGlideCache`. Experimental.
 - Django admin UI for browsing keys, inspecting values, editing, and flushing.
 
@@ -65,7 +64,7 @@ INSTALLED_APPS = [
 
 This project was inspired by [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause. The admin functionality was inspired by [django-redisboard](https://github.com/ionelmc/django-redisboard).
 
-The Rust I/O driver and async bridge are heavily inspired by, and in places directly adapted from, [django-vcache](https://gitlab.com/glitchtip/django-vcache) (MIT, by David Burke / GlitchTip). The fork-safe tokio runtime, the `RedisRsAwaitable` deferred-loop-binding pattern, and the multiplexed-connection design all originate there.
+The ASGI benchmark follows the shape of [django-vcache](https://gitlab.com/glitchtip/django-vcache)'s `bench_compare.py` (MIT, by David Burke / GlitchTip), so the numbers are directly comparable.
 
 See also [django-valkey](https://github.com/django-commons/django-valkey) and [dj-cache-panel](https://github.com/yassi/dj-cache-panel) for related projects with similar goals.
 

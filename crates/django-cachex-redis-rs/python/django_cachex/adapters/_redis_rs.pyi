@@ -1,1 +1,0 @@
-../../../../../django_cachex/adapters/_redis_rs.pyi

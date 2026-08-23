@@ -7,7 +7,7 @@ rest of the project's convention (``foo``/``afoo``):
   ``_SemaphoreRegistry`` shared by every cache with the same LOCATION;
   standalone instances share a process-wide registry.
 - :class:`RespSemaphore`: backed by Lua scripts dispatched through any
-  ``RespAdapterProtocol`` (redis-py, redis-rs, valkey-py, valkey-glide).
+  ``RespAdapterProtocol`` (redis-py, valkey-py, valkey-glide).
   Constructed by ``cache.semaphore(...)`` / ``cache.asemaphore(...)`` and not
   exposed at the package root.
 

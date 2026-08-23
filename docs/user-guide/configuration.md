@@ -34,21 +34,6 @@ All backends live in `django_cachex.cache`.
 | `ValkeyClusterCache` | Valkey Cluster sharding |
 | `RedisClusterCache` | Redis Cluster sharding |
 
-### Valkey / Redis (Rust driver)
-
-!!! warning "Experimental"
-    The Rust driver is experimental: interfaces and behavior may change,
-    and it has seen less production testing than the redis-py/valkey-py
-    backends.
-
-Nearly the same wire-level feature set as the Python driver, dispatched through the optional `django-cachex-redis-rs` extension (PyO3 + tokio + redis-rs). `slowlog_get` and `slowlog_len` are the exceptions and raise `NotSupportedError`. Sync and async share one tokio runtime, so async paths skip the asgiref threadpool round-trip. Install via the `redis-rs` extra.
-
-| Backend | Description |
-|---------|-------------|
-| `RedisRsCache` | Standard connection (Valkey or Redis, protocol-compatible) |
-| `RedisRsSentinelCache` | Sentinel high availability |
-| `RedisRsClusterCache` | Cluster sharding |
-
 ### Valkey-Glide
 
 !!! warning "Experimental"
@@ -240,7 +225,6 @@ selected by your ``BACKEND``. Each cache class has a fixed adapter:
 |----------------------------------------------------|-----------------|
 | ``django_cachex.cache.RedisCache``                 | redis-py        |
 | ``django_cachex.cache.ValkeyCache``                | valkey-py       |
-| ``django_cachex.cache.RedisRsCache``               | Rust driver     |
 | ``django_cachex.cache.ValkeyGlideCache``           | valkey-glide    |
 | ``django_cachex.cache.ValkeyGlideClusterCache``    | valkey-glide    |
 

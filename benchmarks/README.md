@@ -15,16 +15,15 @@ depends on letting workloads run).
 - `redis-py+hiredis`: C parser
 - `valkey-py`: pure-Python parser
 - `valkey-py+libvalkey`: C parser
-- `redis-rs`: our Rust extension adapter (PyO3 bindings around the
-  `redis-rs` crate, multiplexed Tokio transport)
-- `valkey-glide`: `valkey/valkey-glide` Python wheels (also Rust-cored,
-  but with a thread-pool transport instead of multiplexed). Only available
-  on cp314 GIL. No cp314t (free-threaded) wheels yet.
+- `valkey-glide`: `valkey/valkey-glide` Python wheels, Rust-cored with a
+  thread-pool transport. Only available on cp314 GIL. No cp314t
+  (free-threaded) wheels yet.
 - `django (builtin)`: Django's official built-in `django.core.cache.backends.redis.RedisCache`
   (since 4.0). Not the third-party `jazzband/django-redis` package, which is
   unrelated. Included as an external reference point.
 
-**Serializers** (with `redis-rs` adapter, since adapter overhead is smallest there):
+**Serializers** (with the `valkey-py+libvalkey` adapter, the fastest one that
+is always installed):
 
 - `pickle`: stdlib default
 - `json`: Django's `DjangoJSONEncoder`
@@ -32,7 +31,7 @@ depends on letting workloads run).
 - `orjson`: Rust-backed JSON
 - `ormsgpack`: Rust-backed MessagePack
 
-**Compressors** get two views, both with `redis-rs` + `pickle`:
+**Compressors** get two views, both with `valkey-py+libvalkey` + `pickle`:
 
 - *Macro* (`test_compressors_macro`): end-to-end Django cache ops on a
   ~14 KiB queryset-shaped payload. Captures the cost of compress/decompress
@@ -128,7 +127,7 @@ uv run pytest benchmarks/test_throughput.py::test_adapters_async_concurrent -c b
 uv run pytest benchmarks/test_throughput.py::test_adapters_asgi             -c benchmarks/pytest.ini
 
 # A single config
-uv run pytest 'benchmarks/test_throughput.py::test_adapters_sync[redis-rs]' -c benchmarks/pytest.ini
+uv run pytest 'benchmarks/test_throughput.py::test_adapters_sync[valkey-glide]' -c benchmarks/pytest.ini
 ```
 
 `test_compressors_micro` is the only test that doesn't need Docker, which
@@ -141,7 +140,7 @@ A summary table prints at the end of the session.
 
 - **No xdist.** Parallel runs make timings noisy; benchmarks run sequentially.
 - **Redis vs Valkey.** Each adapter is paired with its natural server
-  (redis-py → redis, valkey-py / redis-rs / valkey-glide → valkey,
+  (redis-py → redis, valkey-py / valkey-glide → valkey,
   django (builtin) → redis). Cross-pairings are intentionally not in the
   matrix: both servers speak the same protocol, so the comparison is
   mostly a wash.
@@ -164,7 +163,6 @@ run; ordering is what matters.
 | redis-py+hiredis     |  2,332 |    2,480 |  2,281 | 1,515 | 1,345 |  2,506 |  1,209 |         51 |
 | valkey-py            |  2,783 |    2,956 |  2,695 | 1,595 | 1,418 |  2,978 |  1,437 |        109 |
 | valkey-py+libvalkey  |  2,821 |    2,973 |  2,741 | 1,695 | 1,508 |  3,040 |  1,465 |         48 |
-| **redis-rs**         |  9,651 |   13,396 | 11,151 | 2,967 | 4,520 | 13,226 |  5,894 |         29 |
 | **valkey-glide**     |  6,982 |    8,783 |  6,982 | 2,030 | 1,916 |  8,901 |  3,994 |         29 |
 | django (builtin)     |  2,307 |    2,459 |  2,269 | 1,501 | 1,347 |  1,947 |  1,199 |         51 |
 
@@ -178,7 +176,6 @@ One cache op per request through the full middleware/URL/view path.
 | redis-py+hiredis     | 1,065 |    1,181 | 1,131 |   866 |   807 | 1,168 |  1,173 |
 | valkey-py            | 1,089 |    1,299 | 1,241 |   891 |   836 | 1,276 |  1,282 |
 | valkey-py+libvalkey  | 1,053 |    1,306 | 1,248 |   924 |   861 | 1,290 |  1,300 |
-| **redis-rs**         | 1,382 |    2,044 | 2,001 | 1,265 | 1,490 | 1,995 |  2,005 |
 | **valkey-glide**     | 1,237 |    1,863 | 1,753 | 1,023 |   994 | 1,816 |  1,838 |
 | django (builtin)     |   861 |    1,177 | 1,133 |   859 |   806 | 1,016 |  1,169 |
 
@@ -192,7 +189,6 @@ One `await` at a time.
 | redis-py+hiredis     | 1,815 |    1,913 | 1,729 | 1,199 |   849 | 1,911 |    915 |
 | valkey-py            | 2,080 |    2,184 | 2,039 | 1,331 |   854 | 2,190 |  1,055 |
 | valkey-py+libvalkey  | 2,075 |    2,187 | 2,029 | 1,329 |   852 | 2,176 |  1,049 |
-| **redis-rs**         | 6,862 |    8,238 | 7,517 | 2,474 | 3,560 | 8,265 |  3,952 |
 | **valkey-glide**     | 3,300 |    3,738 | 3,297 | 1,725 | 1,678 | 3,693 |  1,735 |
 | django (builtin)     | 1,948 |    1,995 | 1,929 |   199 |   197 |   989 |    992 |
 
@@ -207,7 +203,6 @@ actually generate.
 | redis-py+hiredis     |  2,121 |    2,254 |  2,047 | 1,347 |   931 |  2,149 |    979 |        106 |
 | valkey-py            |  2,465 |    2,591 |  2,327 | 1,229 |   920 |  2,569 |  1,130 |         58 |
 | valkey-py+libvalkey  |  2,467 |    2,588 |  2,329 | 1,223 |   917 |  2,564 |  1,129 |        108 |
-| **redis-rs**         | 22,335 |   35,848 | 28,528 | 2,508 | 6,533 | 39,406 |  5,543 |        108 |
 | **valkey-glide**     | 10,149 |   12,575 | 10,045 | 2,074 | 2,607 | 12,232 |  2,627 |        109 |
 | django (builtin)     |  2,078 |    2,177 |  2,076 |   212 |   210 |  1,051 |  1,018 |        107 |
 
@@ -222,36 +217,28 @@ six async cache ops, the shape closest to real production load.
 | redis-py+hiredis     |   467 |    213 |  1,509 |            414 |        209 |           209 |
 | valkey-py            |   519 |    192 |  1,375 |            420 |        211 |           211 |
 | valkey-py+libvalkey  |   498 |    200 |  1,599 |            432 |        211 |           211 |
-| **redis-rs**         |   607 |    164 |  1,152 |            430 |        115 |           115 |
 | **valkey-glide**     |   553 |    180 |  1,395 |            446 |        172 |           172 |
 | django (builtin)     |   156 |    634 |  3,117 |            466 |        337 |           337 |
 
 ### Takeaways
 
-- **Sync direct.** `redis-rs` leads on every phase at **~10k get / 11k set
-  / 13k incr / 6k delete** ops/sec, ~4× the fastest pure-Python adapter.
-  `valkey-glide` is second on single-key ops (`get`/`set`/`incr` ~7–9k)
-  but trails `redis-rs` on multi-key and `delete`. Both Rust adapters
-  use ~4× less Python memory than the pure-Python adapters.
-- **Django request cycle.** Both Rust adapters lead the table:
-  `redis-rs` ~1.4–2.1k ops/sec, `valkey-glide` ~1.2–1.9k. Earlier
-  versions of these adapters failed this benchmark entirely because
-  ``close()`` was tearing down the connection on every
-  ``request_finished`` signal; now they outperform the Python adapters.
-- **Async serial.** `redis-rs` runs **~3–4× faster** than the C-parser
-  Python adapters on every phase (6.9k get, 8.3k incr). `valkey-glide`
-  is also faster than Python (~1.5–1.8×) but trails `redis-rs`.
-- **Async concurrent (50 in flight).** `redis-rs` peaks at **22k get /
-  36k get-miss / 39k incr** ops/sec, which is **9–18×** the fastest Python
-  adapter. `valkey-glide` is half that rate but still **~4×** ahead of
-  the Python adapters.
+- **Sync direct.** `valkey-glide` leads every phase at **~7k get / 7k set
+  / 8.9k incr / 4k delete** ops/sec, ~2.5× the fastest pure-Python adapter,
+  and uses ~4× less Python memory.
+- **Django request cycle.** `valkey-glide` leads at ~1.2–1.9k ops/sec.
+  An earlier version failed this benchmark entirely because ``close()``
+  was tearing down the connection on every ``request_finished`` signal;
+  now it outperforms the Python adapters.
+- **Async serial.** `valkey-glide` runs ~1.5–1.8× faster than the C-parser
+  Python adapters on every phase (3.3k get, 3.7k incr).
+- **Async concurrent (50 in flight).** `valkey-glide` peaks at **10k get /
+  12.5k get-miss / 12.2k incr** ops/sec, roughly **4–5×** the fastest
+  Python adapter.
 - **ASGI full-stack** (granian × 4 workers, httpx × 100 concurrent).
-  Both Rust adapters lead on req/s: `redis-rs` 607 (164 ms avg, 1.15 s
-  p99) and `valkey-glide` 553. They also use **fewer connections** than
-  every Python adapter (`redis-rs` 115, `valkey-glide` 172, vs Python ~210).
-  Process-wide client sharing (added after this benchmark first
-  surfaced 1,111 / 4,577 conn counts) brought the Rust adapters in
-  line with the multiplexed-transport claim.
+  `valkey-glide` leads on req/s at 553 (180 ms avg, 1.4 s p99) and uses
+  fewer connections than every Python adapter (172 vs ~210). Process-wide
+  client sharing, added after this benchmark first surfaced 4,577 conn
+  counts, brought it in line with its transport's claim.
 - **Connection stability.** Across every shape the cachex path keeps
   `Δ` at 0 between phases, so there are no per-phase connection leaks on
   any adapter.

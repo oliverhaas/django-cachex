@@ -302,24 +302,3 @@ class TestXAutoclaimJustid:
 
         # Field values stay raw at the adapter layer; the cache decodes them.
         assert result == ("0-0", [("1-0", {"field": b"value"})], ["2-0"])
-
-
-# ---------------------------------------------- redis-rs protocol-stub gaps
-
-
-def test_redis_rs_slowlog_raises_not_supported():
-    """Regression: RespAdapterProtocol sits last in the MRO, so a command the
-    Rust class does not implement resolved to the protocol's ``...`` body and
-    returned None. slowlog_get/slowlog_len were the only two such gaps, and
-    callers got ``TypeError: 'NoneType' object is not iterable`` instead of a
-    catchable NotSupportedError.
-    """
-    from django_cachex.adapters.redis_rs import RedisRsAdapter
-    from django_cachex.exceptions import NotSupportedError
-
-    # The Rust __new__ demands a live server, so call the overrides unbound;
-    # neither touches self.
-    with pytest.raises(NotSupportedError):
-        RedisRsAdapter.slowlog_get(None)
-    with pytest.raises(NotSupportedError):
-        RedisRsAdapter.slowlog_len(None)

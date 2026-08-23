@@ -62,7 +62,7 @@ class TestBasicLockOperations:
         """blocking_timeout was renamed to timeout; the old name must error.
 
         Only enforced for adapters that wrap the returned Lock in our own
-        class (redis-rs, valkey-glide). The redis-py / valkey-py adapters
+        class (valkey-glide). The redis-py / valkey-py adapters
         return the upstream library's Lock object directly, which still
         accepts its native ``blocking_timeout`` kwarg.
         """

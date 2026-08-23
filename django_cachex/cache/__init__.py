@@ -10,11 +10,6 @@ from django_cachex.cache.redis_py import (
     RedisClusterCache,
     RedisSentinelCache,
 )
-from django_cachex.cache.redis_rs import (
-    RedisRsCache,
-    RedisRsClusterCache,
-    RedisRsSentinelCache,
-)
 from django_cachex.cache.resp import RespCache, RespClusterCache, RespSentinelCache
 from django_cachex.cache.stream import StreamCache
 from django_cachex.cache.tiered import TieredCache
@@ -30,9 +25,6 @@ __all__ = [
     "LocMemCache",
     "RedisCache",
     "RedisClusterCache",
-    "RedisRsCache",
-    "RedisRsClusterCache",
-    "RedisRsSentinelCache",
     "RedisSentinelCache",
     "RespCache",
     "RespClusterCache",

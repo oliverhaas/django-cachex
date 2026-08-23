@@ -4,7 +4,7 @@ Per-backend tests live next to the backends they cover:
 
 * LocMemCache → ``tests/cache/test_locmem.py``
 * DatabaseCache → ``tests/cache/test_database.py`` (TBD)
-* RESP backends (redis-py / valkey-py / valkey-glide / redis-rs) →
+* RESP backends (redis-py / valkey-py / valkey-glide) →
   the parametrized ``cache`` fixture in ``tests/cache/``.
 """
 

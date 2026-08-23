@@ -69,12 +69,6 @@ ADAPTER_CONFIGS: tuple[AdapterConfig, ...] = (
         server="valkey",
     ),
     AdapterConfig(
-        id="redis-rs",
-        backend="django_cachex.cache.RedisRsCache",
-        options={},
-        server="valkey",
-    ),
-    AdapterConfig(
         id="valkey-glide",
         backend="django_cachex.cache.valkey_glide.ValkeyGlideCache",
         options={},

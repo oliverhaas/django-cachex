@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Breaking changes
+
+- **The `redis-rs` backends are gone.** `RedisRsCache`, `RedisRsSentinelCache` and `RedisRsClusterCache`, the `django_cachex.adapters.redis_rs` module, the `redis-rs` extra and the `django-cachex-redis-rs` companion package have all been removed. The Rust driver was never published to PyPI, so no released install can break; switch to `ValkeyCache`, `RedisCache` or `ValkeyGlideCache`. A standalone [redis-rs-py](https://github.com/oliverhaas/redis-rs-py) binding is in progress and cachex may grow an adapter for it once that package stands on its own.
+- **`django_cachex.Lock` and `django_cachex.AsyncLock` removed.** They existed only to wrap the Rust driver's raw lock commands. `cache.lock()` is unchanged on every remaining backend, and `LockError` / `LockNotOwnedError` are still the exceptions it raises.
+
 ## 0.4.2 (August 2026)
 
 ### Improvements

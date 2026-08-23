@@ -42,9 +42,6 @@ BACKENDS = {
     ("cluster", "valkey-py"): "django_cachex.cache.ValkeyClusterCache",
     ("default", "valkey-glide"): "django_cachex.cache.ValkeyGlideCache",
     ("cluster", "valkey-glide"): "django_cachex.cache.ValkeyGlideClusterCache",
-    ("default", "redis-rs"): "django_cachex.cache.RedisRsCache",
-    ("sentinel", "redis-rs"): "django_cachex.cache.RedisRsSentinelCache",
-    ("cluster", "redis-rs"): "django_cachex.cache.RedisRsClusterCache",
 }
 
 # Per-adapter image + library mapping. ``redis-py`` is paired with the Redis
@@ -54,13 +51,12 @@ ADAPTER_IMAGES = {
     "redis-py": ("redis:latest", "redis"),
     "valkey-py": ("valkey/valkey:latest", "valkey"),
     "valkey-glide": ("valkey/valkey:latest", "valkey"),
-    "redis-rs": ("valkey/valkey:latest", "valkey"),
 }
 
 # Adapters whose Python connection pool / parser internals are exercised by
 # the ``test_internals.py`` / ``test_client.py`` / ``test_replica.py``
 # probes. Used by ``conftest.pytest_collection_modifyitems`` to skip those
-# files for adapters that don't expose those concepts (redis-rs, valkey-glide).
+# files for adapters that don't expose those concepts (valkey-glide).
 PY_INTERNAL_ADAPTERS = frozenset({"redis-py", "valkey-py"})
 
 # Pool / parser config per Python client library. ``client_library`` is
@@ -110,7 +106,7 @@ def native_parser(request) -> bool:
     return request.param
 
 
-@pytest.fixture(params=["redis-py", "valkey-py", "valkey-glide", "redis-rs"])
+@pytest.fixture(params=["redis-py", "valkey-py", "valkey-glide"])
 def resp_adapter(request) -> str:
     """Parametrized adapter fixture: which RespAdapter implementation to test."""
     return request.param
@@ -143,7 +139,7 @@ def build_cache_config(
         client_library = ADAPTER_IMAGES[resp_adapter][1]
         options: dict = _get_client_library_options(client_library, native_parser)
     else:
-        # redis-rs and valkey-glide ignore pool/parser options entirely.
+        # valkey-glide ignores pool/parser options entirely.
         options = {}
 
     if compressor and compressor in COMPRESSORS:

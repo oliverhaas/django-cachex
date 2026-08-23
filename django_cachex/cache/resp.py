@@ -7,7 +7,6 @@ concrete subclasses live in:
 
 - :mod:`django_cachex.cache.valkey_py`: ``valkey-py``
 - :mod:`django_cachex.cache.redis_py`: ``redis-py``
-- :mod:`django_cachex.cache.redis_rs`: Rust ``redis-rs`` driver
 - :mod:`django_cachex.cache.valkey_glide`: ``valkey-glide``
 """
 

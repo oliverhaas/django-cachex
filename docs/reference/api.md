@@ -284,7 +284,6 @@ adapter is configured:
 |---------|------------------------|
 | `ValkeyCache` (`valkey-py`) | `valkey.Valkey` |
 | `RedisCache` (`redis-py`) | `redis.Redis` |
-| `RedisRsCache` (`redis-rs`) | `django_cachex.adapters.RedisRsAdapter` (the adapter is its own multiplexed client) |
 | `ValkeyGlideCache` (`valkey-glide`) | `glide_sync.GlideClient` |
 
 The four objects expose comparable command surfaces but are not
@@ -422,7 +421,7 @@ Sync and async callers on the same cache instance share state for a given name.
 Backends:
 
 - **`LocMemCache`** uses an in-process FIFO deque. FIFO fairness is strict within the process; `lease` is accepted but ignored.
-- **RESP backends** (`RedisCache`, `ValkeyCache`, `RedisRsCache`, `ValkeyGlideCache`, ...) use Lua scripts. FIFO fairness is best-effort across processes (head-of-queue check plus jittered polling).
+- **RESP backends** (`RedisCache`, `ValkeyCache`, `ValkeyGlideCache`, ...) use Lua scripts. FIFO fairness is best-effort across processes (head-of-queue check plus jittered polling).
 
 Cluster mode is supported on RESP backends: all keys for one semaphore name carry a `{name}` hash tag so they colocate on the same slot.
 
@@ -505,7 +504,7 @@ failure.
 | Exception | Description |
 |-----------|-------------|
 | `CachexError` | Base class for every exception raised by django-cachex. |
-| `WrongTypeError` | Operation applied to a key holding the wrong RESP type (subclass of `TypeError`). Mirrors Redis ``WRONGTYPE``; raised consistently across LocMem, redis-py, valkey-py, valkey-glide, and the Rust adapter. |
+| `WrongTypeError` | Operation applied to a key holding the wrong RESP type (subclass of `TypeError`). Mirrors Redis ``WRONGTYPE``; raised consistently across LocMem, redis-py, valkey-py, and valkey-glide. |
 | `CompressorError` | Compression or decompression failed. Triggers the configured compressor fallback chain. |
 | `SerializerError` | Serialization or deserialization failed. Triggers the serializer fallback chain. |
 | `NotSupportedError` | Operation is not supported by this backend (e.g. `lpush` on `TieredCache`). |

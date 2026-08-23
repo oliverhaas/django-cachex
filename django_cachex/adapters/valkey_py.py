@@ -67,7 +67,7 @@ _set = set
 # process-wide registry every async cache call would open a brand-new
 # TCP connection, which is slow on the hot path and noisy on the server. Sharing
 # pools at the module level by event loop + config keeps connections
-# reused across tasks, in line with the multiplexed redis-rs adapter.
+# reused across tasks.
 #
 # The registry itself lives on each driver-specific adapter class as the
 # ``_async_pools`` class attribute (see :mod:`~django_cachex.adapters.redis_py`
@@ -375,7 +375,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """Get an async client connection.
 
         ``async def`` for Protocol uniformity: adapters whose async-client
-        construction is genuinely async (glide, redis-rs) ``await`` here;
+        construction is genuinely async (glide) ``await`` here;
         for redis-py / valkey-py the body is sync (pool lookup +
         ``Redis(connection_pool=...)``) since the connection opens
         lazily on the first awaited command.

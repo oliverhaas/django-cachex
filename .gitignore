@@ -35,8 +35,3 @@ CLAUDE.md
 site/
 *.sqlite3
 docs/superpowers/
-
-# Rust build artifacts
-target/
-django_cachex/adapters/_redis_rs*.so
-crates/django-cachex-redis-rs/python/django_cachex/adapters/_redis_rs*.so
