@@ -1,0 +1,2147 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Valkey and Redis cache backend for Django, with a Django admin UI for cache inspection.">
+      
+      
+      
+        <link rel="canonical" href="https://oliverhaas.github.io/django-cachex/0.4.2/reference/changelog/">
+      
+      
+        <link rel="prev" href="../benchmarks/">
+      
+      
+        <link rel="next" href="../../development/locmem-vs-fakeredis/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Changelog - Django CacheX</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="red" data-md-color-accent="red">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#changelog" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Django CacheX" class="md-header__button md-logo" aria-label="Django CacheX" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Django CacheX
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Changelog
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="red" data-md-color-accent="red"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="red" data-md-color-accent="red"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/oliverhaas/django-cachex" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    oliverhaas/django-cachex
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Django CacheX" class="md-nav__button md-logo" aria-label="Django CacheX" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Django CacheX
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/oliverhaas/django-cachex" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    oliverhaas/django-cachex
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/admin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cache Admin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/async/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Async Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/serializers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serializers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/compression/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compression
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/sentinel/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sentinel
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/composite-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Composite Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#042-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.2 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.2 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#041-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.1 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.1 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#040-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.0 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.0 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#performance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#030-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.3.0 (February 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#020-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.2.0 (February 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#010-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0 (February 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0 (February 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-structure-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Structure Operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pre-release-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-release History
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pre-release History">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#010b6-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0b6 (February 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0b6 (February 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#010b5-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0b5 (February 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0b5 (February 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#010b4-january-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0b4 (January 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0b4 (January 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#010b3-january-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0b3 (January 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0b3 (January 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/locmem-vs-fakeredis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LocMemCache vs fakeredis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#042-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.2 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.2 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#041-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.1 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.1 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#040-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.0 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.0 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#performance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#030-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.3.0 (February 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#020-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.2.0 (February 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#010-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0 (February 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0 (February 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-structure-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Structure Operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pre-release-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-release History
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pre-release History">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#010b6-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0b6 (February 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0b6 (February 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#010b5-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0b5 (February 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0b5 (February 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#010b4-january-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0b4 (January 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0b4 (January 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#010b3-january-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0b3 (January 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0b3 (January 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
+<h2 id="042-august-2026">0.4.2 (August 2026)<a class="headerlink" href="#042-august-2026" title="Permanent link">&para;</a></h2>
+<h3 id="improvements">Improvements<a class="headerlink" href="#improvements" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Every value input in the key admin is the same textarea.</strong> Push, add and set-field forms were single-line <code>&lt;input type="text"&gt;</code> fields 100 to 150px wide, so a multi-line JSON value could not be typed into them at all. They are now four-row textareas laid out like the string editor. Item, field and member rows use a two-row version of the same field, with their buttons stacked beside it so a row stays compact. The field is one Django template partial (<code>{% partialdef value-input %}</code>), and the fieldsets carry the admin's own <code>monospace</code> class instead of five ad-hoc font declarations.</li>
+<li><strong>Sorted set members and set members can be edited.</strong> Both rendered as static <code>&lt;code&gt;</code>, so a typo in a member meant remove-and-re-add by hand. Renaming adds the new member before dropping the old one, so an interrupted request leaves a visible duplicate rather than losing the member.</li>
+<li><strong>Hash field names can be edited.</strong> They rendered as static <code>&lt;code&gt;</code> for the same reason. Redis has no <code>HRENAME</code>, so the rename runs <code>HSET</code> plus <code>HDEL</code> inside the existing compare-and-swap script: one round trip, atomic, and still refused if the value changed since page load. It also refuses to overwrite a field name that is already in use.</li>
+</ul>
+<h3 id="fixes">Fixes<a class="headerlink" href="#fixes" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Container entries that are not JSON-serializable are read-only.</strong> They display as <code>repr()</code>, and nothing stopped that text from being submitted back, which stored the repr string over the real value. Their Update and Remove buttons are now disabled, matching the guard the string editor already had.</li>
+<li><strong><code>xadd</code> parses its value like every other handler.</strong> It was the one action that stored the submitted text raw, so a stream entry could not hold a number, list or dict the way a list item or hash field can.</li>
+<li><strong>The string editor strips surrounding whitespace.</strong> Every container handler already did; the string path did not, so a stray newline changed the stored value.</li>
+</ul>
+<h2 id="041-august-2026">0.4.1 (August 2026)<a class="headerlink" href="#041-august-2026" title="Permanent link">&para;</a></h2>
+<h3 id="fixes_1">Fixes<a class="headerlink" href="#fixes_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>The admin's value textarea no longer overflows its container.</strong> It was sized <code>width: 100%</code> without <code>box-sizing: border-box</code>, so the admin's 1px border and 8px side padding landed outside that width and clipped the right edge by 18px.</li>
+<li><strong>Admin warnings and field errors are readable in dark mode.</strong> The key detail page's complex-value notice inlined light-theme colors and set no foreground, so dark mode drew <code>.help</code>'s near-white text on pale yellow. It now uses the admin's own <code>messagelist</code> warning styling, which follows the active theme. The add form's client-side field errors hardcoded the light-theme error red for the same reason and now take <code>--error-fg</code>.</li>
+<li><strong>Semaphore <code>release()</code> and <code>extend()</code> no longer act on a token they don't own.</strong> Both re-read <code>self._token</code> after their "not held" guard, so a racing re-acquire on the same instance could install a new token in between; the command then ran against that live claim, and <code>release()</code> cleared the field to <code>None</code>. The token is now snapshotted under the same lock <code>_claim()</code> uses, and <code>release()</code> clears it only if it is still the one it entered with.</li>
+<li><strong>RESP semaphores no longer wedge when Redis evicts their bookkeeping.</strong> The reaper only ever adjusted the <code>used</code> counter by a delta, so losing the claims hash to <code>maxmemory</code> eviction left <code>used</code> pinned at capacity with nothing left to subtract and every later acquire failing forever. Losing the state hash instead made <code>used</code> read zero and admitted past capacity. <code>used</code> is now derived from the surviving claims during the walk the reaper already performs, which costs no extra round trip and self-heals both directions.</li>
+</ul>
+<h2 id="040-august-2026">0.4.0 (August 2026)<a class="headerlink" href="#040-august-2026" title="Permanent link">&para;</a></h2>
+<h3 id="breaking-changes">Breaking changes<a class="headerlink" href="#breaking-changes" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Python 3.14+ required.</strong> Dropped support for 3.12 and 3.13. The package now ships on cp314 and cp314t (free-threaded) wheels.</li>
+<li><strong>Django 6.0+ required.</strong> Dropped support for Django 5.2.</li>
+<li><strong><code>LocMemCache</code> data structures use tagged subclasses.</strong> Lists, sets, hashes, and sorted sets are stored as dedicated subclasses (<code>_List</code>, <code>_Set</code>, <code>_Hash</code>, <code>_ZSet</code>) rather than plain Python types, and cross-type access raises <code>WrongTypeError</code> instead of silently coercing, matching real Valkey/Redis <code>WRONGTYPE</code> semantics.</li>
+<li><strong><code>LocMemCache</code> bypasses pickle for tagged collections.</strong> Mutations happen in place; the prior copy-on-read/copy-on-write contract no longer holds. Code that relied on getting a detached snapshot from <code>cache.get()</code> for these types now sees the live structure.</li>
+<li><strong><code>StreamCache</code> wire format changed.</strong> Stream entries now flow through the transport's serializer + compressor pipeline instead of raw pickle. Pods running the new code cannot read entries written by older pods on the same stream; coordinate the rollout (drain or rotate <code>stream_key</code>).</li>
+<li><strong><code>hmset</code> removed.</strong> Use <code>hset(key, mapping=...)</code> or <code>hset(key, items=...)</code> (flat key-value list, matching redis-py/valkey-py).</li>
+<li><strong><code>django_cachex.unfold</code> removed.</strong> The django-unfold theme variant of the admin is gone, along with the <code>[unfold]</code> extra and <code>examples/unfold/</code>. Plain <code>django_cachex.admin</code> remains. Unfold support may return as a thin theme override once the core admin app stabilises.</li>
+<li><strong>Lock parameters renamed.</strong> <code>cache.lock(timeout=...)</code> is now <code>cache.lock(lease=...)</code> (TTL of the held lock); <code>lock.acquire(blocking_timeout=...)</code> is now <code>lock.acquire(timeout=...)</code> (max wait). The old <code>blocking_timeout</code> kwarg raises <code>TypeError</code>; the constructor's new <code>timeout=</code> kwarg means "max wait" rather than "TTL". No deprecation shim. This aligns the lock API with the upcoming <code>cache.semaphore(...)</code> primitive.</li>
+<li><strong><code>ZStdCompressor</code> renamed to <code>ZstdCompressor</code></strong> (<code>django_cachex.compressors.zstd.ZstdCompressor</code>). Update <code>OPTIONS["compressor"]</code> strings.</li>
+<li><strong><code>LzmaCompressor</code> constructor <code>preset=</code> renamed to <code>level=</code></strong> for consistency with the other compressors. All compressors now accept <code>level=</code> (mapped to the underlying library's native parameter).</li>
+<li><strong><code>PickleSerializer</code> no longer raises <code>ImproperlyConfigured</code> for <code>protocol &gt; pickle.HIGHEST_PROTOCOL</code></strong>. Pickle's own <code>ValueError</code> is now surfaced at the first <code>dumps</code> call, wrapped as <code>SerializerError</code> (with the pickle exception as <code>__cause__</code>).</li>
+<li><strong><code>CachexCompat</code> removed.</strong> The mixin class that emulated the cachex ext surface on top of an arbitrary <code>BaseCache</code> is gone, along with the admin's "wrapped" support tier. Django's <code>BaseCache</code> and the stock backends (<code>LocMemCache</code>, <code>RedisCache</code>, <code>DatabaseCache</code>, <code>FileBasedCache</code>, <code>MemcachedCache</code>, <code>DummyCache</code>) deliberately don't expose key listing, so the wrap couldn't drive the admin's browse views meaningfully. Use <code>django_cachex.cache.LocMemCache</code> / <code>DatabaseCache</code> (drop-in replacements) for full admin support; non-cachex backends now show as "limited" (configuration only).</li>
+<li><strong>Cluster <code>LOCATION</code> with a database number now raises on the redis-py and valkey-py cluster backends.</strong> Those two are built with the driver's <code>from_url()</code>, which rejects a non-zero <code>db</code> in the URL path or query (<code>RedisClusterException</code> / <code>ValkeyClusterException</code>). The old code read only host and port off the URL, so <code>redis://host:6379/1</code> connected to db 0 without complaint. Cluster has no <code>SELECT</code>, so the number was never honored; drop it from <code>LOCATION</code>. <code>ValkeyGlideClusterCache</code> and <code>RedisRsClusterCache</code> still ignore it silently.</li>
+</ul>
+<h3 id="new-features">New features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Rust I/O driver (experimental).</strong> Optional native driver built on PyO3 + tokio + redis-rs, shipped as a separate <code>django-cachex-redis-rs</code> package. Interfaces and behavior may change, and it has seen less production testing than the redis-py/valkey-py paths. Opt in via the <code>redis-rs</code> extra (<code>pip install django-cachex[redis-rs]</code>); without it, only the pure-Python backends are pulled in and the <code>RedisRsCache</code> classes raise a clean <code>ImportError</code> on first use. Set <code>BACKEND</code> to one of <code>RedisRsCache</code>, <code>RedisRsClusterCache</code>, or <code>RedisRsSentinelCache</code>. Sync and async share one tokio runtime; async dodges the threadpool round-trip.</li>
+<li><strong><code>valkey-glide</code> adapter (experimental).</strong> Optional Rust-cored client from the Valkey project. Interfaces and behavior may change, and it has seen less production testing than the redis-py/valkey-py paths. Opt in via the <code>valkey-glide</code> extra. Standalone (<code>ValkeyGlideCache</code>) and cluster (<code>ValkeyGlideClusterCache</code>) topologies are exposed; Sentinel is not (<code>valkey-glide</code> itself does not ship a Sentinel client).</li>
+<li><strong><code>WrongTypeError</code> exception.</strong> Backends now translate Redis <code>WRONGTYPE</code> responses into a single <code>django_cachex.WrongTypeError</code> (subclass of <code>TypeError</code>) so user code can catch one exception across LocMem, redis-py, valkey-py, valkey-glide, and the Rust adapter.</li>
+<li><strong>Async ext methods on LocMem and Database.</strong> The full async data-structure surface (<code>alpush</code>, <code>ahset</code>, <code>azadd</code>, <code>attl</code>, <code>aexpire</code>, ...) is now available on <code>LocMemCache</code> (direct sync calls; in-memory, so no I/O to offload) and <code>DatabaseCache</code> (via <code>sync_to_async</code>, the same path Django uses for <code>BaseCache.aget</code>). They no longer raise <code>NotSupportedError</code> from async views.</li>
+<li><strong><code>StreamCache</code> backend.</strong> Stream-synchronized in-memory cache: reads are local, writes broadcast over a Redis Stream, a daemon thread on each pod consumes the stream and applies remote changes. Read-heavy, write-light, eventually consistent.</li>
+<li><strong><code>TieredCache</code> backend.</strong> Composes two existing <code>CACHES</code> entries as L1 (fast, e.g. LocMem) and L2 (durable, e.g. Redis), with TTL propagation and pull-through reads.</li>
+<li><strong>Cache-stampede prevention.</strong> TTL-based XFetch via <code>OPTIONS["stampede_prevention"]</code> (or <code>stampede_prevention=</code> per call). Configurable buffer/beta/delta.</li>
+<li><strong><code>LocMemCache</code> and <code>DatabaseCache</code> extensions.</strong> Drop-in replacements for the Django builtins, adding data-structure ops, TTL helpers, and admin support. Compound read-modify-write ops on <code>LocMemCache</code> are serialized via a per-backend <code>RLock</code> (#62).</li>
+<li><strong><code>orjson</code> and <code>ormsgpack</code> serializer extras.</strong></li>
+<li><strong>Free-threaded CPython (3.14t) support.</strong> A cp314t wheel is built; <code>_redis_rs</code> works with the GIL disabled. The Rust driver also runs on the free-threaded build.</li>
+<li><strong>PyPI wheels via cibuildwheel.</strong> Wheels for Linux x86_64, Linux aarch64, macOS arm64, and Windows amd64, on cp314 and cp314t.</li>
+<li><strong>Async pool sharing.</strong> A single async connection pool is shared across per-task <code>Cache</code> instances (#83), avoiding the thundering-herd reconnect on cold start.</li>
+<li><strong>Pipeline parity.</strong> Stream ops, CAS ops, missing key ops (<code>persist</code>/<code>pttl</code>/<code>expireat</code>/etc.), context manager, <code>zpopmin</code>/<code>zpopmax</code> default <code>count=1</code> aligned with the cache API.</li>
+<li><strong>Compressors gain a uniform <code>level=</code> parameter</strong> (gzip, lz4, zstd join zlib/lzma in exposing it). Defaults match each library's own default.</li>
+<li><strong>Serializer/compressor wrappers consolidated.</strong> Subclasses now implement <code>_dumps</code>/<code>_loads</code> (serializers) or <code>_compress</code>/<code>_decompress</code> (compressors); the base classes wrap the boilerplate (<code>SerializerError</code> / <code>CompressorError</code> translation, int-passthrough on loads).</li>
+<li><strong>Weighted semaphores.</strong> New <code>cache.semaphore(name, capacity, *, weight=1, lease=..., timeout=...)</code> and <code>cache.asemaphore(...)</code> for gating concurrent access by a budget (counting or weighted). Backed by an in-process FIFO deque on <code>LocMemCache</code> and by Lua scripts on the RESP backends (redis-py, redis-rs, valkey-py, valkey-glide). Cluster mode is supported via <code>{name}</code> hash-tag colocation. Sync and async APIs share state per cache instance; lease-based crash reclaim on the RESP backend (no heartbeat). See <code>docs/recipes.md</code> for examples.</li>
+</ul>
+<h3 id="performance">Performance<a class="headerlink" href="#performance" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>LocMemCache</code> sorted sets are O(log N).</strong> Sorted-set operations now back the underlying dict with a <code>sortedcontainers.SortedList</code> sidecar for O(log N) insertion, deletion, and rank queries; previous implementation was O(N log N) per write. Adds <code>sortedcontainers&gt;=2.4</code> as a runtime dependency.</li>
+<li><strong><code>LocMemCache</code> skips pickle for tagged collections.</strong> Tagged subclasses are mutated in place; reads and writes no longer round-trip through pickle for list/set/hash/zset/stream types.</li>
+</ul>
+<h3 id="fixes_2">Fixes<a class="headerlink" href="#fixes_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>LocMemCache.lpush</code>/<code>sadd</code>/<code>hset</code>/<code>hincrby</code>/<code>zadd</code>/etc. no longer lose updates under concurrent threads (#62).</li>
+<li><code>delete_pattern</code> batches deletes to bound peak memory on broad patterns.</li>
+<li><code>clear()</code> is now prefix/version-scoped instead of <code>FLUSHDB</code>. The old behavior is available as <code>flush_db()</code>.</li>
+<li>Compressor <code>compress</code> and <code>decompress</code> methods catch all exceptions and re-raise as <code>CompressorError</code>.</li>
+<li>Several cluster correctness fixes (script loading on replicas, set_many <code>timeout=0</code>).</li>
+<li>Fixed a crash when reading values small enough to have skipped compression (at or below the compressor's <code>min_length</code>).</li>
+<li>Admin cache/key changelists are compatible with Django 6.1.</li>
+<li>Semaphore waiters abandoned by crashed or cancelled callers are reaped instead of blocking the queue.</li>
+<li>valkey-glide: connection options reach the client instead of being reduced to host and port. The TLS scheme (<code>rediss</code>/<code>valkeys</code>) or <code>use_tls</code>/<code>ssl</code>, credentials from the URL or <code>OPTIONS</code>, the database index (standalone only), <code>request_timeout</code>, and <code>client_name</code> are all applied; <code>zadd</code> forwards the <code>gt</code>/<code>lt</code> flags, and pipelines support the stream commands.</li>
+<li><code>TieredCache.set</code> forwards <code>nx</code>/<code>xx</code> to L2, and an L2 that is a stock Django backend no longer raises <code>TypeError</code>: <code>nx</code> falls back to <code>add()</code>, <code>xx</code>/<code>get</code> raise <code>NotSupportedError</code>, and a plain set drops the flags.</li>
+<li><code>set(..., timeout=0)</code> deletes the key across all backends, matching Django's cache contract.</li>
+<li><code>LocMemCache</code> aliases sharing a <code>LOCATION</code> share one store, including the tagged collections and the semaphore budgets, matching Django's builtin behavior.</li>
+<li>Admin: backend capability probes fail gracefully, and key URLs are quoted so keys with special characters open correctly.</li>
+<li>CI runs the test matrix against Django 6.1 in addition to 6.0.</li>
+<li>Dependabot automerge waits for every workflow run on the PR head to succeed before merging.</li>
+<li><code>reverse_key()</code> handles a <code>KEY_PREFIX</code> containing colons, so <code>keys()</code>, <code>iter_keys()</code>, <code>scan()</code>, and the blocking list pops return user keys instead of raw internal ones.</li>
+<li><code>DatabaseCache</code> compound ops (<code>rpush</code>, <code>sadd</code>, <code>zadd</code>, <code>hset</code>, ...) that lose the insert race against a concurrent writer now merge with the committed row instead of overwriting it.</li>
+<li><code>LocMemCache</code> and <code>DatabaseCache</code> <code>hincrby</code>/<code>hincrbyfloat</code> reject non-numeric stored values with the same error as the server instead of truncating them.</li>
+<li><code>TieredCache</code> rejects <code>KEY_PREFIX</code> in the standard top-level slot as well as in <code>OPTIONS</code>; it was silently ignored before.</li>
+<li>Sentinel: async connection pools are keyed by sentinel fleet, so two aliases sharing a service name no longer alias onto one pool.</li>
+<li>Semaphores: concurrent <code>acquire()</code> on one <code>RespSemaphore</code> instance can no longer double-claim and leak a slot until the lease expires.</li>
+<li>Admin: editing a key preserves its TTL and persistence instead of resetting it to the default timeout. Covers every backend, including those that report no-expiry as <code>-1</code> rather than <code>None</code> (<code>StreamCache</code>) and those without <code>pexpire</code> (<code>StreamCache</code>, <code>TieredCache</code>).</li>
+<li><code>StreamCache</code> enqueues each broadcast while still holding the local write lock, so a pod's stream entries carry the order its writes were applied and replaying consumers converge on the writer's final value instead of an older one. <code>keys()</code> is scoped to the cache's own prefix and version.</li>
+<li>Pipelines discard their queued decoders when <code>execute()</code> raises, so a reused pipeline no longer decodes the next batch against a stale, misaligned decoder list. <code>AsyncPipeline</code> rejects a sync <code>with</code> at entry rather than after the block has run.</li>
+<li>The redis-py and valkey-py cluster backends are built from the full server URL through the driver's <code>from_url()</code>, so the TLS scheme, credentials, and query parameters survive; only the host and port were read before. The async Sentinel pool cache is also keyed on the sentinel fleet rather than the manager's <code>id()</code>, so the per-task adapters asgiref creates share one pool instead of each opening its own.</li>
+<li><code>encode()</code> passes through exact <code>int</code> values only. <code>int</code> subclasses (<code>IntEnum</code>, <code>IntFlag</code>) now go through the serializer, so they come back as their own type instead of as plain ints.</li>
+<li><code>touch()</code>/<code>atouch()</code> apply the stampede buffer to the TTL they write and accept a per-call <code>stampede_prevention=</code>. Touching a key under stampede prevention no longer strips the buffer and pushes every reader into a recompute.</li>
+<li><code>DatabaseCache</code> key scans escape SQL <code>LIKE</code> metacharacters per database vendor, so a <code>KEY_PREFIX</code> or pattern containing <code>%</code>, <code>_</code>, or a backslash no longer matches unrelated rows.</li>
+<li><code>DatabaseCache.zadd</code>/<code>zincrby</code> reject a non-numeric score with <code>ValueError</code> before writing, matching the server, instead of storing a value that breaks later range queries.</li>
+<li><code>MAX_ENTRIES</code> culling covers the whole store: <code>LocMemCache</code> counts its tagged collections alongside the pickled entries and evicts them, and <code>DatabaseCache</code> compound ops (<code>rpush</code>, <code>sadd</code>, <code>hset</code>, ...) run the same cull check as a plain <code>set()</code> when they insert a new row.</li>
+<li><code>LocMemCache</code> collection edge cases: <code>keys()</code> scopes to the requested version and skips expired-but-not-yet-culled entries, <code>incr()</code> on a collection key raises <code>WrongTypeError</code> instead of <code>KeyError</code>, and <code>sadd</code>/<code>hset</code>/<code>zadd</code> no longer leave an empty key behind when the call adds nothing (<code>zadd</code> where <code>nx</code>/<code>xx</code> skip every member, <code>sadd</code>/<code>hset</code> called with no members or fields).</li>
+<li><code>rpop(count=0)</code> on <code>LocMemCache</code> and <code>DatabaseCache</code>, and <code>zpopmax(count=0)</code> on <code>LocMemCache</code>, return an empty list instead of draining the whole collection.</li>
+</ul>
+<hr />
+<h2 id="030-february-2026">0.3.0 (February 2026)<a class="headerlink" href="#030-february-2026" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong><code>expiretime()</code> and <code>set(get=True)</code> support</strong>: New cache methods for retrieving absolute expiry timestamps and atomic get-and-set operations.</li>
+<li><strong>Atomic CAS operations in admin</strong>: Key detail edits use compare-and-swap via Lua-computed SHA1 fingerprints to prevent concurrent edit conflicts.</li>
+<li><strong>Key detail pagination</strong>: Collection types (list, hash, set, zset, stream) are paginated at 100 items per page with <code>?page=N</code> navigation.</li>
+<li><strong>Keys in admin sidebar</strong>: The key list is now a first-class sidebar entry with a cache filter for switching between configured caches.</li>
+<li><strong>Simplified Lua script execution</strong>: <code>eval_script()</code> replaces the <code>register_script</code>/<code>LuaScript</code> registry with direct <code>EVAL</code> calls; redis-py handles script caching.</li>
+<li><strong>Async data structure methods</strong>: All hash, list, set, and sorted set operations now have async counterparts on <code>RespCache</code> (e.g. <code>ahset</code>, <code>alpush</code>, <code>asadd</code>, <code>azadd</code>).</li>
+<li><strong>Stream operations</strong>: Full sync and async support for Redis streams (<code>xadd</code>, <code>xread</code>, <code>xrange</code>, <code>xlen</code>, <code>xdel</code>, <code>xtrim</code>, <code>xinfo_stream</code>, <code>xgroup_create</code>, <code>xreadgroup</code>, <code>xack</code>, <code>xpending</code>, <code>xclaim</code>, <code>xautoclaim</code>, and more).</li>
+<li><strong>Safe <code>clear()</code></strong>: <code>clear()</code> now uses <code>delete_pattern("*")</code> to only remove keys for the current cache version and prefix, instead of <code>FLUSHDB</code>. Use <code>flush_db()</code> for the old behavior.</li>
+<li><strong>Danger zone in admin</strong>: Cache detail view has a "Danger Zone" section with "Clear all versions" and "Flush database" actions. Key list view has a "Clear" button for safe prefix-scoped clearing.</li>
+<li><strong><code>hset</code> items param</strong>: <code>hset()</code> now accepts an <code>items</code> parameter (flat key-value list), matching the redis-py/valkey-py signature. <code>hmset</code> is removed.</li>
+<li><strong><code>delete_pattern</code> batched deletes</strong>: Deletes are now batched to prevent OOM on broad patterns.</li>
+<li><strong>Multi-key params standardized</strong>: Set operations (<code>sdiff</code>, <code>sinter</code>, <code>sunion</code>, etc.) accept <code>KeyT | Sequence[KeyT]</code> consistently.</li>
+</ul>
+<hr />
+<h2 id="020-february-2026">0.2.0 (February 2026)<a class="headerlink" href="#020-february-2026" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Django permissions enforced</strong>: The admin now uses Django's built-in permission system for granular access control. Staff users need explicit permissions; superusers are unaffected.</li>
+</ul>
+<hr />
+<h2 id="010-february-2026">0.1.0 (February 2026)<a class="headerlink" href="#010-february-2026" title="Permanent link">&para;</a></h2>
+<p>Initial stable release of django-cachex.</p>
+<h3 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Valkey and Redis support in one package.</li>
+<li>Session backend support via Django's cache sessions.</li>
+<li>Pluggable clients: Default, Sentinel, Cluster.</li>
+<li>Pluggable serializers: Pickle, JSON, MsgPack.</li>
+<li>Pluggable compressors: Zlib, Gzip, LZMA, LZ4, Zstandard.</li>
+<li>Multi-serializer/compressor fallback for safe migrations.</li>
+<li>Connection pooling with configurable options.</li>
+<li>Primary/replica replication support.</li>
+<li>Valkey/Redis Sentinel support for high availability.</li>
+<li>Valkey/Redis Cluster support with automatic slot handling.</li>
+<li>Distributed locks compatible with <code>threading.Lock</code>.</li>
+<li>TTL operations: <code>ttl()</code>, <code>pttl()</code>, <code>expire()</code>, <code>persist()</code>.</li>
+<li>Pattern operations: <code>keys()</code>, <code>iter_keys()</code>, <code>delete_pattern()</code>.</li>
+<li>Pipelines for batched operations.</li>
+<li>Lua script interface with automatic key prefixing and value encoding/decoding.</li>
+<li>Django Cache Admin for cache inspection and management:</li>
+<li>Browse, search, edit, and delete cache keys.</li>
+<li>View server info, memory statistics, and slowlog.</li>
+<li>Key type filter sidebar.</li>
+<li>Support for Django builtin backends (LocMemCache, DatabaseCache, FileBasedCache) via wrappers.</li>
+<li>Django Unfold theme support (<code>django_cachex.unfold</code>).</li>
+<li>Async support for all extended methods.</li>
+</ul>
+<h3 id="data-structure-operations">Data Structure Operations<a class="headerlink" href="#data-structure-operations" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Hash operations</strong>: <code>hset</code>, <code>hdel</code>, <code>hexists</code>, <code>hget</code>, <code>hgetall</code>, <code>hincrby</code>, <code>hincrbyfloat</code>, <code>hkeys</code>, <code>hlen</code>, <code>hmget</code>, <code>hmset</code>, <code>hsetnx</code>, <code>hvals</code></li>
+<li><strong>Sorted set operations</strong>: <code>zadd</code>, <code>zcard</code>, <code>zcount</code>, <code>zincrby</code>, <code>zrange</code>, <code>zrevrange</code>, <code>zrangebyscore</code>, <code>zrevrangebyscore</code>, <code>zrank</code>, <code>zrevrank</code>, <code>zrem</code>, <code>zremrangebyrank</code>, <code>zremrangebyscore</code>, <code>zscore</code>, <code>zmscore</code>, <code>zpopmin</code>, <code>zpopmax</code></li>
+<li><strong>List operations</strong>: <code>llen</code>, <code>lpush</code>, <code>rpush</code>, <code>lpop</code>, <code>rpop</code>, <code>lindex</code>, <code>lrange</code>, <code>lset</code>, <code>ltrim</code>, <code>lrem</code>, <code>lpos</code>, <code>linsert</code>, <code>lmove</code>, <code>blpop</code>, <code>brpop</code>, <code>blmove</code></li>
+<li><strong>Set operations</strong>: <code>sadd</code>, <code>srem</code>, <code>smembers</code>, <code>sismember</code>, <code>smismember</code>, <code>scard</code>, <code>spop</code>, <code>srandmember</code>, <code>smove</code>, <code>sdiff</code>, <code>sdiffstore</code>, <code>sinter</code>, <code>sinterstore</code>, <code>sunion</code>, <code>sunionstore</code>, <code>sscan</code>, <code>sscan_iter</code></li>
+</ul>
+<h3 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Python 3.12+</li>
+<li>Django 5.2+</li>
+<li>valkey-py 6.1+ or redis-py 6+</li>
+</ul>
+<hr />
+<h2 id="pre-release-history">Pre-release History<a class="headerlink" href="#pre-release-history" title="Permanent link">&para;</a></h2>
+<h3 id="010b6-february-2026">0.1.0b6 (February 2026)<a class="headerlink" href="#010b6-february-2026" title="Permanent link">&para;</a></h3>
+<h4 id="new-features_1">New Features<a class="headerlink" href="#new-features_1" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Key type filter</strong>: Filter keys by type (string, list, set, hash, zset, stream) in the admin key list sidebar</li>
+<li><strong>LocMemCache data structure operations</strong>: List, set, and hash operations now work with LocMemCache wrappers</li>
+<li><strong>LocMemCache type detection</strong>: Automatically detects stored Python types (list, set, dict) and maps them to Redis equivalents</li>
+<li><strong><code>KeyType</code> StrEnum</strong>: Centralized enum for Redis key types, replacing scattered string literals</li>
+</ul>
+<h4 id="improvements_1">Improvements<a class="headerlink" href="#improvements_1" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Major admin refactoring: replaced service layer with helpers module, simplified views, restructured templates</li>
+<li>Unified admin views between classic Django admin and Unfold theme</li>
+<li>Added <code>_cachex_support</code> ClassVar to <code>CacheProtocol</code> for standardized support level detection</li>
+<li>Mixin-based class patching for cache wrappers (replacing intermediate extension classes)</li>
+<li>Extensive dead code cleanup across the codebase</li>
+</ul>
+<h4 id="bug-fixes">Bug Fixes<a class="headerlink" href="#bug-fixes" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Fixed unfold template differences with classic admin</li>
+<li>Fixed <code>key_type</code> variable usage in unfold key detail template</li>
+<li>Fixed mypy and ty type-checking errors</li>
+<li>Fixed <code>!r</code> format spec for <code>KeyT</code> in error messages</li>
+</ul>
+<h3 id="010b5-february-2026">0.1.0b5 (February 2026)<a class="headerlink" href="#010b5-february-2026" title="Permanent link">&para;</a></h3>
+<h4 id="new-features_2">New Features<a class="headerlink" href="#new-features_2" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Expanded cache backend support</strong>: The admin interface now supports Django's builtin cache backends through wrapper classes</li>
+<li><code>LocMemCache</code>: Full support including key listing, TTL inspection, and memory statistics</li>
+<li><code>DatabaseCache</code>: Key listing, TTL inspection, and database statistics</li>
+<li><code>FileBasedCache</code>: File listing (as MD5 hashes) and disk usage statistics</li>
+<li><code>Memcached</code>: Basic stats when available</li>
+<li>Django's <code>RedisCache</code>: Basic support (full features require django-cachex backends)</li>
+</ul>
+<h4 id="improvements_2">Improvements<a class="headerlink" href="#improvements_2" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Standardized <code>info()</code> output format across all wrapped cache backends</li>
+<li>Added TTL support (<code>ttl()</code>, <code>expire()</code>, <code>persist()</code>) for LocMemCache</li>
+<li>Improved cache admin UX: operations that aren't supported now fail gracefully instead of hiding UI elements</li>
+</ul>
+<h4 id="bug-fixes_1">Bug Fixes<a class="headerlink" href="#bug-fixes_1" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Fixed LocMemCache keys showing "not found" when clicked in admin</li>
+<li>Fixed cache query parameter preservation in key search form</li>
+<li>Fixed editing for wrapped cache backends</li>
+</ul>
+<h3 id="010b4-january-2026">0.1.0b4 (January 2026)<a class="headerlink" href="#010b4-january-2026" title="Permanent link">&para;</a></h3>
+<h4 id="new-features_3">New Features<a class="headerlink" href="#new-features_3" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Django Cache Admin</strong>: Built-in admin interface for cache management</li>
+<li>Browse all configured caches</li>
+<li>Search keys with wildcard patterns</li>
+<li>View and edit cache values (strings, hashes, lists, sets, sorted sets)</li>
+<li>Inspect TTL and modify expiration</li>
+<li>View server info and memory statistics</li>
+<li>Flush individual caches</li>
+<li>
+<p>Bulk delete keys</p>
+</li>
+<li>
+<p><strong>Django Unfold Theme Support</strong>: Alternative admin styling for django-unfold users</p>
+</li>
+<li>Use <code>django_cachex.unfold</code> instead of <code>django_cachex.admin</code></li>
+<li>
+<p>Consistent styling with Unfold's modern admin theme</p>
+</li>
+<li>
+<p><strong>Example Projects</strong>: Added example projects demonstrating various configurations</p>
+</li>
+<li><code>examples/simple/</code> - Basic setup with ValkeyCache and LocMemCache</li>
+<li><code>examples/full/</code> - Multiple backends including Sentinel and Cluster</li>
+<li><code>examples/unfold/</code> - Django Unfold theme integration</li>
+</ul>
+<h3 id="010b3-january-2026">0.1.0b3 (January 2026)<a class="headerlink" href="#010b3-january-2026" title="Permanent link">&para;</a></h3>
+<h4 id="new-features_4">New Features<a class="headerlink" href="#new-features_4" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Lua Script Interface</strong>: High-level API for registering and executing Lua scripts with automatic key prefixing and value encoding/decoding</li>
+<li><code>cache.register_script()</code> to register scripts with pre/post processing hooks</li>
+<li><code>cache.eval_script()</code> and <code>cache.aeval_script()</code> for sync/async execution</li>
+<li><code>pipe.eval_script()</code> for pipeline support</li>
+<li>Pre-built helpers: <code>keys_only_pre</code>, <code>full_encode_pre</code>, <code>decode_single_post</code>, <code>decode_list_post</code></li>
+<li><code>ScriptHelpers</code> class exposes <code>make_key</code>, <code>encode</code>, <code>decode</code> for custom hooks</li>
+<li>Automatic SHA caching with NOSCRIPT fallback</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.sections", "navigation.expand", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
