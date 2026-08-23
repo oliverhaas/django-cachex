@@ -26,8 +26,8 @@ Configuration::
         },
     }
 
-``transport`` is the alias of any cachex ``RespCache`` subclass (pure-Python
-or Rust-driver-backed) used for stream I/O.
+``transport`` is the alias of any cachex ``RespCache`` subclass used for
+stream I/O.
 ``stream_key`` is the Redis Stream key shared by all pods (default ``cache:sync``).
 ``maxlen`` caps stream length via approximate trimming (default 10000).
 ``block_timeout`` is the XREAD BLOCK timeout in milliseconds (default 1000).
@@ -106,7 +106,7 @@ class StreamCache(LocMemCache):
         from collections import OrderedDict
         from threading import Lock
 
-        _cache: OrderedDict
+        _cache: OrderedDict[str, bytes]
         _expire_info: dict[str, float | None]
         _lock: Lock
 

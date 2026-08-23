@@ -146,7 +146,7 @@ def test_locmem_zincrby_concurrent_conservation(
 
 # =============================================================================
 # Redis backend smoke tests: same shape on the existing `cache` fixture
-# (default / cluster / sentinel / sentinel_opts x py / rust drivers).
+# (default / cluster / sentinel / sentinel_opts x every resp adapter).
 # These exercise native server-side atomic commands and should always pass.
 # =============================================================================
 

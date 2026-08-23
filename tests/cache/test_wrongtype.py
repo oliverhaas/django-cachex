@@ -3,7 +3,7 @@
 Real Redis/Valkey raise ``WRONGTYPE`` (as a server-side response error)
 when a command is applied to a key holding the wrong type. Each adapter
 surfaces this differently (redis-py and valkey-py via ``ResponseError``,
-the Rust adapter via ``RuntimeError``), so callers historically had no
+valkey-glide via ``RequestError``), so callers historically had no
 single exception to catch. The adapter layer now normalizes those into
 :class:`django_cachex.exceptions.WrongTypeError` (a :class:`TypeError`
 subclass) so user code can ``except WrongTypeError`` portably.

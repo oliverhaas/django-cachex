@@ -103,8 +103,8 @@ class TestLockRelease:
         lock = cache.lock("dbl_release_resource", lease=5)
         lock.acquire()
         lock.release()
-        # redis-py / valkey-py raise their library's ``LockError``; the Rust
-        # adapter raises ``django_cachex.lock.LockError``. All fulfill the
+        # redis-py / valkey-py raise their library's ``LockError``; valkey-glide
+        # raises ``django_cachex.lock.LockError``. All fulfill the
         # "double release is loud" contract.
         with pytest.raises((LockError, RedisLockError, ValkeyLockError)):
             lock.release()

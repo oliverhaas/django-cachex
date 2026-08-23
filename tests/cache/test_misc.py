@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 class TestScanOperations:
     def _is_py_cluster(self, client_class: str, sentinel_mode: str | bool, resp_adapter: str) -> bool:
         """redis-py / valkey-py cluster can't combine per-node cursors, so SCAN raises.
-        The Rust adapter scans all nodes itself and returns combined keys.
+        valkey-glide scans all nodes itself and returns combined keys.
         """
         return client_class == "cluster" and not sentinel_mode and resp_adapter in {"redis-py", "valkey-py"}
 
