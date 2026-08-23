@@ -92,7 +92,7 @@ build-backend = "hatchling.build"
 packages = ["django_cachex"]
 
 [tool.hatch.build.targets.sdist]
-include = ["django_cachex/**", "README.md", "LICENSE", "pyproject.toml"]
+include = ["django_cachex/**", "/README.md", "/LICENSE", "/pyproject.toml"]
 
 [tool.uv.workspace]
 members = ["examples/full"]
