@@ -1,5 +1,5 @@
 {% extends "admin/change_list.html" %}
-{% load i18n admin_urls %}
+{% load i18n l10n admin_urls %}
 
 {% block breadcrumbs %}
 <ol class="breadcrumbs">
@@ -38,10 +38,10 @@
 <nav class="paginator">
     <ul>
         {% if cl.result_list.cursor > 0 %}
-        <li><a role="button" href="?cache={{ cache_name|urlencode }}{% for k, v in cl.params.items %}{% if k != 'cursor' %}&amp;{{ k }}={{ v|urlencode }}{% endif %}{% endfor %}&amp;count={{ cl.result_list.scan_count }}">{% trans 'Start' %}</a></li>
+        <li><a role="button" href="?cache={{ cache_name|urlencode }}{% for k, v in cl.params.items %}{% if k != 'cursor' and k != 'cache' %}&amp;{{ k }}={{ v|urlencode }}{% endif %}{% endfor %}&amp;count={{ cl.result_list.scan_count|unlocalize }}">{% trans 'Start' %}</a></li>
         {% endif %}
         {% if cl.result_list.has_next %}
-        <li><a role="button" href="?cache={{ cache_name|urlencode }}{% for k, v in cl.params.items %}{% if k != 'cursor' %}&amp;{{ k }}={{ v|urlencode }}{% endif %}{% endfor %}&amp;count={{ cl.result_list.scan_count }}&amp;cursor={{ cl.result_list.next_cursor }}">{% trans 'Next' %}</a></li>
+        <li><a role="button" href="?cache={{ cache_name|urlencode }}{% for k, v in cl.params.items %}{% if k != 'cursor' and k != 'cache' %}&amp;{{ k }}={{ v|urlencode }}{% endif %}{% endfor %}&amp;count={{ cl.result_list.scan_count|unlocalize }}&amp;cursor={{ cl.result_list.next_cursor|unlocalize }}">{% trans 'Next' %}</a></li>
         {% endif %}
     </ul>
     {{ cl.result_list|length }} {% trans 'keys shown' %}

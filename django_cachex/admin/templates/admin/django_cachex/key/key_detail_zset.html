@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n l10n %}
 {% with input_tpl="admin/django_cachex/key/key_detail_value_input.html#value-input" %}
 <!-- Sorted Set Operations -->
 <fieldset class="module aligned monospace">
@@ -58,7 +58,7 @@
                 <tr class="{% cycle 'row1' 'row2' %}">
                     <td>{% include input_tpl with name="new_member" value=member rows=2 form_id="zset-update-" row_index=forloop.counter0 editable=editable only %}</td>
                     <td>
-                        <input type="number" name="score_value" value="{{ score }}" step="any" class="cachex-value-input" form="zset-update-{{ forloop.counter0 }}"{% if not editable %} readonly{% endif %}>
+                        <input type="number" name="score_value" value="{{ score|unlocalize }}" step="any" class="cachex-value-input" form="zset-update-{{ forloop.counter0 }}"{% if not editable %} readonly{% endif %}>
                     </td>
                     <td>
                         <div class="cachex-row-actions">
@@ -66,8 +66,8 @@
                             <button type="submit" form="zset-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
                             <button type="submit" form="zset-remove-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Remove this member?' %}');">{% trans 'Remove' %}</button>
                             {% else %}
-                            <button type="button" class="button btn-small" disabled title="{% trans 'Not JSON-serializable, so this member cannot be edited or matched for removal.' %}">{% trans 'Update' %}</button>
-                            <button type="button" class="button delete-btn btn-small" disabled title="{% trans 'Not JSON-serializable, so this member cannot be edited or matched for removal.' %}">{% trans 'Remove' %}</button>
+                            <button type="button" class="button btn-small" disabled title="{% trans 'This member cannot be safely edited or matched for removal.' %}">{% trans 'Update' %}</button>
+                            <button type="button" class="button delete-btn btn-small" disabled title="{% trans 'This member cannot be safely edited or matched for removal.' %}">{% trans 'Remove' %}</button>
                             {% endif %}
                         </div>
                     </td>
@@ -82,7 +82,7 @@
         {% csrf_token %}
         <input type="hidden" name="action" value="zupdate">
         <input type="hidden" name="member" value="{{ member }}">
-        <input type="hidden" name="original_score" value="{{ score }}">
+        <input type="hidden" name="original_score" value="{{ score|unlocalize }}">
     </form>
     <form id="zset-remove-{{ forloop.counter0 }}" method="post" style="display: none;">
         {% csrf_token %}

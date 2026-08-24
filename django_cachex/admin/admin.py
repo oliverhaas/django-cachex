@@ -6,7 +6,7 @@ from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.admin.utils import unquote
 from django.core.exceptions import PermissionDenied
-from django.http import HttpResponseRedirect
+from django.http import Http404, HttpResponseRedirect
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 
@@ -24,8 +24,36 @@ else:
     _KeyBase = admin.ModelAdmin
 
 
+class _NoObjectRoutesMixin:
+    """404 the per-object routes ``ModelAdmin.get_urls`` registers unasked.
+
+    ``history_view`` and ``delete_view`` both start with
+    ``ModelAdmin.get_object``, which calls ``self.get_queryset(request).get()``.
+    Neither ``CacheQuerySet`` nor ``KeyQuerySet`` implements ``get()``, so
+    those URLs would raise ``AttributeError`` (a 500) instead of saying the
+    page does not exist. Caches and keys have no ``LogEntry`` history, and key
+    deletion lives on the key detail page and the changelist action.
+    """
+
+    def history_view(
+        self,
+        request: HttpRequest,
+        object_id: str,
+        extra_context: dict[str, Any] | None = None,
+    ) -> HttpResponse:
+        raise Http404
+
+    def delete_view(
+        self,
+        request: HttpRequest,
+        object_id: str,
+        extra_context: dict[str, Any] | None = None,
+    ) -> HttpResponse:
+        raise Http404
+
+
 @admin.register(Cache)
-class CacheAdmin(CacheAdminMixin, _CacheBase):  # type: ignore[misc]
+class CacheAdmin(_NoObjectRoutesMixin, CacheAdminMixin, _CacheBase):  # type: ignore[misc]
     """Admin for caches.
 
     Uses CacheAdminMixin for list_display, filtering, search, and flush action.
@@ -97,7 +125,7 @@ class CacheAdmin(CacheAdminMixin, _CacheBase):  # type: ignore[misc]
 
 
 @admin.register(Key)
-class KeyAdmin(KeyAdminMixin, _KeyBase):  # type: ignore[misc]
+class KeyAdmin(_NoObjectRoutesMixin, KeyAdminMixin, _KeyBase):  # type: ignore[misc]
     """Admin for cache keys.
 
     Uses KeyAdminMixin for list_display, filtering, search, and delete action.

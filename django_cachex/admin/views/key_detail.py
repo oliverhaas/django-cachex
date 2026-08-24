@@ -1,7 +1,6 @@
 """Key detail view for the django-cachex admin."""
 
 import contextlib
-import json
 import logging
 import math
 from datetime import timedelta
@@ -20,7 +19,7 @@ from django_cachex.admin.cas import (
     cas_update_zset_score,
     get_string_sha1,
 )
-from django_cachex.admin.helpers import get_cache, get_type_data
+from django_cachex.admin.helpers import get_cache, get_type_data, is_hashable, parse_json_or_str
 from django_cachex.admin.views.base import (
     ViewConfig,
     format_value_for_display,
@@ -37,6 +36,8 @@ if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
 
 logger = logging.getLogger(__name__)
+
+_KEY_TYPE_VALUES = frozenset(t.value for t in KeyType)
 
 
 # -- Small helpers --------------------------------------------------------------
@@ -61,11 +62,9 @@ def _parse_count(request: HttpRequest, field: str, *, default: int = 1, min_valu
         return default
 
 
-def _parse_json_or_str(value: str) -> Any:
-    """Try to interpret a string as JSON, falling back to the raw string."""
-    with contextlib.suppress(json.JSONDecodeError, ValueError):
-        return json.loads(value)
-    return value
+# ZADD takes its members as dict keys, so a JSON array/object member would
+# raise a bare ``TypeError: unhashable type``.
+_UNHASHABLE_MEMBER_ERROR = "JSON arrays and objects cannot be used as sorted set members."
 
 
 # Extra CAS result, returned only by the hash field rename script.
@@ -149,7 +148,7 @@ def _handle_delete(request: HttpRequest, cache: Any, cache_name: str, key: str, 
 
 def _handle_update(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse | None:
     try:
-        new_value = _parse_json_or_str(request.POST.get("value", "").strip())
+        new_value = parse_json_or_str(request.POST.get("value", "").strip())
         original_sha1 = request.POST.get("original_sha1", "").strip()
         if original_sha1 and hasattr(cache, "eval_script"):
             cas_result = cas_update_string(cache, key, original_sha1, new_value)
@@ -172,19 +171,20 @@ def _handle_update(request: HttpRequest, cache: Any, cache_name: str, key: str, 
 def _handle_set_ttl(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse | None:
     try:
         ttl_str = request.POST.get("ttl_value", "").strip()
-        if not ttl_str or ttl_str == "0":
+        # Compare the parsed int: "00" and "+0" also mean no expiry, and a
+        # string match let them reach ``expire(key, 0)``, deleting the key.
+        ttl_int = int(ttl_str) if ttl_str else 0
+        if ttl_int < 0:
+            messages.error(request, "TTL must be non-negative.")
+        elif ttl_int == 0:
             if cache.persist(key):
                 messages.success(request, "TTL removed. Key will not expire.")
             else:
                 messages.error(request, "Key does not exist or has no TTL.")
+        elif cache.expire(key, ttl_int):
+            messages.success(request, f"TTL set to {ttl_int} seconds.")
         else:
-            ttl_int = int(ttl_str)
-            if ttl_int < 0:
-                messages.error(request, "TTL must be non-negative.")
-            elif cache.expire(key, ttl_int):
-                messages.success(request, f"TTL set to {ttl_int} seconds.")
-            else:
-                messages.error(request, "Key does not exist or TTL could not be set.")
+            messages.error(request, "Key does not exist or TTL could not be set.")
         return _redirect_to_key(cache_name, key, page)
     except ValueError:
         messages.error(request, "Invalid TTL value. Must be a number.")
@@ -231,7 +231,7 @@ def _handle_lpush(request: HttpRequest, cache: Any, cache_name: str, key: str, p
         messages.error(request, "Value is required.")
         return _redirect_to_key(cache_name, key, page)
     try:
-        new_len = cache.lpush(key, _parse_json_or_str(raw))
+        new_len = cache.lpush(key, parse_json_or_str(raw))
         messages.success(request, f"Pushed to left. Length: {new_len}")
     except Exception as e:  # noqa: BLE001
         messages.error(request, str(e))
@@ -244,7 +244,7 @@ def _handle_rpush(request: HttpRequest, cache: Any, cache_name: str, key: str, p
         messages.error(request, "Value is required.")
         return _redirect_to_key(cache_name, key, page)
     try:
-        new_len = cache.rpush(key, _parse_json_or_str(raw))
+        new_len = cache.rpush(key, parse_json_or_str(raw))
         messages.success(request, f"Pushed to right. Length: {new_len}")
     except Exception as e:  # noqa: BLE001
         messages.error(request, str(e))
@@ -254,13 +254,14 @@ def _handle_rpush(request: HttpRequest, cache: Any, cache_name: str, key: str, p
 def _handle_lrem(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
     raw = request.POST.get("value", "").strip()
     if not raw:
-        # ``raw`` (the form-supplied string) gates submission; checking the
-        # parsed value would reject legitimate falsy entries like 0, false,
-        # null, "", or [].
+        # Gate on the raw string: the parsed value rejects legitimate falsy
+        # entries like 0, false, null, "" or [].
         messages.error(request, "Value is required.")
         return _redirect_to_key(cache_name, key, page)
-    value = _parse_json_or_str(raw)
-    count = 0  # 0 = remove all occurrences
+    value = parse_json_or_str(raw)
+    # LREM matches by value, not index, so bound a per-row "Remove" to one
+    # occurrence rather than every duplicate.
+    count = 1
     count_str = request.POST.get("lrem_count", "").strip()
     if count_str:
         with contextlib.suppress(ValueError):
@@ -292,7 +293,7 @@ def _handle_ltrim(request: HttpRequest, cache: Any, cache_name: str, key: str, p
 def _handle_lset(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
     try:
         index = int(request.POST.get("index", "0"))
-        value = _parse_json_or_str(request.POST.get("value", "").strip())
+        value = parse_json_or_str(request.POST.get("value", "").strip())
         original_sha1 = request.POST.get("original_sha1", "").strip()
         if original_sha1 and hasattr(cache, "eval_script"):
             cas_result = cas_update_list_element(cache, key, index, original_sha1, value)
@@ -322,7 +323,7 @@ def _handle_sadd(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         messages.error(request, "Member is required.")
         return _redirect_to_key(cache_name, key, page)
     try:
-        member = _parse_json_or_str(raw)
+        member = parse_json_or_str(raw)
         if cache.sadd(key, member):
             messages.success(request, f"Added '{member}' to set.")
         else:
@@ -335,9 +336,10 @@ def _handle_sadd(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
 def _handle_srem(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
     raw = request.POST.get("member", "").strip()
     if not raw:
+        messages.error(request, "Member is required.")
         return _redirect_to_key(cache_name, key, page)
     try:
-        member = _parse_json_or_str(raw)
+        member = parse_json_or_str(raw)
         if cache.srem(key, member):
             messages.success(request, f"Removed '{member}' from set.")
         else:
@@ -354,8 +356,8 @@ def _handle_supdate(request: HttpRequest, cache: Any, cache_name: str, key: str,
     if not raw_new:
         messages.error(request, "Member is required.")
         return _redirect_to_key(cache_name, key, page)
-    member = _parse_json_or_str(raw_old)
-    new_member = _parse_json_or_str(raw_new)
+    member = parse_json_or_str(raw_old)
+    new_member = parse_json_or_str(raw_new)
     if new_member == member:
         messages.info(request, "Member unchanged.")
         return _redirect_to_key(cache_name, key, page)
@@ -382,7 +384,7 @@ def _handle_spop(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
 
 def _handle_hset(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
     field = request.POST.get("field", "").strip()
-    value = _parse_json_or_str(request.POST.get("field_value", "").strip())
+    value = parse_json_or_str(request.POST.get("field_value", "").strip())
     if not field:
         messages.error(request, "Field name is required.")
         return _redirect_to_key(cache_name, key, page)
@@ -417,7 +419,7 @@ def _handle_hupdate(request: HttpRequest, cache: Any, cache_name: str, key: str,
     if new_field == field:
         # Value-only edit: reuse the CAS-protected path.
         return _handle_hset(request, cache, cache_name, key, page)
-    value = _parse_json_or_str(request.POST.get("field_value", "").strip())
+    value = parse_json_or_str(request.POST.get("field_value", "").strip())
     try:
         original_sha1 = request.POST.get("original_sha1", "").strip()
         if original_sha1 and hasattr(cache, "eval_script"):
@@ -451,6 +453,7 @@ def _handle_hupdate(request: HttpRequest, cache: Any, cache_name: str, key: str,
 def _handle_hdel(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
     field = request.POST.get("field", "").strip()
     if not field:
+        messages.error(request, "Field name is required.")
         return _redirect_to_key(cache_name, key, page)
     try:
         if cache.hdel(key, field):
@@ -469,7 +472,10 @@ def _handle_zadd(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         messages.error(request, "Member and score are required.")
         return _redirect_to_key(cache_name, key, page)
     try:
-        member = _parse_json_or_str(raw_member)
+        member = parse_json_or_str(raw_member)
+        if not is_hashable(member):
+            messages.error(request, _UNHASHABLE_MEMBER_ERROR)
+            return _redirect_to_key(cache_name, key, page)
         score = float(score_str)
         original_score = request.POST.get("original_score", "").strip()
         if original_score and hasattr(cache, "eval_script"):
@@ -489,9 +495,20 @@ def _handle_zadd(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
             xx = request.POST.get("zadd_xx") == "on"
             gt = request.POST.get("zadd_gt") == "on"
             lt = request.POST.get("zadd_lt") == "on"
-            added = cache.zadd(key, {member: score}, nx=nx, xx=xx, gt=gt, lt=lt)
-            if added:
-                messages.success(request, f"Added '{member}' with score {score}.")
+            flagged = nx or xx or gt or lt
+            # ZADD counts added members, so a plain 0 can still mean the score
+            # was rewritten. CH makes 0 mean nothing changed.
+            result = cache.zadd(key, {member: score}, nx=nx, xx=xx, gt=gt, lt=lt, ch=flagged)
+            if result:
+                messages.success(
+                    request,
+                    f"Set '{member}' to score {score}." if flagged else f"Added '{member}' with score {score}.",
+                )
+            elif flagged:
+                messages.warning(
+                    request,
+                    f"No change: the NX/XX/GT/LT flags left '{member}' untouched.",
+                )
             else:
                 messages.success(request, f"Updated '{member}' score to {score}.")
     except ValueError:
@@ -504,9 +521,10 @@ def _handle_zadd(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
 def _handle_zrem(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
     raw = request.POST.get("member", "").strip()
     if not raw:
+        messages.error(request, "Member is required.")
         return _redirect_to_key(cache_name, key, page)
     try:
-        member = _parse_json_or_str(raw)
+        member = parse_json_or_str(raw)
         if cache.zrem(key, member):
             messages.success(request, f"Removed '{member}' from sorted set.")
         else:
@@ -524,11 +542,14 @@ def _handle_zupdate(request: HttpRequest, cache: Any, cache_name: str, key: str,
     if not (raw_new and score_str):
         messages.error(request, "Member and score are required.")
         return _redirect_to_key(cache_name, key, page)
-    member = _parse_json_or_str(raw_old)
-    new_member = _parse_json_or_str(raw_new)
+    member = parse_json_or_str(raw_old)
+    new_member = parse_json_or_str(raw_new)
     if new_member == member:
         # Score-only edit: reuse the CAS-protected path.
         return _handle_zadd(request, cache, cache_name, key, page)
+    if not is_hashable(new_member):
+        messages.error(request, _UNHASHABLE_MEMBER_ERROR)
+        return _redirect_to_key(cache_name, key, page)
     try:
         score = float(score_str)
     except ValueError:
@@ -585,7 +606,7 @@ def _handle_xadd(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         messages.error(request, "Field name and value are required.")
         return _redirect_to_key(cache_name, key, page)
     try:
-        entry_id = cache.xadd(key, {field: _parse_json_or_str(field_value)})
+        entry_id = cache.xadd(key, {field: parse_json_or_str(field_value)})
         messages.success(request, f"Added entry {entry_id}.")
     except Exception as e:  # noqa: BLE001
         messages.error(request, str(e))
@@ -614,7 +635,9 @@ def _handle_xtrim(request: HttpRequest, cache: Any, cache_name: str, key: str, p
         return _redirect_to_key(cache_name, key, page)
     try:
         maxlen = int(maxlen_str)
-        trimmed = cache.xtrim(key, maxlen=maxlen)
+        # The default ``MAXLEN ~`` overshoots, but the confirm dialog promises
+        # an exact trim.
+        trimmed = cache.xtrim(key, maxlen=maxlen, approximate=False)
         messages.success(request, f"Trimmed {trimmed} entries.")
     except ValueError:
         messages.error(request, "Max length must be a number.")
@@ -660,11 +683,41 @@ _POST_HANDLERS: dict[str, Callable[[HttpRequest, Any, str, str, int], HttpRespon
 }
 
 
-def _check_post_permission(request: HttpRequest, action: str | None) -> None:
+# These create a missing key, so they also need ``add_key``; otherwise
+# ``change_key`` alone routes around the add view's gate.
+_CREATE_ACTIONS = frozenset(
+    {
+        "update",
+        "lpush",
+        "rpush",
+        "sadd",
+        "supdate",
+        "hset",
+        "hupdate",
+        "zadd",
+        "zupdate",
+        "xadd",
+    },
+)
+
+
+def _check_post_permission(request: HttpRequest, action: str | None, cache: Any, key: str) -> None:
     """Raise PermissionDenied if the user lacks the right to perform ``action``."""
-    if action == "delete" and not request.user.has_perm("django_cachex.delete_key"):  # ty: ignore[unresolved-attribute]
+    user = request.user
+    if action == "delete":
+        if not user.has_perm("django_cachex.delete_key"):  # ty: ignore[unresolved-attribute]
+            raise PermissionDenied
+        return
+    if not action:
+        return
+    if not user.has_perm("django_cachex.change_key"):  # ty: ignore[unresolved-attribute]
         raise PermissionDenied
-    if action and action != "delete" and not request.user.has_perm("django_cachex.change_key"):  # ty: ignore[unresolved-attribute]
+    # ``has_key`` only runs for users who would actually be blocked by it.
+    if (
+        action in _CREATE_ACTIONS
+        and not user.has_perm("django_cachex.add_key")  # ty: ignore[unresolved-attribute]
+        and not cache.has_key(key)
+    ):
         raise PermissionDenied
 
 
@@ -685,7 +738,7 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
 
     if request.method == "POST":
         action = request.POST.get("action")
-        _check_post_permission(request, action)
+        _check_post_permission(request, action, cache, key)
         handler = _POST_HANDLERS.get(action) if action else None
         if handler is not None:
             response = handler(request, cache, cache_name, key, page)
@@ -697,14 +750,22 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
     key_exists = cache.has_key(key)
 
     create_mode = False
-    create_type = request.GET.get("type", "").strip()
+    requested_type = request.GET.get("type", "").strip().lower()
+    # Anything outside ``KeyType`` would be rendered as a badge class/label and
+    # interpolated into the help key, yielding an undefined-state page.
+    create_type = requested_type if requested_type in _KEY_TYPE_VALUES else ""
     if not key_exists:
-        if create_type:
+        # Materializing a key is an add, so create mode needs ``add_key``.
+        may_create = create_type and request.user.has_perm("django_cachex.add_key")  # ty: ignore[unresolved-attribute]
+        if may_create:
             create_mode = True
             messages.warning(
                 request,
                 "This key does not exist yet. Use the operations below to add your first item and create the key.",
             )
+        elif requested_type and not create_type:
+            messages.error(request, f"Unknown key type '{requested_type}'.")
+            return redirect(key_list_url(cache_name))
         else:
             messages.error(request, f"Key '{key}' does not exist in cache '{cache_name}'.")
             return redirect(key_list_url(cache_name))
@@ -725,24 +786,31 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
     elif create_mode:
         key_type = create_type
 
-    # Get value for string keys (cache.get() only works for strings).
-    # Decode failures (compressor / serializer mismatch on stale data) must NOT
-    # crash the page; the user still needs to be able to delete the broken key.
+    # This read fails on data the serializer cannot load, but the page must
+    # still render so the user can delete a broken key.
     raw_value = None
     value_is_editable = True
-    value_decode_error: str | None = None
+    value_error_display: str | None = None
     string_sha1 = None
     if key_exists and (not key_type or key_type == KeyType.STRING):
         try:
             raw_value = cache.get(key)
         except (CompressorError, SerializerError) as exc:
-            value_decode_error = str(exc) or exc.__class__.__name__
+            value_error_display = f"<value cannot be decoded: {exc or exc.__class__.__name__}>"
             value_is_editable = False
             messages.warning(
                 request,
                 f"Value cannot be decoded ({exc.__class__.__name__}: {exc}). "
                 "The key was likely written with a different compressor or serializer. "
                 "You can still delete the key.",
+            )
+        except Exception as exc:
+            logger.warning("Failed to read value for key %r", key, exc_info=True)
+            value_error_display = f"<value could not be read: {exc or exc.__class__.__name__}>"
+            value_is_editable = False
+            messages.warning(
+                request,
+                f"Value could not be read ({exc.__class__.__name__}: {exc}). You can still delete the key.",
             )
         else:
             if hasattr(cache, "eval_script"):
@@ -765,8 +833,8 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
                         "Concurrent edits won't be caught; the next save will overwrite blindly.",
                     )
 
-    if value_decode_error is not None:
-        value_display = f"<value cannot be decoded: {value_decode_error}>"
+    if value_error_display is not None:
+        value_display = value_error_display
     elif raw_value is not None:
         value_display, value_is_editable = format_value_for_display(raw_value)
     else:
@@ -778,6 +846,14 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
     # the same way since ``KeyType`` is a ``StrEnum``.
     help_key = f"key_detail_{key_type}" if key_type else "key_detail"
     help_active = show_help(request, help_key, config.help_messages)
+
+    # Keep ``page`` and ``type``: dropping ``type`` in create mode points Help
+    # at a key that does not exist, bouncing the user to the key list.
+    help_params = request.GET.copy()
+    help_params.pop("help", None)
+    if not help_active:
+        help_params["help"] = "1"
+    help_url = f"?{help_params.urlencode()}"
 
     cache_metadata = {
         "key_prefix": cache.key_prefix,
@@ -816,6 +892,7 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
             "zset_ops_supported": can_operate,
             "stream_ops_supported": can_operate,
             "help_active": help_active,
+            "help_url": help_url,
         },
     )
     return render(request, config.template("key/change_form.html"), context)

@@ -4,12 +4,15 @@ These tests use simple fixtures from the local conftest that don't
 have the parametrization of the main test suite.
 """
 
+import re
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import pytest
 from django.contrib.admin.utils import quote
 from django.test import Client, override_settings
 from django.urls import reverse
+from django.utils import translation
 
 from django_cachex.admin.models import Key
 
@@ -1465,13 +1468,31 @@ class TestKeyOperations:
         url = _key_detail_url("default", "lrem:test")
         response = admin_client.post(
             url,
+            {"action": "lrem", "value": "item2", "lrem_count": "0"},
+        )
+        assert response.status_code == 302
+
+        # count=0 is LREM's "remove every occurrence"
+        items = test_cache.lrange("lrem:test", 0, -1)
+        assert items == ["item1", "item3"]
+
+    def test_list_lrem_defaults_to_a_single_occurrence(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+    ):
+        """The per-row Remove button says "remove this item", so an absent
+        ``lrem_count`` must not fall through to LREM's "remove all" mode.
+        """
+        test_cache.rpush("lrem:once", "item1", "item2", "item3", "item2")
+
+        response = admin_client.post(
+            _key_detail_url("default", "lrem:once"),
             {"action": "lrem", "value": "item2"},
         )
         assert response.status_code == 302
 
-        # Verify all occurrences of item2 were removed
-        items = test_cache.lrange("lrem:test", 0, -1)
-        assert items == ["item1", "item3"]
+        assert test_cache.lrange("lrem:once", 0, -1) == ["item1", "item3", "item2"]
 
     def test_list_ltrim(
         self,
@@ -1996,11 +2017,11 @@ class TestKeyOperations:
         admin_client: Client,
         test_cache: RespCache,
     ):
-        """XTRIM action should execute successfully.
+        """XTRIM must trim to exactly the requested length.
 
-        Note: Redis's approximate trimming (~MAXLEN) may not immediately trim
-        small streams as it optimizes for performance by trimming in batches.
-        This test verifies the action executes without error.
+        The backend defaults to ``MAXLEN ~``, which Redis is free to leave
+        longer than asked; the confirm dialog promises an exact trim, so the
+        admin passes ``approximate=False``.
         """
         # Create a stream with entries via high-level API
         for i in range(10):
@@ -2017,9 +2038,10 @@ class TestKeyOperations:
         )
         assert response.status_code == 200
 
-        # Verify the action executed successfully (shows "Trimmed N entries" message)
+        assert test_cache.xlen("xtrim:test") == 3
+
         messages = [str(m.message) for m in response.context.get("messages", [])]
-        assert any("Trimmed" in m for m in messages), f"Expected trim success message, got: {messages}"
+        assert any("Trimmed 7 entries" in m for m in messages), f"Expected trim success message, got: {messages}"
 
 
 class TestContainerValueInputs:
@@ -3233,3 +3255,417 @@ class TestBreadcrumbs:
             response.content.decode(),
             trail=["Home", "Caches", "default", "Add Key"],
         )
+
+
+def _staff_client(perms: list[str]) -> Client:
+    """Log in a staff user holding exactly ``perms`` on ``django_cachex``."""
+    from django.contrib.auth.models import Permission, User
+
+    user = User.objects.create_user(
+        username="staff_" + "_".join(perms),
+        password="password",  # noqa: S106
+        is_staff=True,
+    )
+    for codename in perms:
+        user.user_permissions.add(
+            Permission.objects.get(codename=codename, content_type__app_label="django_cachex"),
+        )
+    user = User.objects.get(pk=user.pk)
+    client = Client()
+    client.force_login(user)
+    return client
+
+
+class TestNumberLocalization:
+    """Numbers that travel back to the server must render unlocalized.
+
+    Django localizes every number a template renders, so under a comma-decimal
+    locale a score of ``1.5`` comes out as ``1,5`` and under
+    ``USE_THOUSAND_SEPARATOR`` an index of ``1000`` comes out as ``1,000``.
+    Both round-trip straight back into ``float()``/``int()`` on the next POST.
+    """
+
+    def test_zset_scores_render_unlocalized(self, admin_client: Client, test_cache: RespCache):
+        test_cache.zadd("l10n:zset", {"member-a": 1.5})
+
+        with translation.override("de"):
+            response = admin_client.get(_key_detail_url("default", "l10n:zset"))
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'value="1.5"' in content
+        assert 'value="1,5"' not in content
+
+    def test_zset_score_edit_round_trips_under_comma_locale(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+    ):
+        """The CAS check compares the posted ``original_score`` with the stored
+        one, so a localized score silently fails every edit.
+        """
+        test_cache.zadd("l10n:zset:edit", {"member-a": 1.5})
+        url = _key_detail_url("default", "l10n:zset:edit")
+
+        with translation.override("de"):
+            content = admin_client.get(url).content.decode()
+            match = re.search(r'name="original_score" value="([^"]+)"', content)
+            assert match is not None
+            admin_client.post(
+                url,
+                {
+                    "action": "zupdate",
+                    "member": "member-a",
+                    "new_member": "member-a",
+                    "original_score": match.group(1),
+                    "score_value": "2.5",
+                },
+            )
+
+        assert test_cache.zscore("l10n:zset:edit", "member-a") == 2.5
+
+    @override_settings(USE_THOUSAND_SEPARATOR=True)
+    def test_ttl_input_renders_unlocalized(self, admin_client: Client, test_cache: RespCache):
+        test_cache.set("l10n:ttl", "value", timeout=3600)
+
+        response = admin_client.get(_key_detail_url("default", "l10n:ttl"))
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'name="ttl_value"' in content
+        assert 'value="3,600"' not in content
+        assert re.search(r'name="ttl_value"[^>]*value="3[56]\d\d"', content)
+
+    @override_settings(USE_THOUSAND_SEPARATOR=True)
+    def test_list_row_index_renders_unlocalized(self, admin_client: Client, test_cache: RespCache):
+        """The hidden ``index`` field feeds LSET, which needs a plain integer."""
+        test_cache.rpush("l10n:list", *[f"item{i}" for i in range(1001)])
+
+        response = admin_client.get(_key_detail_url("default", "l10n:list") + "?page=11")
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'name="index" value="1000"' in content
+        assert 'name="index" value="1,000"' not in content
+
+    @override_settings(USE_THOUSAND_SEPARATOR=True)
+    def test_key_list_cursor_and_count_render_unlocalized(
+        self,
+        admin_client: Client,
+        mocker,
+        test_cache: RespCache,
+    ):
+        """``cursor`` and ``count`` go back into SCAN as integers."""
+        from unittest.mock import MagicMock
+
+        fake = MagicMock()
+        fake.scan.return_value = (123456, [])
+        mocker.patch("django_cachex.admin.queryset.get_cache", return_value=fake)
+
+        response = admin_client.get(_key_list_url("default") + "&count=1000")
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "count=1000" in content
+        assert "count=1,000" not in content
+        assert "cursor=123456" in content
+        assert "cursor=123,456" not in content
+
+
+class TestKeyCreateRequiresAddPermission:
+    """Materializing a missing key is an add, not a change.
+
+    ``change_key`` alone must not be a way around the ``add_key`` gate that the
+    dedicated add view enforces.
+    """
+
+    KEY = "perm:create:key"
+
+    def test_create_mode_get_denied_without_add_perm(self, db, test_cache: RespCache):
+        client = _staff_client(["view_key", "change_key"])
+
+        response = client.get(_key_detail_create_url("default", self.KEY, "hash"))
+
+        assert response.status_code == 302
+        assert response.url == _key_list_url("default")
+
+    def test_create_mode_get_allowed_with_add_perm(self, db, test_cache: RespCache):
+        client = _staff_client(["view_key", "change_key", "add_key"])
+
+        response = client.get(_key_detail_create_url("default", self.KEY, "hash"))
+
+        assert response.status_code == 200
+
+    def test_materializing_post_denied_without_add_perm(self, db, test_cache: RespCache):
+        client = _staff_client(["view_key", "change_key"])
+
+        response = client.post(
+            _key_detail_url("default", self.KEY),
+            {"action": "hset", "field": "f", "field_value": "v"},
+        )
+
+        assert response.status_code == 403
+        assert not test_cache.has_key(self.KEY)
+
+    def test_materializing_post_allowed_with_add_perm(self, db, test_cache: RespCache):
+        client = _staff_client(["view_key", "change_key", "add_key"])
+
+        response = client.post(
+            _key_detail_url("default", self.KEY),
+            {"action": "hset", "field": "f", "field_value": "v"},
+        )
+
+        assert response.status_code == 302
+        assert test_cache.hget(self.KEY, "f") == "v"
+
+    def test_existing_key_still_editable_without_add_perm(self, db, test_cache: RespCache):
+        """``change_key`` alone must keep working on keys that already exist."""
+        test_cache.hset("perm:existing:key", "f", "old")
+        client = _staff_client(["view_key", "change_key"])
+
+        response = client.post(
+            _key_detail_url("default", "perm:existing:key"),
+            {"action": "hset", "field": "f", "field_value": "new"},
+        )
+
+        assert response.status_code == 302
+        assert test_cache.hget("perm:existing:key", "f") == "new"
+
+
+class TestCreateModeDeleteButton:
+    def test_delete_button_hidden_in_create_mode(self, admin_client: Client, test_cache: RespCache):
+        """The Delete link submits ``#delete-form``, which only exists once the
+        key does. Rendering it in create mode gives a JS TypeError.
+        """
+        response = admin_client.get(_key_detail_create_url("default", "nodelete:key", "hash"))
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'id="delete-form"' not in content
+        assert 'class="deletelink"' not in content
+
+    def test_delete_button_shown_for_existing_key(self, admin_client: Client, test_cache: RespCache):
+        test_cache.set("hasdelete:key", "value")
+
+        response = admin_client.get(_key_detail_url("default", "hasdelete:key"))
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'id="delete-form"' in content
+        assert 'class="deletelink"' in content
+
+
+class TestUnreadableValueResilience:
+    def test_unexpected_read_error_still_renders(
+        self,
+        admin_client: Client,
+        mocker,
+        test_cache: RespCache,
+    ):
+        """Only decode errors used to be caught, so any other read failure
+        turned the detail page into a 500 with no way to delete the key.
+        """
+        test_cache.set("unreadable:key", "value")
+        mocker.patch.object(test_cache, "get", side_effect=RuntimeError("boom"))
+
+        response = admin_client.get(_key_detail_url("default", "unreadable:key"))
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "could not be read" in content
+
+
+class TestTypeFilterFallback:
+    def test_type_filter_drops_rows_the_backend_did_not_filter(
+        self,
+        admin_client: Client,
+        mocker,
+        test_cache: RespCache,
+    ):
+        """``key_type`` is only a hint to ``scan()``. A backend that ignores it
+        used to make the Type filter silently list every key.
+        """
+        from unittest.mock import MagicMock
+
+        fake = MagicMock()
+        fake.scan.return_value = (0, ["typefilter:str", "typefilter:lst"])
+        fake.type.side_effect = lambda k: "string" if k.endswith("str") else "list"
+        mocker.patch("django_cachex.admin.queryset.get_cache", return_value=fake)
+        mocker.patch("django_cachex.admin.queryset.get_size", return_value=10)
+
+        response = admin_client.get(_key_list_url("default") + "&type=string")
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "typefilter:str" in content
+        assert "typefilter:lst" not in content
+
+
+class TestPerObjectAdminRoutes:
+    """``ModelAdmin.get_urls`` registers history/delete routes unasked, and both
+    start with ``get_queryset(request).get()``, which the fake querysets do not
+    implement. They must 404 rather than raise ``AttributeError``.
+    """
+
+    @pytest.mark.parametrize(
+        ("url_name", "arg"),
+        [
+            ("admin:django_cachex_cache_history", "default"),
+            ("admin:django_cachex_cache_delete", "default"),
+            ("admin:django_cachex_key_history", "default::somekey"),
+            ("admin:django_cachex_key_delete", "default::somekey"),
+        ],
+    )
+    def test_per_object_routes_404(self, admin_client: Client, test_cache, url_name, arg):
+        response = admin_client.get(reverse(url_name, args=[quote(arg)]))
+        assert response.status_code == 404
+
+
+class TestSetTtlNormalization:
+    @pytest.mark.parametrize("ttl_value", ["0", "00", "+0", "-0"])
+    def test_zero_spellings_persist_instead_of_deleting(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+        ttl_value: str,
+    ):
+        """``expire(key, 0)`` deletes the key. Only the string ``"0"`` used to be
+        recognised as "no expiry", so ``"00"`` reported success and dropped the key.
+        """
+        test_cache.set("ttl:zero", "value", timeout=300)
+
+        response = admin_client.post(
+            _key_detail_url("default", "ttl:zero"),
+            {"action": "set_ttl", "ttl_value": ttl_value},
+        )
+
+        assert response.status_code == 302
+        assert test_cache.get("ttl:zero") == "value"
+        assert test_cache.ttl("ttl:zero") in (None, -1)
+
+    def test_negative_ttl_rejected(self, admin_client: Client, test_cache: RespCache):
+        test_cache.set("ttl:negative", "value", timeout=300)
+
+        response = admin_client.post(
+            _key_detail_url("default", "ttl:negative"),
+            {"action": "set_ttl", "ttl_value": "-5"},
+            follow=True,
+        )
+
+        content = response.content.decode()
+        assert "TTL must be non-negative." in content
+        assert test_cache.get("ttl:negative") == "value"
+
+
+class TestZaddReporting:
+    def test_flag_noop_reported_as_no_change(self, admin_client: Client, test_cache: RespCache):
+        """ZADD returns 0 both for "existing member, score rewritten" and for
+        "flags blocked the write". Asking for CH makes the two distinguishable.
+        """
+        test_cache.zadd("zadd:noop", {"a": 1.0})
+
+        response = admin_client.post(
+            _key_detail_url("default", "zadd:noop"),
+            {"action": "zadd", "member": "a", "score_value": "99.0", "zadd_nx": "on"},
+            follow=True,
+        )
+
+        content = response.content.decode()
+        assert "No change" in content
+        assert test_cache.zscore("zadd:noop", "a") == 1.0
+
+    def test_flagged_write_reported_as_success(self, admin_client: Client, test_cache: RespCache):
+        test_cache.zadd("zadd:applied", {"a": 1.0})
+
+        response = admin_client.post(
+            _key_detail_url("default", "zadd:applied"),
+            {"action": "zadd", "member": "a", "score_value": "99.0", "zadd_xx": "on"},
+            follow=True,
+        )
+
+        content = response.content.decode()
+        assert "No change" not in content
+        assert test_cache.zscore("zadd:applied", "a") == 99.0
+
+    def test_unhashable_member_rejected(self, admin_client: Client, test_cache: RespCache):
+        """ZADD passes members as dict keys, so a JSON array would raise a bare
+        ``TypeError: unhashable type``.
+        """
+        response = admin_client.post(
+            _key_detail_url("default", "zadd:unhashable"),
+            {"action": "zadd", "member": "[1, 2]", "score_value": "1.0"},
+            follow=True,
+        )
+
+        content = response.content.decode()
+        assert "cannot be used as sorted set members" in content
+
+
+class TestBlankMemberFeedback:
+    @pytest.mark.parametrize(
+        ("action", "expected"),
+        [
+            ("srem", "Member is required."),
+            ("zrem", "Member is required."),
+            ("hdel", "Field name is required."),
+        ],
+    )
+    def test_blank_input_reports_an_error(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+        action: str,
+        expected: str,
+    ):
+        """A blank field used to redirect with no message at all, which reads as
+        a successful no-op.
+        """
+        test_cache.sadd("blank:set", "a")
+
+        response = admin_client.post(
+            _key_detail_url("default", "blank:set"),
+            {"action": action, "member": "", "field": ""},
+            follow=True,
+        )
+
+        assert expected in response.content.decode()
+
+
+class TestHelpLinkPreservesParams:
+    def _help_href(self, content: str) -> str:
+        match = re.search(r'<a href="([^"]*)">Help</a>', content)
+        assert match is not None
+        return match.group(1)
+
+    def test_help_link_keeps_page(self, admin_client: Client, test_cache: RespCache):
+        test_cache.rpush("help:list", "a", "b")
+
+        content = admin_client.get(_key_detail_url("default", "help:list") + "?page=1").content.decode()
+
+        href = self._help_href(content)
+        assert "page=1" in href
+        assert "help=1" in href
+
+    def test_help_link_keeps_type_in_create_mode(self, admin_client: Client, test_cache: RespCache):
+        """Dropping ``type`` points Help at a key that does not exist, which
+        bounces straight back to the key list.
+        """
+        content = admin_client.get(_key_detail_create_url("default", "help:create", "hash")).content.decode()
+
+        href = self._help_href(content)
+        assert "type=hash" in href
+        assert "help=1" in href
+
+
+class TestCreateTypeValidation:
+    def test_unknown_type_is_rejected(self, admin_client: Client, test_cache: RespCache):
+        """``create_type`` is interpolated into badge classes and the help key,
+        so an arbitrary value renders an undefined-state page.
+        """
+        response = admin_client.get(
+            _key_detail_create_url("default", "bogus:type:key", "notatype"),
+            follow=True,
+        )
+
+        assert "Unknown key type" in response.content.decode()
+        assert response.redirect_chain[0][1] == 302

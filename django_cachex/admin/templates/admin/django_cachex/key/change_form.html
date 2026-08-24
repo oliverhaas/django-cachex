@@ -1,5 +1,5 @@
 {% extends "admin/base_site.html" %}
-{% load i18n static %}
+{% load i18n l10n static %}
 
 {% block extrastyle %}
 {{ block.super }}
@@ -24,7 +24,7 @@
 {% block object-tools %}
 <ul class="object-tools">
     <li>
-        <a href="?{% if not help_active %}help=1{% endif %}">{% trans 'Help' %}</a>
+        <a href="{{ help_url }}">{% trans 'Help' %}</a>
     </li>
 </ul>
 {% endblock %}
@@ -71,7 +71,7 @@
                     style="width: 100px;"
                     step="1"
                     min="0"
-                    value="{% if ttl is not None and ttl >= 0 %}{{ ttl }}{% endif %}"
+                    value="{% if ttl is not None and ttl >= 0 %}{{ ttl|unlocalize }}{% endif %}"
                     placeholder="{% trans 'no expiry' %}"
                 >
                 <button type="submit" class="button btn-small" style="margin-left: 10px;">{% trans 'Update' %}</button>

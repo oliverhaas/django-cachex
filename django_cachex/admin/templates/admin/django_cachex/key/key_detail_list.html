@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n l10n %}
 {% with input_tpl="admin/django_cachex/key/key_detail_value_input.html#value-input" %}
 <!-- List Operations -->
 <fieldset class="module aligned monospace">
@@ -80,7 +80,7 @@
                         <div class="cachex-row-actions">
                             {% if editable %}
                             <button type="submit" form="list-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
-                            <button type="submit" form="list-remove-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Remove this item?' %}');">{% trans 'Remove' %}</button>
+                            <button type="submit" form="list-remove-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Remove the first item in the list matching this value?' %}');">{% trans 'Remove' %}</button>
                             {% else %}
                             <button type="button" class="button btn-small" disabled title="{% trans 'Not JSON-serializable, so this item cannot be edited or matched for removal.' %}">{% trans 'Update' %}</button>
                             <button type="button" class="button delete-btn btn-small" disabled title="{% trans 'Not JSON-serializable, so this item cannot be edited or matched for removal.' %}">{% trans 'Remove' %}</button>
@@ -97,13 +97,15 @@
     <form id="list-update-{{ forloop.counter0 }}" method="post" style="display: none;">
         {% csrf_token %}
         <input type="hidden" name="action" value="lset">
-        <input type="hidden" name="index" value="{{ index }}">
+        <input type="hidden" name="index" value="{{ index|unlocalize }}">
         {% if sha1 %}<input type="hidden" name="original_sha1" value="{{ sha1 }}">{% endif %}
     </form>
     <form id="list-remove-{{ forloop.counter0 }}" method="post" style="display: none;">
         {% csrf_token %}
         <input type="hidden" name="action" value="lrem">
         <input type="hidden" name="value" value="{{ item }}">
+        <!-- LREM matches by value, never by index: bound it to one occurrence. -->
+        <input type="hidden" name="lrem_count" value="1">
     </form>
     {% endfor %}
     {% else %}

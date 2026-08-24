@@ -3,10 +3,13 @@
 from typing import Any
 
 import pytest
+from django.template.loader import render_to_string
+from django.test import override_settings
 
-from django_cachex.admin.helpers import PAGE_SIZE, _paginate
+from django_cachex.admin.helpers import PAGE_SIZE, _fetch_type_data, _paginate
 from django_cachex.admin.views.key_detail import _set_preserving_ttl
 from django_cachex.exceptions import NotSupportedError
+from django_cachex.types import KeyType
 
 _DEFAULT = object()
 
@@ -184,3 +187,66 @@ class TestPaginate:
 
     def test_page_size_constant(self):
         assert PAGE_SIZE == 100
+
+
+class TestZsetMemberEditability:
+    """ZADD passes members as dict keys and every edit re-parses the displayed
+    text as JSON first, so a member that reads back as an array or object can be
+    shown but never written back. Such rows must be marked non-editable.
+    """
+
+    class _ZsetCache:
+        def __init__(self, members: list[tuple[Any, float]]):
+            self._members = members
+
+        def zcard(self, key: str) -> int:
+            del key
+            return len(self._members)
+
+        def zrange(self, key: str, start: int, stop: int, *, withscores: bool = False) -> list:
+            del key, withscores
+            return self._members[start : stop + 1]
+
+    def _editable(self, member: Any) -> bool:
+        data = _fetch_type_data(self._ZsetCache([(member, 1.0)]), "k", KeyType.ZSET)
+        _display, _score, editable = data["members"][0]
+        return editable
+
+    def test_json_array_member_is_not_editable(self):
+        assert self._editable(["a", "b"]) is False
+
+    def test_json_object_member_is_not_editable(self):
+        assert self._editable({"a": 1}) is False
+
+    def test_plain_member_stays_editable(self):
+        assert self._editable("plain") is True
+
+
+class TestStreamBrowsingUnsupported:
+    """A backend without ``xrange`` used to fall through to an empty result,
+    which the template renders as "Stream is empty" -- a different claim.
+    """
+
+    def test_backend_without_xrange_reports_an_error(self):
+        class _NoStreams:
+            def xlen(self, key: str) -> int:
+                del key
+                return 0
+
+        data = _fetch_type_data(_NoStreams(), "k", KeyType.STREAM)
+        assert "not supported" in data["error"]
+
+
+class TestPaginationTemplateLocalization:
+    """Page numbers go straight back into ``?page=`` and are parsed as ints."""
+
+    @override_settings(USE_THOUSAND_SEPARATOR=True)
+    def test_page_numbers_render_unlocalized(self):
+        html = render_to_string(
+            "admin/django_cachex/key/key_detail_pagination.html",
+            {"type_data": {"pagination": _paginate(200_000, 1234)}},
+        )
+        assert "?page=1235" in html
+        assert "?page=1,235" not in html
+        assert "?page=2000" in html
+        assert "?page=2,000" not in html

@@ -452,13 +452,18 @@ class TypeFilter(admin.SimpleListFilter):
     def queryset(self, request: HttpRequest, queryset: KeyQuerySet) -> KeyQuerySet:  # type: ignore[override]
         return queryset  # No-op: type filtering handled via SCAN in get_queryset
 
-    def get_facet_queryset(self, changelist: Any) -> dict[str, int]:
-        """Compute type counts in-memory from current batch."""
-        data = list(changelist.queryset)
-        return {
-            f"{i}__c": sum(1 for k in data if getattr(k, "key_type", None) == value)
-            for i, (value, _) in enumerate(self.lookup_choices)
-        }
+
+def _describe_key(cache: Any, cache_name: str, user_key: str) -> Key:
+    """Build one list row, tolerating backends without ``ttl()`` or ``type()``."""
+    key_obj = Key.from_cache_key(cache_name, user_key)
+    with contextlib.suppress(Exception):
+        ttl = cache.ttl(user_key)
+        key_obj.ttl = ttl  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        if ttl is not None and ttl >= 0:
+            key_obj.ttl_expires_at = timezone.now() + timedelta(seconds=ttl)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    with contextlib.suppress(Exception):
+        key_obj.key_type = cache.type(user_key)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    return key_obj
 
 
 class KeyAdminMixin:
@@ -547,18 +552,14 @@ class KeyAdminMixin:
                     break
 
             data: list[Key] = []
-            for key_item in keys:
-                user_key = key_item["key"] if isinstance(key_item, dict) else key_item
-                key_obj = Key.from_cache_key(cache_name, user_key)
+            for user_key in keys:
+                key_obj = _describe_key(cache, cache_name, user_key)
 
-                with contextlib.suppress(Exception):
-                    ttl = cache.ttl(user_key)
-                    key_obj.ttl = ttl  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-                    if ttl is not None and ttl >= 0:
-                        key_obj.ttl_expires_at = timezone.now() + timedelta(seconds=ttl)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-                with contextlib.suppress(Exception):
-                    key_type = cache.type(user_key)
-                    key_obj.key_type = key_type  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+                # ``key_type`` is only a hint to ``scan()``; a backend that
+                # can't push it down would otherwise return every key.
+                if type_filter and getattr(key_obj, "key_type", None) != type_filter:
+                    continue
+
                 with contextlib.suppress(Exception):
                     key_obj.key_size = get_size(cache, user_key, getattr(key_obj, "key_type", None))  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
 

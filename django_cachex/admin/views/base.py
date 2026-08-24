@@ -38,10 +38,6 @@ def key_detail_url(cache_name: str, key: str) -> str:
     return reverse("admin:django_cachex_key_change", args=[quote(pk)])
 
 
-def key_add_url(cache_name: str) -> str:
-    return reverse("admin:django_cachex_key_add") + "?" + urlencode({"cache": cache_name})
-
-
 # =============================================================================
 # View Configuration
 # =============================================================================

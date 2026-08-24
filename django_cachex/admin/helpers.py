@@ -1,5 +1,7 @@
 """Helper functions for cache admin views."""
 
+import contextlib
+import json
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -217,6 +219,33 @@ def _format_entry(value: Any) -> tuple[str, bool]:
     return format_value_for_display(value)
 
 
+def parse_json_or_str(value: str) -> Any:
+    """Try to interpret a string as JSON, falling back to the raw string."""
+    with contextlib.suppress(json.JSONDecodeError, ValueError):
+        return json.loads(value)
+    return value
+
+
+def is_hashable(value: Any) -> bool:
+    """Report whether ``value`` can be used as a dict key."""
+    try:
+        hash(value)
+    except TypeError:
+        return False
+    return True
+
+
+def _zset_rows(entries: Any) -> list[tuple[str, float, bool]]:
+    """Format ``(member, score)`` pairs as display rows."""
+    rows = []
+    for raw, score in entries:
+        member, editable = _format_entry(raw)
+        # ZADD takes members as dict keys, so a member that parses back as an
+        # array or object can be shown but never written.
+        rows.append((member, score, editable and is_hashable(parse_json_or_str(member))))
+    return rows
+
+
 def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> dict[str, Any]:  # noqa: PLR0911
     """Fetch type-specific data from cache, paginated."""
     try:
@@ -254,12 +283,13 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
                 pagination = _paginate(length, page)
                 start = pagination["start_index"]
                 stop = pagination["end_index"] - 1  # ZRANGE stop is inclusive
-                zset_members = []
-                for raw, score in cache.zrange(key, start, stop, withscores=True):
-                    member, editable = _format_entry(raw)
-                    zset_members.append((member, score, editable))
+                zset_members = _zset_rows(cache.zrange(key, start, stop, withscores=True))
                 return {"members": zset_members, "length": length, "pagination": pagination}
-            case KeyType.STREAM if hasattr(cache, "xrange"):
+            case KeyType.STREAM:
+                if not hasattr(cache, "xrange"):
+                    # Falling through would return {} and render "Stream is
+                    # empty", which is a different claim entirely.
+                    return {"error": "Stream browsing is not supported by this cache backend."}
                 length = cache.xlen(key)
                 pagination = _paginate(length, page)
                 # Fetch up to page*PAGE_SIZE entries and slice to the last page
@@ -395,7 +425,7 @@ def _parse_slowlog_entry(entry: Any) -> dict[str, Any]:
             "duration_us": dur,
             "duration_ms": dur / 1000,
             "duration_s": dur / 1_000_000,
-            "command": entry[3] if len(entry) > 3 else [],
+            "command": entry[3],
             "client": entry[4] if len(entry) > 4 else None,
             "client_name": entry[5] if len(entry) > 5 else None,
         }
