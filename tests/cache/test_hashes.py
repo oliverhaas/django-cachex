@@ -183,6 +183,57 @@ class TestHashIncrementOperations:
         result = cache.hincrbyfloat("new_metrics", "rate", 2.718)
         assert abs(result - 2.718) < 0.001
 
+    def test_hincrbyfloat_value_is_readable(self, cache: RespCache):
+        """HINCRBYFLOAT writes a bare float string, which every reader must decode.
+
+        Regression: the readers only short-circuited on int, so a float
+        string fell through to pickle.loads() and raised SerializerError,
+        taking hgetall()/hvals() down with the whole hash.
+        """
+        cache.hincrbyfloat("float_metrics", "score", 10.5)
+
+        assert cache.hget("float_metrics", "score") == pytest.approx(10.5)
+        assert cache.hmget("float_metrics", "score") == [pytest.approx(10.5)]
+        assert cache.hgetall("float_metrics") == {"score": pytest.approx(10.5)}
+        assert cache.hvals("float_metrics") == [pytest.approx(10.5)]
+
+    def test_hincrbyfloat_mixes_with_hset_and_hgetall(self, cache: RespCache):
+        """A float field must not break the readers for the rest of the hash."""
+        cache.hset("mixed_hash", "name", "widget")
+        cache.hincrbyfloat("mixed_hash", "score", 2.718)
+        cache.hincrby("mixed_hash", "views", 3)
+
+        assert cache.hgetall("mixed_hash") == {
+            "name": "widget",
+            "score": pytest.approx(2.718),
+            "views": 3,
+        }
+
+    def test_hset_float_is_serialized_not_incrementable(self, cache: RespCache):
+        """hset() serializes floats to stay wire-compatible with Django's RedisCache.
+
+        The consequence is that HINCRBYFLOAT cannot touch such a field.
+        Documented on RespCache.encode()/hincrbyfloat().
+        """
+        cache.hset("hset_float", "score", 1.5)
+        assert cache.hget("hset_float", "score") == pytest.approx(1.5)
+        with pytest.raises(Exception, match=r"(?i)not a (valid )?float"):
+            cache.hincrbyfloat("hset_float", "score", 0.25)
+
+    def test_string_that_looks_like_a_float_still_round_trips(self, cache: RespCache):
+        """A str is serialized, so it must not be decoded back as a number."""
+        cache.hset("float_str", "value", "2.718")
+        assert cache.hget("float_str", "value") == "2.718"
+
+    @pytest.mark.asyncio
+    async def test_ahincrbyfloat_value_is_readable(self, cache: RespCache):
+        await cache.ahincrbyfloat("afloat_metrics", "score", 10.5)
+
+        assert await cache.ahget("afloat_metrics", "score") == pytest.approx(10.5)
+        assert await cache.ahgetall("afloat_metrics") == {"score": pytest.approx(10.5)}
+        assert await cache.ahvals("afloat_metrics") == [pytest.approx(10.5)]
+        assert await cache.ahmget("afloat_metrics", "score") == [pytest.approx(10.5)]
+
 
 class TestHashSetNX:
     """Tests for hsetnx."""

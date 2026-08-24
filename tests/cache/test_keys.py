@@ -155,7 +155,6 @@ class TestDeletePatternOperations:
         for key in ["foo-aa", "foo-ab", "foo-bb", "foo-bc"]:
             cache.set(key, "foo")
 
-        # Verify the setting is applied correctly
         assert settings.DJANGO_REDIS_SCAN_ITERSIZE == 30
 
         res = cache.delete_pattern("*foo-a*")

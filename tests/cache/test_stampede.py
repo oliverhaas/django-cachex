@@ -1,5 +1,7 @@
 """Tests for cache stampede prevention via XFetch algorithm (TTL-based)."""
 
+import time
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
@@ -143,12 +145,39 @@ class TestStampedeWithIntegerValues:
 class TestStampedeExtendedTTL:
     """Redis TTL should be extended by buffer amount."""
 
-    def test_ttl_includes_buffer(self, stampede_cache: RespCache):
+    def test_stored_ttl_includes_buffer(self, stampede_cache: RespCache):
         stampede_cache.set("sp_ttl", "val", timeout=300)
-        ttl = stampede_cache.ttl("sp_ttl")
-        # TTL should be between 300 and 360 (300 + 60 buffer)
+        # The raw stored TTL is between 300 and 360 (300 + 60 buffer).
+        ttl = stampede_cache.ttl("sp_ttl", stampede_prevention=False)
         assert ttl is not None
         assert 300 < ttl <= 360
+
+    def test_reported_ttl_strips_buffer(self, stampede_cache: RespCache):
+        """ttl() reports the timeout the caller passed, not the buffered one."""
+        stampede_cache.set("sp_ttl_logical", "val", timeout=300)
+        ttl = stampede_cache.ttl("sp_ttl_logical")
+        assert ttl is not None
+        assert 290 < ttl <= 300
+
+    def test_reported_pttl_strips_buffer(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_pttl_logical", "val", timeout=300)
+        pttl = stampede_cache.pttl("sp_pttl_logical")
+        assert pttl is not None
+        assert 290_000 < pttl <= 300_000
+
+    def test_reported_expiretime_strips_buffer(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_et_logical", "val", timeout=300)
+        logical = stampede_cache.expiretime("sp_et_logical")
+        raw = stampede_cache.expiretime("sp_et_logical", stampede_prevention=False)
+        assert logical is not None
+        assert raw is not None
+        assert raw - logical == 60
+
+    def test_ttl_sentinels_pass_through(self, stampede_cache: RespCache):
+        """-2 (missing key) must not have the buffer subtracted from it."""
+        stampede_cache.delete("sp_ttl_missing")
+        assert stampede_cache.ttl("sp_ttl_missing") == -2
+        assert stampede_cache.pttl("sp_ttl_missing") == -2
 
     def test_no_timeout_no_buffer(self, stampede_cache: RespCache):
         stampede_cache.set("sp_persist", "val", timeout=None)
@@ -166,11 +195,11 @@ class TestStampedeTouch:
 
     def test_touch_reapplies_buffer(self, stampede_cache: RespCache):
         stampede_cache.set("sp_touch", "val", timeout=300)
-        # Shrink TTL below buffer → logically expired
-        stampede_cache.expire("sp_touch", 50)
+        # Shrink the raw TTL below the buffer → logically expired
+        stampede_cache.expire("sp_touch", 50, stampede_prevention=False)
 
         assert stampede_cache.touch("sp_touch", timeout=300) is True
-        ttl = stampede_cache.ttl("sp_touch")
+        ttl = stampede_cache.ttl("sp_touch", stampede_prevention=False)
         assert ttl is not None
         assert 300 < ttl <= 360  # 300 + 60 buffer, same as set()
         assert stampede_cache.get("sp_touch") == "val"
@@ -181,7 +210,7 @@ class TestStampedeTouch:
         # timeout=50 is below the 60s buffer; without the buffer the key
         # would be logically expired the moment it was touched.
         assert stampede_cache.touch("sp_touch_short", timeout=50) is True
-        ttl = stampede_cache.ttl("sp_touch_short")
+        ttl = stampede_cache.ttl("sp_touch_short", stampede_prevention=False)
         assert ttl is not None
         assert 50 < ttl <= 110
         assert stampede_cache.get("sp_touch_short") == "val"
@@ -194,13 +223,111 @@ class TestStampedeTouch:
     @pytest.mark.asyncio
     async def test_atouch_reapplies_buffer(self, stampede_cache: RespCache):
         await stampede_cache.aset("asp_touch", "val", timeout=300)
-        await stampede_cache.aexpire("asp_touch", 50)
+        await stampede_cache.aexpire("asp_touch", 50, stampede_prevention=False)
 
         assert await stampede_cache.atouch("asp_touch", timeout=300) is True
-        ttl = await stampede_cache.attl("asp_touch")
+        ttl = await stampede_cache.attl("asp_touch", stampede_prevention=False)
         assert ttl is not None
         assert 300 < ttl <= 360
         assert await stampede_cache.aget("asp_touch") == "val"
+
+
+class TestStampedeExpireFamily:
+    """expire()/pexpire()/expireat()/pexpireat() must apply the same buffer as set().
+
+    Regression: they passed the raw timeout to the server, so with the
+    default 60s buffer a key given expire(k, 30) sat permanently below the
+    buffer and every later get() returned None for the rest of its life.
+    """
+
+    def test_expire_keeps_value_readable(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_exp_read", "val", timeout=300)
+        assert stampede_cache.expire("sp_exp_read", 30) is True
+        assert stampede_cache.get("sp_exp_read") == "val"
+        assert stampede_cache.get("sp_exp_read") == "val"
+
+    def test_expire_reports_the_timeout_it_was_given(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_exp_ttl", "val", timeout=300)
+        stampede_cache.expire("sp_exp_ttl", 120)
+        assert stampede_cache.ttl("sp_exp_ttl") == pytest.approx(120, abs=2)
+        assert stampede_cache.ttl("sp_exp_ttl", stampede_prevention=False) == pytest.approx(180, abs=2)
+
+    def test_expire_timedelta_gets_the_buffer(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_exp_td", "val", timeout=300)
+        stampede_cache.expire("sp_exp_td", timedelta(seconds=120))
+        assert stampede_cache.get("sp_exp_td") == "val"
+        assert stampede_cache.ttl("sp_exp_td", stampede_prevention=False) == pytest.approx(180, abs=2)
+
+    def test_expire_non_positive_timeout_still_deletes(self, stampede_cache: RespCache):
+        """The buffer must not resurrect a key the caller asked to drop."""
+        stampede_cache.set("sp_exp_zero", "val", timeout=300)
+        assert stampede_cache.expire("sp_exp_zero", 0) is True
+        assert stampede_cache.has_key("sp_exp_zero") is False
+
+    def test_pexpire_keeps_value_readable(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_pexp", "val", timeout=300)
+        assert stampede_cache.pexpire("sp_pexp", 30_000) is True
+        assert stampede_cache.get("sp_pexp") == "val"
+        assert stampede_cache.pttl("sp_pexp") == pytest.approx(30_000, abs=2000)
+
+    def test_expireat_keeps_value_readable(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_expat", "val", timeout=300)
+        when = int(time.time()) + 30
+        assert stampede_cache.expireat("sp_expat", when) is True
+        assert stampede_cache.get("sp_expat") == "val"
+        assert stampede_cache.expiretime("sp_expat") == pytest.approx(when, abs=2)
+
+    def test_expireat_datetime_keeps_value_readable(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_expat_dt", "val", timeout=300)
+        when = datetime.now(tz=UTC) + timedelta(seconds=30)
+        assert stampede_cache.expireat("sp_expat_dt", when) is True
+        assert stampede_cache.get("sp_expat_dt") == "val"
+
+    def test_pexpireat_keeps_value_readable(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_pexpat", "val", timeout=300)
+        assert stampede_cache.pexpireat("sp_pexpat", int(time.time() * 1000) + 30_000) is True
+        assert stampede_cache.get("sp_pexpat") == "val"
+
+    @pytest.mark.asyncio
+    async def test_aexpire_keeps_value_readable(self, stampede_cache: RespCache):
+        await stampede_cache.aset("asp_exp_read", "val", timeout=300)
+        assert await stampede_cache.aexpire("asp_exp_read", 30) is True
+        assert await stampede_cache.aget("asp_exp_read") == "val"
+        assert await stampede_cache.attl("asp_exp_read") == pytest.approx(30, abs=2)
+
+    @pytest.mark.asyncio
+    async def test_apexpire_and_apexpireat_keep_value_readable(self, stampede_cache: RespCache):
+        await stampede_cache.aset("asp_pexp", "val", timeout=300)
+        assert await stampede_cache.apexpire("asp_pexp", 30_000) is True
+        assert await stampede_cache.aget("asp_pexp") == "val"
+
+        await stampede_cache.aset("asp_pexpat", "val", timeout=300)
+        assert await stampede_cache.apexpireat("asp_pexpat", int(time.time() * 1000) + 30_000) is True
+        assert await stampede_cache.aget("asp_pexpat") == "val"
+
+    @pytest.mark.asyncio
+    async def test_aexpireat_keeps_value_readable(self, stampede_cache: RespCache):
+        await stampede_cache.aset("asp_expat", "val", timeout=300)
+        when = int(time.time()) + 30
+        assert await stampede_cache.aexpireat("asp_expat", when) is True
+        assert await stampede_cache.aget("asp_expat") == "val"
+        assert await stampede_cache.aexpiretime("asp_expat") == pytest.approx(when, abs=2)
+
+
+class TestNoStampedeTTLSurfaceUnchanged:
+    """Without stampede prevention the expire/ttl surface stays raw Redis."""
+
+    def test_expire_and_ttl_are_untouched(self, cache: RespCache):
+        cache.set("nosp_exp", "val", timeout=300)
+        assert cache.expire("nosp_exp", 120) is True
+        assert cache.ttl("nosp_exp") == pytest.approx(120, abs=2)
+        assert cache.pttl("nosp_exp") == pytest.approx(120_000, abs=2000)
+
+    def test_expireat_and_expiretime_are_untouched(self, cache: RespCache):
+        cache.set("nosp_expat", "val", timeout=300)
+        when = int(time.time()) + 120
+        assert cache.expireat("nosp_expat", when) is True
+        assert cache.expiretime("nosp_expat") == when
 
 
 class TestStampedeGetMany:
@@ -219,7 +346,7 @@ class TestStampedeGetMany:
     def test_get_many_filters_expired(self, stampede_cache: RespCache):
         stampede_cache.set("sp_gm_exp", "val", timeout=300)
         # Shrink TTL below buffer → logically expired
-        stampede_cache.expire("sp_gm_exp", 50)
+        stampede_cache.expire("sp_gm_exp", 50, stampede_prevention=False)
 
         result = stampede_cache.get_many(["sp_gm_exp"])
         assert len(result) == 0
@@ -235,7 +362,7 @@ class TestStampedeSetMany:
 
     def test_set_many_ttl_includes_buffer(self, stampede_cache: RespCache):
         stampede_cache.set_many({"sp_sm_ttl": "val"}, timeout=300)
-        ttl = stampede_cache.ttl("sp_sm_ttl")
+        ttl = stampede_cache.ttl("sp_sm_ttl", stampede_prevention=False)
         assert ttl is not None
         assert 300 < ttl <= 360
 
@@ -243,8 +370,10 @@ class TestStampedeSetMany:
 class TestStampedeEarlyRecompute:
     """Test that XFetch triggers early recomputation.
 
-    Uses expire() to simulate logical expiry deterministically:
-    set with timeout=300 (TTL=360), then expire(key, 50) → TTL=50 < buffer=60 → logically expired.
+    Uses expire() to simulate logical expiry deterministically: set with
+    timeout=300 (TTL=360), then expire(key, 50, stampede_prevention=False)
+    → raw TTL=50 < buffer=60 → logically expired. The override is required
+    because expire() otherwise adds the buffer just like set() does.
     """
 
     def test_returns_none_after_logical_expiry(self, stampede_cache: RespCache):
@@ -253,7 +382,7 @@ class TestStampedeEarlyRecompute:
         assert stampede_cache.get("sp_expire") == "val"
 
         # Shrink TTL below buffer → logically expired
-        stampede_cache.expire("sp_expire", 50)
+        stampede_cache.expire("sp_expire", 50, stampede_prevention=False)
         assert stampede_cache.get("sp_expire") is None
 
     def test_get_or_set_recomputes_after_expiry(self, stampede_cache: RespCache):
@@ -262,7 +391,7 @@ class TestStampedeEarlyRecompute:
         assert stampede_cache.get("sp_gos") == "old"
 
         # Shrink TTL below buffer → logically expired
-        stampede_cache.expire("sp_gos", 50)
+        stampede_cache.expire("sp_gos", 50, stampede_prevention=False)
 
         # get_or_set should see None, call the default callable, and set new value
         result = stampede_cache.get_or_set("sp_gos", lambda: "recomputed", timeout=300)
@@ -271,14 +400,14 @@ class TestStampedeEarlyRecompute:
     def test_recompute_stores_with_buffer(self, stampede_cache: RespCache):
         """After recomputation, the new value should have buffered TTL."""
         stampede_cache.set("sp_recomp", "initial", timeout=300)
-        stampede_cache.expire("sp_recomp", 50)
+        stampede_cache.expire("sp_recomp", 50, stampede_prevention=False)
 
         # Recompute
         stampede_cache.set("sp_recomp", "recomputed", timeout=300)
 
         # Verify value and TTL
         assert stampede_cache.get("sp_recomp") == "recomputed"
-        ttl = stampede_cache.ttl("sp_recomp")
+        ttl = stampede_cache.ttl("sp_recomp", stampede_prevention=False)
         assert ttl is not None
         assert ttl > 300
 
@@ -302,7 +431,7 @@ class TestStampedePipeline:
         """Pipeline should serve stale data (not return None) during buffer window."""
         stampede_cache.set("sp_pipe_stale", "stale_val", timeout=300)
         # Shrink TTL below buffer → logically expired, but pipeline should still serve
-        stampede_cache.expire("sp_pipe_stale", 50)
+        stampede_cache.expire("sp_pipe_stale", 50, stampede_prevention=False)
 
         with stampede_cache.pipeline() as pipe:
             pipe.get("sp_pipe_stale")
@@ -317,7 +446,7 @@ class TestStampedeOverride:
     def test_false_skips_ttl_check(self, stampede_cache: RespCache):
         """stampede_prevention=False on get() should return value even if logically expired."""
         stampede_cache.set("sp_ovr_get", "val", timeout=300)
-        stampede_cache.expire("sp_ovr_get", 50)  # logically expired
+        stampede_cache.expire("sp_ovr_get", 50, stampede_prevention=False)  # logically expired
 
         # Default behavior: returns None (logically expired)
         assert stampede_cache.get("sp_ovr_get") is None
@@ -327,22 +456,30 @@ class TestStampedeOverride:
     def test_false_skips_buffer_on_set(self, stampede_cache: RespCache):
         """stampede_prevention=False on set() should not add buffer to TTL."""
         stampede_cache.set("sp_ovr_set", "val", timeout=300, stampede_prevention=False)
-        ttl = stampede_cache.ttl("sp_ovr_set")
+        ttl = stampede_cache.ttl("sp_ovr_set", stampede_prevention=False)
         assert ttl is not None
-        assert ttl <= 300  # No buffer added
+        assert 290 < ttl <= 300  # No buffer added
 
     def test_false_skips_buffer_on_touch(self, stampede_cache: RespCache):
         """stampede_prevention=False on touch() should not add buffer to TTL."""
         stampede_cache.set("sp_ovr_touch", "val", timeout=300)
         assert stampede_cache.touch("sp_ovr_touch", timeout=200, stampede_prevention=False) is True
-        ttl = stampede_cache.ttl("sp_ovr_touch")
+        ttl = stampede_cache.ttl("sp_ovr_touch", stampede_prevention=False)
         assert ttl is not None
-        assert ttl <= 200  # No buffer added
+        assert 190 < ttl <= 200  # No buffer added
+
+    def test_false_skips_buffer_on_expire(self, stampede_cache: RespCache):
+        """stampede_prevention=False on expire() should set the raw TTL."""
+        stampede_cache.set("sp_ovr_expire", "val", timeout=300)
+        assert stampede_cache.expire("sp_ovr_expire", 200, stampede_prevention=False) is True
+        ttl = stampede_cache.ttl("sp_ovr_expire", stampede_prevention=False)
+        assert ttl is not None
+        assert 190 < ttl <= 200
 
     def test_false_on_get_many(self, stampede_cache: RespCache):
         """stampede_prevention=False on get_many() should return logically expired values."""
         stampede_cache.set("sp_ovr_gm", "val", timeout=300)
-        stampede_cache.expire("sp_ovr_gm", 50)  # logically expired
+        stampede_cache.expire("sp_ovr_gm", 50, stampede_prevention=False)  # logically expired
 
         # Default behavior: filtered out (logically expired)
         assert len(stampede_cache.get_many(["sp_ovr_gm"])) == 0
@@ -378,7 +515,7 @@ class TestStampedeOverride:
             timeout=300,
             stampede_prevention=StampedeConfig(buffer=90, delta=5.0),
         )
-        ttl = stampede_cache.ttl("sp_ovr_replace")
+        ttl = stampede_cache.ttl("sp_ovr_replace", stampede_prevention=False)
         assert ttl is not None
         assert 300 < ttl <= 390  # 300 + 90 buffer from override
 
@@ -424,7 +561,7 @@ class TestStampedeGetOrSetRecompute:
         the recomputed value actually replaces the stale one."""
         stampede_cache.set("sp_gos_overwrite", "stale", timeout=300)
         # Shrink TTL below buffer → logically expired
-        stampede_cache.expire("sp_gos_overwrite", 50)
+        stampede_cache.expire("sp_gos_overwrite", 50, stampede_prevention=False)
 
         result = stampede_cache.get_or_set(
             "sp_gos_overwrite",
@@ -439,7 +576,7 @@ class TestStampedeGetOrSetRecompute:
         """After recomputation, get_or_set should return the fresh value, not
         re-trigger stampede on the confirmation get()."""
         stampede_cache.set("sp_gos_retrig", "stale", timeout=300)
-        stampede_cache.expire("sp_gos_retrig", 50)
+        stampede_cache.expire("sp_gos_retrig", 50, stampede_prevention=False)
 
         # With short timeout, stampede could re-trigger on confirmation get
         # if stampede_prevention is passed to the final get(). It shouldn't be.
@@ -458,8 +595,8 @@ class TestStampedeGetManyConsistency:
         stampede_cache.set("sp_gmc_str", "hello", timeout=300)
         stampede_cache.set("sp_gmc_int", 42, timeout=300)
         # Shrink TTL below buffer → logically expired
-        stampede_cache.expire("sp_gmc_str", 50)
-        stampede_cache.expire("sp_gmc_int", 50)
+        stampede_cache.expire("sp_gmc_str", 50, stampede_prevention=False)
+        stampede_cache.expire("sp_gmc_int", 50, stampede_prevention=False)
 
         # Both get() and get_many() should treat them as logically expired
         assert stampede_cache.get("sp_gmc_str") is None
@@ -514,7 +651,7 @@ class TestAsyncStampedeGetMany:
     async def test_aget_many_filters_expired(self, stampede_cache: RespCache):
         await stampede_cache.aset("asp_gm_exp", "val", timeout=300)
         # Shrink TTL below buffer → logically expired
-        await stampede_cache.aexpire("asp_gm_exp", 50)
+        await stampede_cache.aexpire("asp_gm_exp", 50, stampede_prevention=False)
 
         result = await stampede_cache.aget_many(["asp_gm_exp"])
         assert len(result) == 0
@@ -533,8 +670,9 @@ class TestAsyncStampedeSetMany:
 class TestAsyncStampedeEarlyRecompute:
     """XFetch must trigger on the async get path too.
 
-    Uses aexpire() to simulate logical expiry deterministically:
-    set with timeout=300 (TTL=360), then expire(key, 50) → TTL=50 < buffer=60.
+    Uses aexpire() to simulate logical expiry deterministically: set with
+    timeout=300 (TTL=360), then aexpire(key, 50, stampede_prevention=False)
+    → raw TTL=50 < buffer=60.
     """
 
     @pytest.mark.asyncio
@@ -542,7 +680,7 @@ class TestAsyncStampedeEarlyRecompute:
         await stampede_cache.aset("asp_expire", "val", timeout=300)
         assert await stampede_cache.aget("asp_expire") == "val"
 
-        await stampede_cache.aexpire("asp_expire", 50)
+        await stampede_cache.aexpire("asp_expire", 50, stampede_prevention=False)
         assert await stampede_cache.aget("asp_expire") is None
 
     @pytest.mark.asyncio
@@ -551,7 +689,7 @@ class TestAsyncStampedeEarlyRecompute:
         await stampede_cache.aset("asp_gos", "old", timeout=300)
         assert await stampede_cache.aget("asp_gos") == "old"
 
-        await stampede_cache.aexpire("asp_gos", 50)
+        await stampede_cache.aexpire("asp_gos", 50, stampede_prevention=False)
 
         result = await stampede_cache.aget_or_set("asp_gos", lambda: "recomputed", timeout=300)
         assert result == "recomputed"
@@ -563,7 +701,7 @@ class TestAsyncStampedeGetOrSetRecompute:
     @pytest.mark.asyncio
     async def test_aget_or_set_overwrites_stale_key(self, stampede_cache: RespCache):
         await stampede_cache.aset("asp_gos_overwrite", "stale", timeout=300)
-        await stampede_cache.aexpire("asp_gos_overwrite", 50)
+        await stampede_cache.aexpire("asp_gos_overwrite", 50, stampede_prevention=False)
 
         result = await stampede_cache.aget_or_set(
             "asp_gos_overwrite",
@@ -579,7 +717,7 @@ class TestAsyncStampedeGetOrSetRecompute:
         """After recomputation, aget_or_set should return the fresh value, not
         re-trigger stampede on the confirmation aget()."""
         await stampede_cache.aset("asp_gos_retrig", "stale", timeout=300)
-        await stampede_cache.aexpire("asp_gos_retrig", 50)
+        await stampede_cache.aexpire("asp_gos_retrig", 50, stampede_prevention=False)
 
         result = await stampede_cache.aget_or_set(
             "asp_gos_retrig",

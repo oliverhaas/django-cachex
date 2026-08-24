@@ -12,6 +12,7 @@ concrete subclasses live in:
 
 import inspect
 import re
+from datetime import datetime, timedelta
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, cast, override
 
@@ -22,7 +23,6 @@ from django.utils.module_loading import import_string
 if TYPE_CHECKING:
     import builtins
     from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
-    from datetime import datetime, timedelta
 
     from django_cachex.adapters.pipeline import AsyncPipeline, Pipeline
     from django_cachex.adapters.protocols import RespAdapterProtocol
@@ -43,6 +43,10 @@ _set = set
 # Regex for escaping glob special characters
 _special_re = re.compile("([*?[])")
 
+# Consumed by Django's ``BaseCache.__init__``. Forwarding them to the
+# connection pool raises "unexpected keyword argument" on the first command.
+_DJANGO_GENERIC_OPTIONS = frozenset({"CULL_FREQUENCY", "MAX_ENTRIES"})
+
 
 def _glob_escape(s: str) -> str:
     """Escape glob special characters in a string."""
@@ -61,6 +65,27 @@ def _has_hash_tag(key: str) -> bool:
         return False
     close_idx = key.find("}", open_idx + 1)
     return close_idx > open_idx + 1
+
+
+def _check_hashable(member: Any) -> Any:
+    """Return ``member`` if it can go into a Python ``set``, else raise ``TypeError``.
+
+    Set readers collapse decoded members into a ``set``, so an unhashable
+    member written today only blows up on a later read, taking the whole
+    key with it. ``hash()`` rather than an ``isinstance(..., Hashable)``
+    check: a tuple containing a list claims to be hashable and is not.
+    """
+    try:
+        hash(member)
+    except TypeError:
+        msg = (
+            f"set members must be hashable, got {type(member).__name__}: "
+            f"cache set operations return a Python set, so an unhashable member "
+            f"could never be read back. Convert it first, for example a tuple "
+            f"instead of a list."
+        )
+        raise TypeError(msg) from None
+    return member
 
 
 def _load_codec(config: str | type | Any) -> Any:
@@ -101,7 +126,9 @@ class RespCache(BaseCachex):
         else:
             self._servers = server
 
-        self._options = params.get("OPTIONS", {})
+        # ``super().__init__`` already read these off ``params``, so dropping
+        # them here just keeps them out of the pool kwargs.
+        self._options = {k: v for k, v in params.get("OPTIONS", {}).items() if k not in _DJANGO_GENERIC_OPTIONS}
 
         # Top-level like Django's ``KEY_FUNCTION``; dotted path or callable.
         reverse_key_func = params.get("REVERSE_KEY_FUNCTION")
@@ -125,8 +152,25 @@ class RespCache(BaseCachex):
 
     @cached_property
     def adapter(self) -> RespAdapterProtocol:
-        """Get the adapter instance (matches Django's pattern)."""
-        return self._adapter_class(self._servers, **self._options)
+        """Get the adapter instance (matches Django's pattern).
+
+        :class:`RespCache`, :class:`RespClusterCache` and
+        :class:`RespSentinelCache` are abstract bases: they declare
+        ``_adapter_class`` but never assign it. Naming one of them as
+        ``BACKEND`` used to construct fine and then die with a bare
+        ``AttributeError`` on the first operation, so report the
+        misconfiguration properly instead.
+        """
+        adapter_class = getattr(self, "_adapter_class", None)
+        if adapter_class is None:
+            msg = (
+                f"{type(self).__name__} is an abstract base backend and cannot be used as BACKEND: "
+                f"it defines no '_adapter_class'. Use a concrete driver backend instead, for example "
+                f"'django_cachex.cache.ValkeyCache', 'django_cachex.cache.RedisCache' or "
+                f"'django_cachex.cache.ValkeyGlideCache'."
+            )
+            raise ImproperlyConfigured(msg)
+        return adapter_class(self._servers, **self._options)
 
     # =========================================================================
     # Serializer / Compressor stack. Encoding lives at the cache layer
@@ -179,7 +223,15 @@ class RespCache(BaseCachex):
         raise SerializerError("No serializers configured")
 
     def encode(self, value: Any) -> bytes | int:
-        """Encode a value for storage (serialize + compress). Exact ints pass through unchanged."""
+        """Encode a value for storage (serialize + compress). Exact ints pass through unchanged.
+
+        Floats are deliberately *not* passed through, even though that
+        would let ``HINCRBYFLOAT`` operate on a field written by
+        :meth:`hset`. The wire format has to stay readable by Django's own
+        ``django.core.cache.backends.redis.RedisCache``, whose
+        ``RedisSerializer.loads()`` tries only ``int()`` before
+        ``pickle.loads()`` and so chokes on a bare ``b"3.14"``.
+        """
         # Not isinstance(): bool and int subclasses (IntEnum, IntFlag) go
         # through the serializer so they round-trip with their type intact.
         if type(value) is not int:
@@ -190,12 +242,26 @@ class RespCache(BaseCachex):
         return value
 
     def decode(self, value: Any) -> Any:
-        """Decode a value from storage. Returns int directly if parseable, otherwise decompress + deserialize."""
+        """Decode a value from storage.
+
+        Bare numeric strings are returned as ``int`` or ``float``
+        directly; anything else is decompressed and deserialized. The
+        float branch is what makes ``HINCRBYFLOAT``/``INCRBYFLOAT``
+        results readable: they store a bare ``b"2.718"``, which no
+        serializer can load, so without it one float field would break
+        ``hget()`` and take ``hgetall()``/``hvals()`` down with the
+        whole hash.
+        """
         try:
             return int(value)
         except ValueError, TypeError:
-            value = self._decompress(value)
-            return self._deserialize(value)
+            pass
+        try:
+            return float(value)
+        except ValueError, TypeError:
+            pass
+        value = self._decompress(value)
+        return self._deserialize(value)
 
     def get_backend_timeout(self, timeout: float | None = DEFAULT_TIMEOUT) -> int | None:
         """Convert timeout to backend format (matches Django's RedisCache).
@@ -208,6 +274,69 @@ class RespCache(BaseCachex):
         # The key will be made persistent if None used as a timeout.
         # Non-positive values will cause the key to be deleted.
         return None if timeout is None else max(0, int(timeout))
+
+    def _stampede_buffer(self, stampede_prevention: bool | StampedeConfig | None = None) -> int:
+        """Effective stampede buffer in seconds; ``0`` when prevention is off."""
+        config = self.adapter.resolve_stampede(stampede_prevention)
+        return config.buffer if config is not None else 0
+
+    def _buffered_timeout(
+        self,
+        timeout: int | timedelta,
+        stampede_prevention: bool | StampedeConfig | None = None,
+        *,
+        milliseconds: bool = False,
+    ) -> int | timedelta:
+        """Add the stampede buffer to a relative ``EXPIRE``/``PEXPIRE`` timeout.
+
+        Without this, ``expire(key, 30)`` on a stampede-enabled cache leaves
+        the raw TTL at 30, below the 60s buffer, so every later ``get()``
+        reads it as logically expired and returns ``None`` for the rest of
+        the key's life. Mirrors what ``set()`` and ``touch()`` do.
+        Non-positive timeouts delete the key and pass through untouched.
+        """
+        buffer_s = self._stampede_buffer(stampede_prevention)
+        if not buffer_s:
+            return timeout
+        if isinstance(timeout, timedelta):
+            return timeout + timedelta(seconds=buffer_s) if timeout > timedelta(0) else timeout
+        if timeout <= 0:
+            return timeout
+        return timeout + (buffer_s * 1000 if milliseconds else buffer_s)
+
+    def _buffered_when(
+        self,
+        when: int | datetime,
+        stampede_prevention: bool | StampedeConfig | None = None,
+        *,
+        milliseconds: bool = False,
+    ) -> int | datetime:
+        """Add the stampede buffer to an absolute ``EXPIREAT``/``PEXPIREAT`` deadline."""
+        buffer_s = self._stampede_buffer(stampede_prevention)
+        if not buffer_s:
+            return when
+        if isinstance(when, datetime):
+            return when + timedelta(seconds=buffer_s)
+        return when + (buffer_s * 1000 if milliseconds else buffer_s)
+
+    def _logical_ttl(
+        self,
+        ttl: int | None,
+        stampede_prevention: bool | StampedeConfig | None = None,
+        *,
+        milliseconds: bool = False,
+    ) -> int | None:
+        """Strip the stampede buffer from a raw server TTL.
+
+        Writes store ``timeout + buffer``, so the raw value would otherwise
+        contradict the timeout the caller passed. ``None`` (no expiry) and
+        the ``-2`` "key missing" sentinel pass through untouched. Pass
+        ``stampede_prevention=False`` to read the raw stored TTL.
+        """
+        buffer_s = self._stampede_buffer(stampede_prevention)
+        if not buffer_s or ttl is None or ttl < 0:
+            return ttl
+        return max(0, ttl - (buffer_s * 1000 if milliseconds else buffer_s))
 
     # =========================================================================
     # Pattern helpers
@@ -481,13 +610,29 @@ class RespCache(BaseCachex):
 
     @override
     def incr(self, key: str, delta: int = 1, version: int | None = None) -> int:
-        """Increment a value."""
+        """Increment a value, creating the key at ``delta`` when it is missing.
+
+        This diverges from Django deliberately. ``BaseCache.incr`` raises
+        ``ValueError("Key '%s' not found")`` on a missing key, and
+        :class:`~django_cachex.cache.locmem.LocMemCache` keeps that
+        behaviour; the RESP path delegates straight to ``INCRBY``, which
+        autovivifies a missing key at 0 and returns ``delta``. Counters
+        that may not exist yet therefore need no priming here, but code
+        that relies on the ``ValueError`` to detect an expired counter
+        must check :meth:`has_key` first, and must not assume the two
+        backends agree.
+        """
         key = self.make_and_validate_key(key, version=version)
         return self.adapter.incr(key, delta)
 
     @override
     async def aincr(self, key: str, delta: int = 1, version: int | None = None) -> int:
-        """Increment a value asynchronously."""
+        """Increment a value asynchronously.
+
+        Same divergence from Django and from ``LocMemCache`` as
+        :meth:`incr`: a missing key is created at ``delta`` instead of
+        raising ``ValueError``.
+        """
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.aincr(key, delta)
 
@@ -534,11 +679,21 @@ class RespCache(BaseCachex):
         *,
         stampede_prevention: bool | StampedeConfig | None = None,
     ) -> Any:
-        """Fetch a key from the cache asynchronously, setting it to default if missing."""
+        """Fetch a key from the cache asynchronously, setting it to default if missing.
+
+        A callable ``default`` is awaited whenever calling it produces an
+        awaitable. Testing ``inspect.iscoroutinefunction`` on the callable
+        instead would miss a sync function that returns a coroutine and an
+        object with an ``async def __call__``, storing the un-awaited
+        coroutine object (which then fails to pickle and warns "coroutine
+        was never awaited").
+        """
         val = await self.aget(key, self._missing_key, version=version, stampede_prevention=stampede_prevention)
         if val is self._missing_key:
             if callable(default):
-                default = await default() if inspect.iscoroutinefunction(default) else default()
+                default = default()
+                if inspect.isawaitable(default):
+                    default = await default
             if self.adapter.resolve_stampede(stampede_prevention):
                 await self.aset(key, default, timeout=timeout, version=version, stampede_prevention=stampede_prevention)
             else:
@@ -643,25 +798,58 @@ class RespCache(BaseCachex):
     # Extended Methods (beyond Django's BaseCache)
     # =========================================================================
 
-    def ttl(self, key: str, version: int | None = None) -> int | None:
-        """Get TTL in seconds. Returns None if no expiry, -2 if key doesn't exist."""
-        key = self.make_and_validate_key(key, version=version)
-        return self.adapter.ttl(key)
+    def ttl(
+        self,
+        key: str,
+        version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
+    ) -> int | None:
+        """Get TTL in seconds. Returns None if no expiry, -2 if key doesn't exist.
 
-    async def attl(self, key: str, version: int | None = None) -> int | None:
-        """Get TTL in seconds asynchronously."""
+        With stampede prevention active the stampede buffer is subtracted,
+        so the reported TTL matches the timeout the caller passed to
+        ``set()``/``expire()`` rather than the buffered value on the wire.
+        Pass ``stampede_prevention=False`` for the raw stored TTL.
+        """
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.attl(key)
+        return self._logical_ttl(self.adapter.ttl(key), stampede_prevention)
 
-    def pttl(self, key: str, version: int | None = None) -> int | None:
-        """Get TTL in milliseconds. Returns None if no expiry, -2 if key doesn't exist."""
+    async def attl(
+        self,
+        key: str,
+        version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
+    ) -> int | None:
+        """Get TTL in seconds asynchronously. See :meth:`ttl`."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.pttl(key)
+        return self._logical_ttl(await self.adapter.attl(key), stampede_prevention)
 
-    async def apttl(self, key: str, version: int | None = None) -> int | None:
-        """Get TTL in milliseconds asynchronously."""
+    def pttl(
+        self,
+        key: str,
+        version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
+    ) -> int | None:
+        """Get TTL in milliseconds. Returns None if no expiry, -2 if key doesn't exist.
+
+        The stampede buffer is subtracted (in milliseconds). See :meth:`ttl`.
+        """
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.apttl(key)
+        return self._logical_ttl(self.adapter.pttl(key), stampede_prevention, milliseconds=True)
+
+    async def apttl(
+        self,
+        key: str,
+        version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
+    ) -> int | None:
+        """Get TTL in milliseconds asynchronously. See :meth:`pttl`."""
+        key = self.make_and_validate_key(key, version=version)
+        return self._logical_ttl(await self.adapter.apttl(key), stampede_prevention, milliseconds=True)
 
     def type(self, key: str, version: int | None = None) -> KeyType | None:
         """Get the Redis data type of a key."""
@@ -688,94 +876,143 @@ class RespCache(BaseCachex):
         key: str,
         timeout: int | timedelta,
         version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
-        """Set expiry time on a key in seconds."""
+        """Set expiry time on a key in seconds.
+
+        ``timeout`` is a *logical* timeout, exactly like the one ``set()``
+        and ``touch()`` take: with stampede prevention active the stampede
+        buffer is added on top before it reaches the server. Passing the
+        raw TTL instead would put the key permanently below the buffer,
+        making every later ``get()`` return ``None``. Pass
+        ``stampede_prevention=False`` to set the raw TTL.
+        """
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.expire(key, timeout)
+        return self.adapter.expire(key, self._buffered_timeout(timeout, stampede_prevention))
 
     async def aexpire(
         self,
         key: str,
         timeout: int | timedelta,
         version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
-        """Set expiry time on a key in seconds asynchronously."""
+        """Set expiry time on a key in seconds asynchronously. See :meth:`expire`."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.aexpire(key, timeout)
+        return await self.adapter.aexpire(key, self._buffered_timeout(timeout, stampede_prevention))
 
     def expireat(
         self,
         key: str,
         when: int | datetime,
         version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
-        """Set expiry to an absolute time."""
+        """Set expiry to an absolute time.
+
+        With stampede prevention active the stampede buffer is added to
+        ``when``, so the logical deadline is the one the caller asked for.
+        See :meth:`expire`.
+        """
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.expireat(key, when)
+        return self.adapter.expireat(key, self._buffered_when(when, stampede_prevention))
 
     async def aexpireat(
         self,
         key: str,
         when: int | datetime,
         version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
-        """Set expiry to an absolute time asynchronously."""
+        """Set expiry to an absolute time asynchronously. See :meth:`expireat`."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.aexpireat(key, when)
+        return await self.adapter.aexpireat(key, self._buffered_when(when, stampede_prevention))
 
     def pexpire(
         self,
         key: str,
         timeout: int | timedelta,
         version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
-        """Set expiry time on a key in milliseconds."""
+        """Set expiry time on a key in milliseconds. See :meth:`expire`."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.pexpire(key, timeout)
+        return self.adapter.pexpire(key, self._buffered_timeout(timeout, stampede_prevention, milliseconds=True))
 
     async def apexpire(
         self,
         key: str,
         timeout: int | timedelta,
         version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
-        """Set expiry time on a key in milliseconds asynchronously."""
+        """Set expiry time on a key in milliseconds asynchronously. See :meth:`expire`."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.apexpire(key, timeout)
+        return await self.adapter.apexpire(
+            key,
+            self._buffered_timeout(timeout, stampede_prevention, milliseconds=True),
+        )
 
     def pexpireat(
         self,
         key: str,
         when: int | datetime,
         version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
-        """Set expiry to an absolute time with millisecond precision."""
+        """Set expiry to an absolute time with millisecond precision. See :meth:`expireat`."""
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.pexpireat(key, when)
+        return self.adapter.pexpireat(key, self._buffered_when(when, stampede_prevention, milliseconds=True))
 
     async def apexpireat(
         self,
         key: str,
         when: int | datetime,
         version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
         """Set expiry to an absolute time with millisecond precision asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.apexpireat(key, when)
+        return await self.adapter.apexpireat(
+            key,
+            self._buffered_when(when, stampede_prevention, milliseconds=True),
+        )
 
-    def expiretime(self, key: str, version: int | None = None) -> int | None:
+    def expiretime(
+        self,
+        key: str,
+        version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
+    ) -> int | None:
         """Get the absolute Unix timestamp (seconds) when a key will expire.
 
         Returns None if the key has no expiry, -2 if the key doesn't exist.
-        Requires Redis 7.0+ / Valkey 7.2+.
+        Requires Redis 7.0+ / Valkey 7.2+. With stampede prevention active
+        the stampede buffer is subtracted, so the reported deadline is the
+        logical one. See :meth:`ttl`.
         """
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.expiretime(key)
+        return self._logical_ttl(self.adapter.expiretime(key), stampede_prevention)
 
-    async def aexpiretime(self, key: str, version: int | None = None) -> int | None:
+    async def aexpiretime(
+        self,
+        key: str,
+        version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
+    ) -> int | None:
         """Get the absolute Unix timestamp (seconds) when a key will expire asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.aexpiretime(key)
+        return self._logical_ttl(await self.adapter.aexpiretime(key), stampede_prevention)
 
     def keys(
         self,
@@ -937,6 +1174,12 @@ class RespCache(BaseCachex):
     ) -> Any:
         """Return a weighted semaphore backed by Lua scripts on the RESP server.
 
+        ``lease`` is required (seconds, positive) even though the signature
+        defaults it to ``None``: a semaphore claim is only ever reclaimed by
+        its lease expiring, so a holder that crashes without a lease would
+        hold budget forever. The default exists to match the backend-agnostic
+        signature on :class:`~django_cachex.cache.base.BaseCachex`.
+
         Cluster mode is supported: the three Redis keys per semaphore name
         all carry a ``{name}`` hash tag so they colocate on one slot, which
         is what cluster requires for atomic multi-key Lua. The returned
@@ -944,8 +1187,25 @@ class RespCache(BaseCachex):
         sync/async methods (``acquire``/``aacquire``, ``release``/``arelease``,
         ``extend``/``aextend``), so the same instance works from sync or async
         code.
+
+        Those hash-tagged keys sit *outside* this cache's namespace: they are
+        ``{prefix:version:name}:state`` / ``:claims`` / ``:queue``, so they
+        start with ``{`` and match neither ``clear()``'s ``prefix:version:*``
+        pattern nor :meth:`keys` / :meth:`clear_all_versions`. Semaphore state
+        therefore survives ``cache.clear()`` and does not show up in the admin
+        key browser. That is deliberate: the hash tag has to wrap the whole
+        key for cluster colocation. Delete the three keys explicitly if you
+        need to reset a semaphore.
         """
         from django_cachex.semaphore import RespSemaphore
+
+        if lease is None or lease <= 0:
+            msg = (
+                "semaphore() requires a positive 'lease' in seconds on RESP backends, "
+                "since a claim is only reclaimed when its lease expires. "
+                "For example: cache.semaphore('image-convert', capacity=4, lease=60)"
+            )
+            raise ValueError(msg)
 
         full_key = self.make_and_validate_key(key, version=version)
         return RespSemaphore(
@@ -994,11 +1254,7 @@ class RespCache(BaseCachex):
 
         v = version if version is not None else self.version
         pipeline_adapter = self.adapter.pipeline(transaction=transaction)
-        pipe = Pipeline(cache=self, pipeline_adapter=pipeline_adapter, version=v)
-        # Set key_func for proper key prefixing
-        pipe._key_func = self.make_and_validate_key
-        pipe._cache_version = v
-        return pipe
+        return Pipeline(cache=self, pipeline_adapter=pipeline_adapter, version=v)
 
     async def apipeline(
         self,
@@ -1019,10 +1275,7 @@ class RespCache(BaseCachex):
 
         v = version if version is not None else self.version
         pipeline_adapter = await self.adapter.apipeline(transaction=transaction)
-        pipe = AsyncPipeline(cache=self, pipeline_adapter=pipeline_adapter, version=v)
-        pipe._key_func = self.make_and_validate_key
-        pipe._cache_version = v
-        return pipe
+        return AsyncPipeline(cache=self, pipeline_adapter=pipeline_adapter, version=v)
 
     # =========================================================================
     # Destructive Operations
@@ -1157,7 +1410,16 @@ class RespCache(BaseCachex):
         amount: float = 1.0,
         version: int | None = None,
     ) -> float:
-        """Increment float value of field in hash by amount."""
+        """Increment float value of field in hash by amount.
+
+        Works on a field that is absent or was written by
+        ``hincrbyfloat``/``hincrby``, and the result reads back correctly
+        through :meth:`hget`/:meth:`hgetall`/:meth:`hvals`. It does *not*
+        work on a float written by :meth:`hset`, which serializes it (see
+        :meth:`encode`); the server rejects that with "hash value is not
+        a float". :class:`~django_cachex.cache.locmem.LocMemCache` stores
+        values natively and has no such restriction.
+        """
         key = self.make_and_validate_key(key, version=version)
         return self.adapter.hincrbyfloat(key, field, amount)
 
@@ -1276,7 +1538,11 @@ class RespCache(BaseCachex):
         amount: float = 1.0,
         version: int | None = None,
     ) -> float:
-        """Increment float value of field in hash by amount asynchronously."""
+        """Increment float value of field in hash by amount asynchronously.
+
+        Same restriction as :meth:`hincrbyfloat`: the field must be absent
+        or hold a bare numeric string, not an ``hset``-serialized float.
+        """
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.ahincrbyfloat(key, field, amount)
 
@@ -1716,9 +1982,17 @@ class RespCache(BaseCachex):
         *members: Any,
         version: int | None = None,
     ) -> int:
-        """Add members to a set."""
+        """Add members to a set.
+
+        Members must be hashable: every reader (:meth:`smembers`,
+        :meth:`sdiff`, :meth:`sinter`, :meth:`sunion`, :meth:`spop`,
+        :meth:`sscan`) returns a Python ``set``, matching the unordered,
+        deduplicated semantics of a Redis set. Unhashable members are
+        rejected here rather than at read time, where a single bad member
+        would raise ``TypeError`` and take down the whole key.
+        """
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.sadd(key, *(self.encode(m) for m in members))
+        return self.adapter.sadd(key, *(self.encode(_check_hashable(m)) for m in members))
 
     def scard(self, key: str, version: int | None = None) -> int:
         """Get the number of members in a set."""
@@ -1904,7 +2178,14 @@ class RespCache(BaseCachex):
         count: int | None = None,
         version: int | None = None,
     ) -> tuple[int, _set[Any]]:
-        """Incrementally iterate over set members."""
+        """Incrementally iterate over set members.
+
+        ``match`` is applied by the server to the *stored* member bytes,
+        which :meth:`sadd` wrote through the configured serializer. With
+        anything other than an identity serializer a glob like
+        ``"user:*"`` is matched against pickle bytes and never hits, so
+        the parameter is only useful when members are stored verbatim.
+        """
         key = self.make_and_validate_key(key, version=version)
         new_cursor, members = self.adapter.sscan(key, cursor=cursor, match=match, count=count)
         return (new_cursor, {self.decode(m) for m in members})
@@ -1916,7 +2197,12 @@ class RespCache(BaseCachex):
         count: int | None = None,
         version: int | None = None,
     ) -> Iterator[Any]:
-        """Iterate over set members using SSCAN."""
+        """Iterate over set members using SSCAN.
+
+        ``match`` is server-side and runs against the serialized member
+        bytes, so it is unusable with a non-identity serializer. See
+        :meth:`sscan`.
+        """
         key = self.make_and_validate_key(key, version=version)
         for member in self.adapter.sscan_iter(key, match=match, count=count):
             yield self.decode(member)
@@ -1927,9 +2213,9 @@ class RespCache(BaseCachex):
         *members: Any,
         version: int | None = None,
     ) -> int:
-        """Add members to a set asynchronously."""
+        """Add members to a set asynchronously. Members must be hashable, see :meth:`sadd`."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.asadd(key, *(self.encode(m) for m in members))
+        return await self.adapter.asadd(key, *(self.encode(_check_hashable(m)) for m in members))
 
     async def ascard(self, key: str, version: int | None = None) -> int:
         """Get the number of members in a set asynchronously."""
@@ -2107,7 +2393,12 @@ class RespCache(BaseCachex):
         count: int | None = None,
         version: int | None = None,
     ) -> tuple[int, _set[Any]]:
-        """Incrementally iterate over set members asynchronously."""
+        """Incrementally iterate over set members asynchronously.
+
+        ``match`` is server-side and runs against the serialized member
+        bytes, so it is unusable with a non-identity serializer. See
+        :meth:`sscan`.
+        """
         key = self.make_and_validate_key(key, version=version)
         new_cursor, members = await self.adapter.asscan(key, cursor=cursor, match=match, count=count)
         return (new_cursor, {self.decode(m) for m in members})
@@ -2119,7 +2410,12 @@ class RespCache(BaseCachex):
         count: int | None = None,
         version: int | None = None,
     ) -> AsyncIterator[Any]:
-        """Iterate over set members using SSCAN asynchronously."""
+        """Iterate over set members using SSCAN asynchronously.
+
+        ``match`` is server-side and runs against the serialized member
+        bytes, so it is unusable with a non-identity serializer. See
+        :meth:`sscan`.
+        """
         key = self.make_and_validate_key(key, version=version)
         async for member in self.adapter.asscan_iter(key, match=match, count=count):
             yield self.decode(member)
@@ -3280,19 +3576,23 @@ class RespClusterCache(RespCache):
         """Cluster mode can't ``RENAME`` across slots.
 
         ``KEY_PREFIX:V:key`` and ``KEY_PREFIX:V+1:key`` only land in the
-        same slot when the user-supplied ``key`` includes a hash tag
-        (``{...}`` segment) that excludes the version. Without one the
-        rename hits CROSSSLOT. Reject up front instead of leaving users
-        with a runtime cluster error and a half-renamed state.
+        same slot when the *made* key includes a hash tag (``{...}``
+        segment) that excludes the version. Without one the rename hits
+        CROSSSLOT. Reject up front instead of leaving users with a runtime
+        cluster error and a half-renamed state.
+
+        The made key is what gets checked, not the raw one, so a
+        ``KEY_PREFIX`` of ``"{app}"`` colocates every key it produces and
+        works here just as well as a ``{...}`` inside the key itself.
         """
-        if not _has_hash_tag(key):
+        if not _has_hash_tag(self.make_and_validate_key(key, version=version)):
             raise NotSupportedError("incr_version (without hash tag)", backend="cluster")
         return super().incr_version(key, delta, version)
 
     @override
     async def aincr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
         """See :meth:`incr_version`, same hash-tag requirement."""
-        if not _has_hash_tag(key):
+        if not _has_hash_tag(self.make_and_validate_key(key, version=version)):
             raise NotSupportedError("aincr_version (without hash tag)", backend="cluster")
         return await super().aincr_version(key, delta, version)
 

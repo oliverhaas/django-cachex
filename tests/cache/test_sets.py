@@ -130,6 +130,36 @@ class TestSetOperations:
         assert cache.smembers("{foo}3") == {"bar1", "bar2", "bar3"}
 
 
+class TestSetMemberHashability:
+    """sadd() rejects unhashable members instead of letting readers blow up.
+
+    Regression: every set reader collapses decoded members into a Python
+    set, so sadd("k", [1, 2]) stored fine and smembers("k") then raised
+    TypeError: unhashable type: 'list', taking the whole key with it.
+    """
+
+    @pytest.mark.parametrize("member", [[1, 2], {"a": 1}, {1, 2}, (1, [2])])
+    def test_sadd_rejects_unhashable_member(self, cache: RespCache, member):
+        with pytest.raises(TypeError, match="hashable"):
+            cache.sadd("unhashable", member)
+        assert cache.smembers("unhashable") == set()
+
+    def test_sadd_rejects_the_whole_call_on_one_bad_member(self, cache: RespCache):
+        with pytest.raises(TypeError, match="hashable"):
+            cache.sadd("partial", "ok", [1, 2])
+        assert cache.smembers("partial") == set()
+
+    def test_sadd_accepts_hashable_containers(self, cache: RespCache):
+        cache.sadd("hashable", (1, 2), frozenset({3}), None, 4, 5.5)
+        assert cache.smembers("hashable") == {(1, 2), frozenset({3}), None, 4, 5.5}
+
+    @pytest.mark.asyncio
+    async def test_asadd_rejects_unhashable_member(self, cache: RespCache):
+        with pytest.raises(TypeError, match="hashable"):
+            await cache.asadd("aunhashable", [1, 2])
+        assert cache.smembers("aunhashable") == set()
+
+
 class TestAsyncSetOperations:
     @pytest.mark.asyncio
     async def test_asadd(self, cache: RespCache):

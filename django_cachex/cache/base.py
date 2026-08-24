@@ -107,8 +107,13 @@ class BaseCachex(BaseCache):
         raise NotSupportedError("pttl", self.__class__.__name__)
 
     def type(self, key: str, version: int | None = None) -> KeyType | None:
-        """Get the data type of a key."""
-        return KeyType.STRING
+        """Get the data type of a key.
+
+        Backends with no data structures beyond opaque values report every
+        live key as ``STRING`` and a missing key as ``None``, matching Redis
+        ``TYPE``.
+        """
+        return KeyType.STRING if self.has_key(key, version=version) else None
 
     def persist(self, key: str, version: int | None = None) -> bool:
         """Remove the TTL from a key."""
@@ -143,8 +148,8 @@ class BaseCachex(BaseCache):
         raise NotSupportedError("apttl", self.__class__.__name__)
 
     async def atype(self, key: str, version: int | None = None) -> KeyType | None:
-        """Async: get the data type of a key."""
-        raise NotSupportedError("atype", self.__class__.__name__)
+        """Async: get the data type of a key. See :meth:`type`."""
+        return KeyType.STRING if await self.ahas_key(key, version=version) else None
 
     async def apersist(self, key: str, version: int | None = None) -> bool:
         """Async: remove the TTL from a key."""
@@ -195,13 +200,17 @@ class BaseCachex(BaseCache):
         version: int | None = None,
         key_type: str | None = None,
     ) -> tuple[int, list[str]]:
-        """Perform a single SCAN iteration using cursor-based pagination."""
-        all_keys = self.keys(pattern, version=version)
-        if hasattr(all_keys, "sort"):
-            all_keys.sort()
-        else:
-            all_keys = sorted(all_keys)
-        count = count or 100
+        """Perform a single SCAN iteration using cursor-based pagination.
+
+        ``key_type`` filters client-side via :meth:`type`: backends reaching
+        this default have no server-side ``TYPE`` filter, and silently
+        ignoring the argument would make the admin's type filter a no-op.
+        """
+        all_keys = sorted(self.keys(pattern, version=version))
+        if key_type is not None:
+            all_keys = [k for k in all_keys if self.type(k, version=version) == key_type]
+        if count is None:
+            count = 100
         start_idx = cursor
         end_idx = start_idx + count
         paginated_keys = all_keys[start_idx:end_idx]

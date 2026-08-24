@@ -12,6 +12,7 @@ import pytest
 
 from django_cachex.cache.base import BaseCachex
 from django_cachex.exceptions import NotSupportedError
+from django_cachex.types import KeyType
 
 UNSUPPORTED_OPERATIONS = [
     ("keys", ("*",)),
@@ -96,3 +97,74 @@ class TestBaseCachexSetFlags:
     async def test_aset_with_flag_raises(self, flag: str):
         with pytest.raises(NotSupportedError):
             await self.cache.aset("k", "v", **{flag: True})
+
+
+class KeysOnlyCache(BaseCachex):
+    """Minimal ``"limited"`` backend: a dict plus ``keys()``.
+
+    Exercises the ``BaseCachex`` defaults that build on ``keys()``/``type()``
+    without pulling in a real backend.
+    """
+
+    def __init__(self, data: dict[str, object]):
+        super().__init__(params={})
+        self._data = data
+
+    def get(self, key, default=None, version=None):
+        return self._data.get(key, default)
+
+    def keys(self, pattern="*", version=None):
+        return list(self._data)
+
+
+class TestBaseCachexType:
+    """``type()``/``atype()`` agree and honor the None-for-missing contract."""
+
+    @pytest.fixture
+    def cache(self) -> KeysOnlyCache:
+        return KeysOnlyCache({"present": "v"})
+
+    def test_present_key_reports_string(self, cache: KeysOnlyCache):
+        assert cache.type("present") == KeyType.STRING
+
+    def test_missing_key_reports_none(self, cache: KeysOnlyCache):
+        # Regression: the default returned STRING for every key, including
+        # ones that don't exist, contradicting the ``KeyType | None`` return.
+        assert cache.type("absent") is None
+
+    @pytest.mark.asyncio
+    async def test_atype_matches_type(self, cache: KeysOnlyCache):
+        # Regression: the async twin raised NotSupportedError while the sync
+        # one answered.
+        assert await cache.atype("present") == KeyType.STRING
+        assert await cache.atype("absent") is None
+
+
+class TestBaseCachexScan:
+    """``scan()`` paginates ``keys()`` and applies ``key_type`` client-side."""
+
+    @pytest.fixture
+    def cache(self) -> KeysOnlyCache:
+        return KeysOnlyCache({f"k{i}": i for i in range(5)})
+
+    def test_explicit_count_zero_is_honored(self, cache: KeysOnlyCache):
+        # Regression: ``count = count or 100`` turned an explicit 0 into 100.
+        next_cursor, keys = cache.scan(count=0)
+        assert keys == []
+        assert next_cursor == 0
+
+    def test_default_count_paginates(self, cache: KeysOnlyCache):
+        next_cursor, keys = cache.scan()
+        assert keys == ["k0", "k1", "k2", "k3", "k4"]
+        assert next_cursor == 0
+
+    def test_cursor_advances(self, cache: KeysOnlyCache):
+        next_cursor, keys = cache.scan(count=2)
+        assert keys == ["k0", "k1"]
+        assert next_cursor == 2
+
+    def test_key_type_filter_is_applied(self, cache: KeysOnlyCache):
+        # Regression: ``key_type`` was accepted and ignored, so the admin's Type
+        # filter was a no-op here. Every key is opaque, so only STRING matches.
+        assert cache.scan(key_type="string")[1] == ["k0", "k1", "k2", "k3", "k4"]
+        assert cache.scan(key_type="hash")[1] == []

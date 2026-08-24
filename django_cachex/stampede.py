@@ -27,11 +27,13 @@ class StampedeConfig:
 def should_recompute(ttl: int, config: StampedeConfig) -> bool:
     """Return True when the caller should recompute the value early.
 
-    Redis ``TTL`` sentinels are filtered up front: ``-1`` (key has no
-    expire) and ``-2`` (key absent) would otherwise both flip to
-    "recompute now" because ``ttl - buffer`` is unconditionally
-    negative. ``ttl == 0`` (about-to-expire) still triggers; that's
-    the whole point of the ``buffer``.
+    ``ttl`` is a live remaining TTL in seconds. Every adapter call site
+    already gates on ``ttl > 0``, so the ``ttl <= 0`` handling below is
+    defensive only, kept because this function is importable and callable
+    on its own: ``-1`` (key has no expire) and ``-2`` (key absent) are Redis
+    ``TTL`` sentinels, not durations, and would otherwise flip to "recompute
+    now" since ``ttl - buffer`` is unconditionally negative for them.
+    ``ttl == 0`` is a real about-to-expire key and does trigger.
     """
     if ttl < 0:
         return False

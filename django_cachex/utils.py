@@ -1,5 +1,10 @@
 import sys
+from types import FunctionType, ModuleType
 from typing import Any
+
+# Walking a module's __dict__ reaches the whole import graph: one cached value
+# holding `sys` cost ~11 ms vs ~14 us, all under LocMemCache.info()'s lock.
+_OPAQUE_TYPES = (type, ModuleType, FunctionType)
 
 
 def _format_bytes(size_bytes: int) -> str:
@@ -19,6 +24,8 @@ def _deep_getsizeof(obj: Any, seen: set[int] | None = None) -> int:
         return 0
     seen.add(obj_id)
     size = sys.getsizeof(obj)
+    if isinstance(obj, _OPAQUE_TYPES):
+        return size
     if isinstance(obj, dict):
         size += sum(_deep_getsizeof(k, seen) + _deep_getsizeof(v, seen) for k, v in obj.items())
     elif isinstance(obj, (list, tuple, set, frozenset)):
