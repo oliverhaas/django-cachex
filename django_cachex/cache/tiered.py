@@ -12,7 +12,7 @@ Configuration::
 
     CACHES = {
         "l1": {
-            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "BACKEND": "django_cachex.cache.LocMemCache",
             "OPTIONS": {"MAX_ENTRIES": 1000},
         },
         "l2": {
@@ -30,6 +30,12 @@ Configuration::
 
 ``l1_timeout`` caps how long entries live in L1. If omitted, falls back
 to L1's own ``TIMEOUT`` setting.
+
+Use ``django_cachex.cache.LocMemCache`` (not Django's stock
+``django.core.cache.backends.locmem.LocMemCache``) as L1 if you ever call
+``delete_pattern``: targeted L1 invalidation needs ``delete_pattern`` or
+``iter_keys`` on L1, and an L1 with neither leaves ``clear()`` as the only
+way to keep the tiers coherent, evicting every cached entry.
 """
 
 from functools import cached_property
@@ -42,7 +48,7 @@ from django_cachex.cache.base import BaseCachex, CachexSupportLevel
 from django_cachex.exceptions import NotSupportedError
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import AsyncIterator, Iterable, Iterator
     from datetime import timedelta
 
 # Sentinel to distinguish "not in L1" from a stored None
@@ -82,28 +88,45 @@ class TieredCache(BaseCachex):
                 "own keys. Set KEY_PREFIX on the tier cache aliases instead."
             )
             raise ImproperlyConfigured(msg)
+        if tiers[0] == tiers[1]:
+            msg = f"TieredCache requires two distinct cache aliases in OPTIONS['tiers']. Got: {tiers!r}"
+            raise ImproperlyConfigured(msg)
         self._l1_alias: str = tiers[0]
         self._l2_alias: str = tiers[1]
         # L1 TTL cap: explicit option or fall back to L1's own default_timeout
         self._l1_max_timeout: float | None = options.get("l1_timeout")
 
-    @cached_property
-    def _l1(self) -> BaseCache:
+    def _resolve_tier(self, alias: str) -> BaseCache:
+        """Look up a tier by alias, rejecting a tier that is this cache itself.
+
+        The alias TieredCache is registered under isn't passed to ``__init__``,
+        so a self-referencing tier can only be caught here, on first use.
+        Resolving it would otherwise recurse until ``RecursionError``.
+        """
         from django.core.cache import caches
 
-        return caches[self._l1_alias]
+        tier = caches[alias]
+        if tier is self:
+            msg = (
+                f"TieredCache tier alias {alias!r} resolves to the TieredCache itself. "
+                f"OPTIONS['tiers'] must name two other cache aliases."
+            )
+            raise ImproperlyConfigured(msg)
+        return tier
+
+    @cached_property
+    def _l1(self) -> BaseCache:
+        return self._resolve_tier(self._l1_alias)
 
     @cached_property
     def _l2(self) -> BaseCachex:
-        from django.core.cache import caches
-
         # Cast the ``BaseCache``-typed registry entry to the cachex shape;
         # cachex-only APIs still guard at runtime, so a stock L2 works.
-        return cast("BaseCachex", caches[self._l2_alias])
+        return cast("BaseCachex", self._resolve_tier(self._l2_alias))
 
     @property
     def _l1_cap(self) -> float | None:
-        """L1 TTL cap: explicit L1_TIMEOUT option, or L1's own default_timeout."""
+        """L1 TTL cap: explicit ``l1_timeout`` option, or L1's own default_timeout."""
         cap = self._l1_max_timeout
         return cap if cap is not None else self._l1.default_timeout
 
@@ -232,14 +255,14 @@ class TieredCache(BaseCachex):
         return val
 
     async def aget(self, key: str, default: Any = None, version: int | None = None) -> Any:
-        val = self._l1.get(key, _L1_MISS, version=version)
+        val = await self._l1.aget(key, _L1_MISS, version=version)
         if val is not _L1_MISS:
             return val
         val = await self._l2.aget(key, _L1_MISS, version=version)
         if val is _L1_MISS:
             return default
         l2_ttl = await self._aget_l2_ttl(key, version=version)
-        self._l1.set(key, val, self._l1_timeout(l2_ttl), version=version)
+        await self._l1.aset(key, val, self._l1_timeout(l2_ttl), version=version)
         return val
 
     @staticmethod
@@ -289,6 +312,24 @@ class TieredCache(BaseCachex):
             self._l1.delete(key, version=version)
         elif self._l2_write_happened(result, nx=nx, xx=xx, get=get):
             self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
+
+    async def _async_l1_after_set(
+        self,
+        key: str,
+        value: Any,
+        timeout: float | None,
+        version: int | None,
+        result: Any,
+        *,
+        nx: bool,
+        xx: bool,
+        get: bool,
+    ) -> None:
+        """Async twin of :meth:`_sync_l1_after_set`."""
+        if get and (nx or xx) and result is None:
+            await self._l1.adelete(key, version=version)
+        elif self._l2_write_happened(result, nx=nx, xx=xx, get=get):
+            await self._l1.aset(key, value, self._l1_timeout_for_set(timeout), version=version)
 
     def _l2_set(
         self,
@@ -365,7 +406,7 @@ class TieredCache(BaseCachex):
         get: bool = False,
     ) -> Any:
         result = await self._al2_set(key, value, timeout, version, nx=nx, xx=xx, get=get)
-        self._sync_l1_after_set(key, value, timeout, version, result, nx=nx, xx=xx, get=get)
+        await self._async_l1_after_set(key, value, timeout, version, result, nx=nx, xx=xx, get=get)
         return result
 
     def add(
@@ -389,16 +430,21 @@ class TieredCache(BaseCachex):
     ) -> bool:
         result = await self._l2.aadd(key, value, timeout, version=version)
         if result:
-            self._l1.set(key, value, self._l1_timeout_for_set(timeout), version=version)
+            await self._l1.aset(key, value, self._l1_timeout_for_set(timeout), version=version)
         return result
 
+    # Mutate L2 before invalidating L1: the other order lets a concurrent read
+    # repopulate L1 from the pre-mutation L2 value.
+
     def delete(self, key: str, version: int | None = None) -> bool:
+        result = self._l2.delete(key, version=version)
         self._l1.delete(key, version=version)
-        return self._l2.delete(key, version=version)
+        return result
 
     async def adelete(self, key: str, version: int | None = None) -> bool:
-        self._l1.delete(key, version=version)
-        return await self._l2.adelete(key, version=version)
+        result = await self._l2.adelete(key, version=version)
+        await self._l1.adelete(key, version=version)
+        return result
 
     def get_many(self, keys: Iterable[str], version: int | None = None) -> dict[str, Any]:
         l1_results: dict[str, Any] = {}
@@ -422,7 +468,7 @@ class TieredCache(BaseCachex):
         l1_results: dict[str, Any] = {}
         missed_keys: list[str] = []
         for key in keys:
-            val = self._l1.get(key, _L1_MISS, version=version)
+            val = await self._l1.aget(key, _L1_MISS, version=version)
             if val is not _L1_MISS:
                 l1_results[key] = val
             else:
@@ -432,7 +478,7 @@ class TieredCache(BaseCachex):
         l2_results = await self._l2.aget_many(missed_keys, version=version)
         l2_ttls = await self._aget_l2_ttls(list(l2_results), version=version)
         for key, val in l2_results.items():
-            self._l1.set(key, val, self._l1_timeout(l2_ttls.get(key)), version=version)
+            await self._l1.aset(key, val, self._l1_timeout(l2_ttls.get(key)), version=version)
         l1_results.update(l2_results)
         return l1_results
 
@@ -464,23 +510,25 @@ class TieredCache(BaseCachex):
         l1_timeout = self._l1_timeout_for_set(timeout)
         for key, value in data.items():
             if key not in failed:
-                self._l1.set(key, value, l1_timeout, version=version)
+                await self._l1.aset(key, value, l1_timeout, version=version)
         return result
 
     # Django's ``BaseCache.delete_many``/``clear`` return ``None``; ``RespCache``
-    # extends both to return ``int`` / ``bool``. Coerce so the contract holds
-    # whatever L2 happens to be (cachex backend or stock Django).
+    # extends both to return ``int`` / ``bool``. A stock-Django ``None`` means
+    # "done", not "failed", so it maps to success here rather than 0 / False.
     def delete_many(self, keys: Iterable[str], version: int | None = None) -> int:  # type: ignore[override]
         keys = list(keys)
+        result: Any = self._l2.delete_many(keys, version=version)  # type: ignore[func-returns-value]
         for key in keys:
             self._l1.delete(key, version=version)
-        return self._l2.delete_many(keys, version=version) or 0  # type: ignore[func-returns-value]
+        return len(keys) if result is None else result
 
     async def adelete_many(self, keys: Iterable[str], version: int | None = None) -> int:  # type: ignore[override]
         keys = list(keys)
+        result: Any = await self._l2.adelete_many(keys, version=version)  # type: ignore[func-returns-value]
         for key in keys:
-            self._l1.delete(key, version=version)
-        return await self._l2.adelete_many(keys, version=version) or 0  # type: ignore[func-returns-value]
+            await self._l1.adelete(key, version=version)
+        return len(keys) if result is None else result
 
     def has_key(self, key: str, version: int | None = None) -> bool:
         if self._l1.has_key(key, version=version):
@@ -488,25 +536,29 @@ class TieredCache(BaseCachex):
         return self._l2.has_key(key, version=version)
 
     async def ahas_key(self, key: str, version: int | None = None) -> bool:
-        if self._l1.has_key(key, version=version):
+        if await self._l1.ahas_key(key, version=version):
             return True
         return await self._l2.ahas_key(key, version=version)
 
     def incr(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        result = self._l2.incr(key, delta, version=version)
         self._l1.delete(key, version=version)
-        return self._l2.incr(key, delta, version=version)
+        return result
 
     async def aincr(self, key: str, delta: int = 1, version: int | None = None) -> int:
-        self._l1.delete(key, version=version)
-        return await self._l2.aincr(key, delta, version=version)
+        result = await self._l2.aincr(key, delta, version=version)
+        await self._l1.adelete(key, version=version)
+        return result
 
     def decr(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        result = self._l2.decr(key, delta, version=version)
         self._l1.delete(key, version=version)
-        return self._l2.decr(key, delta, version=version)
+        return result
 
     async def adecr(self, key: str, delta: int = 1, version: int | None = None) -> int:
-        self._l1.delete(key, version=version)
-        return await self._l2.adecr(key, delta, version=version)
+        result = await self._l2.adecr(key, delta, version=version)
+        await self._l1.adelete(key, version=version)
+        return result
 
     def touch(self, key: str, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
         result = self._l2.touch(key, timeout, version=version)
@@ -517,37 +569,86 @@ class TieredCache(BaseCachex):
     async def atouch(self, key: str, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
         result = await self._l2.atouch(key, timeout, version=version)
         if result:
-            self._l1.touch(key, self._l1_timeout_for_set(timeout), version=version)
+            await self._l1.atouch(key, self._l1_timeout_for_set(timeout), version=version)
         return result
 
     def clear(self) -> bool:  # type: ignore[override]
+        result: Any = self._l2.clear()  # type: ignore[func-returns-value]
         self._l1.clear()
-        return bool(self._l2.clear())  # type: ignore[func-returns-value]
+        return True if result is None else bool(result)
 
     async def aclear(self) -> bool:  # type: ignore[override]
-        self._l1.clear()
-        return bool(await self._l2.aclear())  # type: ignore[func-returns-value]
+        result: Any = await self._l2.aclear()  # type: ignore[func-returns-value]
+        await self._l1.aclear()
+        return True if result is None else bool(result)
+
+    def _resolved_tiers(self) -> list[BaseCache]:
+        """Tiers already resolved by :meth:`_resolve_tier`.
+
+        Closing must not resolve a tier that was never used: building it can
+        fail (a misconfigured alias) and there is nothing of ours to close.
+        """
+        return [tier for tier in (self.__dict__.get("_l1"), self.__dict__.get("_l2")) if tier is not None]
 
     def close(self, **kwargs: Any) -> None:
-        self._l1.close(**kwargs)
-        self._l2.close(**kwargs)
+        for tier in self._resolved_tiers():
+            tier.close(**kwargs)
 
     async def aclose(self, **kwargs: Any) -> None:
-        await self._l1.aclose(**kwargs)
-        await self._l2.aclose(**kwargs)
+        for tier in self._resolved_tiers():
+            await tier.aclose(**kwargs)
 
     # =========================================================================
     # Admin delegation methods (delegate to L2)
     # =========================================================================
 
-    def _delegate(self, method: str, *args: Any, **kwargs: Any) -> Any:
-        """Delegate a method call to L2, raising NotSupportedError if unavailable."""
+    def _l2_method(self, method: str) -> Any:
+        """Look up ``method`` on L2, raising NotSupportedError if it has none."""
         fn = getattr(self._l2, method, None)
         if fn is None:
             raise NotSupportedError(method, "TieredCache")
+        return fn
+
+    def _delegate(self, method: str, *args: Any, **kwargs: Any) -> Any:
+        """Delegate a method call to L2, raising NotSupportedError if unavailable.
+
+        Only the attribute lookup and an explicit ``NotSupportedError`` from L2
+        are translated; an ``AttributeError`` raised inside L2's implementation
+        is a bug there and propagates unchanged.
+        """
+        fn = self._l2_method(method)
         try:
             return fn(*args, **kwargs)
-        except (AttributeError, NotSupportedError) as exc:
+        except NotSupportedError as exc:
+            raise NotSupportedError(method, "TieredCache") from exc
+
+    async def _adelegate(self, method: str, *args: Any, **kwargs: Any) -> Any:
+        """Async twin of :meth:`_delegate`."""
+        fn = self._l2_method(method)
+        try:
+            return await fn(*args, **kwargs)
+        except NotSupportedError as exc:
+            raise NotSupportedError(method, "TieredCache") from exc
+
+    @staticmethod
+    def _wrap_iter(method: str, it: Iterator[str]) -> Iterator[str]:
+        """Re-raise a lazily surfaced NotSupportedError as TieredCache's.
+
+        A generator function returns without running its body, so L2's
+        ``NotSupportedError`` escapes :meth:`_delegate` at iteration time.
+        """
+        try:
+            yield from it
+        except NotSupportedError as exc:
+            raise NotSupportedError(method, "TieredCache") from exc
+
+    @staticmethod
+    async def _awrap_iter(method: str, it: AsyncIterator[str]) -> AsyncIterator[str]:
+        """Async twin of :meth:`_wrap_iter`."""
+        try:
+            async for key in it:
+                yield key
+        except NotSupportedError as exc:
             raise NotSupportedError(method, "TieredCache") from exc
 
     def make_key(self, key: str, version: int | None = None) -> str:
@@ -568,7 +669,7 @@ class TieredCache(BaseCachex):
         version: int | None = None,
         itersize: int | None = None,
     ) -> Iterator[str]:
-        return self._delegate("iter_keys", pattern, version=version, itersize=itersize)
+        return self._wrap_iter("iter_keys", self._delegate("iter_keys", pattern, version=version, itersize=itersize))
 
     def scan(
         self,
@@ -603,8 +704,9 @@ class TieredCache(BaseCachex):
         return self._delegate("persist", key, version=version)
 
     def expire(self, key: str, timeout: int | timedelta, version: int | None = None) -> bool:
+        result = self._delegate("expire", key, timeout, version=version)
         self._l1.delete(key, version=version)
-        return self._delegate("expire", key, timeout, version=version)
+        return result
 
     def delete_pattern(
         self,
@@ -616,8 +718,9 @@ class TieredCache(BaseCachex):
         # footgun (a single ``delete_pattern("user:42:*")`` would evict every
         # cached entry). Prefer L1.delete_pattern; fall back to iter_keys +
         # delete; clear() only as the last resort if L1 supports neither.
+        result = self._delegate("delete_pattern", pattern, version=version, itersize=itersize)
         self._invalidate_l1_by_pattern(pattern, version=version)
-        return self._delegate("delete_pattern", pattern, version=version, itersize=itersize)
+        return result
 
     def _invalidate_l1_by_pattern(self, pattern: str, version: int | None) -> None:
         """Remove L1 entries matching ``pattern`` without clearing the whole cache."""
@@ -650,6 +753,97 @@ class TieredCache(BaseCachex):
         for k in keys:
             self._l1.delete(k, version=version)
         return True
+
+    async def _ainvalidate_l1_by_pattern(self, pattern: str, version: int | None) -> None:
+        """Async twin of :meth:`_invalidate_l1_by_pattern`."""
+        l1_delete_pattern = getattr(self._l1, "adelete_pattern", None)
+        if callable(l1_delete_pattern):
+            try:
+                await l1_delete_pattern(pattern, version=version)
+                return
+            except NotSupportedError:
+                pass
+        if await self._al1_targeted_delete(pattern, version=version):
+            return
+        # Last resort: L1 supports neither adelete_pattern nor aiter_keys.
+        await self._l1.aclear()
+
+    async def _al1_targeted_delete(self, pattern: str, version: int | None) -> bool:
+        """Async twin of :meth:`_l1_targeted_delete`."""
+        aiter_keys = getattr(self._l1, "aiter_keys", None)
+        if not callable(aiter_keys):
+            return False
+        try:
+            keys = [k async for k in aiter_keys(pattern, version=version)]
+        except NotSupportedError:
+            return False
+        for k in keys:
+            await self._l1.adelete(k, version=version)
+        return True
+
+    async def akeys(self, pattern: str = "*", version: int | None = None) -> list[str]:
+        return await self._adelegate("akeys", pattern, version=version)
+
+    def aiter_keys(
+        self,
+        pattern: str = "*",
+        version: int | None = None,
+        itersize: int | None = None,
+    ) -> AsyncIterator[str]:
+        # Not ``async def``: L2's ``aiter_keys`` is itself a plain method
+        # returning an async iterator, matching ``BaseCachex``.
+        fn = self._l2_method("aiter_keys")
+        try:
+            it = fn(pattern, version=version, itersize=itersize)
+        except NotSupportedError as exc:
+            raise NotSupportedError("aiter_keys", "TieredCache") from exc
+        return self._awrap_iter("aiter_keys", it)
+
+    async def ascan(
+        self,
+        cursor: int = 0,
+        pattern: str = "*",
+        count: int | None = None,
+        version: int | None = None,
+        key_type: str | None = None,
+    ) -> tuple[int, list[str]]:
+        return await self._adelegate(
+            "ascan",
+            cursor=cursor,
+            pattern=pattern,
+            count=count,
+            version=version,
+            key_type=key_type,
+        )
+
+    async def attl(self, key: str, version: int | None = None) -> int | None:
+        return await self._adelegate("attl", key, version=version)
+
+    async def apttl(self, key: str, version: int | None = None) -> int | None:
+        return await self._adelegate("apttl", key, version=version)
+
+    async def atype(self, key: str, version: int | None = None) -> Any:
+        return await self._adelegate("atype", key, version=version)
+
+    async def apersist(self, key: str, version: int | None = None) -> bool:
+        return await self._adelegate("apersist", key, version=version)
+
+    async def aexpire(self, key: str, timeout: int | timedelta, version: int | None = None) -> bool:
+        result = await self._adelegate("aexpire", key, timeout, version=version)
+        await self._l1.adelete(key, version=version)
+        return result
+
+    async def adelete_pattern(
+        self,
+        pattern: str,
+        version: int | None = None,
+        itersize: int | None = None,
+    ) -> int:
+        # See :meth:`delete_pattern` for why L1 is invalidated by pattern
+        # rather than cleared.
+        result = await self._adelegate("adelete_pattern", pattern, version=version, itersize=itersize)
+        await self._ainvalidate_l1_by_pattern(pattern, version=version)
+        return result
 
 
 __all__ = [

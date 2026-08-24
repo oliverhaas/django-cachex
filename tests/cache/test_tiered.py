@@ -1,12 +1,14 @@
 """Tests for two-tiered cache (L1 in-process + L2 Redis/Valkey)."""
 
+import asyncio
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from django.core.cache import caches
 from django.core.cache.backends.base import DEFAULT_TIMEOUT
-from django.core.exceptions import ImproperlyConfigured
+from django.core.cache.backends.locmem import LocMemCache as DjangoLocMemCache
+from django.core.exceptions import ImproperlyConfigured, SynchronousOnlyOperation
 from django.test import override_settings
 
 from django_cachex.exceptions import NotSupportedError
@@ -19,6 +21,48 @@ if TYPE_CHECKING:
     from django.core.cache.backends.base import BaseCache
 
     from tests.fixtures.containers import RedisContainerInfo
+
+
+class AsyncGuardL1(DjangoLocMemCache):
+    """L1 stand-in that rejects sync calls made on the event loop thread.
+
+    Stands in for a DB-backed L1 (raises ``SynchronousOnlyOperation``) or a
+    network-backed one (silently blocks the loop). Its ``a*`` methods are
+    Django's, which hop to a worker thread, so an async caller passes.
+    """
+
+    @staticmethod
+    def _guard(method: str) -> None:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        msg = f"L1.{method}() was called synchronously from the event loop thread"
+        raise SynchronousOnlyOperation(msg)
+
+    def get(self, key: str, default: Any = None, version: int | None = None) -> Any:
+        self._guard("get")
+        return super().get(key, default, version)
+
+    def set(self, key: str, value: Any, timeout: Any = DEFAULT_TIMEOUT, version: int | None = None) -> None:
+        self._guard("set")
+        super().set(key, value, timeout, version)
+
+    def delete(self, key: str, version: int | None = None) -> bool:
+        self._guard("delete")
+        return super().delete(key, version)
+
+    def has_key(self, key: str, version: int | None = None) -> bool:
+        self._guard("has_key")
+        return super().has_key(key, version)
+
+    def touch(self, key: str, timeout: Any = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
+        self._guard("touch")
+        return super().touch(key, timeout, version)
+
+    def clear(self) -> None:
+        self._guard("clear")
+        super().clear()
 
 
 class TestTieredL2WriteDetection:
@@ -747,3 +791,258 @@ class TestTieredAsync:
         result = await tiered_cache.aget_many(["agm1", "agm2"])
         assert result == {"agm1": "a", "agm2": "b"}
         assert l1.get("agm2") == "b"
+
+
+@pytest.mark.asyncio
+class TestTieredAsyncAdminDelegation:
+    """The admin surface has async twins that delegate to L2.
+
+    Regression: none of them were overridden, so ``BaseCachex``'s
+    ``NotSupportedError`` stubs won even though every sync twin delegated fine,
+    leaving async code unable to invalidate through ``aexpire`` /
+    ``adelete_pattern``.
+    """
+
+    async def test_attl_and_apttl(self, tiered_cache: BaseCache):
+        await tiered_cache.aset("aadmin", "v", timeout=100)
+        assert await tiered_cache.attl("aadmin") > 0
+        assert await tiered_cache.apttl("aadmin") > 0
+
+    async def test_atype(self, tiered_cache: BaseCache):
+        await tiered_cache.aset("aadmin", "v")
+        assert await tiered_cache.atype("aadmin") is not None
+
+    async def test_apersist_and_aexpire(self, tiered_cache: BaseCache):
+        await tiered_cache.aset("aadmin", "v", timeout=100)
+        assert await tiered_cache.apersist("aadmin") is True
+        assert await tiered_cache.attl("aadmin") is None  # no expiry
+        assert await tiered_cache.aexpire("aadmin", 100) is True
+        assert await tiered_cache.attl("aadmin") > 0
+
+    async def test_aexpire_evicts_l1(self, tiered_cache: BaseCache):
+        await tiered_cache.aset("aexp", "v")
+        assert caches["l1"].get("aexp") == "v"
+        await tiered_cache.aexpire("aexp", 100)
+        assert caches["l1"].get("aexp") is None
+
+    async def test_akeys_and_aiter_keys(self, tiered_cache: BaseCache):
+        await tiered_cache.aset("akeys:1", "v")
+        assert "akeys:1" in await tiered_cache.akeys("akeys:*")
+        assert [k async for k in tiered_cache.aiter_keys("akeys:*")] == ["akeys:1"]
+
+    async def test_ascan(self, tiered_cache: BaseCache):
+        await tiered_cache.aset("ascan:1", "v")
+        _cursor, keys = await tiered_cache.ascan(pattern="ascan:*")
+        assert "ascan:1" in keys
+
+    async def test_adelete_pattern_invalidates_l1(self, tiered_cache: BaseCache):
+        await tiered_cache.aset_many({"adp:1": "a", "keep": "b"})
+        assert await tiered_cache.adelete_pattern("adp:*") == 1
+        assert await tiered_cache.aget("adp:1") is None
+        assert caches["l1"].get("adp:1") is None
+        assert caches["l1"].get("keep") == "b"
+
+
+class TestTieredNonRespL2:
+    """A stock (non-RESP) L2 returns ``None`` from ``clear``/``delete_many``,
+    which means success, not failure."""
+
+    @pytest.fixture
+    def locmem_tiered(self) -> Iterator[BaseCache]:
+        config = {
+            "l1": {"BACKEND": "django_cachex.cache.LocMemCache", "LOCATION": "tiered-nonresp-l1"},
+            "l2": {"BACKEND": "django_cachex.cache.LocMemCache", "LOCATION": "tiered-nonresp-l2"},
+            "default": {
+                "BACKEND": "django_cachex.cache.TieredCache",
+                "OPTIONS": {"tiers": ["l1", "l2"], "l1_timeout": L1_TIMEOUT},
+            },
+        }
+        with override_settings(CACHES=config):
+            cache = caches["default"]
+            cache.clear()
+            yield cache
+            cache.clear()
+
+    def test_clear_reports_success(self, locmem_tiered: BaseCache):
+        # Regression: ``bool(None)`` reported a successful clear as a failure.
+        locmem_tiered.set("a", 1)
+        assert locmem_tiered.clear() is True
+        assert locmem_tiered.get("a") is None
+
+    def test_delete_many_reports_the_number_of_keys(self, locmem_tiered: BaseCache):
+        # Regression: ``None or 0`` reported two successful deletes as zero.
+        locmem_tiered.set_many({"a": 1, "b": 2})
+        assert locmem_tiered.delete_many(["a", "b"]) == 2
+        assert locmem_tiered.get_many(["a", "b"]) == {}
+
+    @pytest.mark.asyncio
+    async def test_aclear_and_adelete_many_report_success(self, locmem_tiered: BaseCache):
+        await locmem_tiered.aset_many({"a": 1, "b": 2})
+        assert await locmem_tiered.adelete_many(["a"]) == 1
+        assert await locmem_tiered.aclear() is True
+
+
+class TestTieredWriteOrdering:
+    """L2 is mutated before L1 is invalidated.
+
+    The other order lets a concurrent read repopulate L1 from the pre-mutation
+    L2 value, leaving L1 stale for up to ``l1_timeout`` after the call returns.
+    """
+
+    @pytest.mark.parametrize(
+        ("op", "l1_method", "l2_method"),
+        [
+            (lambda c: c.delete("ord"), "delete", "delete"),
+            (lambda c: c.delete_many(["ord"]), "delete", "delete_many"),
+            (lambda c: c.incr("ord"), "delete", "incr"),
+            (lambda c: c.decr("ord"), "delete", "decr"),
+            (lambda c: c.expire("ord", 10), "delete", "expire"),
+        ],
+    )
+    def test_l2_is_mutated_before_l1_is_invalidated(self, tiered_cache: BaseCache, mocker, op, l1_method, l2_method):
+        calls: list[str] = []
+        mocker.patch.object(tiered_cache._l1, l1_method, side_effect=lambda *a, **kw: calls.append("l1"))
+        mocker.patch.object(tiered_cache._l2, l2_method, side_effect=lambda *a, **kw: calls.append("l2"))
+
+        op(tiered_cache)
+
+        assert calls == ["l2", "l1"]
+
+
+@pytest.mark.asyncio
+class TestTieredAsyncL1Access:
+    """Every async path must reach L1 through its ``a*`` methods.
+
+    Regression: they all called L1's sync methods, which raises
+    ``SynchronousOnlyOperation`` on a DB-backed L1 and silently blocks the
+    event loop on a network-backed one.
+    """
+
+    @pytest.fixture
+    def guarded_tiered(self) -> Iterator[BaseCache]:
+        config = {
+            "l1": {"BACKEND": "tests.cache.test_tiered.AsyncGuardL1", "LOCATION": "tiered-guard-l1"},
+            "l2": {"BACKEND": "django_cachex.cache.LocMemCache", "LOCATION": "tiered-guard-l2"},
+            "default": {
+                "BACKEND": "django_cachex.cache.TieredCache",
+                "OPTIONS": {"tiers": ["l1", "l2"], "l1_timeout": L1_TIMEOUT},
+            },
+        }
+        with override_settings(CACHES=config):
+            cache = caches["default"]
+            cache.clear()
+            yield cache
+            cache.clear()
+
+    async def test_aset_and_aget(self, guarded_tiered: BaseCache):
+        await guarded_tiered.aset("k", "v")
+        assert await guarded_tiered.aget("k") == "v"
+
+    async def test_aget_populates_l1_on_miss(self, guarded_tiered: BaseCache):
+        await guarded_tiered.aset("k", "v")
+        await caches["l1"].adelete("k")
+        assert await guarded_tiered.aget("k") == "v"
+        assert await caches["l1"].aget("k") == "v"
+
+    async def test_aset_with_flags(self, guarded_tiered: BaseCache):
+        assert await guarded_tiered.aset("k", "first", nx=True) is True
+        assert await guarded_tiered.aset("k", "second", nx=True) is False
+        assert await guarded_tiered.aset("k", "third", get=True) == "first"
+
+    async def test_aadd_and_adelete(self, guarded_tiered: BaseCache):
+        assert await guarded_tiered.aadd("k", "v") is True
+        assert await guarded_tiered.adelete("k") is True
+
+    async def test_aset_many_and_aget_many(self, guarded_tiered: BaseCache):
+        await guarded_tiered.aset_many({"a": 1, "b": 2})
+        assert await guarded_tiered.aget_many(["a", "b"]) == {"a": 1, "b": 2}
+
+    async def test_adelete_many(self, guarded_tiered: BaseCache):
+        await guarded_tiered.aset_many({"a": 1, "b": 2})
+        assert await guarded_tiered.adelete_many(["a", "b"]) == 2
+
+    async def test_ahas_key(self, guarded_tiered: BaseCache):
+        await guarded_tiered.aset("k", "v")
+        assert await guarded_tiered.ahas_key("k") is True
+
+    async def test_aincr_and_adecr(self, guarded_tiered: BaseCache):
+        await guarded_tiered.aset("n", 10)
+        assert await guarded_tiered.aincr("n", 5) == 15
+        assert await guarded_tiered.adecr("n", 5) == 10
+
+    async def test_atouch(self, guarded_tiered: BaseCache):
+        await guarded_tiered.aset("k", "v")
+        assert await guarded_tiered.atouch("k", timeout=60) is True
+
+    async def test_aclear(self, guarded_tiered: BaseCache):
+        await guarded_tiered.aset("k", "v")
+        await guarded_tiered.aclear()
+        assert await guarded_tiered.aget("k") is None
+
+    async def test_aexpire_and_adelete_pattern(self, guarded_tiered: BaseCache):
+        await guarded_tiered.aset("p:1", "v")
+        assert await guarded_tiered.aexpire("p:1", 100) is True
+        assert await guarded_tiered.adelete_pattern("p:*") == 1
+
+
+class TestTieredTierAliasValidation:
+    """Both tier aliases must exist, differ, and not point back at the tiered cache."""
+
+    def test_duplicate_tier_aliases_rejected(self):
+        config = {
+            "l1": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+            "default": {
+                "BACKEND": "django_cachex.cache.TieredCache",
+                "OPTIONS": {"tiers": ["l1", "l1"]},
+            },
+        }
+        with override_settings(CACHES=config), pytest.raises(ImproperlyConfigured, match="distinct"):
+            caches["default"].get("test")
+
+    def test_self_referencing_tier_rejected(self):
+        # Regression: this recursed until RecursionError on the first get().
+        config = {
+            "l2": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+            "selfref": {
+                "BACKEND": "django_cachex.cache.TieredCache",
+                "OPTIONS": {"tiers": ["selfref", "l2"]},
+            },
+        }
+        with override_settings(CACHES=config), pytest.raises(ImproperlyConfigured, match="itself"):
+            caches["selfref"].get("test")
+
+
+class TestTieredDelegationErrors:
+    """``_delegate`` only translates a missing method or L2's own
+    ``NotSupportedError``; it must not swallow bugs inside L2."""
+
+    @pytest.fixture
+    def broken_l2_tiered(self, tiered_cache: BaseCache) -> BaseCache:
+        return tiered_cache
+
+    def test_attribute_error_from_l2_propagates(self, tiered_cache: BaseCache, mocker):
+        # Regression: an AttributeError raised inside L2's implementation was
+        # reported as "operation not supported".
+        mocker.patch.object(tiered_cache._l2, "keys", side_effect=AttributeError("boom"))
+        with pytest.raises(AttributeError, match="boom"):
+            tiered_cache.keys("*")
+
+    def test_not_supported_from_l2_is_rewrapped(self, tiered_cache: BaseCache, mocker):
+        mocker.patch.object(tiered_cache._l2, "keys", side_effect=NotSupportedError("keys", "L2"))
+        with pytest.raises(NotSupportedError, match="TieredCache"):
+            tiered_cache.keys("*")
+
+    def test_missing_l2_method_raises_not_supported(self, tiered_cache: BaseCache, mocker):
+        mocker.patch.object(type(tiered_cache._l2), "keys", None)
+        with pytest.raises(NotSupportedError, match="TieredCache"):
+            tiered_cache.keys("*")
+
+    def test_lazy_not_supported_from_iter_keys_is_rewrapped(self, tiered_cache: BaseCache, mocker):
+        # ``iter_keys`` is a generator, so the error surfaces on iteration.
+        def raising_iter_keys(*_args, **_kwargs):
+            raise NotSupportedError("iter_keys", "L2")
+            yield  # pragma: no cover
+
+        mocker.patch.object(tiered_cache._l2, "iter_keys", side_effect=raising_iter_keys)
+        with pytest.raises(NotSupportedError, match="TieredCache"):
+            list(tiered_cache.iter_keys("*"))
