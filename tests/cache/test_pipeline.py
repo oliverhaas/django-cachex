@@ -1033,3 +1033,191 @@ class TestPipelineErrorRecovery:
         pipe.set("decoder_leak_after", "ok")
         assert pipe.execute() == [True]
         assert cache.get("decoder_leak_after") == "ok"
+
+
+class TestPipelineSetTimeoutSemantics:
+    """``pipe.set()`` must resolve timeouts exactly like ``cache.set()``."""
+
+    def test_default_timeout_sentinel_applies_backend_timeout(self, cache: RespCache, monkeypatch):
+        # Regression: pipe.set() defaulted to timeout=None and stored the key
+        # forever, while cache.set() applies the backend's TIMEOUT.
+        monkeypatch.setattr(cache, "default_timeout", 123)
+
+        pipe = cache.pipeline()
+        pipe.set("pipe_default_to", "value")
+        pipe.ttl("pipe_default_to")
+        results = pipe.execute()
+
+        assert results[0] is True
+        assert 0 < results[1] <= 123
+
+    def test_explicit_none_timeout_persists(self, cache: RespCache, monkeypatch):
+        monkeypatch.setattr(cache, "default_timeout", 123)
+
+        pipe = cache.pipeline()
+        pipe.set("pipe_none_to", "value", timeout=None)
+        pipe.ttl("pipe_none_to")
+        results = pipe.execute()
+
+        assert results[0] is True
+        assert results[1] is None
+
+    def test_negative_timeout_deletes_instead_of_erroring(self, cache: RespCache):
+        # Regression: a negative timeout was passed through as ``EX -1``, which
+        # the server rejects and which aborts the whole batch.
+        cache.set("pipe_neg_to", "old")
+
+        pipe = cache.pipeline()
+        pipe.set("pipe_neg_to", "value", -1)
+        pipe.exists("pipe_neg_to")
+        results = pipe.execute()
+
+        assert results[0] is True
+        assert results[1] is False
+
+    def test_float_timeout_is_truncated(self, cache: RespCache):
+        # Regression: a float reached redis-py's validation and raised DataError.
+        pipe = cache.pipeline()
+        pipe.set("pipe_float_trunc", "value", 0.5)
+        pipe.exists("pipe_float_trunc")
+        pipe.set("pipe_float_keep", "value", 100.9)
+        pipe.ttl("pipe_float_keep")
+        results = pipe.execute()
+
+        assert results[0] is True
+        assert results[1] is False
+        assert results[2] is True
+        assert 0 < results[3] <= 100
+
+    def test_zero_timeout_reports_success_for_absent_key(self, cache: RespCache):
+        # Regression: the zero-timeout branch returned bool(DEL count), so a
+        # write to a key that did not exist yet looked like a failure.
+        pipe = cache.pipeline()
+        pipe.set("pipe_zero_absent", "value", 0)
+        pipe.exists("pipe_zero_absent")
+        results = pipe.execute()
+
+        assert results[0] is True
+        assert results[1] is False
+
+    def test_matches_cache_set_for_the_same_timeouts(self, cache: RespCache, monkeypatch):
+        monkeypatch.setattr(cache, "default_timeout", 123)
+
+        for timeout, suffix in ((-1, "neg"), (0, "zero"), (0.5, "frac")):
+            cache.set(f"pipe_parity_direct_{suffix}", "value", timeout)
+            pipe = cache.pipeline()
+            pipe.set(f"pipe_parity_pipe_{suffix}", "value", timeout)
+            pipe.execute()
+            assert cache.has_key(f"pipe_parity_pipe_{suffix}") == cache.has_key(f"pipe_parity_direct_{suffix}")
+
+        cache.set("pipe_parity_direct_default", "value")
+        pipe = cache.pipeline()
+        pipe.set("pipe_parity_pipe_default", "value")
+        pipe.execute()
+        assert cache.ttl("pipe_parity_pipe_default") == cache.ttl("pipe_parity_direct_default")
+
+
+class TestPipelineTtlNormalization:
+    """``ttl``/``pttl``/``expiretime`` report "no expiry" as None, like the cache does."""
+
+    def test_persistent_key_reports_none(self, cache: RespCache):
+        # Regression: the raw -1 sentinel leaked out, so ``if result is None``
+        # never fired and a persistent key looked nearly expired.
+        cache.set("pipe_ttl_persist", "value", timeout=None)
+
+        pipe = cache.pipeline()
+        pipe.ttl("pipe_ttl_persist")
+        pipe.pttl("pipe_ttl_persist")
+        pipe.expiretime("pipe_ttl_persist")
+        results = pipe.execute()
+
+        assert results == [None, None, None]
+        assert cache.ttl("pipe_ttl_persist") is None
+
+    def test_missing_key_keeps_minus_two(self, cache: RespCache):
+        pipe = cache.pipeline()
+        pipe.ttl("pipe_ttl_missing")
+        pipe.pttl("pipe_ttl_missing")
+        pipe.expiretime("pipe_ttl_missing")
+        results = pipe.execute()
+
+        assert results == [-2, -2, -2]
+
+
+class TestPipelineRenameResult:
+    """RENAME reports a driver-independent bool."""
+
+    def test_rename_returns_true(self, cache: RespCache, client_class: str):
+        if client_class == "cluster":
+            pytest.skip("rename blocked in cluster pipeline mode")
+
+        # Regression: the raw reply leaked through, so ``results[i] is True``
+        # held on redis-py/valkey-py but not on glide (which yields "OK").
+        cache.set("{piperen}src", "value")
+
+        pipe = cache.pipeline()
+        pipe.rename("{piperen}src", "{piperen}dst")
+        pipe.get("{piperen}dst")
+        results = pipe.execute()
+
+        assert results[0] is True
+        assert results[1] == "value"
+
+
+class TestPipelineStreamResultParity:
+    """Stream replies decode to the same shapes as the non-pipelined path."""
+
+    def test_xclaim_justid_returns_str_ids(self, cache: RespCache):
+        # Regression: justid results kept the driver's raw bytes entry IDs.
+        cache.xadd("pipe_claim_jid", {"msg": "test"})
+        cache.xgroup_create("pipe_claim_jid", "grp", entry_id="0")
+        entries = cache.xreadgroup("grp", "c1", {"pipe_claim_jid": ">"})
+        entry_id = entries["pipe_claim_jid"][0][0]
+
+        pipe = cache.pipeline()
+        pipe.xclaim("pipe_claim_jid", "grp", "c2", 0, [entry_id], justid=True)
+        results = pipe.execute()
+
+        assert results[0] == [entry_id]
+        assert all(isinstance(claimed, str) for claimed in results[0])
+
+    def test_xpending_rejects_filters_without_a_range(self, cache: RespCache):
+        # Regression: consumer/idle were silently dropped and the unfiltered
+        # summary form was queued instead.
+        cache.xadd("pipe_pend_guard", {"msg": "test"})
+        cache.xgroup_create("pipe_pend_guard", "grp", entry_id="0")
+
+        pipe = cache.pipeline()
+        with pytest.raises(ValueError, match="start, end and count"):
+            pipe.xpending("pipe_pend_guard", "grp", idle=1000)
+        with pytest.raises(ValueError, match="start, end and count"):
+            pipe.xpending("pipe_pend_guard", "grp", consumer="c1")
+
+
+def _drivers_loaded_by(code: str) -> str:
+    import subprocess
+    import sys
+
+    probe = f"{code}; import sys; print([m for m in ('redis', 'valkey', 'glide') if m in sys.modules])"
+    proc = subprocess.run(  # noqa: S603 (args are sys.executable + a constant)
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return proc.stdout.strip()
+
+
+def test_importing_django_cachex_does_not_import_any_driver():
+    """``import django_cachex`` must not drag in redis / valkey / glide."""
+    assert _drivers_loaded_by("import django_cachex") == "[]"
+
+
+def test_importing_django_cachex_cache_does_not_import_any_driver():
+    """Naming a LocMem or Database BACKEND must not drag in a driver."""
+    assert _drivers_loaded_by("import django_cachex.cache") == "[]"
+    assert _drivers_loaded_by("from django_cachex.cache import LocMemCache") == "[]"
+
+
+def test_resolving_a_resp_backend_imports_its_driver():
+    assert _drivers_loaded_by("from django_cachex.cache import ValkeyCache") != "[]"

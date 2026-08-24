@@ -93,14 +93,6 @@ class RedisPyAdapter(_RedisPyMixin, ValkeyPyAdapter):
         _async_client_class = RedisAsyncClient
         _async_pool_class = RedisAsyncConnectionPool
 
-    def pipeline(self, *, transaction: bool = True) -> RedisPyPipelineAdapter:
-        client = self.get_client(write=True)
-        return RedisPyPipelineAdapter(client.pipeline(transaction=transaction))
-
-    async def apipeline(self, *, transaction: bool = True) -> RedisPyAsyncPipelineAdapter:
-        client = await self.get_async_client(write=True)
-        return RedisPyAsyncPipelineAdapter(client.pipeline(transaction=transaction))
-
 
 class RedisPySentinelAdapter(_RedisPyMixin, ValkeyPySentinelAdapter):
     """Sentinel-managed cache adapter using ``redis-py``."""
@@ -114,14 +106,6 @@ class RedisPySentinelAdapter(_RedisPyMixin, ValkeyPySentinelAdapter):
         _async_client_class = RedisAsyncClient
         _async_sentinel_class = AsyncRedisSentinel
         _async_sentinel_pool_class = AsyncRedisSentinelConnectionPool
-
-    def pipeline(self, *, transaction: bool = True) -> RedisPyPipelineAdapter:
-        client = self.get_client(write=True)
-        return RedisPyPipelineAdapter(client.pipeline(transaction=transaction))
-
-    async def apipeline(self, *, transaction: bool = True) -> RedisPyAsyncPipelineAdapter:
-        client = await self.get_async_client(write=True)
-        return RedisPyAsyncPipelineAdapter(client.pipeline(transaction=transaction))
 
 
 class RedisPyClusterAdapter(_RedisPyMixin, ValkeyPyClusterAdapter):
@@ -138,14 +122,6 @@ class RedisPyClusterAdapter(_RedisPyMixin, ValkeyPyClusterAdapter):
         _cluster_class = RedisCluster
         _async_cluster_class = AsyncRedisCluster
         _key_slot_func = staticmethod(redis_key_slot)
-
-    def pipeline(self, *, transaction: bool = True) -> RedisPyPipelineAdapter:
-        client = self.get_client(write=True)
-        return RedisPyPipelineAdapter(client.pipeline(transaction=False))
-
-    async def apipeline(self, *, transaction: bool = True) -> RedisPyAsyncPipelineAdapter:
-        client = await self.get_async_client(write=True)
-        return RedisPyAsyncPipelineAdapter(client.pipeline(transaction=False))
 
 
 __all__ = [

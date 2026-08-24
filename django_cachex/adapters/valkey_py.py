@@ -26,6 +26,7 @@ import random
 import threading
 import weakref
 from collections import defaultdict
+from contextlib import contextmanager
 from itertools import batched
 from typing import TYPE_CHECKING, Any, cast, override
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
@@ -61,48 +62,73 @@ _set = set
 # =============================================================================
 # Process-wide async connection pool registry
 # =============================================================================
-# Django's ``asgiref.local.Local``-backed cache handler returns a fresh
-# ``BaseCache`` instance per asyncio task, which means our cached adapter
-# (and any instance-level pool dict) is fresh per task. Without a
-# process-wide registry every async cache call would open a brand-new
-# TCP connection, which is slow on the hot path and noisy on the server. Sharing
-# pools at the module level by event loop + config keeps connections
-# reused across tasks.
-#
-# The registry itself lives on each driver-specific adapter class as the
-# ``_async_pools`` class attribute (see :mod:`~django_cachex.adapters.redis_py`
-# for the parallel one); each driver gets its own, isolated by construction.
-#
-# Outer ``WeakKeyDictionary`` keyed by the asyncio loop:
-#  - When a loop is GC'd (process shutdown, ``asyncio.run`` finishing, fork
-#    re-creating the loop in a child), its entry vanishes automatically.
-#  - On fork the child's new loop becomes the live reference; the parent's
-#    stale entries become unreachable and are dropped on the next mutation,
-#    so we don't need explicit PID-tracking.
-#
-# Inner ``dict`` is keyed by ``(pool class, url, options key, index)`` so
-# different cache configurations in the same process don't share a pool.
+# Django hands out a fresh ``BaseCache`` per asyncio task, so an instance-level
+# pool dict would reconnect on every call. Weak keys drop dead loops, not pools.
 
 AsyncPoolsRegistry = weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], Any]]
 
 
-def _options_key(options: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
-    """Make a hashable key from pool options."""
-    out: list[tuple[str, Any]] = []
-    for k in sorted(options):
-        v = options[k]
-        # Class objects, strings, ints, floats and tuples are all hashable.
-        if isinstance(v, (type, str, int, float, bool)) or v is None:
-            out.append((k, v))
-        else:
-            # Fall back to repr for unhashable / opaque values.
-            out.append((k, repr(v)))
-    return tuple(out)
+# How deep ``_stable_value`` walks a nested option value before giving up.
+_OPTIONS_KEY_MAX_DEPTH = 4
+
+
+def _stable_value(value: Any, depth: int = 0) -> Any:
+    """Reduce an option value to a hashable digest that doesn't vary per instance.
+
+    ``repr()`` of a plain object embeds its ``id()``, so an OPTIONS value
+    rebuilt per cache instance (a ``Retry``, a backoff policy) would key a
+    brand-new connection pool every time.
+    """
+    if isinstance(value, (type, str, bytes, int, float, bool)) or value is None:
+        return value
+    if depth < _OPTIONS_KEY_MAX_DEPTH:
+        if isinstance(value, (list, tuple)):
+            return tuple(_stable_value(item, depth + 1) for item in value)
+        if isinstance(value, (set, frozenset)):
+            return frozenset(_stable_value(item, depth + 1) for item in value)
+        if isinstance(value, dict):
+            return tuple((k, _stable_value(value[k], depth + 1)) for k in sorted(value, key=repr))
+        state = _attribute_state(value)
+        if state is not None:
+            return (type(value), tuple((k, _stable_value(v, depth + 1)) for k, v in state))
+    return (type(value), repr(value))
+
+
+def _attribute_state(value: Any) -> list[tuple[str, Any]] | None:
+    """Collect an object's ``__dict__`` / ``__slots__`` attributes, sorted by name."""
+    names: _set[str] = set(getattr(value, "__dict__", None) or ())
+    for klass in type(value).__mro__:
+        slots = klass.__dict__.get("__slots__")
+        if isinstance(slots, str):
+            names.add(slots)
+        elif slots:
+            names.update(slots)
+    if not names:
+        return None
+    return [(name, getattr(value, name)) for name in sorted(names) if hasattr(value, name)]
+
+
+def _options_key(options: Mapping[str, Any]) -> tuple[tuple[str, Any], ...]:
+    """Make a hashable, instance-stable key from pool options."""
+    return tuple((k, _stable_value(options[k])) for k in sorted(options))
 
 
 def _raw_response(response: Any, **_options: Any) -> Any:
     """Response callback that returns the driver's reply unparsed."""
     return response
+
+
+def _check_xpending_args(
+    start: str | None,
+    end: str | None,
+    count: int | None,
+    consumer: str | None,
+    idle: int | None,
+) -> None:
+    """Reject XPENDING range/filter arguments given without ``count``."""
+    if count is None and (start is not None or end is not None or consumer is not None or idle is not None):
+        msg = "xpending() requires count when start, end, consumer or idle is given"
+        raise ValueError(msg)
 
 
 _VALKEY_ASYNC_POOLS: AsyncPoolsRegistry = weakref.WeakKeyDictionary()
@@ -119,7 +145,23 @@ _VALKEY_CLUSTERS: ClusterRegistry = {}
 _VALKEY_CLUSTERS_LOCK = threading.Lock()
 _VALKEY_ASYNC_CLUSTERS: AsyncClusterRegistry = weakref.WeakKeyDictionary()
 
+# One client per pool suffices. Parked on the pool itself, since a registry
+# would hold it strongly and the client keeps its pool alive.
+_CLIENT_ATTR = "_django_cachex_client"
+
 _WRONGTYPE_INSTALLED_ATTR = "_django_cachex_wrongtype_installed"
+
+
+@contextmanager
+def _wrongtype_translated() -> Iterator[None]:
+    """Re-raise a driver WRONGTYPE reply as :class:`WrongTypeError`."""
+    try:
+        yield
+    except Exception as e:
+        wrapped = maybe_wrap_wrongtype(e)
+        if wrapped is e:
+            raise
+        raise wrapped from e
 
 
 def _install_wrongtype_translation(client: Any) -> Any:
@@ -129,7 +171,9 @@ def _install_wrongtype_translation(client: Any) -> Any:
     is passed in twice. Cluster clients route via the same hook, so this also
     covers ``ValkeyCluster`` / ``RedisCluster`` instances. No-op for clients
     that don't expose ``execute_command`` (e.g. valkey-glide's Rust pyclass);
-    those adapters need their own translation.
+    those adapters need their own translation. Clients are cached per pool
+    (see ``get_client``), so the closure cycle this installs is created once
+    per pool rather than once per command.
     """
     if getattr(client, _WRONGTYPE_INSTALLED_ATTR, False):
         return client
@@ -138,22 +182,12 @@ def _install_wrongtype_translation(client: Any) -> Any:
         return client
 
     async def _aexecute(*args: Any, **kwargs: Any) -> Any:
-        try:
+        with _wrongtype_translated():
             return await orig(*args, **kwargs)
-        except Exception as e:
-            wrapped = maybe_wrap_wrongtype(e)
-            if wrapped is e:
-                raise
-            raise wrapped from e
 
     def _sexecute(*args: Any, **kwargs: Any) -> Any:
-        try:
+        with _wrongtype_translated():
             return orig(*args, **kwargs)
-        except Exception as e:
-            wrapped = maybe_wrap_wrongtype(e)
-            if wrapped is e:
-                raise
-            raise wrapped from e
 
     client.execute_command = _aexecute if inspect.iscoroutinefunction(orig) else _sexecute
     client._django_cachex_wrongtype_installed = True
@@ -210,8 +244,8 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     _async_pools = _VALKEY_ASYNC_POOLS
 
-    # Per-call client wrappers may be mutated (e.g. response callbacks) without
-    # leaking; the cluster adapter shares one client and overrides to False.
+    # Safe here because a throwaway client is cheap; the cluster adapter can
+    # only reach the shared cluster client, so it overrides this to False.
     _per_call_clients: bool = True
 
     if _VALKEY_AVAILABLE:
@@ -258,6 +292,14 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         if not self._LIB_AVAILABLE:
             raise self._missing_lib_error()
 
+        if not servers:
+            msg = (
+                f"{type(self).__name__} requires at least one server URL. "
+                f"Set the cache's LOCATION to a URL such as 'redis://127.0.0.1:6379/0' "
+                f"(or a list of them, primary first)."
+            )
+            raise ImproperlyConfigured(msg)
+
         self._servers = servers
         self._options = options
         self._pools: dict[int, Any] = {}
@@ -281,6 +323,11 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         for key, value in options.items():
             if key not in self._CLIENT_ONLY_OPTIONS:
                 self._pool_options[key] = value
+
+        # parser_class is sync-only. Precomputed because the async path looks
+        # its pool up on every awaited command.
+        self._async_pool_options = {k: v for k, v in self._pool_options.items() if k != "parser_class"}
+        self._async_pool_options_key = _options_key(self._async_pool_options)
 
     # =========================================================================
     # Stampede + replica-index helpers
@@ -326,13 +373,27 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             )
         return self._pools[index]
 
-    def get_client(self, key: str | None = None, *, write: bool = False) -> Any:
-        """Get a client connection."""
-        pool = self._get_connection_pool(write=write)
+    def _new_client(self, pool: Any) -> Any:
+        """Build a fresh client for ``pool``, safe for a caller to mutate."""
         if self._client_class is None:
             msg = "Subclasses must set _client_class"
             raise RuntimeError(msg)
         return _install_wrongtype_translation(self._client_class(connection_pool=pool))
+
+    def get_client(self, key: str | None = None, *, write: bool = False) -> Any:
+        """Get the shared client for the pool serving this operation.
+
+        Cached per pool: a client is a stateless wrapper that checks a
+        connection out of the pool per command, so one per pool is enough.
+        Call sites that mutate the client (response callbacks) must build
+        their own with :meth:`_new_client`.
+        """
+        pool = self._get_connection_pool(write=write)
+        client = getattr(pool, _CLIENT_ATTR, None)
+        if client is None:
+            client = self._new_client(pool)
+            setattr(pool, _CLIENT_ATTR, client)
+        return client
 
     # =========================================================================
     # Async Connection Pool Management
@@ -354,11 +415,8 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             msg = "Async operations require _async_pool_class to be set. Use RedisPyAdapter or ValkeyPyAdapter."
             raise RuntimeError(msg)
 
-        # Filter out parser_class; it's sync-specific.
-        async_pool_options: dict[str, Any] = {k: v for k, v in self._pool_options.items() if k != "parser_class"}
-
         url = self._servers[index]
-        key = (self._async_pool_class, url, _options_key(async_pool_options), index)
+        key = (self._async_pool_class, url, self._async_pool_options_key, index)
 
         sub = self._async_pools.get(loop)
         if sub is None:
@@ -367,9 +425,16 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         pool = sub.get(key)
         if pool is None:
-            pool = self._async_pool_class.from_url(url, **async_pool_options)
+            pool = self._async_pool_class.from_url(url, **self._async_pool_options)
             sub[key] = pool
         return pool
+
+    def _new_async_client(self, pool: Any) -> Any:
+        """Build a fresh async client for ``pool``, safe for a caller to mutate."""
+        if self._async_client_class is None:
+            msg = "Async operations require _async_client_class to be set. Use RedisPyAdapter or ValkeyPyAdapter."
+            raise RuntimeError(msg)
+        return _install_wrongtype_translation(self._async_client_class(connection_pool=pool))
 
     async def get_async_client(self, key: str | None = None, *, write: bool = False) -> Any:
         """Get an async client connection.
@@ -382,10 +447,11 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """
         del key
         pool = self._get_async_connection_pool(write=write)
-        if self._async_client_class is None:
-            msg = "Async operations require _async_client_class to be set. Use RedisPyAdapter or ValkeyPyAdapter."
-            raise RuntimeError(msg)
-        return _install_wrongtype_translation(self._async_client_class(connection_pool=pool))
+        client = getattr(pool, _CLIENT_ATTR, None)
+        if client is None:
+            client = self._new_async_client(pool)
+            setattr(pool, _CLIENT_ATTR, client)
+        return client
 
     def close(self, **kwargs: Any) -> None:
         """No-op. Pools live for the instance's lifetime (matches Django's BaseCache)."""
@@ -527,11 +593,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
                 client.delete(key)
             return result if get else bool(result)
         result = client.set(key, nvalue, ex=actual_timeout, nx=nx, xx=xx, get=get)
-        if get:
-            if result is None:
-                return None
-            return result
-        return bool(result)
+        return result if get else bool(result)
 
     async def aset_with_flags(
         self,
@@ -563,11 +625,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
                 await client.delete(key)
             return result if get else bool(result)
         result = await client.set(key, nvalue, ex=actual_timeout, nx=nx, xx=xx, get=get)
-        if get:
-            if result is None:
-                return None
-            return result
-        return bool(result)
+        return result if get else bool(result)
 
     def touch(self, key: str, timeout: int | None) -> bool:
         """Update the timeout on a key."""
@@ -1220,15 +1278,16 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """Get a hash field."""
         client = self.get_client(key, write=False)
 
-        val = client.hget(key, field)
-        return val if val is not None else None
+        return client.hget(key, field)
 
     def hmget(self, key: str, *fields: str) -> list[Any | None]:
         """Get multiple hash fields."""
+        # ``HMGET key`` with no fields is a syntax error on the wire.
+        if not fields:
+            return []
         client = self.get_client(key, write=False)
 
-        values = client.hmget(key, fields)
-        return [v if v is not None else None for v in values]
+        return list(client.hmget(key, fields))
 
     def hgetall(self, key: str) -> dict[str, Any]:
         """Get all hash fields."""
@@ -1308,15 +1367,16 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """Get a hash field asynchronously."""
         client = await self.get_async_client(key, write=False)
 
-        val = await client.hget(key, field)
-        return val if val is not None else None
+        return await client.hget(key, field)
 
     async def ahmget(self, key: str, *fields: str) -> list[Any | None]:
         """Get multiple hash fields asynchronously."""
+        # ``HMGET key`` with no fields is a syntax error on the wire.
+        if not fields:
+            return []
         client = await self.get_async_client(key, write=False)
 
-        values = await client.hmget(key, fields)
-        return [v if v is not None else None for v in values]
+        return list(await client.hmget(key, fields))
 
     async def ahgetall(self, key: str) -> dict[str, Any]:
         """Get all hash fields asynchronously."""
@@ -1393,9 +1453,10 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         if count is not None:
             vals = client.lpop(key, count)
-            return list(vals) if vals else []
-        val = client.lpop(key)
-        return val if val is not None else None
+            # A nil reply means the key is missing; keep it distinct from an
+            # empty array so callers can tell a miss from an empty pop.
+            return list(vals) if vals is not None else None
+        return client.lpop(key)
 
     def rpop(self, key: str, count: int | None = None) -> Any | list[Any] | None:
         """Pop value(s) from the right of a list."""
@@ -1403,9 +1464,10 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         if count is not None:
             vals = client.rpop(key, count)
-            return list(vals) if vals else []
-        val = client.rpop(key)
-        return val if val is not None else None
+            # A nil reply means the key is missing; keep it distinct from an
+            # empty array so callers can tell a miss from an empty pop.
+            return list(vals) if vals is not None else None
+        return client.rpop(key)
 
     def llen(self, key: str) -> int:
         """Get the length of a list."""
@@ -1445,8 +1507,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """Atomically move an element from one list to another."""
         client = self.get_client(src, write=True)
 
-        val = client.lmove(src, dst, wherefrom, whereto)
-        return val if val is not None else None
+        return client.lmove(src, dst, wherefrom, whereto)
 
     def lrange(self, key: str, start: int, end: int) -> list[Any]:
         """Get a range of elements from a list."""
@@ -1459,8 +1520,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """Get an element from a list by index."""
         client = self.get_client(key, write=False)
 
-        val = client.lindex(key, index)
-        return val if val is not None else None
+        return client.lindex(key, index)
 
     def lset(self, key: str, index: int, value: Any) -> bool:
         """Set an element in a list by index."""
@@ -1539,8 +1599,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """Blocking atomically move element from one list to another."""
         client = self.get_client(src, write=True)
 
-        val = client.blmove(src, dst, timeout, wherefrom, whereto)
-        return val if val is not None else None
+        return client.blmove(src, dst, timeout, wherefrom, whereto)
 
     async def alpush(self, key: str, *values: Any) -> int:
         """Push values to the left of a list asynchronously."""
@@ -1562,9 +1621,10 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         if count is not None:
             vals = await client.lpop(key, count)
-            return list(vals) if vals else []
-        val = await client.lpop(key)
-        return val if val is not None else None
+            # A nil reply means the key is missing; keep it distinct from an
+            # empty array so callers can tell a miss from an empty pop.
+            return list(vals) if vals is not None else None
+        return await client.lpop(key)
 
     async def arpop(self, key: str, count: int | None = None) -> Any | list[Any] | None:
         """Pop value(s) from the right of a list asynchronously."""
@@ -1572,9 +1632,10 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         if count is not None:
             vals = await client.rpop(key, count)
-            return list(vals) if vals else []
-        val = await client.rpop(key)
-        return val if val is not None else None
+            # A nil reply means the key is missing; keep it distinct from an
+            # empty array so callers can tell a miss from an empty pop.
+            return list(vals) if vals is not None else None
+        return await client.rpop(key)
 
     async def allen(self, key: str) -> int:
         """Get the length of a list asynchronously."""
@@ -1614,8 +1675,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """Atomically move an element from one list to another asynchronously."""
         client = await self.get_async_client(src, write=True)
 
-        val = await client.lmove(src, dst, wherefrom, whereto)
-        return val if val is not None else None
+        return await client.lmove(src, dst, wherefrom, whereto)
 
     async def alrange(self, key: str, start: int, end: int) -> list[Any]:
         """Get a range of elements from a list asynchronously."""
@@ -1628,8 +1688,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """Get an element from a list by index asynchronously."""
         client = await self.get_async_client(key, write=False)
 
-        val = await client.lindex(key, index)
-        return val if val is not None else None
+        return await client.lindex(key, index)
 
     async def alset(self, key: str, index: int, value: Any) -> bool:
         """Set an element in a list by index asynchronously."""
@@ -1708,8 +1767,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """Blocking atomically move element from one list to another asynchronously."""
         client = await self.get_async_client(src, write=True)
 
-        val = await client.blmove(src, dst, timeout, wherefrom, whereto)
-        return val if val is not None else None
+        return await client.blmove(src, dst, timeout, wherefrom, whereto)
 
     # =========================================================================
     # Set Operations
@@ -1754,8 +1812,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         client = self.get_client(key, write=True)
 
         if count is None:
-            val = client.spop(key)
-            return val if val is not None else None
+            return client.spop(key)
         vals = client.spop(key, count)
         return list(vals) if vals else []
 
@@ -1764,8 +1821,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         client = self.get_client(key, write=False)
 
         if count is None:
-            val = client.srandmember(key)
-            return val if val is not None else None
+            return client.srandmember(key)
         vals = client.srandmember(key, count)
         return list(vals) if vals else []
 
@@ -1886,8 +1942,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         client = await self.get_async_client(key, write=True)
 
         if count is None:
-            val = await client.spop(key)
-            return val if val is not None else None
+            return await client.spop(key)
         vals = await client.spop(key, count)
         return list(vals) if vals else []
 
@@ -1896,8 +1951,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         client = await self.get_async_client(key, write=False)
 
         if count is None:
-            val = await client.srandmember(key)
-            return val if val is not None else None
+            return await client.srandmember(key)
         vals = await client.srandmember(key, count)
         return list(vals) if vals else []
 
@@ -2392,14 +2446,17 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     def _decode_stream_results(
         self,
-        results: list[tuple[Any, list[tuple[Any, dict[Any, Any]]]]],
+        results: Mapping[Any, list[tuple[Any, dict[Any, Any]]]] | list[tuple[Any, list[tuple[Any, dict[Any, Any]]]]],
     ) -> dict[str, list[tuple[str, dict[str, Any]]]]:
         """Decode multi-stream results (xread/xreadgroup) from Redis."""
+        # RESP2 hands back a list of (stream, entries) pairs; RESP3 (``protocol: 3``
+        # in OPTIONS) hands back a mapping keyed by stream name.
+        pairs = results.items() if isinstance(results, dict) else results
         return {
             (stream_key.decode() if isinstance(stream_key, bytes) else stream_key): self._decode_stream_entries(
                 entries,
             )
-            for stream_key, entries in results
+            for stream_key, entries in pairs
         }
 
     def xlen(self, key: str) -> int:
@@ -2572,14 +2629,15 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         idle: int | None = None,
     ) -> dict[str, Any] | list[dict[str, Any]]:
         """Get pending entries information."""
+        _check_xpending_args(start, end, count, consumer, idle)
         client = self.get_client(key, write=False)
 
-        if start is not None and end is not None and count is not None:
+        if count is not None:
             return client.xpending_range(
                 key,
                 group,
-                min=start,
-                max=end,
+                min="-" if start is None else start,
+                max="+" if end is None else end,
                 count=count,
                 consumername=consumer,
                 idle=idle,
@@ -2629,12 +2687,13 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         justid: bool = False,
     ) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
         """Auto-claim pending messages that have been idle."""
-        client = self.get_client(key, write=True)
-
         if justid and self._per_call_clients:
-            # The driver's JUSTID callback strips next_id and deleted; safe to
-            # override on a per-call client wrapper.
+            # The driver's JUSTID callback strips next_id and deleted. Override
+            # it on a throwaway client so the pooled one stays pristine.
+            client = self._new_client(self._get_connection_pool(write=True))
             client.set_response_callback("XAUTOCLAIM", _raw_response)
+        else:
+            client = self.get_client(key, write=True)
 
         result = client.xautoclaim(
             key,
@@ -2859,14 +2918,15 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         idle: int | None = None,
     ) -> dict[str, Any] | list[dict[str, Any]]:
         """Get pending entries information asynchronously."""
+        _check_xpending_args(start, end, count, consumer, idle)
         client = await self.get_async_client(key, write=False)
 
-        if start is not None and end is not None and count is not None:
+        if count is not None:
             return await client.xpending_range(
                 key,
                 group,
-                min=start,
-                max=end,
+                min="-" if start is None else start,
+                max="+" if end is None else end,
                 count=count,
                 consumername=consumer,
                 idle=idle,
@@ -2916,12 +2976,13 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         justid: bool = False,
     ) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
         """Auto-claim pending messages asynchronously."""
-        client = await self.get_async_client(key, write=True)
-
         if justid and self._per_call_clients:
-            # The driver's JUSTID callback strips next_id and deleted; safe to
-            # override on a per-call client wrapper.
+            # The driver's JUSTID callback strips next_id and deleted. Override
+            # it on a throwaway client so the pooled one stays pristine.
+            client = self._new_async_client(self._get_async_connection_pool(write=True))
             client.set_response_callback("XAUTOCLAIM", _raw_response)
+        else:
+            client = await self.get_async_client(key, write=True)
 
         result = await client.xautoclaim(
             key,
@@ -2991,9 +3052,6 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
     # Async sentinels: WeakKeyDictionary keyed by event loop
     _async_sentinels: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, Any]
 
-    # Options that shouldn't be passed to the connection pool
-    _SENTINEL_ONLY_OPTIONS = frozenset({"sentinels", "sentinel_kwargs"})
-
     if _VALKEY_AVAILABLE:
         _pool_class = ValkeySentinelConnectionPool
         _sentinel_class = ValkeySentinel
@@ -3018,17 +3076,14 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
 
         self._async_sentinels = weakref.WeakKeyDictionary()
 
-        # Sentinel-only options must not flow through to the underlying pool.
-        if hasattr(self, "_pool_options"):
-            for key in self._SENTINEL_ONLY_OPTIONS:
-                self._pool_options.pop(key, None)
-
         sentinels = self._options.get("sentinels")
         if not sentinels:
             raise ImproperlyConfigured("sentinels must be provided as a list of (host, port) tuples")
 
-        sentinel_kwargs = self._options.get("sentinel_kwargs", {})
-        pool_options = dict(self._pool_options) if hasattr(self, "_pool_options") else {}
+        # None, not {}: only then does the driver give sentinel clients the
+        # connection's ``socket_*`` timeouts, bounding discovery.
+        sentinel_kwargs = self._options.get("sentinel_kwargs")
+        pool_options = dict(self._pool_options)
 
         if self._sentinel_class is None:
             msg = "Subclasses must set _sentinel_class"
@@ -3096,7 +3151,7 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
         service_name, is_master, clean_url = self._parse_sentinel_url(index)
 
         # Use _pool_options from parent class (already cleaned in __init__)
-        pool_options: dict[str, Any] = dict(self._pool_options) if hasattr(self, "_pool_options") else {}
+        pool_options: dict[str, Any] = dict(self._pool_options)
         pool_options.update(
             service_name=service_name,
             sentinel_manager=self._sentinel,
@@ -3123,13 +3178,10 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
             raise RuntimeError(msg)
 
         sentinels = self._options.get("sentinels")
-        sentinel_kwargs = self._options.get("sentinel_kwargs", {})
+        # None, not {}: see the note in __init__ about socket_* inheritance.
+        sentinel_kwargs = self._options.get("sentinel_kwargs")
         # Filter out parser_class - it's sync-specific
-        pool_options = (
-            {k: v for k, v in self._pool_options.items() if k != "parser_class"}
-            if hasattr(self, "_pool_options")
-            else {}
-        )
+        pool_options = {k: v for k, v in self._pool_options.items() if k != "parser_class"}
 
         async_sentinel = self._async_sentinel_class(
             sentinels,
@@ -3146,7 +3198,7 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
         Uses the same ``_async_pools`` registry (driver-specific class
         attribute) as the non-sentinel client so per-task adapter instances
         share a single pool. See
-        ``RespAdapterProtocol._get_async_connection_pool`` for the rationale.
+        :meth:`ValkeyPyAdapter._get_async_connection_pool` for the rationale.
         """
         loop = asyncio.get_running_loop()
         index = self._get_connection_pool_index(write=write)
@@ -3158,11 +3210,7 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
         service_name, is_master, clean_url = self._parse_sentinel_url(index)
 
         # Filter out parser_class - it's sync-specific and causes AttributeError on async connections
-        pool_options: dict[str, Any] = (
-            {k: v for k, v in self._pool_options.items() if k != "parser_class"}
-            if hasattr(self, "_pool_options")
-            else {}
-        )
+        pool_options: dict[str, Any] = {k: v for k, v in self._pool_options.items() if k != "parser_class"}
 
         # The key must be stable across adapter instances (asgiref hands each
         # task a fresh one), so the fleet stands in for its sentinel manager.
@@ -3675,7 +3723,10 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
 
     def execute(self) -> list[Any]:
         """Run all buffered commands and return their raw results."""
-        return cast("list[Any]", self._raw.execute())
+        # The driver pipeline is a fresh object with its own unpatched
+        # ``execute_command``, so WRONGTYPE is translated here instead.
+        with _wrongtype_translated():
+            return cast("list[Any]", self._raw.execute())
 
     def reset(self) -> None:
         """Discard any buffered commands without executing."""
@@ -3683,7 +3734,8 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
 
     def execute_command(self, *args: Any) -> Any:
         """Queue a raw Redis command (``EVAL``, etc.)."""
-        return self._raw.execute_command(*args)
+        with _wrongtype_translated():
+            return self._raw.execute_command(*args)
 
     # -------------------------------------------------------------------------
     # Strings / generic key ops
@@ -4223,7 +4275,8 @@ class ValkeyPyAsyncPipelineAdapter(ValkeyPyPipelineAdapter, RespAsyncPipelinePro
     @override
     async def execute(self) -> list[Any]:  # type: ignore[override]
         """Run all buffered commands asynchronously and return their raw results."""
-        return cast("list[Any]", await self._raw.execute())
+        with _wrongtype_translated():
+            return cast("list[Any]", await self._raw.execute())
 
     @override
     async def reset(self) -> None:  # type: ignore[override]

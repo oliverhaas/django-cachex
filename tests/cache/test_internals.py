@@ -18,6 +18,7 @@ from django.core.cache import caches
 from django.test import override_settings
 
 from django_cachex.adapters import RedisPyAdapter
+from django_cachex.exceptions import WrongTypeError
 
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
@@ -200,6 +201,55 @@ class TestRedisAdapterMethods:
 
         # Same pool should be returned
         assert pool1 is pool2
+
+    def test_client_is_cached_per_pool(self, cache: RespCache):
+        # Regression: a brand-new client per command left one uncollectable
+        # cyclic object (the WRONGTYPE patch) behind on every cache call.
+        assert cache.adapter.get_client(write=True) is cache.adapter.get_client(write=True)
+
+    @pytest.mark.asyncio
+    async def test_async_client_is_cached_per_pool(self, cache: RespCache):
+        if cache.adapter._async_pool_class is None:
+            pytest.skip("Async not supported for this client type")
+
+        assert await cache.adapter.get_async_client(write=True) is await cache.adapter.get_async_client(write=True)
+
+    def test_count_form_pop_reports_a_missing_key_as_none(self, cache: RespCache):
+        # Regression: the driver's nil reply collapsed to [], so a miss looked
+        # like an empty pop; LocMemCache returns None either way.
+        cache.delete("missing_list")
+
+        assert cache.lpop("missing_list", count=2) is None
+        assert cache.rpop("missing_list", count=2) is None
+
+    def test_pipeline_translates_wrongtype(self, cache: RespCache):
+        # Regression: the client-instance patch never reached the driver's
+        # pipeline, so batched type errors escaped as raw ResponseErrors.
+        cache.set("wrongtype_pipeline", 1)
+        try:
+            pipe = cache.pipeline()
+            pipe.lpush("wrongtype_pipeline", "value")
+            with pytest.raises(WrongTypeError):
+                pipe.execute()
+        finally:
+            cache.delete("wrongtype_pipeline")
+
+    @pytest.mark.asyncio
+    async def test_async_pipeline_translates_wrongtype(self, cache: RespCache):
+        await cache.aset("wrongtype_apipeline", 1)
+        try:
+            pipe = await cache.apipeline()
+            pipe.lpush("wrongtype_apipeline", "value")
+            with pytest.raises(WrongTypeError):
+                await pipe.execute()
+        finally:
+            await cache.adelete("wrongtype_apipeline")
+
+    def test_xpending_filters_require_count(self, cache: RespCache):
+        # Regression: without count the range/consumer filters were dropped and
+        # the summary dict came back instead of the per-message list.
+        with pytest.raises(ValueError, match="xpending\\(\\) requires count"):
+            cache.xpending("stream", "group", start="-", end="+")
 
     def test_multiple_servers_pool_selection(self, redis_container: RedisContainerInfo):
         from contextlib import suppress

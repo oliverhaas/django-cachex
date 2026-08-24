@@ -11,7 +11,7 @@ from django_cachex.adapters import RedisPyClusterAdapter
 
 
 def setup_cluster_client(mock_cluster_cls=None):
-    """Helper to create a properly configured RedisPyClusterAdapter for testing.
+    """Build a RedisPyClusterAdapter for testing.
 
     Each call gets isolated cluster registries so concurrent tests don't
     share cached cluster instances and don't poison the process-wide

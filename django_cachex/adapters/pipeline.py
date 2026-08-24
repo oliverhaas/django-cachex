@@ -17,6 +17,8 @@ concrete pipeline adapter and the cache layer wraps it in a :class:`Pipeline`.
 
 from typing import TYPE_CHECKING, Any, Self
 
+from django.core.cache.backends.base import DEFAULT_TIMEOUT
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from datetime import datetime, timedelta
@@ -47,14 +49,10 @@ class Pipeline:
     ) -> None:
         """Initialize the wrapped pipeline."""
         self._cache = cache
-        # Adapter back-reference for timeout / stampede helpers that live
-        # on the adapter layer (``get_timeout_with_buffer`` /
-        # ``resolve_stampede``). Encoding/decoding lives on the cache.
+        # Only for ``get_timeout_with_buffer``; everything else lives on the cache.
         self._adapter = cache.adapter
         self._pipeline_adapter = pipeline_adapter
         self._version = version
-        self._key_func: Callable[..., str] | None = None
-        self._cache_version: int | None = None
         self._decoders: list[Callable[[Any], Any]] = []
 
     def __enter__(self) -> Self:
@@ -87,6 +85,33 @@ class Pipeline:
     def _noop(self, value: Any) -> Any:
         """Return value unchanged (for int, bool, etc.)."""
         return value
+
+    def _normalize_ttl(self, value: int) -> int | None:
+        """Normalize a TTL/PTTL/EXPIRETIME reply the way the non-pipelined path does.
+
+        ``-1`` (key exists but has no expiry) becomes ``None``; ``-2``
+        (key missing) and positive values pass through unchanged.
+        """
+        if value == -1:
+            return None
+        return value
+
+    def _decode_ok(self, value: Any) -> bool:
+        """Normalize a simple-status reply to ``bool``.
+
+        Drivers disagree on the raw form: redis-py / valkey-py apply their
+        ``bool_ok`` response callback inside the pipeline and yield ``True``,
+        while glide's batch yields the untouched ``"OK"`` / ``b"OK"``.
+        """
+        return value is True or value in ("OK", b"OK")
+
+    def _decode_set_result(self, value: Any) -> bool | None:
+        """Decode a SET reply: ``True`` on success, ``None`` on an NX/XX miss."""
+        return True if value else None
+
+    def _decode_id_list(self, value: list[bytes | str] | None) -> list[str]:
+        """Decode a flat list of stream entry IDs (bytes on redis-py, str on glide)."""
+        return [v.decode() if isinstance(v, bytes) else v for v in value or []]
 
     def _decode_single(self, value: bytes | None) -> Any:
         """Decode a single value, returning None if None.
@@ -149,8 +174,6 @@ class Pipeline:
 
     def _decode_zpop(self, value: list[tuple[bytes, float]]) -> list[tuple[Any, float]]:
         """Decode zpopmin/zpopmax result."""
-        if not value:
-            return []
         return [(self._cache.decode(member), score) for member, score in value]
 
     def _decode_type(self, value: bytes | str) -> str:
@@ -185,8 +208,7 @@ class Pipeline:
             decoded: dict[str, list[tuple[str, dict[str, Any]]]] = {}
             for stream_key, entries in results:
                 sk = stream_key.decode() if isinstance(stream_key, bytes) else str(stream_key)
-                original = key_map.get(sk, sk)
-                decoded[str(original)] = self._decode_stream_entries(entries)
+                decoded[key_map.get(sk, sk)] = self._decode_stream_entries(entries)
             return decoded
 
         return decode
@@ -198,8 +220,6 @@ class Pipeline:
     def _make_key(self, key: str, version: int | None = None) -> str:
         """Create a prefixed key."""
         v = version if version is not None else self._version
-        if self._key_func is not None:
-            return self._key_func(key, version=v)
         return self._cache.make_and_validate_key(key, version=v)
 
     def _encode(self, value: Any) -> bytes | int:
@@ -214,24 +234,35 @@ class Pipeline:
         self,
         key: str,
         value: Any,
-        timeout: int | None = None,
+        timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         *,
         nx: bool = False,
         xx: bool = False,
         stampede_prevention: bool | StampedeConfig | None = None,
     ) -> Self:
-        """Queue a SET command."""
+        """Queue a SET command.
+
+        ``timeout`` follows the same rules as :meth:`RespCache.set`: the
+        ``DEFAULT_TIMEOUT`` sentinel resolves to the backend's configured
+        ``TIMEOUT``, ``None`` stores the key forever, floats are truncated to
+        whole seconds, and a non-positive timeout expires the key immediately
+        (queued as a DELETE).
+        """
         if nx and xx:
             raise ValueError("nx and xx are mutually exclusive")
         nkey = self._make_key(key, version)
         nvalue = self._encode(value)
-        actual_timeout = self._adapter.get_timeout_with_buffer(timeout, stampede_prevention)
+        # Normalize before buffering, same order as RespCache.set()/touch().
+        backend_timeout = self._cache.get_backend_timeout(timeout)
+        actual_timeout = self._adapter.get_timeout_with_buffer(backend_timeout, stampede_prevention)
 
         # timeout=0 means "expire immediately" (Django convention); queue a DELETE
         if actual_timeout == 0:
             self._pipeline_adapter.delete(nkey)
-            self._decoders.append(bool)
+            # Report the write as successful like every other set() path; the
+            # DEL count only says whether a previous value happened to exist.
+            self._decoders.append(lambda _result: True)
             return self
 
         kwargs: dict[str, Any] = {}
@@ -243,8 +274,7 @@ class Pipeline:
             kwargs["xx"] = True
 
         self._pipeline_adapter.set(nkey, nvalue, **kwargs)
-        # SET returns OK/True on success, None on NX/XX miss.
-        self._decoders.append(lambda x: True if (x is not None and x != b"" and x is not False) else None)
+        self._decoders.append(self._decode_set_result)
         return self
 
     def get(self, key: str, version: int | None = None) -> Self:
@@ -286,7 +316,7 @@ class Pipeline:
         """Queue a TTL command."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.ttl(nkey)
-        self._decoders.append(self._noop)
+        self._decoders.append(self._normalize_ttl)
         return self
 
     def incr(
@@ -324,7 +354,7 @@ class Pipeline:
         """Queue a PTTL command (TTL in milliseconds)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.pttl(nkey)
-        self._decoders.append(self._noop)
+        self._decoders.append(self._normalize_ttl)
         return self
 
     def expireat(
@@ -367,7 +397,7 @@ class Pipeline:
         """Queue an EXPIRETIME command (get absolute expiry timestamp)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.expiretime(nkey)
-        self._decoders.append(self._noop)
+        self._decoders.append(self._normalize_ttl)
         return self
 
     def type(self, key: str, version: int | None = None) -> Self:
@@ -391,7 +421,7 @@ class Pipeline:
         nsrc = self._make_key(src, src_ver)
         ndst = self._make_key(dst, dst_ver)
         self._pipeline_adapter.rename(nsrc, ndst)
-        self._decoders.append(self._noop)
+        self._decoders.append(self._decode_ok)
         return self
 
     def renamenx(
@@ -1321,7 +1351,7 @@ class Pipeline:
         nstreams: dict[str, str] = {}
         for k, v in streams.items():
             nk = self._make_key(k, version)
-            key_map[nk if isinstance(nk, str) else str(nk)] = k
+            key_map[nk] = k
             nstreams[nk] = v
         self._pipeline_adapter.xread(nstreams, count=count, block=block)
         self._decoders.append(self._make_stream_key_decoder(key_map))
@@ -1428,7 +1458,7 @@ class Pipeline:
         nstreams: dict[str, str] = {}
         for k, v in streams.items():
             nk = self._make_key(k, version)
-            key_map[nk if isinstance(nk, str) else str(nk)] = k
+            key_map[nk] = k
             nstreams[nk] = v
         self._pipeline_adapter.xreadgroup(group, consumer, nstreams, count=count, block=block, noack=noack)
         self._decoders.append(self._make_stream_key_decoder(key_map))
@@ -1452,7 +1482,13 @@ class Pipeline:
         idle: int | None = None,
         version: int | None = None,
     ) -> Self:
-        """Queue XPENDING command (get pending entries info)."""
+        """Queue XPENDING command (get pending entries info).
+
+        Passing ``start``, ``end`` and ``count`` queues the detail form; omitting
+        them queues the summary form. ``consumer`` and ``idle`` only apply to the
+        detail form, so combining them with a missing range raises ``ValueError``
+        rather than silently returning an unfiltered summary.
+        """
         nkey = self._make_key(key, version)
         if start is not None and end is not None and count is not None:
             kwargs: dict[str, Any] = {}
@@ -1462,6 +1498,9 @@ class Pipeline:
                 kwargs["idle"] = idle
             self._pipeline_adapter.xpending_range(nkey, group, min=start, max=end, count=count, **kwargs)
         else:
+            if consumer is not None or idle is not None:
+                msg = "xpending() requires start, end and count when consumer or idle is given"
+                raise ValueError(msg)
             self._pipeline_adapter.xpending(nkey, group)
         self._decoders.append(self._noop)
         return self
@@ -1495,7 +1534,9 @@ class Pipeline:
             justid=justid,
         )
         if justid:
-            self._decoders.append(self._noop)
+            # Matches the non-pipelined path: XCLAIM JUSTID yields entry IDs as
+            # str, not the raw bytes redis-py / valkey-py hand back.
+            self._decoders.append(self._decode_id_list)
         else:
             self._decoders.append(self._decode_stream_entries)
         return self
@@ -1532,16 +1573,22 @@ class Pipeline:
     ) -> Callable[[Any], tuple[str, list[Any], list[str]]]:
         """Create decoder for XAUTOCLAIM result.
 
-        redis-py returns different formats based on justid:
-        - justid=False: [next_id, [[id, fields], ...], [deleted]] (3-tuple)
-        - justid=True:  [id1, id2, ...] (flat list of claimed IDs)
+        The pipeline adapters normalize to two shapes:
+
+        - ``justid=False``: ``[next_id, [(id, fields), ...], [deleted]]``
+        - ``justid=True``: ``[id1, id2, ...]`` (flat list of claimed IDs)
+
+        The cursor is unrecoverable in the ``justid`` case: redis-py's
+        ``parse_xautoclaim`` callback (applied inside ``Pipeline.execute()``,
+        against a ``response_callbacks`` dict shared with the client) drops
+        everything but the ID list, and glide's batch adapter drops it too.
+        The non-pipelined path works around this with a per-call client, which
+        a pipeline has no equivalent of, so ``next_id`` is reported as ``""``.
         """
 
         def decode(result: Any) -> tuple[str, list[Any], list[str]]:
             if justid:
-                # redis-py returns flat list of claimed IDs (strips next_id/deleted)
-                claimed = [r.decode() if isinstance(r, bytes) else r for r in result]
-                return ("", claimed, [])
+                return ("", self._decode_id_list(result), [])
 
             next_id = result[0].decode() if isinstance(result[0], bytes) else result[0]
             deleted = [d.decode() if isinstance(d, bytes) else d for d in result[2]] if len(result) > 2 else []
@@ -1566,8 +1613,6 @@ class Pipeline:
         """Queue a Lua script for pipelined execution."""
         # Determine version for key prefixing
         v = version if version is not None else self._version
-        if v is None:
-            v = getattr(self, "_cache_version", None)
 
         # Create helpers for pre/post processing
         helpers = ScriptHelpers(
@@ -1586,17 +1631,11 @@ class Pipeline:
         # and ClusterPipeline.eval has a different signature than the standalone one.
         self._pipeline_adapter.execute_command("EVAL", script, len(proc_keys), *proc_keys, *proc_args)
 
-        if post_hook is not None:
-
-            def make_decoder(ph: Any, h: ScriptHelpers) -> Any:
-                def decoder(result: Any) -> Any:
-                    return ph(h, result)
-
-                return decoder
-
-            self._decoders.append(make_decoder(post_hook, helpers))
-        else:
+        if post_hook is None:
             self._decoders.append(self._noop)
+        else:
+            hook = post_hook
+            self._decoders.append(lambda result: hook(helpers, result))
 
         return self
 

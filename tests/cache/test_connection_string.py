@@ -4,9 +4,6 @@ import pytest
 from django.core.cache import caches
 from django.test import override_settings
 
-# Test that various URL formats work with the cache backend
-# These tests verify that URLs are properly handled when creating connections
-
 
 @pytest.mark.parametrize(
     "url_path",
