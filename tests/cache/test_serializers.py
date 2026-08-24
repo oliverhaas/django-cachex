@@ -112,6 +112,13 @@ class TestOrmsgpackSerializer:
         decoded = serializer.loads(encoded)
         assert decoded is None
 
+    def test_non_str_dict_keys_roundtrip_like_msgpack(self):
+        # Regression: ormsgpack packed without OPT_NON_STR_KEYS, so int keys
+        # raised where MsgpackSerializer round-tripped them.
+        data = {1: "a", 2: "b", "mixed": 3}
+        assert OrmsgpackSerializer().loads(OrmsgpackSerializer().dumps(data)) == data
+        assert MsgpackSerializer().loads(MsgpackSerializer().dumps(data)) == data
+
 
 @pytest.mark.skipif(OrjsonSerializer is None, reason="orjson not installed")
 class TestOrjsonSerializer:
