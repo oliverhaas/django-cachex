@@ -8,33 +8,44 @@
 """Exceptions for django-cachex."""
 
 import socket
+from typing import Any
 
-# Network/server-side errors the client layer treats as transient or
-# backend-specific failures. Each block is best-effort: redis-py and
-# valkey-py are both optional installs.
-_exception_list: list[type[Exception]] = [socket.timeout]
 
-try:
-    from redis.exceptions import ConnectionError as RedisConnectionError
-    from redis.exceptions import RedisClusterException
-    from redis.exceptions import ResponseError as RedisResponseError
-    from redis.exceptions import TimeoutError as RedisTimeoutError
+def _build_main_exceptions() -> tuple[type[Exception], ...]:
+    """Network/server-side errors the client layer treats as transient."""
+    # Built on first access: importing ``CachexError`` must not drag in a
+    # driver that a LocMem or Database user never installed.
+    found: list[type[Exception]] = [socket.timeout]
 
-    _exception_list.extend([RedisConnectionError, RedisTimeoutError, RedisResponseError, RedisClusterException])
-except ImportError:
-    pass
+    try:
+        from redis.exceptions import ConnectionError as RedisConnectionError
+        from redis.exceptions import RedisClusterException
+        from redis.exceptions import ResponseError as RedisResponseError
+        from redis.exceptions import TimeoutError as RedisTimeoutError
 
-try:
-    from valkey.exceptions import ConnectionError as ValkeyConnectionError
-    from valkey.exceptions import ResponseError as ValkeyResponseError
-    from valkey.exceptions import TimeoutError as ValkeyTimeoutError
-    from valkey.exceptions import ValkeyClusterException
+        found.extend([RedisConnectionError, RedisTimeoutError, RedisResponseError, RedisClusterException])
+    except ImportError:
+        pass
 
-    _exception_list.extend([ValkeyConnectionError, ValkeyTimeoutError, ValkeyResponseError, ValkeyClusterException])
-except ImportError:
-    pass
+    try:
+        from valkey.exceptions import ConnectionError as ValkeyConnectionError
+        from valkey.exceptions import ResponseError as ValkeyResponseError
+        from valkey.exceptions import TimeoutError as ValkeyTimeoutError
+        from valkey.exceptions import ValkeyClusterException
 
-_main_exceptions = tuple(_exception_list)
+        found.extend([ValkeyConnectionError, ValkeyTimeoutError, ValkeyResponseError, ValkeyClusterException])
+    except ImportError:
+        pass
+
+    return tuple(found)
+
+
+def __getattr__(name: str) -> Any:
+    if name == "_main_exceptions":
+        value = _build_main_exceptions()
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class CachexError(Exception):
