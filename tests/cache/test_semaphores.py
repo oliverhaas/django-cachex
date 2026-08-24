@@ -16,8 +16,6 @@ def test_semaphore_module_exports():
     )
 
     assert issubclass(SemaphoreTimeoutError, SemaphoreError)
-    # Semaphore (local) and RespSemaphore (RESP) are distinct classes; both
-    # expose paired sync/async methods.
     assert Semaphore is not RespSemaphore
 
 
@@ -30,7 +28,6 @@ class TestLocalCountingSemaphore:
         sem_c = Semaphore("counting", capacity=2)
         assert sem_a.acquire(blocking=False) is True
         assert sem_b.acquire(blocking=False) is True
-        # capacity exhausted
         assert sem_c.acquire(blocking=False) is False
 
     def test_release_returns_capacity(self):
@@ -79,7 +76,6 @@ class TestLocalWeightedSemaphore:
         assert sem_a.acquire(blocking=False) is True
 
         sem_b = Semaphore("weighted", capacity=10, weight=4)
-        # 7 + 4 > 10, so this should not fit.
         assert sem_b.acquire(blocking=False) is False
 
         sem_c = Semaphore("weighted", capacity=10, weight=3)
@@ -147,7 +143,6 @@ class TestLocalFifoFairness:
 
         from django_cachex.semaphore import Semaphore
 
-        # Capacity 10, occupied by a weight-6 holder.
         holder = Semaphore("fifo", capacity=10, weight=6)
         assert holder.acquire(blocking=False) is True
 
@@ -170,10 +165,8 @@ class TestLocalFifoFairness:
         t_small.start()
         time.sleep(0.05)
 
-        # Release the holder; big should win because it is at the head.
         holder.release()
         t_big.join(timeout=2)
-        # Now release big; small should win.
         big.release()
         t_small.join(timeout=2)
         small.release()
@@ -217,18 +210,15 @@ class TestLocalCascadeWake:
             t.start()
         time.sleep(0.1)  # let all three enqueue before capacity frees
 
-        # Releasing the weight-3 holder frees all three units at once.
         t0 = time.monotonic()
         holder.release()
         for t in threads:
             t.join(timeout=waiter_timeout + 1)
         elapsed = time.monotonic() - t0
 
-        # All three fit in the freed capacity and must be admitted...
         assert results == {0: True, 1: True, 2: True}
-        # ...by cascade, near-instantly. Without the fix the trailing waiters
-        # admit only at their ``waiter_timeout`` expiry, so bounding the gap well
-        # below that distinguishes a real cascade from a retry-on-timeout.
+        # Without the cascade the trailing waiters admit only at their
+        # ``waiter_timeout``, well above this bound.
         assert elapsed < 1.5, f"waiters not cascaded promptly: {elapsed:.2f}s"
         for w in waiters:
             w.release()
@@ -306,7 +296,6 @@ class TestLocalCrossContext:
 
         from django_cachex.semaphore import Semaphore
 
-        # Capacity 1, sync holder on the main thread.
         holder = Semaphore("xthread", capacity=1)
         holder.acquire(blocking=False)
 
@@ -336,9 +325,9 @@ class TestLocalCapacityChange:
 
         from django_cachex.semaphore import Semaphore
 
-        # Distinct names avoid interference in the process-wide registry;
-        # cache-attached registries isolate by LOCATION.
-        Semaphore("capchange_a", capacity=10)
+        # The first instance is kept alive on purpose: state is held weakly,
+        # so dropping it would reclaim the name and leave nothing to mismatch.
+        sem_a = Semaphore("capchange_a", capacity=10)
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
@@ -347,21 +336,134 @@ class TestLocalCapacityChange:
         assert len(w) == 1
         assert issubclass(w[0].category, RuntimeWarning)
         assert "capacity" in str(w[0].message).lower()
-        # New capacity took effect.
         assert sem_b._state.capacity == 20
+        assert sem_a._state is sem_b._state
 
     def test_capacity_unchanged_no_warning(self):
         import warnings
 
         from django_cachex.semaphore import Semaphore
 
-        Semaphore("capchange_b", capacity=5)
+        sem_a = Semaphore("capchange_b", capacity=5)
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            Semaphore("capchange_b", capacity=5)
+            sem_b = Semaphore("capchange_b", capacity=5)
 
         assert len(w) == 0
+        assert sem_a._state is sem_b._state
+
+    def test_capacity_warning_is_attributed_to_the_caller(self):
+        # Regression: stacklevel was hardcoded for the cache.semaphore() chain,
+        # so a direct Semaphore(...) blamed the frame above the real call site.
+        import warnings
+
+        from django_cachex.semaphore import Semaphore
+
+        keep_alive = Semaphore("capchange_stack", capacity=1)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            Semaphore("capchange_stack", capacity=2)
+
+        assert len(w) == 1
+        assert w[0].filename == __file__
+        assert keep_alive._state.capacity == 2
+
+    def test_capacity_increase_wakes_a_parked_waiter(self):
+        import threading
+        import time
+        import warnings
+
+        from django_cachex.semaphore import Semaphore
+
+        holder = Semaphore("capgrow", capacity=1)
+        assert holder.acquire(blocking=False) is True
+
+        result: dict[str, object] = {}
+
+        def park() -> None:
+            waiter = Semaphore("capgrow", capacity=1)
+            result["ok"] = waiter.acquire(blocking=True, timeout=5)
+            waiter.release()
+
+        t = threading.Thread(target=park)
+        t.start()
+        time.sleep(0.1)  # let the waiter park
+
+        started = time.monotonic()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            Semaphore("capgrow", capacity=2)
+        t.join(timeout=5)
+        elapsed = time.monotonic() - started
+
+        assert result["ok"] is True
+        # Without the wake the waiter admits only near its 5 s timeout.
+        assert elapsed < 1.0, f"waiter not woken by the capacity bump: {elapsed:.2f}s"
+        holder.release()
+
+
+class TestLocalRegistryReclamation:
+    def test_unreferenced_names_are_reclaimed(self):
+        import gc
+
+        from django_cachex.semaphore import Semaphore, _SemaphoreRegistry
+
+        registry = _SemaphoreRegistry()
+        for i in range(50):
+            sem = Semaphore(f"job:{i}", capacity=1, _registry=registry)
+            assert sem.acquire(blocking=False) is True
+            sem.release()
+            del sem
+        gc.collect()
+
+        assert len(registry._states) == 0
+
+    def test_live_instances_keep_their_state(self):
+        """Reclamation must never split a name's budget across instances."""
+        import gc
+
+        from django_cachex.semaphore import Semaphore, _SemaphoreRegistry
+
+        registry = _SemaphoreRegistry()
+        holder = Semaphore("kept", capacity=1, _registry=registry)
+        assert holder.acquire(blocking=False) is True
+        gc.collect()
+
+        other = Semaphore("kept", capacity=1, _registry=registry)
+        assert other._state is holder._state
+        assert other.acquire(blocking=False) is False
+        holder.release()
+
+
+class TestLocalDeadWaiter:
+    def test_closed_loop_waiter_does_not_wedge_release(self):
+        import asyncio
+
+        from django_cachex.semaphore import Semaphore, _Waiter
+
+        holder = Semaphore("dead_loop", capacity=1)
+        assert holder.acquire(blocking=False) is True
+
+        loop = asyncio.new_event_loop()
+
+        async def make_waiter() -> _Waiter:
+            return _Waiter(async_=True)
+
+        dead = loop.run_until_complete(make_waiter())
+        loop.close()
+
+        state = holder._state
+        with state.lock:
+            state.waiters[dead] = 1
+
+        holder.release()  # must not raise
+
+        assert dead not in state.waiters
+        fresh = Semaphore("dead_loop", capacity=1)
+        assert fresh.acquire(blocking=False) is True
+        fresh.release()
 
 
 class TestLocalAsyncCancellation:
@@ -376,7 +478,6 @@ class TestLocalAsyncCancellation:
             holder = Semaphore("cancel_test", capacity=1)
             await holder.aacquire(blocking=False)
 
-            # Park an async waiter, then cancel it.
             waiter = Semaphore("cancel_test", capacity=1)
             task = asyncio.create_task(waiter.aacquire(blocking=True, timeout=10))
             await asyncio.sleep(0.05)  # let it enqueue
@@ -384,7 +485,6 @@ class TestLocalAsyncCancellation:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
-            # The phantom must be gone; a fresh acquire after release should succeed quickly.
             fresh = Semaphore("cancel_test", capacity=1)
             await holder.arelease()
             ok = await fresh.aacquire(blocking=True, timeout=1)
@@ -447,8 +547,8 @@ class TestLocalConcurrentMisuse:
     nothing: the shared budget stays consistent and the loser raises."""
 
     def test_concurrent_release_releases_once(self):
-        # Regression: the held check ran outside the state lock, letting
-        # racing release() calls double-decrement the shared budget.
+        # Regression: the held check ran outside the state lock, so racing
+        # release() calls double-decremented the budget.
         from django_cachex.semaphore import Semaphore
 
         sem = Semaphore("race_release", capacity=1)
@@ -464,8 +564,8 @@ class TestLocalConcurrentMisuse:
         assert sem._state.used == 0
 
     def test_concurrent_acquire_admits_once(self):
-        # Regression: the held check ran outside the state lock, letting
-        # racing acquire() calls both admit and permanently leak budget.
+        # Regression: the held check ran outside the state lock, so racing
+        # acquire() calls both admitted and leaked budget.
         from django_cachex.semaphore import Semaphore
 
         sem = Semaphore("race_acquire", capacity=2)
@@ -519,7 +619,6 @@ class TestLocMemSemaphoreIntegration:
         sem_b = cache_b.semaphore("shared_name", capacity=1)
 
         assert sem_a.acquire(blocking=False) is True
-        # Same name on a different cache instance should NOT see used budget.
         assert sem_b.acquire(blocking=False) is True
 
         sem_a.release()
@@ -649,14 +748,11 @@ class TestRespLeaseReclaim:
         when the next acquirer hits the Lua reap loop."""
         import time
 
-        # Acquire with a short lease, then DO NOT release (simulates crash).
         crashed_holder = cache.semaphore("resp_reclaim", capacity=1, lease=0.3)
         assert crashed_holder.acquire(blocking=False) is True
 
-        # Wait past the lease.
         time.sleep(0.5)
 
-        # Fresh acquirer should succeed because the expired claim is reaped.
         fresh = cache.semaphore("resp_reclaim", capacity=1, lease=10)
         assert fresh.acquire(blocking=False) is True
         fresh.release()
@@ -666,13 +762,11 @@ class TestRespLeaseReclaim:
         import contextlib
         import time
 
-        # Capacity 10, weight-6 holder crashes; capacity should fully free up.
         crashed = cache.semaphore("resp_reclaim_w", capacity=10, weight=6, lease=0.3)
         assert crashed.acquire(blocking=False) is True
 
         time.sleep(0.5)
 
-        # Two new acquirers totaling 10 should both fit now that the 6 is reclaimed.
         a = cache.semaphore("resp_reclaim_w", capacity=10, weight=6, lease=10)
         b = cache.semaphore("resp_reclaim_w", capacity=10, weight=4, lease=10)
         try:
@@ -687,11 +781,9 @@ class TestRespLeaseReclaim:
 
 class TestRespQueueReap:
     def test_stale_queue_entry_reaped_on_acquire(self, cache):
-        # Regression: a crashed waiter's queue entry sat at the head forever;
-        # acquire now reaps entries whose liveness key expired.
+        # Regression: a crashed waiter's queue entry sat at the head forever.
         full_name = cache.make_and_validate_key("resp_queue_reap")
         queue_key = "{" + full_name + "}:queue"
-        # A dead waiter: queue entry present, liveness key absent.
         cache.adapter.zadd(queue_key, {b"dead-token": 1.0})
 
         fresh = cache.semaphore("resp_queue_reap", capacity=1, lease=10)
@@ -729,9 +821,8 @@ class TestRespQueueReap:
         def waiter_thread() -> None:
             waiter = cache.semaphore("resp_live_waiter", capacity=1, lease=10, timeout=5)
             result["ok"] = waiter.acquire(blocking=True)
-            # Keep the slot until the jumper has had its turn. Releasing here
-            # would hand the jumper a legitimately free slot whenever the
-            # waiter's poll lands between holder.release() and the assert.
+            # Releasing here would hand the jumper a legitimately free slot
+            # whenever the waiter's poll lands before the assert.
             may_release.wait(10)
             waiter.release()
 
@@ -739,9 +830,6 @@ class TestRespQueueReap:
         t.start()
         time.sleep(0.3)  # let the waiter enqueue and heartbeat
 
-        # The queued (live) waiter holds the head slot, so a non-blocking
-        # acquire must not jump the queue even once capacity frees up. Whether
-        # or not the waiter has been admitted yet, the jumper is refused.
         jumper = cache.semaphore("resp_live_waiter", capacity=1, lease=10)
         holder.release()
         assert jumper.acquire(blocking=False) is False
@@ -787,8 +875,6 @@ class TestRespAcquireInterrupted:
         queue_key = "{" + full_name + "}:queue"
         assert cache.adapter.zcard(queue_key) == 0
 
-        # With the queue entry cleaned up, a fresh acquire succeeds as soon
-        # as the holder releases (no phantom head to wait out).
         holder.release()
         fresh = cache.semaphore("resp_interrupt", capacity=1, lease=10)
         assert fresh.acquire(blocking=False) is True
@@ -801,7 +887,7 @@ class TestRespConcurrentMisuse:
 
     def test_concurrent_acquire_claims_once(self, monkeypatch):
         # Regression: the held check ran outside any lock, so two threads both
-        # minted a token, both were admitted, and one claim leaked.
+        # minted a token and one claim leaked.
         import contextlib
         import secrets
         import threading
@@ -834,15 +920,14 @@ class TestRespConcurrentMisuse:
                     return [b"queued", self.used, self.capacity]
 
         adapter = StubAdapter(capacity=2)
-        # Capacity 2 with weight 1: a double claim would be admitted twice.
         sem = RespSemaphore(adapter, "resp_race", capacity=2, lease=10)
 
         barrier = threading.Barrier(2)
         real_token_hex = secrets.token_hex
 
         def barrier_token_hex(nbytes=None):
-            # Both threads meet here only if both got past the held check;
-            # once the claim is locked the second never mints and this times out.
+            # Both arrive only if both got past the held check; once the claim
+            # is locked the second never mints and this times out.
             with contextlib.suppress(threading.BrokenBarrierError):
                 barrier.wait(timeout=0.25)
             return real_token_hex(nbytes)
@@ -867,7 +952,6 @@ class TestRespConcurrentMisuse:
         assert outcomes.count(True) == 1, outcomes
         assert adapter.used == 1
         assert len(adapter.claims) == 1
-        # The winner holds the only claim, so its release frees the budget.
         sem.release()
         assert adapter.used == 0
         assert adapter.claims == {}
@@ -897,9 +981,8 @@ class TestRespTokenSnapshot:
     """release()/extend() must act on the token they entered with."""
 
     def test_release_spares_a_racing_reacquire(self):
-        # Regression: release() re-read self._token after its guard, so a
-        # racing re-acquire could install a new token in between. RELEASE then
-        # ran against that live claim and cleared the field to None.
+        # Regression: release() re-read self._token after its guard, so a racing
+        # re-acquire's live claim was released instead.
         from django_cachex.semaphore import RespSemaphore
 
         seen: list[str] = []
@@ -950,9 +1033,8 @@ class TestRespTokenSnapshot:
 
 class TestRespEvictedState:
     def test_evicted_claims_hash_does_not_wedge(self, cache):
-        # Regression: 'used' was only ever adjusted by a delta, so losing the
-        # claims hash to maxmemory eviction left it pinned at capacity with
-        # nothing left to reap, and every later acquire failed forever.
+        # Regression: 'used' moved only by delta, so losing the claims hash to
+        # eviction pinned it at capacity with nothing left to reap.
         holder = cache.semaphore("resp_evicted", capacity=1, lease=60)
         assert holder.acquire(blocking=False) is True
 
@@ -966,8 +1048,8 @@ class TestRespEvictedState:
         fresh.release()
 
     def test_evicted_state_hash_does_not_over_admit(self, cache):
-        # The mirror case: losing the counter makes 'used' read 0, which would
-        # admit past capacity until the live claims are summed back up.
+        # Mirror case: losing the counter reads 'used' as 0, admitting past
+        # capacity until the live claims are summed back up.
         holder = cache.semaphore("resp_evicted_state", capacity=1, lease=60)
         assert holder.acquire(blocking=False) is True
 
@@ -977,6 +1059,129 @@ class TestRespEvictedState:
         fresh = cache.semaphore("resp_evicted_state", capacity=1, lease=60)
         assert fresh.acquire(blocking=False) is False
         holder.release()
+
+    def test_release_after_state_eviction_does_not_over_admit(self, cache):
+        # Regression: RELEASE resurrected 'used' as 0 from a missing state hash.
+        # ACQUIRE only re-derives when the counter is absent, so it trusted it.
+        a = cache.semaphore("resp_release_evicted", capacity=500, weight=200, lease=60)
+        b = cache.semaphore("resp_release_evicted", capacity=500, weight=200, lease=60)
+        assert a.acquire(blocking=False) is True
+        assert b.acquire(blocking=False) is True
+
+        full_name = cache.make_and_validate_key("resp_release_evicted")
+        cache.adapter.delete("{" + full_name + "}:state")
+
+        a.release()
+
+        c = cache.semaphore("resp_release_evicted", capacity=500, weight=500, lease=60)
+        assert c.acquire(blocking=False) is False
+        d = cache.semaphore("resp_release_evicted", capacity=500, weight=300, lease=60)
+        assert d.acquire(blocking=False) is True
+        d.release()
+        b.release()
+
+    def test_last_release_drops_the_state_hash(self, cache):
+        full_name = cache.make_and_validate_key("resp_state_gc")
+        prefix = "{" + full_name + "}"
+
+        sem = cache.semaphore("resp_state_gc", capacity=1, lease=60)
+        assert sem.acquire(blocking=False) is True
+        assert cache.adapter.hlen(f"{prefix}:state") > 0
+
+        sem.release()
+
+        assert cache.adapter.hlen(f"{prefix}:state") == 0
+        assert cache.adapter.hlen(f"{prefix}:claims") == 0
+
+    def test_state_hash_survives_while_another_claim_is_live(self, cache):
+        """The drop is last-holder-out only, never mid-flight."""
+        full_name = cache.make_and_validate_key("resp_state_gc_partial")
+        state_key = "{" + full_name + "}:state"
+
+        a = cache.semaphore("resp_state_gc_partial", capacity=2, lease=60)
+        b = cache.semaphore("resp_state_gc_partial", capacity=2, lease=60)
+        assert a.acquire(blocking=False) is True
+        assert b.acquire(blocking=False) is True
+
+        a.release()
+        assert cache.adapter.hlen(state_key) > 0
+
+        b.release()
+        assert cache.adapter.hlen(state_key) == 0
+
+
+class TestRespQueueScore:
+    def test_queue_score_comes_from_the_server_clock(self, cache):
+        from django_cachex.cache._semaphore_lua import ACQUIRE_LUA
+        from django_cachex.semaphore import _decode_status
+
+        server_now = "local t = redis.call('TIME') return tostring(t[1] * 1000 + t[2] / 1000)"
+
+        def server_ms(key: str) -> float:
+            raw = cache.adapter.eval(server_now, 1, key)
+            return float(raw.decode() if isinstance(raw, bytes) else raw)
+
+        holder = cache.semaphore("resp_qscore", capacity=1, lease=60)
+        assert holder.acquire(blocking=False) is True
+        try:
+            full_name = cache.make_and_validate_key("resp_qscore")
+            prefix = "{" + full_name + "}"
+            queue_key = f"{prefix}:queue"
+
+            before = server_ms(queue_key)
+            result = cache.adapter.eval(
+                ACQUIRE_LUA,
+                3,
+                f"{prefix}:state",
+                f"{prefix}:claims",
+                queue_key,
+                "probe-token",
+                "1",
+                "1",
+                "60000",
+                "5000",
+            )
+            after = server_ms(queue_key)
+            assert _decode_status(result) == "queued"
+
+            score = cache.adapter.zscore(queue_key, b"probe-token")
+            assert score is not None
+            # Bracketed by two reads of the SERVER clock taken milliseconds
+            # apart; nothing the caller passes could land in that window.
+            assert before <= float(score) <= after
+        finally:
+            holder.release()
+
+
+class TestRespReleaseNotOwned:
+    def test_release_reports_an_expired_lease(self, caplog):
+        # 'not_owned' means the claim was already reaped, so the work ran past
+        # its lease unprotected. That used to be discarded silently.
+        import logging
+
+        from django_cachex.semaphore import RespSemaphore
+
+        class NotOwnedAdapter:
+            def eval(self, script, numkeys, *args):
+                return [b"not_owned", 0]
+
+        sem = RespSemaphore(NotOwnedAdapter(), "resp_not_owned", capacity=1, lease=5)
+        sem._token = "reaped-token"
+
+        with caplog.at_level(logging.WARNING, logger="django_cachex.semaphore"):
+            sem.release()
+
+        assert "release found no claim" in caplog.text
+        assert sem._token is None
+
+    def test_release_is_quiet_on_success(self, cache, caplog):
+        import logging
+
+        sem = cache.semaphore("resp_quiet_release", capacity=1, lease=60)
+        assert sem.acquire(blocking=False) is True
+        with caplog.at_level(logging.WARNING, logger="django_cachex.semaphore"):
+            sem.release()
+        assert caplog.text == ""
 
 
 class TestRespExtend:

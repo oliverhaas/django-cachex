@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from django_cachex.cache.locmem import LocMemCache
+from django_cachex.exceptions import WrongTypeError
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -68,6 +69,20 @@ def _run_in_threads(worker: Callable[[int], None], n_threads: int = N_THREADS) -
     with ThreadPoolExecutor(max_workers=n_threads) as pool:
         for f in [pool.submit(runner, t) for t in range(n_threads)]:
             f.result()
+
+
+def _run_readers_and_writers(
+    reader: Callable[[], None],
+    writer: Callable[[], None],
+    n_readers: int = 6,
+    n_writers: int = 4,
+) -> None:
+    """Run ``reader``/``writer`` loops concurrently, all released by a barrier."""
+
+    def worker(tid: int) -> None:
+        (reader if tid < n_readers else writer)()
+
+    _run_in_threads(worker, n_threads=n_readers + n_writers)
 
 
 # =============================================================================
@@ -142,6 +157,62 @@ def test_locmem_zincrby_concurrent_conservation(
     _run_in_threads(worker)
 
     assert locmem_cache.zscore(key, member) == float(N_THREADS * OPS_PER_THREAD)
+
+
+def test_locmem_get_during_collection_writes_only_raises_wrongtype(
+    locmem_cache: LocMemCache,
+    fast_thread_switching: None,
+) -> None:
+    """``get`` racing a ``lpush`` on the same key must never raise ``KeyError``."""
+    # Regression: the collection check and the value read took Django's
+    # non-reentrant ``_lock`` separately, so a racing ``lpush`` slipped in.
+    key = "get-vs-lpush"
+    unexpected: list[BaseException] = []
+
+    def reader() -> None:
+        for _ in range(OPS_PER_THREAD * 4):
+            try:
+                locmem_cache.get(key)
+            except WrongTypeError:
+                pass
+            except BaseException as exc:  # noqa: BLE001
+                unexpected.append(exc)
+
+    def writer() -> None:
+        for _ in range(OPS_PER_THREAD * 4):
+            locmem_cache.lpush(key, "v")
+            locmem_cache.delete(key)
+
+    _run_readers_and_writers(reader, writer)
+
+    assert unexpected == []
+
+
+def test_locmem_incr_during_collection_writes_only_raises_documented_errors(
+    locmem_cache: LocMemCache,
+    fast_thread_switching: None,
+) -> None:
+    """``incr`` racing a ``lpush`` may only raise ``ValueError`` or ``WrongTypeError``."""
+    key = "incr-vs-lpush"
+    unexpected: list[BaseException] = []
+
+    def reader() -> None:
+        for _ in range(OPS_PER_THREAD * 4):
+            try:
+                locmem_cache.incr(key)
+            except ValueError, WrongTypeError:
+                pass
+            except BaseException as exc:  # noqa: BLE001
+                unexpected.append(exc)
+
+    def writer() -> None:
+        for _ in range(OPS_PER_THREAD * 4):
+            locmem_cache.lpush(key, "v")
+            locmem_cache.delete(key)
+
+    _run_readers_and_writers(reader, writer)
+
+    assert unexpected == []
 
 
 # =============================================================================

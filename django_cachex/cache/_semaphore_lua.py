@@ -17,9 +17,22 @@ Plus per-token TTL keys the scripts manage internally:
 The ``{name}`` hash-tag prefix colocates all keys for one semaphore on the
 same cluster slot, which is what Redis Cluster requires for atomic multi-key
 Lua. Cluster mode is supported (see ``RespCache.semaphore``).
+
+Eviction resilience differs per key. ACQUIRE re-derives ``used`` from the
+live claims and RELEASE refuses to resurrect a missing counter, so losing
+``{name}:state`` or ``{name}:claims`` to a ``allkeys-*`` maxmemory policy
+costs at most a queue position, never correctness. The per-token keys have
+no such recovery: evicting a LIVE holder's ``{name}:state:claim:<token>``
+is indistinguishable from that holder's lease expiring, so the next ACQUIRE
+reaps its weight and hands the budget to someone else while it is still
+running. Only ``maxmemory-policy noeviction`` protects them: ``allkeys-*``
+can evict any key, and ``volatile-*`` evicts precisely the keys that carry
+an expire, which is these. Point semaphores at a ``noeviction`` server (or
+a dedicated database) if the mutual exclusion has to hold under memory
+pressure.
 """
 
-# ARGV: token, weight, capacity, lease_ms, now_ms, waiter_ttl_ms
+# ARGV: token, weight, capacity, lease_ms, waiter_ttl_ms
 ACQUIRE_LUA = r"""
 local state_key = KEYS[1]
 local claims_key = KEYS[2]
@@ -28,8 +41,7 @@ local token = ARGV[1]
 local weight = tonumber(ARGV[2])
 local capacity = tonumber(ARGV[3])
 local lease_ms = tonumber(ARGV[4])
-local now_ms = tonumber(ARGV[5])
-local waiter_ttl_ms = tonumber(ARGV[6])
+local waiter_ttl_ms = tonumber(ARGV[5])
 
 -- Sync capacity: caller's value wins (capacity-at-call-site).
 local stored_cap = tonumber(redis.call('HGET', state_key, 'capacity') or '0')
@@ -62,8 +74,9 @@ if raw_used == false or not (at_head and used + weight <= capacity) then
   -- and every later acquire fails forever. Lose the state hash instead and
   -- 'used' reads 0, over-admitting past capacity, which is why a missing
   -- counter forces the walk even when the fast path would have admitted.
-  -- ACQUIRE and RELEASE always write counter and claims together, so the
-  -- live sum is the authoritative value whenever the two disagree.
+  -- The claims hash is the only record written on every admission and every
+  -- release, and RELEASE deliberately refuses to resurrect a missing counter,
+  -- so the live sum is the authoritative value whenever the two disagree.
   local claims = redis.call('HGETALL', claims_key)
   local live = 0
   for i = 1, #claims, 2 do
@@ -111,6 +124,14 @@ end
 
 -- Not admitted: enqueue if not already in queue; refresh liveness either way.
 if redis.call('ZSCORE', queue_key, token) == false then
+  -- Score from the SERVER clock, not the caller's. Admission is strictly
+  -- head-of-queue, so a client-supplied score lets a host with a skewed
+  -- clock sort ahead of every other host's waiters forever. TIME is the one
+  -- clock every contender shares. It is the only place a wall clock is read:
+  -- lease_ms and waiter_ttl_ms are relative PX durations, and the reapers key
+  -- off key existence rather than off any stored timestamp.
+  local t = redis.call('TIME')
+  local now_ms = tonumber(t[1]) * 1000 + tonumber(t[2]) / 1000
   redis.call('ZADD', queue_key, now_ms, token)
 end
 redis.call('SET', queue_key .. ':waiter:' .. token, '1', 'PX', waiter_ttl_ms)
@@ -131,9 +152,30 @@ if weight == 0 then
 end
 redis.call('HDEL', claims_key, token)
 redis.call('DEL', state_key .. ':claim:' .. token)
-local used = tonumber(redis.call('HGET', state_key, 'used') or '0')
-used = math.max(0, used - weight)
-redis.call('HSET', state_key, 'used', used)
+
+local raw_used = redis.call('HGET', state_key, 'used')
+if raw_used == false then
+  -- The state hash is gone (it carries no TTL, so only eviction removes it).
+  -- Writing `0 - weight` clamped to 0 here would invent a counter that is
+  -- wrong whenever other claims are still live, and ACQUIRE trusts a present
+  -- counter on its fast path: it only re-derives `used` from the claims hash
+  -- when the field is MISSING. Resurrecting it would therefore defeat exactly
+  -- the self-heal that is supposed to cover this case and over-admit past
+  -- capacity. Leave the field absent and let the next ACQUIRE do the walk.
+  -- -1 reports "counter unknown" to the caller.
+  return {'released', -1, 0}
+end
+
+local used = math.max(0, tonumber(raw_used) - weight)
+if used == 0 and redis.call('HLEN', claims_key) == 0 then
+  -- Last holder out drops the state hash so dynamically-named semaphores
+  -- ("job:<id>") don't leak one un-expiring key per name. ACQUIRE recreates
+  -- it (capacity comes from the caller on every call), and a missing counter
+  -- is the safe direction: it forces the derive-from-claims walk.
+  redis.call('DEL', state_key)
+else
+  redis.call('HSET', state_key, 'used', used)
+end
 return {'released', used, 0}
 """
 

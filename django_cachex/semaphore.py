@@ -18,20 +18,28 @@ instance per acquire/release lifecycle, the same way :class:`Lock` is used.
 
 import asyncio
 import contextlib
+import logging
 import secrets
+import sys
 import threading
 import time
 import warnings
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Self
+from weakref import WeakValueDictionary
 
 from django_cachex.exceptions import CachexError
 
 if TYPE_CHECKING:
-    from types import TracebackType
+    from types import FrameType, TracebackType
 
     from django_cachex.adapters.protocols import RespAdapterProtocol
+
+logger = logging.getLogger(__name__)
+
+_PACKAGE_DIR = str(Path(__file__).parent)
 
 
 class SemaphoreError(CachexError):
@@ -40,6 +48,20 @@ class SemaphoreError(CachexError):
 
 class SemaphoreTimeoutError(SemaphoreError):
     """Raised when ``timeout`` elapses before the caller could acquire."""
+
+
+def _caller_stacklevel() -> int:
+    """``stacklevel`` for a warning that should point at the first non-package frame."""
+    # A constant can't serve both entry points: ``cache.semaphore(...)`` sits
+    # one frame deeper than a direct ``Semaphore(...)``.
+    frame: FrameType | None = sys._getframe(1)
+    level = 1
+    while frame is not None:
+        if not str(frame.f_globals.get("__file__", "")).startswith(_PACKAGE_DIR):
+            return level
+        frame = frame.f_back
+        level += 1
+    return level
 
 
 @dataclass
@@ -68,10 +90,18 @@ class _SemaphoreRegistry:
     :class:`~django_cachex.cache.LocMemCache` configured for the same
     LOCATION shares one; standalone :class:`Semaphore` instances share the
     module-level ``_DEFAULT_REGISTRY``.
+
+    Entries are held weakly so dynamically-named semaphores
+    (``cache.semaphore(f"job:{id}", ...)``) do not grow the registry without
+    bound. Every :class:`Semaphore` keeps a strong reference to its state, and
+    so does the frame of any thread parked in ``acquire()``, so a name is
+    reclaimed only once nothing can still hold or wait on it. Deleting a live
+    entry instead is not an option: an instance created before the delete and
+    one created after would accumulate against different budgets.
     """
 
     def __init__(self) -> None:
-        self._states: dict[str, _LocalState] = {}
+        self._states: WeakValueDictionary[str, _LocalState] = WeakValueDictionary()
         self._lock = threading.Lock()
 
     def get_state(self, name: str, capacity: int) -> _LocalState:
@@ -86,6 +116,10 @@ class _SemaphoreRegistry:
                 old_capacity = state.capacity
                 with state.lock:
                     state.capacity = capacity
+                    if capacity > old_capacity:
+                        # A parked waiter may now fit; without this it waits
+                        # out its timeout for an unrelated release.
+                        _notify_next(state)
         if old_capacity is not None:
             # Warn AFTER releasing the registry lock: a user warning handler
             # that re-enters get_state would otherwise deadlock.
@@ -96,7 +130,7 @@ class _SemaphoreRegistry:
                     f"In-flight claims are not retroactively rejected."
                 ),
                 RuntimeWarning,
-                stacklevel=4,
+                stacklevel=_caller_stacklevel(),
             )
         return state
 
@@ -106,12 +140,16 @@ _DEFAULT_REGISTRY = _SemaphoreRegistry()
 
 def _notify_next(state: _LocalState) -> None:
     """Wake the head waiter if its weight now fits."""
-    if not state.waiters:
-        return
-    head_waiter = next(iter(state.waiters))
-    head_weight = state.waiters[head_waiter]
-    if state.used + head_weight <= state.capacity:
-        head_waiter.wake()
+    # Loop, don't wake once: a waiter whose loop closed while queued can never
+    # be woken, and at the head it would block every release() behind it.
+    while state.waiters:
+        head_waiter = next(iter(state.waiters))
+        head_weight = state.waiters[head_waiter]
+        if state.used + head_weight > state.capacity:
+            return
+        if head_waiter.wake():
+            return
+        del state.waiters[head_waiter]
 
 
 class _Waiter:
@@ -155,13 +193,21 @@ class _Waiter:
         else:
             return True
 
-    def wake(self) -> None:
+    def wake(self) -> bool:
+        """Wake this waiter; False means it is unwakeable and should be dropped."""
         if self.event is not None:
             self.event.set()
-            return
+            return True
         assert self.future is not None  # noqa: S101
         assert self.loop is not None  # noqa: S101
-        self.loop.call_soon_threadsafe(self._set_future_result)
+        if self.loop.is_closed():
+            return False
+        try:
+            self.loop.call_soon_threadsafe(self._set_future_result)
+        except RuntimeError:
+            # The loop closed between the check and the call.
+            return False
+        return True
 
     def _set_future_result(self) -> None:
         assert self.future is not None  # noqa: S101
@@ -353,14 +399,11 @@ class Semaphore:
             # iteration can park on it if we're not admitted yet.
             new_waiter = _Waiter(async_=True)
             with state.lock:
-                if waiter in state.waiters:
-                    weight = state.waiters.pop(waiter)
-                    state.waiters[new_waiter] = weight
-                    state.waiters.move_to_end(new_waiter, last=False)
-                    # Restore head position by moving every other waiter back
-                    # to the end in their original order. Since OrderedDict
-                    # preserves insertion order, popping us and reinserting
-                    # at the front via move_to_end(last=False) keeps FIFO.
+                # ``_notify_next`` only ever wakes the head, so we were it;
+                # reinserting at the front is what preserves FIFO.
+                weight = state.waiters.pop(waiter, self.weight)
+                state.waiters[new_waiter] = weight
+                state.waiters.move_to_end(new_waiter, last=False)
             waiter = new_waiter
 
     async def arelease(self) -> None:
@@ -405,7 +448,9 @@ class Semaphore:
 
 
 # Waiter heartbeat TTL; ACQUIRE_LUA reaps queue entries whose key expired.
-# Must exceed the poll backoff cap so a live waiter is never reaped.
+# Must exceed the longest gap between two polls so a live waiter is never
+# reaped. That gap is _MAX_BACKOFF_MS plus its jitter, i.e. 750 ms.
+_MAX_BACKOFF_MS = 500
 _WAITER_TTL_MS = 5_000
 
 
@@ -424,9 +469,10 @@ class RespSemaphore:
     raises :class:`SemaphoreError`.
 
     Blocking ``acquire``/``aacquire`` polls with jittered exponential backoff
-    (10 ms initial, 500 ms cap). Worst-case admission latency after a release
-    on another process is therefore up to ~500 ms even when budget is free;
-    in-process the local :class:`Semaphore` wakes immediately. Non-blocking
+    (10 ms initial, 500 ms cap plus up to 250 ms of jitter). Worst-case
+    admission latency after a release on another process is therefore up to
+    ~750 ms even when budget is free; in-process the local
+    :class:`Semaphore` wakes immediately. Non-blocking
     acquire (``blocking=False``) round-trips Redis twice on a miss (one
     ACQUIRE_LUA that enqueues, one DEQUEUE_LUA that removes); poll loops on
     ``blocking=False`` are inefficient and contend with the wait queue.
@@ -489,6 +535,20 @@ class RespSemaphore:
             if self._token == token:
                 self._token = None
 
+    def _warn_if_not_owned(self, result: object) -> None:
+        """Report a RELEASE that found no claim: the lease expired mid-work."""
+        # Logged, not raised: ``release()`` runs from ``__exit__``, so raising
+        # would chain over whatever the body was already reporting.
+        if _decode_status(result) != "not_owned":
+            return
+        logger.warning(
+            "semaphore %r: release found no claim; the lease (%.3gs) expired "
+            "while the work was still running, so the budget was reclaimed and "
+            "handed to another caller. Raise the lease or call extend().",
+            self.name,
+            self.lease,
+        )
+
     # ------------------------------------------------------------------ sync
 
     def acquire(self, *, blocking: bool = True, timeout: float | None = None) -> bool:  # noqa: C901
@@ -500,7 +560,6 @@ class RespSemaphore:
         lease_ms = max(1, int(self.lease * 1000))
         deadline = None if timeout is None else time.monotonic() + timeout
         backoff_ms = 10
-        max_backoff_ms = 500
 
         def _dequeue_token() -> None:
             # Best-effort queue cleanup on any non-success exit; suppress
@@ -509,7 +568,6 @@ class RespSemaphore:
                 self._adapter.eval(DEQUEUE_LUA, 1, self._queue_key, token)
 
         while True:
-            now_ms = int(time.time() * 1000)
             try:
                 result = self._adapter.eval(
                     ACQUIRE_LUA,
@@ -521,7 +579,6 @@ class RespSemaphore:
                     str(self.weight),
                     str(self.capacity),
                     str(lease_ms),
-                    str(now_ms),
                     str(_WAITER_TTL_MS),
                 )
                 status = _decode_status(result)
@@ -529,17 +586,17 @@ class RespSemaphore:
                 # KeyboardInterrupt must not leave our queue entry behind: a
                 # dead head blocks acquirers until the liveness TTL expires.
                 _dequeue_token()
-                self._token = None
+                self._clear_token(token)
                 raise
             if status == "acquired":
                 return True
             if not blocking:
                 _dequeue_token()
-                self._token = None
+                self._clear_token(token)
                 return False
             if deadline is not None and time.monotonic() >= deadline:
                 _dequeue_token()
-                self._token = None
+                self._clear_token(token)
                 msg = f"semaphore {self.name!r} acquire timed out"
                 raise SemaphoreTimeoutError(msg)
             # Jittered exponential backoff.
@@ -552,15 +609,15 @@ class RespSemaphore:
                     time.sleep(sleep_s)
                 except BaseException:
                     _dequeue_token()
-                    self._token = None
+                    self._clear_token(token)
                     raise
-            backoff_ms = min(max_backoff_ms, int(backoff_ms * 1.5))
+            backoff_ms = min(_MAX_BACKOFF_MS, int(backoff_ms * 1.5))
 
     def release(self) -> None:
         from django_cachex.cache._semaphore_lua import RELEASE_LUA
 
         token = self._held_token("release")
-        self._adapter.eval(
+        result = self._adapter.eval(
             RELEASE_LUA,
             3,
             self._state_key,
@@ -569,6 +626,7 @@ class RespSemaphore:
             token,
         )
         self._clear_token(token)
+        self._warn_if_not_owned(result)
 
     def extend(self, additional_seconds: float) -> bool:
         """Bump the lease TTL of the held claim by ``additional_seconds``.
@@ -604,7 +662,6 @@ class RespSemaphore:
         loop = asyncio.get_running_loop()
         deadline = None if timeout is None else loop.time() + timeout
         backoff_ms = 10
-        max_backoff_ms = 500
 
         async def _dequeue_token() -> None:
             # Best-effort cleanup of our queue entry on any non-success exit
@@ -614,7 +671,6 @@ class RespSemaphore:
                 await self._adapter.aeval(DEQUEUE_LUA, 1, self._queue_key, token)
 
         while True:
-            now_ms = int(time.time() * 1000)
             try:
                 result = await self._adapter.aeval(
                     ACQUIRE_LUA,
@@ -626,23 +682,22 @@ class RespSemaphore:
                     str(self.weight),
                     str(self.capacity),
                     str(lease_ms),
-                    str(now_ms),
                     str(_WAITER_TTL_MS),
                 )
                 status = _decode_status(result)
             except BaseException:
                 await _dequeue_token()
-                self._token = None
+                self._clear_token(token)
                 raise
             if status == "acquired":
                 return True
             if not blocking:
                 await _dequeue_token()
-                self._token = None
+                self._clear_token(token)
                 return False
             if deadline is not None and loop.time() >= deadline:
                 await _dequeue_token()
-                self._token = None
+                self._clear_token(token)
                 msg = f"semaphore {self.name!r} acquire timed out"
                 raise SemaphoreTimeoutError(msg)
             # Jittered exponential backoff.
@@ -655,15 +710,15 @@ class RespSemaphore:
                     await asyncio.sleep(sleep_s)
                 except BaseException:
                     await _dequeue_token()
-                    self._token = None
+                    self._clear_token(token)
                     raise
-            backoff_ms = min(max_backoff_ms, int(backoff_ms * 1.5))
+            backoff_ms = min(_MAX_BACKOFF_MS, int(backoff_ms * 1.5))
 
     async def arelease(self) -> None:
         from django_cachex.cache._semaphore_lua import RELEASE_LUA
 
         token = self._held_token("release")
-        await self._adapter.aeval(
+        result = await self._adapter.aeval(
             RELEASE_LUA,
             3,
             self._state_key,
@@ -672,6 +727,7 @@ class RespSemaphore:
             token,
         )
         self._clear_token(token)
+        self._warn_if_not_owned(result)
 
     async def aextend(self, additional_seconds: float) -> bool:
         """Async mirror of :meth:`extend`."""
