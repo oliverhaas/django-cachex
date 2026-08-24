@@ -22,7 +22,7 @@ CACHES = {
     "default": {
         "BACKEND": "django_cachex.cache.StreamCache",
         "OPTIONS": {
-            "transport": "redis",  # alias of any cachex RespCache subclass
+            "transport": "redis",  # alias of any cachex Valkey/Redis backend
             "stream_key": "cache:sync",
             "maxlen": 10000,  # approximate trim
             "block_timeout": 1000,  # XREAD BLOCK timeout, ms

@@ -225,14 +225,14 @@ six async cache ops, the shape closest to real production load.
 - **Sync direct.** `valkey-glide` leads every phase at **~7k get / 7k set
   / 8.9k incr / 4k delete** ops/sec, ~2.5× the fastest pure-Python adapter,
   and uses ~4× less Python memory.
-- **Django request cycle.** `valkey-glide` leads at ~1.2–1.9k ops/sec.
+- **Django request cycle.** `valkey-glide` leads at ~1.2-1.9k ops/sec.
   An earlier version failed this benchmark entirely because ``close()``
   was tearing down the connection on every ``request_finished`` signal;
   now it outperforms the Python adapters.
-- **Async serial.** `valkey-glide` runs ~1.5–1.8× faster than the C-parser
+- **Async serial.** `valkey-glide` runs ~1.5-1.8x faster than the C-parser
   Python adapters on every phase (3.3k get, 3.7k incr).
 - **Async concurrent (50 in flight).** `valkey-glide` peaks at **10k get /
-  12.5k get-miss / 12.2k incr** ops/sec, roughly **4–5×** the fastest
+  12.5k get-miss / 12.2k incr** ops/sec, roughly **4-5x** the fastest
   Python adapter.
 - **ASGI full-stack** (granian × 4 workers, httpx × 100 concurrent).
   `valkey-glide` leads on req/s at 553 (180 ms avg, 1.4 s p99) and uses

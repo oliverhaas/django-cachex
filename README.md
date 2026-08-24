@@ -26,7 +26,7 @@ CACHES = {
 ## What's in the box
 
 - One package for both Valkey and Redis, default and Sentinel and Cluster.
-- Sync and async are first-class. The async cache also works from sync code.
+- Sync and async support sharing one configuration: every cache exposes both `get()` and `aget()`, backed by the same alias.
 - Hash, list, set, sorted set, and stream operations on the cache object.
 - TTL and pattern helpers (`ttl()`, `expire()`, `keys()`, `delete_pattern()`).
 - Distributed locks: `cache.lock()`.
@@ -35,7 +35,7 @@ CACHES = {
 - Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with fallback chains for safe migrations.
 - Cache stampede prevention (TTL-based XFetch).
 - Two composite backends: `StreamCache` (cross-pod stream-synchronized in-memory cache) and `TieredCache` (L1/L2 with TTL propagation).
-- Django `LocMemCache` and `DatabaseCache` extensions with the same data-structure ops and admin support.
+- Django `LocMemCache` and `DatabaseCache` extensions with the hash, list, set and sorted set ops (no streams) and admin support.
 - Optional `valkey-glide` adapter: Valkey's official Rust-cored client, exposed as `ValkeyGlideCache`. Experimental.
 - Django admin UI for browsing keys, inspecting values, editing, and flushing. See below.
 
@@ -52,9 +52,9 @@ INSTALLED_APPS = [
 
 Browse all configured caches, search and filter keys by type, and manage values directly:
 
-![Cache list](docs/assets/screenshot-cache-list.png)
-![Key list](docs/assets/screenshot-key-list.png)
-![Key detail](docs/assets/screenshot-key-detail.png)
+![Cache list](https://raw.githubusercontent.com/oliverhaas/django-cachex/main/docs/assets/screenshot-cache-list.png)
+![Key list](https://raw.githubusercontent.com/oliverhaas/django-cachex/main/docs/assets/screenshot-key-list.png)
+![Key detail](https://raw.githubusercontent.com/oliverhaas/django-cachex/main/docs/assets/screenshot-key-detail.png)
 
 Features:
 - Browse all configured cache backends (Valkey, Redis, LocMemCache, DatabaseCache, and more)

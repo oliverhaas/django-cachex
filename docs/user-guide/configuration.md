@@ -41,7 +41,11 @@ All backends live in `django_cachex.cache`.
     change, and it has seen less production testing than the
     redis-py/valkey-py backends.
 
-Valkey's official client library, bundled as `valkey-glide`. Async-first; cachex wraps the async client transparently. Install via the `valkey-glide` extra.
+Valkey's official client library, with a Rust core. It ships as two PyPI
+distributions, `valkey-glide-sync` and `valkey-glide`, both pulled in by the
+`valkey-glide` extra. cachex uses the sync distribution's `glide_sync.GlideClient`
+for sync calls and the async distribution's `glide.GlideClient` for the `a*`
+methods, so one cache alias holds up to one client of each kind.
 
 | Backend | Description |
 |---------|-------------|
@@ -76,6 +80,15 @@ See the upstream [valkey-glide](https://github.com/valkey-io/valkey-glide) docs 
 !!! note "Valkey and Redis Compatibility"
     Valkey and Redis are protocol-compatible, so either backend works with either server. Valkey is recommended as it remains fully open source.
 
+### Shared base classes
+
+`django_cachex.cache` also exports `RespCache`, `RespClusterCache` and
+`RespSentinelCache`. They hold the shared implementation that the Valkey/Redis
+backends above inherit. They bind no driver, so naming one as `BACKEND` raises
+`ImproperlyConfigured` on the first operation; they exist for subclassing and
+typing. Read a mention of
+them elsewhere as shorthand for "every Valkey/Redis backend".
+
 ## LOCATION
 
 Server URL(s):
@@ -107,6 +120,22 @@ Server URL(s):
 ```
 
 ## OPTIONS Reference
+
+Which keys are honored depends on the backend:
+
+| Keys | Honored by |
+|------|------------|
+| `serializer`, `compressor`, `stampede_prevention`, `username`, `password` | Every Valkey/Redis backend, valkey-glide included |
+| `pool_class`, `async_pool_class`, `parser_class`, `sentinels`, `sentinel_kwargs`, plus everything forwarded to the driver's `from_url()` (`socket_timeout`, `socket_connect_timeout`, `retry_on_timeout`, `ssl_*`, `db`, ...) | redis-py and valkey-py backends |
+| `db`, `use_tls` / `ssl`, `request_timeout`, `client_name` | valkey-glide backends, see [Valkey-Glide OPTIONS](#valkey-glide-options) |
+
+`db` appears in both driver rows because each reads it its own way: redis-py and
+valkey-py hand it to `from_url()`, valkey-glide turns it into a `database_id` on
+the client config.
+
+The valkey-glide adapter builds its client configuration from that short list and
+ignores every other `OPTIONS` key without warning, so a `socket_timeout` or
+`pool_class` copied from a valkey-py alias has no effect there.
 
 ### Serialization
 
@@ -164,10 +193,16 @@ Compression is only applied to values larger than `min_length` bytes (default: 2
 
 ### Connection Pool
 
+Applies to the redis-py and valkey-py backends. valkey-glide manages its own
+connections and reads none of these keys.
+
 ```python
 "OPTIONS": {
     # Custom pool class (use valkey.ConnectionPool for Valkey)
     "pool_class": "valkey.ConnectionPool",
+
+    # Custom async pool class, used by the a* methods
+    "async_pool_class": "valkey.asyncio.ConnectionPool",
 
     "retry_on_timeout": True,
 
@@ -177,9 +212,16 @@ Compression is only applied to values larger than `min_length` bytes (default: 2
 }
 ```
 
-Any extra keys you add are forwarded to the underlying pool's `from_url(...)`,
-so you can pin driver-specific options (`socket_keepalive`, `health_check_interval`,
-etc.) the same way.
+`pool_class` and `async_pool_class` take a dotted path or a class; each defaults
+to the driver's own sync or async `ConnectionPool`. See
+[Async support](async.md#custom-async-pool-class) for the async pool.
+
+Extra keys you add are forwarded to the underlying pool's `from_url(...)`, so you
+can pin driver-specific options (`socket_keepalive`, `health_check_interval`, etc.)
+the same way. Seven keys are handled by cachex instead of being forwarded:
+`pool_class`, `async_pool_class`, `serializer`, `compressor`,
+`stampede_prevention`, `sentinels` and `sentinel_kwargs`. `parser_class` is
+resolved to a class first and then passed to the pool.
 
 ### Parser
 
@@ -190,7 +232,7 @@ etc.) the same way.
 }
 ```
 
-You rarely need to set this. When omitted, the driver's `DefaultParser`
+Also redis-py and valkey-py only. You rarely need to set this. When omitted, the driver's `DefaultParser`
 is used, which resolves to the C-accelerated parser when `libvalkey`
 (Valkey) or `hiredis` (Redis) is installed and to the pure-Python RESP
 parser otherwise. To get the C parser, install the `libvalkey` or
@@ -216,21 +258,56 @@ Probabilistic early recompute (XFetch) to avoid thundering-herd recompute when a
 
 Per-call overrides accept the same shapes via the `stampede_prevention=` keyword on `get`/`set`/`add`/`touch`/`get_or_set`/`get_many`/`set_many`, and on their `a`-prefixed async counterparts. On `touch` the keyword decides whether the refreshed TTL gets the buffer added back, so it should match what the original write used.
 
+!!! warning "Valkey/Redis backends only"
+    Stampede prevention is implemented in the RESP cache layer and the
+    valkey-py and valkey-glide adapters. `LocMemCache`, `DatabaseCache`,
+    `StreamCache` and `TieredCache` ignore both `OPTIONS["stampede_prevention"]`
+    and the per-call keyword.
+
+### Valkey-Glide OPTIONS
+
+The valkey-glide adapter builds a `GlideClientConfiguration` rather than a
+connection pool, so it reads its own short set of keys:
+
+```python
+"OPTIONS": {
+    "db": 2,                  # database index, standalone only
+    "use_tls": True,          # "ssl" is accepted as an alias
+    "username": "app",
+    "password": "secret",
+    "request_timeout": 250,   # milliseconds
+    "client_name": "web-1",
+}
+```
+
+| Option | Description |
+|--------|-------------|
+| `db` | Database index. Beats a `?db=` query, which beats the URL path. Ignored by `ValkeyGlideClusterCache`, since cluster only serves db 0. |
+| `use_tls` / `ssl` | Force TLS on or off. Without either key, TLS follows the `rediss://` or `valkeys://` scheme. `use_tls` is read first. |
+| `username` / `password` | ACL credentials. Either one present builds a `ServerCredentials`; `OPTIONS` wins over the URL. |
+| `request_timeout` | Per-request timeout. Coerced to `int` and passed through as glide's own `request_timeout`, which glide reads as milliseconds. |
+| `client_name` | Name reported to the server, visible in `CLIENT LIST`. |
+
+`serializer`, `compressor` and `stampede_prevention` also apply, since those are
+handled above the adapter. Every other key is ignored.
+
 ### Choosing an adapter
 
 The adapter (the layer that talks to the underlying client lib) is
 selected by your ``BACKEND``. Each cache class has a fixed adapter:
 
-| Backend                                            | Adapter         |
-|----------------------------------------------------|-----------------|
-| ``django_cachex.cache.RedisCache``                 | redis-py        |
-| ``django_cachex.cache.ValkeyCache``                | valkey-py       |
-| ``django_cachex.cache.ValkeyGlideCache``           | valkey-glide    |
-| ``django_cachex.cache.ValkeyGlideClusterCache``    | valkey-glide    |
+| Backend                                         | Adapter      |
+|-------------------------------------------------|--------------|
+| `django_cachex.cache.RedisCache`                | redis-py     |
+| `django_cachex.cache.RedisSentinelCache`        | redis-py     |
+| `django_cachex.cache.RedisClusterCache`         | redis-py     |
+| `django_cachex.cache.ValkeyCache`               | valkey-py    |
+| `django_cachex.cache.ValkeySentinelCache`       | valkey-py    |
+| `django_cachex.cache.ValkeyClusterCache`        | valkey-py    |
+| `django_cachex.cache.ValkeyGlideCache`          | valkey-glide |
+| `django_cachex.cache.ValkeyGlideClusterCache`   | valkey-glide |
 
-To use a different adapter, change ``BACKEND``. The matching
-``*ClusterCache`` and ``*SentinelCache`` classes pick the same
-adapter family in cluster/sentinel mode.
+To use a different adapter, change `BACKEND`.
 
 ## Authentication
 
@@ -300,6 +377,10 @@ user name contains characters that would need URL-escaping:
     "ssl_keyfile": "/path/to/client.key",
 }
 ```
+
+The `ssl_*` keys go to the redis-py or valkey-py connection pool and have no
+effect on valkey-glide, where the only TLS input cachex passes on is the
+`use_tls` flag. See [Valkey-Glide OPTIONS](#valkey-glide-options).
 
 ## Sentinel Configuration
 

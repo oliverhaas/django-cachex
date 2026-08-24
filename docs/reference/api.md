@@ -286,7 +286,7 @@ adapter is configured:
 | `RedisCache` (`redis-py`) | `redis.Redis` |
 | `ValkeyGlideCache` (`valkey-glide`) | `glide_sync.GlideClient` |
 
-The four objects expose comparable command surfaces but are not
+The three objects expose comparable command surfaces but are not
 interchangeable types; code that pins to one adapter for type-narrowing
 or vendor-specific calls won't work against the others. For
 adapter-portable code use the cache API directly; reach for
@@ -299,16 +299,24 @@ returns the adapter's async client.
 ## Lock Interface
 
 ```python
-lock = cache.lock(key, lease=None, sleep=0.1, blocking=True, timeout=None)
+lock = cache.lock(key, version=None, lease=None, sleep=0.1, *, blocking=True, timeout=None, thread_local=True)
 ```
 
 | Parameter | Description |
 |-----------|-------------|
 | `key` | Lock name |
+| `version` | Cache version namespace for the lock key |
 | `lease` | TTL of the held lock; the lock is auto-released after this many seconds (no auto-release if `None`) |
 | `sleep` | Time between acquire attempts |
 | `blocking` | Wait for lock if held |
 | `timeout` | Max time `acquire()` will wait before giving up (no upper bound if `None`) |
+| `thread_local` | Keep the ownership token in thread-local storage, so one thread cannot release another's hold |
+
+`version` is the second positional parameter, ahead of `lease`. Pass `lease` by
+keyword: `cache.lock("k", 30)` sets `version=30` and leaves the lock without a
+TTL.
+
+`alock()` takes the same parameters.
 
 `acquire()` accepts the same `blocking` / `timeout` arguments to override
 the defaults set on the lock object:
@@ -364,7 +372,7 @@ sem = cache.semaphore(key, capacity, *, weight=1, version=None, lease=None, time
 Return a weighted semaphore for concurrency gating. Use as a context manager.
 
 ```python
-with cache.semaphore("image-convert", capacity=4):
+with cache.semaphore("image-convert", capacity=4, lease=60):
     # Up to 4 callers may hold this semaphore concurrently.
     convert(...)
 
@@ -465,19 +473,33 @@ Single-key commands are available on the pipeline. The multi-key helpers (`set_m
 
 ### Cache OPTIONS
 
-| Option | Description |
-|--------|-------------|
-| `serializer` | Serializer class or list for fallback |
-| `compressor` | Compressor class or list for fallback |
-| `password` | Server password |
-| `socket_connect_timeout` | Connection timeout |
-| `socket_timeout` | Read/write timeout |
-| `pool_class` | Custom connection pool class (sync) |
-| `async_pool_class` | Custom connection pool class (async) |
-| `parser_class` | Custom RESP parser class |
-| `stampede_prevention` | `True` / `False` / dict (`buffer`, `beta`, `delta`); see [`StampedeConfig`](#stampedeconfig) |
-| `sentinels` | Sentinel server list (for Sentinel backends) |
-| `sentinel_kwargs` | Sentinel configuration |
+| Option | Backends | Description |
+|--------|----------|-------------|
+| `serializer` | all Valkey/Redis | Serializer class or list for fallback |
+| `compressor` | all Valkey/Redis | Compressor class or list for fallback |
+| `stampede_prevention` | all Valkey/Redis | `True` / `False` / dict (`buffer`, `beta`, `delta`); see [`StampedeConfig`](#stampedeconfig) |
+| `username` | all Valkey/Redis | ACL user name; takes precedence over the URL |
+| `password` | all Valkey/Redis | Server password; takes precedence over the URL |
+| `socket_connect_timeout` | redis-py, valkey-py | Connection timeout |
+| `socket_timeout` | redis-py, valkey-py | Read/write timeout |
+| `pool_class` | redis-py, valkey-py | Custom connection pool class (sync) |
+| `async_pool_class` | redis-py, valkey-py | Custom connection pool class (async) |
+| `parser_class` | redis-py, valkey-py | Custom RESP parser class |
+| `sentinels` | redis-py, valkey-py | Sentinel server list (for Sentinel backends) |
+| `sentinel_kwargs` | redis-py, valkey-py | Sentinel configuration |
+| `db` | valkey-glide | Database index (standalone only); on redis-py/valkey-py it goes through the URL or `from_url()` |
+| `use_tls` / `ssl` | valkey-glide | Force TLS on or off, overriding the URL scheme |
+| `request_timeout` | valkey-glide | Per-request timeout, in milliseconds |
+| `client_name` | valkey-glide | Client name reported to the server |
+
+The redis-py and valkey-py adapters forward any key not listed above to the
+driver's `from_url()`, so `retry_on_timeout`, `ssl_ca_certs`, `socket_keepalive`
+and the rest of the driver's own options work there. The valkey-glide adapter
+does not: it reads only the keys marked "all Valkey/Redis" or "valkey-glide" and
+ignores everything else. `LocMemCache`, `DatabaseCache`, `StreamCache` and
+`TieredCache` take their own `OPTIONS`; see
+[Configuration](../user-guide/configuration.md) and
+[Composite backends](../user-guide/composite-backends.md).
 
 ### StampedeConfig
 
@@ -494,6 +516,9 @@ gets the buffer added back.
 | `buffer` | `60`  | Seconds added to TTL on writes; defines the early-recompute window. |
 | `beta`   | `1.0` | Multiplier on the recompute probability; higher = recompute earlier. |
 | `delta`  | `1.0` | Recompute-cost estimate (seconds); larger = recompute earlier. |
+
+Only the Valkey/Redis backends implement it. `LocMemCache`, `DatabaseCache`,
+`StreamCache` and `TieredCache` ignore both the option and the per-call keyword.
 
 ## Exceptions
 
