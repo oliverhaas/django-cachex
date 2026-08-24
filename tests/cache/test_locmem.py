@@ -104,6 +104,19 @@ class TestCulling:
         # Culled keys must not leak TTL entries.
         assert len(cache._expire_info) == len(cache._cache) + len(cache._collections)
 
+    def test_collection_rewrite_at_capacity_keeps_key_and_ttl(self):
+        # Regression: a rewrite at capacity culled the key being written, then
+        # re-added it without its TTL and evicted a sibling.
+        cache = LocMemCache("cull-rewrite", {"OPTIONS": {"MAX_ENTRIES": 4, "CULL_FREQUENCY": 2}})
+        cache.clear()
+        for i in range(4):
+            cache.hset(f"h{i}", "f", i)
+            cache.expire(f"h{i}", 1000)
+        cache.hset("h0", "f", 99)
+        assert cache.hget("h0", "f") == 99
+        assert cache.ttl("h0") >= 999
+        assert sorted(cache.keys()) == ["h0", "h1", "h2", "h3"]
+
     def test_cull_frequency_zero_clears_collections_too(self):
         cache = LocMemCache("cull-zero", {"OPTIONS": {"MAX_ENTRIES": 3, "CULL_FREQUENCY": 0}})
         cache.clear()
@@ -467,6 +480,24 @@ class TestListOps:
         assert locmem_cache.lpush("k", "a", "b", "c") == 3
         assert locmem_cache.lrange("k", 0, -1) == ["c", "b", "a"]
 
+    def test_lpush_no_values_creates_nothing(self, locmem_cache: LocMemCache):
+        # Regression: an empty ``_List`` was stored, an immortal key no list op
+        # can reach or reap. Redis never creates an empty list.
+        assert locmem_cache.lpush("empty") == 0
+        assert locmem_cache.has_key("empty") is False
+        assert locmem_cache.keys() == []
+
+    def test_rpush_no_values_creates_nothing(self, locmem_cache: LocMemCache):
+        assert locmem_cache.rpush("empty") == 0
+        assert locmem_cache.has_key("empty") is False
+        assert locmem_cache.keys() == []
+
+    def test_push_no_values_leaves_existing_list_alone(self, locmem_cache: LocMemCache):
+        locmem_cache.rpush("k", "a")
+        assert locmem_cache.lpush("k") == 1
+        assert locmem_cache.rpush("k") == 1
+        assert locmem_cache.lrange("k", 0, -1) == ["a"]
+
     def test_lpush_wrongtype_on_string(self, locmem_cache: LocMemCache):
         locmem_cache.set("k", "string")
         with pytest.raises(TypeError):
@@ -534,6 +565,20 @@ class TestListOps:
     def test_rpop_empty(self, locmem_cache: LocMemCache):
         assert locmem_cache.rpop("missing") is None
         assert locmem_cache.rpop("missing", count=2) is None
+
+    @pytest.mark.parametrize("method", ["lpop", "rpop"])
+    def test_pop_negative_count_rejected(self, locmem_cache: LocMemCache, method: str):
+        # Regression: a negative count sliced from the opposite end, so
+        # ``rpop(key, -2)`` popped from the head. Redis rejects it.
+        locmem_cache.rpush("k", 1, 2, 3, 1)
+        with pytest.raises(ValueError, match="must be positive"):
+            getattr(locmem_cache, method)("k", -2)
+        assert locmem_cache.lrange("k", 0, -1) == [1, 2, 3, 1]
+
+    @pytest.mark.parametrize("method", ["lpop", "rpop"])
+    def test_pop_negative_count_rejected_on_missing_key(self, locmem_cache: LocMemCache, method: str):
+        with pytest.raises(ValueError, match="must be positive"):
+            getattr(locmem_cache, method)("missing", -1)
 
     def test_rpop_deletes_when_empty(self, locmem_cache: LocMemCache):
         locmem_cache.rpush("k", 1)
@@ -1354,3 +1399,107 @@ class TestVersion:
         locmem_cache.lpush("k", "b", version=2)
         assert locmem_cache.lrange("k", 0, -1, version=1) == ["a"]
         assert locmem_cache.lrange("k", 0, -1, version=2) == ["b"]
+
+    def test_incr_version_moves_string(self, locmem_cache: LocMemCache):
+        locmem_cache.set("k", 5)
+        assert locmem_cache.incr_version("k") == 2
+        assert locmem_cache.get("k", version=2) == 5
+        assert locmem_cache.get("k") is None
+
+    def test_incr_version_moves_collection(self, locmem_cache: LocMemCache):
+        # Regression: the inherited get/set/delete round trip raised
+        # WrongTypeError on a collection key. RespCache uses RENAME.
+        locmem_cache.rpush("k", "a", "b")
+        locmem_cache.expire("k", 1000)
+        assert locmem_cache.incr_version("k") == 2
+        assert locmem_cache.lrange("k", 0, -1, version=2) == ["a", "b"]
+        assert locmem_cache.has_key("k") is False
+        assert locmem_cache.ttl("k", version=2) >= 999
+
+    def test_incr_version_overwrites_destination(self, locmem_cache: LocMemCache):
+        locmem_cache.set("k", "src")
+        locmem_cache.set("k", "dst", version=2)
+        locmem_cache.incr_version("k")
+        assert locmem_cache.get("k", version=2) == "src"
+
+    def test_incr_version_missing_key_raises(self, locmem_cache: LocMemCache):
+        with pytest.raises(ValueError, match="not found"):
+            locmem_cache.incr_version("nope")
+
+    def test_decr_version_moves_collection(self, locmem_cache: LocMemCache):
+        locmem_cache.sadd("k", "m", version=2)
+        assert locmem_cache.decr_version("k", version=2) == 1
+        assert locmem_cache.smembers("k") == {"m"}
+
+
+# =============================================================================
+# RESP-faithful string reads
+# =============================================================================
+
+
+class TestStringReads:
+    """``get``/``incr``/``get_many`` must resolve the collection check and the
+    value read under a single acquisition of Django's non-reentrant, per-LOCATION
+    ``_lock``, and must report the user key rather than the prefixed one.
+    """
+
+    def _ghost_key(self, cache: LocMemCache, key: str) -> None:
+        """Leave behind the state a concurrent collection write creates mid-flight.
+
+        ``_native_write`` sets ``_expire_info[key] = None`` (never expired) and
+        stores the value outside ``_cache``, so Django's ``get`` would sail past
+        ``_has_expired`` into ``self._cache[key]`` and raise ``KeyError``.
+        """
+        cache._expire_info[cache.make_key(key)] = None
+
+    def test_get_returns_default_when_key_is_not_in_the_pickled_store(self, locmem_cache: LocMemCache):
+        self._ghost_key(locmem_cache, "ghost")
+        assert locmem_cache.get("ghost") is None
+        assert locmem_cache.get("ghost", "fallback") == "fallback"
+
+    def test_incr_raises_valueerror_when_key_is_not_in_the_pickled_store(self, locmem_cache: LocMemCache):
+        self._ghost_key(locmem_cache, "ghost")
+        with pytest.raises(ValueError, match="not found"):
+            locmem_cache.incr("ghost")
+
+    def test_get_wrongtype_message_uses_the_user_key(self, locmem_cache: LocMemCache):
+        locmem_cache.rpush("lk", 1)
+        with pytest.raises(WrongTypeError, match="'lk'") as exc_info:
+            locmem_cache.get("lk")
+        assert ":1:lk" not in str(exc_info.value)
+
+    def test_typed_wrongtype_message_uses_the_user_key(self, locmem_cache: LocMemCache):
+        locmem_cache.rpush("lk", 1)
+        with pytest.raises(WrongTypeError, match="'lk'") as exc_info:
+            locmem_cache.sadd("lk", "x")
+        assert ":1:lk" not in str(exc_info.value)
+
+    def test_get_still_moves_the_key_to_the_front(self, locmem_cache: LocMemCache):
+        locmem_cache.set("a", 1)
+        locmem_cache.set("b", 2)
+        locmem_cache.get("a")
+        assert next(iter(locmem_cache._cache)) == locmem_cache.make_key("a")
+
+    def test_get_many_skips_collection_keys(self, locmem_cache: LocMemCache):
+        # MGET reports a list/hash/set/zset key as nil, so RespCache omits it;
+        # the inherited get()-per-key path aborted the whole batch instead.
+        locmem_cache.set("plain", 1)
+        locmem_cache.rpush("lst", "a")
+        locmem_cache.hset("hsh", "f", "v")
+        assert locmem_cache.get_many(["plain", "lst", "hsh", "missing"]) == {"plain": 1}
+
+    def test_get_many_honors_version(self, locmem_cache: LocMemCache):
+        locmem_cache.set("k", "v1", version=1)
+        locmem_cache.set("k", "v2", version=2)
+        assert locmem_cache.get_many(["k"], version=2) == {"k": "v2"}
+
+    def test_get_many_skips_expired_keys(self, locmem_cache: LocMemCache):
+        locmem_cache.set("live", 1)
+        locmem_cache.set("dead", 2, timeout=-1)
+        assert locmem_cache.get_many(["live", "dead"]) == {"live": 1}
+
+    @pytest.mark.asyncio
+    async def test_aget_many_skips_collection_keys(self, locmem_cache: LocMemCache):
+        locmem_cache.set("plain", 1)
+        locmem_cache.rpush("lst", "a")
+        assert await locmem_cache.aget_many(["plain", "lst"]) == {"plain": 1}

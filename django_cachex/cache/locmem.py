@@ -35,7 +35,6 @@ import time
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
-from asgiref.sync import sync_to_async
 from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.cache.backends.locmem import LocMemCache as DjangoLocMemCache
 from sortedcontainers import SortedList  # type: ignore[import-untyped]
@@ -49,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections import OrderedDict
-    from collections.abc import Iterator, Mapping, Sequence
+    from collections.abc import Iterable, Iterator, Mapping, Sequence
     from threading import Lock
 
     from django_cachex.semaphore import _SemaphoreRegistry
@@ -187,8 +186,6 @@ def _make_zset(items: dict[Any, float]) -> _ZSet:
     return _ZSet(items)
 
 
-_TAGGED_COLLECTIONS: tuple[type, ...] = (_List, _Set, _Hash, _ZSet)
-
 # Django builds one backend instance per thread, so state is shared per
 # LOCATION, like Django's module-level ``_caches``/``_locks``.
 _collections: dict[str, dict[str, Any]] = {}
@@ -248,30 +245,22 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             return _MISSING
         return pickle.loads(self._cache[internal_key])  # noqa: S301
 
-    def _native_write(self, internal_key: str, value: Any) -> None:
-        """Store ``value`` for ``internal_key``.
+    def _native_write(self, internal_key: str, value: _List | _Set | _Hash | _ZSet) -> None:
+        """Store a tagged collection for ``internal_key``.
 
         Caller must hold ``self._lock``. Tagged collections (``_List``/
         ``_Set``/``_Hash``/``_ZSet``) are stored by reference in
         ``self._collections``, no pickling, so subsequent in-place mutation
-        through the same reference is visible to future reads. Other values
-        go through the standard pickled-bytes path in ``self._cache``.
-        Existing keys keep their TTL untouched; new keys get no expiry,
-        matching Redis' compound-op semantics (``LPUSH`` etc. don't touch
-        TTL).
+        through the same reference is visible to future reads. Existing keys
+        keep their TTL untouched; new keys get no expiry, matching Redis'
+        compound-op semantics (``LPUSH`` etc. don't touch TTL).
         """
-        if isinstance(value, _TAGGED_COLLECTIONS):
-            if len(self._cache) + len(self._collections) >= self._max_entries:
-                self._cull()
-            self._collections[internal_key] = value
-            self._expire_info.setdefault(internal_key, None)
-            return
-        pickled = pickle.dumps(value, self.pickle_protocol)
-        if internal_key in self._cache:
-            self._cache[internal_key] = pickled
-            self._cache.move_to_end(internal_key, last=False)
-        else:
-            self._set(internal_key, pickled, timeout=None)
+        # Cull only on a first write: on a rewrite it could evict the key being
+        # written, which ``setdefault`` would then resurrect without its TTL.
+        if internal_key not in self._collections and len(self._cache) + len(self._collections) >= self._max_entries:
+            self._cull()
+        self._collections[internal_key] = value
+        self._expire_info.setdefault(internal_key, None)
 
     # =========================================================================
     # Django interface overrides; keep ``_collections`` in sync with
@@ -349,16 +338,26 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         A key holding a RESP collection (list/set/hash/zset, written via the
         respective ops) cannot be retrieved through the string ``GET`` API.
         Redis raises ``WRONGTYPE`` and so do we.
+
+        Django's ``get`` is inlined rather than called through ``super()``:
+        ``self._lock`` is not reentrant, and releasing it between the
+        collection check and the read lets a concurrent collection write turn
+        the key into one, which Django's unguarded ``self._cache[key]`` would
+        surface as a raw ``KeyError``.
         """
         internal_key = self.make_and_validate_key(key, version=version)
         with self._lock:
+            if self._has_expired(internal_key):
+                self._delete(internal_key)
+                return default
             if internal_key in self._collections:
-                if self._has_expired(internal_key):
-                    self._delete(internal_key)
-                    return default
                 msg = f"WRONGTYPE Key {key!r} does not hold a string value."
                 raise WrongTypeError(msg)
-        return super().get(key, default, version=version)
+            if internal_key not in self._cache:
+                return default
+            pickled = self._cache[internal_key]
+            self._cache.move_to_end(internal_key, last=False)
+        return pickle.loads(pickled)  # noqa: S301
 
     def incr(self, key: str, delta: int = 1, version: int | None = None) -> int:
         """Increment a value, mirroring Redis ``INCRBY``: WRONGTYPE on non-string keys.
@@ -366,13 +365,75 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         Django's inherited ``incr`` reads ``self._cache`` directly and would
         raise ``KeyError`` for a live key that holds a RESP collection; a
         missing key still raises ``ValueError`` per the Django cache contract.
+        Inlined for the same lock-atomicity reason as :meth:`get`.
         """
         internal_key = self.make_and_validate_key(key, version=version)
         with self._lock:
-            if internal_key in self._collections and not self._has_expired(internal_key):
+            if self._has_expired(internal_key):
+                self._delete(internal_key)
+                msg = f"Key '{key}' not found"
+                raise ValueError(msg)
+            if internal_key in self._collections:
                 msg = f"WRONGTYPE Key {key!r} does not hold a string value."
                 raise WrongTypeError(msg)
-        return super().incr(key, delta, version=version)
+            if internal_key not in self._cache:
+                msg = f"Key '{key}' not found"
+                raise ValueError(msg)
+            new_value = pickle.loads(self._cache[internal_key]) + delta  # noqa: S301
+            self._cache[internal_key] = pickle.dumps(new_value, self.pickle_protocol)
+            self._cache.move_to_end(internal_key, last=False)
+        return new_value
+
+    def get_many(self, keys: Iterable[str], version: int | None = None) -> dict[str, Any]:
+        """Get many values at once, mirroring Redis ``MGET``.
+
+        ``BaseCache.get_many`` calls :meth:`get` per key, so a single
+        collection key would abort the whole batch with ``WrongTypeError``.
+        ``MGET`` reports a list/set/hash/zset key as nil instead, so RespCache
+        simply omits it from the result; do the same here.
+        """
+        key_map = {self.make_and_validate_key(key, version=version): key for key in keys}
+        found: dict[str, Any] = {}
+        with self._lock:
+            for internal_key, key in key_map.items():
+                if self._has_expired(internal_key):
+                    self._delete(internal_key)
+                    continue
+                if internal_key in self._collections or internal_key not in self._cache:
+                    continue
+                found[key] = self._cache[internal_key]
+                self._cache.move_to_end(internal_key, last=False)
+        return {key: pickle.loads(pickled) for key, pickled in found.items()}  # noqa: S301
+
+    def incr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        """Move a key to a new version, mirroring Redis ``RENAME``.
+
+        ``BaseCache.incr_version`` is a ``get``/``set``/``delete`` round trip,
+        so it would raise ``WrongTypeError`` on a collection key. Moving the
+        entry works for any type and preserves the TTL, matching the
+        ``RENAME``-based RespCache override.
+        """
+        if version is None:
+            version = self.version
+        old_key = self.make_and_validate_key(key, version=version)
+        new_key = self.make_and_validate_key(key, version=version + delta)
+        with self._lock:
+            if self._has_expired(old_key):
+                self._delete(old_key)
+                msg = f"Key '{key}' not found"
+                raise ValueError(msg)
+            if old_key in self._collections:
+                self._delete(new_key)
+                self._collections[new_key] = self._collections.pop(old_key)
+            elif old_key in self._cache:
+                self._delete(new_key)
+                self._cache[new_key] = self._cache.pop(old_key)
+                self._cache.move_to_end(new_key, last=False)
+            else:
+                msg = f"Key '{key}' not found"
+                raise ValueError(msg)
+            self._expire_info[new_key] = self._expire_info.pop(old_key, None)
+        return version + delta
 
     def set(
         self,
@@ -426,16 +487,9 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         xx: bool = False,
         get: bool = False,
     ) -> Any:
-        """Async: see :meth:`set`. Locmem has no I/O; runs sync under a thread bridge."""
-        return await sync_to_async(self.set, thread_sensitive=True)(
-            key,
-            value,
-            timeout,
-            version,
-            nx=nx,
-            xx=xx,
-            get=get,
-        )
+        """Async: see :meth:`set`. Calls the sync method directly, like the rest
+        of the async surface (see the note above ``attl``)."""
+        return self.set(key, value, timeout, version, nx=nx, xx=xx, get=get)
 
     # =========================================================================
     # TTL Operations
@@ -530,16 +584,29 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         whatever ``KEY_PREFIX``/``KEY_FUNCTION`` produce. Expired but
         not-yet-culled entries are excluded.
         """
+        all_keys = list(self._matching_keys(pattern, version=version))
+        all_keys.sort()
+        return all_keys
+
+    def _matching_keys(self, pattern: str, version: int | None) -> Iterator[str]:
+        """Yield user keys matching ``pattern``, unsorted.
+
+        The internal key list is snapshotted under the lock (it has to be:
+        yielding while holding a non-reentrant lock would deadlock any cache
+        op the consumer runs), then filtered lazily.
+        """
         prefix = self.make_key("", version=version)
         with self._lock:
             internal_keys = [k for k in [*self._cache, *self._collections] if not self._has_expired(k)]
-        all_keys = [
-            internal_key.removeprefix(prefix) for internal_key in internal_keys if internal_key.startswith(prefix)
-        ]
-        if pattern and pattern != "*":
-            all_keys = [k for k in all_keys if fnmatch.fnmatch(k, pattern)]
-        all_keys.sort()
-        return all_keys
+        for internal_key in internal_keys:
+            if not internal_key.startswith(prefix):
+                continue
+            user_key = internal_key.removeprefix(prefix)
+            # ``fnmatch`` normcases both sides, which would make patterns
+            # case-insensitive on Windows only; Redis globs never are.
+            if pattern and pattern != "*" and not fnmatch.fnmatchcase(user_key, pattern):
+                continue
+            yield user_key
 
     def iter_keys(
         self,
@@ -547,8 +614,13 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         version: int | None = None,
         itersize: int | None = None,
     ) -> Iterator[str]:
-        """Iterate over keys matching pattern."""
-        yield from self.keys(pattern, version=version)
+        """Iterate over keys matching pattern.
+
+        ``itersize`` is accepted for parity with the RESP backends, where it
+        sizes the ``SCAN`` batches; there is no server round trip here, so it
+        has nothing to size and is ignored.
+        """
+        yield from self._matching_keys(pattern, version=version)
 
     def delete_pattern(
         self,
@@ -606,18 +678,19 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     # List Operations
     # =========================================================================
 
-    def _typed_get_list(self, internal_key: str) -> _List | None:
+    def _typed_get_list(self, internal_key: str, key: str) -> _List | None:
         """Caller holds ``self._lock``. Returns the stored RESP list or None.
 
         Raises :class:`WrongTypeError` if the key holds any other type. A
         plain Python ``list`` set via ``cache.set()`` does not qualify; only
-        values produced by ``lpush``/``rpush``/... do.
+        values produced by ``lpush``/``rpush``/... do. ``key`` is the user key,
+        reported in the error instead of the prefixed internal one.
         """
         value = self._native_get(internal_key)
         if value is _MISSING:
             return None
         if not isinstance(value, _List):
-            msg = f"WRONGTYPE Key {internal_key!r} does not hold a list value."
+            msg = f"WRONGTYPE Key {key!r} does not hold a list value."
             raise WrongTypeError(msg)
         return value
 
@@ -625,8 +698,12 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Prepend values to the head of a list."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_list(internal_key)
+            current = self._typed_get_list(internal_key, key)
             if current is None:
+                # Redis never creates an empty list; an empty one here would be
+                # unreachable (every list op bails on a falsy list) and immortal.
+                if not values:
+                    return 0
                 current = _List(reversed(values))
                 self._native_write(internal_key, current)
             else:
@@ -638,24 +715,40 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Append values to the tail of a list."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_list(internal_key)
+            current = self._typed_get_list(internal_key, key)
             if current is None:
+                # See :meth:`lpush`: no values, no key.
+                if not values:
+                    return 0
                 current = _List(values)
                 self._native_write(internal_key, current)
             else:
                 current.extend(values)
             return len(current)
 
+    @staticmethod
+    def _validate_pop_count(count: int | None) -> None:
+        """Reject a negative pop count before it slices from the wrong end.
+
+        ``current[-count:]`` / ``current[:count]`` silently pop from the
+        opposite end for a negative ``count``; Redis rejects it outright.
+        """
+        if count is not None and count < 0:
+            msg = "value is out of range, must be positive"
+            raise ValueError(msg)
+
     def lpop(self, key: str, count: int | None = None, version: int | None = None) -> Any | list[Any] | None:
         """Remove and return element(s) from the head of a list.
 
         Matches Redis ``LPOP``: a missing key returns ``None`` whether or
         not ``count`` is supplied. ``count=int`` returns a list when the
-        key exists; ``count=None`` returns the bare value.
+        key exists; ``count=None`` returns the bare value. A negative
+        ``count`` is rejected, as Redis rejects it.
         """
+        self._validate_pop_count(count)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_list(internal_key)
+            current = self._typed_get_list(internal_key, key)
             if not current:
                 return None
             pop_count = count if count is not None else 1
@@ -670,11 +763,13 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
         Matches Redis ``RPOP``: a missing key returns ``None`` whether or
         not ``count`` is supplied. ``count=int`` returns a list when the
-        key exists; ``count=None`` returns the bare value.
+        key exists; ``count=None`` returns the bare value. A negative
+        ``count`` is rejected, as Redis rejects it.
         """
+        self._validate_pop_count(count)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_list(internal_key)
+            current = self._typed_get_list(internal_key, key)
             if not current:
                 return None
             if count == 0:
@@ -692,7 +787,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Return a range of elements from a list (inclusive end, Redis-style)."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_list(internal_key)
+            current = self._typed_get_list(internal_key, key)
             if not current:
                 return []
             length = len(current)
@@ -708,14 +803,14 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Return the length of a list."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_list(internal_key)
+            current = self._typed_get_list(internal_key, key)
             return 0 if current is None else len(current)
 
     def lrem(self, key: str, count: int, value: Any, version: int | None = None) -> int:
         """Remove occurrences of value from a list."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_list(internal_key)
+            current = self._typed_get_list(internal_key, key)
             if not current:
                 return 0
             length_before = len(current)
@@ -742,7 +837,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Trim a list to the specified range (inclusive end, Redis-style)."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_list(internal_key)
+            current = self._typed_get_list(internal_key, key)
             if current is None:
                 return True
             length = len(current)
@@ -763,7 +858,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Get element at index in list."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_list(internal_key)
+            current = self._typed_get_list(internal_key, key)
             if not current:
                 return None
             try:
@@ -775,7 +870,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Set element at index in list."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_list(internal_key)
+            current = self._typed_get_list(internal_key, key)
             if not current:
                 msg = "no such key"
                 raise ValueError(msg)
@@ -790,7 +885,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Insert value before or after pivot in list."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_list(internal_key)
+            current = self._typed_get_list(internal_key, key)
             if not current:
                 return 0
             try:
@@ -814,7 +909,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Find position(s) of element in list."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_list(internal_key)
+            current = self._typed_get_list(internal_key, key)
             if not current:
                 return [] if count is not None else None
             scan = current[:maxlen] if maxlen else list(current)
@@ -832,17 +927,18 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     # Set Operations
     # =========================================================================
 
-    def _typed_get_set(self, internal_key: str) -> _Set | None:
+    def _typed_get_set(self, internal_key: str, key: str) -> _Set | None:
         """Caller holds ``self._lock``. Returns the stored RESP set or None.
 
         Only values produced by ``sadd``/``srem``/... qualify; a plain
-        Python ``set`` stored via ``cache.set()`` is rejected.
+        Python ``set`` stored via ``cache.set()`` is rejected. ``key`` is the
+        user key, reported in the error instead of the prefixed internal one.
         """
         value = self._native_get(internal_key)
         if value is _MISSING:
             return None
         if not isinstance(value, _Set):
-            msg = f"WRONGTYPE Key {internal_key!r} does not hold a set value."
+            msg = f"WRONGTYPE Key {key!r} does not hold a set value."
             raise WrongTypeError(msg)
         return value
 
@@ -850,7 +946,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Add members to a set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_set(internal_key)
+            current = self._typed_get_set(internal_key, key)
             if current is None:
                 current = _Set()
             before = len(current)
@@ -863,7 +959,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Remove members from a set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_set(internal_key)
+            current = self._typed_get_set(internal_key, key)
             if not current:
                 return 0
             removed = len(current.intersection(members))
@@ -878,28 +974,28 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Get the number of members in a set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_set(internal_key)
+            current = self._typed_get_set(internal_key, key)
             return 0 if current is None else len(current)
 
     def sismember(self, key: str, member: Any, version: int | None = None) -> bool:
         """Check if member is in set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_set(internal_key)
+            current = self._typed_get_set(internal_key, key)
             return False if current is None else member in current
 
     def smembers(self, key: str, version: int | None = None) -> _PySet[Any]:
         """Get all members of a set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_set(internal_key)
+            current = self._typed_get_set(internal_key, key)
             return set() if current is None else set(current)
 
     def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | _PySet[Any] | None:
         """Remove and return random member(s) from set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_set(internal_key)
+            current = self._typed_get_set(internal_key, key)
             if not current:
                 return set() if count is not None else None
             if count is None:
@@ -923,7 +1019,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Get random member(s) from set without removing."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_set(internal_key)
+            current = self._typed_get_set(internal_key, key)
             if not current:
                 return [] if count is not None else None
             members = list(current)
@@ -935,7 +1031,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Check if multiple values are members of a set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_set(internal_key)
+            current = self._typed_get_set(internal_key, key)
             if current is None:
                 return [False] * len(members)
             return [m in current for m in members]
@@ -950,7 +1046,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             keys = [keys]
         internal_keys = [self._internal_key(k, version=version) for k in keys]
         with self._lock:
-            return [set(self._typed_get_set(ik) or ()) for ik in internal_keys]
+            return [set(self._typed_get_set(ik, k) or ()) for ik, k in zip(internal_keys, keys, strict=True)]
 
     def sdiff(self, keys: str | Sequence[str], version: int | None = None) -> _PySet[Any]:
         """Return the difference between sets."""
@@ -983,17 +1079,18 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     # Hash Operations
     # =========================================================================
 
-    def _typed_get_hash(self, internal_key: str) -> _Hash | None:
+    def _typed_get_hash(self, internal_key: str, key: str) -> _Hash | None:
         """Caller holds ``self._lock``. Returns the stored RESP hash or None.
 
         Only values produced by ``hset``/``hdel``/... qualify; a plain
-        Python ``dict`` stored via ``cache.set()`` is rejected.
+        Python ``dict`` stored via ``cache.set()`` is rejected. ``key`` is the
+        user key, reported in the error instead of the prefixed internal one.
         """
         value = self._native_get(internal_key)
         if value is _MISSING:
             return None
         if not isinstance(value, _Hash):
-            msg = f"WRONGTYPE Key {internal_key!r} does not hold a hash value."
+            msg = f"WRONGTYPE Key {key!r} does not hold a hash value."
             raise WrongTypeError(msg)
         return value
 
@@ -1009,7 +1106,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Set hash field(s)."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_hash(internal_key)
+            current = self._typed_get_hash(internal_key, key)
             if current is None:
                 current = _Hash()
             added = 0
@@ -1039,7 +1136,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Delete hash fields."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_hash(internal_key)
+            current = self._typed_get_hash(internal_key, key)
             if not current:
                 return 0
             removed = sum(1 for f in fields if f in current)
@@ -1056,49 +1153,49 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Get value of field in hash."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_hash(internal_key)
+            current = self._typed_get_hash(internal_key, key)
             return None if current is None else current.get(field)
 
     def hgetall(self, key: str, version: int | None = None) -> dict[str, Any]:
         """Get all fields and values in hash."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_hash(internal_key)
+            current = self._typed_get_hash(internal_key, key)
             return {} if current is None else dict(current)
 
     def hlen(self, key: str, version: int | None = None) -> int:
         """Get number of fields in hash."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_hash(internal_key)
+            current = self._typed_get_hash(internal_key, key)
             return 0 if current is None else len(current)
 
     def hkeys(self, key: str, version: int | None = None) -> list[str]:
         """Get all field names in hash."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_hash(internal_key)
+            current = self._typed_get_hash(internal_key, key)
             return [] if current is None else list(current.keys())
 
     def hvals(self, key: str, version: int | None = None) -> list[Any]:
         """Get all values in hash."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_hash(internal_key)
+            current = self._typed_get_hash(internal_key, key)
             return [] if current is None else list(current.values())
 
     def hexists(self, key: str, field: str, version: int | None = None) -> bool:
         """Check if field exists in hash."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_hash(internal_key)
+            current = self._typed_get_hash(internal_key, key)
             return False if current is None else field in current
 
     def hmget(self, key: str, *fields: str, version: int | None = None) -> list[Any]:
         """Get values of multiple fields."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_hash(internal_key)
+            current = self._typed_get_hash(internal_key, key)
             if current is None:
                 return [None] * len(fields)
             return [current.get(f) for f in fields]
@@ -1107,7 +1204,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Set field in hash only if it doesn't exist."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_hash(internal_key)
+            current = self._typed_get_hash(internal_key, key)
             if current is None:
                 current = _Hash()
             if field in current:
@@ -1120,7 +1217,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Increment integer value of field in hash."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_hash(internal_key)
+            current = self._typed_get_hash(internal_key, key)
             if current is None:
                 current = _Hash()
             value = current.get(field, 0)
@@ -1137,7 +1234,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Increment float value of field in hash."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_hash(internal_key)
+            current = self._typed_get_hash(internal_key, key)
             if current is None:
                 current = _Hash()
             value = current.get(field, 0)
@@ -1152,13 +1249,17 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     # Sorted Set Operations
     # =========================================================================
 
-    def _typed_get_zset(self, internal_key: str) -> _ZSet | None:
-        """Caller holds ``self._lock``. Returns the stored sorted set or None."""
+    def _typed_get_zset(self, internal_key: str, key: str) -> _ZSet | None:
+        """Caller holds ``self._lock``. Returns the stored sorted set or None.
+
+        ``key`` is the user key, reported in the error instead of the prefixed
+        internal one.
+        """
         value = self._native_get(internal_key)
         if value is _MISSING:
             return None
         if not isinstance(value, _ZSet):
-            msg = f"WRONGTYPE Key {internal_key!r} does not hold a sorted set value."
+            msg = f"WRONGTYPE Key {key!r} does not hold a sorted set value."
             raise WrongTypeError(msg)
         return value
 
@@ -1177,7 +1278,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Add members to a sorted set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_zset(internal_key) or _ZSet()
+            current = self._typed_get_zset(internal_key, key) or _ZSet()
             changed = 0
             for member, score in mapping.items():
                 exists = member in current
@@ -1206,28 +1307,28 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Get the number of members in a sorted set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_zset(internal_key)
+            current = self._typed_get_zset(internal_key, key)
             return 0 if current is None else len(current)
 
     def zscore(self, key: str, member: Any, version: int | None = None) -> float | None:
         """Get the score of a member."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_zset(internal_key)
+            current = self._typed_get_zset(internal_key, key)
             return None if current is None else current.get(member)
 
     def zrank(self, key: str, member: Any, version: int | None = None) -> int | None:
         """Get the rank of a member (lowest score = 0). O(log N)."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_zset(internal_key)
+            current = self._typed_get_zset(internal_key, key)
             return None if current is None else current.rank_of(member)
 
     def zrevrank(self, key: str, member: Any, version: int | None = None) -> int | None:
         """Get the rank of a member (highest score = 0). O(log N)."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_zset(internal_key)
+            current = self._typed_get_zset(internal_key, key)
             return None if current is None else current.revrank_of(member)
 
     def zrange(
@@ -1242,7 +1343,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Return a range of members by index."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_zset(internal_key)
+            current = self._typed_get_zset(internal_key, key)
             if not current:
                 return []
             length = len(current)
@@ -1269,7 +1370,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Return a range of members by index, highest to lowest."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_zset(internal_key)
+            current = self._typed_get_zset(internal_key, key)
             if not current:
                 return []
             length = len(current)
@@ -1300,7 +1401,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Return members with scores between min and max."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_zset(internal_key)
+            current = self._typed_get_zset(internal_key, key)
             if not current:
                 return []
             lo = float("-inf") if min_score == "-inf" else float(min_score)
@@ -1316,7 +1417,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Remove members from a sorted set."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_zset(internal_key)
+            current = self._typed_get_zset(internal_key, key)
             if not current:
                 return 0
             removed = sum(1 for m in members if m in current)
@@ -1333,7 +1434,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Increment the score of a member."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_zset(internal_key) or _ZSet()
+            current = self._typed_get_zset(internal_key, key) or _ZSet()
             current[member] = current.get(member, 0.0) + amount
             self._native_write(internal_key, current)
             return current[member]
@@ -1348,7 +1449,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Count members with scores between min and max."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_zset(internal_key)
+            current = self._typed_get_zset(internal_key, key)
             if not current:
                 return 0
             lo = float("-inf") if min_score == "-inf" else float(min_score)
@@ -1359,7 +1460,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Remove and return members with lowest scores. O((log N) * count)."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_zset(internal_key)
+            current = self._typed_get_zset(internal_key, key)
             if not current:
                 return []
             n = 1 if count is None else count
@@ -1376,7 +1477,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Remove and return members with highest scores. O((log N) * count)."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_zset(internal_key)
+            current = self._typed_get_zset(internal_key, key)
             if not current:
                 return []
             n = 1 if count is None else count
@@ -1398,7 +1499,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Get the scores of multiple members."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_zset(internal_key)
+            current = self._typed_get_zset(internal_key, key)
             if current is None:
                 return [None] * len(members)
             return [current.get(m) for m in members]
@@ -1415,7 +1516,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         lo = float("-inf") if min_score == "-inf" else float(min_score)
         hi = float("inf") if max_score == "+inf" else float(max_score)
         with self._lock:
-            current = self._typed_get_zset(internal_key)
+            current = self._typed_get_zset(internal_key, key)
             if not current:
                 return 0
             to_remove = [m for m, s in current.items() if lo <= s <= hi]
@@ -1432,7 +1533,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Remove members by rank range. O((log N) * k)."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            current = self._typed_get_zset(internal_key)
+            current = self._typed_get_zset(internal_key, key)
             if not current:
                 return 0
             length = len(current)
@@ -1515,13 +1616,8 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     # =========================================================================
     # Async surface
     # =========================================================================
-    # LocMemCache is in-memory: no I/O, no thread pool needed. Each ``a*``
-    # method calls its sync counterpart directly. Calling these from an
-    # async event loop is safe: the underlying ops are dict/list/set
-    # mutations behind a per-instance ``RLock``, never blocking on I/O.
-    # Signatures stay loose (``*args, **kwargs``) so the sync method's
-    # signature, which is the source of truth, doesn't need to be
-    # mirrored in two places.
+    # Each ``a*`` calls its sync twin directly. The per-LOCATION ``_lock`` can
+    # block the loop under contention, bounded by short in-memory sections.
 
     async def attl(self, *args: Any, **kwargs: Any) -> Any:
         return self.ttl(*args, **kwargs)
