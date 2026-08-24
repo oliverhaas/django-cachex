@@ -17,6 +17,13 @@ Notable design points:
 - Existing keys preserve their ``expires`` column on in-place mutation;
   only new rows get a fresh ``expires`` (set to ``datetime.max``,
   matching Django's "no expiry" sentinel for compound ops).
+- Reads go through ``router.db_for_read`` while compound ops write through
+  ``router.db_for_write``. Under a primary/replica router the two resolve
+  to different connections, so a read op (``llen``, ``hgetall``, ``type``,
+  ``keys``, ``ttl``, ``info``) issued right after a write can observe a
+  stale replica. The atomicity guarantee above covers concurrent writers
+  against one row, not read-after-write visibility across replicas; route
+  this cache's model to a single database if you need that.
 
 Usage::
 
@@ -66,14 +73,33 @@ _INSERT_RACE_ATTEMPTS = 3
 _set = set
 
 
-class _ZSet(dict[Any, float]):
-    """Marker subclass tagging a stored sorted set.
+class _List(list[Any]):
+    """Tagged ``list`` marking a key as a RESP list.
 
-    Sorted sets and hashes are both persisted as plain dicts, so ``type()``
-    cannot tell them apart by structure. Tagging zsets (pickle preserves the
-    subclass) lets ``type()`` report ``ZSET`` rather than misreporting
-    ``HASH``, matching ``LocMemCache``'s tagged collections.
+    Compound structures are persisted as pickled Python containers, so
+    structure alone cannot tell a RESP list from a plain ``list`` stored via
+    ``cache.set()``, nor a hash from a sorted set. Only values produced by
+    the matching ops carry the tag (pickle preserves the subclass); anything
+    else is opaque and reports as ``STRING``. Mirrors ``LocMemCache``'s
+    tagged collections.
     """
+
+
+class _Set(_set[Any]):
+    """Tagged ``set`` marking a key as a RESP set. See :class:`_List`."""
+
+
+class _Hash(dict[str, Any]):
+    """Tagged ``dict`` marking a key as a RESP hash. See :class:`_List`."""
+
+
+class _ZSet(dict[Any, float]):
+    """Tagged ``dict`` marking a key as a RESP sorted set. See :class:`_List`."""
+
+
+# Redis has no empty collections, so emptying one of these drops the key
+# instead of persisting it.
+_TAGGED_COLLECTIONS = (_List, _Set, _Hash, _ZSet)
 
 
 def _as_score(value: Any) -> float:
@@ -83,6 +109,18 @@ def _as_score(value: Any) -> float:
     except TypeError, ValueError:
         msg = "value is not a valid float"
         raise ValueError(msg) from None
+
+
+def _score_bound(value: float | str, backend: str) -> float:
+    """Parse a ``ZRANGEBYSCORE``-style score bound.
+
+    ``-inf``/``+inf`` parse natively. Redis's exclusive ``(`` prefix has no
+    equivalent in the inclusive comparison this backend does in Python, so
+    it is rejected rather than blowing up in ``float()``.
+    """
+    if isinstance(value, str) and value.lstrip().startswith("("):
+        raise NotSupportedError("exclusive score bounds ('(' prefix)", backend)
+    return float(value)
 
 
 def _now() -> datetime:
@@ -197,6 +235,31 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             return _MISSING
         return self._decode_value(raw_value, conn)
 
+    def _locked_read(
+        self,
+        cursor: Any,
+        conn: BaseDatabaseWrapper,
+        select_sql: str,
+        delete_sql: str,
+        internal_key: str,
+    ) -> tuple[Any, bool]:
+        """Read a key through an already-open cursor, returning ``(value, row_exists)``.
+
+        ``select_sql`` is expected to carry ``FOR UPDATE`` where the backend
+        supports it, so the row stays locked for the caller's transaction.
+        Expired rows are deleted and reported as missing.
+        """
+        cursor.execute(select_sql, [internal_key])
+        row = cursor.fetchone()
+        if row is None:
+            return _MISSING, False
+        raw_value, raw_expires = row
+        expires_dt = _normalize_expires(raw_expires, conn)
+        if expires_dt is None or expires_dt <= _now():
+            cursor.execute(delete_sql, [internal_key])
+            return _MISSING, False
+        return self._decode_value(raw_value, conn), True
+
     def _atomic_compound(  # noqa: C901
         self,
         internal_key: str,
@@ -206,8 +269,9 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         ``transform(current_value)`` receives the deserialized stored value
         (or ``_MISSING`` for absent/expired rows) and returns a
-        ``(new_value, return_value)`` tuple. If ``new_value`` is ``_DELETE``,
-        the row is deleted; if it is ``_MISSING``, nothing is written;
+        ``(new_value, return_value)`` tuple. If ``new_value`` is ``_DELETE``
+        (or an empty tagged collection, which Redis cannot represent), the
+        row is deleted; if it is ``_MISSING``, nothing is written;
         otherwise it is upserted. The existing ``expires`` is preserved on
         UPDATE; new rows get ``datetime.max`` (no expiry, matches Redis
         compound-op semantics) and trigger the same MAX_ENTRIES cull check
@@ -217,7 +281,10 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         read-modify-write against the row they committed, so their value is
         merged rather than clobbered.
         """
-        conn = self._get_connection(write=True)
+        # Resolve once: a load-balancing router asked twice could give the
+        # cursor and the atomic block different connections, unlocking the row.
+        db = router.db_for_write(self.cache_model_class)
+        conn = connections[db]
         quote = conn.ops.quote_name
         table = quote(self._get_table_name())
         select_sql = (
@@ -232,22 +299,13 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             f"INSERT INTO {table} ({quote('cache_key')}, {quote('value')}, {quote('expires')}) "  # noqa: S608
             f"VALUES (%s, %s, %s)"
         )
-        db = router.db_for_write(self.cache_model_class)
         with transaction.atomic(using=db), conn.cursor() as cursor:
-            for attempt in range(_INSERT_RACE_ATTEMPTS):
-                cursor.execute(select_sql, [internal_key])
-                row = cursor.fetchone()
-                row_exists = False
-                current: Any = _MISSING
-                if row is not None:
-                    raw_value, raw_expires = row
-                    expires_dt = _normalize_expires(raw_expires, conn)
-                    if expires_dt is not None and expires_dt > _now():
-                        current = self._decode_value(raw_value, conn)
-                        row_exists = True
-                    else:
-                        cursor.execute(delete_sql, [internal_key])
+            attempt = 0
+            while True:
+                current, row_exists = self._locked_read(cursor, conn, select_sql, delete_sql, internal_key)
                 new_value, ret = transform(current)
+                if isinstance(new_value, _TAGGED_COLLECTIONS) and not new_value:
+                    new_value = _DELETE
                 if new_value is _DELETE:
                     if row_exists:
                         cursor.execute(delete_sql, [internal_key])
@@ -270,11 +328,13 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
                 except IntegrityError:
                     # A concurrent writer created the row between our SELECT and
                     # INSERT; redo the read-modify-write against their value.
-                    if attempt == _INSERT_RACE_ATTEMPTS - 1:
+                    # The last attempt re-raises, so the loop always exits
+                    # through a return or an exception.
+                    attempt += 1
+                    if attempt >= _INSERT_RACE_ATTEMPTS:
                         raise
                     continue
                 return ret
-        return None
 
     # =========================================================================
     # Standard set / aset
@@ -408,23 +468,34 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
     # =========================================================================
 
     def type(self, key: str, version: int | None = None) -> KeyType | None:
-        """Get the data type of a key by inspecting the stored Python value."""
+        """Get the RESP data type of a key.
+
+        Mirrors Redis ``TYPE``: only values created by RESP ops (lpush, sadd,
+        hset, zadd, ...) report as ``LIST``/``SET``/``HASH``/``ZSET``. Anything
+        stored via plain ``cache.set()`` is opaque and reports as ``STRING``,
+        regardless of the underlying Python type.
+        """
         value = self._read(self._internal_key(key, version=version))
         if value is _MISSING:
             return None
-        if isinstance(value, list):
-            return KeyType.LIST
-        if isinstance(value, set):
-            return KeyType.SET
         if isinstance(value, _ZSet):
             return KeyType.ZSET
-        if isinstance(value, dict) and all(isinstance(k, str) for k in value):
+        if isinstance(value, _Hash):
             return KeyType.HASH
+        if isinstance(value, _List):
+            return KeyType.LIST
+        if isinstance(value, _Set):
+            return KeyType.SET
         return KeyType.STRING
 
     # =========================================================================
     # Key Operations
     # =========================================================================
+
+    @staticmethod
+    def _glob_to_like(escaped: str) -> str:
+        """Translate glob wildcards to SQL ``LIKE`` wildcards in an escaped fragment."""
+        return escaped.replace("*", "%").replace("?", "_")
 
     def keys(self, pattern: str = "*", version: int | None = None) -> list[str]:
         """List user keys matching ``pattern`` (Redis-style glob).
@@ -441,9 +512,16 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         # Anchor to ``KEY_PREFIX:VERSION:`` so ``pattern="*"`` can't leak
         # other versions or prefixes.
         prefixed = self.make_key(pattern or "*", version=version)
-        # prep_for_like_query escapes literal ``%``/``_``/``\`` per vendor;
-        # glob wildcards are translated only after that.
-        sql_pattern = conn.ops.prep_for_like_query(prefixed).replace("*", "%").replace("?", "_")
+        key_prefix = self.make_key("", version=version)
+        # Translate glob wildcards over the user-supplied tail only: a ``*`` in
+        # KEY_PREFIX or the version segment is data, so it stays escaped.
+        if prefixed.startswith(key_prefix):
+            tail = prefixed[len(key_prefix) :]
+            sql_pattern = conn.ops.prep_for_like_query(key_prefix) + self._glob_to_like(
+                conn.ops.prep_for_like_query(tail),
+            )
+        else:
+            sql_pattern = self._glob_to_like(conn.ops.prep_for_like_query(prefixed))
         # ``operators`` is set per vendor on the concrete wrapper; the
         # django-stubs surface omits it, hence the ``cast``.
         like_clause = cast("Any", conn).operators["contains"]
@@ -485,11 +563,29 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         version: int | None = None,
         itersize: int | None = None,
     ) -> int:
-        """Delete all keys matching pattern. Returns the number deleted."""
+        """Delete all keys matching pattern. Returns the number deleted.
+
+        Deletes are batched into ``cache_key IN (...)`` statements of at most
+        ``itersize`` keys (default 500) instead of one statement per key.
+        """
+        matched = self.keys(pattern, version=version)
+        if not matched:
+            return 0
+        chunk_size = itersize if itersize and itersize > 0 else 500
+        db = router.db_for_write(self.cache_model_class)
+        conn = connections[db]
+        quote = conn.ops.quote_name
+        table = quote(self._get_table_name())
         deleted = 0
-        for key in self.keys(pattern, version=version):
-            if self.delete(key, version=version):
-                deleted += 1
+        with transaction.atomic(using=db), conn.cursor() as cursor:
+            for offset in range(0, len(matched), chunk_size):
+                chunk = [self._internal_key(k, version=version) for k in matched[offset : offset + chunk_size]]
+                placeholders = ", ".join(["%s"] * len(chunk))
+                cursor.execute(
+                    f"DELETE FROM {table} WHERE {quote('cache_key')} IN ({placeholders})",  # noqa: S608
+                    chunk,
+                )
+                deleted += max(cursor.rowcount, 0)
         return deleted
 
     # =========================================================================
@@ -503,6 +599,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         table = quote(self._get_table_name())
         total_count = 0
         active_count = 0
+        expiring_count = 0
         try:
             with conn.cursor() as cursor:
                 cursor.execute(f"SELECT COUNT(*) FROM {table}")  # noqa: S608
@@ -512,6 +609,14 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
                     [_adapt_dt(conn, _now())],
                 )
                 active_count = cursor.fetchone()[0]
+                # Redis reports ``expires`` as the number of keys that carry a
+                # TTL, so exclude the ``datetime.max`` no-expiry sentinel.
+                cursor.execute(
+                    f"SELECT COUNT(*) FROM {table} "  # noqa: S608
+                    f"WHERE {quote('expires')} > %s AND {quote('expires')} < %s",
+                    [_adapt_dt(conn, _now()), _adapt_dt(conn, _no_expiry_dt())],
+                )
+                expiring_count = cursor.fetchone()[0]
         except Exception:
             logger.exception("DatabaseCache.info(): row-count query failed; reporting 0")
         return {
@@ -523,7 +628,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             "keyspace": {
                 "db0": {
                     "keys": active_count,
-                    "expires": active_count,
+                    "expires": expiring_count,
                 },
             },
             "stats": {
@@ -536,26 +641,31 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
     # =========================================================================
 
     @staticmethod
-    def _coerce_list(current: Any, *, allow_missing: bool = True) -> list[Any] | None:
+    def _coerce_list(current: Any) -> _List | None:
+        """Return the stored RESP list, or None if the key is absent.
+
+        Only values produced by ``lpush``/``rpush``/... qualify; a plain
+        Python ``list`` stored via ``cache.set()`` is rejected.
+        """
         if current is _MISSING:
-            return None if allow_missing else []
-        if not isinstance(current, list):
+            return None
+        if not isinstance(current, _List):
             msg = "Key does not hold a list value."
             raise WrongTypeError(msg)
         return current
 
     def lpush(self, key: str, *values: Any, version: int | None = None) -> int:
         def transform(current: Any) -> tuple[Any, int]:
-            existing = self._coerce_list(current) or []
-            new_list = list(reversed(values)) + existing
+            existing: list[Any] = self._coerce_list(current) or []
+            new_list = _List(list(reversed(values)) + existing)
             return new_list, len(new_list)
 
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
 
     def rpush(self, key: str, *values: Any, version: int | None = None) -> int:
         def transform(current: Any) -> tuple[Any, int]:
-            existing = self._coerce_list(current) or []
-            new_list = existing + list(values)
+            existing: list[Any] = self._coerce_list(current) or []
+            new_list = _List(existing + list(values))
             return new_list, len(new_list)
 
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
@@ -567,7 +677,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
                 return _DELETE if existing is not None else _MISSING, None
             n = count if count is not None else 1
             popped = existing[:n]
-            remaining = existing[n:]
+            remaining = _List(existing[n:])
             return (remaining or _DELETE), (popped if count is not None else popped[0])
 
         return self._atomic_compound(self._internal_key(key, version=version), transform)
@@ -583,7 +693,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
                 # nothing and returns an empty array for ``count=0``.
                 return _MISSING, []
             popped = list(reversed(existing[-n:]))
-            remaining = existing[:-n] if n < len(existing) else []
+            remaining = _List(existing[:-n]) if n < len(existing) else _List()
             return (remaining or _DELETE), (popped if count is not None else popped[0])
 
         return self._atomic_compound(self._internal_key(key, version=version), transform)
@@ -613,10 +723,10 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
                 return _MISSING, 0
             removed = 0
             if count == 0:
-                new_list = [item for item in existing if item != value]
+                new_list = _List(item for item in existing if item != value)
                 removed = len(existing) - len(new_list)
             elif count > 0:
-                new_list = []
+                new_list = _List()
                 for item in existing:
                     if item == value and removed < count:
                         removed += 1
@@ -624,7 +734,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
                         new_list.append(item)
             else:
                 abs_count = abs(count)
-                new_list = []
+                new_list = _List()
                 for item in reversed(existing):
                     if item == value and removed < abs_count:
                         removed += 1
@@ -647,7 +757,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             e = length + end if end < 0 else end
             if s >= length or e < s:
                 return _DELETE, True
-            trimmed = existing[s : e + 1]
+            trimmed = _List(existing[s : e + 1])
             return (trimmed or _DELETE), True
 
         return cast("bool", self._atomic_compound(self._internal_key(key, version=version), transform))
@@ -723,17 +833,22 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
     # =========================================================================
 
     @staticmethod
-    def _coerce_set(current: Any) -> _set[Any] | None:
+    def _coerce_set(current: Any) -> _Set | None:
+        """Return the stored RESP set, or None if the key is absent.
+
+        Only values produced by ``sadd``/``srem``/... qualify; a plain
+        Python ``set`` stored via ``cache.set()`` is rejected.
+        """
         if current is _MISSING:
             return None
-        if not isinstance(current, set):
+        if not isinstance(current, _Set):
             msg = "Key does not hold a set value."
             raise WrongTypeError(msg)
         return current
 
     def sadd(self, key: str, *members: Any, version: int | None = None) -> int:
         def transform(current: Any) -> tuple[Any, int]:
-            existing = self._coerce_set(current) or set()
+            existing = self._coerce_set(current) or _Set()
             before = len(existing)
             existing.update(members)
             return existing, len(existing) - before
@@ -746,6 +861,8 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             if not existing:
                 return _MISSING, 0
             removed = len(existing.intersection(members))
+            if removed == 0:
+                return _MISSING, 0
             existing.difference_update(members)
             return (existing or _DELETE), removed
 
@@ -827,10 +944,15 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
     # =========================================================================
 
     @staticmethod
-    def _coerce_hash(current: Any) -> dict[str, Any] | None:
+    def _coerce_hash(current: Any) -> _Hash | None:
+        """Return the stored RESP hash, or None if the key is absent.
+
+        Only values produced by ``hset``/``hdel``/... qualify; a plain
+        Python ``dict`` (or a sorted set) is rejected.
+        """
         if current is _MISSING:
             return None
-        if not isinstance(current, dict) or not all(isinstance(k, str) for k in current):
+        if not isinstance(current, _Hash):
             msg = "Key does not hold a hash value."
             raise WrongTypeError(msg)
         return current
@@ -845,7 +967,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         items: list[Any] | None = None,
     ) -> int:
         def transform(current: Any) -> tuple[Any, int]:
-            existing = self._coerce_hash(current) or {}
+            existing = self._coerce_hash(current) or _Hash()
             added = 0
             if field is not None:
                 if field not in existing:
@@ -915,7 +1037,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
     def hsetnx(self, key: str, field: str, value: Any, version: int | None = None) -> bool:
         def transform(current: Any) -> tuple[Any, bool]:
-            existing = self._coerce_hash(current) or {}
+            existing = self._coerce_hash(current) or _Hash()
             if field in existing:
                 return _MISSING, False
             existing[field] = value
@@ -925,7 +1047,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
     def hincrby(self, key: str, field: str, amount: int = 1, version: int | None = None) -> int:
         def transform(current: Any) -> tuple[Any, int]:
-            existing = self._coerce_hash(current) or {}
+            existing = self._coerce_hash(current) or _Hash()
             value = existing.get(field, 0)
             if isinstance(value, bool) or not isinstance(value, int):
                 msg = "hash value is not an integer"
@@ -939,7 +1061,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
     def hincrbyfloat(self, key: str, field: str, amount: float = 1.0, version: int | None = None) -> float:
         def transform(current: Any) -> tuple[Any, float]:
-            existing = self._coerce_hash(current) or {}
+            existing = self._coerce_hash(current) or _Hash()
             value = existing.get(field, 0)
             if isinstance(value, bool) or not isinstance(value, int | float):
                 msg = "hash value is not a float"
@@ -955,15 +1077,18 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
     @staticmethod
     def _coerce_zset(current: Any) -> _ZSet | None:
+        """Return the stored RESP sorted set, or None if the key is absent.
+
+        Only values produced by ``zadd``/``zincrby``/... qualify; a plain
+        Python ``dict`` (or a hash) is rejected, so the hash/zset boundary
+        raises ``WRONGTYPE`` in both directions.
+        """
         if current is _MISSING:
             return None
-        if not isinstance(current, dict):
+        if not isinstance(current, _ZSet):
             msg = "Key does not hold a sorted set value."
             raise WrongTypeError(msg)
-        # Normalize to the tagged subclass so the stored value (and ``type()``)
-        # can tell a sorted set apart from a hash. Plain-dict rows written
-        # before this tag existed are upgraded on the next write.
-        return current if isinstance(current, _ZSet) else _ZSet(current)
+        return current
 
     @staticmethod
     def _sorted_members(zset: dict[Any, float]) -> list[tuple[Any, float]]:
@@ -1086,14 +1211,16 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         num: int | None = None,
         version: int | None = None,
     ) -> list[Any] | list[tuple[Any, float]]:
+        backend = self.__class__.__name__
+        lo = _score_bound(min_score, backend)
+        hi = _score_bound(max_score, backend)
         existing = self._coerce_zset(self._read(self._internal_key(key, version=version)))
         if not existing:
             return []
-        lo = float("-inf") if min_score == "-inf" else float(min_score)
-        hi = float("inf") if max_score == "+inf" else float(max_score)
         filtered = [(m, s) for m, s in self._sorted_members(existing) if lo <= s <= hi]
         if start is not None and num is not None:
-            filtered = filtered[start : start + num]
+            # A negative count is Redis's "to the end of the range".
+            filtered = filtered[start:] if num < 0 else filtered[start : start + num]
         return filtered if withscores else [m for m, _ in filtered]
 
     def zrem(self, key: str, *members: Any, version: int | None = None) -> int:
@@ -1127,11 +1254,12 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         max_score: float | str,
         version: int | None = None,
     ) -> int:
+        backend = self.__class__.__name__
+        lo = _score_bound(min_score, backend)
+        hi = _score_bound(max_score, backend)
         existing = self._coerce_zset(self._read(self._internal_key(key, version=version)))
         if not existing:
             return 0
-        lo = float("-inf") if min_score == "-inf" else float(min_score)
-        hi = float("inf") if max_score == "+inf" else float(max_score)
         return sum(1 for s in existing.values() if lo <= s <= hi)
 
     def zpopmin(self, key: str, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
@@ -1181,8 +1309,9 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         max_score: float | str,
         version: int | None = None,
     ) -> int:
-        lo = float("-inf") if min_score == "-inf" else float(min_score)
-        hi = float("inf") if max_score == "+inf" else float(max_score)
+        backend = self.__class__.__name__
+        lo = _score_bound(min_score, backend)
+        hi = _score_bound(max_score, backend)
 
         def transform(current: Any) -> tuple[Any, int]:
             existing = self._coerce_zset(current)
@@ -1239,6 +1368,11 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
     async def akeys(self, *args: Any, **kwargs: Any) -> Any:
         return await sync_to_async(self.keys, thread_sensitive=True)(*args, **kwargs)
+
+    async def ascan(self, *args: Any, **kwargs: Any) -> Any:
+        # ``BaseCachex.scan`` paginates over ``keys()``, which this backend
+        # implements, so the async twin just offloads it.
+        return await sync_to_async(self.scan, thread_sensitive=True)(*args, **kwargs)
 
     async def aiter_keys(self, *args: Any, **kwargs: Any) -> Any:
         # iter_keys is a generator over a list snapshot, materializing once
