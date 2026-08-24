@@ -49,9 +49,12 @@ import fnmatch
 import logging
 import os
 import pickle
+import threading
 import time
 import uuid
+import weakref
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from functools import cached_property
 from threading import BoundedSemaphore, Event, Lock, Thread
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -60,19 +63,19 @@ from django.core.cache.backends.base import DEFAULT_TIMEOUT, BaseCache
 from django.core.cache.backends.locmem import LocMemCache
 from django.core.exceptions import ImproperlyConfigured
 
+from django_cachex.cache.base import BaseCachex
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
-    from datetime import timedelta
+    from collections.abc import Iterable, Iterator, Sequence
 
     from django_cachex.cache.base import CachexSupportLevel
 
 logger = logging.getLogger(__name__)
 
 
-class StreamCache(LocMemCache):
+class StreamCache(BaseCachex, LocMemCache):
     """Stream-synchronized in-memory cache.
 
     Extends Django's ``LocMemCache`` with cross-pod synchronization. Reads are
@@ -85,6 +88,10 @@ class StreamCache(LocMemCache):
     ``add``, ``incr``, and ``decr`` raise ``NotSupportedError``: their
     semantics (atomic check-and-set, atomic increment) can't be provided
     with eventual consistency. Use the transport cache directly for these.
+    The rest of the cachex surface (hashes, lists, sets, sorted sets, locks,
+    pipelines, Lua) has no replicated equivalent either and raises
+    ``NotSupportedError`` from :class:`~django_cachex.cache.base.BaseCachex`;
+    key/TTL/type/info ops are implemented locally.
 
     Write-ordering guarantee: every mutating operation holds the local lock
     across both the local update and the enqueue of its stream broadcast,
@@ -169,6 +176,30 @@ class StreamCache(LocMemCache):
         # Admin display: show stream key and transport alias as location
         self._cachex_location = f"stream:{self._stream_key} [transport: {self._transport_alias}]"
 
+        self._register_interpreter_shutdown()
+
+    def _register_interpreter_shutdown(self) -> None:
+        """Run the bounded ``shutdown`` before the executor's unbounded join.
+
+        ``ThreadPoolExecutor`` worker threads are non-daemon and joined with
+        no timeout by ``concurrent.futures.thread._python_exit``, so a
+        transport hung inside ``_do_xadd`` would stall interpreter shutdown
+        forever. ``threading._register_atexit`` hooks run at the top of
+        ``threading._shutdown()`` in reverse registration order, i.e. before
+        that join, which ``atexit`` (which runs after it) cannot do. The hook
+        holds a weak reference so a discarded cache can still be collected.
+        """
+        ref = weakref.ref(self)
+
+        def _bounded_shutdown() -> None:
+            instance = ref()
+            if instance is not None:
+                with contextlib.suppress(Exception):
+                    instance.shutdown()
+
+        with contextlib.suppress(AttributeError):
+            threading._register_atexit(_bounded_shutdown)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+
     def __del__(self) -> None:
         with contextlib.suppress(Exception):
             self.shutdown()
@@ -204,7 +235,7 @@ class StreamCache(LocMemCache):
         key: str = "",
         val: Any = None,
         exp: float | None = None,
-        keys: str = "",
+        keys: Sequence[str] | None = None,
     ) -> None:
         """Publish a cache mutation to the stream (non-blocking, best-effort).
 
@@ -234,7 +265,9 @@ class StreamCache(LocMemCache):
             "exp": str(exp) if exp is not None else "",
         }
         if keys:
-            fields["keys"] = keys
+            # A list, not a joined string: any separator is legal inside a
+            # Django cache key.
+            fields["keys"] = list(keys)
         try:
             self._publish_executor.submit(self._do_xadd, fields)
         except RuntimeError:
@@ -346,9 +379,11 @@ class StreamCache(LocMemCache):
                     count=100,
                     block=self._block_timeout,
                 )
+                # Stamp every poll: ``last_read_age_seconds`` tracks consumer
+                # liveness, so an idle stream would otherwise look stalled.
+                self._last_read_time = time.time()
                 if not result:
                     continue
-                self._last_read_time = time.time()
                 for entries in result.values():
                     with self._lock:
                         for entry_id, fields in entries:
@@ -396,7 +431,7 @@ class StreamCache(LocMemCache):
         self._delete(fields["key"])
 
     def _handle_delete_many(self, fields: dict[str, Any]) -> None:
-        for key in fields.get("keys", "").split("\x00"):
+        for key in fields.get("keys") or ():
             if key:
                 self._delete(key)
 
@@ -512,14 +547,17 @@ class StreamCache(LocMemCache):
         value: Any,
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
-        **kwargs: Any,
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        get: bool = False,
     ) -> bool:
         # Conditional (nx/xx) and read-prior (get) writes need atomic
         # check-and-set, which eventual, last-writer-wins replication cannot
         # provide. Reject them rather than silently ignoring the flag, the same
         # way ``add``/``incr``/``decr`` do. Use the transport cache for these.
-        for flag in ("nx", "xx", "get"):
-            if kwargs.get(flag):
+        for flag, requested in (("nx", nx), ("xx", xx), ("get", get)):
+            if requested:
                 raise NotSupportedError(f"set(..., {flag}=True)", "StreamCache")
         self._ensure_consumer()
         made_key = self.make_and_validate_key(key, version=version)
@@ -574,7 +612,7 @@ class StreamCache(LocMemCache):
                 if self._delete(mk):
                     deleted += 1
             if made_keys:
-                self._publish("delete_many", keys="\x00".join(made_keys))
+                self._publish("delete_many", keys=made_keys)
         return deleted
 
     def has_key(self, key: str, version: int | None = None) -> bool:
@@ -594,14 +632,20 @@ class StreamCache(LocMemCache):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
     ) -> Any:
-        """Get a value or set it if missing. Uses ``set`` (not ``add``)."""
-        val = self.get(key, version=version)
-        if val is None:
+        """Get a value or set it if missing.
+
+        Mirrors ``BaseCache.get_or_set`` but writes with ``set``: ``add``
+        needs an atomic check-and-set this backend can't provide. A stored
+        ``None`` therefore counts as a hit (the missing-key sentinel, not
+        ``None``, decides), and the value is re-read after the write so
+        concurrent callers converge on whatever landed last.
+        """
+        val = self.get(key, self._missing_key, version=version)
+        if val is self._missing_key:
             if callable(default):
                 default = default()
-            if default is not None:
-                self.set(key, default, timeout=timeout, version=version)
-            return default
+            self.set(key, default, timeout=timeout, version=version)
+            return self.get(key, default, version=version)
         return val
 
     def touch(
@@ -662,7 +706,9 @@ class StreamCache(LocMemCache):
             internal_key.removeprefix(prefix) for internal_key in internal_keys if internal_key.startswith(prefix)
         ]
         if pattern and pattern != "*":
-            user_keys = [k for k in user_keys if fnmatch.fnmatch(k, pattern)]
+            # ``fnmatch`` normcases both sides, which would make patterns
+            # case-insensitive on Windows only; Redis globs never are.
+            user_keys = [k for k in user_keys if fnmatch.fnmatchcase(k, pattern)]
         user_keys.sort()
         return user_keys
 
@@ -693,9 +739,9 @@ class StreamCache(LocMemCache):
     def persist(self, key: str, version: int | None = None) -> bool:
         return self.touch(key, timeout=None, version=version)
 
-    def expire(self, key: str, timeout: int | timedelta, version: int | None = None) -> bool:
+    def expire(self, key: str, timeout: int | float | timedelta, version: int | None = None) -> bool:  # noqa: PYI041
         # ``timedelta`` collapses to seconds. ``touch()`` takes float | None.
-        seconds: float = timeout if isinstance(timeout, int) else timeout.total_seconds()
+        seconds = timeout.total_seconds() if isinstance(timeout, timedelta) else float(timeout)
         return self.touch(key, timeout=seconds, version=version)
 
     def type(self, key: str, version: int | None = None) -> KeyType | None:
@@ -741,11 +787,17 @@ class StreamCache(LocMemCache):
         version: int | None = None,
         key_type: str | None = None,
     ) -> tuple[int, list[str]]:
-        """Scan local cache keys with cursor-based pagination."""
+        """Scan local cache keys with cursor-based pagination.
+
+        Every live key is opaque here, so ``key_type`` either passes
+        everything through (``"string"``) or matches nothing.
+        """
         self._ensure_consumer()
         all_keys = self.keys(pattern, version=version)
+        if key_type is not None and key_type != KeyType.STRING:
+            all_keys = []
         if count is None:
-            count = 10
+            count = 100
         start = cursor
         end = min(start + count, len(all_keys))
         page = all_keys[start:end]
@@ -760,16 +812,8 @@ class StreamCache(LocMemCache):
     ) -> Iterator[str]:
         yield from self.keys(pattern, version=version)
 
-    def make_pattern(self, pattern: str, version: int | None = None) -> str:
-        """Make a key pattern with the cache prefix.
-
-        Routed through ``key_func`` so a custom ``KEY_FUNCTION`` produces a
-        pattern that matches its own keys. Unlike the RESP backends the prefix
-        is not glob-escaped: matching here is ``fnmatch`` over user keys that
-        have already had the prefix stripped.
-        """
-        v = version if version is not None else self.version
-        return self.key_func(pattern, self.key_prefix, v)
+    # ``make_pattern`` stays unimplemented on purpose. ``keys``/``delete_pattern``
+    # fnmatch prefix-stripped user keys, so a prefixed pattern is unusable here.
 
     def delete_pattern(
         self,

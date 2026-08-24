@@ -1,6 +1,8 @@
 """Tests for stream-synchronized local cache (StreamCache)."""
 
+import time
 import uuid
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -255,6 +257,30 @@ class TestSyncBasicOps:
         result = stream_cache.get_or_set("gos", lambda: "other")
         assert result == "computed"
 
+    def test_get_or_set_treats_stored_none_as_a_hit(self, stream_cache: BaseCache):
+        stream_cache.set("gos_none", None)
+        calls = []
+
+        def default():
+            calls.append(1)
+            return "recomputed"
+
+        assert stream_cache.get_or_set("gos_none", default) is None
+        assert stream_cache.get_or_set("gos_none", default) is None
+        assert calls == []
+
+    def test_get_or_set_stores_a_none_default(self, stream_cache: BaseCache):
+        assert stream_cache.get_or_set("gos_null", lambda: None) is None
+        assert stream_cache.has_key("gos_null") is True
+
+    @pytest.mark.asyncio
+    async def test_aget_or_set_on_miss(self, stream_cache: BaseCache):
+        # ``BaseCache.aget_or_set`` routes through the sync override rather than
+        # ``aadd`` (which StreamCache rejects) whenever ``get_or_set`` is set.
+        await stream_cache.adelete("agos")
+        assert await stream_cache.aget_or_set("agos", lambda: "computed") == "computed"
+        assert await stream_cache.aget_or_set("agos", lambda: "other") == "computed"
+
     def test_clear(self, stream_cache: BaseCache):
         stream_cache.set("c1", 1)
         stream_cache.set("c2", 2)
@@ -341,6 +367,16 @@ class TestSyncExpiry:
         assert ttl is not None
         assert 20 <= ttl <= 30
 
+    @pytest.mark.parametrize("timeout", [30, 30.5, timedelta(seconds=30)], ids=["int", "float", "timedelta"])
+    def test_expire_accepts_numeric_and_timedelta_timeouts(self, stream_cache: BaseCache, timeout):
+        # Regression: narrowing with ``isinstance(timeout, int)`` sent a float
+        # down the timedelta branch and raised AttributeError.
+        stream_cache.set("expire_types", "val", timeout=None)
+        assert stream_cache.expire("expire_types", timeout) is True
+        ttl = stream_cache.ttl("expire_types")
+        assert ttl is not None
+        assert 20 <= ttl <= 31
+
 
 # =============================================================================
 # Cross-instance sync tests (the key feature)
@@ -394,6 +430,22 @@ class TestSyncCrossInstance:
         assert pod2.get("dm1") is None
         assert pod2.get("dm2") is None
         assert pod2.get("dm3") == 3
+
+    @pytest.mark.filterwarnings("ignore::django.core.cache.backends.base.CacheKeyWarning")
+    def test_delete_many_with_separator_in_key_propagates(self, stream_pair: tuple[StreamCache, StreamCache]):
+        # Regression: made keys were joined with ``\x00``, legal in a Django
+        # cache key, so remote pods split it and deleted the wrong keys.
+        pod1, pod2 = stream_pair
+        pod1.set_many({"a\x00b": 1, "keep": 2})
+        pod1._flush_publishes()
+        pod2._drain()
+        assert pod2.get("a\x00b") == 1
+
+        pod1.delete_many(["a\x00b"])
+        pod1._flush_publishes()
+        pod2._drain()
+        assert pod2.get("a\x00b") is None
+        assert pod2.get("keep") == 2
 
     def test_touch_propagates(self, stream_pair: tuple[StreamCache, StreamCache]):
         pod1, pod2 = stream_pair
@@ -542,6 +594,13 @@ class TestSyncAdmin:
         result = stream_cache.keys("wc_*")
         assert len(result) == 2
 
+    def test_keys_pattern_is_case_sensitive(self, stream_cache: BaseCache):
+        # Regression: ``fnmatch.fnmatch`` normcases both sides, so the pattern
+        # matched case-insensitively on Windows. Redis globs never do.
+        stream_cache.set("Case_a", 1)
+        stream_cache.set("case_b", 2)
+        assert stream_cache.keys("Case_*") == ["Case_a"]
+
     def test_keys_respects_version(self, stream_cache: BaseCache):
         # Regression: keys() listed entries across all versions, leaking
         # other versions' keys (raw internal form) into the result.
@@ -582,6 +641,18 @@ class TestSyncAdmin:
         assert "keyspace" in info
         assert info["keyspace"]["db0"]["keys"] >= 1
 
+    def test_info_last_read_age_tracks_idle_polls(self, stream_cache: BaseCache):
+        # Regression: ``_last_read_time`` was stamped only on a message, so the
+        # health signal grew without bound on a healthy but idle stream.
+        stream_cache.get("warm")  # starts the consumer
+        deadline = time.time() + 5.0
+        while time.time() < deadline and stream_cache.info()["sync"]["last_read_age_seconds"] is None:
+            time.sleep(0.05)
+        sync_info = stream_cache.info()["sync"]
+        assert sync_info["consumer_alive"] is True
+        assert sync_info["last_read_age_seconds"] is not None
+        assert sync_info["last_read_age_seconds"] < 3.0
+
     def test_type_returns_string(self, stream_cache: BaseCache):
         stream_cache.set("type_key", "val")
         assert stream_cache.type("type_key") == "string"
@@ -601,6 +672,19 @@ class TestSyncAdmin:
         cursor, page = stream_cache.scan(cursor=0, count=100)
         assert "scan1" in page or any("scan" in k for k in page)
         assert cursor == 0  # All results in one page
+
+    def test_scan_default_count_matches_base(self, stream_cache: BaseCache):
+        for i in range(50):
+            stream_cache.set(f"cnt{i:02d}", i)
+        _, page = stream_cache.scan()
+        assert len(page) == 50
+
+    def test_scan_key_type_filter(self, stream_cache: BaseCache):
+        # Regression: ``key_type`` was accepted and ignored, so the admin's Type
+        # filter was a no-op. Every key here is opaque.
+        stream_cache.set("kt1", "a")
+        assert stream_cache.scan(key_type="string")[1] == ["kt1"]
+        assert stream_cache.scan(key_type="hash")[1] == []
 
     def test_iter_keys(self, stream_cache: BaseCache):
         stream_cache.set("ik1", "a")
@@ -622,6 +706,48 @@ class TestSyncAdmin:
         mk = stream_cache.make_key("test_key")
         rk = stream_cache.reverse_key(mk)
         assert rk == "test_key"
+
+    def test_make_pattern_raises_not_supported(self, stream_cache: BaseCache):
+        # Its output could never be fed back into keys()/delete_pattern(),
+        # which fnmatch against prefix-stripped user keys.
+        with pytest.raises(NotSupportedError):
+            stream_cache.make_pattern("*")
+
+
+class TestSyncUnsupportedSurface:
+    """Cachex ops with no replicated equivalent raise ``NotSupportedError``.
+
+    Regression: StreamCache did not inherit ``BaseCachex``, so these raised
+    ``AttributeError`` while the class advertised ``_cachex_support="cachex"``.
+    """
+
+    @pytest.mark.parametrize(
+        ("operation", "args"),
+        [
+            ("hset", ("k", "f", "v")),
+            ("hgetall", ("k",)),
+            ("lpush", ("k", "v")),
+            ("lrange", ("k", 0, -1)),
+            ("sadd", ("k", "m")),
+            ("zadd", ("k", {"m": 1.0})),
+            ("lock", ("k",)),
+            ("pipeline", ()),
+            ("eval_script", ("return 1",)),
+        ],
+        ids=["hset", "hgetall", "lpush", "lrange", "sadd", "zadd", "lock", "pipeline", "eval_script"],
+    )
+    def test_raises_not_supported(self, stream_cache: BaseCache, operation, args):
+        with pytest.raises(NotSupportedError):
+            getattr(stream_cache, operation)(*args)
+
+    @pytest.mark.parametrize("flag", ["nx", "xx", "get"])
+    def test_set_flag_raises_not_supported(self, stream_cache: BaseCache, flag: str):
+        with pytest.raises(NotSupportedError):
+            stream_cache.set("k", "v", **{flag: True})
+
+    def test_set_rejects_unknown_kwargs(self, stream_cache: BaseCache):
+        with pytest.raises(TypeError):
+            stream_cache.set("k", "v", nxx=True)
 
 
 class TestSyncReplay:
