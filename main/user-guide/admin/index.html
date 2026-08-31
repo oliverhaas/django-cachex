@@ -1420,9 +1420,9 @@
 <p>The admin uses Django's built-in permission system. Superusers have full access. Staff users need explicit permissions:</p>
 <ul>
 <li><code>django_cachex.view_cache</code> / <code>view_key</code>: view caches and keys</li>
-<li><code>django_cachex.change_cache</code>: flush caches, update TTL</li>
+<li><code>django_cachex.change_cache</code>: cache-wide actions, meaning flush, clear the current version, and the cache detail page's danger zone (clear all versions, flush the database)</li>
 <li><code>django_cachex.add_key</code>: create keys</li>
-<li><code>django_cachex.change_key</code>: edit values</li>
+<li><code>django_cachex.change_key</code>: every mutation on the key detail page, including editing values, setting a TTL, and making a key persistent</li>
 <li><code>django_cachex.delete_key</code>: delete keys</li>
 </ul>
 <h2 id="support-levels">Support Levels<a class="headerlink" href="#support-levels" title="Permanent link">&para;</a></h2>
@@ -1455,12 +1455,15 @@
 <h2 id="views">Views<a class="headerlink" href="#views" title="Permanent link">&para;</a></h2>
 <h3 id="caches-index">Caches (Index)<a class="headerlink" href="#caches-index" title="Permanent link">&para;</a></h3>
 <p>Lists all configured caches showing name, backend class, location, and support level.</p>
+<p><img alt="The cache list, showing each configured alias with its backend and support level" src="../../assets/screenshot-cache-list.png" /></p>
 <p><strong>Actions:</strong> Flush selected caches (delete all entries).</p>
 <h3 id="key-browser">Key Browser<a class="headerlink" href="#key-browser" title="Permanent link">&para;</a></h3>
 <p>Click a cache name to browse its keys with wildcard search (<code>*</code>), data type display, TTL, and pagination.</p>
+<p><img alt="The key browser, with the type filter sidebar and a wildcard search" src="../../assets/screenshot-key-list.png" /></p>
 <p><strong>Actions:</strong> Delete selected keys, add new key.</p>
 <h3 id="key-detail">Key Detail<a class="headerlink" href="#key-detail" title="Permanent link">&para;</a></h3>
 <p>View and edit a specific key's value (formatted JSON for objects/arrays), data type, and TTL. Supports editing values/timeout and deleting the key.</p>
+<p><img alt="The key detail page, editing a value and its TTL" src="../../assets/screenshot-key-detail.png" /></p>
 <h3 id="cache-info">Cache Info<a class="headerlink" href="#cache-info" title="Permanent link">&para;</a></h3>
 <p>View server information: configuration, server version/uptime, memory usage, connected clients, command statistics, and keyspace data.</p>
 <h3 id="add-key">Add Key<a class="headerlink" href="#add-key" title="Permanent link">&para;</a></h3>
@@ -1529,10 +1532,10 @@
 </table>
 <h2 id="tips">Tips<a class="headerlink" href="#tips" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Pattern Search</strong>: Use <code>*</code> as a wildcard (e.g., <code>user:*</code> finds all keys starting with "user:").</li>
-<li><strong>JSON Values</strong>: Enter valid JSON when editing to store objects or arrays.</li>
-<li><strong>Help Button</strong>: Each view has a help button with context-specific tips.</li>
-<li><strong>Refresh</strong>: Use the refresh action to update key lists and statistics.</li>
+<li>Use <code>*</code> as a wildcard in the key search, so <code>user:*</code> finds every key starting with <code>user:</code>.</li>
+<li>Enter valid JSON when editing to store objects or arrays.</li>
+<li>Each view has a help button with tips for that view.</li>
+<li>The refresh action re-reads key lists and statistics.</li>
 </ul>
 
 

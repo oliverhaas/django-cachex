@@ -2501,7 +2501,7 @@ adapter is configured:</p>
 </tr>
 </tbody>
 </table>
-<p>The four objects expose comparable command surfaces but are not
+<p>The three objects expose comparable command surfaces but are not
 interchangeable types; code that pins to one adapter for type-narrowing
 or vendor-specific calls won't work against the others. For
 adapter-portable code use the cache API directly; reach for
@@ -2510,7 +2510,7 @@ key prefix, version, serializer, and compressor.</p>
 <p>The async equivalent is <code>get_async_client()</code>, which is <code>async def</code> and
 returns the adapter's async client.</p>
 <h2 id="lock-interface">Lock Interface<a class="headerlink" href="#lock-interface" title="Permanent link">&para;</a></h2>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sleep</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sleep</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">thread_local</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </span></code></pre></div>
 <table>
 <thead>
@@ -2523,6 +2523,10 @@ returns the adapter's async client.</p>
 <tr>
 <td><code>key</code></td>
 <td>Lock name</td>
+</tr>
+<tr>
+<td><code>version</code></td>
+<td>Cache version namespace for the lock key</td>
 </tr>
 <tr>
 <td><code>lease</code></td>
@@ -2540,8 +2544,16 @@ returns the adapter's async client.</p>
 <td><code>timeout</code></td>
 <td>Max time <code>acquire()</code> will wait before giving up (no upper bound if <code>None</code>)</td>
 </tr>
+<tr>
+<td><code>thread_local</code></td>
+<td>Keep the ownership token in thread-local storage, so one thread cannot release another's hold</td>
+</tr>
 </tbody>
 </table>
+<p><code>version</code> is the second positional parameter, ahead of <code>lease</code>. Pass <code>lease</code> by
+keyword: <code>cache.lock("k", 30)</code> sets <code>version=30</code> and leaves the lock without a
+TTL.</p>
+<p><code>alock()</code> takes the same parameters.</p>
 <p><code>acquire()</code> accepts the same <code>blocking</code> / <code>timeout</code> arguments to override
 the defaults set on the lock object:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">&quot;mylock&quot;</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
@@ -2580,7 +2592,7 @@ the defaults set on the lock object:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">sem</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">semaphore</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">capacity</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 </span></code></pre></div>
 <p>Return a weighted semaphore for concurrency gating. Use as a context manager.</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">semaphore</span><span class="p">(</span><span class="s2">&quot;image-convert&quot;</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">):</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">semaphore</span><span class="p">(</span><span class="s2">&quot;image-convert&quot;</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">60</span><span class="p">):</span>
 </span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>    <span class="c1"># Up to 4 callers may hold this semaphore concurrently.</span>
 </span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>    <span class="n">convert</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
 </span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>
@@ -2698,56 +2710,101 @@ returned <code>bool</code>, leaving the claim held until its lease expires.</p>
 <thead>
 <tr>
 <th>Option</th>
+<th>Backends</th>
 <th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>serializer</code></td>
+<td>all Valkey/Redis</td>
 <td>Serializer class or list for fallback</td>
 </tr>
 <tr>
 <td><code>compressor</code></td>
+<td>all Valkey/Redis</td>
 <td>Compressor class or list for fallback</td>
 </tr>
 <tr>
+<td><code>stampede_prevention</code></td>
+<td>all Valkey/Redis</td>
+<td><code>True</code> / <code>False</code> / dict (<code>buffer</code>, <code>beta</code>, <code>delta</code>); see <a href="#stampedeconfig"><code>StampedeConfig</code></a></td>
+</tr>
+<tr>
+<td><code>username</code></td>
+<td>all Valkey/Redis</td>
+<td>ACL user name; takes precedence over the URL</td>
+</tr>
+<tr>
 <td><code>password</code></td>
-<td>Server password</td>
+<td>all Valkey/Redis</td>
+<td>Server password; takes precedence over the URL</td>
 </tr>
 <tr>
 <td><code>socket_connect_timeout</code></td>
+<td>redis-py, valkey-py</td>
 <td>Connection timeout</td>
 </tr>
 <tr>
 <td><code>socket_timeout</code></td>
+<td>redis-py, valkey-py</td>
 <td>Read/write timeout</td>
 </tr>
 <tr>
 <td><code>pool_class</code></td>
+<td>redis-py, valkey-py</td>
 <td>Custom connection pool class (sync)</td>
 </tr>
 <tr>
 <td><code>async_pool_class</code></td>
+<td>redis-py, valkey-py</td>
 <td>Custom connection pool class (async)</td>
 </tr>
 <tr>
 <td><code>parser_class</code></td>
+<td>redis-py, valkey-py</td>
 <td>Custom RESP parser class</td>
 </tr>
 <tr>
-<td><code>stampede_prevention</code></td>
-<td><code>True</code> / <code>False</code> / dict (<code>buffer</code>, <code>beta</code>, <code>delta</code>); see <a href="#stampedeconfig"><code>StampedeConfig</code></a></td>
-</tr>
-<tr>
 <td><code>sentinels</code></td>
+<td>redis-py, valkey-py</td>
 <td>Sentinel server list (for Sentinel backends)</td>
 </tr>
 <tr>
 <td><code>sentinel_kwargs</code></td>
+<td>redis-py, valkey-py</td>
 <td>Sentinel configuration</td>
+</tr>
+<tr>
+<td><code>db</code></td>
+<td>valkey-glide</td>
+<td>Database index (standalone only); on redis-py/valkey-py it goes through the URL or <code>from_url()</code></td>
+</tr>
+<tr>
+<td><code>use_tls</code> / <code>ssl</code></td>
+<td>valkey-glide</td>
+<td>Force TLS on or off, overriding the URL scheme</td>
+</tr>
+<tr>
+<td><code>request_timeout</code></td>
+<td>valkey-glide</td>
+<td>Per-request timeout, in milliseconds</td>
+</tr>
+<tr>
+<td><code>client_name</code></td>
+<td>valkey-glide</td>
+<td>Client name reported to the server</td>
 </tr>
 </tbody>
 </table>
+<p>The redis-py and valkey-py adapters forward any key not listed above to the
+driver's <code>from_url()</code>, so <code>retry_on_timeout</code>, <code>ssl_ca_certs</code>, <code>socket_keepalive</code>
+and the rest of the driver's own options work there. The valkey-glide adapter
+does not: it reads only the keys marked "all Valkey/Redis" or "valkey-glide" and
+ignores everything else. <code>LocMemCache</code>, <code>DatabaseCache</code>, <code>StreamCache</code> and
+<code>TieredCache</code> take their own <code>OPTIONS</code>; see
+<a href="../../user-guide/configuration/">Configuration</a> and
+<a href="../../user-guide/composite-backends/">Composite backends</a>.</p>
 <h3 id="stampedeconfig">StampedeConfig<a class="headerlink" href="#stampedeconfig" title="Permanent link">&para;</a></h3>
 <p><code>django_cachex.StampedeConfig(buffer=60, beta=1.0, delta=1.0)</code>, frozen
 dataclass that tunes the TTL-based XFetch stampede-prevention algorithm.
@@ -2782,6 +2839,8 @@ gets the buffer added back.</p>
 </tr>
 </tbody>
 </table>
+<p>Only the Valkey/Redis backends implement it. <code>LocMemCache</code>, <code>DatabaseCache</code>,
+<code>StreamCache</code> and <code>TieredCache</code> ignore both the option and the per-call keyword.</p>
 <h2 id="exceptions">Exceptions<a class="headerlink" href="#exceptions" title="Permanent link">&para;</a></h2>
 <p>All importable from the package root (<code>django_cachex</code>). Every exception
 subclasses <code>CachexError</code>, so one <code>except CachexError</code> handles any library
