@@ -9,7 +9,8 @@ import pytest
 pytest.importorskip("glide_sync")
 pytest.importorskip("glide")
 
-from glide_sync import RandomNode, ServerCredentials
+from django.core.exceptions import ImproperlyConfigured
+from glide_sync import ClusterBatch, RandomNode, ServerCredentials
 
 from django_cachex.adapters.protocols import _RespPipelineCommandsProtocol
 from django_cachex.adapters.valkey_glide import (
@@ -25,6 +26,7 @@ from django_cachex.adapters.valkey_glide import (
     _WrongTypeClient,
 )
 from django_cachex.lock import LockError
+from django_cachex.types import KeyType
 
 
 def _adapter(mocker):
@@ -326,12 +328,64 @@ def test_xpending_range_places_idle_before_range(mocker):
     assert client.custom_command.call_args[0][0] == [b"XPENDING", "k", "g", b"IDLE", b"5000", "-", "+", b"10"]
 
 
-def test_xpending_summary_ignores_idle(mocker):
-    # Regression: XPENDING key group IDLE n (no range) is a syntax error.
+def test_xpending_rejects_a_filter_without_a_count(mocker):
+    # XPENDING key group IDLE n with no range is a syntax error on the wire.
+    adapter, _client = _adapter(mocker)
+    with pytest.raises(ValueError, match="requires count"):
+        adapter.xpending("k", "g", idle=5000)
+
+
+def test_xpending_defaults_the_range_when_only_count_is_given(mocker):
     adapter, client = _adapter(mocker)
+    client.custom_command.return_value = []
+    adapter.xpending("k", "g", count=10)
+    assert client.custom_command.call_args[0][0] == [b"XPENDING", "k", "g", "-", "+", b"10"]
+
+
+def test_xpending_summary_returns_the_protocol_dict(mocker):
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = [2, b"1-1", b"2-2", [[b"c1", b"2"]]]
+    assert adapter.xpending("k", "g") == {
+        "pending": 2,
+        "min": "1-1",
+        "max": "2-2",
+        "consumers": [{"name": "c1", "pending": 2}],
+    }
+
+
+def test_xpending_range_returns_protocol_dicts(mocker):
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = [[b"1-1", b"c1", 120, 3]]
+    assert adapter.xpending("k", "g", count=10) == [
+        {"message_id": "1-1", "consumer": "c1", "time_since_delivered": 120, "times_delivered": 3},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_axpending_summary_returns_the_protocol_dict(mocker):
+    adapter, client = _async_adapter(mocker)
     client.custom_command.return_value = [0, None, None, []]
-    adapter.xpending("k", "g", idle=5000)
-    assert client.custom_command.call_args[0][0] == [b"XPENDING", "k", "g"]
+    assert await adapter.axpending("k", "g") == {"pending": 0, "min": None, "max": None, "consumers": []}
+
+
+def test_pipeline_xpending_decodes_the_summary(mocker):
+    client = mocker.Mock()
+    client.exec.return_value = [[2, b"1-1", b"2-2", [[b"c1", b"2"]]]]
+    pipe = ValkeyGlidePipelineAdapter(client, transaction=False)
+    pipe.xpending("k", "g")
+    assert pipe.execute() == [
+        {"pending": 2, "min": "1-1", "max": "2-2", "consumers": [{"name": "c1", "pending": 2}]},
+    ]
+
+
+def test_pipeline_xpending_range_decodes_the_rows(mocker):
+    client = mocker.Mock()
+    client.exec.return_value = [[[b"1-1", b"c1", 120, 3]]]
+    pipe = ValkeyGlidePipelineAdapter(client, transaction=False)
+    pipe.xpending_range("k", "g", count=10)
+    assert pipe.execute() == [
+        [{"message_id": "1-1", "consumer": "c1", "time_since_delivered": 120, "times_delivered": 3}],
+    ]
 
 
 # ------------------------------------------------- sscan cursor normalization
@@ -739,3 +793,238 @@ def test_cluster_aclose_uses_the_cluster_registry(mocker):
     remaining = asyncio.run(scenario())
     client.close.assert_awaited_once()
     assert remaining == {}
+
+
+# ------------------------------------------------------- LOCATION validation
+
+
+def test_empty_location_is_rejected():
+    with pytest.raises(ImproperlyConfigured, match="at least one server URL"):
+        ValkeyGlideAdapter([])
+
+
+def test_empty_cluster_location_is_rejected():
+    with pytest.raises(ImproperlyConfigured, match="at least one server URL"):
+        ValkeyGlideClusterAdapter([])
+
+
+# ------------------------------------------------------- nopass ACL usernames
+
+
+def test_config_kwargs_skips_credentials_without_a_password():
+    # glide's ServerCredentials rejects a username with no password, which a
+    # nopass ACL user has.
+    kwargs = _glide_config_kwargs(["redis://user@host:6379/0"], {}, credentials_cls=ServerCredentials)
+    assert "credentials" not in kwargs
+
+
+def test_config_kwargs_keeps_a_username_given_with_a_password():
+    kwargs = _glide_config_kwargs(["redis://user:pw@host:6379/0"], {}, credentials_cls=ServerCredentials)
+    assert kwargs["credentials"].username == "user"
+    assert kwargs["credentials"].password == "pw"
+
+
+# ------------------------------------------------------- empty field payloads
+
+
+def test_hmget_without_fields_returns_empty(mocker):
+    # HMGET key with no field is a syntax error on the wire.
+    adapter, client = _adapter(mocker)
+    assert adapter.hmget("h") == []
+    client.hmget.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_ahmget_without_fields_returns_empty(mocker):
+    adapter, client = _async_adapter(mocker)
+    assert await adapter.ahmget("h") == []
+    client.hmget.assert_not_awaited()
+
+
+def test_hset_without_a_payload_raises(mocker):
+    adapter, client = _adapter(mocker)
+    with pytest.raises(ValueError, match="at least one field/value pair"):
+        adapter.hset("h", mapping={})
+    client.hset.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_ahset_without_a_payload_raises(mocker):
+    adapter, client = _async_adapter(mocker)
+    with pytest.raises(ValueError, match="at least one field/value pair"):
+        await adapter.ahset("h", mapping={})
+    client.hset.assert_not_awaited()
+
+
+# ----------------------------------------------------------- pop count misses
+
+
+@pytest.mark.parametrize("name", ["lpop", "rpop"])
+def test_pop_count_returns_none_for_a_missing_key(mocker, name):
+    # The cache layer tells a miss from an empty pop by the None.
+    adapter, client = _adapter(mocker)
+    getattr(client, f"{name}_count").return_value = None
+    assert getattr(adapter, name)("l", count=2) is None
+
+
+@pytest.mark.parametrize("name", ["lpop", "rpop"])
+def test_pop_count_returns_a_list_when_the_key_exists(mocker, name):
+    adapter, client = _adapter(mocker)
+    getattr(client, f"{name}_count").return_value = [b"a", b"b"]
+    assert getattr(adapter, name)("l", count=2) == [b"a", b"b"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", ["alpop", "arpop"])
+async def test_async_pop_count_returns_none_for_a_missing_key(mocker, name):
+    adapter, client = _async_adapter(mocker)
+    getattr(client, f"{name[1:]}_count").return_value = None
+    assert await getattr(adapter, name)("l", count=2) is None
+
+
+# --------------------------------------------------------- XINFO STREAM FULL
+
+
+def test_xinfo_stream_full_decodes_nested_group_keys(mocker):
+    # FULL nests the group and consumer dicts inside list values.
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = {
+        b"length": 1,
+        b"groups": [{b"name": b"g", b"consumers": [{b"name": b"c"}]}],
+    }
+    info = adapter.xinfo_stream("s", full=True)
+    assert info["groups"][0]["name"] == b"g"
+    assert info["groups"][0]["consumers"][0]["name"] == b"c"
+
+
+# ------------------------------------------------------------- TYPE mapping
+
+
+def test_type_maps_an_unmodelled_type_to_unknown(mocker):
+    adapter, client = _adapter(mocker)
+    client.type.return_value = b"ReJSON-RL"
+    assert adapter.type("k") is KeyType.UNKNOWN
+
+
+def test_type_maps_none_to_none(mocker):
+    adapter, client = _adapter(mocker)
+    client.type.return_value = b"none"
+    assert adapter.type("k") is None
+
+
+@pytest.mark.asyncio
+async def test_atype_maps_an_unmodelled_type_to_unknown(mocker):
+    adapter, client = _async_adapter(mocker)
+    client.type.return_value = b"ReJSON-RL"
+    assert await adapter.atype("k") is KeyType.UNKNOWN
+
+
+# -------------------------------------------------------------- SET options
+
+
+def test_pipeline_set_sends_px(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    pipe.set("k", b"v", px=60000)
+    assert pipe._batch.commands[-1][1] == ["k", b"v", "PX", "60000"]
+
+
+def test_pipeline_set_sends_keepttl(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    pipe.set("k", b"v", keepttl=True)
+    assert pipe._batch.commands[-1][1] == ["k", b"v", "KEEPTTL"]
+
+
+def test_pipeline_set_rejects_two_expiry_options(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    with pytest.raises(ValueError, match="at most one of"):
+        pipe.set("k", b"v", ex=60, px=60000)
+
+
+def test_pipeline_set_with_get_returns_the_old_value(mocker):
+    # Without the tracker skip, the old value collapsed to False.
+    client = mocker.Mock()
+    client.exec.return_value = [b"old"]
+    pipe = ValkeyGlidePipelineAdapter(client, transaction=False)
+    pipe.set("k", b"v", get=True)
+    assert pipe.execute() == [b"old"]
+
+
+# ---------------------------------------------- protocol parameter spellings
+
+
+def test_xadd_takes_entry_id(mocker):
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = b"1-1"
+    adapter.xadd("s", {"f": b"v"}, entry_id="1-1")
+    assert client.custom_command.call_args[0][0] == [b"XADD", "s", "1-1", "f", b"v"]
+
+
+def test_xrange_takes_start_and_end(mocker):
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = {}
+    adapter.xrange("s", start="1-1", end="2-2", count=5)
+    assert client.custom_command.call_args[0][0] == [b"XRANGE", "s", "1-1", "2-2", b"COUNT", b"5"]
+
+
+def test_xrevrange_takes_end_and_start(mocker):
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = {}
+    adapter.xrevrange("s", end="2-2", start="1-1")
+    assert client.custom_command.call_args[0][0] == [b"XREVRANGE", "s", "2-2", "1-1"]
+
+
+def test_slowlog_get_sends_its_count(mocker):
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = []
+    adapter.slowlog_get(5)
+    assert client.custom_command.call_args[0][0] == [b"SLOWLOG", b"GET", b"5"]
+
+
+# ------------------------------------------------------- lock sleep clamping
+
+
+def test_lock_blocking_sleep_stops_at_the_deadline(mocker):
+    client = mocker.Mock()
+    client.set.return_value = None
+    sleep = mocker.patch("django_cachex.adapters.valkey_glide.time.sleep")
+    mocker.patch("django_cachex.adapters.valkey_glide.time.monotonic", side_effect=[0.0, 0.0, 0.05])
+    lock = _GlideLock(client, "k", sleep=0.1, blocking=True, timeout=0.05)
+
+    assert lock.acquire() is False
+    assert sleep.call_args_list == [mocker.call(0.05)]
+
+
+# ------------------------------------------------------------ cluster batches
+
+
+def test_cluster_pipeline_uses_a_cluster_batch(mocker):
+    adapter = ValkeyGlideClusterAdapter.__new__(ValkeyGlideClusterAdapter)
+    mocker.patch.object(ValkeyGlideClusterAdapter, "_client", return_value=mocker.Mock())
+    assert isinstance(adapter.pipeline()._batch, ClusterBatch)
+
+
+# --------------------------------------------------- per-loop registry growth
+
+
+def test_closed_loops_do_not_accumulate_in_the_async_registry(mocker):
+    import django_cachex.adapters.valkey_glide as vg
+
+    adapter = ValkeyGlideAdapter.__new__(ValkeyGlideAdapter)
+    adapter._config_key = ("growth",)
+    adapter._stampede_config = None
+
+    async def make_client():
+        # Glide's client holds its loop, so the registry key is never collected
+        # on its own and a closed loop only leaves through the sweep.
+        client = mocker.AsyncMock()
+        client.loop = asyncio.get_running_loop()
+        return client
+
+    mocker.patch.object(ValkeyGlideAdapter, "_create_async_client", mocker.AsyncMock(side_effect=make_client))
+
+    asyncio.run(adapter.aget("k"))
+    after_first = len(vg._GLIDE_ASYNC_CLIENTS)
+    for _ in range(300):
+        asyncio.run(adapter.aget("k"))
+
+    assert len(vg._GLIDE_ASYNC_CLIENTS) <= after_first

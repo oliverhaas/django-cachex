@@ -55,7 +55,7 @@ dev = [
   "django-stubs==6.1.0",
   "djlint==1.44.2",
   "lz4==4.4.5",
-  "msgpack==1.2.1",
+  "msgpack==1.2.2",
   "ormsgpack==1.12.2",
   "mypy==2.3.1",
   "pre-commit==4.6.2",
@@ -66,10 +66,10 @@ dev = [
   "pytest-mock==3.15.1",
   "pytest-xdist==3.8.0",
   "pytest==9.1.1",
-  "ruff==0.16.4",
+  "ruff==0.16.5",
   "testcontainers==4.15.0",
-  "ty==0.0.74",
-  "types-docker==7.2.0.20260819",
+  "ty==0.0.77",
+  "types-docker==7.2.0.20260827",
   # ASGI benchmark only: granian (real ASGI server) plus httpx (load gen).
   "granian>=2.6,<3",
   "httpx>=0.28,<0.29",
@@ -163,11 +163,6 @@ suppress-none-returning = true # Don't require -> None on functions
   "TC001",   # Don't bother with TYPE_CHECKING gymnastics
   "TC003",
 ]
-"scripts/**" = [
-  "ANN",    # Annotations not required in one-shot generator scripts
-  "INP001", # Standalone scripts, not a package
-  "T201",   # print() is the output mechanism
-]
 
 [tool.djlint]
 # djLint reads this list instead of stdin when the source argument is `-`, which
@@ -225,9 +220,7 @@ ignore_missing_imports = true
 module = "testcontainers.*"
 ignore_missing_imports = true
 
-# valkey-glide ships only as an optional install; let mypy skip it when
-# absent, and ignore the spike file's many Liskov violations from the
-# Design B overrides until/unless we keep this backend long-term.
+# valkey-glide ships only as an optional install, so let mypy skip it when absent.
 [[tool.mypy.overrides]]
 module = "glide.*"
 ignore_missing_imports = true
@@ -236,9 +229,6 @@ ignore_missing_imports = true
 module = "glide_sync.*"
 ignore_missing_imports = true
 
-[[tool.mypy.overrides]]
-module = "django_cachex.adapters.valkey_glide"
-ignore_errors = true
 
 [tool.ty.rules]
 # Disable rules that conflict with intentional Django extensions:

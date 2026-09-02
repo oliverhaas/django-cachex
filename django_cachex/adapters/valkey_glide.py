@@ -1,4 +1,3 @@
-# ruff: noqa: ERA001
 """``valkey-glide``-backed cache adapter (sync + async).
 
 Each operation method implements ``RespAdapterProtocol`` and calls
@@ -23,11 +22,14 @@ import os
 import threading
 import time
 import weakref
-from typing import TYPE_CHECKING, Any, Self
+from itertools import batched
+from typing import TYPE_CHECKING, Any, Self, cast
 from urllib.parse import parse_qs, unquote, urlparse
 
+from django.core.exceptions import ImproperlyConfigured
+
 from django_cachex.adapters.protocols import RespAdapterProtocol, RespAsyncPipelineProtocol, RespPipelineProtocol
-from django_cachex.adapters.valkey_py import _options_key
+from django_cachex.adapters.valkey_py import _check_xpending_args, _options_key
 from django_cachex.exceptions import maybe_wrap_wrongtype
 from django_cachex.stampede import (
     StampedeConfig,
@@ -39,14 +41,11 @@ from django_cachex.stampede import (
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Iterable, Iterator, Mapping, Sequence
 
 
-# valkey-glide is an optional install. The names below are unbound when it
-# isn't available; method bodies that reference them only run at runtime
-# after ``_check_installed`` has gated construction, so a missing install
-# raises at backend instantiation time with an actionable message rather
-# than at module import time.
+# valkey-glide is an optional install: the names below stay unbound without it,
+# and ``_check_installed`` turns that into an actionable error at construction.
 try:
     from glide import ClusterScanCursor as AsyncClusterScanCursor  # ty: ignore[unresolved-import]
     from glide import GlideClient as AsyncGlideClient  # ty: ignore[unresolved-import]
@@ -59,6 +58,8 @@ try:
     from glide import ServerCredentials as AsyncServerCredentials  # ty: ignore[unresolved-import]
     from glide_sync import (  # ty: ignore[unresolved-import]
         Batch,
+        ClosingError,
+        ClusterBatch,
         ClusterScanCursor,
         ConditionalChange,
         ExpirySet,
@@ -175,21 +176,8 @@ class _WrongTypeClient:
 # =============================================================================
 # Process-wide client registries
 # =============================================================================
-# Glide's clients are expensive (each opens at least one TCP connection), and
-# Django's ``asgiref.local.Local`` returns a fresh ``BaseCache`` per asyncio
-# task. Under granian + 100 concurrent ``httpx`` clients we'd otherwise
-# build thousands of clients. Mirror :mod:`~django_cachex.adapters.valkey_py`'s
-# ``_async_pools`` registry so adapter instances within the same loop share
-# one client.
-#
-# Sync registry: a plain dict guarded by a lock. Process-wide. Glide's sync
-# client is itself thread-safe, so multiple threads can use one client; we
-# only need the lock for the lazy-init race.
-#
-# Async registry: ``WeakKeyDictionary`` keyed by the running event loop, so
-# entries clear when a worker's loop is GC'd. Inner dict keyed by the same
-# config tuple as :mod:`valkey_py` so different cache configs in the same
-# loop don't share a client.
+# Glide clients are expensive and Django hands out a fresh ``BaseCache`` per
+# asyncio task, so these registries share one per loop (async) or config (sync).
 
 if TYPE_CHECKING:
     _GlideSyncRegistry = dict[tuple[Any, ...], "GlideClient"]
@@ -203,10 +191,12 @@ _GLIDE_SYNC_LOCK = threading.Lock()
 _GLIDE_ASYNC_CLIENTS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], Any]] = (
     weakref.WeakKeyDictionary()
 )
-# Per-loop async-create locks. Without this, two concurrent tasks on the same
-# loop both miss the registry, both await ``AsyncGlideClient.create``, and the
-# loser's client is GC'd without ``close()``, leaking a connection.
+# Per-loop async-create locks: without them two tasks both miss the registry,
+# both create a client, and the loser's is dropped without ``close()``.
 _GLIDE_ASYNC_LOCKS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = weakref.WeakKeyDictionary()
+# Guards the sweep, which iterates the registries while other threads insert.
+# Matches :mod:`~django_cachex.adapters.valkey_py`'s ``_ASYNC_REGISTRY_LOCK``.
+_GLIDE_ASYNC_REGISTRY_LOCK = threading.RLock()
 
 
 async def _aclose_glide_client(client: Any) -> None:
@@ -214,7 +204,7 @@ async def _aclose_glide_client(client: Any) -> None:
     close = getattr(client, "close", None)
     if close is None:
         return
-    with contextlib.suppress(Exception):
+    with contextlib.suppress(ClosingError):
         result = close()
         if inspect.isawaitable(result):
             await result
@@ -268,7 +258,8 @@ def _glide_config_kwargs(
     # unquotes credentials, so match it.
     username = options.get("username") or (unquote(u.username) if u.username else None)
     password = options.get("password") or (unquote(u.password) if u.password else None)
-    if username or password:
+    if password is not None:
+        # glide rejects a username without a password, so nopass users connect unauthenticated.
         kwargs["credentials"] = credentials_cls(password=password, username=username)
 
     if include_database and (db := _parse_db(u, options)) is not None:
@@ -320,17 +311,36 @@ def _enc_map(mapping: Mapping[Any, Any]) -> dict[Any, bytes | str]:
     return {k: _enc(v) for k, v in mapping.items()}
 
 
-def _set_kw(*, ex: int | None = None, nx: bool = False, xx: bool = False, get: bool = False) -> dict[str, Any]:
-    kw: dict[str, Any] = {}
-    if ex is not None:
-        kw["expiry"] = ExpirySet(ExpiryType.SEC, ex)
-    if nx:
-        kw["conditional_set"] = ConditionalChange.ONLY_IF_DOES_NOT_EXIST
-    elif xx:
-        kw["conditional_set"] = ConditionalChange.ONLY_IF_EXISTS
-    if get:
-        kw["return_old_value"] = True
-    return kw
+def _xadd_args(
+    key: Any,
+    fields: Mapping[Any, Any],
+    entry_id: str,
+    *,
+    maxlen: int | None = None,
+    approximate: bool = True,
+    nomkstream: bool = False,
+    minid: str | None = None,
+    limit: int | None = None,
+) -> list[Any]:
+    args: list[Any] = [b"XADD", key]
+    if nomkstream:
+        args.append(b"NOMKSTREAM")
+    if maxlen is not None:
+        args.append(b"MAXLEN")
+        if approximate:
+            args.append(b"~")
+        args.append(str(maxlen).encode())
+    elif minid is not None:
+        args.append(b"MINID")
+        if approximate:
+            args.append(b"~")
+        args.append(_enc(minid))
+    if limit is not None:
+        args.extend([b"LIMIT", str(limit).encode()])
+    args.append(_enc(entry_id))
+    for field, value in fields.items():
+        args.extend([_enc(field), _enc(value)])
+    return args
 
 
 def _normalize_ttl(result: int) -> int | None:
@@ -379,13 +389,8 @@ def _decode_stream_entries(raw: Any) -> list[tuple[str, dict[str, Any]]]:
     """
     if not raw:
         return []
-    if isinstance(raw, dict):
-        items = raw.items()
-    else:
-        # Already a list of [entry_id, [field_value_pairs]] entries.
-        items = ((entry[0], entry[1]) for entry in raw)
     out: list[tuple[str, dict[str, Any]]] = []
-    for entry_id, pairs in items:
+    for entry_id, pairs in raw.items():
         fields: dict[str, Any] = {}
         for pair in pairs:
             f, v = pair[0], pair[1]
@@ -402,21 +407,64 @@ def _decode_xread(raw: Any) -> dict[str, list[tuple[str, dict[str, Any]]]] | Non
 
 
 def _decode_xinfo(raw: Any) -> Any:
-    """Normalize XINFO STREAM/GROUPS/CONSUMERS responses to keyed dicts with ``str`` keys."""
+    """Normalize XINFO STREAM/GROUPS/CONSUMERS responses to keyed dicts with ``str`` keys.
+
+    ``XINFO STREAM FULL`` nests the group and consumer dicts inside list
+    values, so the walk has to recurse through lists as well.
+    """
     if isinstance(raw, dict):
         return {_dec_str(k): _decode_xinfo(v) for k, v in raw.items()}
-    if isinstance(raw, list) and raw and isinstance(raw[0], list):
+    if isinstance(raw, list):
         return [_decode_xinfo(item) for item in raw]
     return raw
 
 
+def _decode_xpending_summary(raw: Any) -> dict[str, Any]:
+    """Reshape ``[total, min_id, max_id, [[consumer, count], ...]]`` into the protocol's dict."""
+    if not raw or raw[0] == 0:
+        return {"pending": 0, "min": None, "max": None, "consumers": []}
+    return {
+        "pending": int(raw[0]),
+        "min": _dec_str(raw[1]) if raw[1] is not None else None,
+        "max": _dec_str(raw[2]) if raw[2] is not None else None,
+        "consumers": [{"name": _dec_str(c[0]), "pending": int(c[1])} for c in (raw[3] or [])],
+    }
+
+
+def _decode_xpending_range(raw: Any) -> list[dict[str, Any]]:
+    """Reshape ``[[id, consumer, idle_ms, deliveries], ...]`` into the protocol's dicts."""
+    return [
+        {
+            "message_id": _dec_str(row[0]),
+            "consumer": _dec_str(row[1]),
+            "time_since_delivered": int(row[2]),
+            "times_delivered": int(row[3]),
+        }
+        for row in (raw or [])
+    ]
+
+
+def _key_type(name: str) -> KeyType | None:
+    """Map a TYPE reply to ``KeyType``; a module type the package doesn't model is ``UNKNOWN``."""
+    if name == "none":
+        return None
+    try:
+        return KeyType(name)
+    except ValueError:
+        return KeyType.UNKNOWN
+
+
 # =============================================================================
-# Pipeline wrappers (redis-py-shaped) for django_cachex.adapters.pipeline.Pipeline
+# Pipeline adapters for django_cachex.adapters.pipeline.Pipeline
 # =============================================================================
 
 
 def _ok_to_bool(v: Any) -> bool:
     return v in ("OK", b"OK")
+
+
+def _new_batch(*, atomic: bool) -> Any:
+    return Batch(is_atomic=atomic)
 
 
 def _decode_xread_pipeline(raw: Any) -> Any:
@@ -447,12 +495,14 @@ def _decode_xread_pipeline(raw: Any) -> Any:
 class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
     """Pipeline adapter that buffers cachex ops into glide's ``Batch``."""
 
-    def __init__(self, client: GlideClient, *, transaction: bool = False) -> None:
-        self._client = client
-        self._batch = Batch(is_atomic=transaction)
-        # Sparse per-command post-processors keyed by the command's index in
-        # ``self._batch.commands``. Methods whose raw glide result already
-        # matches the cache layer's expectation skip this entirely.
+    def __init__(self, client: GlideClient, *, transaction: bool = False, batch_factory: Any = None) -> None:
+        self._client: Any = client
+        # ``GlideClusterClient.exec`` is typed for ``ClusterBatch``, so the
+        # topology hands its own factory in.
+        self._new_batch = batch_factory or _new_batch
+        self._batch = self._new_batch(atomic=transaction)
+        # Sparse post-processors keyed by the command's index in
+        # ``self._batch.commands``; a reply that already fits skips this.
         self._post: dict[int, Any] = {}
 
     def _track(self, post: Any) -> None:
@@ -460,9 +510,45 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         self._post[len(self._batch.commands) - 1] = post
 
     # ---- strings ----
-    def set(self, key: Any, value: Any, **kw: Any) -> Self:
-        self._batch.set(key, _enc(value), **_set_kw(**kw))
-        self._track(_ok_to_bool)
+    def set(
+        self,
+        key: Any,
+        value: Any,
+        *,
+        ex: int | datetime.timedelta | None = None,
+        px: int | datetime.timedelta | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        exat: int | datetime.datetime | None = None,
+        pxat: int | datetime.datetime | None = None,
+        keepttl: bool = False,
+        get: bool = False,
+    ) -> Self:
+        expiries = [
+            (ExpiryType.SEC, ex),
+            (ExpiryType.MILLSEC, px),
+            (ExpiryType.UNIX_SEC, exat),
+            (ExpiryType.UNIX_MILLSEC, pxat),
+        ]
+        given = [pair for pair in expiries if pair[1] is not None]
+        if keepttl:
+            given.append((ExpiryType.KEEP_TTL, None))
+        if len(given) > 1:
+            msg = "set() accepts at most one of ex, px, exat, pxat and keepttl"
+            raise ValueError(msg)
+        options: dict[str, Any] = {}
+        if given:
+            options["expiry"] = ExpirySet(*given[0])
+        if nx:
+            options["conditional_set"] = ConditionalChange.ONLY_IF_DOES_NOT_EXIST
+        elif xx:
+            options["conditional_set"] = ConditionalChange.ONLY_IF_EXISTS
+        if get:
+            options["return_old_value"] = True
+        self._batch.set(key, _enc(value), **options)
+        # A GET reply is the old value, not an OK.
+        if not get:
+            self._track(_ok_to_bool)
         return self
 
     def get(self, key: Any) -> Self:
@@ -604,7 +690,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         self._batch.hincrby(key, field, amount)
         return self
 
-    def hincrbyfloat(self, key: Any, field: Any, amount: float) -> Self:
+    def hincrbyfloat(self, key: Any, field: Any, amount: float = 1.0) -> Self:
         self._batch.hincrbyfloat(key, field, amount)
         return self
 
@@ -706,7 +792,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         self._batch.zscore(key, _enc(member))
         return self
 
-    def zmscore(self, key: Any, members: list[Any]) -> Self:
+    def zmscore(self, key: Any, members: Sequence[Any]) -> Self:
         self._batch.zmscore(key, _enc_list(members))
         return self
 
@@ -767,13 +853,14 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
     def zrangebyscore(
         self,
         key: Any,
-        mn: Any,
-        mx: Any,
-        withscores: bool = False,
+        min: Any,
+        max: Any,
         start: int | None = None,
         num: int | None = None,
+        *,
+        withscores: bool = False,
     ) -> Self:
-        args = [b"ZRANGEBYSCORE", key, _enc(mn), _enc(mx)]
+        args = [b"ZRANGEBYSCORE", key, _enc(min), _enc(max)]
         if withscores:
             args.append(b"WITHSCORES")
         if start is not None and num is not None:
@@ -785,13 +872,14 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
     def zrevrangebyscore(
         self,
         key: Any,
-        mx: Any,
-        mn: Any,
-        withscores: bool = False,
+        max: Any,
+        min: Any,
         start: int | None = None,
         num: int | None = None,
+        *,
+        withscores: bool = False,
     ) -> Self:
-        args = [b"ZREVRANGEBYSCORE", key, _enc(mx), _enc(mn)]
+        args = [b"ZREVRANGEBYSCORE", key, _enc(max), _enc(min)]
         if withscores:
             args.append(b"WITHSCORES")
         if start is not None and num is not None:
@@ -867,42 +955,53 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         self._batch.custom_command([b"LINSERT", key, _enc(where.upper()), _enc(pivot), _enc(value)])
         return self
 
-    def lpos(self, key: Any, element: Any, **kwargs: Any) -> Self:
-        args: list[Any] = [b"LPOS", key, _enc(element)]
-        if (rank := kwargs.get("rank")) is not None:
+    def lpos(
+        self,
+        key: Any,
+        value: Any,
+        rank: int | None = None,
+        count: int | None = None,
+        maxlen: int | None = None,
+    ) -> Self:
+        args: list[Any] = [b"LPOS", key, _enc(value)]
+        if rank is not None:
             args.extend([b"RANK", str(rank).encode()])
-        if (count := kwargs.get("count")) is not None:
+        if count is not None:
             args.extend([b"COUNT", str(count).encode()])
-        if (maxlen := kwargs.get("maxlen")) is not None:
+        if maxlen is not None:
             args.extend([b"MAXLEN", str(maxlen).encode()])
         self._batch.custom_command(args)
         return self
 
-    def lmove(self, src: Any, dst: Any, wherefrom: str, whereto: str) -> Self:
+    def lmove(self, src: Any, dst: Any, wherefrom: str = "LEFT", whereto: str = "RIGHT") -> Self:
         self._batch.custom_command([b"LMOVE", src, dst, _enc(wherefrom.upper()), _enc(whereto.upper())])
         return self
 
     # ---- streams (via custom_command for everything that's not single-response) ----
-    def xadd(self, key: Any, fields: Mapping[Any, Any], id: str = "*", **kwargs: Any) -> Self:
-        args: list[Any] = [b"XADD", key]
-        if kwargs.get("nomkstream"):
-            args.append(b"NOMKSTREAM")
-        if (maxlen := kwargs.get("maxlen")) is not None:
-            args.append(b"MAXLEN")
-            if kwargs.get("approximate", True):
-                args.append(b"~")
-            args.append(str(maxlen).encode())
-        elif (minid := kwargs.get("minid")) is not None:
-            args.append(b"MINID")
-            if kwargs.get("approximate", True):
-                args.append(b"~")
-            args.append(_enc(minid))
-        if (limit := kwargs.get("limit")) is not None:
-            args.extend([b"LIMIT", str(limit).encode()])
-        args.append(_enc(id))
-        for f, v in fields.items():
-            args.extend([_enc(f), _enc(v)])
-        self._batch.custom_command(args)
+    def xadd(
+        self,
+        key: Any,
+        fields: Mapping[Any, Any],
+        id: str = "*",
+        *,
+        maxlen: int | None = None,
+        approximate: bool = True,
+        nomkstream: bool = False,
+        minid: str | None = None,
+        limit: int | None = None,
+    ) -> Self:
+        self._batch.custom_command(
+            _xadd_args(
+                key,
+                fields,
+                id,
+                maxlen=maxlen,
+                approximate=approximate,
+                nomkstream=nomkstream,
+                minid=minid,
+                limit=limit,
+            ),
+        )
         return self
 
     def xlen(self, key: Any) -> Self:
@@ -968,6 +1067,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
 
     def xpending(self, key: Any, group: str) -> Self:
         self._batch.custom_command([b"XPENDING", key, _enc(group)])
+        self._track(_decode_xpending_summary)
         return self
 
     def xpending_range(
@@ -989,25 +1089,33 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         if consumer is not None:
             args.append(_enc(consumer))
         self._batch.custom_command(args)
+        self._track(_decode_xpending_range)
         return self
 
     def xdel(self, key: Any, *ids: Any) -> Self:
         self._batch.custom_command([b"XDEL", key, *_enc_list(ids)])
         return self
 
-    def xtrim(self, key: Any, **kwargs: Any) -> Self:
+    def xtrim(
+        self,
+        key: Any,
+        maxlen: int | None = None,
+        approximate: bool = True,
+        minid: str | None = None,
+        limit: int | None = None,
+    ) -> Self:
         args: list[Any] = [b"XTRIM", key]
-        if (maxlen := kwargs.get("maxlen")) is not None:
+        if maxlen is not None:
             args.append(b"MAXLEN")
-            if kwargs.get("approximate", True):
+            if approximate:
                 args.append(b"~")
             args.append(str(maxlen).encode())
-        elif (minid := kwargs.get("minid")) is not None:
+        elif minid is not None:
             args.append(b"MINID")
-            if kwargs.get("approximate", True):
+            if approximate:
                 args.append(b"~")
             args.append(_enc(minid))
-        if (limit := kwargs.get("limit")) is not None:
+        if limit is not None:
             args.extend([b"LIMIT", str(limit).encode()])
         self._batch.custom_command(args)
         return self
@@ -1154,7 +1262,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
             raise AttributeError(name)
         cmd = name.upper()
 
-        def call(*args: Any) -> Self:
+        def call(*args: Any) -> ValkeyGlidePipelineAdapter:
             self._batch.custom_command([cmd, *_enc_list(args)])
             return self
 
@@ -1165,7 +1273,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         # Capture before resetting so the pipeline is reusable even if a
         # transform raises mid-decode.
         batch, post = self._batch, self._post
-        self._batch = Batch(is_atomic=batch.is_atomic)
+        self._batch = self._new_batch(atomic=batch.is_atomic)
         self._post = {}
         if not batch.commands:
             return []
@@ -1175,7 +1283,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         return [post[i](r) if i in post else r for i, r in enumerate(raw)]
 
     def reset(self) -> None:
-        self._batch = Batch(is_atomic=self._batch.is_atomic)
+        self._batch = self._new_batch(atomic=self._batch.is_atomic)
         self._post = {}
 
     def __enter__(self) -> Self:
@@ -1188,35 +1296,35 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
 class ValkeyGlideAsyncPipelineAdapter(ValkeyGlidePipelineAdapter, RespAsyncPipelineProtocol):
     """Async parallel of ``ValkeyGlidePipelineAdapter``.
 
-    Conforms to :class:`RespAsyncPipelineProtocol`. Holds a resolved
-    ``AsyncGlideClient``. The adapter's ``apipeline()`` is async so it
-    can ``await self.get_async_client()`` before constructing this
-    wrapper, removing the lazy-factory dance the v1 design needed.
+    Conforms to :class:`RespAsyncPipelineProtocol` and holds a resolved
+    ``AsyncGlideClient``, which is why the adapter's ``apipeline()`` is
+    itself async.
 
     Inherits every queueing method from the sync adapter (they only
     mutate ``self._batch``) and overrides ``execute`` / ``reset`` to go
-    through the async client. Don't redefine queueing methods here:
+    through the async client. Don't redefine the queueing methods here:
     the sync surface already covers ``zrange(withscores=...)``,
-    ``xrange(min=...)``, ``hset(mapping=...)``, etc., and any divergence
-    risks the same kwargs-rejection regression that prompted this
-    rewrite.
+    ``xrange(min=...)``, ``hset(mapping=...)`` and the rest, and a
+    divergent copy would reject kwargs the cache layer sends.
     """
 
-    def __init__(  # type: ignore[override]
+    def __init__(
         self,
         client: AsyncGlideClient,
         *,
         transaction: bool = False,
+        batch_factory: Any = None,
     ) -> None:
-        self._client = client  # type: ignore[assignment]
-        self._batch = Batch(is_atomic=transaction)
+        self._client = client
+        self._new_batch = batch_factory or _new_batch
+        self._batch = self._new_batch(atomic=transaction)
         self._post: dict[int, Any] = {}
 
     async def execute(self) -> list[Any]:  # type: ignore[override]
         # Capture before awaiting so a transform raising mid-decode doesn't
         # leave the next ``execute()`` replaying the same commands.
         batch, post = self._batch, self._post
-        self._batch = Batch(is_atomic=batch.is_atomic)
+        self._batch = self._new_batch(atomic=batch.is_atomic)
         self._post = {}
         if not batch.commands:
             return []
@@ -1226,7 +1334,7 @@ class ValkeyGlideAsyncPipelineAdapter(ValkeyGlidePipelineAdapter, RespAsyncPipel
         return [post[i](r) if i in post else r for i, r in enumerate(raw)]
 
     async def reset(self) -> None:  # type: ignore[override]
-        self._batch = Batch(is_atomic=self._batch.is_atomic)
+        self._batch = self._new_batch(atomic=self._batch.is_atomic)
         self._post = {}
 
     async def __aenter__(self) -> Self:
@@ -1244,18 +1352,31 @@ class ValkeyGlideAsyncPipelineAdapter(ValkeyGlidePipelineAdapter, RespAsyncPipel
 class ValkeyGlideAdapter(RespAdapterProtocol):
     """Implements the cachex adapter surface against ``valkey-glide-sync``.
 
-    Each operation method calls glide natively. Everything that touches
-    the wire is overridden directly; the redis-py pool/parser machinery
-    in :class:`~django_cachex.adapters.valkey_py.ValkeyPyAdapter` isn't
-    used here.
+    Every operation method calls glide natively; none of the redis-py
+    pool and parser machinery :class:`~django_cachex.adapters.valkey_py`
+    builds on is involved.
     """
+
+    def _batch_factory(self, *, atomic: bool = False) -> Any:
+        """The batch flavor ``exec`` expects, overridden by the cluster adapter."""
+        return Batch(is_atomic=atomic)
 
     # Matches ValkeyPyAdapter. Without it glide sends no COUNT and the server
     # default of 10 applies, which is ten times the round trips.
     _default_scan_itersize: int = 100
 
+    # glide multiplexes: one connection carries every command of a client.
+    multiplexed: bool = True
+
     def __init__(self, servers: list[str], **options: Any) -> None:
         _check_installed()
+        if not servers:
+            msg = (
+                f"{type(self).__name__} requires at least one server URL. "
+                f"Set the cache's LOCATION to a URL such as 'redis://127.0.0.1:6379/0' "
+                f"(or a list of them, primary first)."
+            )
+            raise ImproperlyConfigured(msg)
         self._servers = servers
         self._options = options
         self._stampede_config: StampedeConfig | None = make_stampede_config(options.get("stampede_prevention"))
@@ -1286,7 +1407,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
                 )
                 client = _WrongTypeClient(GlideClient.create(cfg))
                 _GLIDE_SYNC_CLIENTS[self._config_key] = client
-        return client
+        return cast("GlideClient", client)
 
     def get_client(self, key: Any = None, *, write: bool = False) -> GlideClient:
         del key, write
@@ -1297,6 +1418,42 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         """The per-loop client registry for this topology, so ``aclose`` finds it."""
         return _GLIDE_ASYNC_CLIENTS
 
+    @staticmethod
+    def _async_locks() -> weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]:
+        """The per-loop create-locks for this topology, swept alongside the clients."""
+        return _GLIDE_ASYNC_LOCKS
+
+    @classmethod
+    def _sweep_async_clients(cls) -> None:
+        """Close and drop the clients of every event loop that has been closed.
+
+        Glide's async client keeps a reference to the loop it was built on,
+        which pins the ``WeakKeyDictionary`` key, so one ``asyncio.run()`` per
+        request would otherwise grow the registry without bound.
+        """
+        registry = cls._async_registry()
+        locks = cls._async_locks()
+        with _GLIDE_ASYNC_REGISTRY_LOCK:
+            for loop in [dead for dead in registry if dead.is_closed()]:
+                for client in registry.pop(loop, {}).values():
+                    # ``close()`` is a coroutine that never awaits, so one
+                    # ``send`` runs it to completion; the dead loop can't.
+                    closer = getattr(client, "close", None)
+                    coro = closer() if closer is not None else None
+                    if inspect.iscoroutine(coro):
+                        with contextlib.suppress(ClosingError, StopIteration):
+                            coro.send(None)
+                        coro.close()
+                locks.pop(loop, None)
+
+    async def _create_async_client(self) -> Any:
+        u = urlparse(self._servers[0])
+        cfg = AsyncGlideClientConfiguration(
+            addresses=[AsyncNodeAddress(u.hostname or "localhost", u.port or 6379)],
+            **_glide_config_kwargs(self._servers, self._options, credentials_cls=AsyncServerCredentials),
+        )
+        return await AsyncGlideClient.create(cfg)
+
     async def get_async_client(self, key: Any = None, *, write: bool = False) -> AsyncGlideClient:
         """Lazy-init the async client for the running loop and config.
 
@@ -1305,32 +1462,41 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         gets us a Redis instance whose connection is opened on first use.
         """
         del key, write
+        self._sweep_async_clients()
+        registry = self._async_registry()
+        locks = self._async_locks()
         loop = asyncio.get_running_loop()
-        sub = _GLIDE_ASYNC_CLIENTS.get(loop)
-        if sub is None:
-            sub = {}
-            _GLIDE_ASYNC_CLIENTS[loop] = sub
+        with _GLIDE_ASYNC_REGISTRY_LOCK:
+            sub = registry.get(loop)
+            if sub is None:
+                sub = {}
+                registry[loop] = sub
+            lock = locks.get(loop)
+            if lock is None:
+                lock = asyncio.Lock()
+                locks[loop] = lock
         client = sub.get(self._config_key)
         if client is not None:
             return client
-        lock = _GLIDE_ASYNC_LOCKS.get(loop)
-        if lock is None:
-            lock = asyncio.Lock()
-            _GLIDE_ASYNC_LOCKS[loop] = lock
         async with lock:
             client = sub.get(self._config_key)
             if client is None:
-                u = urlparse(self._servers[0])
-                cfg = AsyncGlideClientConfiguration(
-                    addresses=[AsyncNodeAddress(u.hostname or "localhost", u.port or 6379)],
-                    **_glide_config_kwargs(self._servers, self._options, credentials_cls=AsyncServerCredentials),
-                )
-                client = _WrongTypeClient(await AsyncGlideClient.create(cfg))
+                client = _WrongTypeClient(await self._create_async_client())
                 sub[self._config_key] = client
-        return client
+        return cast("AsyncGlideClient", client)
+
+    def _cmd(self, args: list[Any], route: Any = None) -> Any:
+        # Glide types every raw reply as one big union; each caller knows the
+        # shape its own command returns.
+        client: Any = self._client()
+        return client.custom_command(args) if route is None else client.custom_command(args, route)
+
+    async def _acmd(self, args: list[Any]) -> Any:
+        client: Any = await self.get_async_client()
+        return await client.custom_command(args)
 
     # =========================================================================
-    # Core ops (sync)
+    # Sync core ops
     # =========================================================================
 
     def add(
@@ -1342,16 +1508,15 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
         client = self._client()
-        nvalue = value
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             result = client.set(
                 key,
-                _enc(nvalue),
+                _enc(value),
                 conditional_set=ConditionalChange.ONLY_IF_DOES_NOT_EXIST,
             )
-            if result == "OK":
+            if _ok_to_bool(result):
                 client.delete([key])
                 return True
             return False
@@ -1359,7 +1524,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         kw: dict[str, Any] = {"conditional_set": ConditionalChange.ONLY_IF_DOES_NOT_EXIST}
         if actual_timeout is not None:
             kw["expiry"] = ExpirySet(ExpiryType.SEC, actual_timeout)
-        return client.set(key, _enc(nvalue), **kw) == "OK"
+        return _ok_to_bool(client.set(key, _enc(value), **kw))
 
     def get(self, key: str, *, stampede_prevention: bool | StampedeConfig | None = None) -> Any:
         client = self._client()
@@ -1382,15 +1547,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         stampede_prevention: bool | StampedeConfig | None = None,
     ) -> None:
         client = self._client()
-        nvalue = value
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             client.delete([key])
         elif actual_timeout is None:
-            client.set(key, _enc(nvalue))
+            client.set(key, _enc(value))
         else:
-            client.set(key, _enc(nvalue), expiry=ExpirySet(ExpiryType.SEC, actual_timeout))
+            client.set(key, _enc(value), expiry=ExpirySet(ExpiryType.SEC, actual_timeout))
 
     def set_with_flags(
         self,
@@ -1404,7 +1568,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool | Any:
         client = self._client()
-        nvalue = value
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         kw: dict[str, Any] = {}
@@ -1418,21 +1581,21 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         if actual_timeout == 0:
             # timeout=0 means expire immediately: run the SET unexpired so
             # the nx/xx/get semantics still apply, then delete when it wrote.
-            result = client.set(key, _enc(nvalue), **kw)
+            result = client.set(key, _enc(value), **kw)
             if get:
                 executed = result is None if nx else (result is not None if xx else True)
             else:
-                executed = result == "OK"
+                executed = _ok_to_bool(result)
             if executed:
                 client.delete([key])
-            return result if get else result == "OK"
+            return result if get else _ok_to_bool(result)
 
         if actual_timeout is not None:
             kw["expiry"] = ExpirySet(ExpiryType.SEC, actual_timeout)
-        result = client.set(key, _enc(nvalue), **kw)
+        result = client.set(key, _enc(value), **kw)
         if get:
             return result
-        return result == "OK"
+        return _ok_to_bool(result)
 
     def touch(self, key: str, timeout: int | None) -> bool:
         client = self._client()
@@ -1454,7 +1617,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             return {}
 
         client = self._client()
-        results = client.mget(keys)
+        results = client.mget(list[Any](keys))
         found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
         config = self.resolve_stampede(stampede_prevention)
@@ -1475,10 +1638,8 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return bool(self._client().exists([key]))
 
     def type(self, key: str) -> KeyType | None:
-        result = self._client().type(key)
-        if isinstance(result, bytes):
-            result = result.decode("utf-8")
-        return None if result == "none" else KeyType(result)
+        result: Any = self._client().type(key)
+        return _key_type(result.decode() if isinstance(result, bytes) else result)
 
     def incr(self, key: str, delta: int = 1) -> int:
         client = self._client()
@@ -1492,11 +1653,11 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         timeout: int | None,
         *,
         stampede_prevention: bool | StampedeConfig | None = None,
-    ) -> list:
+    ) -> list[Any]:
         if not data:
             return []
         client = self._client()
-        prepared = {k: _enc(v) for k, v in data.items()}
+        prepared: dict[Any, Any] = {k: _enc(v) for k, v in data.items()}
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -1507,7 +1668,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             # SET PX per key: MSET plus N EXPIREs would strand keys with no TTL
             # if the batch broke partway.
             expiry = ExpirySet(ExpiryType.MILLSEC, int(actual_timeout * 1000))
-            batch = Batch(is_atomic=False)
+            batch = self._batch_factory(atomic=False)
             for key, value in prepared.items():
                 batch.set(key, value, expiry=expiry)
             client.exec(batch, raise_on_error=True)
@@ -1522,9 +1683,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return self._client().flushdb(FlushMode.SYNC) == "OK"
 
     def close(self, **kwargs: Any) -> None:
-        """No-op. Django fires ``cache.close()`` on every ``request_finished``
-        signal. Tearing the glide client down here would force a reconnect
-        per request."""
+        """Reap async clients whose event loop has been closed.
+
+        Django fires ``cache.close()`` on every ``request_finished`` signal, so
+        the sync client stays open (tearing it down would force a reconnect per
+        request). Only the per-loop async clients nothing can await any more go.
+        """
+        del kwargs
+        self._sweep_async_clients()
 
     # ---- TTL ----
     def ttl(self, key: str) -> int | None:
@@ -1571,7 +1737,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     # ---- scan / keys ----
     def keys(self, pattern: str = "*") -> list[str]:
-        result = self._client().custom_command([b"KEYS", _enc(pattern)])
+        result = self._cmd([b"KEYS", _enc(pattern)])
         return _dec_keys(result) if result else []
 
     def scan(
@@ -1586,14 +1752,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         result = self._client().scan(_enc(cursor), match=match, count=count, type=_object_type(_type))
         return int(_dec_str(result[0])), _dec_keys(result[1])
 
-    def iter_keys(self, pattern: str, itersize: int | None = None) -> Iterable[str]:
+    def iter_keys(self, pattern: str, itersize: int | None = None) -> Iterator[str]:
         client = self._client()
         if itersize is None:
             itersize = self._default_scan_itersize
         cursor: Any = b"0"
         while True:
             result = client.scan(cursor, match=pattern, count=itersize)
-            cursor, keys = result[0], result[1]
+            cursor, keys = cast("Any", result[0]), result[1]
             for k in keys:
                 yield _dec_str(k)
             if cursor in (b"0", "0", 0):
@@ -1604,13 +1770,12 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         if itersize is None:
             itersize = self._default_scan_itersize
         deleted = 0
-        for batch_keys in _batched(self.iter_keys(pattern, itersize=itersize), itersize):
-            if batch_keys:
-                deleted += client.delete(batch_keys)
+        for batch_keys in batched(self.iter_keys(pattern, itersize=itersize), itersize, strict=False):
+            deleted += client.delete(list(batch_keys))
         return deleted
 
     # =========================================================================
-    # Hashes (sync)
+    # Sync hashes
     # =========================================================================
 
     def hset(
@@ -1631,7 +1796,8 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             for i in range(0, len(items), 2):
                 m[items[i]] = _enc(items[i + 1])
         if not m:
-            return 0
+            msg = "hset requires at least one field/value pair"
+            raise ValueError(msg)
         return client.hset(key, m)
 
     def hsetnx(self, key: str, field: str, value: Any) -> bool:
@@ -1643,6 +1809,9 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def hmget(self, key: str, *fields: str) -> list[Any]:
         if len(fields) == 1 and isinstance(fields[0], (list, tuple)):
             fields = tuple(fields[0])
+        if not fields:
+            # ``HMGET key`` with no fields is a syntax error on the wire.
+            return []
         return list(self._client().hmget(key, list(fields)))
 
     def hgetall(self, key: str) -> dict[str, Any]:
@@ -1667,11 +1836,11 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def hincrby(self, key: str, field: str, amount: int = 1) -> int:
         return self._client().hincrby(key, field, amount)
 
-    def hincrbyfloat(self, key: str, field: str, amount: float) -> float:
+    def hincrbyfloat(self, key: str, field: str, amount: float = 1.0) -> float:
         return self._client().hincrbyfloat(key, field, amount)
 
     # =========================================================================
-    # Sets (sync)
+    # Sync sets
     # =========================================================================
 
     def sadd(self, key: str, *members: Any) -> int:
@@ -1735,18 +1904,18 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         result = self._client().sscan(key, _enc(cursor), match=match, count=count)
         return int(_dec_str(result[0])), set(result[1])
 
-    def sscan_iter(self, key: str, match: str | None = None, count: int | None = None) -> Iterable[Any]:
+    def sscan_iter(self, key: str, match: str | None = None, count: int | None = None) -> Iterator[bytes]:
         client = self._client()
         cursor: Any = b"0"
         while True:
             result = client.sscan(key, cursor, match=match, count=count)
-            cursor, members = result[0], result[1]
-            yield from members
+            cursor, members = cast("Any", result[0]), result[1]
+            yield from cast("list[bytes]", members)
             if cursor in (b"0", "0", 0):
                 return
 
     # =========================================================================
-    # Sorted sets (sync)
+    # Sync sorted sets
     # =========================================================================
 
     def zadd(self, key: str, mapping: Mapping[Any, float], **kwargs: Any) -> int:
@@ -1767,7 +1936,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
                 args.append(b"INCR")
             for member, score in mapping.items():
                 args.extend([_enc(score), _enc(member)])
-            return client.custom_command(args)
+            return self._cmd(args)
         return client.zadd(key, {_enc(m): float(s) for m, s in mapping.items()})
 
     def zrem(self, key: str, *members: Any) -> int:
@@ -1792,13 +1961,13 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return self._client().zremrangebyrank(key, start, end)
 
     def zremrangebyscore(self, key: str, mn: Any, mx: Any) -> int:
-        return self._client().custom_command([b"ZREMRANGEBYSCORE", key, _enc(mn), _enc(mx)])
+        return self._cmd([b"ZREMRANGEBYSCORE", key, _enc(mn), _enc(mx)])
 
     def zcard(self, key: str) -> int:
         return self._client().zcard(key)
 
     def zcount(self, key: str, mn: Any, mx: Any) -> int:
-        return self._client().custom_command([b"ZCOUNT", key, _enc(mn), _enc(mx)])
+        return self._cmd([b"ZCOUNT", key, _enc(mn), _enc(mx)])
 
     def zrange(
         self,
@@ -1807,13 +1976,13 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         end: int,
         withscores: bool = False,
         desc: bool = False,
-    ) -> list:
+    ) -> list[Any]:
         args = [b"ZRANGE", key, str(start).encode(), str(end).encode()]
         if desc:
             args.append(b"REV")
         if withscores:
             args.append(b"WITHSCORES")
-        result = self._client().custom_command(args)
+        result = self._cmd(args)
         return _decode_zrange(result, withscores=withscores)
 
     def zrevrange(
@@ -1822,7 +1991,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         start: int,
         end: int,
         withscores: bool = False,
-    ) -> list:
+    ) -> list[Any]:
         return self.zrange(key, start, end, withscores=withscores, desc=True)
 
     def zrangebyscore(
@@ -1833,13 +2002,13 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         withscores: bool = False,
         start: int | None = None,
         num: int | None = None,
-    ) -> list:
+    ) -> list[Any]:
         args = [b"ZRANGEBYSCORE", key, _enc(mn), _enc(mx)]
         if withscores:
             args.append(b"WITHSCORES")
         if start is not None and num is not None:
             args.extend([b"LIMIT", str(start).encode(), str(num).encode()])
-        return _decode_zrange(self._client().custom_command(args), withscores=withscores)
+        return _decode_zrange(self._cmd(args), withscores=withscores)
 
     def zrevrangebyscore(
         self,
@@ -1849,13 +2018,13 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         withscores: bool = False,
         start: int | None = None,
         num: int | None = None,
-    ) -> list:
+    ) -> list[Any]:
         args = [b"ZREVRANGEBYSCORE", key, _enc(mx), _enc(mn)]
         if withscores:
             args.append(b"WITHSCORES")
         if start is not None and num is not None:
             args.extend([b"LIMIT", str(start).encode(), str(num).encode()])
-        return _decode_zrange(self._client().custom_command(args), withscores=withscores)
+        return _decode_zrange(self._cmd(args), withscores=withscores)
 
     def zpopmin(self, key: str, count: int | None = None) -> list[tuple[Any, float]]:
         if count is None:
@@ -1868,7 +2037,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return _decode_zpop(self._client().zpopmax(key, count))
 
     # =========================================================================
-    # Lists (sync)
+    # Sync lists
     # =========================================================================
 
     def lpush(self, key: str, *values: Any) -> int:
@@ -1882,16 +2051,18 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         if count is None:
             return client.lpop(key)
         result = client.lpop_count(key, count)
-        return list(result) if result else []
+        # A nil reply means the key is missing; keep it distinct from an empty
+        # array so the cache layer can tell a miss from an empty pop.
+        return list(result) if result is not None else None
 
     def rpop(self, key: str, count: int | None = None) -> Any:
         client = self._client()
         if count is None:
             return client.rpop(key)
         result = client.rpop_count(key, count)
-        return list(result) if result else []
+        return list(result) if result is not None else None
 
-    def lrange(self, key: str, start: int, end: int) -> list:
+    def lrange(self, key: str, start: int, end: int) -> list[Any]:
         return list(self._client().lrange(key, start, end))
 
     def ltrim(self, key: str, start: int, end: int) -> bool:
@@ -1910,7 +2081,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return self._client().lrem(key, count, _enc(value))
 
     def linsert(self, key: str, where: str, pivot: Any, value: Any) -> int:
-        return self._client().custom_command(
+        return self._cmd(
             [
                 b"LINSERT",
                 key,
@@ -1920,21 +2091,28 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             ],
         )
 
-    def lpos(self, key: str, element: Any, **kwargs: Any) -> Any:
-        args: list[Any] = [b"LPOS", key, _enc(element)]
-        if (rank := kwargs.get("rank")) is not None:
+    def lpos(
+        self,
+        key: str,
+        value: Any,
+        rank: int | None = None,
+        count: int | None = None,
+        maxlen: int | None = None,
+    ) -> Any:
+        args: list[Any] = [b"LPOS", key, _enc(value)]
+        if rank is not None:
             args.extend([b"RANK", str(rank).encode()])
-        if (count := kwargs.get("count")) is not None:
+        if count is not None:
             args.extend([b"COUNT", str(count).encode()])
-        if (maxlen := kwargs.get("maxlen")) is not None:
+        if maxlen is not None:
             args.extend([b"MAXLEN", str(maxlen).encode()])
-        return self._client().custom_command(args)
+        return self._cmd(args)
 
     def lmove(self, src: str, dst: str, wherefrom: str, whereto: str) -> Any:
-        return self._client().custom_command([b"LMOVE", src, dst, _enc(wherefrom.upper()), _enc(whereto.upper())])
+        return self._cmd([b"LMOVE", src, dst, _enc(wherefrom.upper()), _enc(whereto.upper())])
 
     def blmove(self, src: str, dst: str, timeout: float, wherefrom: str = "LEFT", whereto: str = "RIGHT") -> Any:
-        return self._client().custom_command(
+        return self._cmd(
             [
                 b"BLMOVE",
                 src,
@@ -1947,7 +2125,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     def blpop(self, keys: Any, timeout: float = 0) -> Any:
         ks = list(keys) if isinstance(keys, (list, tuple)) else [keys]
-        result = self._client().custom_command([b"BLPOP", *_enc_list(ks), str(timeout).encode()])
+        result = self._cmd([b"BLPOP", *_enc_list(ks), str(timeout).encode()])
         if result is None:
             return None
         # Server returns [key, value]; cache layer expects (key: str, value: bytes).
@@ -1956,36 +2134,38 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     def brpop(self, keys: Any, timeout: float = 0) -> Any:
         ks = list(keys) if isinstance(keys, (list, tuple)) else [keys]
-        result = self._client().custom_command([b"BRPOP", *_enc_list(ks), str(timeout).encode()])
+        result = self._cmd([b"BRPOP", *_enc_list(ks), str(timeout).encode()])
         if result is None:
             return None
         key, value = result[0], result[1]
         return (_dec_str(key), value)
 
     # =========================================================================
-    # Streams (sync) via custom_command
+    # Sync streams, mostly via custom_command
     # =========================================================================
 
-    def xadd(self, key: str, fields: Mapping[Any, Any], id: str = "*", **kwargs: Any) -> str:
-        args: list[Any] = [b"XADD", key]
-        if kwargs.get("nomkstream"):
-            args.append(b"NOMKSTREAM")
-        if (maxlen := kwargs.get("maxlen")) is not None:
-            args.append(b"MAXLEN")
-            if kwargs.get("approximate", True):
-                args.append(b"~")
-            args.append(str(maxlen).encode())
-        elif (minid := kwargs.get("minid")) is not None:
-            args.append(b"MINID")
-            if kwargs.get("approximate", True):
-                args.append(b"~")
-            args.append(_enc(minid))
-        if (limit := kwargs.get("limit")) is not None:
-            args.extend([b"LIMIT", str(limit).encode()])
-        args.append(_enc(id))
-        for f, v in fields.items():
-            args.extend([_enc(f), _enc(v)])
-        result = self._client().custom_command(args)
+    def xadd(
+        self,
+        key: str,
+        fields: Mapping[Any, Any],
+        entry_id: str = "*",
+        maxlen: int | None = None,
+        approximate: bool = True,
+        nomkstream: bool = False,
+        minid: str | None = None,
+        limit: int | None = None,
+    ) -> str:
+        args = _xadd_args(
+            key,
+            fields,
+            entry_id,
+            maxlen=maxlen,
+            approximate=approximate,
+            nomkstream=nomkstream,
+            minid=minid,
+            limit=limit,
+        )
+        result = self._cmd(args)
         return result.decode() if isinstance(result, bytes) else result
 
     def xlen(self, key: str) -> int:
@@ -1994,48 +2174,55 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def xrange(
         self,
         key: str,
-        mn: str = "-",
-        mx: str = "+",
+        start: str = "-",
+        end: str = "+",
         count: int | None = None,
     ) -> list[tuple[str, dict[str, Any]]]:
-        args = [b"XRANGE", key, _enc(mn), _enc(mx)]
+        args = [b"XRANGE", key, _enc(start), _enc(end)]
         if count is not None:
             args.extend([b"COUNT", str(count).encode()])
-        return _decode_stream_entries(self._client().custom_command(args))
+        return _decode_stream_entries(self._cmd(args))
 
     def xrevrange(
         self,
         key: str,
-        mx: str = "+",
-        mn: str = "-",
+        end: str = "+",
+        start: str = "-",
         count: int | None = None,
     ) -> list[tuple[str, dict[str, Any]]]:
-        args = [b"XREVRANGE", key, _enc(mx), _enc(mn)]
+        args = [b"XREVRANGE", key, _enc(end), _enc(start)]
         if count is not None:
             args.extend([b"COUNT", str(count).encode()])
-        return _decode_stream_entries(self._client().custom_command(args))
+        return _decode_stream_entries(self._cmd(args))
 
     def xdel(self, key: str, *ids: Any) -> int:
-        return self._client().custom_command([b"XDEL", key, *_enc_list(ids)])
+        return self._cmd([b"XDEL", key, *_enc_list(ids)])
 
-    def xtrim(self, key: str, **kwargs: Any) -> int:
+    def xtrim(
+        self,
+        key: str,
+        maxlen: int | None = None,
+        approximate: bool = True,
+        minid: str | None = None,
+        limit: int | None = None,
+    ) -> int:
         args: list[Any] = [b"XTRIM", key]
-        if (maxlen := kwargs.get("maxlen")) is not None:
+        if maxlen is not None:
             args.append(b"MAXLEN")
-            if kwargs.get("approximate", True):
+            if approximate:
                 args.append(b"~")
             args.append(str(maxlen).encode())
-        elif (minid := kwargs.get("minid")) is not None:
+        elif minid is not None:
             args.append(b"MINID")
-            if kwargs.get("approximate", True):
+            if approximate:
                 args.append(b"~")
             args.append(_enc(minid))
-        if (limit := kwargs.get("limit")) is not None:
+        if limit is not None:
             args.extend([b"LIMIT", str(limit).encode()])
-        return self._client().custom_command(args)
+        return self._cmd(args)
 
     def xack(self, key: str, group: str, *ids: Any) -> int:
-        return self._client().custom_command([b"XACK", key, _enc(group), *_enc_list(ids)])
+        return self._cmd([b"XACK", key, _enc(group), *_enc_list(ids)])
 
     def xclaim(
         self,
@@ -2068,7 +2255,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.append(b"FORCE")
         if justid:
             args.append(b"JUSTID")
-        result = self._client().custom_command(args)
+        result = self._cmd(args)
         if justid:
             return _dec_keys(result or [])
         return _decode_stream_entries(result)
@@ -2095,7 +2282,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.extend([b"COUNT", str(count).encode()])
         if justid:
             args.append(b"JUSTID")
-        result = self._client().custom_command(args)
+        result = self._cmd(args)
         # Server returns [next_id, entries_or_ids, deleted_ids]
         next_id = _dec_str(result[0])
         if justid:
@@ -2114,44 +2301,35 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         count: int | None = None,
         consumer: str | None = None,
         idle: int | None = None,
-    ) -> Any:
+    ) -> dict[str, Any] | list[dict[str, Any]]:
+        _check_xpending_args(start, end, count, consumer, idle)
         args: list[Any] = [b"XPENDING", key, _enc(group)]
-        is_range = start is not None and end is not None and count is not None
-        if is_range:
+        if count is not None:
             # IDLE is only valid in the extended form, between the group
             # name and the start/end/count range.
             if idle is not None:
                 args.extend([b"IDLE", str(idle).encode()])
-            args.extend([_enc(start), _enc(end), str(count).encode()])
+            args.extend([_enc("-" if start is None else start), _enc("+" if end is None else end)])
+            args.append(str(count).encode())
             if consumer is not None:
                 args.append(_enc(consumer))
-        result = self._client().custom_command(args)
-        if is_range:
-            # ``[[id, consumer, idle_ms, deliveries], ...]``
-            return [[_dec_str(row[0]), _dec_str(row[1]), int(row[2]), int(row[3])] for row in (result or [])]
-        # Summary: ``[total, min_id_or_None, max_id_or_None, [[consumer, count], ...]]``
-        if not result or result[0] == 0:
-            return {"pending": 0, "min": None, "max": None, "consumers": []}
-        consumers_raw = result[3] or []
-        return {
-            "pending": int(result[0]),
-            "min": _dec_str(result[1]) if result[1] is not None else None,
-            "max": _dec_str(result[2]) if result[2] is not None else None,
-            "consumers": [{"name": _dec_str(c[0]), "pending": int(c[1])} for c in consumers_raw],
-        }
+        result = self._cmd(args)
+        if count is not None:
+            return _decode_xpending_range(result)
+        return _decode_xpending_summary(result)
 
     def xinfo_stream(self, key: str, full: bool = False) -> Any:
         args: list[Any] = [b"XINFO", b"STREAM", key]
         if full:
             args.append(b"FULL")
-        return _decode_xinfo(self._client().custom_command(args))
+        return _decode_xinfo(self._cmd(args))
 
     def xinfo_groups(self, key: str) -> Any:
-        result = self._client().custom_command([b"XINFO", b"GROUPS", key])
+        result = self._cmd([b"XINFO", b"GROUPS", key])
         return [_decode_xinfo(g) for g in (result or [])]
 
     def xinfo_consumers(self, key: str, group: str) -> Any:
-        result = self._client().custom_command([b"XINFO", b"CONSUMERS", key, _enc(group)])
+        result = self._cmd([b"XINFO", b"CONSUMERS", key, _enc(group)])
         return [_decode_xinfo(c) for c in (result or [])]
 
     def xgroup_create(
@@ -2167,26 +2345,25 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.append(b"MKSTREAM")
         if entries_read is not None:
             args.extend([b"ENTRIESREAD", str(entries_read).encode()])
-        return self._client().custom_command(args) == "OK"
+        return self._cmd(args) == "OK"
 
     def xgroup_destroy(self, key: str, group: str) -> int:
-        return self._client().custom_command([b"XGROUP", b"DESTROY", key, _enc(group)])
+        return self._cmd([b"XGROUP", b"DESTROY", key, _enc(group)])
 
     def xgroup_setid(
         self,
         key: str,
         group: str,
         entry_id: str,
-        *,
         entries_read: int | None = None,
     ) -> bool:
         args: list[Any] = [b"XGROUP", b"SETID", key, _enc(group), _enc(entry_id)]
         if entries_read is not None:
             args.extend([b"ENTRIESREAD", str(entries_read).encode()])
-        return self._client().custom_command(args) == "OK"
+        return self._cmd(args) == "OK"
 
     def xgroup_delconsumer(self, key: str, group: str, consumer: str) -> int:
-        return self._client().custom_command([b"XGROUP", b"DELCONSUMER", key, _enc(group), _enc(consumer)])
+        return self._cmd([b"XGROUP", b"DELCONSUMER", key, _enc(group), _enc(consumer)])
 
     def xread(
         self,
@@ -2202,7 +2379,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args.append(b"STREAMS")
         args.extend(_enc_list(streams.keys()))
         args.extend(_enc_list(streams.values()))
-        return _decode_xread(self._client().custom_command(args))
+        return _decode_xread(self._cmd(args))
 
     def xreadgroup(
         self,
@@ -2223,19 +2400,19 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args.append(b"STREAMS")
         args.extend(_enc_list(streams.keys()))
         args.extend(_enc_list(streams.values()))
-        return _decode_xread(self._client().custom_command(args))
+        return _decode_xread(self._cmd(args))
 
     # =========================================================================
-    # Scripting (sync)
+    # Sync scripting
     # =========================================================================
 
     def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any:
-        return self._client().custom_command(
+        return self._cmd(
             [b"EVAL", _enc(script), str(numkeys).encode(), *_enc_list(keys_and_args)],
         )
 
     # =========================================================================
-    # Server (sync)
+    # Sync server
     # =========================================================================
 
     def _info_args(self, section: str | None) -> list[bytes | str]:
@@ -2245,16 +2422,13 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return args
 
     def info(self, section: str | None = None) -> dict[str, Any]:
-        return _parse_info(self._client().custom_command(self._info_args(section)))
+        return _parse_info(self._cmd(self._info_args(section)))
 
     def slowlog_len(self) -> int:
-        return self._client().custom_command([b"SLOWLOG", b"LEN"])
+        return self._cmd([b"SLOWLOG", b"LEN"])
 
-    def slowlog_get(self, num: int | None = None) -> list[dict[str, Any]]:
-        args: list[bytes] = [b"SLOWLOG", b"GET"]
-        if num is not None:
-            args.append(str(num).encode())
-        raw = self._client().custom_command(args)
+    def slowlog_get(self, count: int = 10) -> list[dict[str, Any]]:
+        raw = self._cmd([b"SLOWLOG", b"GET", str(count).encode()])
         # Reshape each row into the dict form the other adapters return.
         return [
             {
@@ -2270,7 +2444,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         ]
 
     # =========================================================================
-    # Lock (sync). Bespoke SET NX PX + Lua release, see ``_GlideLock``
+    # Sync lock. Bespoke SET NX PX + Lua release, see ``_GlideLock``
     # =========================================================================
 
     def lock(
@@ -2294,19 +2468,18 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         )
 
     # =========================================================================
-    # Pipeline (sync)
+    # Sync pipeline
     # =========================================================================
 
     def _pipeline(self, *, transaction: bool = False) -> ValkeyGlidePipelineAdapter:
-        return ValkeyGlidePipelineAdapter(self._client(), transaction=transaction)
+        return ValkeyGlidePipelineAdapter(self._client(), transaction=transaction, batch_factory=self._batch_factory)
 
     def pipeline(self, *, transaction: bool = True) -> ValkeyGlidePipelineAdapter:
         return self._pipeline(transaction=transaction)
 
     async def apipeline(self, *, transaction: bool = True) -> ValkeyGlideAsyncPipelineAdapter:
-        """Construct an async pipeline adapter wrapping glide's async ``Batch``."""
         client = await self.get_async_client()
-        return ValkeyGlideAsyncPipelineAdapter(client, transaction=transaction)
+        return ValkeyGlideAsyncPipelineAdapter(client, transaction=transaction, batch_factory=self._batch_factory)
 
     # =========================================================================
     # Async core ops
@@ -2321,16 +2494,15 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
         client = await self.get_async_client()
-        nvalue = value
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             result = await client.set(
                 key,
-                _enc(nvalue),
+                _enc(value),
                 conditional_set=ConditionalChange.ONLY_IF_DOES_NOT_EXIST,
             )
-            if result == "OK":
+            if _ok_to_bool(result):
                 await client.delete([key])
                 return True
             return False
@@ -2338,7 +2510,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         kw: dict[str, Any] = {"conditional_set": ConditionalChange.ONLY_IF_DOES_NOT_EXIST}
         if actual_timeout is not None:
             kw["expiry"] = ExpirySet(ExpiryType.SEC, actual_timeout)
-        return await client.set(key, _enc(nvalue), **kw) == "OK"
+        return _ok_to_bool(await client.set(key, _enc(value), **kw))
 
     async def aget(self, key: str, *, stampede_prevention: bool | StampedeConfig | None = None) -> Any:
         client = await self.get_async_client()
@@ -2361,15 +2533,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         stampede_prevention: bool | StampedeConfig | None = None,
     ) -> None:
         client = await self.get_async_client()
-        nvalue = value
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
             await client.delete([key])
         elif actual_timeout is None:
-            await client.set(key, _enc(nvalue))
+            await client.set(key, _enc(value))
         else:
-            await client.set(key, _enc(nvalue), expiry=ExpirySet(ExpiryType.SEC, actual_timeout))
+            await client.set(key, _enc(value), expiry=ExpirySet(ExpiryType.SEC, actual_timeout))
 
     async def aset_with_flags(
         self,
@@ -2383,7 +2554,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool | Any:
         client = await self.get_async_client()
-        nvalue = value
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         kw: dict[str, Any] = {}
@@ -2397,21 +2567,21 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         if actual_timeout == 0:
             # timeout=0 means expire immediately: run the SET unexpired so
             # the nx/xx/get semantics still apply, then delete when it wrote.
-            result = await client.set(key, _enc(nvalue), **kw)
+            result = await client.set(key, _enc(value), **kw)
             if get:
                 executed = result is None if nx else (result is not None if xx else True)
             else:
-                executed = result == "OK"
+                executed = _ok_to_bool(result)
             if executed:
                 await client.delete([key])
-            return result if get else result == "OK"
+            return result if get else _ok_to_bool(result)
 
         if actual_timeout is not None:
             kw["expiry"] = ExpirySet(ExpiryType.SEC, actual_timeout)
-        result = await client.set(key, _enc(nvalue), **kw)
+        result = await client.set(key, _enc(value), **kw)
         if get:
             return result
-        return result == "OK"
+        return _ok_to_bool(result)
 
     async def atouch(self, key: str, timeout: int | None) -> bool:
         client = await self.get_async_client()
@@ -2433,14 +2603,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             return {}
 
         client = await self.get_async_client()
-        results = await client.mget(keys)
+        results = await client.mget(list[Any](keys))
         found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
         config = self.resolve_stampede(stampede_prevention)
         if config and found:
             stampede_keys = [k for k, v in found.items() if isinstance(v, bytes)]
             if stampede_keys:
-                batch = Batch(is_atomic=False)
+                batch = self._batch_factory(atomic=False)
                 for k in stampede_keys:
                     batch.ttl(k)
                 ttls = await client.exec(batch, raise_on_error=True) or []
@@ -2454,10 +2624,8 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return bool(await (await self.get_async_client()).exists([key]))
 
     async def atype(self, key: str) -> KeyType | None:
-        result = await (await self.get_async_client()).type(key)
-        if isinstance(result, bytes):
-            result = result.decode("utf-8")
-        return None if result == "none" else KeyType(result)
+        result: Any = await (await self.get_async_client()).type(key)
+        return _key_type(result.decode() if isinstance(result, bytes) else result)
 
     async def aincr(self, key: str, delta: int = 1) -> int:
         client = await self.get_async_client()
@@ -2471,11 +2639,11 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         timeout: int | None,
         *,
         stampede_prevention: bool | StampedeConfig | None = None,
-    ) -> list:
+    ) -> list[Any]:
         if not data:
             return []
         client = await self.get_async_client()
-        prepared = {k: _enc(v) for k, v in data.items()}
+        prepared: dict[Any, Any] = {k: _enc(v) for k, v in data.items()}
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
@@ -2485,7 +2653,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         else:
             # SET ... PX per key: see the note in the sync ``set_many``.
             expiry = ExpirySet(ExpiryType.MILLSEC, int(actual_timeout * 1000))
-            batch = Batch(is_atomic=False)
+            batch = self._batch_factory(atomic=False)
             for key, value in prepared.items():
                 batch.set(key, value, expiry=expiry)
             await client.exec(batch, raise_on_error=True)
@@ -2504,14 +2672,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         # Nothing fires this implicitly and glide clients have no ``__del__``,
         # so a loop discarded without it strands a socket and a Rust handle.
         del kwargs
+        self._sweep_async_clients()
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        sub = self._async_registry().get(loop)
-        if not sub:
-            return
-        client = sub.pop(self._config_key, None)
+        with _GLIDE_ASYNC_REGISTRY_LOCK:
+            sub = self._async_registry().get(loop)
+            client = sub.pop(self._config_key, None) if sub else None
         if client is not None:
             await _aclose_glide_client(client)
 
@@ -2560,7 +2728,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     # ---- Async scan ----
     async def akeys(self, pattern: str = "*") -> list[str]:
-        result = await (await self.get_async_client()).custom_command([b"KEYS", _enc(pattern)])
+        result = await self._acmd([b"KEYS", _enc(pattern)])
         return _dec_keys(result) if result else []
 
     async def ascan(
@@ -2583,7 +2751,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         cursor: Any = b"0"
         while True:
             result = await client.scan(cursor, match=pattern, count=itersize)
-            cursor, keys = result[0], result[1]
+            cursor, keys = cast("Any", result[0]), result[1]
             for k in keys:
                 yield _dec_str(k)
             if cursor in (b"0", "0", 0):
@@ -2594,7 +2762,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         if itersize is None:
             itersize = self._default_scan_itersize
         deleted = 0
-        keys: list = []
+        keys: list[Any] = []
         async for k in self.aiter_keys(pattern, itersize=itersize):
             keys.append(k)
             if len(keys) >= itersize:
@@ -2626,7 +2794,8 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             for i in range(0, len(items), 2):
                 m[items[i]] = _enc(items[i + 1])
         if not m:
-            return 0
+            msg = "hset requires at least one field/value pair"
+            raise ValueError(msg)
         return await client.hset(key, m)
 
     async def ahsetnx(self, key: str, field: str, value: Any) -> bool:
@@ -2635,9 +2804,12 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def ahget(self, key: str, field: str) -> Any:
         return await (await self.get_async_client()).hget(key, field)
 
-    async def ahmget(self, key: str, *fields: str) -> list:
+    async def ahmget(self, key: str, *fields: str) -> list[Any]:
         if len(fields) == 1 and isinstance(fields[0], (list, tuple)):
             fields = tuple(fields[0])
+        if not fields:
+            # ``HMGET key`` with no fields is a syntax error on the wire.
+            return []
         return list(await (await self.get_async_client()).hmget(key, list(fields)))
 
     async def ahgetall(self, key: str) -> dict[str, Any]:
@@ -2647,7 +2819,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def ahkeys(self, key: str) -> list[str]:
         return [k.decode() if isinstance(k, bytes) else k for k in await (await self.get_async_client()).hkeys(key)]
 
-    async def ahvals(self, key: str) -> list:
+    async def ahvals(self, key: str) -> list[Any]:
         return list(await (await self.get_async_client()).hvals(key))
 
     async def ahlen(self, key: str) -> int:
@@ -2662,7 +2834,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def ahincrby(self, key: str, field: str, amount: int = 1) -> int:
         return await (await self.get_async_client()).hincrby(key, field, amount)
 
-    async def ahincrbyfloat(self, key: str, field: str, amount: float) -> float:
+    async def ahincrbyfloat(self, key: str, field: str, amount: float = 1.0) -> float:
         return await (await self.get_async_client()).hincrbyfloat(key, field, amount)
 
     # =========================================================================
@@ -2735,7 +2907,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         cursor: Any = b"0"
         while True:
             result = await client.sscan(key, cursor, match=match, count=count)
-            cursor, members = result[0], result[1]
+            cursor, members = cast("Any", result[0]), result[1]
             for m in members:
                 yield m
             if cursor in (b"0", "0", 0):
@@ -2763,7 +2935,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
                 args.append(b"INCR")
             for member, score in mapping.items():
                 args.extend([_enc(score), _enc(member)])
-            return await client.custom_command(args)
+            return await self._acmd(args)
         return await client.zadd(key, {_enc(m): float(s) for m, s in mapping.items()})
 
     async def azrem(self, key: str, *members: Any) -> int:
@@ -2788,13 +2960,13 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return await (await self.get_async_client()).zremrangebyrank(key, start, end)
 
     async def azremrangebyscore(self, key: str, mn: Any, mx: Any) -> int:
-        return await (await self.get_async_client()).custom_command([b"ZREMRANGEBYSCORE", key, _enc(mn), _enc(mx)])
+        return await self._acmd([b"ZREMRANGEBYSCORE", key, _enc(mn), _enc(mx)])
 
     async def azcard(self, key: str) -> int:
         return await (await self.get_async_client()).zcard(key)
 
     async def azcount(self, key: str, mn: Any, mx: Any) -> int:
-        return await (await self.get_async_client()).custom_command([b"ZCOUNT", key, _enc(mn), _enc(mx)])
+        return await self._acmd([b"ZCOUNT", key, _enc(mn), _enc(mx)])
 
     async def azrange(
         self,
@@ -2803,14 +2975,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         end: int,
         withscores: bool = False,
         desc: bool = False,
-    ) -> list:
+    ) -> list[Any]:
         args = [b"ZRANGE", key, str(start).encode(), str(end).encode()]
         if desc:
             args.append(b"REV")
         if withscores:
             args.append(b"WITHSCORES")
         return _decode_zrange(
-            await (await self.get_async_client()).custom_command(args),
+            await self._acmd(args),
             withscores=withscores,
         )
 
@@ -2820,7 +2992,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         start: int,
         end: int,
         withscores: bool = False,
-    ) -> list:
+    ) -> list[Any]:
         return await self.azrange(key, start, end, withscores=withscores, desc=True)
 
     async def azrangebyscore(
@@ -2831,14 +3003,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         withscores: bool = False,
         start: int | None = None,
         num: int | None = None,
-    ) -> list:
+    ) -> list[Any]:
         args = [b"ZRANGEBYSCORE", key, _enc(mn), _enc(mx)]
         if withscores:
             args.append(b"WITHSCORES")
         if start is not None and num is not None:
             args.extend([b"LIMIT", str(start).encode(), str(num).encode()])
         return _decode_zrange(
-            await (await self.get_async_client()).custom_command(args),
+            await self._acmd(args),
             withscores=withscores,
         )
 
@@ -2850,14 +3022,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         withscores: bool = False,
         start: int | None = None,
         num: int | None = None,
-    ) -> list:
+    ) -> list[Any]:
         args = [b"ZREVRANGEBYSCORE", key, _enc(mx), _enc(mn)]
         if withscores:
             args.append(b"WITHSCORES")
         if start is not None and num is not None:
             args.extend([b"LIMIT", str(start).encode(), str(num).encode()])
         return _decode_zrange(
-            await (await self.get_async_client()).custom_command(args),
+            await self._acmd(args),
             withscores=withscores,
         )
 
@@ -2886,16 +3058,17 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         if count is None:
             return await client.lpop(key)
         result = await client.lpop_count(key, count)
-        return list(result) if result else []
+        # See the note in the sync ``lpop``.
+        return list(result) if result is not None else None
 
     async def arpop(self, key: str, count: int | None = None) -> Any:
         client = await self.get_async_client()
         if count is None:
             return await client.rpop(key)
         result = await client.rpop_count(key, count)
-        return list(result) if result else []
+        return list(result) if result is not None else None
 
-    async def alrange(self, key: str, start: int, end: int) -> list:
+    async def alrange(self, key: str, start: int, end: int) -> list[Any]:
         return list(await (await self.get_async_client()).lrange(key, start, end))
 
     async def altrim(self, key: str, start: int, end: int) -> bool:
@@ -2914,7 +3087,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return await (await self.get_async_client()).lrem(key, count, _enc(value))
 
     async def alinsert(self, key: str, where: str, pivot: Any, value: Any) -> int:
-        return await (await self.get_async_client()).custom_command(
+        return await self._acmd(
             [
                 b"LINSERT",
                 key,
@@ -2924,18 +3097,25 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             ],
         )
 
-    async def alpos(self, key: str, element: Any, **kwargs: Any) -> Any:
-        args: list[Any] = [b"LPOS", key, _enc(element)]
-        if (rank := kwargs.get("rank")) is not None:
+    async def alpos(
+        self,
+        key: str,
+        value: Any,
+        rank: int | None = None,
+        count: int | None = None,
+        maxlen: int | None = None,
+    ) -> Any:
+        args: list[Any] = [b"LPOS", key, _enc(value)]
+        if rank is not None:
             args.extend([b"RANK", str(rank).encode()])
-        if (count := kwargs.get("count")) is not None:
+        if count is not None:
             args.extend([b"COUNT", str(count).encode()])
-        if (maxlen := kwargs.get("maxlen")) is not None:
+        if maxlen is not None:
             args.extend([b"MAXLEN", str(maxlen).encode()])
-        return await (await self.get_async_client()).custom_command(args)
+        return await self._acmd(args)
 
     async def almove(self, src: str, dst: str, wherefrom: str, whereto: str) -> Any:
-        return await (await self.get_async_client()).custom_command(
+        return await self._acmd(
             [b"LMOVE", src, dst, _enc(wherefrom.upper()), _enc(whereto.upper())],
         )
 
@@ -2947,7 +3127,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         wherefrom: str = "LEFT",
         whereto: str = "RIGHT",
     ) -> Any:
-        return await (await self.get_async_client()).custom_command(
+        return await self._acmd(
             [
                 b"BLMOVE",
                 src,
@@ -2960,7 +3140,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     async def ablpop(self, keys: Any, timeout: float = 0) -> Any:
         ks = list(keys) if isinstance(keys, (list, tuple)) else [keys]
-        result = await (await self.get_async_client()).custom_command([b"BLPOP", *_enc_list(ks), str(timeout).encode()])
+        result = await self._acmd([b"BLPOP", *_enc_list(ks), str(timeout).encode()])
         if result is None:
             return None
         key, value = result[0], result[1]
@@ -2968,36 +3148,38 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     async def abrpop(self, keys: Any, timeout: float = 0) -> Any:
         ks = list(keys) if isinstance(keys, (list, tuple)) else [keys]
-        result = await (await self.get_async_client()).custom_command([b"BRPOP", *_enc_list(ks), str(timeout).encode()])
+        result = await self._acmd([b"BRPOP", *_enc_list(ks), str(timeout).encode()])
         if result is None:
             return None
         key, value = result[0], result[1]
         return (_dec_str(key), value)
 
     # =========================================================================
-    # Async streams (mostly via custom_command)
+    # Async streams, mostly via custom_command
     # =========================================================================
 
-    async def axadd(self, key: str, fields: Mapping[Any, Any], id: str = "*", **kwargs: Any) -> str:
-        args: list[Any] = [b"XADD", key]
-        if kwargs.get("nomkstream"):
-            args.append(b"NOMKSTREAM")
-        if (maxlen := kwargs.get("maxlen")) is not None:
-            args.append(b"MAXLEN")
-            if kwargs.get("approximate", True):
-                args.append(b"~")
-            args.append(str(maxlen).encode())
-        elif (minid := kwargs.get("minid")) is not None:
-            args.append(b"MINID")
-            if kwargs.get("approximate", True):
-                args.append(b"~")
-            args.append(_enc(minid))
-        if (limit := kwargs.get("limit")) is not None:
-            args.extend([b"LIMIT", str(limit).encode()])
-        args.append(_enc(id))
-        for f, v in fields.items():
-            args.extend([_enc(f), _enc(v)])
-        result = await (await self.get_async_client()).custom_command(args)
+    async def axadd(
+        self,
+        key: str,
+        fields: Mapping[Any, Any],
+        entry_id: str = "*",
+        maxlen: int | None = None,
+        approximate: bool = True,
+        nomkstream: bool = False,
+        minid: str | None = None,
+        limit: int | None = None,
+    ) -> str:
+        args = _xadd_args(
+            key,
+            fields,
+            entry_id,
+            maxlen=maxlen,
+            approximate=approximate,
+            nomkstream=nomkstream,
+            minid=minid,
+            limit=limit,
+        )
+        result = await self._acmd(args)
         return result.decode() if isinstance(result, bytes) else result
 
     async def axlen(self, key: str) -> int:
@@ -3006,48 +3188,55 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def axrange(
         self,
         key: str,
-        mn: str = "-",
-        mx: str = "+",
+        start: str = "-",
+        end: str = "+",
         count: int | None = None,
     ) -> list[tuple[str, dict[str, Any]]]:
-        args = [b"XRANGE", key, _enc(mn), _enc(mx)]
+        args = [b"XRANGE", key, _enc(start), _enc(end)]
         if count is not None:
             args.extend([b"COUNT", str(count).encode()])
-        return _decode_stream_entries(await (await self.get_async_client()).custom_command(args))
+        return _decode_stream_entries(await self._acmd(args))
 
     async def axrevrange(
         self,
         key: str,
-        mx: str = "+",
-        mn: str = "-",
+        end: str = "+",
+        start: str = "-",
         count: int | None = None,
     ) -> list[tuple[str, dict[str, Any]]]:
-        args = [b"XREVRANGE", key, _enc(mx), _enc(mn)]
+        args = [b"XREVRANGE", key, _enc(end), _enc(start)]
         if count is not None:
             args.extend([b"COUNT", str(count).encode()])
-        return _decode_stream_entries(await (await self.get_async_client()).custom_command(args))
+        return _decode_stream_entries(await self._acmd(args))
 
     async def axdel(self, key: str, *ids: Any) -> int:
-        return await (await self.get_async_client()).custom_command([b"XDEL", key, *_enc_list(ids)])
+        return await self._acmd([b"XDEL", key, *_enc_list(ids)])
 
-    async def axtrim(self, key: str, **kwargs: Any) -> int:
+    async def axtrim(
+        self,
+        key: str,
+        maxlen: int | None = None,
+        approximate: bool = True,
+        minid: str | None = None,
+        limit: int | None = None,
+    ) -> int:
         args: list[Any] = [b"XTRIM", key]
-        if (maxlen := kwargs.get("maxlen")) is not None:
+        if maxlen is not None:
             args.append(b"MAXLEN")
-            if kwargs.get("approximate", True):
+            if approximate:
                 args.append(b"~")
             args.append(str(maxlen).encode())
-        elif (minid := kwargs.get("minid")) is not None:
+        elif minid is not None:
             args.append(b"MINID")
-            if kwargs.get("approximate", True):
+            if approximate:
                 args.append(b"~")
             args.append(_enc(minid))
-        if (limit := kwargs.get("limit")) is not None:
+        if limit is not None:
             args.extend([b"LIMIT", str(limit).encode()])
-        return await (await self.get_async_client()).custom_command(args)
+        return await self._acmd(args)
 
     async def axack(self, key: str, group: str, *ids: Any) -> int:
-        return await (await self.get_async_client()).custom_command([b"XACK", key, _enc(group), *_enc_list(ids)])
+        return await self._acmd([b"XACK", key, _enc(group), *_enc_list(ids)])
 
     async def axclaim(
         self,
@@ -3080,7 +3269,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.append(b"FORCE")
         if justid:
             args.append(b"JUSTID")
-        result = await (await self.get_async_client()).custom_command(args)
+        result = await self._acmd(args)
         if justid:
             return _dec_keys(result or [])
         return _decode_stream_entries(result)
@@ -3107,7 +3296,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.extend([b"COUNT", str(count).encode()])
         if justid:
             args.append(b"JUSTID")
-        result = await (await self.get_async_client()).custom_command(args)
+        result = await self._acmd(args)
         next_id = _dec_str(result[0])
         if justid:
             claimed: Any = _dec_keys(result[1] or [])
@@ -3125,42 +3314,35 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         count: int | None = None,
         consumer: str | None = None,
         idle: int | None = None,
-    ) -> Any:
+    ) -> dict[str, Any] | list[dict[str, Any]]:
+        _check_xpending_args(start, end, count, consumer, idle)
         args: list[Any] = [b"XPENDING", key, _enc(group)]
-        is_range = start is not None and end is not None and count is not None
-        if is_range:
+        if count is not None:
             # IDLE is only valid in the extended form, between the group
             # name and the start/end/count range.
             if idle is not None:
                 args.extend([b"IDLE", str(idle).encode()])
-            args.extend([_enc(start), _enc(end), str(count).encode()])
+            args.extend([_enc("-" if start is None else start), _enc("+" if end is None else end)])
+            args.append(str(count).encode())
             if consumer is not None:
                 args.append(_enc(consumer))
-        result = await (await self.get_async_client()).custom_command(args)
-        if is_range:
-            return [[_dec_str(row[0]), _dec_str(row[1]), int(row[2]), int(row[3])] for row in (result or [])]
-        if not result or result[0] == 0:
-            return {"pending": 0, "min": None, "max": None, "consumers": []}
-        consumers_raw = result[3] or []
-        return {
-            "pending": int(result[0]),
-            "min": _dec_str(result[1]) if result[1] is not None else None,
-            "max": _dec_str(result[2]) if result[2] is not None else None,
-            "consumers": [{"name": _dec_str(c[0]), "pending": int(c[1])} for c in consumers_raw],
-        }
+        result = await self._acmd(args)
+        if count is not None:
+            return _decode_xpending_range(result)
+        return _decode_xpending_summary(result)
 
     async def axinfo_stream(self, key: str, full: bool = False) -> Any:
         args: list[Any] = [b"XINFO", b"STREAM", key]
         if full:
             args.append(b"FULL")
-        return _decode_xinfo(await (await self.get_async_client()).custom_command(args))
+        return _decode_xinfo(await self._acmd(args))
 
     async def axinfo_groups(self, key: str) -> Any:
-        result = await (await self.get_async_client()).custom_command([b"XINFO", b"GROUPS", key])
+        result = await self._acmd([b"XINFO", b"GROUPS", key])
         return [_decode_xinfo(g) for g in (result or [])]
 
     async def axinfo_consumers(self, key: str, group: str) -> Any:
-        result = await (await self.get_async_client()).custom_command([b"XINFO", b"CONSUMERS", key, _enc(group)])
+        result = await self._acmd([b"XINFO", b"CONSUMERS", key, _enc(group)])
         return [_decode_xinfo(c) for c in (result or [])]
 
     async def axgroup_create(
@@ -3176,26 +3358,25 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.append(b"MKSTREAM")
         if entries_read is not None:
             args.extend([b"ENTRIESREAD", str(entries_read).encode()])
-        return (await (await self.get_async_client()).custom_command(args)) == "OK"
+        return (await self._acmd(args)) == "OK"
 
     async def axgroup_destroy(self, key: str, group: str) -> int:
-        return await (await self.get_async_client()).custom_command([b"XGROUP", b"DESTROY", key, _enc(group)])
+        return await self._acmd([b"XGROUP", b"DESTROY", key, _enc(group)])
 
     async def axgroup_setid(
         self,
         key: str,
         group: str,
         entry_id: str,
-        *,
         entries_read: int | None = None,
     ) -> bool:
         args: list[Any] = [b"XGROUP", b"SETID", key, _enc(group), _enc(entry_id)]
         if entries_read is not None:
             args.extend([b"ENTRIESREAD", str(entries_read).encode()])
-        return (await (await self.get_async_client()).custom_command(args)) == "OK"
+        return (await self._acmd(args)) == "OK"
 
     async def axgroup_delconsumer(self, key: str, group: str, consumer: str) -> int:
-        return await (await self.get_async_client()).custom_command(
+        return await self._acmd(
             [b"XGROUP", b"DELCONSUMER", key, _enc(group), _enc(consumer)],
         )
 
@@ -3213,7 +3394,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args.append(b"STREAMS")
         args.extend(_enc_list(streams.keys()))
         args.extend(_enc_list(streams.values()))
-        return _decode_xread(await (await self.get_async_client()).custom_command(args))
+        return _decode_xread(await self._acmd(args))
 
     async def axreadgroup(
         self,
@@ -3234,14 +3415,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args.append(b"STREAMS")
         args.extend(_enc_list(streams.keys()))
         args.extend(_enc_list(streams.values()))
-        return _decode_xread(await (await self.get_async_client()).custom_command(args))
+        return _decode_xread(await self._acmd(args))
 
     # =========================================================================
     # Async eval
     # =========================================================================
 
     async def aeval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any:
-        return await (await self.get_async_client()).custom_command(
+        return await self._acmd(
             [b"EVAL", _enc(script), str(numkeys).encode(), *_enc_list(keys_and_args)],
         )
 
@@ -3273,9 +3454,8 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 # =============================================================================
 # Cluster topology
 # =============================================================================
-# Distinct registries from the standalone ones above so cluster vs standalone
-# clients (different config classes, can't mix) stay isolated even when the
-# same address tuple appears in both.
+# Separate from the standalone registries above: the two client flavors take
+# different config classes and must not be mixed for the same address.
 _GLIDE_SYNC_CLUSTER_CLIENTS: dict[tuple[Any, ...], Any] = {}
 _GLIDE_SYNC_CLUSTER_LOCK = threading.Lock()
 _GLIDE_ASYNC_CLUSTER_CLIENTS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], Any]] = (
@@ -3296,27 +3476,30 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
     for the other drivers).
     """
 
+    def _batch_factory(self, *, atomic: bool = False) -> Any:
+        return ClusterBatch(is_atomic=atomic)
+
     def pipeline(self, *, transaction: bool = True) -> ValkeyGlidePipelineAdapter:
         """Cluster pipelines can't be atomic across slots, force non-atomic batches."""
         del transaction
-        return ValkeyGlidePipelineAdapter(self._client(), transaction=False)
+        return ValkeyGlidePipelineAdapter(self._client(), transaction=False, batch_factory=self._batch_factory)
 
     async def apipeline(self, *, transaction: bool = True) -> ValkeyGlideAsyncPipelineAdapter:
         """Async cluster pipelines can't be atomic across slots."""
         del transaction
         client = await self.get_async_client()
-        return ValkeyGlideAsyncPipelineAdapter(client, transaction=False)
+        return ValkeyGlideAsyncPipelineAdapter(client, transaction=False, batch_factory=self._batch_factory)
 
     def info(self, section: str | None = None) -> dict[str, Any]:
         """Ask one node for INFO instead of letting glide fan the command out."""
         # Unrouted, glide fans INFO out to all primaries and returns
         # ``{node_address: payload}`` instead of the single body we parse.
-        return _parse_info(self._client().custom_command(self._info_args(section), RandomNode()))
+        return _parse_info(self._cmd(self._info_args(section), RandomNode()))
 
     # A ``ClusterScanCursor`` can't round-trip through the protocol's int cursor,
     # so drive the loop here and report one finished scan.
 
-    def _scan_keys(self, match: str | None, count: int | None, _type: str | None) -> Iterable[str]:
+    def _scan_keys(self, match: str | None, count: int | None, _type: str | None) -> Iterator[str]:
         client = self._client()
         if count is None:
             count = self._default_scan_itersize
@@ -3336,11 +3519,11 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
         del cursor  # Only ever 0: the previous call consumed the whole keyspace.
         return 0, list(self._scan_keys(match, count, _type))
 
-    def iter_keys(self, pattern: str, itersize: int | None = None) -> Iterable[str]:
+    def iter_keys(self, pattern: str, itersize: int | None = None) -> Iterator[str]:
         return self._scan_keys(pattern, itersize, None)
 
     async def _ascan_keys(self, match: str | None, count: int | None, _type: str | None):
-        client = await self.get_async_client()
+        client: Any = await self.get_async_client()
         if count is None:
             count = self._default_scan_itersize
         cursor = AsyncClusterScanCursor()
@@ -3388,35 +3571,21 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
     def _async_registry() -> weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], Any]]:
         return _GLIDE_ASYNC_CLUSTER_CLIENTS
 
-    async def get_async_client(self, key: Any = None, *, write: bool = False) -> Any:
-        del key, write
-        loop = asyncio.get_running_loop()
-        sub = _GLIDE_ASYNC_CLUSTER_CLIENTS.get(loop)
-        if sub is None:
-            sub = {}
-            _GLIDE_ASYNC_CLUSTER_CLIENTS[loop] = sub
-        client = sub.get(self._config_key)
-        if client is not None:
-            return client
-        lock = _GLIDE_ASYNC_CLUSTER_LOCKS.get(loop)
-        if lock is None:
-            lock = asyncio.Lock()
-            _GLIDE_ASYNC_CLUSTER_LOCKS[loop] = lock
-        async with lock:
-            client = sub.get(self._config_key)
-            if client is None:
-                cfg = AsyncGlideClusterClientConfiguration(
-                    addresses=self._cluster_addresses_async(),
-                    **_glide_config_kwargs(
-                        self._servers,
-                        self._options,
-                        credentials_cls=AsyncServerCredentials,
-                        include_database=False,
-                    ),
-                )
-                client = _WrongTypeClient(await AsyncGlideClusterClient.create(cfg))
-                sub[self._config_key] = client
-        return client
+    @staticmethod
+    def _async_locks() -> weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]:
+        return _GLIDE_ASYNC_CLUSTER_LOCKS
+
+    async def _create_async_client(self) -> Any:
+        cfg = AsyncGlideClusterClientConfiguration(
+            addresses=self._cluster_addresses_async(),
+            **_glide_config_kwargs(
+                self._servers,
+                self._options,
+                credentials_cls=AsyncServerCredentials,
+                include_database=False,
+            ),
+        )
+        return await AsyncGlideClusterClient.create(cfg)
 
     def _cluster_addresses(self) -> list[NodeAddress]:
         out: list[NodeAddress] = []
@@ -3438,20 +3607,7 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
 # =============================================================================
 
 
-def _batched(it: Iterable[Any], n: int) -> Iterable[list[Any]]:
-    """Yield successive n-sized batches from iterable."""
-    chunk: list[Any] = []
-    for item in it:
-        chunk.append(item)
-        if len(chunk) >= n:
-            yield chunk
-            chunk = []
-    if chunk:
-        yield chunk
-
-
-def _decode_zrange(result: Any, *, withscores: bool) -> list:
-    """Decode ZRANGE/ZRANGEBYSCORE/ZREVRANGEBYSCORE result."""
+def _decode_zrange(result: Any, *, withscores: bool) -> list[Any]:
     # Glide's shape varies by command: ZRANGE WITHSCORES gives a dict,
     # ZRANGEBYSCORE WITHSCORES gives a list of pairs.
     if not result:
@@ -3460,10 +3616,7 @@ def _decode_zrange(result: Any, *, withscores: bool) -> list:
         return list(result)
     if isinstance(result, dict):
         return [(m, float(s)) for m, s in result.items()]
-    if isinstance(result[0], list):
-        return [(item[0], float(item[1])) for item in result]
-    # Defensive: ``[m1, s1, m2, s2, ...]`` flat shape.
-    return [(result[i], float(result[i + 1])) for i in range(0, len(result), 2)]
+    return [(item[0], float(item[1])) for item in result]
 
 
 def _decode_zpop(result: Any) -> list[tuple[Any, float]]:
@@ -3531,9 +3684,8 @@ end
 return 0
 """
 
-# Atomic extend: if the lock is still owned by this token, add ``ARGV[2]``
-# seconds (or replace with ``ARGV[2]`` when ``replace_ttl`` is requested).
-# Returns 1 on success, 0 if not owned.
+# Extend atomically, only while still owned by this token: adds ``ARGV[2]``
+# seconds, or replaces the TTL with it. Returns 1 on success, 0 if not owned.
 _EXTEND_LUA = """
 if redis.call('GET', KEYS[1]) ~= ARGV[1] then
     return 0
@@ -3601,14 +3753,18 @@ class _GlideLock:
             # holder release/extend a lock re-acquired by someone else.
             token = os.urandom(16).hex().encode()
             result = self._client.set(self._key, token, **kw)
-            if result == "OK":
+            if _ok_to_bool(result):
                 self._token = token
                 return True
             if not bl:
                 return False
-            if deadline is not None and time.monotonic() >= deadline:
+            if deadline is None:
+                time.sleep(self._sleep)
+                continue
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 return False
-            time.sleep(self._sleep)
+            time.sleep(min(self._sleep, remaining))
 
     def release(self) -> None:
         from django_cachex.lock import LockError, LockNotOwnedError
@@ -3719,14 +3875,18 @@ class _AsyncGlideLock:
             # holder release/extend a lock re-acquired by someone else.
             token = os.urandom(16).hex().encode()
             result = await client.set(self._key, token, **kw)
-            if result == "OK":
+            if _ok_to_bool(result):
                 self._token = token
                 return True
             if not bl:
                 return False
-            if deadline is not None and time.monotonic() >= deadline:
+            if deadline is None:
+                await asyncio.sleep(self._sleep)
+                continue
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 return False
-            await asyncio.sleep(self._sleep)
+            await asyncio.sleep(min(self._sleep, remaining))
 
     async def release(self) -> None:
         from django_cachex.lock import LockError, LockNotOwnedError
@@ -3784,4 +3944,9 @@ class _AsyncGlideLock:
             await self.release()
 
 
-__all__ = ["ValkeyGlideAdapter", "ValkeyGlideAsyncPipelineAdapter", "ValkeyGlidePipelineAdapter"]
+__all__ = [
+    "ValkeyGlideAdapter",
+    "ValkeyGlideAsyncPipelineAdapter",
+    "ValkeyGlideClusterAdapter",
+    "ValkeyGlidePipelineAdapter",
+]
