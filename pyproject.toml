@@ -1,6 +1,6 @@
 [project]
 name = "django-cachex"
-version = "0.6.0"
+version = "0.7.0"
 description = "Full featured Valkey and Redis cache backend for Django"
 readme = "README.md"
 license = "MIT"
