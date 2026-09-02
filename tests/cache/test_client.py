@@ -1,38 +1,11 @@
-from typing import TYPE_CHECKING
 from unittest.mock import Mock, patch
 
-import pytest
-
-from django_cachex.adapters import RedisPyAdapter, RespAdapterProtocol
-
-if TYPE_CHECKING:
-    from django_cachex.cache import RespCache
-
-
-@pytest.fixture
-def cache_client(cache: RespCache):
-    """Fixture that returns the internal cache client for testing client-level behavior."""
-    cache.set("TestClientClose", 0)
-    yield cache.adapter  # Return the internal client
-    cache.delete("TestClientClose")
-
-
-class TestClientClose:
-    def test_close_is_noop(self, cache_client: RespAdapterProtocol):
-        """close() is a no-op; pools persist after close."""
-        # Create a pool first by accessing it
-        pool = cache_client._get_connection_pool(write=True)
-        assert 0 in cache_client._pools
-
-        # close() should NOT clear pools
-        cache_client.close()
-        assert 0 in cache_client._pools
-        assert cache_client._pools[0] is pool
+from django_cachex.adapters import RedisPyAdapter
 
 
 class TestRedisPyAdapter:
-    @patch("tests.cache.test_client.RedisPyAdapter.get_client")
-    @patch("tests.cache.test_client.RedisPyAdapter.__init__", return_value=None)
+    @patch("django_cachex.adapters.redis_py.RedisPyAdapter.get_client")
+    @patch("django_cachex.adapters.redis_py.RedisPyAdapter.__init__", return_value=None)
     def test_delete_pattern_calls_get_client_given_no_client(
         self,
         init_mock,
@@ -48,8 +21,8 @@ class TestRedisPyAdapter:
         client.delete_pattern(pattern="foo*")
         get_client_mock.assert_called_once_with(write=True)
 
-    @patch("tests.cache.test_client.RedisPyAdapter.get_client")
-    @patch("tests.cache.test_client.RedisPyAdapter.__init__", return_value=None)
+    @patch("django_cachex.adapters.redis_py.RedisPyAdapter.get_client")
+    @patch("django_cachex.adapters.redis_py.RedisPyAdapter.__init__", return_value=None)
     def test_delete_pattern_calls_scan_iter_with_pattern(
         self,
         init_mock,
@@ -69,8 +42,8 @@ class TestRedisPyAdapter:
             match="prefix:1:foo*",
         )
 
-    @patch("tests.cache.test_client.RedisPyAdapter.get_client")
-    @patch("tests.cache.test_client.RedisPyAdapter.__init__", return_value=None)
+    @patch("django_cachex.adapters.redis_py.RedisPyAdapter.get_client")
+    @patch("django_cachex.adapters.redis_py.RedisPyAdapter.__init__", return_value=None)
     def test_delete_pattern_calls_scan_iter_with_count_if_itersize_given(
         self,
         init_mock,
@@ -90,8 +63,8 @@ class TestRedisPyAdapter:
             match="prefix:1:foo*",
         )
 
-    @patch("tests.cache.test_client.RedisPyAdapter.get_client")
-    @patch("tests.cache.test_client.RedisPyAdapter.__init__", return_value=None)
+    @patch("django_cachex.adapters.redis_py.RedisPyAdapter.get_client")
+    @patch("django_cachex.adapters.redis_py.RedisPyAdapter.__init__", return_value=None)
     def test_delete_pattern_deletes_found_keys(
         self,
         init_mock,
@@ -107,6 +80,5 @@ class TestRedisPyAdapter:
 
         result = client.delete_pattern(pattern="prefix:1:foo*")
 
-        # delete is called once with all keys
         mock_client.delete.assert_called_once_with(":1:foo", ":1:foo-a")
         assert result == 2

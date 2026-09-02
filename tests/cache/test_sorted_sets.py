@@ -7,8 +7,6 @@ if TYPE_CHECKING:
 
 
 class TestSortedSetOperations:
-    """Tests for sorted set (ZSET) operations."""
-
     def test_zadd_basic(self, cache: RespCache):
         result = cache.zadd("scores", {"player1": 100.0, "player2": 200.0})
         assert result == 2

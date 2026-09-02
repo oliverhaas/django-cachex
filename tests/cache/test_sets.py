@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from django_cachex.serializers.pickle import PickleSerializer
+
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
 
@@ -158,6 +160,26 @@ class TestSetMemberHashability:
         with pytest.raises(TypeError, match="hashable"):
             await cache.asadd("aunhashable", [1, 2])
         assert cache.smembers("aunhashable") == set()
+
+    def test_sadd_tuple_member_follows_the_serializer(self, cache: RespCache, serializers: str | None):
+        # Sentinel configs ignore the ``serializers`` param, so ask the cache which one it got.
+        if isinstance(cache._serializers[0], PickleSerializer):
+            assert cache.sadd("tuple_member", (1, 2)) == 1
+            assert cache.smembers("tuple_member") == {(1, 2)}
+        else:
+            with pytest.raises(TypeError, match="hashable"):
+                cache.sadd("tuple_member", (1, 2))
+            assert cache.smembers("tuple_member") == set()
+
+    @pytest.mark.asyncio
+    async def test_asadd_tuple_member_follows_the_serializer(self, cache: RespCache, serializers: str | None):
+        if isinstance(cache._serializers[0], PickleSerializer):
+            assert await cache.asadd("atuple_member", (1, 2)) == 1
+            assert await cache.asmembers("atuple_member") == {(1, 2)}
+        else:
+            with pytest.raises(TypeError, match="hashable"):
+                await cache.asadd("atuple_member", (1, 2))
+            assert await cache.asmembers("atuple_member") == set()
 
 
 class TestAsyncSetOperations:

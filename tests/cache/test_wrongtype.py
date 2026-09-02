@@ -52,5 +52,5 @@ class TestWrongTypeNormalization:
 
     def test_wrongtype_is_typeerror_subclass(self, cache: RespCache):
         cache.set("k", "abc")
-        with pytest.raises(TypeError):  # WrongTypeError ⊂ TypeError
+        with pytest.raises(TypeError):  # WrongTypeError is a TypeError subclass
             cache.lpush("k", "x")

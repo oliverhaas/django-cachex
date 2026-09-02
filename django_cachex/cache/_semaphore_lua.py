@@ -6,6 +6,14 @@ Three Redis keys cooperate per semaphore name (passed as ``KEYS[1..3]``):
   2. ``{name}:claims`` - hash mapping ``token`` -> ``weight``.
   3. ``{name}:queue`` - sorted set, score = enqueue timestamp (ms), member = ``token``.
 
+All three carry a guard TTL, refreshed by ACQUIRE, EXTEND and RELEASE to twice
+the longest lease (or waiter TTL) seen. A clean RELEASE drops them, so the TTL
+only matters when the last holder dies without releasing: without it, a
+semaphore named per job ("job:<id>") would leak three keys per name until that
+exact name was acquired again. Twice the lease keeps the guard comfortably
+longer than any claim it has to outlive, since losing the hashes while a claim
+is still live would over-admit past capacity.
+
 Plus per-token TTL keys the scripts manage internally:
 
   - ``{name}:state:claim:<token>`` - claim lease (``PX`` lease_ms); expiry
@@ -42,6 +50,19 @@ local weight = tonumber(ARGV[2])
 local capacity = tonumber(ARGV[3])
 local lease_ms = tonumber(ARGV[4])
 local waiter_ttl_ms = tonumber(ARGV[5])
+
+-- Guard TTL for the three shared keys, long enough to outlive every claim it
+-- covers. Only lengthens: a short lease must not shorten a long one's guard.
+local guard_ms = lease_ms * 2
+if waiter_ttl_ms * 2 > guard_ms then
+  guard_ms = waiter_ttl_ms * 2
+end
+
+local function bump(key, ms)
+  if redis.call('PTTL', key) < ms then
+    redis.call('PEXPIRE', key, ms)
+  end
+end
 
 -- Sync capacity: caller's value wins (capacity-at-call-site).
 local stored_cap = tonumber(redis.call('HGET', state_key, 'capacity') or '0')
@@ -119,6 +140,9 @@ if at_head and used + weight <= capacity then
   redis.call('SET', state_key .. ':claim:' .. token, '1', 'PX', lease_ms)
   redis.call('ZREM', queue_key, token)
   redis.call('DEL', queue_key .. ':waiter:' .. token)
+  bump(state_key, guard_ms)
+  bump(claims_key, guard_ms)
+  bump(queue_key, guard_ms)
   return {'acquired', used, capacity}
 end
 
@@ -130,20 +154,35 @@ if redis.call('ZSCORE', queue_key, token) == false then
   -- clock every contender shares. It is the only place a wall clock is read:
   -- lease_ms and waiter_ttl_ms are relative PX durations, and the reapers key
   -- off key existence rather than off any stored timestamp.
+  -- Reading TIME needs script *effects* replication so replicas and the AOF
+  -- get the resulting ZADD rather than a re-run that reads their own clock.
+  -- That has been the only mode since Redis 5, so TIME no longer taints a
+  -- script; on Redis 4 and older this would have needed replicate_commands().
   local t = redis.call('TIME')
   local now_ms = tonumber(t[1]) * 1000 + tonumber(t[2]) / 1000
   redis.call('ZADD', queue_key, now_ms, token)
 end
 redis.call('SET', queue_key .. ':waiter:' .. token, '1', 'PX', waiter_ttl_ms)
+bump(state_key, guard_ms)
+bump(claims_key, guard_ms)
+bump(queue_key, guard_ms)
 return {'queued', used, capacity}
 """
 
 
-# ARGV layout: token (the claim's owner identifier).
+# ARGV: token (the claim's owner identifier), lease_ms
 RELEASE_LUA = r"""
 local state_key = KEYS[1]
 local claims_key = KEYS[2]
+local queue_key = KEYS[3]
 local token = ARGV[1]
+local guard_ms = tonumber(ARGV[2]) * 2
+
+local function bump(key, ms)
+  if redis.call('PTTL', key) < ms then
+    redis.call('PEXPIRE', key, ms)
+  end
+end
 
 local weight = tonumber(redis.call('HGET', claims_key, token) or '0')
 if weight == 0 then
@@ -155,7 +194,8 @@ redis.call('DEL', state_key .. ':claim:' .. token)
 
 local raw_used = redis.call('HGET', state_key, 'used')
 if raw_used == false then
-  -- The state hash is gone (it carries no TTL, so only eviction removes it).
+  -- The state hash is gone: evicted, or its guard TTL lapsed after every
+  -- lease it covered had already expired.
   -- Writing `0 - weight` clamped to 0 here would invent a counter that is
   -- wrong whenever other claims are still live, and ACQUIRE trusts a present
   -- counter on its fast path: it only re-derives `used` from the claims hash
@@ -175,6 +215,9 @@ if used == 0 and redis.call('HLEN', claims_key) == 0 then
   redis.call('DEL', state_key)
 else
   redis.call('HSET', state_key, 'used', used)
+  bump(state_key, guard_ms)
+  bump(claims_key, guard_ms)
+  bump(queue_key, guard_ms)
 end
 return {'released', used, 0}
 """
@@ -199,7 +242,17 @@ end
 local ttl_key = state_key .. ':claim:' .. token
 local current = redis.call('PTTL', ttl_key)
 if current < 0 then current = 0 end
-redis.call('SET', ttl_key, '1', 'PX', current + additional_ms)
+local lease_ms = current + additional_ms
+redis.call('SET', ttl_key, '1', 'PX', lease_ms)
+
+-- Keep the shared keys ahead of the lease they now cover.
+local guard_ms = lease_ms * 2
+if redis.call('PTTL', state_key) < guard_ms then
+  redis.call('PEXPIRE', state_key, guard_ms)
+end
+if redis.call('PTTL', claims_key) < guard_ms then
+  redis.call('PEXPIRE', claims_key, guard_ms)
+end
 return 1
 """
 

@@ -19,7 +19,8 @@ class BaseSerializer:
         try:
             return self._dumps(obj)
         except Exception as e:
-            raise SerializerError from e
+            msg = f"{type(self).__name__} could not serialize {type(obj).__name__}: {e!r}"
+            raise SerializerError(msg) from e
 
     def loads(self, data: bytes | int) -> Any:
         if isinstance(data, int):
@@ -27,7 +28,8 @@ class BaseSerializer:
         try:
             return self._loads(data)
         except Exception as e:
-            raise SerializerError from e
+            msg = f"{type(self).__name__} could not deserialize {len(data)} bytes: {e!r}"
+            raise SerializerError(msg) from e
 
     def _dumps(self, obj: Any) -> bytes:
         raise NotImplementedError

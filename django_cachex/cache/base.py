@@ -1,10 +1,15 @@
 """Cache-layer base class: the contract every cachex cache satisfies.
 
 :class:`BaseCachex` extends Django's ``BaseCache`` with the cachex
-extension surface (TTL ops, hashes, sets, sorted sets, lists, streams,
-locks, pipelines, …). Every cachex cache class inherits from it so the
-contract is declared and enforced in one place. Native backends
-(:class:`~django_cachex.cache.locmem.LocMemCache`,
+extension surface (TTL ops, hashes, sets, sorted sets, lists, locks,
+pipelines, scripting, …). Every cachex cache class inherits from it so the
+contract is declared and enforced in one place. Streams are the one
+exception: only ``xlen``/``axlen`` are declared here, and the rest of the
+stream commands exist on :class:`~django_cachex.cache.resp.RespCache`
+alone, so backend-agnostic callers probe for them (the admin uses
+``hasattr(cache, "xrange")``).
+
+Native backends (:class:`~django_cachex.cache.locmem.LocMemCache`,
 :class:`~django_cachex.cache.database.DatabaseCache`,
 :class:`~django_cachex.cache.resp.RespCache`) override the methods
 with real implementations; methods left at the default raise
@@ -38,12 +43,14 @@ if TYPE_CHECKING:
 
 
 class BaseCachex(BaseCache):
-    """Cache contract; declares the full cachex extension surface on top of ``BaseCache``.
+    """Cache contract; declares the cachex extension surface on top of ``BaseCache``.
 
     Methods default to :class:`~django_cachex.exceptions.NotSupportedError`;
     native cachex backends override them with real implementations.
     Subclasses can pick which operations they support; the admin discovers
-    support via the ``_cachex_support`` marker.
+    support via the ``_cachex_support`` marker. Of the stream commands only
+    ``xlen``/``axlen`` are declared here; callers that want more probe the
+    concrete backend with ``hasattr``.
     """
 
     _cachex_support: CachexSupportLevel = "limited"
@@ -1212,7 +1219,7 @@ class BaseCachex(BaseCache):
         raise NotSupportedError("azmscore", self.__class__.__name__)
 
     # =========================================================================
-    # Stream Operations
+    # Stream Operations (xlen/axlen only; the rest lives on RespCache)
     # =========================================================================
 
     def xlen(self, key: str, version: int | None = None) -> int:

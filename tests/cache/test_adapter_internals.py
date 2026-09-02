@@ -19,6 +19,7 @@ from django_cachex.adapters.valkey_py import (
     _options_key,
 )
 from django_cachex.exceptions import WrongTypeError
+from django_cachex.types import KeyType
 
 SERVER_URL = "rediss://user:secret@example.com:7000/0?socket_timeout=5"
 
@@ -727,3 +728,139 @@ class TestSentinelKwargs:
         assert "sentinels" not in adapter._pool_options
         assert "sentinel_kwargs" not in adapter._pool_options
         assert adapter._pool_options["socket_timeout"] == 0.5
+
+
+@requires_valkey
+class TestConnectionOptionsReachThePool:
+    """Credentials and TLS settings from OPTIONS must survive into the pool."""
+
+    @staticmethod
+    def _pool_kwargs(**options: Any) -> dict[str, Any]:
+        captured: dict[str, Any] = {}
+
+        class StubPoolClass:
+            @staticmethod
+            def from_url(url: str, **kwargs: Any) -> Any:
+                captured["url"] = url
+                captured["kwargs"] = kwargs
+                return object()
+
+        adapter = ValkeyPyAdapter([SERVER_URL], **options)
+        adapter._pool_class = StubPoolClass
+        adapter._get_connection_pool(write=True)
+        return captured
+
+    def test_username_and_password_are_forwarded(self):
+        captured = self._pool_kwargs(username="alice", password="s3cret")  # noqa: S106
+
+        assert captured["kwargs"]["username"] == "alice"
+        assert captured["kwargs"]["password"] == "s3cret"
+
+    def test_ssl_settings_are_forwarded(self):
+        captured = self._pool_kwargs(ssl_cert_reqs="required", ssl_ca_certs="/etc/ssl/ca.pem")
+
+        assert captured["kwargs"]["ssl_cert_reqs"] == "required"
+        assert captured["kwargs"]["ssl_ca_certs"] == "/etc/ssl/ca.pem"
+
+    def test_client_only_options_stay_out_of_the_pool(self):
+        captured = self._pool_kwargs(username="alice", serializer="pickle", pool_class="valkey.ConnectionPool")
+
+        assert "serializer" not in captured["kwargs"]
+        assert "pool_class" not in captured["kwargs"]
+
+    def test_tls_scheme_selects_the_tls_connection_class(self):
+        import valkey
+
+        adapter = ValkeyPyAdapter([SERVER_URL])
+
+        pool = adapter._get_connection_pool(write=True)
+
+        assert pool.connection_class is valkey.SSLConnection
+        assert pool.connection_kwargs["username"] == "user"
+        assert pool.connection_kwargs["password"] == "secret"
+
+
+@requires_valkey
+class TestSentinelPoolClass:
+    """pool_class on a Sentinel cache selects the Sentinel-managed pool."""
+
+    @staticmethod
+    def _build(pool_class: Any) -> ValkeyPySentinelAdapter:
+        return ValkeyPySentinelAdapter(
+            ["redis://mymaster/0"],
+            pool_class=pool_class,
+            sentinels=[("sentinel-a", 26379)],
+        )
+
+    def test_a_plain_pool_class_is_rejected(self):
+        with pytest.raises(ImproperlyConfigured, match="cannot serve a Sentinel cache"):
+            self._build("valkey.connection.ConnectionPool")
+
+    def test_a_sentinel_pool_subclass_is_honoured(self):
+        from valkey.sentinel import SentinelConnectionPool
+
+        class CustomSentinelPool(SentinelConnectionPool):
+            pass
+
+        adapter = self._build(CustomSentinelPool)
+
+        assert adapter._sentinel_pool_class is CustomSentinelPool
+
+    def test_omitting_pool_class_keeps_the_driver_default(self):
+        from valkey.sentinel import SentinelConnectionPool
+
+        adapter = ValkeyPySentinelAdapter(
+            ["redis://mymaster/0"],
+            sentinels=[("sentinel-a", 26379)],
+        )
+
+        assert adapter._sentinel_pool_class is SentinelConnectionPool
+
+
+class _TypeClient:
+    """Driver stub whose TYPE reply is whatever the test hands it."""
+
+    def __init__(self, reply: str) -> None:
+        self.reply = reply
+
+    def type(self, key: str) -> str:
+        del key
+        return self.reply
+
+
+class _AsyncTypeClient(_TypeClient):
+    async def type(self, key: str) -> str:  # type: ignore[override]
+        return super().type(key)
+
+
+def _type_adapter(client: Any) -> ValkeyPyAdapter:
+    adapter = ValkeyPyAdapter.__new__(ValkeyPyAdapter)
+    adapter.get_client = lambda key=None, *, write=False: client  # type: ignore[method-assign]
+
+    async def get_async_client(key: Any = None, *, write: bool = False) -> Any:
+        del key, write
+        return client
+
+    adapter.get_async_client = get_async_client  # type: ignore[method-assign]
+    return adapter
+
+
+class TestKeyTypeMapping:
+    @pytest.mark.parametrize("reply", ["string", "list", "set", "zset", "hash", "stream"])
+    def test_modelled_types_map_to_their_member(self, reply: str):
+        assert _type_adapter(_TypeClient(reply)).type("key") == KeyType(reply)
+
+    def test_a_missing_key_is_none(self):
+        assert _type_adapter(_TypeClient("none")).type("key") is None
+
+    @pytest.mark.parametrize("reply", ["ReJSON-RL", "TSDB-TYPE", "MBbloom--"])
+    def test_module_types_map_to_unknown(self, reply: str):
+        assert _type_adapter(_TypeClient(reply)).type("key") is KeyType.UNKNOWN
+
+    @pytest.mark.asyncio
+    async def test_async_module_types_map_to_unknown(self):
+        assert await _type_adapter(_AsyncTypeClient("ReJSON-RL")).atype("key") is KeyType.UNKNOWN
+
+    @pytest.mark.asyncio
+    async def test_async_missing_key_is_none(self):
+        assert await _type_adapter(_AsyncTypeClient("none")).atype("key") is None

@@ -1,29 +1,11 @@
 """Tests for key operations: version, delete_pattern, iter_keys, etc."""
 
-from contextlib import suppress
 from typing import TYPE_CHECKING
 
 import pytest
-from django.core.cache import caches
-from django.test import override_settings
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
-
     from django_cachex.cache import RespCache
-    from tests.settings_wrapper import SettingsWrapper
-
-
-@pytest.fixture
-def patch_itersize_setting() -> Iterable[None]:
-    # destroy cache to force recreation with overriden settings
-    with suppress(AttributeError):
-        del caches["default"]
-    with override_settings(DJANGO_REDIS_SCAN_ITERSIZE=30):
-        yield
-    # destroy cache to force recreation with original settings
-    with suppress(AttributeError):
-        del caches["default"]
 
 
 class TestVersionOperations:
@@ -138,30 +120,22 @@ class TestDeletePatternOperations:
         for key in ["foo-aa", "foo-ab", "foo-bb", "foo-bc"]:
             cache.set(key, "foo")
 
-        # Test that custom itersize works (we can't easily verify the internal itersize,
-        # but we can verify the result is correct)
         res = cache.delete_pattern("*foo-a*", itersize=2)
         assert bool(res) is True
 
         keys = cache.keys("foo*")
         assert set(keys) == {"foo-bb", "foo-bc"}
 
-    def test_delete_pattern_with_settings_default_scan_count(
-        self,
-        patch_itersize_setting,
-        cache: RespCache,
-        settings: SettingsWrapper,
-    ):
-        for key in ["foo-aa", "foo-ab", "foo-bb", "foo-bc"]:
+    def test_delete_pattern_itersize_smaller_than_match_count(self, cache: RespCache):
+        """An itersize below the number of matches still deletes every match."""
+        matching = [f"itersize-foo-{i}" for i in range(12)]
+        for key in [*matching, "itersize-bar"]:
             cache.set(key, "foo")
 
-        assert settings.DJANGO_REDIS_SCAN_ITERSIZE == 30
+        res = cache.delete_pattern("*itersize-foo-*", itersize=1)
+        assert res == len(matching)
 
-        res = cache.delete_pattern("*foo-a*")
-        assert bool(res) is True
-
-        keys = cache.keys("foo*")
-        assert set(keys) == {"foo-bb", "foo-bc"}
+        assert cache.keys("itersize-*") == ["itersize-bar"]
 
 
 class TestIterKeysOperations:
@@ -170,7 +144,6 @@ class TestIterKeysOperations:
         cache.set("foo2", 1)
         cache.set("foo3", 1)
 
-        # Test simple result
         result = set(cache.iter_keys("foo*"))
         assert result == {"foo1", "foo2", "foo3"}
 
@@ -179,19 +152,16 @@ class TestIterKeysOperations:
         cache.set("foo2", 1)
         cache.set("foo3", 1)
 
-        # Test limited result
         result = list(cache.iter_keys("foo*", itersize=2))
-        assert len(result) == 3
+        assert sorted(result) == ["foo1", "foo2", "foo3"]
 
     def test_iter_keys_generator(self, cache: RespCache):
         cache.set("foo1", 1)
         cache.set("foo2", 1)
         cache.set("foo3", 1)
 
-        # Test generator object
         result = cache.iter_keys("foo*")
-        next_value = next(result)
-        assert next_value is not None
+        assert next(result) in {"foo1", "foo2", "foo3"}
 
 
 class TestAsyncVersionOperations:
@@ -236,7 +206,7 @@ class TestAsyncKeys:
         cache.set("akeys_bar1", 3)
 
         keys = await cache.akeys("akeys_foo*")
-        assert len(keys) == 2
+        assert sorted(keys) == ["akeys_foo1", "akeys_foo2"]
 
 
 class TestAsyncIterKeys:
@@ -251,7 +221,7 @@ class TestAsyncIterKeys:
         result = set()
         async for key in cache.aiter_keys("aikeys_foo*"):
             result.add(key)
-        assert len(result) == 3
+        assert result == {"aikeys_foo1", "aikeys_foo2", "aikeys_foo3"}
 
     @pytest.mark.asyncio
     async def test_aiter_keys_with_itersize(self, cache: RespCache):
@@ -260,7 +230,7 @@ class TestAsyncIterKeys:
         cache.set("aikeys2_foo3", 3)
 
         result = [key async for key in cache.aiter_keys("aikeys2_foo*", itersize=2)]
-        assert len(result) == 3
+        assert sorted(result) == ["aikeys2_foo1", "aikeys2_foo2", "aikeys2_foo3"]
 
     @pytest.mark.asyncio
     async def test_aiter_keys_async_generator(self, cache: RespCache):
@@ -269,8 +239,7 @@ class TestAsyncIterKeys:
         cache.set("aikgen_foo3", 1)
 
         result = cache.aiter_keys("aikgen_foo*")
-        next_value = await anext(result)
-        assert next_value is not None
+        assert await anext(result) in {"aikgen_foo1", "aikgen_foo2", "aikgen_foo3"}
 
 
 class TestAsyncDeletePattern:
@@ -304,22 +273,16 @@ class TestAsyncDeletePattern:
         assert set(keys) == {"afoo-bb", "afoo-bc"}
 
     @pytest.mark.asyncio
-    async def test_adelete_pattern_with_settings_default_scan_count(
-        self,
-        patch_itersize_setting,
-        cache: RespCache,
-        settings: SettingsWrapper,
-    ):
-        for key in ["asfoo-aa", "asfoo-ab", "asfoo-bb", "asfoo-bc"]:
+    async def test_adelete_pattern_itersize_smaller_than_match_count(self, cache: RespCache):
+        """An itersize below the number of matches still deletes every match."""
+        matching = [f"aitersize-foo-{i}" for i in range(12)]
+        for key in [*matching, "aitersize-bar"]:
             cache.set(key, "foo")
 
-        assert settings.DJANGO_REDIS_SCAN_ITERSIZE == 30
+        res = await cache.adelete_pattern("*aitersize-foo-*", itersize=1)
+        assert res == len(matching)
 
-        res = await cache.adelete_pattern("*asfoo-a*")
-        assert bool(res) is True
-
-        keys = cache.keys("asfoo*")
-        assert set(keys) == {"asfoo-bb", "asfoo-bc"}
+        assert cache.keys("aitersize-*") == ["aitersize-bar"]
 
 
 class TestAsyncRename:
@@ -403,3 +366,45 @@ class TestAsyncRenameTTL:
         ttl = await cache.attl("{aslotttl}:dest")
         assert ttl is not None
         assert ttl > 3500
+
+
+class TestType:
+    @pytest.mark.parametrize(
+        ("setup", "expected"),
+        [
+            (lambda c: c.set("type_string", "value"), "string"),
+            (lambda c: c.hset("type_hash", "field", "value"), "hash"),
+            (lambda c: c.lpush("type_list", "value"), "list"),
+            (lambda c: c.sadd("type_set", "value"), "set"),
+            (lambda c: c.zadd("type_zset", {"member": 1.0}), "zset"),
+        ],
+        ids=["string", "hash", "list", "set", "zset"],
+    )
+    def test_type_returns_kind(self, cache: RespCache, setup, expected: str):
+        setup(cache)
+        assert cache.type(f"type_{expected}") == expected
+
+    def test_type_missing_key(self, cache: RespCache):
+        assert cache.type("type_missing") is None
+
+
+class TestAsyncType:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("setup", "expected"),
+        [
+            (lambda c: c.set("atype_string", "value"), "string"),
+            (lambda c: c.hset("atype_hash", "field", "value"), "hash"),
+            (lambda c: c.lpush("atype_list", "value"), "list"),
+            (lambda c: c.sadd("atype_set", "value"), "set"),
+            (lambda c: c.zadd("atype_zset", {"member": 1.0}), "zset"),
+        ],
+        ids=["string", "hash", "list", "set", "zset"],
+    )
+    async def test_atype_returns_kind(self, cache: RespCache, setup, expected: str):
+        setup(cache)
+        assert await cache.atype(f"atype_{expected}") == expected
+
+    @pytest.mark.asyncio
+    async def test_atype_missing_key(self, cache: RespCache):
+        assert await cache.atype("atype_missing") is None

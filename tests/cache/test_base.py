@@ -3,7 +3,7 @@
 Per-backend tests live next to the backends they cover:
 
 * LocMemCache → ``tests/cache/test_locmem.py``
-* DatabaseCache → ``tests/cache/test_database.py`` (TBD)
+* DatabaseCache → ``tests/cache/test_database.py``
 * RESP backends (redis-py / valkey-py / valkey-glide) →
   the parametrized ``cache`` fixture in ``tests/cache/``.
 """
@@ -13,6 +13,14 @@ import pytest
 from django_cachex.cache.base import BaseCachex
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
+
+
+class MockExtendedCache(BaseCachex):
+    """A cachex backend that overrides nothing, so every extension hits the default."""
+
+    def __init__(self):
+        super().__init__(params={})
+
 
 UNSUPPORTED_OPERATIONS = [
     ("keys", ("*",)),
@@ -51,13 +59,6 @@ class TestBaseCachexUnsupported:
 
     @pytest.fixture(autouse=True)
     def _setup_extensions(self):
-        # Create a mock class that combines BaseCache with BaseCachex
-        # to test that base extensions raise NotSupportedError
-
-        class MockExtendedCache(BaseCachex):
-            def __init__(self):
-                super().__init__(params={})
-
         self.cache = MockExtendedCache()
 
     @pytest.mark.parametrize(
@@ -81,10 +82,6 @@ class TestBaseCachexSetFlags:
 
     @pytest.fixture(autouse=True)
     def _setup(self):
-        class MockExtendedCache(BaseCachex):
-            def __init__(self):
-                super().__init__(params={})
-
         self.cache = MockExtendedCache()
 
     @pytest.mark.parametrize("flag", ["nx", "xx", "get"])
@@ -128,14 +125,10 @@ class TestBaseCachexType:
         assert cache.type("present") == KeyType.STRING
 
     def test_missing_key_reports_none(self, cache: KeysOnlyCache):
-        # Regression: the default returned STRING for every key, including
-        # ones that don't exist, contradicting the ``KeyType | None`` return.
         assert cache.type("absent") is None
 
     @pytest.mark.asyncio
     async def test_atype_matches_type(self, cache: KeysOnlyCache):
-        # Regression: the async twin raised NotSupportedError while the sync
-        # one answered.
         assert await cache.atype("present") == KeyType.STRING
         assert await cache.atype("absent") is None
 
@@ -148,7 +141,6 @@ class TestBaseCachexScan:
         return KeysOnlyCache({f"k{i}": i for i in range(5)})
 
     def test_explicit_count_zero_is_honored(self, cache: KeysOnlyCache):
-        # Regression: ``count = count or 100`` turned an explicit 0 into 100.
         next_cursor, keys = cache.scan(count=0)
         assert keys == []
         assert next_cursor == 0
@@ -164,7 +156,5 @@ class TestBaseCachexScan:
         assert next_cursor == 2
 
     def test_key_type_filter_is_applied(self, cache: KeysOnlyCache):
-        # Regression: ``key_type`` was accepted and ignored, so the admin's Type
-        # filter was a no-op here. Every key is opaque, so only STRING matches.
         assert cache.scan(key_type="string")[1] == ["k0", "k1", "k2", "k3", "k4"]
         assert cache.scan(key_type="hash")[1] == []

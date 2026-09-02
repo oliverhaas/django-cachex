@@ -35,46 +35,36 @@ class TestListOperations:
     def test_lpop(self, cache: RespCache):
         cache.rpush("mylist4", "a", "b", "c")
 
-        # Pop single element from head
         result = cache.lpop("mylist4")
         assert result == "a"
 
-        # Pop multiple elements
         result = cache.lpop("mylist4", count=2)
         assert result == ["b", "c"]
 
-        # Pop from empty list
         result = cache.lpop("mylist4")
         assert result is None
 
     def test_rpop(self, cache: RespCache):
         cache.rpush("mylist5", "a", "b", "c")
 
-        # Pop single element from tail
         result = cache.rpop("mylist5")
         assert result == "c"
 
-        # Pop multiple elements
         result = cache.rpop("mylist5", count=2)
         assert result == ["b", "a"]
 
-        # Pop from empty list
         result = cache.rpop("mylist5")
         assert result is None
 
     def test_lrange(self, cache: RespCache):
         cache.rpush("mylist6", "a", "b", "c", "d", "e")
 
-        # Get all elements
         assert cache.lrange("mylist6", 0, -1) == ["a", "b", "c", "d", "e"]
 
-        # Get first 3
         assert cache.lrange("mylist6", 0, 2) == ["a", "b", "c"]
 
-        # Get last 2
         assert cache.lrange("mylist6", -2, -1) == ["d", "e"]
 
-        # Empty range
         assert cache.lrange("nonexistent", 0, -1) == []
 
     def test_lindex(self, cache: RespCache):
@@ -133,17 +123,14 @@ class TestListOperations:
     def test_linsert(self, cache: RespCache):
         cache.rpush("mylist14", "a", "c")
 
-        # Insert before
         length = cache.linsert("mylist14", "BEFORE", "c", "b")
         assert length == 3
         assert cache.lrange("mylist14", 0, -1) == ["a", "b", "c"]
 
-        # Insert after
         length = cache.linsert("mylist14", "AFTER", "c", "d")
         assert length == 4
         assert cache.lrange("mylist14", 0, -1) == ["a", "b", "c", "d"]
 
-        # Pivot not found
         length = cache.linsert("mylist14", "BEFORE", "z", "x")
         assert length == -1
 
@@ -169,10 +156,8 @@ class TestListOperations:
     def test_lpos_basic(self, cache: RespCache):
         cache.rpush("mylist_lpos", "a", "b", "c", "b", "d")
 
-        # Find first occurrence
         assert cache.lpos("mylist_lpos", "b") == 1
 
-        # Element not found
         assert cache.lpos("mylist_lpos", "z") is None
 
     def test_lpos_with_rank(self, cache: RespCache):
@@ -187,11 +172,9 @@ class TestListOperations:
     def test_lpos_with_count(self, cache: RespCache):
         cache.rpush("mylist_lpos3", "a", "b", "c", "b", "d", "b")
 
-        # Find all occurrences
         result = cache.lpos("mylist_lpos3", "b", count=0)
         assert result == [1, 3, 5]
 
-        # Find first 2 occurrences
         result = cache.lpos("mylist_lpos3", "b", count=2)
         assert result == [1, 3]
 
@@ -200,7 +183,6 @@ class TestListOperations:
         cache.rpush("{list}src", "a", "b", "c")
         cache.rpush("{list}dst", "x", "y")
 
-        # Move from src LEFT to dst RIGHT
         result = cache.lmove("{list}src", "{list}dst", "LEFT", "RIGHT")
         assert result == "a"
 

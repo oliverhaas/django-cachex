@@ -178,7 +178,6 @@ class _RespPipelineCommandsProtocol(Protocol):
         nx: bool = False,
         xx: bool = False,
         ch: bool = False,
-        incr: bool = False,
         gt: bool = False,
         lt: bool = False,
     ) -> Any: ...
@@ -200,7 +199,6 @@ class _RespPipelineCommandsProtocol(Protocol):
         start: int,
         end: int,
         *,
-        desc: bool = False,
         withscores: bool = False,
     ) -> Any: ...
     def zrevrange(
@@ -369,6 +367,10 @@ class RespAdapterProtocol(Protocol):
     therefore shadowed and never executed at runtime.
     """
 
+    # True when the driver runs every command over one shared connection, so a
+    # blocking read holds up everything else issued while it waits.
+    multiplexed: bool = False
+
     def __init__(self, servers: list[str], **options: Any) -> None: ...
 
     # Private-ish stampede helpers, called by ``RespCache`` to resolve
@@ -381,7 +383,6 @@ class RespAdapterProtocol(Protocol):
     ) -> int | None: ...
 
     def get_client(self, key: str | None = None, *, write: bool = False) -> Any: ...
-    async def get_async_client(self, key: str | None = None, *, write: bool = False) -> Any: ...
     def add(
         self,
         key: str,

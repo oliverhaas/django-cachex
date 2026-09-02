@@ -4,6 +4,11 @@ import threading
 from typing import TYPE_CHECKING
 
 import pytest
+from redis.exceptions import LockError as RedisLockError
+from valkey.exceptions import LockError as ValkeyLockError
+
+from django_cachex.exceptions import NotSupportedError
+from django_cachex.lock import LockError
 
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
@@ -32,8 +37,6 @@ def _skip_cluster_lock_tests(request: pytest.FixtureRequest) -> None:
 
 
 class TestBasicLockOperations:
-    """Tests for basic lock acquisition and release."""
-
     def test_acquire_and_release_blocking_lock(self, cache: RespCache):
         resource_lock = cache.lock("resource_a")
         assert resource_lock.acquire(blocking=True) is True
@@ -73,8 +76,6 @@ class TestBasicLockOperations:
 
 
 class TestLockExtend:
-    """Tests for extending the TTL of a held lock."""
-
     def test_extend_increases_ttl(self, cache: RespCache):
         lock = cache.lock("extend_resource", lease=2)
         assert lock.acquire() is True
@@ -92,14 +93,7 @@ class TestLockExtend:
 
 
 class TestLockRelease:
-    """Tests for the release contract."""
-
     def test_double_release_raises(self, cache: RespCache):
-        from redis.exceptions import LockError as RedisLockError
-        from valkey.exceptions import LockError as ValkeyLockError
-
-        from django_cachex.lock import LockError
-
         lock = cache.lock("dbl_release_resource", lease=5)
         lock.acquire()
         lock.release()
@@ -111,8 +105,6 @@ class TestLockRelease:
 
 
 class TestCrossThreadLockRelease:
-    """Tests for releasing locks from different threads."""
-
     def test_release_lock_from_different_thread(self, cache: RespCache):
         shared_lock = cache.lock("shared_resource", thread_local=False)
         assert shared_lock.acquire(blocking=True) is True
@@ -128,7 +120,7 @@ class TestCrossThreadLockRelease:
 
 
 class TestClusterLockRejection:
-    """``RespClusterCache.lock``/``alock`` rejects cluster mode up front (I9)."""
+    """``RespClusterCache.lock``/``alock`` rejects cluster mode up front."""
 
     cluster_supported = True
 
@@ -138,8 +130,6 @@ class TestClusterLockRejection:
         client_class: str,
         sentinel_mode: str | bool,
     ):
-        from django_cachex.exceptions import NotSupportedError
-
         if client_class != "cluster" or sentinel_mode:
             pytest.skip("rejection contract only applies to non-sentinel cluster mode")
         with pytest.raises(NotSupportedError):
@@ -152,8 +142,6 @@ class TestClusterLockRejection:
         client_class: str,
         sentinel_mode: str | bool,
     ):
-        from django_cachex.exceptions import NotSupportedError
-
         if client_class != "cluster" or sentinel_mode:
             pytest.skip("rejection contract only applies to non-sentinel cluster mode")
         with pytest.raises(NotSupportedError):

@@ -7,6 +7,7 @@ for Django's builtin Redis backend (django.core.cache.backends.redis.RedisCache)
 import pickle
 from typing import TYPE_CHECKING
 
+import redis
 from django.core.cache import caches
 from django.test import override_settings
 
@@ -19,63 +20,56 @@ class TestDjangoStyleOptions:
     """Test that Django-style configuration OPTIONS work."""
 
     def test_db_option(self, redis_container: RedisContainerInfo):
-        host = redis_container.host
-        port = redis_container.port
-
-        # Django-style: db in OPTIONS
+        """``db`` in OPTIONS, Django-style, with no db in the URL."""
         caches_config = {
             "default": {
                 "BACKEND": "django_cachex.cache.RedisCache",
-                "LOCATION": f"redis://{host}:{port}",  # No db in URL
-                "OPTIONS": {
-                    "db": 2,
-                },
+                "LOCATION": f"redis://{redis_container.host}:{redis_container.port}",
+                "OPTIONS": {"db": 2},
             },
         }
 
         with override_settings(CACHES=caches_config):
             cache = caches["default"]
-            # Test basic operation to verify connection works
+            pool = cache.adapter._get_connection_pool(write=True)
+
+            assert pool.connection_kwargs["db"] == 2
             cache.set("test_db_option", "value")
             assert cache.get("test_db_option") == "value"
             cache.delete("test_db_option")
 
     def test_pool_class_option(self, redis_container: RedisContainerInfo):
-        host = redis_container.host
-        port = redis_container.port
-
         caches_config = {
             "default": {
                 "BACKEND": "django_cachex.cache.RedisCache",
-                "LOCATION": f"redis://{host}:{port}/1",
-                "OPTIONS": {
-                    "pool_class": "redis.connection.ConnectionPool",
-                },
+                "LOCATION": f"redis://{redis_container.host}:{redis_container.port}/1",
+                "OPTIONS": {"pool_class": "redis.connection.BlockingConnectionPool"},
             },
         }
 
         with override_settings(CACHES=caches_config):
             cache = caches["default"]
+            pool = cache.adapter._get_connection_pool(write=True)
+
+            assert isinstance(pool, redis.BlockingConnectionPool)
             cache.set("test_pool_class", "value")
             assert cache.get("test_pool_class") == "value"
             cache.delete("test_pool_class")
 
     def test_parser_class_option(self, redis_container: RedisContainerInfo):
-        host = redis_container.host
-        port = redis_container.port
-
         caches_config = {
             "default": {
                 "BACKEND": "django_cachex.cache.RedisCache",
-                "LOCATION": f"redis://{host}:{port}/1",
-                "OPTIONS": {
-                    "parser_class": "redis.connection.DefaultParser",
-                },
+                "LOCATION": f"redis://{redis_container.host}:{redis_container.port}/1",
+                "OPTIONS": {"parser_class": "redis.connection._HiredisParser"},
             },
         }
 
         with override_settings(CACHES=caches_config):
             cache = caches["default"]
+            pool = cache.adapter._get_connection_pool(write=True)
+
+            assert pool.connection_kwargs["parser_class"] is redis.connection._HiredisParser
             cache.set("test_parser_class", "value")
             assert cache.get("test_parser_class") == "value"
             cache.delete("test_parser_class")

@@ -535,6 +535,9 @@ class RespSemaphore:
             if self._token == token:
                 self._token = None
 
+    def _lease_ms(self) -> int:
+        return max(1, int(self.lease * 1000))
+
     def _warn_if_not_owned(self, result: object) -> None:
         """Report a RELEASE that found no claim: the lease expired mid-work."""
         # Logged, not raised: ``release()`` runs from ``__exit__``, so raising
@@ -557,7 +560,7 @@ class RespSemaphore:
         if timeout is None:
             timeout = self.timeout
         token = self._claim()
-        lease_ms = max(1, int(self.lease * 1000))
+        lease_ms = self._lease_ms()
         deadline = None if timeout is None else time.monotonic() + timeout
         backoff_ms = 10
 
@@ -624,6 +627,7 @@ class RespSemaphore:
             self._claims_key,
             self._queue_key,
             token,
+            str(self._lease_ms()),
         )
         self._clear_token(token)
         self._warn_if_not_owned(result)
@@ -658,7 +662,7 @@ class RespSemaphore:
         # ``_claim`` holds a plain lock across no awaits, so the sync and async
         # paths can share it without blocking the loop.
         token = self._claim()
-        lease_ms = max(1, int(self.lease * 1000))
+        lease_ms = self._lease_ms()
         loop = asyncio.get_running_loop()
         deadline = None if timeout is None else loop.time() + timeout
         backoff_ms = 10
@@ -725,6 +729,7 @@ class RespSemaphore:
             self._claims_key,
             self._queue_key,
             token,
+            str(self._lease_ms()),
         )
         self._clear_token(token)
         self._warn_if_not_owned(result)

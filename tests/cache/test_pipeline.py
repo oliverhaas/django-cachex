@@ -1,20 +1,21 @@
 """Tests for pipeline operations."""
 
+import time
 import warnings
 from typing import TYPE_CHECKING
 
 import pytest
+
+from django_cachex.adapters.pipeline import AsyncPipeline, Pipeline
+from django_cachex.exceptions import NotSupportedError
+from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
 
 
 class TestPipelineBasic:
-    """Test basic pipeline functionality."""
-
     def test_pipeline_returns_pipeline_object(self, cache: RespCache):
-        from django_cachex.adapters.pipeline import Pipeline
-
         pipe = cache.pipeline()
         assert isinstance(pipe, Pipeline)
 
@@ -51,8 +52,6 @@ class TestPipelineBasic:
         sentinel_mode: str | bool,
     ):
         if client_class == "cluster" and not sentinel_mode:
-            from django_cachex.exceptions import NotSupportedError
-
             with pytest.raises(NotSupportedError):
                 cache.pipeline(transaction=True)
             return
@@ -71,8 +70,6 @@ class TestPipelineBasic:
 
 
 class TestPipelineCacheOperations:
-    """Test standard cache operations in pipeline."""
-
     def test_pipeline_get_set(self, cache: RespCache):
         pipe = cache.pipeline()
         pipe.set("key1", "value1")
@@ -143,8 +140,6 @@ class TestPipelineCacheOperations:
 
 
 class TestPipelineListOperations:
-    """Test list operations in pipeline."""
-
     def test_pipeline_lpush_rpush(self, cache: RespCache):
         pipe = cache.pipeline()
         pipe.rpush("pipe_list", "a", "b", "c")
@@ -249,8 +244,6 @@ class TestPipelineListOperations:
 
 
 class TestPipelineSetOperations:
-    """Test set operations in pipeline."""
-
     def test_pipeline_sadd_smembers(self, cache: RespCache):
         pipe = cache.pipeline()
         pipe.sadd("pipe_set", "a", "b", "c")
@@ -284,9 +277,8 @@ class TestPipelineSetOperations:
         assert results[0] == 2
         assert results[1] == {"a"}
 
-    def test_pipeline_sdiff_sinter_sunion(self, cache: RespCache, client_class: str):
-        # Redis Cluster doesn't support sdiff/sinter/sunion in pipeline mode
-        if client_class == "cluster":
+    def test_pipeline_sdiff_sinter_sunion(self, cache: RespCache, client_class: str, sentinel_mode: str | bool):
+        if client_class == "cluster" and not sentinel_mode:
             pytest.skip("sdiff/sinter/sunion blocked in cluster pipeline mode")
 
         # Use hash tags for cluster compatibility
@@ -323,9 +315,8 @@ class TestPipelineSetOperations:
 
         assert results[0] == [True, False, True]
 
-    def test_pipeline_smove(self, cache: RespCache, client_class: str):
-        # Redis Cluster doesn't support smove in pipeline mode
-        if client_class == "cluster":
+    def test_pipeline_smove(self, cache: RespCache, client_class: str, sentinel_mode: str | bool):
+        if client_class == "cluster" and not sentinel_mode:
             pytest.skip("smove blocked in cluster pipeline mode")
 
         # Use hash tags for cluster compatibility
@@ -344,8 +335,6 @@ class TestPipelineSetOperations:
 
 
 class TestPipelineHashOperations:
-    """Test hash operations in pipeline."""
-
     def test_pipeline_hset_hget(self, cache: RespCache):
         pipe = cache.pipeline()
         pipe.hset("pipe_hash", "field1", "value1")
@@ -440,8 +429,6 @@ class TestPipelineHashOperations:
 
 
 class TestPipelineSortedSetOperations:
-    """Test sorted set operations in pipeline."""
-
     def test_pipeline_zadd_zrange(self, cache: RespCache):
         pipe = cache.pipeline()
         pipe.zadd("pipe_zset", {"a": 1, "b": 2, "c": 3})
@@ -558,8 +545,6 @@ class TestPipelineSortedSetOperations:
 
 
 class TestPipelineVersionSupport:
-    """Test version parameter support in pipeline."""
-
     def test_pipeline_with_version(self, cache: RespCache):
         pipe = cache.pipeline(version=1)
         pipe.set("versioned_key", "v1_value")
@@ -587,7 +572,6 @@ class TestPipelineVersionSupport:
         assert results[2] == "value1"
         assert results[3] == "value2"
 
-        # Verify different versions
         assert cache.get("key_v1", version=1) == "value1"
         assert cache.get("key_v1", version=2) is None
         assert cache.get("key_v2", version=1) is None
@@ -595,8 +579,6 @@ class TestPipelineVersionSupport:
 
 
 class TestPipelineMixedOperations:
-    """Test mixing different operation types in a single pipeline."""
-
     def test_mixed_data_structures(self, cache: RespCache):
         pipe = cache.pipeline()
         # Cache operations
@@ -634,9 +616,7 @@ class TestPipelineMixedOperations:
         assert results[9] == ["member"]
 
 
-class TestPipelineMissingOperations:
-    """Test operations that were missing from initial coverage."""
-
+class TestPipelineSetFlagsAndStoreOperations:
     def test_pipeline_set_with_timeout(self, cache: RespCache):
         pipe = cache.pipeline()
         pipe.set("timeout_key", "value", timeout=100)
@@ -647,7 +627,6 @@ class TestPipelineMissingOperations:
         assert 0 < results[1] <= 100
 
     def test_pipeline_set_nx(self, cache: RespCache):
-        """Test set with nx (only if not exists)."""
         cache.set("nx_existing", "original")
 
         pipe = cache.pipeline()
@@ -657,13 +636,12 @@ class TestPipelineMissingOperations:
         pipe.get("nx_new")
         results = pipe.execute()
 
-        assert results[0] is None  # nx failed, key existed
+        assert results[0] is False  # nx failed, key existed
         assert results[1] is True  # nx succeeded
         assert results[2] == "original"  # unchanged
         assert results[3] == "new_value"
 
     def test_pipeline_set_xx(self, cache: RespCache):
-        """Test set with xx (only if exists)."""
         cache.set("xx_existing", "original")
 
         pipe = cache.pipeline()
@@ -674,7 +652,7 @@ class TestPipelineMissingOperations:
         results = pipe.execute()
 
         assert results[0] is True  # xx succeeded
-        assert results[1] is None  # xx failed, key didn't exist
+        assert results[1] is False  # xx failed, key didn't exist
         assert results[2] == "updated"
         assert results[3] is False  # key wasn't created
 
@@ -690,9 +668,8 @@ class TestPipelineMissingOperations:
         assert len(results[1]) == 2
         assert all(m in {"a", "b", "c"} for m in results[1])
 
-    def test_pipeline_sdiffstore(self, cache: RespCache, client_class: str):
-        # Redis Cluster doesn't support sdiffstore in pipeline mode
-        if client_class == "cluster":
+    def test_pipeline_sdiffstore(self, cache: RespCache, client_class: str, sentinel_mode: str | bool):
+        if client_class == "cluster" and not sentinel_mode:
             pytest.skip("sdiffstore blocked in cluster pipeline mode")
 
         # Use hash tags for cluster compatibility
@@ -707,9 +684,8 @@ class TestPipelineMissingOperations:
         assert results[0] == 1  # Count of elements in result
         assert results[1] == {"a"}
 
-    def test_pipeline_sinterstore(self, cache: RespCache, client_class: str):
-        # Redis Cluster doesn't support sinterstore in pipeline mode
-        if client_class == "cluster":
+    def test_pipeline_sinterstore(self, cache: RespCache, client_class: str, sentinel_mode: str | bool):
+        if client_class == "cluster" and not sentinel_mode:
             pytest.skip("sinterstore blocked in cluster pipeline mode")
 
         # Use hash tags for cluster compatibility
@@ -724,9 +700,8 @@ class TestPipelineMissingOperations:
         assert results[0] == 2  # Count of elements in result
         assert results[1] == {"b", "c"}
 
-    def test_pipeline_sunionstore(self, cache: RespCache, client_class: str):
-        # Redis Cluster doesn't support sunionstore in pipeline mode
-        if client_class == "cluster":
+    def test_pipeline_sunionstore(self, cache: RespCache, client_class: str, sentinel_mode: str | bool):
+        if client_class == "cluster" and not sentinel_mode:
             pytest.skip("sunionstore blocked in cluster pipeline mode")
 
         # Use hash tags for cluster compatibility
@@ -756,10 +731,7 @@ class TestPipelineMissingOperations:
 
 
 class TestPipelineCommandCombinations:
-    """Test various combinations of commands to verify chaining works correctly."""
-
     def test_combination_counter_pattern(self, cache: RespCache):
-        """Test counter pattern: set initial, incr multiple times, get final."""
         pipe = cache.pipeline()
         pipe.set("{combo1}counter", 0)
         pipe.incr("{combo1}counter")
@@ -829,8 +801,6 @@ class TestPipelineCommandCombinations:
 
 
 class TestPipelineStreamOps:
-    """Test pipeline stream operations."""
-
     def test_pipeline_xpending_range(self, cache: RespCache):
         """Pipeline xpending with range params must use xpending_range."""
         cache.xadd("pipe_pend", {"msg": "test"})
@@ -846,8 +816,6 @@ class TestPipelineStreamOps:
 
 
 class TestPipelineReuse:
-    """Test that pipelines can be reused after execute() and context manager exit."""
-
     def test_multiple_execute_calls(self, cache: RespCache):
         """Pipeline can be executed multiple times without decoder misalignment."""
         pipe = cache.pipeline()
@@ -894,7 +862,6 @@ class TestPipelineXreadKeyUnprefixing:
     """Test that pipeline xread/xreadgroup return user-facing keys, not prefixed ones."""
 
     def test_pipeline_xread_returns_original_keys(self, cache: RespCache):
-        """xread in pipeline should return unprefixed stream names."""
         cache.xadd("pipe_xread_stream", {"msg": "hello"})
 
         pipe = cache.pipeline()
@@ -907,7 +874,6 @@ class TestPipelineXreadKeyUnprefixing:
         assert len(results[0]["pipe_xread_stream"]) == 1
 
     def test_pipeline_xreadgroup_returns_original_keys(self, cache: RespCache):
-        """xreadgroup in pipeline should return unprefixed stream names."""
         cache.xadd("pipe_xrg_stream", {"msg": "world"})
         cache.xgroup_create("pipe_xrg_stream", "pipe_grp", entry_id="0")
 
@@ -921,14 +887,7 @@ class TestPipelineXreadKeyUnprefixing:
 
 
 class TestPipelineNoSpuriousWarnings:
-    """Ensure pipeline() does not emit unexpected warnings."""
-
     def test_default_pipeline_no_warnings(self, cache: RespCache):
-        """Creating a pipeline with default args should not emit warnings.
-
-        Regression: cluster pipelines warned about transactions on every call,
-        even when the user never asked for transactions.
-        """
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             pipe = cache.pipeline()
@@ -941,8 +900,6 @@ class TestAsyncPipeline:
 
     @pytest.mark.asyncio
     async def test_apipeline_returns_async_pipeline(self, cache: RespCache):
-        from django_cachex.adapters.pipeline import AsyncPipeline
-
         pipe = await cache.apipeline()
         assert isinstance(pipe, AsyncPipeline)
 
@@ -978,15 +935,12 @@ class TestAsyncPipeline:
 
     @pytest.mark.asyncio
     async def test_apipeline_sync_with_raises_type_error_on_enter(self, cache: RespCache):
-        # Regression: sync ``with`` only failed at __exit__, after the block ran.
         pipe = await cache.apipeline()
         with pytest.raises(TypeError, match="async with"):
             pipe.__enter__()
 
     @pytest.mark.asyncio
     async def test_apipeline_failed_execute_does_not_leak_decoders(self, cache: RespCache):
-        # Regression: a failed execute() left stale decoders behind, which
-        # misaligned against the batch queued next on the same wrapper.
         pipe = await cache.apipeline()
         pipe.set("adecoder_leak", "v1")
         real_adapter = pipe._pipeline_adapter
@@ -1012,8 +966,6 @@ class TestPipelineErrorRecovery:
     """The wrapper stays usable after a failed execute()."""
 
     def test_pipeline_failed_execute_does_not_leak_decoders(self, cache: RespCache):
-        # Regression: a failed execute() left stale decoders behind, which
-        # misaligned against the batch queued next on the same wrapper.
         pipe = cache.pipeline()
         pipe.set("decoder_leak", "v1")
         real_adapter = pipe._pipeline_adapter
@@ -1039,8 +991,6 @@ class TestPipelineSetTimeoutSemantics:
     """``pipe.set()`` must resolve timeouts exactly like ``cache.set()``."""
 
     def test_default_timeout_sentinel_applies_backend_timeout(self, cache: RespCache, monkeypatch):
-        # Regression: pipe.set() defaulted to timeout=None and stored the key
-        # forever, while cache.set() applies the backend's TIMEOUT.
         monkeypatch.setattr(cache, "default_timeout", 123)
 
         pipe = cache.pipeline()
@@ -1063,8 +1013,6 @@ class TestPipelineSetTimeoutSemantics:
         assert results[1] is None
 
     def test_negative_timeout_deletes_instead_of_erroring(self, cache: RespCache):
-        # Regression: a negative timeout was passed through as ``EX -1``, which
-        # the server rejects and which aborts the whole batch.
         cache.set("pipe_neg_to", "old")
 
         pipe = cache.pipeline()
@@ -1076,7 +1024,6 @@ class TestPipelineSetTimeoutSemantics:
         assert results[1] is False
 
     def test_float_timeout_is_truncated(self, cache: RespCache):
-        # Regression: a float reached redis-py's validation and raised DataError.
         pipe = cache.pipeline()
         pipe.set("pipe_float_trunc", "value", 0.5)
         pipe.exists("pipe_float_trunc")
@@ -1090,8 +1037,6 @@ class TestPipelineSetTimeoutSemantics:
         assert 0 < results[3] <= 100
 
     def test_zero_timeout_reports_success_for_absent_key(self, cache: RespCache):
-        # Regression: the zero-timeout branch returned bool(DEL count), so a
-        # write to a key that did not exist yet looked like a failure.
         pipe = cache.pipeline()
         pipe.set("pipe_zero_absent", "value", 0)
         pipe.exists("pipe_zero_absent")
@@ -1121,8 +1066,6 @@ class TestPipelineTtlNormalization:
     """``ttl``/``pttl``/``expiretime`` report "no expiry" as None, like the cache does."""
 
     def test_persistent_key_reports_none(self, cache: RespCache):
-        # Regression: the raw -1 sentinel leaked out, so ``if result is None``
-        # never fired and a persistent key looked nearly expired.
         cache.set("pipe_ttl_persist", "value", timeout=None)
 
         pipe = cache.pipeline()
@@ -1147,12 +1090,10 @@ class TestPipelineTtlNormalization:
 class TestPipelineRenameResult:
     """RENAME reports a driver-independent bool."""
 
-    def test_rename_returns_true(self, cache: RespCache, client_class: str):
-        if client_class == "cluster":
+    def test_rename_returns_true(self, cache: RespCache, client_class: str, sentinel_mode: str | bool):
+        if client_class == "cluster" and not sentinel_mode:
             pytest.skip("rename blocked in cluster pipeline mode")
 
-        # Regression: the raw reply leaked through, so ``results[i] is True``
-        # held on redis-py/valkey-py but not on glide (which yields "OK").
         cache.set("{piperen}src", "value")
 
         pipe = cache.pipeline()
@@ -1168,7 +1109,6 @@ class TestPipelineStreamResultParity:
     """Stream replies decode to the same shapes as the non-pipelined path."""
 
     def test_xclaim_justid_returns_str_ids(self, cache: RespCache):
-        # Regression: justid results kept the driver's raw bytes entry IDs.
         cache.xadd("pipe_claim_jid", {"msg": "test"})
         cache.xgroup_create("pipe_claim_jid", "grp", entry_id="0")
         entries = cache.xreadgroup("grp", "c1", {"pipe_claim_jid": ">"})
@@ -1181,43 +1121,184 @@ class TestPipelineStreamResultParity:
         assert results[0] == [entry_id]
         assert all(isinstance(claimed, str) for claimed in results[0])
 
-    def test_xpending_rejects_filters_without_a_range(self, cache: RespCache):
-        # Regression: consumer/idle were silently dropped and the unfiltered
-        # summary form was queued instead.
+    def test_xpending_rejects_range_and_filters_without_count(self, cache: RespCache):
         cache.xadd("pipe_pend_guard", {"msg": "test"})
         cache.xgroup_create("pipe_pend_guard", "grp", entry_id="0")
 
         pipe = cache.pipeline()
-        with pytest.raises(ValueError, match="start, end and count"):
-            pipe.xpending("pipe_pend_guard", "grp", idle=1000)
-        with pytest.raises(ValueError, match="start, end and count"):
-            pipe.xpending("pipe_pend_guard", "grp", consumer="c1")
+        for kwargs in ({"idle": 1000}, {"consumer": "c1"}, {"start": "-"}, {"end": "+"}):
+            with pytest.raises(ValueError, match="requires count"):
+                pipe.xpending("pipe_pend_guard", "grp", **kwargs)
+
+    def test_xpending_takes_count_without_a_range(self, cache: RespCache):
+        cache.xadd("pipe_pend_count", {"msg": "test"})
+        cache.xgroup_create("pipe_pend_count", "grp", entry_id="0")
+        cache.xreadgroup("grp", "c1", {"pipe_pend_count": ">"})
+
+        pipe = cache.pipeline()
+        pipe.xpending("pipe_pend_count", "grp", count=10)
+        results = pipe.execute()
+
+        assert isinstance(results[0], list)
+        assert len(results[0]) == 1
 
 
-def _drivers_loaded_by(code: str) -> str:
-    import subprocess
-    import sys
+class TestPipelineSetImmediateExpiryWithFlags:
+    """A non-positive timeout must honour nx/xx the way ``set_with_flags`` does."""
 
-    probe = f"{code}; import sys; print([m for m in ('redis', 'valkey', 'glide') if m in sys.modules])"
-    proc = subprocess.run(  # noqa: S603 (args are sys.executable + a constant)
-        [sys.executable, "-c", probe],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return proc.stdout.strip()
+    @pytest.mark.parametrize("flag", ["nx", "xx"])
+    @pytest.mark.parametrize("preexisting", [True, False], ids=["existing", "absent"])
+    def test_matches_cache_set(self, cache: RespCache, flag: str, preexisting: bool):
+        state = "existing" if preexisting else "absent"
+        direct = f"pipe_zeroflag_direct_{flag}_{state}"
+        piped = f"pipe_zeroflag_pipe_{flag}_{state}"
+        for key in (direct, piped):
+            cache.delete(key)
+            if preexisting:
+                cache.set(key, "original")
+
+        expected = cache.set(direct, "new", 0, **{flag: True})
+
+        pipe = cache.pipeline()
+        pipe.set(piped, "new", 0, **{flag: True})
+
+        assert pipe.execute() == [expected]
+        assert cache.has_key(piped) == cache.has_key(direct)
+
+    def test_nx_leaves_an_existing_value_untouched(self, cache: RespCache):
+        cache.set("pipe_nx_zero_keep", "original")
+
+        pipe = cache.pipeline()
+        pipe.set("pipe_nx_zero_keep", "new", 0, nx=True)
+        pipe.get("pipe_nx_zero_keep")
+
+        assert pipe.execute() == [False, "original"]
+
+    def test_xx_deletes_only_a_key_that_exists(self, cache: RespCache):
+        cache.set("pipe_xx_zero_hit", "original")
+        cache.delete("pipe_xx_zero_miss")
+
+        pipe = cache.pipeline()
+        pipe.set("pipe_xx_zero_hit", "new", 0, xx=True)
+        pipe.exists("pipe_xx_zero_hit")
+        pipe.set("pipe_xx_zero_miss", "new", 0, xx=True)
+
+        assert pipe.execute() == [True, False, False]
 
 
-def test_importing_django_cachex_does_not_import_any_driver():
-    """``import django_cachex`` must not drag in redis / valkey / glide."""
-    assert _drivers_loaded_by("import django_cachex") == "[]"
+class TestPipelineStampedeExpireFamily:
+    """``pipe.expire()`` and friends buffer the timeout the way ``cache.expire()`` does."""
+
+    def test_expire_keeps_the_value_readable(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_pipe_exp", "val", timeout=300)
+
+        pipe = stampede_cache.pipeline()
+        pipe.expire("sp_pipe_exp", 30)
+
+        assert pipe.execute() == [True]
+        assert stampede_cache.get("sp_pipe_exp") == "val"
+        assert stampede_cache.ttl("sp_pipe_exp") == pytest.approx(30, abs=2)
+
+    def test_pexpire_keeps_the_value_readable(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_pipe_pexp", "val", timeout=300)
+
+        pipe = stampede_cache.pipeline()
+        pipe.pexpire("sp_pipe_pexp", 30_000)
+
+        assert pipe.execute() == [True]
+        assert stampede_cache.get("sp_pipe_pexp") == "val"
+
+    def test_expireat_keeps_the_value_readable(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_pipe_expat", "val", timeout=300)
+        when = int(time.time()) + 30
+
+        pipe = stampede_cache.pipeline()
+        pipe.expireat("sp_pipe_expat", when)
+
+        assert pipe.execute() == [True]
+        assert stampede_cache.get("sp_pipe_expat") == "val"
+        assert stampede_cache.expiretime("sp_pipe_expat") == pytest.approx(when, abs=2)
+
+    def test_pexpireat_keeps_the_value_readable(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_pipe_pexpat", "val", timeout=300)
+
+        pipe = stampede_cache.pipeline()
+        pipe.pexpireat("sp_pipe_pexpat", int(time.time() * 1000) + 30_000)
+
+        assert pipe.execute() == [True]
+        assert stampede_cache.get("sp_pipe_pexpat") == "val"
+
+    def test_expire_opts_out_of_the_buffer(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_pipe_exp_raw", "val", timeout=300)
+
+        pipe = stampede_cache.pipeline()
+        pipe.expire("sp_pipe_exp_raw", 30, stampede_prevention=False)
+        pipe.execute()
+
+        assert stampede_cache.ttl("sp_pipe_exp_raw", stampede_prevention=False) == pytest.approx(30, abs=2)
 
 
-def test_importing_django_cachex_cache_does_not_import_any_driver():
-    """Naming a LocMem or Database BACKEND must not drag in a driver."""
-    assert _drivers_loaded_by("import django_cachex.cache") == "[]"
-    assert _drivers_loaded_by("from django_cachex.cache import LocMemCache") == "[]"
+class TestPipelineStampedeTtl:
+    """``pipe.ttl()`` reports the logical TTL ``cache.ttl()`` reports."""
+
+    def test_ttl_strips_the_buffer(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_pipe_ttl", "val", timeout=300)
+
+        pipe = stampede_cache.pipeline()
+        pipe.ttl("sp_pipe_ttl")
+        pipe.pttl("sp_pipe_ttl")
+        pipe.expiretime("sp_pipe_ttl")
+        pipe.ttl("sp_pipe_ttl", stampede_prevention=False)
+        results = pipe.execute()
+
+        assert results[0] == pytest.approx(stampede_cache.ttl("sp_pipe_ttl"), abs=2)
+        assert results[0] == pytest.approx(300, abs=2)
+        assert results[1] == pytest.approx(300_000, abs=2000)
+        assert results[2] == pytest.approx(stampede_cache.expiretime("sp_pipe_ttl"), abs=2)
+        assert results[3] == pytest.approx(360, abs=2)
+
+    def test_sentinels_pass_through(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_pipe_ttl_persist", "val", timeout=None)
+        stampede_cache.delete("sp_pipe_ttl_missing")
+
+        pipe = stampede_cache.pipeline()
+        pipe.ttl("sp_pipe_ttl_persist")
+        pipe.ttl("sp_pipe_ttl_missing")
+
+        assert pipe.execute() == [None, -2]
 
 
-def test_resolving_a_resp_backend_imports_its_driver():
-    assert _drivers_loaded_by("from django_cachex.cache import ValkeyCache") != "[]"
+class TestPipelineTypeParity:
+    """``pipe.type()`` reports the KeyType surface ``cache.type()`` reports."""
+
+    def test_type_matches_the_cache(self, cache: RespCache):
+        cache.set("pipe_type_str", "value")
+        cache.rpush("pipe_type_list", "a")
+        cache.delete("pipe_type_missing")
+
+        pipe = cache.pipeline()
+        pipe.type("pipe_type_str")
+        pipe.type("pipe_type_list")
+        pipe.type("pipe_type_missing")
+        results = pipe.execute()
+
+        assert results == [KeyType.STRING, KeyType.LIST, None]
+        assert results[0] == cache.type("pipe_type_str")
+        assert results[2] == cache.type("pipe_type_missing")
+
+    def test_unmodelled_type_becomes_unknown(self, cache: RespCache):
+        assert cache.pipeline()._decode_type(b"ReJSON-RL") is KeyType.UNKNOWN
+
+
+class TestPipelineZsetSignatureParity:
+    """``pipe.zadd``/``pipe.zrange`` take what the cache takes, and nothing more."""
+
+    def test_zadd_has_no_incr_flag(self, cache: RespCache):
+        pipe = cache.pipeline()
+        with pytest.raises(TypeError, match="incr"):
+            pipe.zadd("pipe_zadd_incr", {"a": 1.0}, incr=True)
+
+    def test_zrange_has_no_desc_flag(self, cache: RespCache):
+        pipe = cache.pipeline()
+        with pytest.raises(TypeError, match="desc"):
+            pipe.zrange("pipe_zrange_desc", 0, -1, desc=True)

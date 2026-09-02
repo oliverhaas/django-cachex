@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING, cast
 import pytest
 from django.core.cache import caches
 
+from tests.cache.support import make_cache
+
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
@@ -76,10 +78,39 @@ def test_custom_key_function(cache: RespCache, settings):
 
     keys = cache.keys("foo*")
     assert set(keys) == {"foo-bb", "foo-bc"}
-    # Verify that the prefixed-key form is what landed in the store. Going
-    # through the adapter's ``keys()`` keeps this test driver-agnostic
-    # (cluster needs target_nodes; glide doesn't expose ``.keys()`` on the
-    # raw client at all).
+    # The adapter's own ``keys()`` avoids the raw client, which needs target_nodes on cluster.
     raw_keys = cache.adapter.keys("*")
     decoded = {k.decode() if isinstance(k, bytes) else k for k in raw_keys}
     assert decoded == {"#1#foo-bc", "#1#foo-bb"}
+
+
+class TestDefaultReverseKey:
+    def test_basic_key_reversal(self):
+        cache = make_cache(key_prefix="myprefix")
+        assert cache.reverse_key(cache.make_key("mykey")) == "mykey"
+
+    def test_key_with_colons(self):
+        cache = make_cache(key_prefix="prefix")
+        assert cache.reverse_key("prefix:1:key:with:colons") == "key:with:colons"
+
+    def test_empty_prefix(self):
+        cache = make_cache()
+        assert cache.reverse_key(":1:mykey") == "mykey"
+        assert cache.reverse_key(cache.make_key("mykey")) == "mykey"
+
+    def test_colon_in_key_prefix(self):
+        cache = make_cache(key_prefix="app:v2")
+        assert cache.make_key("foo") == "app:v2:1:foo"
+        assert cache.reverse_key(cache.make_key("foo")) == "foo"
+        assert cache.reverse_key(cache.make_key("key:with:colons")) == "key:with:colons"
+
+    def test_unmatched_prefix_returned_unchanged(self):
+        # A key made by some other cache must not lose its leading segments.
+        cache = make_cache(key_prefix="myprefix")
+        assert cache.reverse_key("otherprefix:1:mykey") == "otherprefix:1:mykey"
+
+    def test_key_without_layout_returned_unchanged(self):
+        cache = make_cache(key_prefix="myprefix")
+        assert cache.reverse_key("plainkey") == "plainkey"
+        # Prefix matches but there is no version:key remainder.
+        assert cache.reverse_key("myprefix:1") == "myprefix:1"

@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from django_cachex.stampede import StampedeConfig
 
 from django_cachex.script import ScriptHelpers
+from django_cachex.types import KeyType
 
 # Alias for the ``set`` builtin shadowed by the ``set`` method (PEP 649
 # defers annotations at runtime, but type checkers still resolve them in
@@ -56,7 +57,6 @@ class Pipeline:
         self._decoders: list[Callable[[Any], Any]] = []
 
     def __enter__(self) -> Self:
-        """Enter context manager."""
         return self
 
     def __exit__(self, *args: object) -> None:
@@ -83,18 +83,21 @@ class Pipeline:
     # -------------------------------------------------------------------------
 
     def _noop(self, value: Any) -> Any:
-        """Return value unchanged (for int, bool, etc.)."""
         return value
 
-    def _normalize_ttl(self, value: int) -> int | None:
-        """Normalize a TTL/PTTL/EXPIRETIME reply the way the non-pipelined path does.
+    def _make_ttl_decoder(
+        self,
+        stampede_prevention: bool | StampedeConfig | None,
+        *,
+        milliseconds: bool = False,
+    ) -> Callable[[int], int | None]:
+        """Build a TTL/PTTL/EXPIRETIME decoder that reports what :meth:`RespCache.ttl` reports."""
 
-        ``-1`` (key exists but has no expiry) becomes ``None``; ``-2``
-        (key missing) and positive values pass through unchanged.
-        """
-        if value == -1:
-            return None
-        return value
+        def decode(value: int) -> int | None:
+            ttl = None if value == -1 else value
+            return self._cache._logical_ttl(ttl, stampede_prevention, milliseconds=milliseconds)
+
+        return decode
 
     def _decode_ok(self, value: Any) -> bool:
         """Normalize a simple-status reply to ``bool``.
@@ -105,13 +108,9 @@ class Pipeline:
         """
         return value is True or value in ("OK", b"OK")
 
-    def _decode_set_result(self, value: Any) -> bool | None:
-        """Decode a SET reply: ``True`` on success, ``None`` on an NX/XX miss."""
-        return True if value else None
-
     def _decode_id_list(self, value: list[bytes | str] | None) -> list[str]:
         """Decode a flat list of stream entry IDs (bytes on redis-py, str on glide)."""
-        return [v.decode() if isinstance(v, bytes) else v for v in value or []]
+        return [self._decode_entry_id(v) for v in value or []]
 
     def _decode_single(self, value: bytes | None) -> Any:
         """Decode a single value, returning None if None.
@@ -122,8 +121,8 @@ class Pipeline:
             return None
         return self._cache.decode(value)
 
-    def _decode_list(self, value: list[bytes | None]) -> list[Any]:
-        """Decode a list of values."""
+    def _decode_values(self, value: Sequence[bytes | None]) -> list[Any]:
+        """Decode a flat sequence of stored values, keeping ``None`` for misses."""
         return [self._cache.decode(item) if item is not None else None for item in value]
 
     def _decode_single_or_list(self, value: bytes | list[bytes | None] | None) -> Any:
@@ -150,35 +149,29 @@ class Pipeline:
         """Decode hash field names (keys are not serialized, just bytes)."""
         return [k.decode() for k in value]
 
-    def _decode_hash_values(self, value: list[bytes | None]) -> list[Any]:
-        """Decode hash values (may contain None for missing fields)."""
-        return [self._cache.decode(v) if v is not None else None for v in value]
-
     def _decode_hash_dict(self, value: dict[bytes, bytes]) -> dict[str, Any]:
         """Decode a full hash (keys are strings, values are decoded)."""
         return {k.decode(): self._cache.decode(v) for k, v in value.items()}
-
-    def _decode_zset_members(self, value: list[bytes]) -> list[Any]:
-        """Decode sorted set members (without scores)."""
-        return [self._cache.decode(member) for member in value]
 
     def _decode_zset_with_scores(self, value: list[tuple[bytes, float]]) -> list[tuple[Any, float]]:
         """Decode sorted set members with scores."""
         return [(self._cache.decode(member), score) for member, score in value]
 
-    def _make_zset_decoder(self, *, withscores: bool) -> Callable[[list[tuple[bytes, float]]], list[Any]]:
+    def _make_zset_decoder(self, *, withscores: bool) -> Callable[[Any], list[Any]]:
         """Create decoder based on whether scores are included."""
         if withscores:
             return self._decode_zset_with_scores
-        return self._decode_zset_members  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
+        return self._decode_values
 
-    def _decode_zpop(self, value: list[tuple[bytes, float]]) -> list[tuple[Any, float]]:
-        """Decode zpopmin/zpopmax result."""
-        return [(self._cache.decode(member), score) for member, score in value]
-
-    def _decode_type(self, value: bytes | str) -> str:
-        """Decode TYPE result to string."""
-        return value.decode() if isinstance(value, bytes) else value
+    def _decode_type(self, value: bytes | str) -> KeyType | None:
+        """Decode a TYPE reply like the adapters: "none" is ``None``, an unmodelled type is ``UNKNOWN``."""
+        name = value.decode() if isinstance(value, bytes) else value
+        if name == "none":
+            return None
+        try:
+            return KeyType(name)
+        except ValueError:
+            return KeyType.UNKNOWN
 
     def _decode_entry_id(self, value: bytes | str) -> str:
         """Decode stream entry ID."""
@@ -246,27 +239,31 @@ class Pipeline:
         ``timeout`` follows the same rules as :meth:`RespCache.set`: the
         ``DEFAULT_TIMEOUT`` sentinel resolves to the backend's configured
         ``TIMEOUT``, ``None`` stores the key forever, floats are truncated to
-        whole seconds, and a non-positive timeout expires the key immediately
-        (queued as a DELETE).
+        whole seconds, and a non-positive timeout expires the key immediately.
+        Decodes to ``True`` when the write ran and ``False`` on an ``nx`` /
+        ``xx`` miss, like :meth:`RespCache.set` with those flags.
         """
-        if nx and xx:
-            raise ValueError("nx and xx are mutually exclusive")
         nkey = self._make_key(key, version)
         nvalue = self._encode(value)
         # Normalize before buffering, same order as RespCache.set()/touch().
         backend_timeout = self._cache.get_backend_timeout(timeout)
         actual_timeout = self._adapter.get_timeout_with_buffer(backend_timeout, stampede_prevention)
 
-        # timeout=0 means "expire immediately" (Django convention); queue a DELETE
-        if actual_timeout == 0:
-            self._pipeline_adapter.delete(nkey)
-            # Report the write as successful like every other set() path; the
-            # DEL count only says whether a previous value happened to exist.
-            self._decoders.append(lambda _result: True)
+        # Immediate expiry: queue the net effect of SET-with-flags followed by DEL.
+        if actual_timeout == 0 and not (nx and xx):
+            if nx:
+                # SET NX then DEL leaves the key absent either way; EXISTS tells whether SET ran.
+                self._pipeline_adapter.exists(nkey)
+                self._decoders.append(lambda result: not result)
+            else:
+                # DEL count equals the SET XX outcome; a plain SET always succeeds.
+                self._pipeline_adapter.delete(nkey)
+                self._decoders.append(bool if xx else (lambda _result: True))
             return self
 
         kwargs: dict[str, Any] = {}
-        if actual_timeout is not None:
+        # nx and xx together fall through so the driver raises its own error.
+        if actual_timeout:
             kwargs["ex"] = actual_timeout
         if nx:
             kwargs["nx"] = True
@@ -274,7 +271,7 @@ class Pipeline:
             kwargs["xx"] = True
 
         self._pipeline_adapter.set(nkey, nvalue, **kwargs)
-        self._decoders.append(self._decode_set_result)
+        self._decoders.append(bool)
         return self
 
     def get(self, key: str, version: int | None = None) -> Self:
@@ -288,7 +285,6 @@ class Pipeline:
         """Queue a DELETE command."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.delete(nkey)
-        # DEL returns count of deleted keys, convert to bool
         self._decoders.append(bool)
         return self
 
@@ -296,27 +292,44 @@ class Pipeline:
         """Queue an EXISTS command."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.exists(nkey)
-        # EXISTS returns count, convert to bool
         self._decoders.append(bool)
         return self
 
     def expire(
         self,
         key: str,
-        timeout: int,
+        timeout: int | timedelta,
         version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> Self:
-        """Queue an EXPIRE command."""
+        """Queue an EXPIRE command.
+
+        ``timeout`` is logical, exactly like the one :meth:`RespCache.expire`
+        takes: with stampede prevention active the buffer is added before the
+        command reaches the server, so later reads still find the key.
+        """
         nkey = self._make_key(key, version)
-        self._pipeline_adapter.expire(nkey, timeout)
-        self._decoders.append(self._noop)
+        self._pipeline_adapter.expire(nkey, self._cache._buffered_timeout(timeout, stampede_prevention))
+        self._decoders.append(bool)
         return self
 
-    def ttl(self, key: str, version: int | None = None) -> Self:
-        """Queue a TTL command."""
+    def ttl(
+        self,
+        key: str,
+        version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
+    ) -> Self:
+        """Queue a TTL command.
+
+        Reports the logical TTL, as :meth:`RespCache.ttl` does: with stampede
+        prevention active the buffer is subtracted. Pass
+        ``stampede_prevention=False`` for the raw stored TTL.
+        """
         nkey = self._make_key(key, version)
         self._pipeline_adapter.ttl(nkey)
-        self._decoders.append(self._normalize_ttl)
+        self._decoders.append(self._make_ttl_decoder(stampede_prevention))
         return self
 
     def incr(
@@ -350,11 +363,17 @@ class Pipeline:
         self._decoders.append(bool)
         return self
 
-    def pttl(self, key: str, version: int | None = None) -> Self:
-        """Queue a PTTL command (TTL in milliseconds)."""
+    def pttl(
+        self,
+        key: str,
+        version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
+    ) -> Self:
+        """Queue a PTTL command (TTL in milliseconds). See :meth:`ttl`."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.pttl(nkey)
-        self._decoders.append(self._normalize_ttl)
+        self._decoders.append(self._make_ttl_decoder(stampede_prevention, milliseconds=True))
         return self
 
     def expireat(
@@ -362,10 +381,16 @@ class Pipeline:
         key: str,
         when: int | datetime,
         version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> Self:
-        """Queue an EXPIREAT command (set expiry to absolute time)."""
+        """Queue an EXPIREAT command (set expiry to absolute time).
+
+        With stampede prevention active the buffer is added to ``when``, so
+        the logical deadline is the one asked for. See :meth:`expire`.
+        """
         nkey = self._make_key(key, version)
-        self._pipeline_adapter.expireat(nkey, when)
+        self._pipeline_adapter.expireat(nkey, self._cache._buffered_when(when, stampede_prevention))
         self._decoders.append(bool)
         return self
 
@@ -374,10 +399,15 @@ class Pipeline:
         key: str,
         timeout: int | timedelta,
         version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> Self:
-        """Queue a PEXPIRE command (set expiry in milliseconds)."""
+        """Queue a PEXPIRE command (set expiry in milliseconds). See :meth:`expire`."""
         nkey = self._make_key(key, version)
-        self._pipeline_adapter.pexpire(nkey, timeout)
+        self._pipeline_adapter.pexpire(
+            nkey,
+            self._cache._buffered_timeout(timeout, stampede_prevention, milliseconds=True),
+        )
         self._decoders.append(bool)
         return self
 
@@ -386,18 +416,29 @@ class Pipeline:
         key: str,
         when: int | datetime,
         version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
     ) -> Self:
-        """Queue a PEXPIREAT command (set expiry to absolute time, ms precision)."""
+        """Queue a PEXPIREAT command (absolute time, ms precision). See :meth:`expireat`."""
         nkey = self._make_key(key, version)
-        self._pipeline_adapter.pexpireat(nkey, when)
+        self._pipeline_adapter.pexpireat(
+            nkey,
+            self._cache._buffered_when(when, stampede_prevention, milliseconds=True),
+        )
         self._decoders.append(bool)
         return self
 
-    def expiretime(self, key: str, version: int | None = None) -> Self:
-        """Queue an EXPIRETIME command (get absolute expiry timestamp)."""
+    def expiretime(
+        self,
+        key: str,
+        version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
+    ) -> Self:
+        """Queue an EXPIRETIME command (absolute expiry timestamp). See :meth:`ttl`."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.expiretime(nkey)
-        self._decoders.append(self._normalize_ttl)
+        self._decoders.append(self._make_ttl_decoder(stampede_prevention))
         return self
 
     def type(self, key: str, version: int | None = None) -> Self:
@@ -455,7 +496,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         encoded_values = [self._encode(value) for value in values]
         self._pipeline_adapter.lpush(nkey, *encoded_values)
-        self._decoders.append(self._noop)  # Returns count
+        self._decoders.append(self._noop)
         return self
 
     def rpush(
@@ -468,7 +509,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         encoded_values = [self._encode(value) for value in values]
         self._pipeline_adapter.rpush(nkey, *encoded_values)
-        self._decoders.append(self._noop)  # Returns count
+        self._decoders.append(self._noop)
         return self
 
     def lpop(
@@ -505,7 +546,7 @@ class Pipeline:
         """Queue LRANGE command (get range of elements)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.lrange(nkey, start, end)
-        self._decoders.append(self._decode_list)
+        self._decoders.append(self._decode_values)
         return self
 
     def lindex(
@@ -528,7 +569,7 @@ class Pipeline:
         """Queue LLEN command (get list length)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.llen(nkey)
-        self._decoders.append(self._noop)  # Returns int
+        self._decoders.append(self._noop)
         return self
 
     def lrem(
@@ -542,7 +583,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         encoded_value = self._encode(value)
         self._pipeline_adapter.lrem(nkey, count, encoded_value)
-        self._decoders.append(self._noop)  # Returns count removed
+        self._decoders.append(self._noop)
         return self
 
     def ltrim(
@@ -555,7 +596,7 @@ class Pipeline:
         """Queue LTRIM command (trim list to range)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.ltrim(nkey, start, end)
-        self._decoders.append(self._noop)  # Returns bool
+        self._decoders.append(self._noop)
         return self
 
     def lset(
@@ -569,7 +610,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         encoded_value = self._encode(value)
         self._pipeline_adapter.lset(nkey, index, encoded_value)
-        self._decoders.append(self._noop)  # Returns bool
+        self._decoders.append(self._noop)
         return self
 
     def linsert(
@@ -585,7 +626,7 @@ class Pipeline:
         encoded_pivot = self._encode(pivot)
         encoded_value = self._encode(value)
         self._pipeline_adapter.linsert(nkey, where, encoded_pivot, encoded_value)
-        self._decoders.append(self._noop)  # Returns new length or -1
+        self._decoders.append(self._noop)
         return self
 
     def lpos(
@@ -601,7 +642,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         encoded_value = self._encode(value)
         self._pipeline_adapter.lpos(nkey, encoded_value, rank=rank, count=count, maxlen=maxlen)
-        self._decoders.append(self._noop)  # Returns int, list[int], or None
+        self._decoders.append(self._noop)
         return self
 
     def lmove(
@@ -637,7 +678,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         encoded_values = [self._encode(value) for value in values]
         self._pipeline_adapter.sadd(nkey, *encoded_values)
-        self._decoders.append(self._noop)  # Returns count added
+        self._decoders.append(self._noop)
         return self
 
     def scard(
@@ -648,7 +689,7 @@ class Pipeline:
         """Queue SCARD command (get set cardinality)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.scard(nkey)
-        self._decoders.append(self._noop)  # Returns int
+        self._decoders.append(self._noop)
         return self
 
     def sdiff(
@@ -678,7 +719,7 @@ class Pipeline:
         ndest = self._make_key(dest, dest_ver)
         nkeys = [self._make_key(key, keys_ver) for key in keys]
         self._pipeline_adapter.sdiffstore(ndest, *nkeys)
-        self._decoders.append(self._noop)  # Returns count
+        self._decoders.append(self._noop)
         return self
 
     def sinter(
@@ -708,7 +749,7 @@ class Pipeline:
         ndest = self._make_key(dest, dest_ver)
         nkeys = [self._make_key(key, keys_ver) for key in keys]
         self._pipeline_adapter.sinterstore(ndest, *nkeys)
-        self._decoders.append(self._noop)  # Returns count
+        self._decoders.append(self._noop)
         return self
 
     def sismember(
@@ -721,7 +762,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         nmember = self._encode(member)
         self._pipeline_adapter.sismember(nkey, nmember)
-        self._decoders.append(bool)  # Returns bool
+        self._decoders.append(bool)
         return self
 
     def smismember(
@@ -734,7 +775,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         encoded_members = [self._encode(member) for member in members]
         self._pipeline_adapter.smismember(nkey, *encoded_members)
-        self._decoders.append(lambda x: [bool(v) for v in x])  # Returns list[bool]
+        self._decoders.append(lambda x: [bool(v) for v in x])
         return self
 
     def smembers(
@@ -764,7 +805,7 @@ class Pipeline:
         ndestination = self._make_key(destination, dst_ver)
         nmember = self._encode(member)
         self._pipeline_adapter.smove(nsource, ndestination, nmember)
-        self._decoders.append(bool)  # Returns bool
+        self._decoders.append(bool)
         return self
 
     def spop(
@@ -788,14 +829,7 @@ class Pipeline:
         """Queue SRANDMEMBER command (get random member(s))."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.srandmember(nkey, count)
-        # Returns list when count is specified, single value otherwise
-        self._decoders.append(
-            lambda x: (
-                [self._cache.decode(item) for item in x]
-                if isinstance(x, list)
-                else (self._cache.decode(x) if x is not None else None)
-            ),
-        )
+        self._decoders.append(self._decode_single_or_list)
         return self
 
     def srem(
@@ -808,7 +842,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         nmembers = [self._encode(member) for member in members]
         self._pipeline_adapter.srem(nkey, *nmembers)
-        self._decoders.append(self._noop)  # Returns count removed
+        self._decoders.append(self._noop)
         return self
 
     def sunion(
@@ -838,7 +872,7 @@ class Pipeline:
         ndestination = self._make_key(destination, dest_ver)
         nkeys = [self._make_key(key, keys_ver) for key in keys]
         self._pipeline_adapter.sunionstore(ndestination, *nkeys)
-        self._decoders.append(self._noop)  # Returns count
+        self._decoders.append(self._noop)
         return self
 
     # -------------------------------------------------------------------------
@@ -860,7 +894,7 @@ class Pipeline:
         nmapping = {f: self._encode(v) for f, v in mapping.items()} if mapping else None
         nitems = [self._encode(v) if i % 2 else v for i, v in enumerate(items)] if items else None
         self._pipeline_adapter.hset(nkey, field, nvalue, mapping=nmapping, items=nitems)
-        self._decoders.append(self._noop)  # Returns count of fields added
+        self._decoders.append(self._noop)
         return self
 
     def hdel(
@@ -872,7 +906,7 @@ class Pipeline:
         """Queue HDEL command (delete one or more fields)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.hdel(nkey, *fields)
-        self._decoders.append(self._noop)  # Returns count deleted
+        self._decoders.append(self._noop)
         return self
 
     def hlen(
@@ -883,7 +917,7 @@ class Pipeline:
         """Queue HLEN command (get number of fields)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.hlen(nkey)
-        self._decoders.append(self._noop)  # Returns int
+        self._decoders.append(self._noop)
         return self
 
     def hkeys(
@@ -941,7 +975,7 @@ class Pipeline:
         """Queue HMGET command (get multiple field values)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.hmget(nkey, *fields)
-        self._decoders.append(self._decode_hash_values)
+        self._decoders.append(self._decode_values)
         return self
 
     def hincrby(
@@ -954,7 +988,7 @@ class Pipeline:
         """Queue HINCRBY command (increment integer field)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.hincrby(nkey, field, amount)
-        self._decoders.append(self._noop)  # Returns new value
+        self._decoders.append(self._noop)
         return self
 
     def hincrbyfloat(
@@ -967,7 +1001,7 @@ class Pipeline:
         """Queue HINCRBYFLOAT command (increment float field)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.hincrbyfloat(nkey, field, amount)
-        self._decoders.append(self._noop)  # Returns new value
+        self._decoders.append(self._noop)
         return self
 
     def hsetnx(
@@ -992,7 +1026,7 @@ class Pipeline:
         """Queue HVALS command (get all values)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.hvals(nkey)
-        self._decoders.append(lambda x: [self._cache.decode(v) for v in x])
+        self._decoders.append(self._decode_values)
         return self
 
     # -------------------------------------------------------------------------
@@ -1007,14 +1041,12 @@ class Pipeline:
         nx: bool = False,
         xx: bool = False,
         ch: bool = False,
-        incr: bool = False,
         gt: bool = False,
         lt: bool = False,
         version: int | None = None,
     ) -> Self:
         """Queue ZADD command (add members with scores)."""
         nkey = self._make_key(key, version)
-        # Encode members but NOT scores
         encoded_mapping = {self._encode(member): score for member, score in mapping.items()}
         self._pipeline_adapter.zadd(
             nkey,
@@ -1022,11 +1054,10 @@ class Pipeline:
             nx=nx,
             xx=xx,
             ch=ch,
-            incr=incr,
             gt=gt,
             lt=lt,
         )
-        self._decoders.append(self._noop)  # Returns count added
+        self._decoders.append(self._noop)
         return self
 
     def zcard(
@@ -1037,7 +1068,7 @@ class Pipeline:
         """Queue ZCARD command (get cardinality)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.zcard(nkey)
-        self._decoders.append(self._noop)  # Returns int
+        self._decoders.append(self._noop)
         return self
 
     def zcount(
@@ -1050,7 +1081,7 @@ class Pipeline:
         """Queue ZCOUNT command (count members in score range)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.zcount(nkey, min, max)
-        self._decoders.append(self._noop)  # Returns int
+        self._decoders.append(self._noop)
         return self
 
     def zincrby(
@@ -1064,7 +1095,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         encoded_value = self._encode(value)
         self._pipeline_adapter.zincrby(nkey, amount, encoded_value)
-        self._decoders.append(self._noop)  # Returns new score
+        self._decoders.append(self._noop)
         return self
 
     def zpopmax(
@@ -1076,7 +1107,7 @@ class Pipeline:
         """Queue ZPOPMAX command (pop highest scoring members)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.zpopmax(nkey, count)
-        self._decoders.append(self._decode_zpop)
+        self._decoders.append(self._decode_zset_with_scores)
         return self
 
     def zpopmin(
@@ -1088,7 +1119,7 @@ class Pipeline:
         """Queue ZPOPMIN command (pop lowest scoring members)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.zpopmin(nkey, count)
-        self._decoders.append(self._decode_zpop)
+        self._decoders.append(self._decode_zset_with_scores)
         return self
 
     def zrange(
@@ -1097,7 +1128,6 @@ class Pipeline:
         start: int,
         end: int,
         *,
-        desc: bool = False,
         withscores: bool = False,
         version: int | None = None,
     ) -> Self:
@@ -1107,7 +1137,6 @@ class Pipeline:
             nkey,
             start,
             end,
-            desc=desc,
             withscores=withscores,
         )
         self._decoders.append(self._make_zset_decoder(withscores=withscores))
@@ -1147,7 +1176,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         encoded_value = self._encode(value)
         self._pipeline_adapter.zrank(nkey, encoded_value)
-        self._decoders.append(self._noop)  # Returns int or None
+        self._decoders.append(self._noop)
         return self
 
     def zrem(
@@ -1160,7 +1189,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         encoded_values = [self._encode(value) for value in values]
         self._pipeline_adapter.zrem(nkey, *encoded_values)
-        self._decoders.append(self._noop)  # Returns count removed
+        self._decoders.append(self._noop)
         return self
 
     def zremrangebyscore(
@@ -1173,7 +1202,7 @@ class Pipeline:
         """Queue ZREMRANGEBYSCORE command (remove by score range)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.zremrangebyscore(nkey, min, max)
-        self._decoders.append(self._noop)  # Returns count removed
+        self._decoders.append(self._noop)
         return self
 
     def zremrangebyrank(
@@ -1186,7 +1215,7 @@ class Pipeline:
         """Queue ZREMRANGEBYRANK command (remove by rank range)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.zremrangebyrank(nkey, start, end)
-        self._decoders.append(self._noop)  # Returns count removed
+        self._decoders.append(self._noop)
         return self
 
     def zrevrange(
@@ -1243,7 +1272,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         encoded_value = self._encode(value)
         self._pipeline_adapter.zscore(nkey, encoded_value)
-        self._decoders.append(self._noop)  # Returns float or None
+        self._decoders.append(self._noop)
         return self
 
     def zrevrank(
@@ -1256,7 +1285,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         encoded_value = self._encode(value)
         self._pipeline_adapter.zrevrank(nkey, encoded_value)
-        self._decoders.append(self._noop)  # Returns int or None
+        self._decoders.append(self._noop)
         return self
 
     def zmscore(
@@ -1269,7 +1298,7 @@ class Pipeline:
         nkey = self._make_key(key, version)
         encoded_members = [self._encode(member) for member in members]
         self._pipeline_adapter.zmscore(nkey, encoded_members)
-        self._decoders.append(self._noop)  # Returns list[float | None]
+        self._decoders.append(self._noop)
         return self
 
     # -------------------------------------------------------------------------
@@ -1484,23 +1513,27 @@ class Pipeline:
     ) -> Self:
         """Queue XPENDING command (get pending entries info).
 
-        Passing ``start``, ``end`` and ``count`` queues the detail form; omitting
-        them queues the summary form. ``consumer`` and ``idle`` only apply to the
-        detail form, so combining them with a missing range raises ``ValueError``
-        rather than silently returning an unfiltered summary.
+        ``count`` selects the detail form, with ``start``/``end`` defaulting to
+        the full range; without it the summary form is queued. ``start``,
+        ``end``, ``consumer`` and ``idle`` only apply to the detail form, so
+        passing one without ``count`` raises ``ValueError`` rather than
+        silently returning an unfiltered summary.
         """
+        if count is None and (start is not None or end is not None or consumer is not None or idle is not None):
+            msg = "xpending() requires count when start, end, consumer or idle is given"
+            raise ValueError(msg)
         nkey = self._make_key(key, version)
-        if start is not None and end is not None and count is not None:
-            kwargs: dict[str, Any] = {}
-            if consumer is not None:
-                kwargs["consumername"] = consumer
-            if idle is not None:
-                kwargs["idle"] = idle
-            self._pipeline_adapter.xpending_range(nkey, group, min=start, max=end, count=count, **kwargs)
+        if count is not None:
+            self._pipeline_adapter.xpending_range(
+                nkey,
+                group,
+                min="-" if start is None else start,
+                max="+" if end is None else end,
+                count=count,
+                consumername=consumer,
+                idle=idle,
+            )
         else:
-            if consumer is not None or idle is not None:
-                msg = "xpending() requires start, end and count when consumer or idle is given"
-                raise ValueError(msg)
             self._pipeline_adapter.xpending(nkey, group)
         self._decoders.append(self._noop)
         return self
@@ -1666,7 +1699,6 @@ class AsyncPipeline(Pipeline):
         super().__init__(cache, pipeline_adapter, version=version)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
     async def __aenter__(self) -> Self:
-        """Enter async context manager."""
         return self
 
     async def __aexit__(self, *args: object) -> None:

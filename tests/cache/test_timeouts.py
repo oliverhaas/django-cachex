@@ -79,7 +79,6 @@ class TestSetWithTimeout:
         assert cache.get("preserve_me") == "original"
 
     def test_zero_timeout_with_xx_removes_existing_value(self, cache: RespCache):
-        # Regression: timeout=0 with xx was a no-op that left stale data behind.
         cache.set("xx_zero", "stale", timeout=None)
         result = cache.set("xx_zero", "new", timeout=0, xx=True)
         assert result is True
@@ -110,11 +109,9 @@ class TestSetWithTimeout:
         assert cache.get("get_zero") is None
 
     def test_subsecond_float_timeout_is_accepted(self, cache: RespCache):
-        # Sub-second float timeout must be accepted (not raise). Whether the
-        # key has already expired by the time we read is a race we don't
-        # assert on; ``test_zero_timeout_immediate_expiration`` covers the
-        # rounded-to-zero case.
+        # int() truncation routes a sub-second timeout to the timeout=0 path.
         cache.set("tiny_ttl", "value", timeout=0.00001)
+        assert cache.get("tiny_ttl") is None
 
 
 class TestTTLOperations:
@@ -135,11 +132,11 @@ class TestTTLOperations:
 
     def test_pttl_returns_milliseconds(self, cache: RespCache):
         cache.set("pttl_key", "data", 10)
-        assert pytest.approx(cache.pttl("pttl_key"), 10) == 10000
+        assert cache.pttl("pttl_key") == pytest.approx(10_000, abs=1000)
 
     def test_pttl_with_fractional_timeout(self, cache: RespCache):
         cache.set("half_sec", "data", 5.5)
-        assert pytest.approx(cache.pttl("half_sec"), 10) == 5500
+        assert cache.pttl("half_sec") == pytest.approx(5500, abs=1000)
 
     def test_pttl_returns_none_for_persistent(self, cache: RespCache):
         cache.set("pttl_persist", "data", timeout=None)
@@ -194,7 +191,7 @@ class TestExpireOperations:
     def test_pexpire_sets_millisecond_ttl(self, cache: RespCache):
         cache.set("pexp_key", "data", timeout=None)
         assert cache.pexpire("pexp_key", 20500) is True
-        assert pytest.approx(cache.pttl("pexp_key"), 10) == 20500
+        assert cache.pttl("pexp_key") == pytest.approx(20_500, abs=1000)
 
     def test_pexpire_on_missing_key_returns_false(self, cache: RespCache):
         assert cache.pexpire("pexp_ghost", 20500) is False
@@ -208,7 +205,7 @@ class TestExpireOperations:
         future = datetime.datetime.now() + timedelta(hours=hours)
         when = future if kind == "datetime" else int(future.timestamp())
         assert cache.expireat("exp_at", when) is True
-        assert pytest.approx(cache.ttl("exp_at"), 1) == timedelta(hours=hours).total_seconds()
+        assert cache.ttl("exp_at") == pytest.approx(timedelta(hours=hours).total_seconds(), abs=5)
 
     def test_expireat_past_time_deletes_key(self, cache: RespCache):
         cache.set("exp_at_past", "data", timeout=None)
@@ -229,7 +226,7 @@ class TestExpireOperations:
         future = datetime.datetime.now() + timedelta(hours=hours)
         when = future if kind == "datetime" else int(future.timestamp() * 1000)
         assert cache.pexpireat("pexp_at", when) is True
-        assert pytest.approx(cache.pttl("pexp_at"), 10) == timedelta(hours=hours).total_seconds() * 1000
+        assert cache.pttl("pexp_at") == pytest.approx(timedelta(hours=hours).total_seconds() * 1000, abs=5000)
 
     def test_pexpireat_past_time_deletes_key(self, cache: RespCache):
         cache.set("pexp_at_past", "data", timeout=None)
@@ -351,7 +348,6 @@ class TestAsyncSetWithTimeout:
 
     @pytest.mark.asyncio
     async def test_azero_timeout_with_xx_removes_existing_value(self, cache: RespCache):
-        # Regression: timeout=0 with xx was a no-op that left stale data behind.
         await cache.aset("axx_zero", "stale", timeout=None)
         result = await cache.aset("axx_zero", "new", timeout=0, xx=True)
         assert result is True
@@ -374,6 +370,7 @@ class TestAsyncSetWithTimeout:
     @pytest.mark.asyncio
     async def test_asubsecond_float_timeout_is_accepted(self, cache: RespCache):
         await cache.aset("atiny_ttl", "value", timeout=0.00001)
+        assert await cache.aget("atiny_ttl") is None
 
 
 class TestAsyncTimeouts:
@@ -397,12 +394,12 @@ class TestAsyncTimeouts:
     @pytest.mark.asyncio
     async def test_apttl_returns_milliseconds(self, cache: RespCache):
         cache.set("apttl_key", "data", 10)
-        assert pytest.approx(await cache.apttl("apttl_key"), 10) == 10000
+        assert await cache.apttl("apttl_key") == pytest.approx(10_000, abs=1000)
 
     @pytest.mark.asyncio
     async def test_apttl_with_fractional_timeout(self, cache: RespCache):
         await cache.aset("ahalf_sec", "data", 5.5)
-        assert pytest.approx(await cache.apttl("ahalf_sec"), 10) == 5500
+        assert await cache.apttl("ahalf_sec") == pytest.approx(5500, abs=1000)
 
     @pytest.mark.asyncio
     async def test_apttl_returns_none_for_persistent(self, cache: RespCache):
@@ -454,7 +451,7 @@ class TestAsyncTimeouts:
     async def test_apexpire_sets_millisecond_ttl(self, cache: RespCache):
         cache.set("apexpire_key", "data", timeout=None)
         assert await cache.apexpire("apexpire_key", 20500) is True
-        assert pytest.approx(cache.pttl("apexpire_key"), 10) == 20500
+        assert cache.pttl("apexpire_key") == pytest.approx(20_500, abs=1000)
 
     @pytest.mark.asyncio
     async def test_apexpire_on_missing_key_returns_false(self, cache: RespCache):
@@ -470,7 +467,7 @@ class TestAsyncTimeouts:
         future = datetime.datetime.now() + timedelta(hours=hours)
         when = future if kind == "datetime" else int(future.timestamp())
         assert await cache.aexpireat("aexpireat", when) is True
-        assert pytest.approx(cache.ttl("aexpireat"), 1) == timedelta(hours=hours).total_seconds()
+        assert cache.ttl("aexpireat") == pytest.approx(timedelta(hours=hours).total_seconds(), abs=5)
 
     @pytest.mark.asyncio
     async def test_aexpireat_past_time_deletes_key(self, cache: RespCache):
@@ -494,7 +491,7 @@ class TestAsyncTimeouts:
         future = datetime.datetime.now() + timedelta(hours=hours)
         when = future if kind == "datetime" else int(future.timestamp() * 1000)
         assert await cache.apexpireat("apexpireat", when) is True
-        assert pytest.approx(cache.pttl("apexpireat"), 10) == timedelta(hours=hours).total_seconds() * 1000
+        assert cache.pttl("apexpireat") == pytest.approx(timedelta(hours=hours).total_seconds() * 1000, abs=5000)
 
     @pytest.mark.asyncio
     async def test_apexpireat_past_time_deletes_key(self, cache: RespCache):
@@ -564,27 +561,3 @@ class TestAsyncTouchOperation:
         assert await cache.aget("atouch_default") == "data"
         ttl = await cache.attl("atouch_default")
         assert ttl is None or ttl > 1
-
-
-class TestAsyncType:
-    """Tests for atype()."""
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        ("setup", "expected"),
-        [
-            (lambda c: c.set("atype_string", "value"), "string"),
-            (lambda c: c.hset("atype_hash", "field", "value"), "hash"),
-            (lambda c: c.lpush("atype_list", "value"), "list"),
-            (lambda c: c.sadd("atype_set", "value"), "set"),
-            (lambda c: c.zadd("atype_zset", {"member": 1.0}), "zset"),
-        ],
-        ids=["string", "hash", "list", "set", "zset"],
-    )
-    async def test_atype_returns_kind(self, cache: RespCache, setup, expected: str):
-        setup(cache)
-        assert await cache.atype(f"atype_{expected}") == expected
-
-    @pytest.mark.asyncio
-    async def test_atype_missing_key(self, cache: RespCache):
-        assert await cache.atype("atype_missing") is None

@@ -1,11 +1,21 @@
 """Tests for hash operations."""
 
+from contextlib import suppress
 from typing import TYPE_CHECKING
 
 import pytest
+from redis.exceptions import ResponseError as RedisResponseError
+from valkey.exceptions import ResponseError as ValkeyResponseError
 
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
+
+# HINCRBYFLOAT rejects a non-numeric field server side, so the error is the driver's own.
+DRIVER_ERRORS: tuple[type[Exception], ...] = (RedisResponseError, ValkeyResponseError)
+with suppress(ImportError):
+    from glide import RequestError
+
+    DRIVER_ERRORS += (RequestError,)
 
 
 class TestHashSetAndGet:
@@ -217,7 +227,7 @@ class TestHashIncrementOperations:
         """
         cache.hset("hset_float", "score", 1.5)
         assert cache.hget("hset_float", "score") == pytest.approx(1.5)
-        with pytest.raises(Exception, match=r"(?i)not a (valid )?float"):
+        with pytest.raises(DRIVER_ERRORS, match=r"(?i)not a (valid )?float"):
             cache.hincrbyfloat("hset_float", "score", 0.25)
 
     def test_string_that_looks_like_a_float_still_round_trips(self, cache: RespCache):

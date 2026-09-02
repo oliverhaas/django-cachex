@@ -1,7 +1,7 @@
 """Tests for basic cache operations: set, get, add, delete, get_many, set_many."""
 
 import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -9,10 +9,7 @@ from django_cachex.serializers.json import JsonSerializer
 from django_cachex.serializers.msgpack import MsgpackSerializer
 
 if TYPE_CHECKING:
-    from pytest_mock import MockerFixture
-
     from django_cachex.cache import RespCache
-    from tests.settings_wrapper import SettingsWrapper
 
 
 class TestSetIfNotExists:
@@ -208,11 +205,7 @@ class TestBulkSetOperations:
 class TestPipelineSetOperation:
     """Tests for pipeline.set() functionality."""
 
-    def test_pipeline_set_returns_true(
-        self,
-        cache: RespCache,
-        mocker: MockerFixture,
-    ):
+    def test_pipeline_set_returns_true(self, cache: RespCache):
         pipe = cache.pipeline()
         pipe.set("pipe_test", "pipe_val")
         results = pipe.execute()
@@ -265,8 +258,6 @@ class TestDeleteOperations:
         assert remaining == {"gen3": 3}
 
     def test_delete_many_empty_generator(self, cache: RespCache):
-        from typing import cast
-
         result = cache.delete_many(k for k in cast("list[str]", []))  # type: ignore[arg-type]
         assert bool(result) is False
 
@@ -284,16 +275,12 @@ class TestClearOperation:
 class TestCloseOperation:
     """Tests for close() method."""
 
-    def test_close_with_setting(self, cache: RespCache, settings: SettingsWrapper):
-        settings.DJANGO_REDIS_CLOSE_CONNECTION = True
-        cache.set("pre_close", "value")
-        cache.close()
-
-    def test_close_and_reconnect(self, cache: RespCache, mocker: MockerFixture):
+    def test_close_and_reconnect(self, cache: RespCache):
         cache.set("reconnect_test", "before")
         cache.close()
         cache.set("reconnect_test2", "after")
         assert cache.get("reconnect_test2") == "after"
+        assert cache.get("reconnect_test") == "before"
 
 
 class TestAsyncAdd:
@@ -336,7 +323,6 @@ class TestAsyncSet:
         await cache.aset("async_timeout_key", "timeout_value", timeout=60)
         result = cache.get("async_timeout_key")
         assert result == "timeout_value"
-        # Verify TTL was set
         ttl = cache.ttl("async_timeout_key")
         assert ttl is not None and ttl > 0
 
@@ -530,8 +516,6 @@ class TestAsyncDeleteMany:
 
     @pytest.mark.asyncio
     async def test_adelete_many_empty_generator(self, cache: RespCache):
-        from typing import cast
-
         result = await cache.adelete_many(k for k in cast("list[str]", []))  # type: ignore[arg-type]
         assert bool(result) is False
 
@@ -753,14 +737,9 @@ class TestAsyncCloseOperation:
     """Tests for aclose() method."""
 
     @pytest.mark.asyncio
-    async def test_aclose_with_setting(self, cache: RespCache, settings: SettingsWrapper):
-        settings.DJANGO_REDIS_CLOSE_CONNECTION = True
-        await cache.aset("apre_close", "value")
-        await cache.aclose()
-
-    @pytest.mark.asyncio
     async def test_aclose_and_reconnect(self, cache: RespCache):
         await cache.aset("areconnect_test", "before")
         await cache.aclose()
         await cache.aset("areconnect_test2", "after")
         assert await cache.aget("areconnect_test2") == "after"
+        assert await cache.aget("areconnect_test") == "before"

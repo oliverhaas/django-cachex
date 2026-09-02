@@ -99,8 +99,10 @@ def make_stampede_config(option: bool | dict[str, Any] | None) -> StampedeConfig
     """Build a ``StampedeConfig`` from an adapter ``stampede_prevention`` option.
 
     Unknown dict keys are dropped (with a warning) instead of raising
-    ``TypeError``. Matches ``resolve_stampede``'s tolerance for typos in
-    per-call overrides; the two were inconsistent before.
+    ``TypeError``, so a typo in ``OPTIONS`` doesn't take the process down at
+    startup. ``resolve_stampede`` is stricter about its per-call override,
+    which is code rather than configuration: a value that is not
+    ``bool | StampedeConfig | None`` raises ``TypeError``.
     """
     if not option:
         return None

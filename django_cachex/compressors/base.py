@@ -24,14 +24,16 @@ class BaseCompressor:
             try:
                 return self._compress(data)
             except Exception as e:
-                raise CompressorError from e
+                msg = f"{type(self).__name__} could not compress {len(data)} bytes: {e!r}"
+                raise CompressorError(msg) from e
         return data
 
     def decompress(self, data: bytes) -> bytes:
         try:
             return self._decompress(data)
         except Exception as e:
-            raise CompressorError from e
+            msg = f"{type(self).__name__} could not decompress {len(data)} bytes: {e!r}"
+            raise CompressorError(msg) from e
 
     def _compress(self, data: bytes) -> bytes:
         raise NotImplementedError

@@ -12,3 +12,4 @@ class KeyType(StrEnum):
     HASH = "hash"
     ZSET = "zset"
     STREAM = "stream"
+    UNKNOWN = "unknown"

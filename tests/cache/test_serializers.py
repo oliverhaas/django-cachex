@@ -1,12 +1,15 @@
 import pickle
+from enum import IntEnum
 
 import pytest
+from django.db import models
 
 from django_cachex.exceptions import SerializerError
 from django_cachex.serializers.json import JsonSerializer
 from django_cachex.serializers.msgpack import MsgpackSerializer
 from django_cachex.serializers.ormsgpack import OrmsgpackSerializer
 from django_cachex.serializers.pickle import PickleSerializer
+from tests.cache.support import make_cache
 
 try:
     from django_cachex.serializers.orjson import OrjsonSerializer
@@ -41,7 +44,6 @@ class TestPickleSerializer:
         assert serializer.protocol == 4
 
     def test_protocol_too_high_raises_on_dumps(self):
-        # We no longer pre-validate; pickle itself raises at dumps time.
         serializer = PickleSerializer(protocol=pickle.HIGHEST_PROTOCOL + 1)
         with pytest.raises(SerializerError):
             serializer.dumps({"x": 1})
@@ -113,8 +115,6 @@ class TestOrmsgpackSerializer:
         assert decoded is None
 
     def test_non_str_dict_keys_roundtrip_like_msgpack(self):
-        # Regression: ormsgpack packed without OPT_NON_STR_KEYS, so int keys
-        # raised where MsgpackSerializer round-tripped them.
         data = {1: "a", 2: "b", "mixed": 3}
         assert OrmsgpackSerializer().loads(OrmsgpackSerializer().dumps(data)) == data
         assert MsgpackSerializer().loads(MsgpackSerializer().dumps(data)) == data
@@ -145,46 +145,49 @@ class TestOrjsonSerializer:
             serializer.dumps({"x": object()})
 
 
-def _make_cache(*, key_prefix: str = ""):
-    """Construct a :class:`RedisCache` purely to exercise ``reverse_key``.
+class Digits(IntEnum):
+    ASCII_ZERO = 48
+    ASCII_NINE = 57
+    ZERO = 0
+    BIG = 200
+    NEGATIVE = -5
 
-    The cache's ``adapter`` property is lazy, so no connection is opened.
+
+class DigitChoices(models.IntegerChoices):
+    ASCII_ZERO = 48, "ascii zero"
+    ASCII_NINE = 57, "ascii nine"
+    ZERO = 0, "zero"
+    BIG = 200, "big"
+    NEGATIVE = -5, "negative"
+
+
+INT_SUBCLASS_MEMBERS = [*Digits, *DigitChoices]
+INT_SUBCLASS_IDS = [f"{type(m).__name__}.{m.name}" for m in INT_SUBCLASS_MEMBERS]
+
+
+class TestIntSubclassEncoding:
+    """encode()/decode() must keep the numeric value of an int subclass.
+
+    Regression: msgpack packs the values 48..57 as a single positive-fixint
+    byte, which is the ASCII digit b"0".."9". decode()'s int fast path read
+    that back as 0..9, so an IntEnum or IntegerChoices member silently
+    changed value on the way out.
     """
-    from django_cachex.cache import RedisCache
 
-    return RedisCache(server="redis://localhost:6379/0", params={"KEY_PREFIX": key_prefix})
+    @pytest.mark.parametrize(
+        "serializer",
+        [
+            "django_cachex.serializers.msgpack.MsgpackSerializer",
+            "django_cachex.serializers.ormsgpack.OrmsgpackSerializer",
+        ],
+        ids=["msgpack", "ormsgpack"],
+    )
+    @pytest.mark.parametrize("member", INT_SUBCLASS_MEMBERS, ids=INT_SUBCLASS_IDS)
+    def test_value_roundtrips(self, serializer: str, member: int):
+        cache = make_cache(serializer=serializer)
+        assert cache.decode(cache.encode(member)) == member.value
 
-
-class TestDefaultReverseKey:
-    def test_basic_key_reversal(self):
-        cache = _make_cache(key_prefix="myprefix")
-        assert cache.reverse_key(cache.make_key("mykey")) == "mykey"
-
-    def test_key_with_colons(self):
-        # Key itself can contain colons
-        cache = _make_cache(key_prefix="prefix")
-        assert cache.reverse_key("prefix:1:key:with:colons") == "key:with:colons"
-
-    def test_empty_prefix(self):
-        cache = _make_cache()
-        assert cache.reverse_key(":1:mykey") == "mykey"
-        assert cache.reverse_key(cache.make_key("mykey")) == "mykey"
-
-    def test_colon_in_key_prefix(self):
-        # Regression: partitioning on the first colon never matched a
-        # KEY_PREFIX that contained one, so keys came back unreversed.
-        cache = _make_cache(key_prefix="app:v2")
-        assert cache.make_key("foo") == "app:v2:1:foo"
-        assert cache.reverse_key(cache.make_key("foo")) == "foo"
-        assert cache.reverse_key(cache.make_key("key:with:colons")) == "key:with:colons"
-
-    def test_unmatched_prefix_returned_unchanged(self):
-        # A key made by some other cache must not lose its leading segments.
-        cache = _make_cache(key_prefix="myprefix")
-        assert cache.reverse_key("otherprefix:1:mykey") == "otherprefix:1:mykey"
-
-    def test_key_without_layout_returned_unchanged(self):
-        cache = _make_cache(key_prefix="myprefix")
-        assert cache.reverse_key("plainkey") == "plainkey"
-        # Prefix matches but there is no version:key remainder.
-        assert cache.reverse_key("myprefix:1") == "myprefix:1"
+    @pytest.mark.parametrize("member", INT_SUBCLASS_MEMBERS, ids=INT_SUBCLASS_IDS)
+    def test_pickle_keeps_the_enum_type(self, member: int):
+        cache = make_cache(serializer="django_cachex.serializers.pickle.PickleSerializer")
+        assert cache.decode(cache.encode(member)) is member

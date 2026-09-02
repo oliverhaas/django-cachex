@@ -1,49 +1,33 @@
-"""Tests to verify client library parametrization works correctly."""
+"""Each adapter against each RESP server image.
+
+``resp_images`` chooses the container image and ``resp_adapter`` the client
+library, so the two together cover the cross product. The topology is pinned
+to standalone: the cluster container always runs grokzen/redis-cluster and
+ignores the requested image, and sentinel adds no parsing behaviour.
+"""
 
 from typing import TYPE_CHECKING
+
+import pytest
 
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
 
 
+@pytest.mark.parametrize("topology", ["default"], indirect=True)
 class TestClientLibraries:
-    """Test that different client libraries work correctly."""
-
-    def test_basic_set_get_with_all_images(self, cache: RespCache, resp_images: tuple[str, str]):
-        """Verify basic operations work with all Redis images and their coupled client libraries.
-
-        By including `resp_images` as a direct parameter, pytest will parametrize
-        the test across all configured images (redis, redis-stack, valkey).
-        """
+    def test_set_get_across_images(self, cache: RespCache, resp_images: tuple[str, str]):
         image, client_library = resp_images
 
-        # Verify we're using the expected client library
         cache.set("test_key", "hello")
-        result = cache.get("test_key")
-        assert result == "hello", f"Failed with image={image}, client_library={client_library}"
+        assert cache.get("test_key") == "hello", f"image={image}, client_library={client_library}"
 
-        # Verify integer handling
         cache.set("int_key", 42)
-        result = cache.get("int_key")
-        assert result == 42, f"Integer handling failed with image={image}, client_library={client_library}"
+        assert cache.get("int_key") == 42, f"image={image}, client_library={client_library}"
 
-    def test_with_native_parser(
-        self,
-        cache: RespCache,
-        resp_images: tuple[str, str],
-        native_parser: bool,
-    ):
-        """Verify native parser (hiredis/libvalkey) works correctly.
+    def test_native_parser_round_trips_nested_values(self, cache: RespCache, native_parser: bool):
+        """hiredis / libvalkey must decode what the pure-Python parser decodes."""
+        parser = "native" if native_parser else "python"
 
-        By including `native_parser` as a direct parameter, pytest will parametrize
-        the test across both parser values (True/False).
-        """
-        image, client_library = resp_images
-        parser_type = "native" if native_parser else "python"
-
-        # Basic operations should work regardless of parser
         cache.set("test_key", {"nested": {"data": [1, 2, 3]}})
-        result = cache.get("test_key")
-        assert result == {"nested": {"data": [1, 2, 3]}}, (
-            f"Failed with image={image}, client={client_library}, parser={parser_type}"
-        )
+        assert cache.get("test_key") == {"nested": {"data": [1, 2, 3]}}, f"parser={parser}"

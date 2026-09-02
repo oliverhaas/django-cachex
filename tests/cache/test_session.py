@@ -4,6 +4,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import pytest
+from django.contrib.sessions.backends.base import UpdateError
 from django.contrib.sessions.backends.cache import SessionStore
 from django.test import override_settings
 from django.utils import timezone
@@ -312,7 +313,6 @@ def test_decode(session):
 
 def test_decode_failure_logged_to_security(session, caplog):
     bad_encode = base64.b64encode(b"flaskdj:alkdjf").decode("ascii")
-    # with self.assertLogs("django.security.SuspiciousSession", "WARNING") as cm:
     assert session.decode(bad_encode) == {}
     assert (
         "django.security.SuspiciousSession",
@@ -336,8 +336,6 @@ def test_session_load_does_not_create_record(session):
 
 def test_session_save_does_not_resurrect_session_logged_out_in_other_context(session):
     """Sessions shouldn't be resurrected by a concurrent request."""
-    from django.contrib.sessions.backends.base import UpdateError
-
     # Create new session.
     s1 = SessionStore()
     s1["test_data"] = "value1"

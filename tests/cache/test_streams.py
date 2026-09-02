@@ -10,6 +10,16 @@ if TYPE_CHECKING:
     from django_cachex.cache import RespCache
 
 
+def _text(value: str | bytes) -> str:
+    """Decode one field of an introspection reply.
+
+    ``xinfo_*`` and ``xpending`` hand the driver's reply back untouched, so
+    entry ids and consumer names arrive as bytes on redis-py and valkey-py and
+    as str on valkey-glide.
+    """
+    return value.decode() if isinstance(value, bytes) else value
+
+
 class TestStreamBasicOps:
     """Tests for xadd, xlen, xrange, xrevrange, xdel."""
 
@@ -88,10 +98,13 @@ class TestStreamInfo:
     """Tests for xinfo_stream, xinfo_groups."""
 
     def test_xinfo_stream(self, cache: RespCache):
-        cache.xadd("stream_info", {"data": "test"})
+        first = cache.xadd("stream_info", {"data": "test"})
+        last = cache.xadd("stream_info", {"data": "test2"})
 
         info = cache.xinfo_stream("stream_info")
-        assert isinstance(info, dict)
+        assert info["length"] == 2
+        assert _text(info["first-entry"][0]) == first
+        assert _text(info["last-entry"][0]) == last
 
     def test_xinfo_groups_empty(self, cache: RespCache):
         cache.xadd("stream_info_groups", {"data": "test"})
@@ -145,7 +158,8 @@ class TestStreamConsumerGroups:
         cache.xreadgroup("pend_grp", "consumer1", {"stream_pend": ">"})
 
         pending = cache.xpending("stream_pend", "pend_grp")
-        assert isinstance(pending, dict)
+        assert pending["pending"] == 1
+        assert [_text(c["name"]) for c in pending["consumers"]] == ["consumer1"]
 
     def test_xgroup_setid(self, cache: RespCache):
         cache.xadd("stream_setid", {"data": "test"})
@@ -158,8 +172,10 @@ class TestStreamConsumerGroups:
         cache.xgroup_create("stream_delc", "delc_grp", entry_id="0")
         cache.xreadgroup("delc_grp", "consumer1", {"stream_delc": ">"})
 
+        # The consumer read one entry and never acked it, so it is still pending.
         result = cache.xgroup_delconsumer("stream_delc", "delc_grp", "consumer1")
-        assert isinstance(result, int)
+        assert result == 1
+        assert cache.xinfo_consumers("stream_delc", "delc_grp") == []
 
     def test_xinfo_consumers(self, cache: RespCache):
         cache.xadd("stream_infoc", {"data": "test"})

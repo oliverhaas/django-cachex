@@ -10,13 +10,15 @@ if TYPE_CHECKING:
     from django_cachex.cache import RespCache
 
 
-class TestScanOperations:
-    def _is_py_cluster(self, client_class: str, sentinel_mode: str | bool, resp_adapter: str) -> bool:
-        """redis-py / valkey-py cluster can't combine per-node cursors, so SCAN raises.
-        valkey-glide scans all nodes itself and returns combined keys.
-        """
-        return client_class == "cluster" and not sentinel_mode and resp_adapter in {"redis-py", "valkey-py"}
+def _is_py_cluster(client_class: str, sentinel_mode: str | bool, resp_adapter: str) -> bool:
+    """redis-py / valkey-py cluster can't combine per-node cursors, so SCAN raises.
 
+    valkey-glide scans all nodes itself and returns combined keys.
+    """
+    return client_class == "cluster" and not sentinel_mode and resp_adapter in {"redis-py", "valkey-py"}
+
+
+class TestScanOperations:
     def test_scan_returns_keys(
         self,
         cache: RespCache,
@@ -24,7 +26,7 @@ class TestScanOperations:
         sentinel_mode: str | bool,
         resp_adapter: str,
     ):
-        if self._is_py_cluster(client_class, sentinel_mode, resp_adapter):
+        if _is_py_cluster(client_class, sentinel_mode, resp_adapter):
             with pytest.raises(NotSupportedError):
                 cache.scan(pattern="scantest_*")
             return
@@ -47,7 +49,7 @@ class TestScanOperations:
         sentinel_mode: str | bool,
         resp_adapter: str,
     ):
-        if self._is_py_cluster(client_class, sentinel_mode, resp_adapter):
+        if _is_py_cluster(client_class, sentinel_mode, resp_adapter):
             with pytest.raises(NotSupportedError):
                 cache.scan(pattern="nonexistent_pattern_xyz_*")
             return
@@ -107,7 +109,7 @@ class TestAsyncScan:
         sentinel_mode: str | bool,
         resp_adapter: str,
     ):
-        if client_class == "cluster" and not sentinel_mode and resp_adapter in {"redis-py", "valkey-py"}:
+        if _is_py_cluster(client_class, sentinel_mode, resp_adapter):
             with pytest.raises(NotSupportedError):
                 await cache.ascan(pattern="ascantest_*")
             return
@@ -131,7 +133,7 @@ class TestAsyncScan:
         sentinel_mode: str | bool,
         resp_adapter: str,
     ):
-        if client_class == "cluster" and not sentinel_mode and resp_adapter in {"redis-py", "valkey-py"}:
+        if _is_py_cluster(client_class, sentinel_mode, resp_adapter):
             with pytest.raises(NotSupportedError):
                 await cache.ascan(pattern="nonexistent_pattern_xyz_*")
             return
@@ -142,9 +144,9 @@ class TestAsyncScan:
 
 class TestAsyncLock:
     @pytest.fixture(autouse=True)
-    def _skip_cluster(self, client_class: str):
+    def _skip_cluster(self, client_class: str, sentinel_mode: str | bool):
         """Async locks use EVALSHA which doesn't work on cluster replicas."""
-        if client_class == "cluster":
+        if client_class == "cluster" and not sentinel_mode:
             pytest.skip("Async lock not supported on cluster (EVALSHA routing)")
 
     @pytest.mark.asyncio
@@ -174,16 +176,7 @@ class TestAsyncLock:
         assert cache.has_key("alock_ctx") is False
 
 
-class TestAsyncVersionOperations:
-    @pytest.mark.asyncio
-    async def test_aincr_version(self, cache: RespCache):
-        cache.set("{av}:key", "value")
-        new_version = await cache.aincr_version("{av}:key")
-
-        assert new_version == 2
-        assert cache.get("{av}:key") is None
-        assert cache.get("{av}:key", version=2) == "value"
-
+class TestAsyncDecrVersionOperations:
     @pytest.mark.asyncio
     async def test_adecr_version(self, cache: RespCache):
         cache.set("{adv}:key", "hello", version=2)

@@ -41,9 +41,7 @@ class TestIncrementWithoutTimeout:
         assert cache.get("persistent2") == 75
 
 
-class TestIncrementErrors:
-    """Tests for error conditions in incr()."""
-
+class TestIncrementMissingKey:
     def test_increment_missing_key_creates_it(self, cache: RespCache):
         cache.delete("nonexistent_counter")
         result = cache.incr("nonexistent_counter")

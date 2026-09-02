@@ -10,10 +10,12 @@ import asyncio
 import enum
 import gc
 import weakref
-from typing import TYPE_CHECKING
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any
 from unittest import mock
 
 import pytest
+from asgiref.sync import async_to_sync
 from django.core.cache import caches
 from django.test import override_settings
 
@@ -21,6 +23,8 @@ from django_cachex.adapters import RedisPyAdapter
 from django_cachex.exceptions import WrongTypeError
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from django_cachex.cache import RespCache
     from tests.fixtures.containers import RedisContainerInfo
 
@@ -29,6 +33,30 @@ class _Priority(enum.IntEnum):
     # Module level so pickle can resolve it by qualname.
     LOW = 1
     HIGH = 3
+
+
+@contextmanager
+def redis_cache(location: str | list[str], **options: Any) -> Iterator[RespCache]:
+    """Yield a RedisCache built from ``location``, outside the adapter matrix.
+
+    ``override_settings(CACHES=...)`` rebuilds Django's cache handler on entry
+    and on exit, so the caller needs no teardown of its own.
+    """
+    config: dict[str, Any] = {"BACKEND": "django_cachex.cache.RedisCache", "LOCATION": location}
+    if options:
+        config["OPTIONS"] = options
+    with override_settings(CACHES={"default": config}):
+        yield caches["default"]
+
+
+def skip_without_generic_async_pool(cache: RespCache) -> None:
+    """Skip adapters that manage their own async pools instead of ``_async_pool_class``.
+
+    Cluster and Sentinel both have async clients; they just reach them
+    through the cluster registry and the Sentinel pool class respectively.
+    """
+    if cache.adapter._async_pool_class is None:
+        pytest.skip("Cluster and Sentinel adapters manage their own async pools")
 
 
 class TestRedisCacheInternals:
@@ -42,11 +70,9 @@ class TestRedisCacheInternals:
         cache.set("number", 42)
         with mock.patch.object(cache.adapter, "get_client", wraps=cache.adapter.get_client) as mocked_get_client:
             cache.incr("number")
-            # incr should use write=True
             assert mocked_get_client.call_args.kwargs.get("write") is True
 
     def test_adapter_class(self, cache: RespCache):
-        # Check _adapter_class attribute points to a redis-py adapter (any topology)
         from django_cachex.adapters import RedisPyClusterAdapter, RedisPySentinelAdapter
         from django_cachex.adapters.redis_py import _RedisPyMixin
 
@@ -54,31 +80,17 @@ class TestRedisCacheInternals:
             cache._adapter_class,
             (RedisPyAdapter, RedisPyClusterAdapter, RedisPySentinelAdapter),
         ) or issubclass(cache._adapter_class, _RedisPyMixin)  # type: ignore[attr-defined]
-        # Check adapter is an instance of the configured class
         assert isinstance(cache.adapter, cache._adapter_class)
 
     def test_get_backend_timeout_method(self, cache: RespCache):
-        # Positive timeout returns as-is
-        positive_timeout = 10
-        positive_backend_timeout = cache.get_backend_timeout(positive_timeout)
-        assert positive_backend_timeout == positive_timeout
-
-        # Negative timeout returns 0 (immediate expiration)
-        negative_timeout = -5
-        negative_backend_timeout = cache.get_backend_timeout(negative_timeout)
-        assert negative_backend_timeout == 0
-
-        # None timeout returns None (no expiration)
-        none_timeout = None
-        none_backend_timeout = cache.get_backend_timeout(none_timeout)
-        assert none_backend_timeout is None
+        assert cache.get_backend_timeout(10) == 10
+        # A negative timeout means expire immediately, not "no expiry".
+        assert cache.get_backend_timeout(-5) == 0
+        assert cache.get_backend_timeout(None) is None
 
     def test_get_connection_pool_index(self, cache: RespCache):
-        # Write always returns index 0 (primary)
-        pool_index = cache.adapter._get_connection_pool_index(write=True)
-        assert pool_index == 0
+        assert cache.adapter._get_connection_pool_index(write=True) == 0
 
-        # Read returns 0 for single server, or random replica for multiple
         pool_index = cache.adapter._get_connection_pool_index(write=False)
         if len(cache.adapter._servers) == 1:
             assert pool_index == 0
@@ -89,20 +101,14 @@ class TestRedisCacheInternals:
     def test_get_connection_pool(self, cache: RespCache):
         import redis
 
-        # Write pool
-        pool = cache.adapter._get_connection_pool(write=True)
-        assert isinstance(pool, redis.ConnectionPool)
-
-        # Read pool
-        pool = cache.adapter._get_connection_pool(write=False)
-        assert isinstance(pool, redis.ConnectionPool)
+        assert isinstance(cache.adapter._get_connection_pool(write=True), redis.ConnectionPool)
+        assert isinstance(cache.adapter._get_connection_pool(write=False), redis.ConnectionPool)
 
     def test_get_client(self, cache: RespCache):
         """Test Redis client creation returns redis.Redis or redis.RedisCluster instance."""
         import redis
 
         client = cache.adapter.get_client()
-        # Can be Redis (standalone/sentinel) or RedisCluster (cluster mode)
         assert isinstance(client, (redis.Redis, redis.RedisCluster))
 
     def test_serializer_dumps(self, cache: RespCache):
@@ -111,13 +117,8 @@ class TestRedisCacheInternals:
         We test via the encode() method which handles the integer optimization.
         Django's test checks _serializer.dumps() but our architecture uses encode().
         """
-        # Integers are stored directly (no serialization overhead)
         assert cache.encode(123) == 123
-
-        # Booleans are serialized to bytes
         assert isinstance(cache.encode(True), bytes)
-
-        # Strings are serialized to bytes
         assert isinstance(cache.encode("abc"), bytes)
 
     def test_encode_serializes_int_subclasses(self, cache: RespCache):
@@ -149,46 +150,18 @@ class TestRedisCacheInternals:
         assert type(result) is int
 
     def test_redis_pool_options(self, redis_container: RedisContainerInfo):
-        from contextlib import suppress
+        location = f"redis://{redis_container.host}:{redis_container.port}/5"
 
-        host = redis_container.host
-        port = redis_container.port
+        with redis_cache(location, socket_timeout=0.1, retry_on_timeout=True) as cache:
+            pool = cache.adapter._get_connection_pool(write=False)
 
-        caches_config = {
-            "default": {
-                "BACKEND": "django_cachex.cache.RedisCache",
-                "LOCATION": f"redis://{host}:{port}/5",  # db=5 in URL
-                "OPTIONS": {
-                    "socket_timeout": 0.1,
-                    "retry_on_timeout": True,
-                },
-            },
-        }
-
-        # Clear cached cache backend before override_settings
-        with suppress(KeyError, AttributeError):
-            del caches["default"]
-
-        with override_settings(CACHES=caches_config):
-            cache = caches["default"]
-            pool = cache.adapter._get_connection_pool(write=False)  # type: ignore[attr-defined]
-
-            # db is parsed from URL path
             assert pool.connection_kwargs["db"] == 5
-            # OPTIONS are passed to pool
             assert pool.connection_kwargs["socket_timeout"] == 0.1
             assert pool.connection_kwargs["retry_on_timeout"] is True
 
-        # Clean up
-        with suppress(KeyError, AttributeError):
-            del caches["default"]
-
 
 class TestRedisAdapterMethods:
-    """Additional tests for CacheClient method behavior."""
-
     def test_get_client_write_vs_read(self, cache: RespCache):
-        # Both should return valid Redis clients
         write_client = cache.adapter.get_client(write=True)
         read_client = cache.adapter.get_client(write=False)
 
@@ -199,7 +172,6 @@ class TestRedisAdapterMethods:
         pool1 = cache.adapter._get_connection_pool(write=True)
         pool2 = cache.adapter._get_connection_pool(write=True)
 
-        # Same pool should be returned
         assert pool1 is pool2
 
     def test_client_is_cached_per_pool(self, cache: RespCache):
@@ -209,8 +181,7 @@ class TestRedisAdapterMethods:
 
     @pytest.mark.asyncio
     async def test_async_client_is_cached_per_pool(self, cache: RespCache):
-        if cache.adapter._async_pool_class is None:
-            pytest.skip("Async not supported for this client type")
+        skip_without_generic_async_pool(cache)
 
         assert await cache.adapter.get_async_client(write=True) is await cache.adapter.get_async_client(write=True)
 
@@ -252,153 +223,84 @@ class TestRedisAdapterMethods:
             cache.xpending("stream", "group", start="-", end="+")
 
     def test_multiple_servers_pool_selection(self, redis_container: RedisContainerInfo):
-        from contextlib import suppress
+        # The same URL three times: the index, not the endpoint, is what matters here.
+        url = f"redis://{redis_container.host}:{redis_container.port}/1"
 
-        host = redis_container.host
-        port = redis_container.port
-        url = f"redis://{host}:{port}/1"
-
-        caches_config = {
-            "default": {
-                "BACKEND": "django_cachex.cache.RedisCache",
-                "LOCATION": [url, url, url],  # 3 "servers" (same for testing)
-            },
-        }
-
-        # Clear cached cache backend before override_settings
-        with suppress(KeyError, AttributeError):
-            del caches["default"]
-
-        with override_settings(CACHES=caches_config):
-            cache = caches["default"]
-
-            # Write should always use index 0
-            write_idx = cache.adapter._get_connection_pool_index(write=True)  # type: ignore[attr-defined]
-            assert write_idx == 0
-
-            # Read can use any index
-            read_idx = cache.adapter._get_connection_pool_index(write=False)  # type: ignore[attr-defined]
-            assert 0 <= read_idx < 3
-
-        # Clean up
-        with suppress(KeyError, AttributeError):
-            del caches["default"]
+        with redis_cache([url, url, url]) as cache:
+            assert cache.adapter._get_connection_pool_index(write=True) == 0
+            assert 0 <= cache.adapter._get_connection_pool_index(write=False) < 3
 
 
 class TestConnectionCleanup:
     """Tests for connection pool cleanup behavior."""
 
     def test_sync_pool_is_cached_per_instance(self, cache: RespCache):
-        # Get pool twice - should be same object
         pool1 = cache.adapter._get_connection_pool(write=True)
         pool2 = cache.adapter._get_connection_pool(write=True)
         assert pool1 is pool2
 
-        # Should be in _pools dict at index 0
         assert 0 in cache.adapter._pools
         assert cache.adapter._pools[0] is pool1
 
     @pytest.mark.asyncio
     async def test_async_pool_is_cached_per_event_loop(self, cache: RespCache):
-        """Test that async pools are cached per event loop."""
-        # Skip if async not supported (cluster/sentinel don't have async yet)
-        if cache.adapter._async_pool_class is None:
-            pytest.skip("Async not supported for this client type")
+        skip_without_generic_async_pool(cache)
 
-        # Get async pool twice in same event loop - should be same object
         pool1 = cache.adapter._get_async_connection_pool(write=True)
         pool2 = cache.adapter._get_async_connection_pool(write=True)
         assert pool1 is pool2
 
-        # Pool lives in the driver's class-level registry under the current loop.
         loop = asyncio.get_running_loop()
         async_pools = cache.adapter._async_pools
         assert loop in async_pools
         assert pool1 in async_pools[loop].values()
 
     def test_async_pool_different_per_loop(self, redis_container: RedisContainerInfo):
-        """Test that different event loops get different async pools.
+        """Each event loop gets its own pool and its own registry entry.
 
-        This is a synchronous test that creates its own event loops to avoid
-        conflicts with pytest-asyncio's event loop management.
+        Stays synchronous and drives its own loops, so pytest-asyncio's loop
+        management does not interfere.
         """
-        from contextlib import suppress
+        location = f"redis://{redis_container.host}:{redis_container.port}/1"
 
-        host = redis_container.host
-        port = redis_container.port
-
-        caches_config = {
-            "default": {
-                "BACKEND": "django_cachex.cache.RedisCache",
-                "LOCATION": f"redis://{host}:{port}/1",
-            },
-        }
-
-        # Clear cached cache backend before override_settings
-        with suppress(KeyError, AttributeError):
-            del caches["default"]
-
-        with override_settings(CACHES=caches_config):
-            cache = caches["default"]
-            client = cache.adapter  # type: ignore[attr-defined]  # type: ignore[attr-defined]
-
-            # Create first event loop and get pool
-            loop1 = asyncio.new_event_loop()
+        with redis_cache(location) as cache:
+            adapter = cache.adapter
 
             async def get_pool():
-                return client._get_async_connection_pool(write=True)
+                return adapter._get_async_connection_pool(write=True)
 
-            pool1 = loop1.run_until_complete(get_pool())
-
-            # Create second event loop and get pool
+            loop1 = asyncio.new_event_loop()
             loop2 = asyncio.new_event_loop()
-            pool2 = loop2.run_until_complete(get_pool())
+            try:
+                pool1 = loop1.run_until_complete(get_pool())
+                pool2 = loop2.run_until_complete(get_pool())
 
-            # Pools should be different objects
-            assert pool1 is not pool2
+                assert pool1 is not pool2
+                assert loop1 in adapter._async_pools
+                assert loop2 in adapter._async_pools
+            finally:
+                loop1.close()
+                loop2.close()
 
-            # Each loop has its own entry in the driver's class-level registry.
-            async_pools = client._async_pools
-            assert loop1 in async_pools
-            assert loop2 in async_pools
-
-            # Clean up loops
-            loop1.close()
-            loop2.close()
-
-        # Clean up
-        with suppress(KeyError, AttributeError):
-            del caches["default"]
-
-    def test_close_is_noop(self, cache: RespCache):
-        """Test close() is a no-op: pools persist after close."""
-        # Create a pool first
+    def test_close_keeps_sync_pools(self, cache: RespCache):
+        """Django fires close() on every request_finished, so the sync pool has to survive it."""
         pool = cache.adapter._get_connection_pool(write=True)
-        assert 0 in cache.adapter._pools
 
-        # close() should NOT clear pools
         cache.adapter.close()
-        assert 0 in cache.adapter._pools
+
         assert cache.adapter._pools[0] is pool
 
     @pytest.mark.asyncio
-    async def test_aclose_is_noop(self, cache: RespCache):
-        """Test aclose() is a no-op: async pools persist after aclose."""
-        if cache.adapter._async_pool_class is None:
-            pytest.skip("Async not supported for this client type")
-
-        # Create an async pool
+    async def test_aclose_disconnects_the_running_loops_pools(self, cache: RespCache):
+        skip_without_generic_async_pool(cache)
         pool = cache.adapter._get_async_connection_pool(write=True)
         loop = asyncio.get_running_loop()
+        assert pool in cache.adapter._async_pools[loop].values()
 
-        async_pools = cache.adapter._async_pools
-        assert loop in async_pools
-        assert pool in async_pools[loop].values()
-
-        # aclose() should NOT disconnect or remove pools
         await cache.adapter.aclose()
-        assert loop in async_pools
-        assert pool in async_pools[loop].values()
+
+        assert loop not in cache.adapter._async_pools
+        assert cache.adapter._get_async_connection_pool(write=True) is not pool
 
     @pytest.mark.asyncio
     async def test_async_pool_shared_across_per_task_client_instances(
@@ -414,93 +316,86 @@ class TestConnectionCleanup:
         every async cache call opened a new TCP connection instead of reusing
         the one from the prior call. This locks in the fix.
         """
-        if cache.adapter._async_pool_class is None:
-            pytest.skip("Async not supported for this client type")
+        skip_without_generic_async_pool(cache)
 
-        # First client (the one Django gave us) opens a pool.
         original_pool = cache.adapter._get_async_connection_pool(write=True)
 
-        # Build a fresh client with the same servers + options. This is what
-        # Django's per-task Local does on every request.
+        # What Django's per-task Local does on every request.
         cls = type(cache.adapter)
         fresh_client = cls(cache.adapter._servers, **cache.adapter._options)
 
-        # The fresh client must reuse the same pool from the module registry.
         fresh_pool = fresh_client._get_async_connection_pool(write=True)
         assert fresh_pool is original_pool, (
             "Fresh per-task client created a new pool; process-wide registry not working."
         )
 
-        # And one more independent instance, just to be sure.
         another_client = cls(cache.adapter._servers, **cache.adapter._options)
         assert another_client._get_async_connection_pool(write=True) is original_pool
 
     def test_weak_key_dictionary_cleanup_on_loop_gc(self, redis_container: RedisContainerInfo):
-        """Test that async pools are cleaned up when event loop is garbage collected.
+        """A collected event loop takes its registry entry with it.
 
-        This tests the WeakKeyDictionary behavior - when an event loop is GC'd,
-        its entry in the driver's class-level _async_pools registry should be
-        automatically removed.
+        Holds only for a pool that never opened a connection: nothing then
+        points back at the loop, so the weak key can expire on its own.
         """
-        from contextlib import suppress
+        location = f"redis://{redis_container.host}:{redis_container.port}/1"
 
-        host = redis_container.host
-        port = redis_container.port
-
-        caches_config = {
-            "default": {
-                "BACKEND": "django_cachex.cache.RedisCache",
-                "LOCATION": f"redis://{host}:{port}/1",
-            },
-        }
-
-        with suppress(KeyError, AttributeError):
-            del caches["default"]
-
-        with override_settings(CACHES=caches_config):
-            cache = caches["default"]
-            client = cache.adapter  # type: ignore[attr-defined]
-
-            # Create a new event loop and get a pool in it
-            loop = asyncio.new_event_loop()
+        with redis_cache(location) as cache:
+            adapter = cache.adapter
+            async_pools = adapter._async_pools
 
             async def create_pool():
-                return client._get_async_connection_pool(write=True)
+                return adapter._get_async_connection_pool(write=True)
 
+            loop = asyncio.new_event_loop()
             pool = loop.run_until_complete(create_pool())
             loop.close()
-
-            # Loop should be in the driver's class-level registry.
-            async_pools = client._async_pools
             assert loop in async_pools
 
-            # Keep a weak reference to track when loop is GC'd
             loop_ref = weakref.ref(loop)
-
-            # Delete the loop reference and force garbage collection
-            del loop
-            del pool
+            del loop, pool
             gc.collect()
 
-            # The loop should have been garbage collected
             assert loop_ref() is None
+            assert [entry for entry in async_pools if entry.is_closed()] == []
 
-            # The WeakKeyDictionary should have automatically removed the entry.
-            # Iterating works without errors; the dead loop is gone.
-            _ = list(async_pools.keys())
+    def test_pools_of_closed_loops_are_evicted(
+        self,
+        redis_container: RedisContainerInfo,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Regression: one pool and one connection leaked per event loop.
 
-        with suppress(KeyError, AttributeError):
-            del caches["default"]
+        ``async_to_sync`` from a plain sync thread runs ``asyncio.run()`` per
+        call. Each pool pins its own loop through the transport of every
+        connection it opened, so weak keys alone never freed the entries and
+        the registry grew without bound.
+        """
+        monkeypatch.setattr(RedisPyAdapter, "_async_pools", weakref.WeakKeyDictionary())
+        location = f"redis://{redis_container.host}:{redis_container.port}/1"
+
+        with redis_cache(location) as cache:
+            registry = cache.adapter._async_pools
+
+            async_to_sync(cache.aset)("loop_churn", "value")
+            first_slot = next(iter(registry.values()))
+            pool_ref = weakref.ref(next(iter(first_slot.values())))
+            del first_slot
+
+            for _ in range(5):
+                assert async_to_sync(cache.aget)("loop_churn") == "value"
+
+            # One entry: the loop of the last call, swept by the call after it.
+            assert len(registry) == 1
+            gc.collect()
+            assert pool_ref() is None, "a pool stayed reachable after its event loop closed"
+
+            cache.delete("loop_churn")
 
     @pytest.mark.asyncio
     async def test_async_pool_reuse_after_operations(self, cache: RespCache):
-        # Skip if async not supported (cluster/sentinel don't have async yet)
-        if cache.adapter._async_pool_class is None:
-            pytest.skip("Async not supported for this client type")
+        skip_without_generic_async_pool(cache)
 
-        # Snapshot the write pool before any ops; the same object must
-        # still be the active write pool after a batch of mixed ops
-        # (this is what verifies "reuse", not just an upper bound).
         loop = asyncio.get_running_loop()
         original_write_pool = cache.adapter._get_async_connection_pool(write=True)
 
@@ -509,141 +404,75 @@ class TestConnectionCleanup:
         await cache.aget("test_reuse_1")
         await cache.adelete("test_reuse_1")
 
-        # Same write-pool object is still active.
         assert cache.adapter._get_async_connection_pool(write=True) is original_write_pool
-        # And we never created more than one pool per configured server.
         assert 1 <= len(cache.adapter._async_pools.get(loop, {})) <= len(cache.adapter._servers)
 
-        # Clean up
         await cache.adelete("test_reuse_2")
 
     @pytest.mark.asyncio
     async def test_mixed_sync_async_operations(self, cache: RespCache):
-        # Skip if async not supported (cluster/sentinel don't have async yet)
-        if cache.adapter._async_pool_class is None:
-            pytest.skip("Async not supported for this client type")
+        skip_without_generic_async_pool(cache)
 
-        # Perform sync operation (creates sync pool)
         cache.set("sync_key", "sync_value")
         sync_pool = cache.adapter._get_connection_pool(write=True)
 
-        # Perform async operation (creates async pool)
         await cache.aset("async_key", "async_value")
         async_pool = cache.adapter._get_async_connection_pool(write=True)
 
-        # Pools should be different objects
         assert sync_pool is not async_pool
-
-        # Both should exist
         assert 0 in cache.adapter._pools
-        loop = asyncio.get_running_loop()
-        assert loop in cache.adapter._async_pools
+        assert asyncio.get_running_loop() in cache.adapter._async_pools
 
-        # Clean up
         cache.delete("sync_key")
         await cache.adelete("async_key")
 
     def test_sync_then_nested_async_run(self, redis_container: RedisContainerInfo):
-        """Test WSGI-like pattern: sync ops then asyncio.run() for async ops.
+        """A WSGI thread does sync work, then drives a loop of its own on the same cache."""
+        location = f"redis://{redis_container.host}:{redis_container.port}/1"
 
-        Simulates a WSGI thread that does sync cache work, then spins up an
-        event loop for some async logic using the same cache instance.
-        """
-        from contextlib import suppress
-
-        host = redis_container.host
-        port = redis_container.port
-
-        caches_config = {
-            "default": {
-                "BACKEND": "django_cachex.cache.RedisCache",
-                "LOCATION": f"redis://{host}:{port}/1",
-            },
-        }
-
-        with suppress(KeyError, AttributeError):
-            del caches["default"]
-
-        with override_settings(CACHES=caches_config):
-            cache = caches["default"]
-
-            # 1. Sync operations (like a normal WSGI request)
+        with redis_cache(location) as cache:
             cache.set("wsgi_key", "wsgi_value")
             assert cache.get("wsgi_key") == "wsgi_value"
 
-            # 2. Spin up an event loop for async work (same cache instance)
             async def async_work():
                 await cache.aset("async_key", "async_value")
-                result = await cache.aget("async_key")
-                assert result == "async_value"
+                assert await cache.aget("async_key") == "async_value"
                 await cache.adelete("async_key")
 
             loop = asyncio.new_event_loop()
             loop.run_until_complete(async_work())
             loop.close()
 
-            # 3. Back to sync, should still work fine
             assert cache.get("wsgi_key") == "wsgi_value"
             cache.delete("wsgi_key")
 
-        with suppress(KeyError, AttributeError):
-            del caches["default"]
+    def test_multiple_sequential_event_loops(
+        self,
+        redis_container: RedisContainerInfo,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """A WSGI thread driving one loop per request keeps working, and keeps one entry.
 
-    def test_multiple_sequential_event_loops(self, redis_container: RedisContainerInfo):
-        """Test multiple asyncio.run() calls from the same sync context.
-
-        Simulates a WSGI thread that calls asyncio.run() multiple times across
-        different requests, each creating a new event loop. The WeakKeyDictionary
-        should handle old loops being GC'd and new ones being created.
+        Each new loop sweeps out the pools of the loops that closed before it,
+        so only the loop of the most recent request is still registered.
         """
-        from contextlib import suppress
+        monkeypatch.setattr(RedisPyAdapter, "_async_pools", weakref.WeakKeyDictionary())
+        location = f"redis://{redis_container.host}:{redis_container.port}/1"
 
-        host = redis_container.host
-        port = redis_container.port
-
-        caches_config = {
-            "default": {
-                "BACKEND": "django_cachex.cache.RedisCache",
-                "LOCATION": f"redis://{host}:{port}/1",
-            },
-        }
-
-        with suppress(KeyError, AttributeError):
-            del caches["default"]
-
-        with override_settings(CACHES=caches_config):
-            cache = caches["default"]
+        with redis_cache(location) as cache:
 
             async def async_set_get(key, value):
                 await cache.aset(key, value)
                 return await cache.aget(key)
 
-            # First "request": sync + async
-            cache.set("sync_1", "value_1")
-            loop1 = asyncio.new_event_loop()
-            result = loop1.run_until_complete(async_set_get("async_1", "avalue_1"))
-            assert result == "avalue_1"
-            loop1.close()
+            for index in (1, 2, 3):
+                cache.set(f"sync_{index}", f"value_{index}")
+                loop = asyncio.new_event_loop()
+                assert loop.run_until_complete(async_set_get(f"async_{index}", f"avalue_{index}")) == f"avalue_{index}"
+                loop.close()
 
-            # Second "request": new event loop, same cache instance
-            cache.set("sync_2", "value_2")
-            loop2 = asyncio.new_event_loop()
-            result = loop2.run_until_complete(async_set_get("async_2", "avalue_2"))
-            assert result == "avalue_2"
-            loop2.close()
-
-            # Third "request": yet another event loop
-            loop3 = asyncio.new_event_loop()
-            result = loop3.run_until_complete(async_set_get("async_3", "avalue_3"))
-            assert result == "avalue_3"
-            loop3.close()
-
-            # Sync still works
+            assert len(cache.adapter._async_pools) == 1
             assert cache.get("sync_1") == "value_1"
-            assert cache.get("sync_2") == "value_2"
+            assert cache.get("sync_3") == "value_3"
 
-            # Clean up
-            cache.delete_many(["sync_1", "sync_2", "async_1", "async_2", "async_3"])
-
-        with suppress(KeyError, AttributeError):
-            del caches["default"]
+            cache.delete_many([f"sync_{i}" for i in (1, 2, 3)] + [f"async_{i}" for i in (1, 2, 3)])

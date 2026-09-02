@@ -2,65 +2,46 @@
 
 import json
 import pickle
-from typing import Any
 
 import pytest
+from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured
+from django.test import override_settings
 
 from django_cachex.exceptions import SerializerError
 from django_cachex.serializers.json import JsonSerializer
 from django_cachex.serializers.pickle import PickleSerializer
+from tests.cache.support import make_cache
+
+JSON_THEN_PICKLE = [
+    "django_cachex.serializers.json.JsonSerializer",
+    "django_cachex.serializers.pickle.PickleSerializer",
+]
 
 
-def _make_cache(*, serializer: Any) -> Any:
-    """Construct a :class:`RedisCache` purely to exercise the encoding stack.
+class TestSerializerConfig:
+    def test_single_string_config_backwards_compatible(self):
+        cache_obj = make_cache(serializer="django_cachex.serializers.pickle.PickleSerializer")
 
-    ``_deserialize`` / ``encode`` / ``decode`` live on the cache layer; the
-    cache's ``adapter`` property is lazy, so we never actually open a
-    connection in these tests.
-    """
-    from django_cachex.cache import RedisCache
+        assert len(cache_obj._serializers) == 1
+        assert cache_obj._serializers[0].__class__.__name__ == "PickleSerializer"
 
-    return RedisCache(
-        server="redis://localhost:6379/0",
-        params={"OPTIONS": {"serializer": serializer}},
-    )
+    def test_list_config_with_fallback(self):
+        cache_obj = make_cache(serializer=JSON_THEN_PICKLE)
 
-
-class TestDefaultClientSerializerConfig:
-    """Tests for RespCache serializer configuration handling."""
-
-    def test_single_string_config_backwards_compatible(self, redis_container):
-        """Test that a single string config still works (backwards compatibility)."""
-        cache = _make_cache(serializer="django_cachex.serializers.pickle.PickleSerializer")
-
-        assert len(cache._serializers) == 1
-        assert cache._serializers[0].__class__.__name__ == "PickleSerializer"
-
-    def test_list_config_with_fallback(self, redis_container):
-        cache = _make_cache(
-            serializer=[
-                "django_cachex.serializers.json.JsonSerializer",
-                "django_cachex.serializers.pickle.PickleSerializer",
-            ],
-        )
-
-        assert len(cache._serializers) == 2
-        assert cache._serializers[0].__class__.__name__ == "JsonSerializer"
-        assert cache._serializers[1].__class__.__name__ == "PickleSerializer"
+        assert len(cache_obj._serializers) == 2
+        assert cache_obj._serializers[0].__class__.__name__ == "JsonSerializer"
+        assert cache_obj._serializers[1].__class__.__name__ == "PickleSerializer"
 
     def test_empty_serializer_list_rejected_at_init(self):
         """An empty serializer list fails at construction, not at first use."""
         with pytest.raises(ImproperlyConfigured):
-            _make_cache(serializer=[])
+            make_cache(serializer=[])
 
     def test_migration_scenario(self, redis_container):
-        """Test a realistic migration scenario from pickle to JSON."""
-        from django.test import override_settings
-
+        """A pickle-only cache is readable after switching to JSON with a pickle fallback."""
         host, port = redis_container.host, redis_container.port
 
-        # Step 1: Write with pickle (simulated old data)
         caches_pickle = {
             "default": {
                 "BACKEND": "django_cachex.cache.RedisCache",
@@ -72,31 +53,19 @@ class TestDefaultClientSerializerConfig:
         }
 
         with override_settings(CACHES=caches_pickle):
-            from django.core.cache import cache
-
             cache.set("old_key", {"data": "from_pickle"})
 
-        # Step 2: Switch to JSON with pickle fallback
         caches_migration = {
             "default": {
                 "BACKEND": "django_cachex.cache.RedisCache",
                 "LOCATION": f"redis://{host}:{port}?db=10",
-                "OPTIONS": {
-                    "serializer": [
-                        "django_cachex.serializers.json.JsonSerializer",
-                        "django_cachex.serializers.pickle.PickleSerializer",
-                    ],
-                },
+                "OPTIONS": {"serializer": JSON_THEN_PICKLE},
             },
         }
 
         with override_settings(CACHES=caches_migration):
-            from django.core.cache import cache
-
-            # Should be able to read old pickle data
             assert cache.get("old_key") == {"data": "from_pickle"}
 
-            # Write new data with JSON
             cache.set("new_key", {"data": "from_json"})
             assert cache.get("new_key") == {"data": "from_json"}
 
@@ -107,68 +76,41 @@ class TestDefaultClientSerializerConfig:
 class TestDeserializeFallback:
     """Tests for the _deserialize fallback logic on the cache layer."""
 
-    def test_deserialize_json_with_multiple_serializers(self, redis_container):
-        cache = _make_cache(
-            serializer=[
-                "django_cachex.serializers.json.JsonSerializer",
-                "django_cachex.serializers.pickle.PickleSerializer",
-            ],
-        )
+    def test_deserialize_json_with_multiple_serializers(self):
+        cache_obj = make_cache(serializer=JSON_THEN_PICKLE)
         data = {"key": "value", "number": 42}
-        json_data = json.dumps(data).encode()
-        assert cache._deserialize(json_data) == data
+        assert cache_obj._deserialize(json.dumps(data).encode()) == data
 
-    def test_deserialize_pickle_with_json_first(self, redis_container):
-        cache = _make_cache(
-            serializer=[
-                "django_cachex.serializers.json.JsonSerializer",
-                "django_cachex.serializers.pickle.PickleSerializer",
-            ],
-        )
+    def test_deserialize_pickle_with_json_first(self):
+        cache_obj = make_cache(serializer=JSON_THEN_PICKLE)
         data = {"key": "value", "number": 42}
-        pickle_data = pickle.dumps(data)
-        # JSON will fail, pickle should succeed
-        assert cache._deserialize(pickle_data) == data
+        assert cache_obj._deserialize(pickle.dumps(data)) == data
 
-    def test_deserialize_raises_when_all_fail(self, redis_container):
-        """Test that _deserialize raises SerializerError when all serializers fail."""
-        cache = _make_cache(serializer=["django_cachex.serializers.json.JsonSerializer"])
-        # Invalid data that can't be deserialized as JSON
+    def test_deserialize_raises_when_all_fail(self):
+        cache_obj = make_cache(serializer=["django_cachex.serializers.json.JsonSerializer"])
         invalid_data = b"\x80\x04\x95\x00\x00\x00\x00"  # Pickle header, not JSON
-        with pytest.raises(SerializerError):
-            cache._deserialize(invalid_data)
-
-    def test_deserialize_continues_on_failure(self, redis_container):
-        cache = _make_cache(
-            serializer=[
-                "django_cachex.serializers.json.JsonSerializer",
-                "django_cachex.serializers.pickle.PickleSerializer",
-            ],
-        )
-        # Data that is valid pickle but not valid JSON
-        data = {"key": "value"}
-        pickle_data = pickle.dumps(data)
-        # JSON fails, falls through to pickle
-        assert cache._deserialize(pickle_data) == data
+        with pytest.raises(SerializerError, match="JsonSerializer"):
+            cache_obj._deserialize(invalid_data)
 
 
 class TestSerializerError:
-    """Tests for SerializerError exception."""
-
     def test_pickle_raises_serializer_error_on_invalid_data(self):
-        """Test that PickleSerializer raises SerializerError on invalid data."""
         serializer = PickleSerializer()
-        with pytest.raises(SerializerError):
+        with pytest.raises(SerializerError, match="PickleSerializer could not deserialize"):
             serializer.loads(b"not valid pickle data")
 
     def test_json_raises_serializer_error_on_invalid_data(self):
-        """Test that JsonSerializer raises SerializerError on invalid data."""
         serializer = JsonSerializer()
-        with pytest.raises(SerializerError):
+        with pytest.raises(SerializerError, match="JsonSerializer could not deserialize"):
             serializer.loads(b"not valid json data")
 
     def test_json_raises_serializer_error_on_invalid_utf8(self):
-        """Test that JsonSerializer raises SerializerError on invalid UTF-8."""
         serializer = JsonSerializer()
         with pytest.raises(SerializerError):
             serializer.loads(b"\xff\xfe")  # Invalid UTF-8
+
+    def test_dumps_error_names_the_serializer_and_the_cause(self):
+        serializer = JsonSerializer()
+        with pytest.raises(SerializerError, match="JsonSerializer could not serialize object") as excinfo:
+            serializer.dumps(object())
+        assert isinstance(excinfo.value.__cause__, TypeError)

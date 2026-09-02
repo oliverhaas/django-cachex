@@ -12,6 +12,7 @@ concrete subclasses live in:
 
 import inspect
 import re
+import time
 from datetime import datetime, timedelta
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, cast, override
@@ -47,6 +48,10 @@ _special_re = re.compile("([*?[])")
 # connection pool raises "unexpected keyword argument" on the first command.
 _DJANGO_GENERIC_OPTIONS = frozenset({"CULL_FREQUENCY", "MAX_ENTRIES"})
 
+# Scalars every serializer hands back as a hashable scalar, so a set member of
+# one of these types skips the round-trip check in ``_encode_member``.
+_ALWAYS_HASHABLE = (str, bytes, int, float, type(None))
+
 
 def _glob_escape(s: str) -> str:
     """Escape glob special characters in a string."""
@@ -65,27 +70,6 @@ def _has_hash_tag(key: str) -> bool:
         return False
     close_idx = key.find("}", open_idx + 1)
     return close_idx > open_idx + 1
-
-
-def _check_hashable(member: Any) -> Any:
-    """Return ``member`` if it can go into a Python ``set``, else raise ``TypeError``.
-
-    Set readers collapse decoded members into a ``set``, so an unhashable
-    member written today only blows up on a later read, taking the whole
-    key with it. ``hash()`` rather than an ``isinstance(..., Hashable)``
-    check: a tuple containing a list claims to be hashable and is not.
-    """
-    try:
-        hash(member)
-    except TypeError:
-        msg = (
-            f"set members must be hashable, got {type(member).__name__}: "
-            f"cache set operations return a Python set, so an unhashable member "
-            f"could never be read back. Convert it first, for example a tuple "
-            f"instead of a list."
-        )
-        raise TypeError(msg) from None
-    return member
 
 
 def _load_codec(config: str | type | Any) -> Any:
@@ -234,12 +218,20 @@ class RespCache(BaseCachex):
         """
         # Not isinstance(): bool and int subclasses (IntEnum, IntFlag) go
         # through the serializer so they round-trip with their type intact.
-        if type(value) is not int:
-            value = self._serializers[0].dumps(value)
-            if self._compressors:
-                return self._compressors[0].compress(value)
+        if type(value) is int:
             return value
-        return value
+        payload = self._serializers[0].dumps(value)
+        if self._compressors:
+            payload = self._compressors[0].compress(payload)
+        if isinstance(value, int) and not isinstance(value, bool):
+            # msgpack packs an int subclass in 48..57 as one fixint byte, an ASCII digit
+            # that decode() would read as 0..9. Store such values as plain ints.
+            try:
+                float(payload)
+            except ValueError, TypeError:
+                return payload
+            return int(value)
+        return payload
 
     def decode(self, value: Any) -> Any:
         """Decode a value from storage.
@@ -262,6 +254,45 @@ class RespCache(BaseCachex):
             pass
         value = self._decompress(value)
         return self._deserialize(value)
+
+    def _encode_member(self, member: Any) -> bytes | int:
+        """Encode a set member, rejecting anything no reader could put back into a ``set``.
+
+        Every set reader collapses decoded members into a Python ``set``, so
+        a member that is unhashable, or that the configured serializer hands
+        back as an unhashable type, would only blow up on a later read and
+        take the whole key with it. json, orjson, msgpack and ormsgpack all
+        return a tuple as a list, so the check is against the round-tripped
+        value, not the input. ``hash()`` rather than an
+        ``isinstance(..., Hashable)`` check: a tuple containing a list claims
+        to be hashable and is not.
+        """
+        try:
+            hash(member)
+        except TypeError:
+            msg = (
+                f"set members must be hashable, got {type(member).__name__}: "
+                f"cache set operations return a Python set, so an unhashable member "
+                f"could never be read back. Convert it first, for example a tuple "
+                f"instead of a list."
+            )
+            raise TypeError(msg) from None
+        encoded = self.encode(member)
+        if isinstance(member, _ALWAYS_HASHABLE):
+            return encoded
+        decoded = self.decode(encoded)
+        try:
+            hash(decoded)
+        except TypeError:
+            msg = (
+                f"set members must stay hashable through the serializer, but "
+                f"{type(self._serializers[0]).__name__} turns {type(member).__name__} into "
+                f"{type(decoded).__name__}: cache set operations return a Python set, so this "
+                f"member could never be read back. Store a hashable representation, for example "
+                f"a string, or configure a serializer that preserves the type."
+            )
+            raise TypeError(msg) from None
+        return encoded
 
     def get_backend_timeout(self, timeout: float | None = DEFAULT_TIMEOUT) -> int | None:
         """Convert timeout to backend format (matches Django's RedisCache).
@@ -311,12 +342,21 @@ class RespCache(BaseCachex):
         *,
         milliseconds: bool = False,
     ) -> int | datetime:
-        """Add the stampede buffer to an absolute ``EXPIREAT``/``PEXPIREAT`` deadline."""
+        """Add the stampede buffer to an absolute ``EXPIREAT``/``PEXPIREAT`` deadline.
+
+        Deadlines already in the past delete the key and pass through
+        untouched, mirroring :meth:`_buffered_timeout`. Without that,
+        ``expireat(key, yesterday)`` kept the key alive for another
+        ``buffer`` seconds.
+        """
         buffer_s = self._stampede_buffer(stampede_prevention)
         if not buffer_s:
             return when
+        now = time.time()
         if isinstance(when, datetime):
-            return when + timedelta(seconds=buffer_s)
+            return when if when.timestamp() <= now else when + timedelta(seconds=buffer_s)
+        if when <= (now * 1000 if milliseconds else now):
+            return when
         return when + (buffer_s * 1000 if milliseconds else buffer_s)
 
     def _logical_ttl(
@@ -516,7 +556,6 @@ class RespCache(BaseCachex):
             if get:
                 return self.decode(result) if result is not None else None
             return result
-        # Use standard Django method - returns None
         self.adapter.set(
             key,
             self.encode(value),
@@ -635,11 +674,6 @@ class RespCache(BaseCachex):
         """
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.aincr(key, delta)
-
-    @override
-    async def adecr(self, key: str, delta: int = 1, version: int | None = None) -> int:
-        """Decrement a value asynchronously."""
-        return await self.aincr(key, -delta, version)
 
     @override
     def get_or_set(
@@ -1348,7 +1382,7 @@ class RespCache(BaseCachex):
     def hkeys(self, key: str, version: int | None = None) -> list[str]:
         """Get all field names in hash at key."""
         key = self.make_and_validate_key(key, version=version)
-        return [f.decode() if isinstance(f, bytes) else f for f in self.adapter.hkeys(key)]
+        return self.adapter.hkeys(key)
 
     def hexists(
         self,
@@ -1378,9 +1412,7 @@ class RespCache(BaseCachex):
     ) -> dict[str, Any]:
         """Get all fields and values in hash at key."""
         key = self.make_and_validate_key(key, version=version)
-        return {
-            (f.decode() if isinstance(f, bytes) else f): self.decode(v) for f, v in self.adapter.hgetall(key).items()
-        }
+        return {f: self.decode(v) for f, v in self.adapter.hgetall(key).items()}
 
     def hmget(
         self,
@@ -1477,7 +1509,7 @@ class RespCache(BaseCachex):
     async def ahkeys(self, key: str, version: int | None = None) -> list[str]:
         """Get all field names in hash at key asynchronously."""
         key = self.make_and_validate_key(key, version=version)
-        return [f.decode() if isinstance(f, bytes) else f for f in await self.adapter.ahkeys(key)]
+        return await self.adapter.ahkeys(key)
 
     async def ahexists(
         self,
@@ -1508,7 +1540,7 @@ class RespCache(BaseCachex):
         """Get all fields and values in hash at key asynchronously."""
         key = self.make_and_validate_key(key, version=version)
         raw = await self.adapter.ahgetall(key)
-        return {(f.decode() if isinstance(f, bytes) else f): self.decode(v) for f, v in raw.items()}
+        return {f: self.decode(v) for f, v in raw.items()}
 
     async def ahmget(
         self,
@@ -1984,15 +2016,16 @@ class RespCache(BaseCachex):
     ) -> int:
         """Add members to a set.
 
-        Members must be hashable: every reader (:meth:`smembers`,
+        Members must be hashable and must stay hashable through the
+        configured serializer: every reader (:meth:`smembers`,
         :meth:`sdiff`, :meth:`sinter`, :meth:`sunion`, :meth:`spop`,
         :meth:`sscan`) returns a Python ``set``, matching the unordered,
-        deduplicated semantics of a Redis set. Unhashable members are
-        rejected here rather than at read time, where a single bad member
-        would raise ``TypeError`` and take down the whole key.
+        deduplicated semantics of a Redis set. Members that fail either
+        rule are rejected here rather than at read time, where a single bad
+        member would raise ``TypeError`` and take down the whole key.
         """
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.sadd(key, *(self.encode(_check_hashable(m)) for m in members))
+        return self.adapter.sadd(key, *(self._encode_member(m) for m in members))
 
     def scard(self, key: str, version: int | None = None) -> int:
         """Get the number of members in a set."""
@@ -2215,7 +2248,7 @@ class RespCache(BaseCachex):
     ) -> int:
         """Add members to a set asynchronously. Members must be hashable, see :meth:`sadd`."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.asadd(key, *(self.encode(_check_hashable(m)) for m in members))
+        return await self.adapter.asadd(key, *(self._encode_member(m) for m in members))
 
     async def ascard(self, key: str, version: int | None = None) -> int:
         """Get the number of members in a set asynchronously."""
@@ -2980,7 +3013,7 @@ class RespCache(BaseCachex):
         result = self.adapter.xread(nstreams, count=count, block=block)
         if result is None:
             return None
-        return {str(key_map.get(k, k)): self._decode_stream_entries(v) for k, v in result.items()}
+        return {key_map.get(k, k): self._decode_stream_entries(v) for k, v in result.items()}
 
     async def axread(
         self,
@@ -2995,7 +3028,7 @@ class RespCache(BaseCachex):
         result = await self.adapter.axread(nstreams, count=count, block=block)
         if result is None:
             return None
-        return {str(key_map.get(k, k)): self._decode_stream_entries(v) for k, v in result.items()}
+        return {key_map.get(k, k): self._decode_stream_entries(v) for k, v in result.items()}
 
     def xtrim(
         self,
@@ -3149,7 +3182,7 @@ class RespCache(BaseCachex):
         result = self.adapter.xreadgroup(group, consumer, nstreams, count=count, block=block, noack=noack)
         if result is None:
             return None
-        return {str(key_map.get(k, k)): self._decode_stream_entries(v) for k, v in result.items()}
+        return {key_map.get(k, k): self._decode_stream_entries(v) for k, v in result.items()}
 
     async def axreadgroup(
         self,
@@ -3167,7 +3200,7 @@ class RespCache(BaseCachex):
         result = await self.adapter.axreadgroup(group, consumer, nstreams, count=count, block=block, noack=noack)
         if result is None:
             return None
-        return {str(key_map.get(k, k)): self._decode_stream_entries(v) for k, v in result.items()}
+        return {key_map.get(k, k): self._decode_stream_entries(v) for k, v in result.items()}
 
     def xack(self, key: str, group: str, *entry_ids: str, version: int | None = None) -> int:
         """Acknowledge message processing."""

@@ -17,8 +17,6 @@ if TYPE_CHECKING:
 
 
 class TestEvalScript:
-    """Test eval_script execution."""
-
     def test_eval_script_simple(self, cache: RespCache):
         result = cache.eval_script("return 42")
         assert result == 42
@@ -69,7 +67,6 @@ class TestEvalScript:
         return redis.call('GET', KEYS[1])
         """
 
-        # Set with version 1
         result1 = cache.eval_script(
             script,
             keys=["vkey"],
@@ -78,7 +75,6 @@ class TestEvalScript:
             post_hook=decode_single_post,
             version=1,
         )
-        # Set with version 2
         result2 = cache.eval_script(
             script,
             keys=["vkey"],
@@ -91,7 +87,6 @@ class TestEvalScript:
         assert result1 == "v1"
         assert result2 == "v2"
 
-        # Get should return different values for different versions
         v1_val = cache.get("vkey", version=1)
         v2_val = cache.get("vkey", version=2)
 
@@ -108,8 +103,6 @@ class TestEvalScript:
 
 
 class TestScriptHelpers:
-    """Test ScriptHelpers functionality."""
-
     def test_script_helpers_make_keys(self, cache: RespCache):
         helpers = ScriptHelpers(
             make_key=cache.make_and_validate_key,
@@ -120,7 +113,6 @@ class TestScriptHelpers:
 
         keys = helpers.make_keys(["key1", "key2"])
         assert len(keys) == 2
-        # Keys should be prefixed
         assert keys[0] != "key1"
         assert keys[1] != "key2"
 
@@ -156,9 +148,7 @@ class TestPreBuiltHooks:
 
         proc_keys, proc_args = keys_only_pre(helpers, keys, args)
 
-        # Keys should be prefixed
         assert proc_keys[0] != "k1"
-        # Args should be unchanged
         assert proc_args == [1, 2, "three"]
 
     def test_full_encode_pre(self, cache: RespCache):
@@ -174,9 +164,7 @@ class TestPreBuiltHooks:
 
         proc_keys, proc_args = full_encode_pre(helpers, keys, args)
 
-        # Keys should be prefixed
         assert proc_keys[0] != "k1"
-        # Args should be encoded
         assert proc_args[0] != args[0]
         assert isinstance(proc_args[0], bytes)
 
@@ -194,7 +182,6 @@ class TestPreBuiltHooks:
         decoded = decode_single_post(helpers, encoded)
         assert decoded == original
 
-        # None should return None
         assert decode_single_post(helpers, None) is None
 
     def test_decode_list_post(self, cache: RespCache):
@@ -211,13 +198,10 @@ class TestPreBuiltHooks:
         decoded = decode_list_post(helpers, encoded)
         assert decoded == originals
 
-        # None should return empty list
         assert decode_list_post(helpers, None) == []
 
 
 class TestPipelineScripts:
-    """Test script execution in pipelines."""
-
     def test_pipeline_eval_script(self, cache: RespCache):
         script = "return redis.call('INCR', KEYS[1])"
 
@@ -278,7 +262,7 @@ class TestAsyncEval:
     """Tests for aeval() method."""
 
     @pytest.mark.asyncio
-    async def test_aeval_simple_return(self, cache: RespCache, mk):
+    async def test_aeval_simple_return(self, cache: RespCache):
         result = await cache.adapter.aeval("return 42", 0)
         assert result == 42
 
@@ -294,7 +278,7 @@ class TestAsyncEval:
         assert result == b"hello"
 
     @pytest.mark.asyncio
-    async def test_aeval_string_return(self, cache: RespCache, mk):
+    async def test_aeval_string_return(self, cache: RespCache):
         result = await cache.adapter.aeval("return 'async_result'", 0)
         assert result == b"async_result"
 

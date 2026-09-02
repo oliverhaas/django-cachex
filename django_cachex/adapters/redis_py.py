@@ -117,6 +117,8 @@ class RedisPyClusterAdapter(_RedisPyMixin, ValkeyPyClusterAdapter):
 
     if _REDIS_AVAILABLE:
         _lib = redis
+        # Commands go through the cluster client, which owns per-node pools, but the
+        # generic pool helpers are still inherited and must not build a valkey-py pool.
         _client_class = redis.Redis
         _pool_class = redis.ConnectionPool
         _cluster_class = RedisCluster

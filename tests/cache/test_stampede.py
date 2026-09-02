@@ -1,5 +1,6 @@
 """Tests for cache stampede prevention via XFetch algorithm (TTL-based)."""
 
+import logging
 import time
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -7,7 +8,8 @@ from unittest.mock import patch
 
 import pytest
 
-from django_cachex.stampede import StampedeConfig, should_recompute
+from django_cachex.stampede import StampedeConfig, make_stampede_config, should_recompute
+from tests.cache.support import make_cache
 
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
@@ -72,6 +74,48 @@ class TestStampedeConfig:
         assert config.buffer == 30
         assert config.beta == 2.0
         assert config.delta == 0.5
+
+
+class TestMakeStampedeConfig:
+    """``OPTIONS["stampede_prevention"]`` takes a bool, a dict, or None."""
+
+    def test_none_and_false_disable_prevention(self):
+        assert make_stampede_config(None) is None
+        assert make_stampede_config(False) is None
+
+    def test_true_uses_the_defaults(self):
+        assert make_stampede_config(True) == StampedeConfig()
+
+    def test_empty_dict_disables_prevention(self):
+        # An empty dict is falsy, so it reads as "off", not "defaults".
+        assert make_stampede_config({}) is None
+
+    def test_dict_sets_every_field(self):
+        config = make_stampede_config({"buffer": 30, "beta": 2.0, "delta": 0.5})
+        assert config == StampedeConfig(buffer=30, beta=2.0, delta=0.5)
+
+    def test_partial_dict_keeps_the_defaults(self):
+        assert make_stampede_config({"buffer": 15}) == StampedeConfig(buffer=15, beta=1.0, delta=1.0)
+
+    def test_unknown_keys_are_dropped_with_a_warning(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="django_cachex.stampede"):
+            config = make_stampede_config({"buffer": 30, "bufer": 99})
+        assert config == StampedeConfig(buffer=30)
+        assert "bufer" in caplog.text
+
+
+class TestStampedeOptionsWiring:
+    """The ``stampede_prevention`` option reaches the adapter."""
+
+    def test_dict_option_becomes_the_adapter_policy(self):
+        cache = make_cache(stampede_prevention={"buffer": 30, "beta": 2.0, "delta": 0.5})
+        assert cache.adapter.resolve_stampede(None) == StampedeConfig(buffer=30, beta=2.0, delta=0.5)
+
+    def test_true_option_becomes_the_default_policy(self):
+        assert make_cache(stampede_prevention=True).adapter.resolve_stampede(None) == StampedeConfig()
+
+    def test_absent_option_leaves_prevention_off(self):
+        assert make_cache().adapter.resolve_stampede(None) is None
 
 
 # =============================================================================
@@ -288,6 +332,22 @@ class TestStampedeExpireFamily:
         assert stampede_cache.pexpireat("sp_pexpat", int(time.time() * 1000) + 30_000) is True
         assert stampede_cache.get("sp_pexpat") == "val"
 
+    def test_expireat_in_the_past_still_deletes(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_expat_past", "val", timeout=300)
+        assert stampede_cache.expireat("sp_expat_past", int(time.time()) - 30) is True
+        assert stampede_cache.has_key("sp_expat_past") is False
+
+    def test_expireat_datetime_in_the_past_still_deletes(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_expat_past_dt", "val", timeout=300)
+        when = datetime.now(tz=UTC) - timedelta(seconds=30)
+        assert stampede_cache.expireat("sp_expat_past_dt", when) is True
+        assert stampede_cache.has_key("sp_expat_past_dt") is False
+
+    def test_pexpireat_in_the_past_still_deletes(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_pexpat_past", "val", timeout=300)
+        assert stampede_cache.pexpireat("sp_pexpat_past", int(time.time() * 1000) - 30_000) is True
+        assert stampede_cache.has_key("sp_pexpat_past") is False
+
     @pytest.mark.asyncio
     async def test_aexpire_keeps_value_readable(self, stampede_cache: RespCache):
         await stampede_cache.aset("asp_exp_read", "val", timeout=300)
@@ -405,7 +465,6 @@ class TestStampedeEarlyRecompute:
         # Recompute
         stampede_cache.set("sp_recomp", "recomputed", timeout=300)
 
-        # Verify value and TTL
         assert stampede_cache.get("sp_recomp") == "recomputed"
         ttl = stampede_cache.ttl("sp_recomp", stampede_prevention=False)
         assert ttl is not None
@@ -494,10 +553,47 @@ class TestStampedeOverride:
         assert ttl is not None
         assert ttl > 300  # Buffer was added
 
+    def test_false_skips_buffer_on_add(self, stampede_cache: RespCache):
+        stampede_cache.delete("sp_ovr_add")
+        assert stampede_cache.add("sp_ovr_add", "val", timeout=300, stampede_prevention=False) is True
+        ttl = stampede_cache.ttl("sp_ovr_add", stampede_prevention=False)
+        assert ttl is not None
+        assert 290 < ttl <= 300  # No buffer added
+
+    def test_true_on_add_adds_buffer_without_instance_config(self, cache: RespCache):
+        cache.delete("sp_ovr_add_force")
+        assert cache.add("sp_ovr_add_force", "val", timeout=300, stampede_prevention=True) is True
+        ttl = cache.ttl("sp_ovr_add_force")
+        assert ttl is not None
+        assert ttl > 300  # Buffer was added
+
+    def test_false_skips_buffer_on_set_many(self, stampede_cache: RespCache):
+        stampede_cache.set_many({"sp_ovr_sm": "val"}, timeout=300, stampede_prevention=False)
+        ttl = stampede_cache.ttl("sp_ovr_sm", stampede_prevention=False)
+        assert ttl is not None
+        assert 290 < ttl <= 300  # No buffer added
+
+    def test_true_on_set_many_adds_buffer_without_instance_config(self, cache: RespCache):
+        cache.set_many({"sp_ovr_sm_force": "val"}, timeout=300, stampede_prevention=True)
+        ttl = cache.ttl("sp_ovr_sm_force")
+        assert ttl is not None
+        assert ttl > 300  # Buffer was added
+
+    def test_false_on_get_or_set_serves_the_logically_expired_value(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_ovr_gos", "stale", timeout=300)
+        stampede_cache.expire("sp_ovr_gos", 50, stampede_prevention=False)  # logically expired
+
+        result = stampede_cache.get_or_set("sp_ovr_gos", lambda: "fresh", timeout=300, stampede_prevention=False)
+        assert result == "stale"
+
+    def test_get_or_set_recomputes_without_the_override(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_ovr_gos_default", "stale", timeout=300)
+        stampede_cache.expire("sp_ovr_gos_default", 50, stampede_prevention=False)
+
+        assert stampede_cache.get_or_set("sp_ovr_gos_default", lambda: "fresh", timeout=300) == "fresh"
+
     def test_config_override_buffer(self, cache: RespCache):
         """``stampede_prevention=StampedeConfig(...)`` should force the supplied policy."""
-        from django_cachex.stampede import StampedeConfig
-
         # Non-stampede cache with per-call override: buffer=120
         cache.set("sp_ovr_cfg", "val", timeout=300, stampede_prevention=StampedeConfig(buffer=120))
         ttl = cache.ttl("sp_ovr_cfg")
@@ -506,8 +602,6 @@ class TestStampedeOverride:
 
     def test_config_override_replaces_instance(self, stampede_cache: RespCache):
         """``StampedeConfig`` override replaces the instance config wholesale."""
-        from django_cachex.stampede import StampedeConfig
-
         # Instance has buffer=60; explicit override supplies the full policy.
         stampede_cache.set(
             "sp_ovr_replace",
@@ -569,7 +663,6 @@ class TestStampedeGetOrSetRecompute:
             timeout=300,
         )
         assert result == "fresh"
-        # Verify the new value is actually stored (not just returned once)
         assert stampede_cache.get("sp_gos_overwrite") == "fresh"
 
     def test_get_or_set_returns_fresh_not_retrigger(self, stampede_cache: RespCache):
@@ -709,7 +802,6 @@ class TestAsyncStampedeGetOrSetRecompute:
             timeout=300,
         )
         assert result == "fresh_async"
-        # Verify the new value is actually stored (not just returned once)
         assert await stampede_cache.aget("asp_gos_overwrite") == "fresh_async"
 
     @pytest.mark.asyncio
