@@ -672,18 +672,16 @@ class TestRespQueueReap:
         fresh.release()
         assert cache.adapter.zscore(queue_key, b"dead-token") is None
 
-    def test_stale_queue_entry_reaped_on_aacquire(self, cache):
-        async def run() -> None:
-            full_name = cache.make_and_validate_key("aresp_queue_reap")
-            queue_key = "{" + full_name + "}:queue"
-            cache.adapter.zadd(queue_key, {b"dead-token": 1.0})
+    @pytest.mark.asyncio
+    async def test_stale_queue_entry_reaped_on_aacquire(self, cache):
+        full_name = cache.make_and_validate_key("aresp_queue_reap")
+        queue_key = "{" + full_name + "}:queue"
+        cache.adapter.zadd(queue_key, {b"dead-token": 1.0})
 
-            fresh = await cache.asemaphore("aresp_queue_reap", capacity=1, lease=10)
-            assert await fresh.aacquire(blocking=False) is True
-            await fresh.arelease()
-            assert cache.adapter.zscore(queue_key, b"dead-token") is None
-
-        asyncio.run(run())
+        fresh = await cache.asemaphore("aresp_queue_reap", capacity=1, lease=10)
+        assert await fresh.aacquire(blocking=False) is True
+        await fresh.arelease()
+        assert cache.adapter.zscore(queue_key, b"dead-token") is None
 
     def test_live_waiter_not_reaped(self, cache):
         """A queued waiter that polls (refreshing its liveness key) keeps its
@@ -824,20 +822,18 @@ class TestRespConcurrentMisuse:
         assert adapter.used == 0
         assert adapter.claims == {}
 
-    def test_double_aacquire_raises(self, cache):
+    @pytest.mark.asyncio
+    async def test_double_aacquire_raises(self, cache):
         """The claim lock is shared with the async path, which still rejects
         re-acquiring a held instance."""
 
-        async def run() -> None:
-            sem = await cache.asemaphore("resp_race_aacquire", capacity=2, lease=10)
-            assert await sem.aacquire(blocking=False) is True
-            try:
-                with pytest.raises(SemaphoreError, match="already held"):
-                    await sem.aacquire(blocking=False)
-            finally:
-                await sem.arelease()
-
-        asyncio.run(run())
+        sem = await cache.asemaphore("resp_race_aacquire", capacity=2, lease=10)
+        assert await sem.aacquire(blocking=False) is True
+        try:
+            with pytest.raises(SemaphoreError, match="already held"):
+                await sem.aacquire(blocking=False)
+        finally:
+            await sem.arelease()
 
 
 class TestRespTokenSnapshot:
@@ -1121,62 +1117,54 @@ class TestRespAsyncSemaphore:
     """``cache.asemaphore`` returns the same ``RespSemaphore`` instance; use
     its ``aacquire``/``arelease``/``aextend`` methods from async code."""
 
-    def test_resp_aacquire(self, cache):
-        async def run() -> None:
-            sem = await cache.asemaphore("aresp_a", capacity=2, lease=10)
-            async with sem:
-                pass  # held via context manager
+    @pytest.mark.asyncio
+    async def test_resp_aacquire(self, cache):
+        sem = await cache.asemaphore("aresp_a", capacity=2, lease=10)
+        async with sem:
+            pass  # held via context manager
 
-        asyncio.run(run())
+    @pytest.mark.asyncio
+    async def test_resp_aacquire_non_blocking(self, cache):
+        a = await cache.asemaphore("aresp_b", capacity=1, lease=10)
+        b = await cache.asemaphore("aresp_b", capacity=1, lease=10)
+        try:
+            assert await a.aacquire(blocking=False) is True
+            assert await b.aacquire(blocking=False) is False
+        finally:
+            with contextlib.suppress(SemaphoreError):
+                await a.arelease()
 
-    def test_resp_aacquire_non_blocking(self, cache):
-        async def run() -> None:
-            a = await cache.asemaphore("aresp_b", capacity=1, lease=10)
-            b = await cache.asemaphore("aresp_b", capacity=1, lease=10)
-            try:
-                assert await a.aacquire(blocking=False) is True
-                assert await b.aacquire(blocking=False) is False
-            finally:
-                with contextlib.suppress(SemaphoreError):
-                    await a.arelease()
+    @pytest.mark.asyncio
+    async def test_resp_aacquire_blocking_with_timeout(self, cache):
+        holder = await cache.asemaphore("aresp_to", capacity=1, lease=10)
+        await holder.aacquire(blocking=False)
+        try:
+            waiter = await cache.asemaphore(
+                "aresp_to",
+                capacity=1,
+                lease=10,
+                timeout=0.3,
+            )
+            with pytest.raises(SemaphoreTimeoutError):
+                await waiter.aacquire(blocking=True)
+        finally:
+            await holder.arelease()
 
-        asyncio.run(run())
-
-    def test_resp_aacquire_blocking_with_timeout(self, cache):
-        async def run() -> None:
-            holder = await cache.asemaphore("aresp_to", capacity=1, lease=10)
-            await holder.aacquire(blocking=False)
-            try:
-                waiter = await cache.asemaphore(
-                    "aresp_to",
-                    capacity=1,
-                    lease=10,
-                    timeout=0.3,
-                )
-                with pytest.raises(SemaphoreTimeoutError):
-                    await waiter.aacquire(blocking=True)
-            finally:
-                await holder.arelease()
-
-        asyncio.run(run())
-
-    def test_resp_aextend(self, cache):
-        async def run() -> None:
-            holder = await cache.asemaphore("aresp_ext", capacity=1, lease=2)
-            await holder.aacquire(blocking=False)
-            try:
-                full_name = cache.make_and_validate_key("aresp_ext")
-                claim_key = "{" + full_name + "}:state:claim:" + holder._token
-                before = cache.adapter.pttl(claim_key)
-                assert await holder.aextend(10) is True
-                after = cache.adapter.pttl(claim_key)
-                assert before is not None and after is not None
-                assert after > before
-                assert after > 5_000
-            finally:
-                await holder.arelease()
-
-        asyncio.run(run())
+    @pytest.mark.asyncio
+    async def test_resp_aextend(self, cache):
+        holder = await cache.asemaphore("aresp_ext", capacity=1, lease=2)
+        await holder.aacquire(blocking=False)
+        try:
+            full_name = cache.make_and_validate_key("aresp_ext")
+            claim_key = "{" + full_name + "}:state:claim:" + holder._token
+            before = cache.adapter.pttl(claim_key)
+            assert await holder.aextend(10) is True
+            after = cache.adapter.pttl(claim_key)
+            assert before is not None and after is not None
+            assert after > before
+            assert after > 5_000
+        finally:
+            await holder.arelease()
 
 
 def test_top_level_semaphore_exports():
