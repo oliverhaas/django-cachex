@@ -20,14 +20,16 @@ jobs:
       # run until its dependencies finish, so a poll landing in that gap sees
       # nothing pending and merges before the wheel tests have even started.
       # A suite stays in progress across the gap. This job's own suite is
-      # excluded so it does not wait on itself forever.
+      # excluded so it does not wait on itself forever, and so are the suites
+      # of other apps (github-pages, travis-ci, vercel): those sit "queued"
+      # with no check runs on every commit and never complete.
       - name: Wait for CI
         run: |
           sha=$(gh pr view "$PR_URL" --json headRefOid --jq .headRefOid)
           own=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .check_suite_id)
           while true; do
             suites=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/check-suites?per_page=100" \
-              --jq "[.check_suites[] | select(.id != $own) | {status, conclusion}]" || true)
+              --jq "[.check_suites[] | select(.app.slug == \"github-actions\" and .id != $own) | {status, conclusion}]" || true)
             [ -n "$suites" ] || suites='[]'
             bad=$(jq -c '[.[] | select(.conclusion != null and ([.conclusion] | inside(["success", "neutral", "skipped"]) | not))]' <<<"$suites")
             if [ "$(jq 'length' <<<"$bad")" -gt 0 ]; then
