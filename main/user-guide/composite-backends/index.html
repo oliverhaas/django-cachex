@@ -769,6 +769,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#convergence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Convergence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#operational-notes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1188,6 +1199,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#convergence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Convergence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#operational-notes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1325,10 +1347,15 @@
 <ul>
 <li><code>add()</code>, <code>incr()</code>, <code>decr()</code> raise <code>NotSupportedError</code>. Their semantics (atomic check-and-set, atomic increment) can't be honoured under eventual consistency. Use the transport cache directly when you need them.</li>
 </ul>
+<h3 id="convergence">Convergence<a class="headerlink" href="#convergence" title="Permanent link">&para;</a></h3>
+<p>Every pod applies stream entries in stream order, its own included, and each entry carries the final value rather than a delta. Two pods that write the same key inside the propagation window therefore both end on whichever entry the stream ordered last, instead of each ending up holding the other's value. A pod skips one of its own entries only where a later local write to that key (or a local <code>clear()</code>) has already replaced it, so a writer never reads back a value it has moved past.</p>
+<p>Broadcasts stay best-effort: an entry is dropped when the publish backlog is full or the transport errors. The stream is a replication feed, not a durable log.</p>
 <h3 id="operational-notes">Operational notes<a class="headerlink" href="#operational-notes" title="Permanent link">&para;</a></h3>
 <ul>
 <li>All pods sharing a <code>stream_key</code> must use the same transport <code>BACKEND</code> and <code>OPTIONS</code> so their serializer/compressor agree on the wire format.</li>
+<li>The consumer thread, the publisher thread and the pod identity are shared per <code>LOCATION</code> within a process, not per backend instance. Django hands out one cache instance per thread and per async context, so per-instance state would mean one consumer per ASGI request. Two <code>StreamCache</code> aliases sharing a <code>stream_key</code> but not a <code>LOCATION</code> act as two independent pods, which is how the test suite simulates a cluster in one process.</li>
 <li>The consumer thread is restarted automatically if it dies; check <code>info()["sync"]</code> for consumer health, last-read age, and stream position.</li>
+<li>On a valkey-glide transport the consumer polls instead of blocking: glide carries every command of a client over one connection, so a parked <code>XREAD BLOCK</code> would hold up each publish behind it. <code>block_timeout</code> is ignored there and the poll runs every 25 ms.</li>
 <li>Set <code>replay</code> above 0 (up to <code>maxlen</code>) so a restarting pod replays the last N mutations and doesn't start with an empty cache.</li>
 <li>Publishes are queued to a background thread; when more than <code>max_pending_publishes</code> are outstanding, new publishes are dropped with a warning instead of blocking the caller.</li>
 </ul>
@@ -1354,8 +1381,9 @@
 </span></code></pre></div>
 <h3 id="ttl-bounding">TTL bounding<a class="headerlink" href="#ttl-bounding" title="Permanent link">&para;</a></h3>
 <p>L1 TTL is <code>min(l1_timeout, L2's remaining TTL)</code>. An L1 entry can never outlive its L2 entry: if you <code>set(key, value, timeout=60)</code>, L1 won't keep that entry past 60 seconds, even if <code>l1_timeout</code> is larger.</p>
-<p>If <code>l1_timeout</code> is omitted, the cap falls back to L1's own <code>TIMEOUT</code> setting.</p>
+<p>If <code>l1_timeout</code> is omitted, the cap falls back to L1's own <code>TIMEOUT</code> setting. One of the two is required. With neither (<code>l1_timeout</code> unset and <code>TIMEOUT: None</code> on the L1 alias) an L1 entry would never expire, so the first operation raises <code>ImproperlyConfigured</code> rather than caching indefinitely.</p>
 <p>The bound is on TTL, not on cross-process visibility. Writes and deletes through a <code>TieredCache</code> update both of its tiers, but when another process changes a key in L2, this process keeps serving its L1 copy until that entry expires, so a read can lag L2 by up to <code>l1_timeout</code>.</p>
+<p>The same bound applies within a process. Every mutation writes L2 before touching L1, which keeps a concurrent read from repopulating L1 out of the pre-mutation L2 value, but it does not close the window: a read that has already fetched from L2 when the invalidation runs still writes the old value into L1 afterwards. L1 then serves the superseded value for up to <code>l1_timeout</code>. Address the tiers directly if a read has to observe a write immediately.</p>
 <h3 id="whats-supported">What's supported<a class="headerlink" href="#whats-supported" title="Permanent link">&para;</a></h3>
 <p><code>TieredCache</code> exposes the standard Django cache interface (<code>get</code>, <code>set</code>, <code>add</code>, <code>delete</code>, <code>get_many</code>, <code>set_many</code>, ...) plus key metadata helpers delegated to L2 (<code>keys</code>, <code>iter_keys</code>, <code>scan</code>, <code>ttl</code>, <code>pttl</code>, <code>type</code>, <code>info</code>, <code>persist</code>, <code>expire</code>, <code>delete_pattern</code>), which is what drives the admin. Data-structure ops (<code>lpush</code>, <code>hset</code>, <code>zadd</code>, ...) raise <code>NotSupportedError</code>; for those, pipelines, or scripts, address the tier caches directly via <code>caches["l1"]</code> or <code>caches["l2"]</code>.</p>
 <p><code>KEY_PREFIX</code> is not accepted on a <code>TieredCache</code> alias, in either the top-level slot or <code>OPTIONS</code>, because keys are passed through to the tiers unprefixed. Set <code>KEY_PREFIX</code> on the tier aliases instead; configuring it on the tiered alias raises <code>ImproperlyConfigured</code>.</p>

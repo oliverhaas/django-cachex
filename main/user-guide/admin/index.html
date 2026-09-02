@@ -1422,7 +1422,7 @@
 <li><code>django_cachex.view_cache</code> / <code>view_key</code>: view caches and keys</li>
 <li><code>django_cachex.change_cache</code>: cache-wide actions, meaning flush, clear the current version, and the cache detail page's danger zone (clear all versions, flush the database)</li>
 <li><code>django_cachex.add_key</code>: create keys</li>
-<li><code>django_cachex.change_key</code>: every mutation on the key detail page, including editing values, setting a TTL, and making a key persistent</li>
+<li><code>django_cachex.change_key</code>: every mutation on the key detail page, including editing values and setting or removing a TTL. Without it the page renders read-only.</li>
 <li><code>django_cachex.delete_key</code>: delete keys</li>
 </ul>
 <h2 id="support-levels">Support Levels<a class="headerlink" href="#support-levels" title="Permanent link">&para;</a></h2>
@@ -1462,12 +1462,13 @@
 <p><img alt="The key browser, with the type filter sidebar and a wildcard search" src="../../assets/screenshot-key-list.png" /></p>
 <p><strong>Actions:</strong> Delete selected keys, add new key.</p>
 <h3 id="key-detail">Key Detail<a class="headerlink" href="#key-detail" title="Permanent link">&para;</a></h3>
-<p>View and edit a specific key's value (formatted JSON for objects/arrays), data type, and TTL. Supports editing values/timeout and deleting the key.</p>
+<p>View and edit a specific key's value (formatted JSON for objects/arrays), data type, and TTL. Supports editing the value, setting the TTL, running the operations for the key's data type, and deleting the key.</p>
+<p>A key whose server-side type the admin cannot render is shown read-only: the type is named, the value is not displayed, and no operations are offered.</p>
 <p><img alt="The key detail page, editing a value and its TTL" src="../../assets/screenshot-key-detail.png" /></p>
 <h3 id="cache-info">Cache Info<a class="headerlink" href="#cache-info" title="Permanent link">&para;</a></h3>
 <p>View server information: configuration, server version/uptime, memory usage, connected clients, command statistics, and keyspace data.</p>
 <h3 id="add-key">Add Key<a class="headerlink" href="#add-key" title="Permanent link">&para;</a></h3>
-<p>Create a new cache entry with key name, value (JSON objects/arrays are parsed automatically), and optional timeout in seconds.</p>
+<p>Name the new key and pick its data type. Nothing is written yet: <strong>Continue</strong> opens the key detail page, where the first value you add creates the key.</p>
 <h2 id="backend-abilities">Backend Abilities<a class="headerlink" href="#backend-abilities" title="Permanent link">&para;</a></h2>
 <p>The admin adapts based on backend capabilities:</p>
 <table>
@@ -1528,6 +1529,18 @@
 <td>Yes</td>
 <td>No</td>
 </tr>
+<tr>
+<td>Danger zone (clear all versions, FLUSHDB)</td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Conflict detection on edit</td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+</tr>
 </tbody>
 </table>
 <h2 id="tips">Tips<a class="headerlink" href="#tips" title="Permanent link">&para;</a></h2>
@@ -1535,7 +1548,7 @@
 <li>Use <code>*</code> as a wildcard in the key search, so <code>user:*</code> finds every key starting with <code>user:</code>.</li>
 <li>Enter valid JSON when editing to store objects or arrays.</li>
 <li>Each view has a help button with tips for that view.</li>
-<li>The refresh action re-reads key lists and statistics.</li>
+<li>On RESP backends an edit is rejected if the value changed since the page loaded. Other backends save without that check.</li>
 </ul>
 
 

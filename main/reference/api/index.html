@@ -1898,8 +1898,8 @@
 <td>Iterate keys matching pattern</td>
 </tr>
 <tr>
-<td><code>scan(cursor, pattern, count)</code></td>
-<td>Single SCAN iteration</td>
+<td><code>scan(cursor, pattern, count, key_type=None)</code></td>
+<td>Single SCAN iteration; <code>key_type</code> keeps only keys of that RESP type</td>
 </tr>
 <tr>
 <td><code>delete_pattern(pattern)</code></td>
@@ -2453,7 +2453,7 @@
 <p>For raw access that skips prefixing/serialization, use <code>cache.adapter</code> (e.g. <code>await cache.adapter.aget(prefixed_key)</code>).</p>
 <ul>
 <li><code>attl</code>, <code>apttl</code>, <code>aexpire</code>, <code>apexpire</code>, <code>aexpireat</code>, <code>apexpireat</code>, <code>apersist</code></li>
-<li><code>akeys</code>, <code>aiter_keys</code>, <code>adelete_pattern</code></li>
+<li><code>akeys</code>, <code>aiter_keys</code>, <code>ascan</code>, <code>adelete_pattern</code></li>
 <li><code>ahset</code>, <code>ahdel</code>, <code>ahexists</code>, <code>ahget</code>, <code>ahgetall</code>, <code>ahincrby</code>, <code>ahincrbyfloat</code>, <code>ahkeys</code>, <code>ahlen</code>, <code>ahmget</code>, <code>ahsetnx</code>, <code>ahvals</code></li>
 <li><code>asadd</code>, <code>asrem</code>, <code>asmembers</code>, <code>asismember</code>, <code>asmismember</code>, <code>ascard</code>, <code>aspop</code>, <code>asrandmember</code>, <code>asmove</code>, <code>asdiff</code>, <code>asdiffstore</code>, <code>asinter</code>, <code>asinterstore</code>, <code>asunion</code>, <code>asunionstore</code></li>
 <li><code>azadd</code>, <code>azcard</code>, <code>azcount</code>, <code>azincrby</code>, <code>azrange</code>, <code>azrevrange</code>, <code>azrangebyscore</code>, <code>azrevrangebyscore</code>, <code>azrank</code>, <code>azrevrank</code>, <code>azrem</code>, <code>azremrangebyrank</code>, <code>azremrangebyscore</code>, <code>azscore</code>, <code>azmscore</code>, <code>azpopmin</code>, <code>azpopmax</code></li>
@@ -2635,6 +2635,7 @@ the defaults set on the lock object:</p>
 </tbody>
 </table>
 <p><code>acquire()</code> accepts <code>blocking</code> and <code>timeout</code> to override the defaults set on the semaphore object. <code>release()</code> returns the claim to the pool; <code>extend(seconds)</code> bumps the TTL on RESP backends for tasks that may legitimately exceed their original lease.</p>
+<p>On RESP backends the semaphore's bookkeeping keys (<code>{name}:state</code>, <code>{name}:claims</code>, <code>{name}:queue</code>) expire after twice the longest lease seen, refreshed by every acquire, extend and release, so a holder that dies without releasing leaves nothing behind once its lease has run out.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">sem</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">semaphore</span><span class="p">(</span><span class="s2">&quot;mysem&quot;</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
 </span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="k">if</span> <span class="n">sem</span><span class="o">.</span><span class="n">acquire</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">):</span>
 </span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    <span class="k">try</span><span class="p">:</span>
@@ -2859,7 +2860,7 @@ failure.</p>
 </tr>
 <tr>
 <td><code>WrongTypeError</code></td>
-<td>Operation applied to a key holding the wrong RESP type (subclass of <code>TypeError</code>). Mirrors Redis <code>WRONGTYPE</code>; raised consistently across LocMem, redis-py, valkey-py, and valkey-glide.</td>
+<td>Operation applied to a key holding the wrong RESP type (subclass of <code>TypeError</code>). Mirrors Redis <code>WRONGTYPE</code>; raised consistently across <code>LocMemCache</code>, <code>DatabaseCache</code>, redis-py, valkey-py, and valkey-glide.</td>
 </tr>
 <tr>
 <td><code>CompressorError</code></td>

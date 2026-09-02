@@ -1777,7 +1777,15 @@
 </span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>└─────────────────────────────────────────────────────────┘
 </span></code></pre></div>
 <h3 id="per-event-loop-caching">Per-Event-Loop Caching<a class="headerlink" href="#per-event-loop-caching" title="Permanent link">&para;</a></h3>
-<p>Async pools are stored in a <code>WeakKeyDictionary</code> keyed by event loop, providing automatic cleanup when loops are garbage collected, thread safety (each loop gets its own pools), and connection reuse within the same loop.</p>
+<p>Async pools live in a registry keyed by event loop, so each loop gets its own
+pools and reuses them for every call it makes.</p>
+<p>A pool cannot outlive its loop: every open connection holds a transport that
+belongs to the loop that opened it. Weak keys alone would never free those
+entries, because the pool keeps its own loop alive. So cachex sweeps the
+registry on every pool lookup and on <code>close()</code>, dropping the entry of any loop
+that has been closed. Dropping the entry releases the pool, its client and its
+connections; each socket closes when the garbage collector reclaims the
+connection that owns it.</p>
 <h2 id="performance-considerations">Performance Considerations<a class="headerlink" href="#performance-considerations" title="Permanent link">&para;</a></h2>
 <div class="admonition warning">
 <p class="admonition-title">Event Loop Lifecycle</p>
@@ -1794,18 +1802,19 @@
 </span></code></pre></div>
 <h3 id="inefficient-short-lived-event-loops">Inefficient: Short-Lived Event Loops<a class="headerlink" href="#inefficient-short-lived-event-loops" title="Permanent link">&para;</a></h3>
 <p>Avoid async methods when event loops are frequently created and destroyed:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># BAD: Each asyncio.run() creates a new event loop = new connection pool</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">sync_function</span><span class="p">():</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">100</span><span class="p">):</span>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>        <span class="c1"># Creates 100 connection pools!</span>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>        <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;key:</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">))</span>
-</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># BAD: each asyncio.run() gets a new event loop, so a new pool and a new</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="c1"># TCP connection. The 100 pools do not pile up (each run sweeps out the</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1"># previous one), but you pay 100 handshakes instead of one.</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="k">def</span><span class="w"> </span><span class="nf">sync_function</span><span class="p">():</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">100</span><span class="p">):</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>        <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;key:</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">))</span>
 </span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>
-</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="c1"># BAD: sync_to_async may create temporary event loops</span>
-</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="nd">@sync_to_async</span>
-</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="k">def</span><span class="w"> </span><span class="nf">wrapped_function</span><span class="p">():</span>
-</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>    <span class="c1"># May not reuse connections efficiently</span>
-</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>    <span class="k">pass</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="c1"># BAD: async_to_sync() called from a plain sync thread runs asyncio.run()</span>
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="c1"># per call, with the same one-connection-per-call cost.</span>
+</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="nd">@sync_to_async</span>
+</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="k">def</span><span class="w"> </span><span class="nf">wrapped_function</span><span class="p">():</span>
+</span><span id="__span-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>    <span class="k">pass</span>
 </span></code></pre></div>
 <h3 id="recommendations">Recommendations<a class="headerlink" href="#recommendations" title="Permanent link">&para;</a></h3>
 <table>
@@ -1855,12 +1864,19 @@
 <h3 id="closing-async-connections">Closing Async Connections<a class="headerlink" href="#closing-async-connections" title="Permanent link">&para;</a></h3>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aclose</span><span class="p">()</span>
 </span></code></pre></div>
-<p><code>aclose()</code> exists for Django API compatibility but is a no-op, as is
-<code>close()</code>: pools live for the lifetime of the process. Django fires
-<code>close()</code> on every <code>request_finished</code> signal, and tearing pools down
-there would force a reconnect per request. Async pools are released
-automatically when their event loop is garbage collected (they live in
-a <code>WeakKeyDictionary</code> keyed by loop).</p>
+<p><code>aclose()</code> disconnects the async pools belonging to the loop it runs on and
+drops them from the registry. The next <code>await</code> on the cache opens fresh ones,
+so call it when you are done with a loop, not between requests. It also sweeps
+the registry, releasing the pools of any loop that has been closed. On a
+cluster backend it closes that loop's cluster client; on a Sentinel backend it
+also closes the loop's Sentinel manager.</p>
+<p><code>close()</code> leaves the sync pools connected: Django fires it on every
+<code>request_finished</code> signal, and tearing pools down there would force a reconnect
+per request. It does sweep the registry, since that needs no running loop.</p>
+<p>Both are safe to skip. A process that only ever runs one loop never
+accumulates anything, and a process that creates loops (<code>asyncio.run()</code>, or
+<code>async_to_sync()</code> called from a sync thread) has each new loop sweep out the
+pools of the loops that closed before it.</p>
 <h2 id="mixed-syncasync-usage">Mixed Sync/Async Usage<a class="headerlink" href="#mixed-syncasync-usage" title="Permanent link">&para;</a></h2>
 <p>A single backend works for both sync and async code:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
