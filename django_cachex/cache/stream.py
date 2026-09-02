@@ -184,6 +184,17 @@ class _StreamSync:
 
 _SYNC_REGISTRY: dict[str, _StreamSync] = {}
 _MULTIPLEXED_POLL_INTERVAL = 0.025
+
+
+def _newer_stream_id(entry_id: str, last_id: str) -> bool:
+    """Whether ``entry_id`` lies past ``last_id``; ``$`` precedes every entry."""
+    if last_id == "$":
+        return True
+    ms, _, seq = entry_id.partition("-")
+    last_ms, _, last_seq = last_id.partition("-")
+    return (int(ms), int(seq)) > (int(last_ms), int(last_seq))
+
+
 _REGISTRY_LOCK = Lock()
 
 
@@ -514,19 +525,7 @@ class StreamCache(BaseCachex, LocMemCache):
                         stop_event.wait(_MULTIPLEXED_POLL_INTERVAL)
                     continue
                 for entries in result.values():
-                    with self._lock:
-                        for entry_id, fields in entries:
-                            # Advance cursor BEFORE processing so a bad
-                            # message is skipped, not retried forever.
-                            state.last_id = entry_id
-                            try:
-                                self._apply_message(fields)
-                            except Exception:
-                                logger.warning(
-                                    "StreamCache: Failed to apply message %s, skipping",
-                                    state.last_id,
-                                    exc_info=True,
-                                )
+                    self._apply_entries(entries)
             except Exception:
                 if not stop_event.is_set():
                     logger.warning(
@@ -534,6 +533,30 @@ class StreamCache(BaseCachex, LocMemCache):
                         exc_info=True,
                     )
                     stop_event.wait(1.0)
+
+    def _apply_entries(self, entries: Sequence[tuple[str, dict[str, Any]]]) -> None:
+        """Apply a batch read from the stream, once per entry.
+
+        The consumer thread and a test-side ``_drain`` can hold overlapping
+        batches, so each entry is checked against the shared cursor under the
+        lock and applied only by whichever reader gets there first.
+        """
+        state = self._sync
+        with self._lock:
+            for entry_id, fields in entries:
+                if not _newer_stream_id(entry_id, state.last_id):
+                    continue
+                # Advance cursor BEFORE processing so a bad
+                # message is skipped, not retried forever.
+                state.last_id = entry_id
+                try:
+                    self._apply_message(fields)
+                except Exception:
+                    logger.warning(
+                        "StreamCache: Failed to apply message %s, skipping",
+                        state.last_id,
+                        exc_info=True,
+                    )
 
     def _apply_message(self, fields: dict[str, Any]) -> None:
         """Apply a single stream message to local cache. Caller holds ``self._lock``.
@@ -640,11 +663,8 @@ class StreamCache(BaseCachex, LocMemCache):
                 if not result:
                     return
                 for entries in result.values():
-                    with self._lock:
-                        for entry_id, fields in entries:
-                            self._apply_message(fields)
-                            read_from = entry_id
-                            state.last_id = entry_id
+                    self._apply_entries(entries)
+                    read_from = entries[-1][0]
             except Exception:  # noqa: BLE001
                 return
 

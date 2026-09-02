@@ -676,6 +676,17 @@ class TestSyncCrossInstance:
         pod1._drain()
         assert pod1.get("pre_clear") is None
 
+    def test_overlapping_readers_apply_each_entry_once(self, stream_pair: tuple[StreamCache, StreamCache]):
+        pod1, _pod2 = stream_pair
+        pod1.clear()
+        pod1.set("twice", "v")
+        pod1._flush_publishes()
+        entries = pod1._transport.xrange(pod1._stream_key)
+        # The consumer thread and a drain holding the same batch.
+        pod1._apply_entries(entries)
+        pod1._apply_entries(entries)
+        assert pod1.get("twice") == "v"
+
     def test_writes_after_own_clear_survive_its_broadcast(
         self,
         stream_pair: tuple[StreamCache, StreamCache],
