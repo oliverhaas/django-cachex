@@ -68,11 +68,16 @@ jobs:
       - name: Run ty check
         run: uv run ty check django_cachex/
 
-      - name: Run tests
+      - name: Run backend tests
         run: uv run pytest tests/cache/ -n auto
         env:
           # Guard against pyc write races on first concurrent import
           # (intermittent xdist collection ImportError on fresh checkouts).
+          PYTHONDONTWRITEBYTECODE: "1"
+
+      - name: Run admin tests
+        run: uv run pytest tests/admin/ -n auto
+        env:
           PYTHONDONTWRITEBYTECODE: "1"
 
   tag-and-trigger:
