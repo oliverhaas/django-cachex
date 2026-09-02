@@ -1,8 +1,9 @@
 """Tests for ``django_cachex.cache.database.DatabaseCache``.
 
-Limited coverage focused on the cachex-contract surface that
-``test_base.py`` defers ("TBD"). The full per-op battery still lives with
-the RESP-backend tests via the parametrized fixtures.
+Covers the parts of the cachex contract that are specific to the cache
+table: atomic compound ops, SQL pattern translation and the typed scan. The
+full per-op battery lives with the RESP-backend tests via the parametrized
+fixtures.
 """
 
 from typing import TYPE_CHECKING
@@ -68,7 +69,6 @@ class TestSetFlags:
         assert db_cache.get("k") == "old"
 
     def test_no_flags_delegates_to_django(self, db_cache: DatabaseCache):
-        # Standard set returns None on success
         assert db_cache.set("k", "v") is None
         assert db_cache.get("k") == "v"
 
@@ -88,7 +88,7 @@ class TestSetFlags:
 
 
 class TestWrongTypeNormalization:
-    """``_coerce_*`` raises :class:`WrongTypeError`, not plain ``TypeError`` (B4).
+    """``_coerce_*`` raises :class:`WrongTypeError`, not plain ``TypeError``.
 
     Cross-backend code that catches ``WrongTypeError`` must work against
     DatabaseCache too; raising plain ``TypeError`` previously broke that
@@ -121,6 +121,61 @@ class TestWrongTypeNormalization:
         # work, since WrongTypeError is a TypeError subclass.
         with pytest.raises(TypeError):
             db_cache.lpush("k", "x")
+
+
+class TestStringReads:
+    """``get``/``get_many``/``incr`` treat a tagged collection as WRONGTYPE.
+
+    Regression: the private ``_List``/``_Set``/``_Hash``/``_ZSet`` container
+    leaked out of ``get()``, and ``incr`` on one raised a bare ``TypeError``
+    from ``value + delta``.
+    """
+
+    def test_get_on_collection_raises_wrongtype(self, db_cache: DatabaseCache):
+        db_cache.rpush("lk", 1)
+        with pytest.raises(WrongTypeError, match="'lk'"):
+            db_cache.get("lk")
+
+    def test_get_missing_key_returns_default(self, db_cache: DatabaseCache):
+        assert db_cache.get("absent", "fallback") == "fallback"
+
+    def test_get_many_skips_collection_keys(self, db_cache: DatabaseCache):
+        # MGET reports a list/hash/set/zset key as nil, so RespCache omits it.
+        db_cache.set("plain", 1)
+        db_cache.rpush("lst", "a")
+        db_cache.hset("hsh", "f", "v")
+        assert db_cache.get_many(["plain", "lst", "hsh", "missing"]) == {"plain": 1}
+
+    def test_incr_on_collection_raises_wrongtype(self, db_cache: DatabaseCache):
+        db_cache.rpush("lk", 1)
+        with pytest.raises(WrongTypeError):
+            db_cache.incr("lk")
+
+    def test_wrongtype_message_uses_the_user_key(self, db_cache: DatabaseCache):
+        db_cache.set("sk", "abc")
+        with pytest.raises(WrongTypeError, match="'sk'") as exc_info:
+            db_cache.lpush("sk", 1)
+        assert ":1:sk" not in str(exc_info.value)
+
+
+class TestTTLReporting:
+    """A key with no expiry reports ``None``; a missing key reports ``-2``."""
+
+    def test_persistent_key_reports_none(self, db_cache: DatabaseCache):
+        db_cache.set("forever", 1, timeout=None)
+        assert db_cache.ttl("forever") is None
+
+    def test_missing_key_reports_minus_two(self, db_cache: DatabaseCache):
+        assert db_cache.ttl("absent") == -2
+
+    def test_expiring_key_reports_seconds(self, db_cache: DatabaseCache):
+        db_cache.set("ticking", 1, timeout=3600)
+        assert 3590 <= db_cache.ttl("ticking") <= 3600
+
+    def test_compound_ops_leave_the_key_persistent(self, db_cache: DatabaseCache):
+        db_cache.rpush("l", 1)
+        db_cache.rpush("l", 2)
+        assert db_cache.ttl("l") is None
 
 
 class TestTypeDetection:
@@ -301,6 +356,64 @@ class TestPopCountZero:
         assert db_cache.lrange("l", 0, -1) == ["a", "b", "c"]
 
 
+class TestRedisArgumentValidation:
+    """Counts and ranks Redis rejects are rejected here, not silently reinterpreted."""
+
+    @pytest.mark.parametrize("method", ["lpop", "rpop"])
+    def test_pop_negative_count_rejected(self, db_cache: DatabaseCache, method: str):
+        db_cache.rpush("l", "a", "b", "c")
+        with pytest.raises(ValueError, match="must be positive"):
+            getattr(db_cache, method)("l", -2)
+        assert db_cache.lrange("l", 0, -1) == ["a", "b", "c"]
+
+    @pytest.mark.parametrize("method", ["lpop", "rpop"])
+    def test_pop_negative_count_rejected_on_missing_key(self, db_cache: DatabaseCache, method: str):
+        with pytest.raises(ValueError, match="must be positive"):
+            getattr(db_cache, method)("absent", -1)
+
+    @pytest.mark.parametrize("method", ["zpopmin", "zpopmax"])
+    def test_zpop_negative_count_rejected(self, db_cache: DatabaseCache, method: str):
+        db_cache.zadd("z", {"a": 1.0, "b": 2.0, "c": 3.0})
+        with pytest.raises(ValueError, match="must be positive"):
+            getattr(db_cache, method)("z", -2)
+        assert db_cache.zcard("z") == 3
+
+    def test_lpos_rank_zero_rejected(self, db_cache: DatabaseCache):
+        db_cache.rpush("l", "a")
+        with pytest.raises(ValueError, match="RANK can't be zero"):
+            db_cache.lpos("l", "a", rank=0)
+
+    def test_lpos_negative_rank_scans_the_tail_within_maxlen(self, db_cache: DatabaseCache):
+        db_cache.rpush("l", "b", "a", "c", "b")
+        assert db_cache.lpos("l", "b", rank=-1, maxlen=2) == 3
+        assert db_cache.lpos("l", "b", rank=-1, count=0) == [3, 0]
+
+    def test_srandmember_negative_count_allows_repeats(self, db_cache: DatabaseCache):
+        db_cache.sadd("s", "a")
+        assert db_cache.srandmember("s", count=-3) == ["a", "a", "a"]
+        assert db_cache.scard("s") == 1
+
+
+class TestSetAlgebra:
+    """``sdiff``/``sinter``/``sunion`` read all their keys in one query."""
+
+    def test_sinter_across_three_keys(self, db_cache: DatabaseCache):
+        db_cache.sadd("a", "x", "y", "z")
+        db_cache.sadd("b", "y", "z")
+        db_cache.sadd("c", "z")
+        assert db_cache.sinter(["a", "b", "c"]) == {"z"}
+
+    def test_missing_keys_read_empty(self, db_cache: DatabaseCache):
+        db_cache.sadd("a", "x")
+        assert db_cache.sdiff(["a", "absent"]) == {"x"}
+
+    def test_wrongtype_names_the_offending_key(self, db_cache: DatabaseCache):
+        db_cache.sadd("a", "x")
+        db_cache.set("b", "plain")
+        with pytest.raises(WrongTypeError, match="'b'"):
+            db_cache.sunion(["a", "b"])
+
+
 class TestInsertRaceRetriesTransform:
     """A lost insert race re-runs the transform against the winner's row."""
 
@@ -340,7 +453,7 @@ class TestInsertRaceRetriesTransform:
 
 
 class TestLikePatternEscaping:
-    """Literal ``%``, ``_``, and ``\\`` in keys and patterns match literally."""
+    """``%`` and ``_`` stay literal in a pattern; ``\\`` escapes, as in Redis."""
 
     def test_underscore_in_pattern_is_literal(self, db_cache: DatabaseCache):
         db_cache.set("foo_bar", 1)
@@ -352,10 +465,23 @@ class TestLikePatternEscaping:
         db_cache.set("100pc", 1)
         assert db_cache.keys("100%") == ["100%"]
 
-    def test_backslash_in_pattern_is_literal(self, db_cache: DatabaseCache):
+    def test_backslash_escapes_the_next_character(self, db_cache: DatabaseCache):
         db_cache.set(r"a\b", 1)
-        db_cache.set("axb", 1)
-        assert db_cache.keys(r"a\b") == [r"a\b"]
+        db_cache.set("ab", 1)
+        # Redis globs read ``\x`` as a literal ``x``, so this names the key ``ab``.
+        assert db_cache.keys(r"a\b") == ["ab"]
+        assert db_cache.keys(r"a\\b") == [r"a\b"]
+
+    def test_character_class_matches_one_member(self, db_cache: DatabaseCache):
+        db_cache.set("ka", 1)
+        db_cache.set("kb", 2)
+        db_cache.set("kc", 3)
+        assert db_cache.keys("k[ab]") == ["ka", "kb"]
+
+    def test_negated_character_class(self, db_cache: DatabaseCache):
+        db_cache.set("ka", 1)
+        db_cache.set("kb", 2)
+        assert db_cache.keys("k[^a]") == ["kb"]
 
     def test_glob_wildcards_still_translate(self, db_cache: DatabaseCache):
         db_cache.set("foo_bar", 1)
@@ -537,20 +663,53 @@ class TestDeletePattern:
 
 
 class TestScanSurface:
-    """``scan`` paginates over ``keys()``; ``ascan`` mirrors it."""
+    """``scan`` resolves ``key_type`` in the listing query; ``ascan`` mirrors it."""
 
-    def test_scan_filters_by_key_type(self, db_cache: DatabaseCache):
+    @pytest.fixture
+    def typed_cache(self, db_cache: DatabaseCache) -> DatabaseCache:
         db_cache.set("plain", 1)
         db_cache.rpush("alist", "a")
+        db_cache.sadd("aset", "a")
         db_cache.hset("ahash", "f", "v")
-        _, keys = db_cache.scan(pattern="*", key_type="list")
-        assert keys == ["alist"]
+        db_cache.zadd("azset", {"m": 1.0})
+        return db_cache
+
+    @pytest.mark.parametrize(
+        ("key_type", "expected"),
+        [
+            (KeyType.STRING, "plain"),
+            (KeyType.LIST, "alist"),
+            (KeyType.SET, "aset"),
+            (KeyType.HASH, "ahash"),
+            (KeyType.ZSET, "azset"),
+        ],
+        ids=["string", "list", "set", "hash", "zset"],
+    )
+    def test_scan_filters_by_key_type(self, typed_cache: DatabaseCache, key_type, expected):
+        assert typed_cache.scan(pattern="*", key_type=key_type) == (0, [expected])
+
+    def test_scan_key_type_the_table_cannot_hold_matches_nothing(self, typed_cache: DatabaseCache):
+        assert typed_cache.scan(pattern="*", key_type=KeyType.STREAM) == (0, [])
 
     def test_scan_without_key_type_returns_everything(self, db_cache: DatabaseCache):
         db_cache.set("plain", 1)
         db_cache.rpush("alist", "a")
         _, keys = db_cache.scan(pattern="*")
         assert sorted(keys) == ["alist", "plain"]
+
+    def test_scan_paginates(self, db_cache: DatabaseCache):
+        for i in range(5):
+            db_cache.set(f"k{i}", i)
+        cursor, page = db_cache.scan(count=2)
+        assert page == ["k0", "k1"]
+        cursor, page = db_cache.scan(cursor=cursor, count=2)
+        assert page == ["k2", "k3"]
+        cursor, page = db_cache.scan(cursor=cursor, count=2)
+        assert (cursor, page) == (0, ["k4"])
+
+    def test_scan_combines_pattern_and_type(self, typed_cache: DatabaseCache):
+        typed_cache.rpush("blist", "b")
+        assert typed_cache.scan(pattern="a*", key_type=KeyType.LIST) == (0, ["alist"])
 
     def test_ascan_is_overridden(self):
         # Regression: ``ascan`` was left at the BaseCachex default and raised

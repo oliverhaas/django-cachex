@@ -27,7 +27,6 @@ Usage::
     }
 """
 
-import fnmatch
 import logging
 import pickle
 import random
@@ -41,8 +40,18 @@ from sortedcontainers import SortedList  # type: ignore[import-untyped]
 
 from django_cachex.cache.base import BaseCachex, CachexSupportLevel
 from django_cachex.exceptions import WrongTypeError
+from django_cachex.semaphore import Semaphore, _SemaphoreRegistry
 from django_cachex.types import KeyType
-from django_cachex.utils import _deep_getsizeof, _format_bytes
+from django_cachex.utils import (
+    _as_score,
+    _deep_getsizeof,
+    _format_bytes,
+    _glob_to_regex,
+    _lpos_positions,
+    _score_bound,
+    _validate_lpos_rank,
+    _validate_pop_count,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +60,10 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping, Sequence
     from threading import Lock
 
-    from django_cachex.semaphore import _SemaphoreRegistry
-
-# Sentinel for "key not found" vs "key holds None".
+# Sentinels returned by ``_native_get``: no such key, and a key holding an
+# opaque (RESP "string") value rather than a tagged collection.
 _MISSING = object()
+_OPAQUE = object()
 
 # Alias for the ``set`` builtin shadowed by the ``set`` method (PEP 649 defers
 # annotations at runtime, but type checkers still resolve them in class scope).
@@ -103,9 +112,6 @@ class _ZSet(dict[Any, float]):
             ((s, str(m), m) for m, s in self.items()),
             key=_zset_sort_key,
         )
-
-    def __reduce__(self) -> tuple[Any, ...]:
-        return (_make_zset, (dict(self),))
 
     def __setitem__(self, member: Any, score: float) -> None:
         if super().__contains__(member):
@@ -156,34 +162,28 @@ class _ZSet(dict[Any, float]):
     def range_by_score(self, lo: float, hi: float) -> list[tuple[Any, float]]:
         """``(member, score)`` pairs where ``lo <= score <= hi``, in sorted order.
 
-        Iterates the sorted index and short-circuits once ``score > hi``, so it
-        runs in O(log N + k) when the matched range is small relative to N
-        (worst case O(N) when the whole set is within range).
+        Binary-searches the low bound and stops at the high one, so it costs
+        O(log N + k) in the size k of the matched range. ``""`` sorts before
+        every member string, so the search lands on the first member scoring
+        exactly ``lo``.
         """
+        start = self._sorted.bisect_key_left((lo, ""))
         out: list[tuple[Any, float]] = []
-        for s, _, m in self._sorted:
-            if s < lo:
-                continue
+        for s, _, m in self._sorted.islice(start):
             if s > hi:
                 break
             out.append((m, s))
         return out
 
     def count_by_score(self, lo: float, hi: float) -> int:
-        """Number of members with ``lo <= score <= hi``. Same complexity as :meth:`range_by_score`."""
+        """Number of members with ``lo <= score <= hi``. Same cost as :meth:`range_by_score`."""
+        start = self._sorted.bisect_key_left((lo, ""))
         n = 0
-        for s, _, _m in self._sorted:
-            if s < lo:
-                continue
+        for s, _, _m in self._sorted.islice(start):
             if s > hi:
                 break
             n += 1
         return n
-
-
-def _make_zset(items: dict[Any, float]) -> _ZSet:
-    """Pickle reconstructor; rebuilds the SortedList sidecar via ``__init__``."""
-    return _ZSet(items)
 
 
 # Django builds one backend instance per thread, so state is shared per
@@ -220,8 +220,6 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         super().__init__(name, params)
         # Kept outside the pickled-bytes ``self._cache`` to mutate in place.
         self._collections: dict[str, Any] = _collections.setdefault(name, {})
-        from django_cachex.semaphore import _SemaphoreRegistry
-
         self._semaphore_registry = _semaphore_registries.setdefault(name, _SemaphoreRegistry())
 
     # =========================================================================
@@ -229,12 +227,14 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     # =========================================================================
 
     def _native_get(self, internal_key: str) -> Any:
-        """Return the live value for ``internal_key``, or ``_MISSING``.
+        """Return the live tagged collection for ``internal_key``.
 
-        Caller must hold ``self._lock``. Tagged collections come back as
-        the live in-memory object (mutations are visible immediately);
-        opaque values are unpickled from ``self._cache``. Expired keys
-        are evicted from whichever store they live in.
+        Caller must hold ``self._lock``. Tagged collections come back as the
+        live in-memory object (mutations are visible immediately); a key
+        holding an opaque value comes back as ``_OPAQUE``, unpickling it
+        would only produce a value every caller discards. Missing keys come
+        back as ``_MISSING``, and expired ones are evicted from whichever
+        store they live in.
         """
         if self._has_expired(internal_key):
             self._delete(internal_key)
@@ -243,7 +243,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             return self._collections[internal_key]
         if internal_key not in self._cache:
             return _MISSING
-        return pickle.loads(self._cache[internal_key])  # noqa: S301
+        return _OPAQUE
 
     def _native_write(self, internal_key: str, value: _List | _Set | _Hash | _ZSet) -> None:
         """Store a tagged collection for ``internal_key``.
@@ -272,8 +272,8 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         # mirroring Redis ``SET`` (which replaces a list/hash/set/zset key
         # without complaint). django-stubs treats Django's ``_set``/``_delete``
         # as private to the concrete subclass and doesn't expose them on the
-        # public type, silence ``attr-defined`` here. The call works at
-        # runtime via the MRO.
+        # public type, hence the ``misc`` suppression on the ``super()`` call.
+        # It works at runtime via the MRO.
         self._collections.pop(key, None)
         # Django's own cull trigger in ``_set`` counts ``_cache`` only;
         # enforce MAX_ENTRIES over both stores here.
@@ -502,8 +502,9 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     def ttl(self, key: str, version: int | None = None) -> int | None:
         """Get the TTL of a key in seconds.
 
-        Returns ``-2`` if the key is missing, ``-1`` if it has no expiry,
-        otherwise the integer seconds remaining (clamped at 0).
+        Returns ``-2`` if the key is missing, ``None`` if it has no expiry,
+        otherwise the integer seconds remaining (clamped at 0). The RESP
+        backends map the server's ``-1`` to ``None`` the same way.
         """
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -514,7 +515,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 return -2
             exp_time = self._expire_info.get(internal_key)
             if exp_time is None:
-                return -1
+                return None
             return max(0, int(exp_time - time.time()))
 
     def expire(self, key: str, timeout: int | timedelta, version: int | None = None) -> bool:
@@ -525,9 +526,10 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         else:
             timeout_secs = float(timeout)
         with self._lock:
-            if not self._key_present(internal_key) or self._has_expired(internal_key):
-                if self._has_expired(internal_key):
-                    self._delete(internal_key)
+            if not self._key_present(internal_key):
+                return False
+            if self._has_expired(internal_key):
+                self._delete(internal_key)
                 return False
             self._expire_info[internal_key] = time.time() + timeout_secs
             return True
@@ -536,9 +538,10 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Remove the TTL from a key. Returns ``True`` if the key existed."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
-            if not self._key_present(internal_key) or self._has_expired(internal_key):
-                if self._has_expired(internal_key):
-                    self._delete(internal_key)
+            if not self._key_present(internal_key):
+                return False
+            if self._has_expired(internal_key):
+                self._delete(internal_key)
                 return False
             self._expire_info[internal_key] = None
             return True
@@ -596,15 +599,14 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         op the consumer runs), then filtered lazily.
         """
         prefix = self.make_key("", version=version)
+        matches = None if pattern in {"", "*"} else _glob_to_regex(pattern).match
         with self._lock:
             internal_keys = [k for k in [*self._cache, *self._collections] if not self._has_expired(k)]
         for internal_key in internal_keys:
             if not internal_key.startswith(prefix):
                 continue
             user_key = internal_key.removeprefix(prefix)
-            # ``fnmatch`` normcases both sides, which would make patterns
-            # case-insensitive on Windows only; Redis globs never are.
-            if pattern and pattern != "*" and not fnmatch.fnmatchcase(user_key, pattern):
+            if matches is not None and not matches(user_key):
                 continue
             yield user_key
 
@@ -726,17 +728,6 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 current.extend(values)
             return len(current)
 
-    @staticmethod
-    def _validate_pop_count(count: int | None) -> None:
-        """Reject a negative pop count before it slices from the wrong end.
-
-        ``current[-count:]`` / ``current[:count]`` silently pop from the
-        opposite end for a negative ``count``; Redis rejects it outright.
-        """
-        if count is not None and count < 0:
-            msg = "value is out of range, must be positive"
-            raise ValueError(msg)
-
     def lpop(self, key: str, count: int | None = None, version: int | None = None) -> Any | list[Any] | None:
         """Remove and return element(s) from the head of a list.
 
@@ -745,7 +736,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         key exists; ``count=None`` returns the bare value. A negative
         ``count`` is rejected, as Redis rejects it.
         """
-        self._validate_pop_count(count)
+        _validate_pop_count(count)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_list(internal_key, key)
@@ -766,7 +757,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         key exists; ``count=None`` returns the bare value. A negative
         ``count`` is rejected, as Redis rejects it.
         """
-        self._validate_pop_count(count)
+        _validate_pop_count(count)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_list(internal_key, key)
@@ -907,18 +898,14 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         version: int | None = None,
     ) -> int | list[int] | None:
         """Find position(s) of element in list."""
+        _validate_lpos_rank(rank)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_list(internal_key, key)
             if not current:
                 return [] if count is not None else None
-            scan = current[:maxlen] if maxlen else list(current)
-            positions = [i for i, v in enumerate(scan) if v == value]
-        if rank is not None:
-            if rank > 0:
-                positions = positions[rank - 1 :]
-            elif rank < 0:
-                positions = list(reversed(positions))[abs(rank) - 1 :]
+            items = list(current)
+        positions = _lpos_positions(items, value, rank, maxlen)
         if count is not None:
             return positions if count == 0 else positions[:count]
         return positions[0] if positions else None
@@ -1025,6 +1012,9 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             members = list(current)
         if count is None:
             return random.choice(members)  # noqa: S311
+        if count < 0:
+            # Redis returns exactly ``|count|`` members, repeats allowed.
+            return random.choices(members, k=-count)  # noqa: S311
         return random.sample(members, min(count, len(members)))
 
     def smismember(self, key: str, *members: Any, version: int | None = None) -> list[bool]:
@@ -1276,11 +1266,14 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         version: int | None = None,
     ) -> int:
         """Add members to a sorted set."""
+        # Parse every score before touching the zset: Redis rejects the whole
+        # command on a bad score rather than applying it halfway.
+        scored = {member: _as_score(score) for member, score in mapping.items()}
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_zset(internal_key, key) or _ZSet()
             changed = 0
-            for member, score in mapping.items():
+            for member, score in scored.items():
                 exists = member in current
                 if nx and exists:
                     continue
@@ -1399,16 +1392,18 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         version: int | None = None,
     ) -> list[Any] | list[tuple[Any, float]]:
         """Return members with scores between min and max."""
+        backend = self.__class__.__name__
+        lo = _score_bound(min_score, backend)
+        hi = _score_bound(max_score, backend)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_zset(internal_key, key)
             if not current:
                 return []
-            lo = float("-inf") if min_score == "-inf" else float(min_score)
-            hi = float("inf") if max_score == "+inf" else float(max_score)
             filtered = current.range_by_score(lo, hi)
         if start is not None and num is not None:
-            filtered = filtered[start : start + num]
+            # A negative count is Redis's "to the end of the range".
+            filtered = filtered[start:] if num < 0 else filtered[start : start + num]
         if withscores:
             return filtered
         return [m for m, _ in filtered]
@@ -1432,10 +1427,11 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def zincrby(self, key: str, amount: float, member: Any, version: int | None = None) -> float:
         """Increment the score of a member."""
+        delta = _as_score(amount)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_zset(internal_key, key) or _ZSet()
-            current[member] = current.get(member, 0.0) + amount
+            current[member] = current.get(member, 0.0) + delta
             self._native_write(internal_key, current)
             return current[member]
 
@@ -1447,17 +1443,19 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         version: int | None = None,
     ) -> int:
         """Count members with scores between min and max."""
+        backend = self.__class__.__name__
+        lo = _score_bound(min_score, backend)
+        hi = _score_bound(max_score, backend)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_zset(internal_key, key)
             if not current:
                 return 0
-            lo = float("-inf") if min_score == "-inf" else float(min_score)
-            hi = float("inf") if max_score == "+inf" else float(max_score)
             return current.count_by_score(lo, hi)
 
     def zpopmin(self, key: str, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with lowest scores. O((log N) * count)."""
+        _validate_pop_count(count)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_zset(internal_key, key)
@@ -1475,6 +1473,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def zpopmax(self, key: str, count: int | None = None, version: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with highest scores. O((log N) * count)."""
+        _validate_pop_count(count)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_zset(internal_key, key)
@@ -1512,9 +1511,10 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         version: int | None = None,
     ) -> int:
         """Remove members with scores between min and max."""
+        backend = self.__class__.__name__
         internal_key = self._internal_key(key, version=version)
-        lo = float("-inf") if min_score == "-inf" else float(min_score)
-        hi = float("inf") if max_score == "+inf" else float(max_score)
+        lo = _score_bound(min_score, backend)
+        hi = _score_bound(max_score, backend)
         with self._lock:
             current = self._typed_get_zset(internal_key, key)
             if not current:
@@ -1576,8 +1576,6 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         backend but is ignored: in-process release on ``__exit__`` is
         reliable.
         """
-        from django_cachex.semaphore import Semaphore
-
         full_key = self.make_and_validate_key(key, version=version)
         return Semaphore(
             full_key,
@@ -1633,6 +1631,11 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     async def akeys(self, *args: Any, **kwargs: Any) -> Any:
         return self.keys(*args, **kwargs)
+
+    async def ascan(self, *args: Any, **kwargs: Any) -> Any:
+        # ``BaseCachex.scan`` paginates over ``keys()``, which this backend
+        # implements.
+        return self.scan(*args, **kwargs)
 
     async def aiter_keys(self, *args: Any, **kwargs: Any) -> Any:
         for key in self.iter_keys(*args, **kwargs):

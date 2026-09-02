@@ -85,11 +85,6 @@ def _run_readers_and_writers(
     _run_in_threads(worker, n_threads=n_readers + n_writers)
 
 
-# =============================================================================
-# LocMemCache compound-op race tests
-# =============================================================================
-
-
 def test_locmem_lpush_concurrent_no_data_loss(
     locmem_cache: LocMemCache,
     fast_thread_switching: None,
@@ -215,11 +210,7 @@ def test_locmem_incr_during_collection_writes_only_raises_documented_errors(
     assert unexpected == []
 
 
-# =============================================================================
-# Redis backend smoke tests: same shape on the existing `cache` fixture
-# (default / cluster / sentinel / sentinel_opts x every resp adapter).
-# These exercise native server-side atomic commands and should always pass.
-# =============================================================================
+# The same races on the `cache` fixture, where the server runs each compound op atomically.
 
 
 def test_redis_lpush_concurrent_no_data_loss(

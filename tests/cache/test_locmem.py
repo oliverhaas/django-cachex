@@ -1,9 +1,8 @@
 """Tests for ``django_cachex.cache.locmem.LocMemCache``.
 
-LocMemCache is a cachex-native backend (extends Django's
-``LocMemCache`` with the cachex extension surface), so its tests live
-here next to the other cachex backends rather than in
-``tests/admin/test_wrappers.py``.
+LocMemCache implements the cachex extension surface natively rather than
+against a RESP server, so these tests cover the same contract the
+parametrized RESP tests do, without a container.
 """
 
 from typing import TYPE_CHECKING
@@ -13,7 +12,7 @@ from django.core.cache import caches
 from django.test import override_settings
 
 from django_cachex.cache.locmem import LocMemCache
-from django_cachex.exceptions import WrongTypeError
+from django_cachex.exceptions import NotSupportedError, WrongTypeError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -186,9 +185,8 @@ class TestSetFlags:
 
 class TestLiveStorage:
     """Tagged collections live in ``self._collections`` as long-lived Python
-    objects, not pickled bytes. Mutating ops are in-place and reads return
-    snapshots. Verify the contract holds at the boundaries that user code
-    can observe.
+    objects, not pickled bytes: mutating ops write in place and reads hand
+    back snapshots.
     """
 
     def test_lrange_returns_independent_copy(self, locmem_cache: LocMemCache):
@@ -286,7 +284,7 @@ class TestKeysAndAdmin:
         assert "beta" in keys
 
     def test_keys_does_not_double_strip_prefix(self):
-        """User keys starting with KEY_PREFIX must not be re-stripped (I8).
+        """User keys starting with KEY_PREFIX must not be re-stripped.
 
         Django's key format is ``KEY_PREFIX:VERSION:user_key``. After
         ``split(':', 2)`` ``parts[2]`` is already the user key. A second
@@ -349,6 +347,39 @@ class TestKeysAndAdmin:
         assert "user:2" in keys
         assert "session:abc" not in keys
 
+    def test_keys_with_character_class(self, locmem_cache: LocMemCache):
+        locmem_cache.set("ka", 1)
+        locmem_cache.set("kb", 2)
+        locmem_cache.set("kc", 3)
+        assert locmem_cache.keys("k[ab]") == ["ka", "kb"]
+
+    def test_keys_with_negated_character_class(self, locmem_cache: LocMemCache):
+        locmem_cache.set("ka", 1)
+        locmem_cache.set("kb", 2)
+        assert locmem_cache.keys("k[^a]") == ["kb"]
+
+    def test_keys_bang_is_a_class_member_not_a_negation(self, locmem_cache: LocMemCache):
+        # ``fnmatch`` spells negation ``[!a]``; Redis reads ``!`` as a member.
+        locmem_cache.set("k!", 1)
+        locmem_cache.set("kb", 2)
+        assert locmem_cache.keys("k[!a]") == ["k!"]
+
+    def test_keys_backslash_escapes_the_next_character(self, locmem_cache: LocMemCache):
+        locmem_cache.set("k*", 1)
+        locmem_cache.set("kx", 2)
+        assert locmem_cache.keys(r"k\*") == ["k*"]
+
+    def test_scan_filters_by_key_type(self, locmem_cache: LocMemCache):
+        locmem_cache.set("plain", 1)
+        locmem_cache.rpush("alist", "a")
+        locmem_cache.hset("ahash", "f", "v")
+        assert locmem_cache.scan(pattern="*", key_type="list") == (0, ["alist"])
+
+    @pytest.mark.asyncio
+    async def test_ascan_mirrors_scan(self, locmem_cache: LocMemCache):
+        locmem_cache.rpush("alist", "a")
+        assert await locmem_cache.ascan(pattern="*", key_type="list") == (0, ["alist"])
+
     def test_iter_keys(self, locmem_cache: LocMemCache):
         locmem_cache.set("a", 1)
         locmem_cache.set("b", 2)
@@ -376,7 +407,7 @@ class TestKeysAndAdmin:
 
     def test_ttl_persistent_key(self, locmem_cache: LocMemCache):
         locmem_cache.set("forever", "value", timeout=None)
-        assert locmem_cache.ttl("forever") == -1
+        assert locmem_cache.ttl("forever") is None
 
     def test_ttl_expiring_key(self, locmem_cache: LocMemCache):
         locmem_cache.set("temp", "value", timeout=3600)
@@ -384,7 +415,7 @@ class TestKeysAndAdmin:
 
     def test_expire(self, locmem_cache: LocMemCache):
         locmem_cache.set("key1", "value1", timeout=None)
-        assert locmem_cache.ttl("key1") == -1
+        assert locmem_cache.ttl("key1") is None
         locmem_cache.expire("key1", 100)
         assert 90 <= locmem_cache.ttl("key1") <= 100
 
@@ -395,7 +426,7 @@ class TestKeysAndAdmin:
         locmem_cache.set("key1", "value1", timeout=60)
         assert locmem_cache.ttl("key1") > 0
         locmem_cache.persist("key1")
-        assert locmem_cache.ttl("key1") == -1
+        assert locmem_cache.ttl("key1") is None
 
     def test_persist_missing_key(self, locmem_cache: LocMemCache):
         assert locmem_cache.persist("nonexistent") is False
@@ -712,6 +743,16 @@ class TestListOps:
         locmem_cache.rpush("k", "a", "b", "c", "b")
         assert locmem_cache.lpos("k", "b", maxlen=2) == 1
 
+    def test_lpos_negative_rank_scans_the_tail_within_maxlen(self, locmem_cache: LocMemCache):
+        locmem_cache.rpush("k", "b", "a", "c", "b")
+        assert locmem_cache.lpos("k", "b", rank=-1, maxlen=2) == 3
+        assert locmem_cache.lpos("k", "b", rank=-1, count=0) == [3, 0]
+
+    def test_lpos_rank_zero_rejected(self, locmem_cache: LocMemCache):
+        locmem_cache.rpush("k", "a")
+        with pytest.raises(ValueError, match="RANK can't be zero"):
+            locmem_cache.lpos("k", "a", rank=0)
+
     def test_lpos_not_found(self, locmem_cache: LocMemCache):
         locmem_cache.rpush("k", "a")
         assert locmem_cache.lpos("k", "z") is None
@@ -730,7 +771,7 @@ class TestListOps:
     def test_list_ops_no_expiry_stays(self, locmem_cache: LocMemCache):
         locmem_cache.rpush("k", 1, 2)
         locmem_cache.rpush("k", 3)
-        assert locmem_cache.ttl("k") == -1
+        assert locmem_cache.ttl("k") is None
 
 
 # =============================================================================
@@ -862,6 +903,11 @@ class TestSetOps:
         assert all(m in {"a", "b", "c"} for m in members)
         assert locmem_cache.scard("k") == 3
 
+    def test_srandmember_negative_count_allows_repeats(self, locmem_cache: LocMemCache):
+        locmem_cache.sadd("k", "a")
+        assert locmem_cache.srandmember("k", count=-3) == ["a", "a", "a"]
+        assert locmem_cache.scard("k") == 1
+
     def test_srandmember_missing_key_single(self, locmem_cache: LocMemCache):
         assert locmem_cache.srandmember("missing") is None
 
@@ -906,7 +952,7 @@ class TestSetOps:
     def test_set_ops_no_expiry_stays(self, locmem_cache: LocMemCache):
         locmem_cache.sadd("k", "a")
         locmem_cache.sadd("k", "b")
-        assert locmem_cache.ttl("k") == -1
+        assert locmem_cache.ttl("k") is None
 
 
 # =============================================================================
@@ -1109,7 +1155,7 @@ class TestHashOps:
     def test_hash_ops_no_expiry_stays(self, locmem_cache: LocMemCache):
         locmem_cache.hset("k", mapping={"a": 1})
         locmem_cache.hset("k", "b", 2)
-        assert locmem_cache.ttl("k") == -1
+        assert locmem_cache.ttl("k") is None
 
 
 # =============================================================================
@@ -1171,6 +1217,18 @@ class TestSortedSetOps:
         assert set(locmem_cache.zrange("k", 0, -1)) == {1, "1"}
         assert locmem_cache.zrem("k", 1) == 1
         assert locmem_cache.zrange("k", 0, -1) == ["1"]
+
+    def test_zadd_coerces_scores_to_float(self, locmem_cache: LocMemCache):
+        locmem_cache.zadd("k", {"a": "1"})
+        locmem_cache.zadd("k", {"b": 2.0})
+        assert locmem_cache.zscore("k", "a") == 1.0
+        assert isinstance(locmem_cache.zscore("k", "a"), float)
+        assert locmem_cache.zrange("k", 0, -1) == ["a", "b"]
+
+    def test_zadd_rejects_a_non_numeric_score(self, locmem_cache: LocMemCache):
+        with pytest.raises(ValueError, match="not a valid float"):
+            locmem_cache.zadd("k", {"a": 1.0, "b": "abc"})
+        assert locmem_cache.zcard("k") == 0
 
     def test_zcard_missing(self, locmem_cache: LocMemCache):
         assert locmem_cache.zcard("missing") == 0
@@ -1253,6 +1311,24 @@ class TestSortedSetOps:
         locmem_cache.zadd("k", {"a": 1.0, "b": 2.0, "c": 3.0, "d": 4.0})
         assert locmem_cache.zrangebyscore("k", "-inf", "+inf", start=1, num=2) == ["b", "c"]
 
+    def test_zrangebyscore_negative_num_reaches_the_end(self, locmem_cache: LocMemCache):
+        locmem_cache.zadd("k", {"a": 1.0, "b": 2.0, "c": 3.0, "d": 4.0})
+        assert locmem_cache.zrangebyscore("k", "-inf", "+inf", start=0, num=-1) == ["a", "b", "c", "d"]
+
+    @pytest.mark.parametrize(
+        ("method", "args"),
+        [
+            ("zrangebyscore", ("k", "(1", "+inf")),
+            ("zcount", ("k", "(1", "+inf")),
+            ("zremrangebyscore", ("k", "-inf", "(3")),
+        ],
+        ids=["zrangebyscore", "zcount", "zremrangebyscore"],
+    )
+    def test_exclusive_bound_raises_not_supported(self, locmem_cache: LocMemCache, method, args):
+        locmem_cache.zadd("k", {"a": 1.0, "b": 2.0, "c": 3.0})
+        with pytest.raises(NotSupportedError):
+            getattr(locmem_cache, method)(*args)
+
     def test_zrangebyscore_missing_key(self, locmem_cache: LocMemCache):
         assert locmem_cache.zrangebyscore("missing", 0.0, 100.0) == []
 
@@ -1283,6 +1359,10 @@ class TestSortedSetOps:
 
     def test_zincrby_creates_member(self, locmem_cache: LocMemCache):
         assert locmem_cache.zincrby("k", 5.0, "new") == pytest.approx(5.0)
+
+    def test_zincrby_coerces_the_amount(self, locmem_cache: LocMemCache):
+        locmem_cache.zadd("k", {"a": 1.0})
+        assert locmem_cache.zincrby("k", "2", "a") == 3.0
 
     def test_zcount(self, locmem_cache: LocMemCache):
         locmem_cache.zadd("k", {"a": 1.0, "b": 2.0, "c": 3.0, "d": 4.0})
@@ -1334,6 +1414,13 @@ class TestSortedSetOps:
         locmem_cache.zadd("k", {"a": 1.0})
         locmem_cache.zpopmax("k")
         assert locmem_cache.get("k") is None
+
+    @pytest.mark.parametrize("method", ["zpopmin", "zpopmax"])
+    def test_zpop_negative_count_rejected(self, locmem_cache: LocMemCache, method: str):
+        locmem_cache.zadd("k", {"a": 1.0, "b": 2.0, "c": 3.0})
+        with pytest.raises(ValueError, match="must be positive"):
+            getattr(locmem_cache, method)("k", -2)
+        assert locmem_cache.zcard("k") == 3
 
     def test_zmscore(self, locmem_cache: LocMemCache):
         locmem_cache.zadd("k", {"a": 1.0, "b": 2.0})
