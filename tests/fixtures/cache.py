@@ -1,5 +1,6 @@
 """Cache fixture and configuration builders."""
 
+import zlib
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -53,11 +54,20 @@ ADAPTER_IMAGES = {
     "valkey-glide": ("valkey/valkey:latest", "valkey"),
 }
 
-# Adapters whose Python connection pool / parser internals are exercised by
-# the ``test_internals.py`` / ``test_client.py`` / ``test_replica.py``
-# probes. Used by ``conftest.pytest_collection_modifyitems`` to skip those
-# files for adapters that don't expose those concepts (valkey-glide).
-PY_INTERNAL_ADAPTERS = frozenset({"redis-py", "valkey-py"})
+# Adapters that accept ``pool_class`` / ``parser_class``; valkey-glide ignores both.
+POOL_OPTION_ADAPTERS = frozenset({"redis-py", "valkey-py"})
+
+# Modules that poke redis-py's own objects; tests/conftest.py skips them on other adapters.
+REDIS_PY_INTERNALS_TEST_FILES = frozenset(
+    {
+        "test_internals.py",
+        "test_client.py",
+        "test_replica.py",
+    },
+)
+
+# ``client_class`` and ``sentinel_mode`` derive from the topology so existing skips keep working.
+TOPOLOGIES = ("default", "cluster", "sentinel")
 
 # Pool / parser config per Python client library. ``client_library`` is
 # derived from ``resp_adapter`` via ``ADAPTER_IMAGES``.
@@ -88,15 +98,27 @@ def serializers(request) -> str | None:
     return request.param
 
 
-@pytest.fixture(params=["default", "cluster"])
-def client_class(request) -> str:
-    """Parametrized client class fixture."""
+@pytest.fixture(params=TOPOLOGIES)
+def topology(request) -> str:
+    """Parametrized topology fixture: standalone, cluster or sentinel."""
     return request.param
 
 
-@pytest.fixture(params=[False, "sentinel", "sentinel_opts"])
-def sentinel_mode(request) -> str | bool:
-    """Parametrized sentinel mode fixture."""
+@pytest.fixture
+def client_class(topology: str) -> str:
+    """Cache class family for the active topology ("default" or "cluster")."""
+    return "cluster" if topology == "cluster" else "default"
+
+
+@pytest.fixture
+def sentinel_mode(topology: str) -> str | bool:
+    """Truthy only on the sentinel topology."""
+    return "sentinel" if topology == "sentinel" else False
+
+
+@pytest.fixture(params=["default", "cluster"])
+def stampede_topology(request) -> str:
+    """Topologies the stampede cache is built for; it has no sentinel config."""
     return request.param
 
 
@@ -135,7 +157,7 @@ def build_cache_config(
     db: int = 1,
 ) -> dict:
     """Build a CACHES configuration dict."""
-    if resp_adapter in PY_INTERNAL_ADAPTERS:
+    if resp_adapter in POOL_OPTION_ADAPTERS:
         client_library = ADAPTER_IMAGES[resp_adapter][1]
         options: dict = _get_client_library_options(client_library, native_parser)
     else:
@@ -155,16 +177,6 @@ def build_cache_config(
             "BACKEND": backend_class,
             "LOCATION": [location, location],
             "OPTIONS": options,
-        },
-        "doesnotexist": {
-            "BACKEND": backend_class,
-            "LOCATION": f"redis://{redis_host}:56379?db={db}",
-            "OPTIONS": options.copy(),
-        },
-        "sample": {
-            "BACKEND": backend_class,
-            "LOCATION": f"{location},{location}",
-            "OPTIONS": options.copy(),
         },
         "with_prefix": {
             "BACKEND": backend_class,
@@ -188,7 +200,7 @@ def build_sentinel_cache_config(
     base_options: dict = {"sentinels": sentinels}
 
     client_library = ADAPTER_IMAGES[resp_adapter][1]
-    if resp_adapter in PY_INTERNAL_ADAPTERS:
+    if resp_adapter in POOL_OPTION_ADAPTERS:
         # Sentinel uses SentinelConnectionPool by default, so drop pool_class.
         lib_options = _get_client_library_options(client_library, native_parser)
         lib_options.pop("pool_class", None)
@@ -201,16 +213,6 @@ def build_sentinel_cache_config(
         "default": {
             "BACKEND": backend_class,
             "LOCATION": [f"{scheme}://mymaster?db={db}"],
-            "OPTIONS": base_options.copy(),
-        },
-        "doesnotexist": {
-            "BACKEND": backend_class,
-            "LOCATION": f"{scheme}://missing_service?db={db}",
-            "OPTIONS": base_options.copy(),
-        },
-        "sample": {
-            "BACKEND": backend_class,
-            "LOCATION": f"{scheme}://mymaster?db={db}",
             "OPTIONS": base_options.copy(),
         },
         "with_prefix": {
@@ -233,7 +235,7 @@ def build_cluster_cache_config(
 ) -> dict:
     """Build a CACHES configuration for Redis Cluster."""
     options: dict = {}
-    if resp_adapter in PY_INTERNAL_ADAPTERS:
+    if resp_adapter in POOL_OPTION_ADAPTERS:
         # Cluster manages its own connections; pass parser_class only.
         client_library = ADAPTER_IMAGES[resp_adapter][1]
         lib_options = _get_client_library_options(client_library, native_parser)
@@ -254,16 +256,6 @@ def build_cluster_cache_config(
             "LOCATION": location,
             "OPTIONS": options.copy(),
         },
-        "doesnotexist": {
-            "BACKEND": backend_class,
-            "LOCATION": f"redis://{cluster_host}:56379",
-            "OPTIONS": options.copy(),
-        },
-        "sample": {
-            "BACKEND": backend_class,
-            "LOCATION": location,
-            "OPTIONS": options.copy(),
-        },
         "with_prefix": {
             "BACKEND": backend_class,
             "LOCATION": location,
@@ -278,73 +270,19 @@ def get_db_number(
     compressor: str | None,
     serializer: str | None,
 ) -> int:
-    """Calculate the db number based on configuration to avoid conflicts."""
-    return abs(hash((backend, compressor, serializer))) % 14 + 1
+    """Pick one of dbs 1-14 for a cache configuration, stably across processes.
+
+    There are more configurations than dbs, so two of them can land on the
+    same db. That is harmless: tests run serially inside a worker and every
+    cache fixture flushes its db both when it is set up and when it is torn
+    down, so no configuration ever sees another one's keys.
+    """
+    fingerprint = f"{backend}|{compressor}|{serializer}".encode()
+    return zlib.crc32(fingerprint) % 14 + 1
 
 
-def _make_cache(
-    redis_container: RedisContainerInfo,
-    request: pytest.FixtureRequest,
-    backend_val: str,
-    sentinel_mode_val: str | bool,
-    compressor_val: str | None,
-    serializer_val: str | None,
-    native_parser_val: bool = False,
-    resp_adapter_val: str = "redis-py",
-) -> Iterator[RespCache]:
-    """Core cache creation logic shared by all cache fixtures."""
-    redis_host = redis_container.host
-    redis_port = redis_container.port
-
-    if sentinel_mode_val:
-        sentinel_info: SentinelContainerInfo = request.getfixturevalue("sentinel_container")
-        db = 8 if sentinel_mode_val == "sentinel_opts" else 7
-        caches = build_sentinel_cache_config(
-            sentinel_info.host,
-            sentinel_info.port,
-            resp_adapter=resp_adapter_val,
-            native_parser=native_parser_val,
-            db=db,
-        )
-
-        with override_settings(CACHES=caches):
-            from django.core.cache import cache as default_cache
-
-            default_cache.flush_db()
-            yield cast("RespCache", default_cache)
-            default_cache.flush_db()
-        return
-
-    if backend_val == "cluster":
-        cluster_host, cluster_port = request.getfixturevalue("cluster_container")
-        caches = build_cluster_cache_config(
-            cluster_host,
-            cluster_port,
-            compressor=compressor_val,
-            serializer=serializer_val,
-            resp_adapter=resp_adapter_val,
-            native_parser=native_parser_val,
-        )
-        with override_settings(CACHES=caches):
-            from django.core.cache import cache as default_cache
-
-            default_cache.flush_db()
-            yield cast("RespCache", default_cache)
-            default_cache.flush_db()
-        return
-
-    db = get_db_number(backend_val, compressor_val, serializer_val)
-    caches = build_cache_config(
-        redis_host,
-        redis_port,
-        backend=backend_val,
-        compressor=compressor_val,
-        serializer=serializer_val,
-        resp_adapter=resp_adapter_val,
-        native_parser=native_parser_val,
-        db=db,
-    )
-
+def _yield_default_cache(caches: dict) -> Iterator[RespCache]:
+    """Activate ``caches`` and hand out ``caches["default"]``, flushed either side."""
     with override_settings(CACHES=caches):
         from django.core.cache import cache as default_cache
 
@@ -369,31 +307,23 @@ def _adapter_library_available(resp_adapter: str) -> bool:
     return True
 
 
-def _skip_unsupported_combo(resp_adapter: str, client_class: str, sentinel_mode: str | bool) -> None:
-    """Skip combos that the adapter doesn't ship a cache class for.
-
-    ``sentinel_mode`` takes priority over ``client_class`` in ``_make_cache``,
-    so the lookup matches that order.
-    """
+def _skip_unsupported_combo(resp_adapter: str, topology: str) -> None:
+    """Skip cells the adapter doesn't ship a cache class for."""
     if not _adapter_library_available(resp_adapter):
         pytest.skip(f"{resp_adapter} library not installed")
-    if sentinel_mode:
-        if ("sentinel", resp_adapter) not in BACKENDS:
-            pytest.skip(f"{resp_adapter} has no sentinel cache class")
-    elif (client_class, resp_adapter) not in BACKENDS:
-        pytest.skip(f"{resp_adapter} has no {client_class} cache class")
+    if (topology, resp_adapter) not in BACKENDS:
+        pytest.skip(f"{resp_adapter} has no {topology} cache class")
 
 
 @pytest.fixture
 def cache(
-    client_class: str,
-    sentinel_mode: str | bool,
+    topology: str,
     resp_adapter: str,
     redis_container: RedisContainerInfo,
     request: pytest.FixtureRequest,
 ) -> Iterator[RespCache]:
-    """Django cache fixture parametrized by client_class × sentinel_mode × resp_adapter."""
-    _skip_unsupported_combo(resp_adapter, client_class, sentinel_mode)
+    """Django cache fixture parametrized by topology × resp_adapter."""
+    _skip_unsupported_combo(resp_adapter, topology)
 
     compressor_val = None
     serializer_val = None
@@ -406,68 +336,62 @@ def cache(
     if "native_parser" in request.fixturenames:
         native_parser_val = request.getfixturevalue("native_parser")
 
-    yield from _make_cache(
-        redis_container,
-        request,
-        client_class,
-        sentinel_mode,
-        compressor_val,
-        serializer_val,
-        native_parser_val,
-        resp_adapter,
-    )
-
-
-def _make_stampede_cache(
-    redis_container: RedisContainerInfo,
-    request: pytest.FixtureRequest,
-    backend_val: str,
-    resp_adapter_val: str = "redis-py",
-) -> Iterator[RespCache]:
-    """Create a cache with stampede prevention enabled."""
-    redis_host = redis_container.host
-    redis_port = redis_container.port
-
-    if backend_val == "cluster":
+    if topology == "sentinel":
+        sentinel_info: SentinelContainerInfo = request.getfixturevalue("sentinel_container")
+        caches = build_sentinel_cache_config(
+            sentinel_info.host,
+            sentinel_info.port,
+            resp_adapter=resp_adapter,
+            native_parser=native_parser_val,
+        )
+    elif topology == "cluster":
         cluster_host, cluster_port = request.getfixturevalue("cluster_container")
         caches = build_cluster_cache_config(
             cluster_host,
             cluster_port,
-            resp_adapter=resp_adapter_val,
+            compressor=compressor_val,
+            serializer=serializer_val,
+            resp_adapter=resp_adapter,
+            native_parser=native_parser_val,
         )
     else:
-        db = 15
         caches = build_cache_config(
-            redis_host,
-            redis_port,
-            backend=backend_val,
-            resp_adapter=resp_adapter_val,
-            db=db,
+            redis_container.host,
+            redis_container.port,
+            compressor=compressor_val,
+            serializer=serializer_val,
+            resp_adapter=resp_adapter,
+            native_parser=native_parser_val,
+            db=get_db_number(topology, compressor_val, serializer_val),
         )
 
-    caches["default"]["OPTIONS"]["stampede_prevention"] = True
-
-    with override_settings(CACHES=caches):
-        from django.core.cache import cache as default_cache
-
-        default_cache.flush_db()
-        yield cast("RespCache", default_cache)
-        default_cache.flush_db()
+    yield from _yield_default_cache(caches)
 
 
 @pytest.fixture
 def stampede_cache(
-    client_class: str,
+    stampede_topology: str,
     resp_adapter: str,
     redis_container: RedisContainerInfo,
     request: pytest.FixtureRequest,
 ) -> Iterator[RespCache]:
     """Django cache fixture with stampede prevention enabled."""
-    _skip_unsupported_combo(resp_adapter, client_class, sentinel_mode=False)
+    _skip_unsupported_combo(resp_adapter, stampede_topology)
 
-    yield from _make_stampede_cache(
-        redis_container,
-        request,
-        client_class,
-        resp_adapter,
-    )
+    if stampede_topology == "cluster":
+        cluster_host, cluster_port = request.getfixturevalue("cluster_container")
+        caches = build_cluster_cache_config(
+            cluster_host,
+            cluster_port,
+            resp_adapter=resp_adapter,
+        )
+    else:
+        caches = build_cache_config(
+            redis_container.host,
+            redis_container.port,
+            resp_adapter=resp_adapter,
+            db=15,
+        )
+
+    caches["default"]["OPTIONS"]["stampede_prevention"] = True
+    yield from _yield_default_cache(caches)

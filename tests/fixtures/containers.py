@@ -10,7 +10,7 @@ import docker
 import pytest
 import redis
 from testcontainers.core.container import DockerContainer
-from testcontainers.core.waiting_utils import wait_for_logs
+from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
 # Available Redis-compatible images with their corresponding client library
 # Format: (image, client_library) where client_library is "redis" or "valkey".
@@ -64,8 +64,8 @@ def _start_redis_container(image: str) -> ContainerInfo:
     container = DockerContainer(image)
     container.with_exposed_ports(6379)
     container.with_command("redis-server --enable-debug-command yes --protected-mode no")
+    container.waiting_for(LogMessageWaitStrategy("Ready to accept connections"))
     container.start()
-    wait_for_logs(container, "Ready to accept connections")
     return ContainerInfo(
         host=container.get_container_host_ip(),
         port=int(container.get_exposed_port(6379)),
@@ -90,7 +90,6 @@ CLUSTER_TOTAL_SLOTS = 16384  # Redis Cluster hash slot count
 
 def _check_cluster_nodes(host: str, port: int) -> bool:
     """Check that all master nodes report cluster_state:ok and slots are covered."""
-    # Verify all master nodes report cluster_state:ok
     for offset in range(CLUSTER_MASTER_COUNT):
         client = redis.Redis(host=host, port=port + offset, socket_connect_timeout=2)
         info = client.execute_command("CLUSTER", "INFO")
@@ -98,7 +97,6 @@ def _check_cluster_nodes(host: str, port: int) -> bool:
         if not (isinstance(info, bytes) and b"cluster_state:ok" in info):
             return False
 
-    # Verify all 16384 slots are covered
     client = redis.Redis(host=host, port=port, socket_connect_timeout=2)
     slots = client.execute_command("CLUSTER", "SLOTS")
     client.close()
@@ -106,7 +104,6 @@ def _check_cluster_nodes(host: str, port: int) -> bool:
     if covered < CLUSTER_TOTAL_SLOTS:
         return False
 
-    # End-to-end test through RedisCluster client
     cluster = redis.RedisCluster(host=host, port=port, socket_connect_timeout=2)
     cluster.set("__cluster_ready_check__", "1")
     val = cluster.get("__cluster_ready_check__")
@@ -168,6 +165,7 @@ def _start_cluster_container(base_port: int) -> ContainerInfo:
         for i in range(CLUSTER_NODE_COUNT):
             port = current_base + i
             container.with_bind_ports(port, port)
+        container.waiting_for(LogMessageWaitStrategy("Cluster state changed: ok"))
         try:
             container.start()
         except Exception as e:  # noqa: BLE001
@@ -175,10 +173,8 @@ def _start_cluster_container(base_port: int) -> ContainerInfo:
             with suppress(Exception):
                 container.stop()
             continue
-        # Wait for cluster to be ready (log message)
-        wait_for_logs(container, "Cluster state changed: ok")
         host = container.get_container_host_ip()
-        # Verify cluster actually accepts commands (avoids ClusterDownError race)
+        # The log message lands before every node serves commands (ClusterDownError race).
         _wait_for_cluster_ready(host, current_base)
         return ContainerInfo(
             host=host,
@@ -209,8 +205,8 @@ sentinel parallel-syncs mymaster 1
     container.with_command(
         f"sh -c 'echo \"{sentinel_conf}\" > /tmp/sentinel.conf && {sentinel_cmd} /tmp/sentinel.conf --port 26379'",
     )
+    container.waiting_for(LogMessageWaitStrategy(r"\+monitor master"))
     container.start()
-    wait_for_logs(container, r"\+monitor master")
     return ContainerInfo(
         host=container.get_container_host_ip(),
         port=int(container.get_exposed_port(26379)),
@@ -317,9 +313,6 @@ def redis_container(
     factory, _ = redis_container_factory
     image, client_library = _resolve_image(request)
     host, port = factory(image)
-    environ["REDIS_HOST"] = host
-    environ["REDIS_PORT"] = str(port)
-    environ["CLIENT_LIBRARY"] = client_library
     return RedisContainerInfo(host, port, client_library)
 
 
@@ -339,17 +332,13 @@ def sentinel_container(
     """Get a Sentinel container, picking the image from ``resp_adapter`` or ``resp_images``."""
     image, client_library = _resolve_image(request)
     host, port = sentinel_container_factory(image)
-    environ["SENTINEL_HOST"] = host
-    environ["SENTINEL_PORT"] = str(port)
-    environ["CLIENT_LIBRARY"] = client_library
     return SentinelContainerInfo(host, port, client_library)
 
 
 @pytest.fixture(scope="session")
-def cluster_container_factory() -> Generator[tuple[ContainerFactory, ContainerInfo | None]]:
+def cluster_container_factory() -> Generator[ContainerFactory]:
     """Session-scoped factory for Redis Cluster container.
 
-    Returns a factory function and the cached container info.
     Uses dynamic port allocation based on xdist worker ID to allow parallel runs.
     """
     cached_info: list[ContainerInfo | None] = [None]
@@ -357,7 +346,7 @@ def cluster_container_factory() -> Generator[tuple[ContainerFactory, ContainerIn
     def get_container(_image: str = "") -> tuple[str, int]:
         # Image parameter ignored - cluster always uses grokzen/redis-cluster
         if cached_info[0] is None:
-            # Calculate base port from xdist worker ID (gw0 -> 7000, gw1 -> 7010, etc.)
+            # Base port from the xdist worker id (gw0 -> 17000, gw1 -> 17010, etc.)
             worker_id = _get_xdist_worker_id()
             base_port = CLUSTER_BASE_PORT + (worker_id * CLUSTER_PORT_SPACING)
             cached_info[0] = _start_cluster_container(base_port)
@@ -365,7 +354,7 @@ def cluster_container_factory() -> Generator[tuple[ContainerFactory, ContainerIn
         assert info is not None
         return info.host, info.port
 
-    yield get_container, cached_info[0]
+    yield get_container
 
     # Cleanup at session end
     if cached_info[0] is not None:
@@ -374,14 +363,9 @@ def cluster_container_factory() -> Generator[tuple[ContainerFactory, ContainerIn
 
 
 @pytest.fixture
-def cluster_container(
-    cluster_container_factory: tuple[ContainerFactory, ContainerInfo | None],
-) -> tuple[str, int]:
+def cluster_container(cluster_container_factory: ContainerFactory) -> tuple[str, int]:
     """Get a Redis Cluster container."""
-    factory, _ = cluster_container_factory
-    host, port = factory("")  # Empty string - cluster ignores image param
-    environ["CLUSTER_HOST"] = host
-    environ["CLUSTER_PORT"] = str(port)
+    host, port = cluster_container_factory("")  # Empty string - cluster ignores image param
     return host, port
 
 
@@ -409,8 +393,8 @@ def _start_bitnami_master() -> ContainerInfo:
     container.with_exposed_ports(6379)
     container.with_env("REDIS_REPLICATION_MODE", "master")
     container.with_env("ALLOW_EMPTY_PASSWORD", "yes")
+    container.waiting_for(LogMessageWaitStrategy("Ready to accept connections").with_startup_timeout(60))
     container.start()
-    wait_for_logs(container, "Ready to accept connections", timeout=60)
     return ContainerInfo(
         host=container.get_container_host_ip(),
         port=int(container.get_exposed_port(6379)),
@@ -426,8 +410,8 @@ def _start_bitnami_replica(master_internal_ip: str) -> ContainerInfo:
     container.with_env("REDIS_MASTER_HOST", master_internal_ip)
     container.with_env("REDIS_MASTER_PORT_NUMBER", "6379")
     container.with_env("ALLOW_EMPTY_PASSWORD", "yes")
+    container.waiting_for(LogMessageWaitStrategy("Ready to accept connections").with_startup_timeout(60))
     container.start()
-    wait_for_logs(container, "Ready to accept connections", timeout=60)
     return ContainerInfo(
         host=container.get_container_host_ip(),
         port=int(container.get_exposed_port(6379)),
@@ -436,9 +420,7 @@ def _start_bitnami_replica(master_internal_ip: str) -> ContainerInfo:
 
 
 @pytest.fixture(scope="session")
-def replica_container_factory() -> Generator[
-    tuple[Callable[[], ReplicaSetContainerInfo], ReplicaSetContainerInfo | None]
-]:
+def replica_container_factory() -> Generator[Callable[[], ReplicaSetContainerInfo]]:
     """Session-scoped factory for master-replica Redis setup.
 
     Creates one master and multiple replicas using bitnami/redis image.
@@ -474,7 +456,7 @@ def replica_container_factory() -> Generator[
         )
         return cached_info[0]
 
-    yield get_containers, cached_info[0]
+    yield get_containers
 
     # Cleanup all containers at session end
     if cached_info[0] is not None:
@@ -485,8 +467,7 @@ def replica_container_factory() -> Generator[
 
 @pytest.fixture
 def replica_containers(
-    replica_container_factory: tuple[Callable[[], ReplicaSetContainerInfo], ReplicaSetContainerInfo | None],
+    replica_container_factory: Callable[[], ReplicaSetContainerInfo],
 ) -> ReplicaSetContainerInfo:
     """Get a master-replica Redis setup."""
-    factory, _ = replica_container_factory
-    return factory()
+    return replica_container_factory()

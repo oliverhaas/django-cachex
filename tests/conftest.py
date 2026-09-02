@@ -19,20 +19,11 @@ from tests.fixtures import (
     sentinel_container_factory,
     sentinel_mode,
     serializers,
-    settings,
     stampede_cache,
+    stampede_topology,
+    topology,
 )
-
-# Tests that probe redis-py-specific internals (connection pools, parser
-# class, _lib wiring). They hardcode ``redis.Redis``, ``redis.ConnectionPool``,
-# etc., so they only run for the redis-py adapter.
-_REDIS_PY_INTERNALS_TEST_FILES: frozenset[str] = frozenset(
-    {
-        "test_internals.py",
-        "test_client.py",
-        "test_replica.py",
-    },
-)
+from tests.fixtures.cache import REDIS_PY_INTERNALS_TEST_FILES
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -46,7 +37,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         adapter = callspec.params.get("resp_adapter")
         if adapter is None or adapter == "redis-py":
             continue
-        if item.path.name in _REDIS_PY_INTERNALS_TEST_FILES:
+        if item.path.name in REDIS_PY_INTERNALS_TEST_FILES:
             item.add_marker(skip_non_redis_py)
 
 
@@ -68,6 +59,7 @@ __all__ = [
     "sentinel_container_factory",
     "sentinel_mode",
     "serializers",
-    "settings",
     "stampede_cache",
+    "stampede_topology",
+    "topology",
 ]

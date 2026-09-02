@@ -51,15 +51,10 @@ USE_TZ = False
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
 # Base CACHES configuration. Test fixtures override this for parametrized tests.
-# The 'doesnotexist' cache points to an invalid port for testing exception handling.
 CACHES = {
     "default": {
         "BACKEND": "django_cachex.cache.RedisCache",
         "LOCATION": "redis://127.0.0.1:6379?db=1",
-    },
-    "doesnotexist": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:56379?db=1",
     },
     "with_prefix": {
         "BACKEND": "django_cachex.cache.RedisCache",

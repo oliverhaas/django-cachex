@@ -10,6 +10,8 @@ from tests.fixtures.cache import (
     sentinel_mode,
     serializers,
     stampede_cache,
+    stampede_topology,
+    topology,
 )
 from tests.fixtures.containers import (
     RedisContainerInfo,
@@ -25,7 +27,6 @@ from tests.fixtures.containers import (
     sentinel_container,
     sentinel_container_factory,
 )
-from tests.fixtures.settings import settings
 
 __all__ = [
     "RedisContainerInfo",
@@ -48,6 +49,7 @@ __all__ = [
     "sentinel_container_factory",
     "sentinel_mode",
     "serializers",
-    "settings",
     "stampede_cache",
+    "stampede_topology",
+    "topology",
 ]
