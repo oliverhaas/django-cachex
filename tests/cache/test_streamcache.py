@@ -1,5 +1,8 @@
 """Tests for stream-synchronized local cache (StreamCache)."""
 
+import copy
+import logging
+import threading
 import time
 import uuid
 from datetime import timedelta
@@ -11,7 +14,7 @@ from django.core.cache.backends.locmem import _caches, _expire_info, _locks
 from django.core.exceptions import ImproperlyConfigured
 from django.test import override_settings
 
-from django_cachex.cache.stream import StreamCache
+from django_cachex.cache.stream import _SYNC_REGISTRY, StreamCache
 from django_cachex.exceptions import NotSupportedError
 from tests.fixtures.cache import (
     ADAPTER_IMAGES,
@@ -21,7 +24,7 @@ from tests.fixtures.cache import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterator, Sequence
 
     from django.core.cache.backends.base import BaseCache
 
@@ -39,7 +42,9 @@ def _build_sync_config(
     if resp_adapter in {"redis-py", "valkey-py"}:
         options = _get_client_library_options(ADAPTER_IMAGES[resp_adapter][1])
     else:
-        options = {}
+        # glide multiplexes every command over one connection, so a publish
+        # queued behind the consumer's XREAD BLOCK needs the longer timeout.
+        options = {"request_timeout": 5000}
     location = f"redis://{host}:{port}?db=13"
     backend_class = BACKENDS[("default", resp_adapter)]
     sk = stream_key or f"test:sync:{uuid.uuid4().hex[:8]}"
@@ -68,11 +73,45 @@ def _custom_key_func(key: str, prefix: str, version: int) -> str:
     return f"{prefix}#{version}#{key}"
 
 
-def _cleanup_globals(stream_key: str) -> None:
-    """Remove module-level globals for a stream key."""
-    _caches.pop(stream_key, None)
-    _expire_info.pop(stream_key, None)
-    _locks.pop(stream_key, None)
+def _build_pod_config(
+    host: str,
+    port: int,
+    resp_adapter: str,
+    stream_key: str,
+    pods: Sequence[str],
+    max_entries: int = 1000,
+) -> dict:
+    """Build a transport plus one StreamCache alias per pod, all sharing ``stream_key``.
+
+    Each alias gets its own ``LOCATION``, which is what keys the local storage
+    and the process-wide sync state, so the pods behave like separate processes.
+    """
+    config = _build_sync_config(
+        host,
+        port,
+        resp_adapter=resp_adapter,
+        stream_key=stream_key,
+        max_entries=max_entries,
+    )
+    base = config.pop("default")
+    for pod in pods:
+        entry = copy.deepcopy(base)
+        entry["LOCATION"] = _pod_storage_key(stream_key, pod)
+        config[pod] = entry
+    return config
+
+
+def _pod_storage_key(stream_key: str, pod: str) -> str:
+    return f"{stream_key}:{pod}"
+
+
+def _cleanup_globals(*storage_keys: str) -> None:
+    """Drop the per-storage-key locmem globals and the shared sync state."""
+    for storage_key in storage_keys:
+        _caches.pop(storage_key, None)
+        _expire_info.pop(storage_key, None)
+        _locks.pop(storage_key, None)
+        _SYNC_REGISTRY.pop(storage_key, None)
 
 
 @pytest.fixture
@@ -100,45 +139,14 @@ def stream_pair(redis_container: RedisContainerInfo, resp_adapter: str) -> Itera
     """Two StreamCache instances sharing one stream (simulates two pods)."""
     if not _adapter_library_available(resp_adapter):
         pytest.skip(f"{resp_adapter} library not installed")
-    if resp_adapter in {"redis-py", "valkey-py"}:
-        options = _get_client_library_options(ADAPTER_IMAGES[resp_adapter][1])
-    else:
-        options = {}
-    location = f"redis://{redis_container.host}:{redis_container.port}?db=13"
-    backend_class = BACKENDS[("default", resp_adapter)]
     stream_key = f"test:sync-pair:{uuid.uuid4().hex[:8]}"
-    storage_key_1 = f"{stream_key}:pod1"
-    storage_key_2 = f"{stream_key}:pod2"
-
-    config = {
-        "transport": {
-            "BACKEND": backend_class,
-            "LOCATION": location,
-            "OPTIONS": options,
-        },
-        "pod1": {
-            "BACKEND": "django_cachex.cache.StreamCache",
-            "LOCATION": storage_key_1,
-            "OPTIONS": {
-                "transport": "transport",
-                "stream_key": stream_key,
-                "MAX_ENTRIES": 1000,
-                "maxlen": 10000,
-                "block_timeout": 100,
-            },
-        },
-        "pod2": {
-            "BACKEND": "django_cachex.cache.StreamCache",
-            "LOCATION": storage_key_2,
-            "OPTIONS": {
-                "transport": "transport",
-                "stream_key": stream_key,
-                "MAX_ENTRIES": 1000,
-                "maxlen": 10000,
-                "block_timeout": 100,
-            },
-        },
-    }
+    config = _build_pod_config(
+        redis_container.host,
+        redis_container.port,
+        resp_adapter,
+        stream_key,
+        pods=("pod1", "pod2"),
+    )
 
     with override_settings(CACHES=config):
         pod1 = caches["pod1"]
@@ -149,8 +157,7 @@ def stream_pair(redis_container: RedisContainerInfo, resp_adapter: str) -> Itera
         yield pod1, pod2
         pod1.shutdown()
         pod2.shutdown()
-        _cleanup_globals(storage_key_1)
-        _cleanup_globals(storage_key_2)
+        _cleanup_globals(_pod_storage_key(stream_key, "pod1"), _pod_storage_key(stream_key, "pod2"))
 
 
 # =============================================================================
@@ -164,12 +171,13 @@ class TestSyncConfig:
             StreamCache("", {"OPTIONS": {}})
 
     def test_default_stream_key(self, redis_container: RedisContainerInfo, resp_adapter: str):
+        if not _adapter_library_available(resp_adapter):
+            pytest.skip(f"{resp_adapter} library not installed")
         config = _build_sync_config(
             redis_container.host,
             redis_container.port,
             resp_adapter=resp_adapter,
         )
-        # Remove stream_key to test default
         del config["default"]["OPTIONS"]["stream_key"]
         with override_settings(CACHES=config):
             cache = caches["default"]
@@ -177,8 +185,171 @@ class TestSyncConfig:
             cache.shutdown()
             _cleanup_globals("cache:sync")
 
+    def test_custom_stream_key_carries_the_writes(
+        self,
+        redis_container: RedisContainerInfo,
+        resp_adapter: str,
+    ):
+        if not _adapter_library_available(resp_adapter):
+            pytest.skip(f"{resp_adapter} library not installed")
+        stream_key = f"test:custom-key:{uuid.uuid4().hex[:8]}"
+        config = _build_sync_config(
+            redis_container.host,
+            redis_container.port,
+            resp_adapter=resp_adapter,
+            stream_key=stream_key,
+        )
+        with override_settings(CACHES=config):
+            cache = caches["default"]
+            transport = caches["transport"]
+            cache.set("custom_key_target", "v")
+            cache._flush_publishes()
+            entries = transport.xrevrange(stream_key, count=10)
+            assert [f["key"] for _id, f in entries] == [cache.make_key("custom_key_target")]
+            cache.shutdown()
+            _cleanup_globals(stream_key)
+
+    def test_maxlen_trims_the_stream(self, redis_container: RedisContainerInfo, resp_adapter: str):
+        if not _adapter_library_available(resp_adapter):
+            pytest.skip(f"{resp_adapter} library not installed")
+        stream_key = f"test:maxlen:{uuid.uuid4().hex[:8]}"
+        config = _build_sync_config(
+            redis_container.host,
+            redis_container.port,
+            resp_adapter=resp_adapter,
+            stream_key=stream_key,
+        )
+        config["default"]["OPTIONS"]["maxlen"] = 10
+        writes = 400
+        with override_settings(CACHES=config):
+            cache = caches["default"]
+            for i in range(writes):
+                cache.set(f"trim_{i}", i)
+            cache._flush_publishes()
+            # Trimming is approximate: whole macro nodes only.
+            length = caches["transport"].xlen(stream_key)
+            assert 10 <= length < writes
+            cache.shutdown()
+            _cleanup_globals(stream_key)
+
+    def test_block_timeout_is_passed_to_xread(
+        self,
+        redis_container: RedisContainerInfo,
+        resp_adapter: str,
+        mocker,
+    ):
+        if not _adapter_library_available(resp_adapter):
+            pytest.skip(f"{resp_adapter} library not installed")
+        stream_key = f"test:block:{uuid.uuid4().hex[:8]}"
+        config = _build_sync_config(
+            redis_container.host,
+            redis_container.port,
+            resp_adapter=resp_adapter,
+            stream_key=stream_key,
+        )
+        config["default"]["OPTIONS"]["block_timeout"] = 250
+        with override_settings(CACHES=config):
+            cache = caches["default"]
+            # Resolve the transport here so the consumer thread, which caches
+            # the same attribute, reads the instance carrying the spy.
+            transport = cache._transport
+            spy = mocker.patch.object(transport, "xread", wraps=transport.xread)
+            cache.get("boot")
+            deadline = time.time() + 5.0
+            while time.time() < deadline and not spy.call_args_list:
+                time.sleep(0.05)
+            assert spy.call_args_list, "consumer never issued an xread"
+            expected = None if cache._transport_is_multiplexed else 250
+            assert {call.kwargs["block"] for call in spy.call_args_list} == {expected}
+            cache.shutdown()
+            _cleanup_globals(stream_key)
+
     def test_cachex_support_level(self, stream_cache: BaseCache):
         assert stream_cache._cachex_support == "cachex"
+
+
+class TestSyncSharedState:
+    """Consumer, publisher and pod id are per storage key, not per instance.
+
+    Regression: Django's ``CacheHandler`` hands out a backend instance per
+    thread and per async context, so per-instance sync state meant a consumer
+    thread and a publisher per caller plus a pod id per worker thread, which
+    made sibling consumers re-apply this process's own writes.
+    """
+
+    def test_threads_share_one_consumer_and_pod_id(
+        self,
+        redis_container: RedisContainerInfo,
+        resp_adapter: str,
+    ):
+        if not _adapter_library_available(resp_adapter):
+            pytest.skip(f"{resp_adapter} library not installed")
+        stream_key = f"test:shared:{uuid.uuid4().hex[:8]}"
+        config = _build_sync_config(
+            redis_container.host,
+            redis_container.port,
+            resp_adapter=resp_adapter,
+            stream_key=stream_key,
+        )
+        instances: list[int] = []
+        states: list[object] = []
+        barrier = threading.Barrier(6)
+
+        with override_settings(CACHES=config):
+
+            def worker(index: int) -> None:
+                barrier.wait(10.0)
+                cache = caches["default"]
+                cache.set(f"shared_{index}", index)
+                instances.append(id(cache))
+                states.append(cache._sync)
+
+            threads = [threading.Thread(target=worker, args=(i,)) for i in range(6)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(10.0)
+
+            assert len(instances) == 6
+            assert len(set(instances)) > 1, "CacheHandler no longer hands out per-thread instances"
+            assert len({id(state) for state in states}) == 1
+            assert len({state.pod_id for state in states}) == 1
+            cache = caches["default"]
+            consumers = [t for t in threading.enumerate() if t.name == f"sync-cache-{stream_key}"]
+            assert len(consumers) == 1
+            publishers = [t for t in threading.enumerate() if t.name.startswith("sync-pub")]
+            assert len(publishers) == 1
+            cache.shutdown()
+            _cleanup_globals(stream_key)
+
+    def test_shutdown_then_restart_leaves_one_consumer(
+        self,
+        redis_container: RedisContainerInfo,
+        resp_adapter: str,
+    ):
+        if not _adapter_library_available(resp_adapter):
+            pytest.skip(f"{resp_adapter} library not installed")
+        stream_key = f"test:restart:{uuid.uuid4().hex[:8]}"
+        config = _build_sync_config(
+            redis_container.host,
+            redis_container.port,
+            resp_adapter=resp_adapter,
+            stream_key=stream_key,
+        )
+        with override_settings(CACHES=config):
+            cache = caches["default"]
+            cache.set("restart", 1)
+            first_stop = cache._sync.stop_event
+            cache.shutdown()
+            assert first_stop.is_set()
+            cache.set("restart", 2)
+            assert first_stop.is_set(), "abandoned consumer was revived by a cleared stop event"
+            assert cache._sync.stop_event is not first_stop
+            consumers = [t for t in threading.enumerate() if t.name == f"sync-cache-{stream_key}"]
+            assert len(consumers) == 1
+            assert cache.get("restart") == 2
+            cache.shutdown()
+            _cleanup_globals(stream_key)
 
 
 # =============================================================================
@@ -220,14 +391,10 @@ class TestSyncBasicOps:
         with pytest.raises(NotSupportedError):
             stream_cache.add("add_key", "first")
 
-    def test_set_conditional_flags_raise_not_supported(self, stream_cache: BaseCache):
-        # nx/xx/get need atomic check-and-set, which last-writer-wins
-        # replication can't provide, so they are rejected rather than ignored.
-        for flag in ("nx", "xx", "get"):
-            with pytest.raises(NotSupportedError):
-                stream_cache.set("flagged", "v", **{flag: True})
-        # Falsy flags are still accepted (plain write).
-        assert stream_cache.set("flagged", "v", nx=False, xx=False, get=False) is True
+    def test_set_accepts_falsy_conditional_flags(self, stream_cache: BaseCache):
+        # Only a requested flag is rejected; ``nx=False`` is a plain write.
+        assert stream_cache.set("flagged", "v", nx=False, xx=False, get=False) is None
+        assert stream_cache.get("flagged") == "v"
 
     def test_has_key(self, stream_cache: BaseCache):
         stream_cache.set("exists", 1)
@@ -306,10 +473,9 @@ class TestSyncBasicOps:
         assert stream_cache.get("bool") is True
 
     def test_none_value_distinguishable(self, stream_cache: BaseCache):
-        """Stored None is distinguishable from cache miss via default sentinel."""
         stream_cache.set("none_val", None)
         sentinel = object()
-        assert stream_cache.get("none_val", sentinel) is None  # stored None, not sentinel
+        assert stream_cache.get("none_val", sentinel) is None
 
     def test_versioned_keys(self, stream_cache: BaseCache):
         stream_cache.set("vk", "v1", version=1)
@@ -338,7 +504,7 @@ class TestSyncExpiry:
 
     def test_ttl_returns_minus_one_for_persistent(self, stream_cache: BaseCache):
         stream_cache.set("persist_key", "val", timeout=None)
-        assert stream_cache.ttl("persist_key") == -1
+        assert stream_cache.ttl("persist_key") is None
 
     def test_ttl_returns_minus_two_for_missing(self, stream_cache: BaseCache):
         assert stream_cache.ttl("no_key") == -2
@@ -358,7 +524,7 @@ class TestSyncExpiry:
     def test_persist_removes_expiry(self, stream_cache: BaseCache):
         stream_cache.set("persist_test", "val", timeout=60)
         stream_cache.persist("persist_test")
-        assert stream_cache.ttl("persist_test") == -1
+        assert stream_cache.ttl("persist_test") is None
 
     def test_expire_sets_new_ttl(self, stream_cache: BaseCache):
         stream_cache.set("expire_test", "val", timeout=None)
@@ -466,8 +632,65 @@ class TestSyncCrossInstance:
     ):
         pod1, _pod2 = stream_pair
         pod1.set("imm", "instant")
-        # No drain needed: writer has the value locally
+        # No drain needed: the writer has the value locally.
         assert pod1.get("imm") == "instant"
+
+    def test_simultaneous_writes_to_one_key_converge(
+        self,
+        stream_pair: tuple[StreamCache, StreamCache],
+    ):
+        pod1, pod2 = stream_pair
+        pod1.set("contested", "from-pod1")
+        pod2.set("contested", "from-pod2")
+        pod1._flush_publishes()
+        pod2._flush_publishes()
+        pod1._drain()
+        pod2._drain()
+        assert pod1.get("contested") == pod2.get("contested")
+
+    def test_own_broadcast_does_not_resurrect_a_later_delete(
+        self,
+        stream_pair: tuple[StreamCache, StreamCache],
+    ):
+        pod1, _pod2 = stream_pair
+        pod1.set("superseded", "old")
+        pod1.delete("superseded")
+        pod1._flush_publishes()
+        pod1._drain()
+        assert pod1.get("superseded") is None
+
+        pod1.set("rewritten", "old")
+        pod1.set("rewritten", "new")
+        pod1._flush_publishes()
+        pod1._drain()
+        assert pod1.get("rewritten") == "new"
+
+    def test_own_clear_is_not_undone_by_earlier_broadcasts(
+        self,
+        stream_pair: tuple[StreamCache, StreamCache],
+    ):
+        pod1, _pod2 = stream_pair
+        pod1.set("pre_clear", "v")
+        pod1.clear()
+        pod1._flush_publishes()
+        pod1._drain()
+        assert pod1.get("pre_clear") is None
+
+    def test_writes_after_own_clear_survive_its_broadcast(
+        self,
+        stream_pair: tuple[StreamCache, StreamCache],
+    ):
+        pod1, _pod2 = stream_pair
+        pod1.clear()
+        pod1.set("after_clear", "v")
+        made_key = pod1.make_key("after_clear")
+        # The clear entry comes back in an earlier XREAD batch than the set entry.
+        with pod1._lock:
+            pod1._apply_message({"op": "clear", "pod": pod1._sync.pod_id, "seq": pod1._sync.pending[made_key] - 1})
+        assert pod1.get("after_clear") == "v"
+        pod1._flush_publishes()
+        pod1._drain()
+        assert pod1.get("after_clear") == "v"
 
     def test_various_types_propagate(self, stream_pair: tuple[StreamCache, StreamCache]):
         pod1, pod2 = stream_pair
@@ -503,8 +726,6 @@ class TestSyncCrossInstance:
         so two racing writers could publish in the opposite order of their
         local writes and replaying consumers converged to the stale value.
         """
-        import threading
-
         cache = stream_cache
         cache.set("warm", 1)  # boot consumer + publish executor
         made_key = cache.make_key("race")
@@ -540,9 +761,8 @@ class TestSyncCrossInstance:
 
         entries = cache._transport.xrevrange(cache._stream_key, count=50)
         race_vals = [f.get("val") for _id, f in entries if f.get("op") == "set" and f.get("key") == made_key]
-        assert race_vals, "expected set broadcasts for the contested key"
-        # The newest stream entry must agree with the writer's local state.
-        assert race_vals[0] == cache.get("race")
+        # Newest first, so a replaying consumer ends on the winner.
+        assert race_vals == ["v2", "v1"]
 
 
 # =============================================================================
@@ -552,6 +772,8 @@ class TestSyncCrossInstance:
 
 class TestSyncCull:
     def test_cull_evicts_when_full(self, redis_container: RedisContainerInfo, resp_adapter: str):
+        if not _adapter_library_available(resp_adapter):
+            pytest.skip(f"{resp_adapter} library not installed")
         config = _build_sync_config(
             redis_container.host,
             redis_container.port,
@@ -562,13 +784,10 @@ class TestSyncCull:
 
         with override_settings(CACHES=config):
             cache = caches["default"]
-            # Fill beyond capacity
             for i in range(15):
                 cache.set(f"cull_{i}", f"v{i}")
-            # Should have culled some entries
             count = sum(1 for i in range(15) if cache.get(f"cull_{i}") is not None)
             assert count <= 10
-            # Most recent entries should still be present
             assert cache.get("cull_14") == "v14"
             cache.shutdown()
             _cleanup_globals(stream_key)
@@ -742,6 +961,7 @@ class TestSyncUnsupportedSurface:
 
     @pytest.mark.parametrize("flag", ["nx", "xx", "get"])
     def test_set_flag_raises_not_supported(self, stream_cache: BaseCache, flag: str):
+        # Atomic check-and-set has no last-writer-wins equivalent.
         with pytest.raises(NotSupportedError):
             stream_cache.set("k", "v", **{flag: True})
 
@@ -752,51 +972,19 @@ class TestSyncUnsupportedSurface:
 
 class TestSyncReplay:
     def test_replay_warms_cache_on_startup(self, redis_container: RedisContainerInfo, resp_adapter: str):
-        """A new StreamCache with REPLAY > 0 picks up entries from the stream."""
         if not _adapter_library_available(resp_adapter):
             pytest.skip(f"{resp_adapter} library not installed")
         stream_key = f"test:replay:{uuid.uuid4().hex[:8]}"
-        storage_key_1 = f"{stream_key}:producer"
-        storage_key_2 = f"{stream_key}:consumer"
-
-        if resp_adapter in {"redis-py", "valkey-py"}:
-            options = _get_client_library_options(ADAPTER_IMAGES[resp_adapter][1])
-        else:
-            options = {}
-        location = f"redis://{redis_container.host}:{redis_container.port}?db=13"
-        backend_class = BACKENDS[("default", resp_adapter)]
-
-        config = {
-            "transport": {
-                "BACKEND": backend_class,
-                "LOCATION": location,
-                "OPTIONS": options,
-            },
-            "producer": {
-                "BACKEND": "django_cachex.cache.StreamCache",
-                "LOCATION": storage_key_1,
-                "OPTIONS": {
-                    "transport": "transport",
-                    "stream_key": stream_key,
-                    "maxlen": 10000,
-                    "block_timeout": 100,
-                },
-            },
-            "consumer": {
-                "BACKEND": "django_cachex.cache.StreamCache",
-                "LOCATION": storage_key_2,
-                "OPTIONS": {
-                    "transport": "transport",
-                    "stream_key": stream_key,
-                    "maxlen": 10000,
-                    "block_timeout": 100,
-                    "replay": 100,
-                },
-            },
-        }
+        config = _build_pod_config(
+            redis_container.host,
+            redis_container.port,
+            resp_adapter,
+            stream_key,
+            pods=("producer", "consumer"),
+        )
+        config["consumer"]["OPTIONS"]["replay"] = 100
 
         with override_settings(CACHES=config):
-            # Producer writes data to the stream
             producer = caches["producer"]
             producer.set("replay_a", "alpha")
             producer.set("replay_b", "beta")
@@ -804,57 +992,28 @@ class TestSyncReplay:
             producer._flush_publishes()
             producer.shutdown()
 
-            # Consumer starts fresh with REPLAY=100, should warm from stream
             consumer = caches["consumer"]
             assert consumer.get("replay_a") == "alpha"
             assert consumer.get("replay_b") == "beta"
             assert consumer.get("replay_c") == "gamma"
             consumer.shutdown()
 
-        _cleanup_globals(storage_key_1)
-        _cleanup_globals(storage_key_2)
+        _cleanup_globals(
+            _pod_storage_key(stream_key, "producer"),
+            _pod_storage_key(stream_key, "consumer"),
+        )
 
     def test_replay_zero_starts_empty(self, redis_container: RedisContainerInfo, resp_adapter: str):
-        """With REPLAY=0 (default), a new pod starts with an empty cache."""
+        if not _adapter_library_available(resp_adapter):
+            pytest.skip(f"{resp_adapter} library not installed")
         stream_key = f"test:noreplay:{uuid.uuid4().hex[:8]}"
-        storage_key_1 = f"{stream_key}:producer"
-        storage_key_2 = f"{stream_key}:consumer"
-
-        if resp_adapter in {"redis-py", "valkey-py"}:
-            options = _get_client_library_options(ADAPTER_IMAGES[resp_adapter][1])
-        else:
-            options = {}
-        location = f"redis://{redis_container.host}:{redis_container.port}?db=13"
-        backend_class = BACKENDS[("default", resp_adapter)]
-
-        config = {
-            "transport": {
-                "BACKEND": backend_class,
-                "LOCATION": location,
-                "OPTIONS": options,
-            },
-            "producer": {
-                "BACKEND": "django_cachex.cache.StreamCache",
-                "LOCATION": storage_key_1,
-                "OPTIONS": {
-                    "transport": "transport",
-                    "stream_key": stream_key,
-                    "maxlen": 10000,
-                    "block_timeout": 100,
-                },
-            },
-            "consumer": {
-                "BACKEND": "django_cachex.cache.StreamCache",
-                "LOCATION": storage_key_2,
-                "OPTIONS": {
-                    "transport": "transport",
-                    "stream_key": stream_key,
-                    "maxlen": 10000,
-                    "block_timeout": 100,
-                    # replay defaults to 0
-                },
-            },
-        }
+        config = _build_pod_config(
+            redis_container.host,
+            redis_container.port,
+            resp_adapter,
+            stream_key,
+            pods=("producer", "consumer"),
+        )
 
         with override_settings(CACHES=config):
             producer = caches["producer"]
@@ -863,16 +1022,19 @@ class TestSyncReplay:
             producer.shutdown()
 
             consumer = caches["consumer"]
-            # No replay: consumer starts empty
             assert consumer.get("no_replay_key") is None
             consumer.shutdown()
 
-        _cleanup_globals(storage_key_1)
-        _cleanup_globals(storage_key_2)
+        _cleanup_globals(
+            _pod_storage_key(stream_key, "producer"),
+            _pod_storage_key(stream_key, "consumer"),
+        )
 
 
 class TestSyncShutdown:
     def test_shutdown_stops_consumer(self, redis_container: RedisContainerInfo, resp_adapter: str):
+        if not _adapter_library_available(resp_adapter):
+            pytest.skip(f"{resp_adapter} library not installed")
         config = _build_sync_config(
             redis_container.host,
             redis_container.port,
@@ -893,16 +1055,15 @@ class TestSyncShutdown:
         redis_container: RedisContainerInfo,
         resp_adapter: str,
     ):
-        """``shutdown`` must return within ``publish_shutdown_timeout`` (I6).
+        """``shutdown`` returns within ``publish_shutdown_timeout``.
 
         Pin the publish executor with a worker that blocks indefinitely.
-        Without the bounded join, ``shutdown(wait=True)`` would block
-        forever; with it, ``shutdown`` returns within the timeout and
-        logs a warning about the abandoned worker.
+        Without the bounded join, ``shutdown(wait=True)`` would block forever;
+        with it, ``shutdown`` returns within the timeout and logs a warning
+        about the abandoned worker.
         """
-        import threading
-        import time
-
+        if not _adapter_library_available(resp_adapter):
+            pytest.skip(f"{resp_adapter} library not installed")
         config = _build_sync_config(
             redis_container.host,
             redis_container.port,
@@ -917,7 +1078,7 @@ class TestSyncShutdown:
             # Park the publish worker on a future that never resolves so the
             # executor's worker thread can't drain on shutdown.
             forever = threading.Event()
-            cache._publish_executor.submit(forever.wait)
+            cache._sync.publish_executor.submit(forever.wait)
             t0 = time.monotonic()
             cache.shutdown()
             elapsed = time.monotonic() - t0
@@ -934,15 +1095,14 @@ class TestSyncShutdown:
         resp_adapter: str,
         caplog,
     ):
-        """Publish budget caps the in-flight queue (I6).
+        """The publish budget caps the in-flight queue.
 
-        Set a tiny ``max_pending_publishes`` and park the worker. Once
-        the budget is exhausted, further ``_publish`` calls log a drop
-        warning instead of growing the queue without bound.
+        Set a tiny ``max_pending_publishes`` and park the worker. Once the
+        budget is exhausted, further ``_publish`` calls log a drop warning
+        instead of growing the queue without bound.
         """
-        import logging
-        import threading
-
+        if not _adapter_library_available(resp_adapter):
+            pytest.skip(f"{resp_adapter} library not installed")
         config = _build_sync_config(
             redis_container.host,
             redis_container.port,
@@ -958,12 +1118,11 @@ class TestSyncShutdown:
             cache._flush_publishes()  # release the warm submit
             # Block the worker so subsequent submits stay queued.
             block_event = threading.Event()
-            cache._publish_executor.submit(block_event.wait)
-            # Fill the budget (2 outstanding) plus one drop.
+            cache._sync.publish_executor.submit(block_event.wait)
             with caplog.at_level(logging.WARNING, logger="django_cachex.cache.stream"):
                 cache._publish("set", key="a", val=1)
                 cache._publish("set", key="b", val=2)
-                cache._publish("set", key="c", val=3)  # should be dropped
+                cache._publish("set", key="c", val=3)  # exceeds the budget of 2
             drop_messages = [r for r in caplog.records if "backlog full" in r.getMessage()]
             try:
                 assert drop_messages, "expected at least one 'backlog full' warning"

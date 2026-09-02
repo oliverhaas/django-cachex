@@ -52,10 +52,10 @@ import pickle
 import threading
 import time
 import uuid
-import weakref
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from functools import cached_property
+from itertools import count
 from threading import BoundedSemaphore, Event, Lock, Thread
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -75,6 +75,118 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class _StreamSync:
+    """Pod identity, consumer thread and publisher shared by one storage key.
+
+    Django's ``CacheHandler`` hands out one backend instance per thread and per
+    async context, so per-instance sync state would mean a consumer and a
+    publisher thread per ASGI request (neither collectable: the thread frame
+    pins the instance) and a pod id per WSGI worker thread, which makes sibling
+    consumers treat this process's own writes as remote. Instances share one of
+    these instead, keyed in ``_SYNC_REGISTRY`` by the storage key
+    ``LocMemCache`` also keys its dict, lock and expiry map with.
+    """
+
+    __slots__ = (
+        "atexit_registered",
+        "block_timeout",
+        "consumer_thread",
+        "initialized",
+        "last_id",
+        "last_read_time",
+        "lock",
+        "max_pending_publishes",
+        "pending",
+        "pid",
+        "pod_id",
+        "publish_budget",
+        "publish_executor",
+        "publish_executor_shutdown",
+        "publish_shutdown_timeout",
+        "seq_counter",
+        "stop_event",
+    )
+
+    def __init__(
+        self,
+        *,
+        block_timeout: int,
+        max_pending_publishes: int,
+        publish_shutdown_timeout: float,
+    ) -> None:
+        self.pid = os.getpid()
+        self.pod_id = f"{self.pid}-{uuid.uuid4().hex[:12]}"
+        self.block_timeout = block_timeout
+        self.max_pending_publishes = max_pending_publishes
+        self.publish_shutdown_timeout = publish_shutdown_timeout
+        self.lock = Lock()
+        self.stop_event = Event()
+        self.consumer_thread: Thread | None = None
+        self.initialized = False
+        self.atexit_registered = False
+        self.last_id = "$"
+        self.last_read_time = 0.0
+        self.seq_counter = count(1)
+        # Made key -> sequence number of this pod's latest local mutation of
+        # it, dropped once the matching broadcast has been consumed.
+        self.pending: dict[str, int] = {}
+        self.publish_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sync-pub")
+        self.publish_executor_shutdown = False
+        self.publish_budget = BoundedSemaphore(max_pending_publishes)
+
+    def next_seq(self) -> int:
+        return next(self.seq_counter)
+
+    def shutdown(self) -> None:
+        """Stop the consumer thread and the publish executor with bounded waits.
+
+        The consumer is parked in ``XREAD BLOCK block_timeout`` (ms), so the
+        join grace has to outlast one block window: ``block_timeout + 1s``,
+        capped at 10s. A thread still alive after that is abandoned, which
+        leaks a daemon thread but does not block process shutdown. Its stop
+        event stays set, and the next start mints a fresh one, so it can never
+        come back alongside its replacement with both advancing ``last_id``.
+
+        The publish executor is bounded by ``publish_shutdown_timeout``.
+        Pending futures are cancelled up front (``cancel_futures=True``), then
+        the worker thread is joined with a timeout; an in-flight XADD that
+        does not drain in time is abandoned with a warning.
+        """
+        with self.lock:
+            thread = self.consumer_thread
+            if thread is not None:
+                self.stop_event.set()
+                join_timeout = min(10.0, (self.block_timeout / 1000.0) + 1.0)
+                thread.join(timeout=join_timeout)
+                if thread.is_alive():
+                    logger.warning(
+                        "StreamCache: consumer thread still alive after %.1fs; abandoning it",
+                        join_timeout,
+                    )
+                self.consumer_thread = None
+                self.initialized = False
+            executor = self.publish_executor
+            self.publish_executor_shutdown = True
+        executor.shutdown(wait=False, cancel_futures=True)
+        # Executor.shutdown has no timeout; join its (private) worker threads with one.
+        worker_threads = list(getattr(executor, "_threads", ()) or ())
+        deadline = time.time() + self.publish_shutdown_timeout
+        for worker in worker_threads:
+            worker.join(timeout=max(0.0, deadline - time.time()))
+        still_alive = [t for t in worker_threads if t.is_alive()]
+        if still_alive:
+            logger.warning(
+                "StreamCache: publish worker(s) still alive after %.1fs; abandoning %d thread(s)",
+                self.publish_shutdown_timeout,
+                len(still_alive),
+            )
+
+
+_SYNC_REGISTRY: dict[str, _StreamSync] = {}
+_MULTIPLEXED_POLL_INTERVAL = 0.025
+_REGISTRY_LOCK = Lock()
+
+
 class StreamCache(BaseCachex, LocMemCache):
     """Stream-synchronized in-memory cache.
 
@@ -82,8 +194,7 @@ class StreamCache(BaseCachex, LocMemCache):
     local dict lookups (inherited from ``LocMemCache``). Writes update the
     local dict and publish to a Redis Stream via the transport cache's
     ``xadd``. A daemon thread consumes the stream via ``xread`` and applies
-    remote changes. Supported operations are eventually consistent
-    (last-writer-wins).
+    changes. Supported operations are eventually consistent.
 
     ``add``, ``incr``, and ``decr`` raise ``NotSupportedError``: their
     semantics (atomic check-and-set, atomic increment) can't be provided
@@ -93,14 +204,21 @@ class StreamCache(BaseCachex, LocMemCache):
     ``NotSupportedError`` from :class:`~django_cachex.cache.base.BaseCachex`;
     key/TTL/type/info ops are implemented locally.
 
-    Write-ordering guarantee: every mutating operation holds the local lock
-    across both the local update and the enqueue of its stream broadcast,
-    and a single-worker executor performs the XADDs in enqueue order, so a
-    pod's stream entries appear in the same order its local writes were
-    applied. Consumers replaying the stream therefore converge to the
-    writer's final state. Broadcasts remain best-effort: an entry is
-    dropped when the publish backlog is full or the transport errors, so
-    the stream is a replication feed, not a durable log.
+    Convergence: the stream is the one order every pod agrees on, and each
+    entry carries the final value rather than a delta, so applying entries in
+    stream order is idempotent and leaves every pod on the last entry written
+    for a key. A pod applies its own entries too, which is what makes two pods
+    writing the same key inside the propagation window converge instead of
+    ending up holding each other's value. An entry is skipped only where a
+    later local write to the same key (or a local ``clear``) has already
+    replaced it, so a writer never reads back a value it has moved past.
+
+    Write ordering: every mutating operation holds the local lock across both
+    the local update and the enqueue of its broadcast, and a single-worker
+    executor performs the XADDs in enqueue order, so a pod's entries appear in
+    the order its local writes were applied. Broadcasts remain best-effort: an
+    entry is dropped when the publish backlog is full or the transport errors,
+    so the stream is a replication feed, not a durable log.
 
     The consumer thread is restarted if it dies; use ``info()["sync"]`` to
     monitor consumer health, last read age, and stream position.
@@ -135,43 +253,24 @@ class StreamCache(BaseCachex, LocMemCache):
         self._block_timeout: int = options.get("block_timeout", 1000)
         self._replay_count: int = options.get("replay", 0)
 
-        # LocMemCache uses its ``server`` argument to key its module-level
-        # globals. Use Django's ``LOCATION`` to do the same; multiple
-        # StreamCache aliases sharing one ``stream_key`` but distinct
-        # ``LOCATION``s simulate separate pods within the same process,
-        # which is how the test suite exercises the consumer side.
+        # Aliases sharing a ``stream_key`` but not a ``LOCATION`` get separate
+        # local storage and separate sync state, i.e. they act as separate pods.
         storage_key = server or self._stream_key
-        self._storage_key: str = storage_key
         super().__init__(storage_key, params)
 
-        # Pod identity for self-message dedup
-        self._pod_id: str = f"{os.getpid()}-{id(self)}-{uuid.uuid4().hex[:8]}"
-
-        # Consumer thread state
-        self._consumer_thread: Thread | None = None
-        self._stop_event = Event()
-        self._last_id: str = "$"
-        self._last_read_time: float = 0.0
-        self._initialized: bool = False
-        self._init_lock = Lock()
-
-        # Non-blocking publish: single-worker executor serializes XADD calls
-        # without blocking the calling thread on network I/O.
-        self._publish_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sync-pub")
-        self._publish_executor_shutdown = False
-
-        # Bound the publish backlog. ``ThreadPoolExecutor`` uses an unbounded
-        # ``SimpleQueue``, so a writer outpacing XADD throughput would grow
-        # memory until OOM. Gate ``submit`` on a ``BoundedSemaphore``; when
-        # the budget is exhausted the publish is dropped with a warning
-        # rather than blocking the caller. Default cap is 1000 outstanding
-        # broadcasts; tune via OPTIONS["max_pending_publishes"].
-        self._max_pending_publishes: int = options.get("max_pending_publishes", 1000)
-        self._publish_budget = BoundedSemaphore(self._max_pending_publishes)
-        # Shutdown grace for the publish executor. ``ThreadPoolExecutor.shutdown``
-        # offers no native timeout in 3.14, so we cancel pending futures and
-        # join the worker thread ourselves with this bound.
-        self._publish_shutdown_timeout: float = options.get("publish_shutdown_timeout", 5.0)
+        # A forked child inherits the registry but none of the parent's threads, and
+        # reusing the parent's pod id would make it treat the parent's writes as its own.
+        pid = os.getpid()
+        with _REGISTRY_LOCK:
+            state = _SYNC_REGISTRY.get(storage_key)
+            if state is None or state.pid != pid:
+                state = _StreamSync(
+                    block_timeout=self._block_timeout,
+                    max_pending_publishes=options.get("max_pending_publishes", 1000),
+                    publish_shutdown_timeout=options.get("publish_shutdown_timeout", 5.0),
+                )
+                _SYNC_REGISTRY[storage_key] = state
+        self._sync = state
 
         # Admin display: show stream key and transport alias as location
         self._cachex_location = f"stream:{self._stream_key} [transport: {self._transport_alias}]"
@@ -186,23 +285,24 @@ class StreamCache(BaseCachex, LocMemCache):
         transport hung inside ``_do_xadd`` would stall interpreter shutdown
         forever. ``threading._register_atexit`` hooks run at the top of
         ``threading._shutdown()`` in reverse registration order, i.e. before
-        that join, which ``atexit`` (which runs after it) cannot do. The hook
-        holds a weak reference so a discarded cache can still be collected.
+        that join, which ``atexit`` (which runs after it) cannot do. One hook
+        per storage key: it holds the shared sync state, not a cache instance,
+        so a discarded instance is still collectable.
         """
-        ref = weakref.ref(self)
+        state = self._sync
+        with state.lock:
+            if state.atexit_registered:
+                return
+            state.atexit_registered = True
 
         def _bounded_shutdown() -> None:
-            instance = ref()
-            if instance is not None:
-                with contextlib.suppress(Exception):
-                    instance.shutdown()
+            with contextlib.suppress(Exception):
+                state.shutdown()
 
-        with contextlib.suppress(AttributeError):
+        # AttributeError: no private hook on this interpreter. RuntimeError:
+        # 3.14 refuses a registration once shutdown has already begun.
+        with contextlib.suppress(AttributeError, RuntimeError):
             threading._register_atexit(_bounded_shutdown)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-
-    def __del__(self) -> None:
-        with contextlib.suppress(Exception):
-            self.shutdown()
 
     # -- Transport (lazy) --
 
@@ -211,6 +311,10 @@ class StreamCache(BaseCachex, LocMemCache):
         from django.core.cache import caches
 
         return caches[self._transport_alias]
+
+    @cached_property
+    def _transport_is_multiplexed(self) -> bool:
+        return bool(getattr(getattr(self._transport, "adapter", None), "multiplexed", False))
 
     # -- Consumer-side local storage helper --
 
@@ -245,21 +349,24 @@ class StreamCache(BaseCachex, LocMemCache):
         network round-trip. Mutators call this while holding ``self._lock``
         so broadcasts are enqueued in local write order.
 
-        The pending-publish budget (``_publish_budget``) caps how many
-        broadcasts may be queued at once. When the budget is exhausted the
-        new publish is dropped with a warning, trading durability for
-        bounded memory under sustained write bursts that outpace XADD.
+        The pending-publish budget caps how many broadcasts may be queued at
+        once. When it is exhausted the new publish is dropped with a warning,
+        trading durability for bounded memory under sustained write bursts
+        that outpace XADD.
         """
-        if not self._publish_budget.acquire(blocking=False):
+        state = self._sync
+        if not state.publish_budget.acquire(blocking=False):
             logger.warning(
                 "StreamCache: publish backlog full (cap=%d); dropping %s broadcast",
-                self._max_pending_publishes,
+                state.max_pending_publishes,
                 op,
             )
             return
+        seq = state.next_seq()
         fields: dict[str, Any] = {
             "op": op,
-            "pod": self._pod_id,
+            "pod": state.pod_id,
+            "seq": seq,
             "key": key,
             "val": val,
             "exp": str(exp) if exp is not None else "",
@@ -269,20 +376,27 @@ class StreamCache(BaseCachex, LocMemCache):
             # Django cache key.
             fields["keys"] = list(keys)
         try:
-            self._publish_executor.submit(self._do_xadd, fields)
+            state.publish_executor.submit(self._do_xadd, fields, state.publish_budget)
         except RuntimeError:
-            # Executor was shut down (likely from a prior ``__del__`` /
-            # ``shutdown`` and a thread is racing the teardown). Drop the
-            # publish; losing the broadcast is preferable to crashing the
+            # Executor was shut down and a thread is racing the teardown. Drop
+            # the publish; losing the broadcast is preferable to crashing the
             # caller. If the cache is still in active use ``_ensure_consumer``
-            # will rebuild the executor on the next get/set.
-            self._publish_budget.release()
+            # rebuilds the executor on the next get/set.
+            state.publish_budget.release()
             logger.warning(
                 "StreamCache: publish executor closed; dropping %s broadcast",
                 op,
             )
+            return
+        # Record what this pod has moved past, under the same ``_lock`` hold
+        # the caller mutated in, so the consumer cannot read a half-written map.
+        if op == "clear":
+            state.pending.clear()
+        else:
+            for made_key in keys or ((key,) if key else ()):
+                state.pending[made_key] = seq
 
-    def _do_xadd(self, fields: dict[str, Any]) -> None:
+    def _do_xadd(self, fields: dict[str, Any], budget: BoundedSemaphore) -> None:
         """Execute a single XADD via the transport's high-level API."""
         try:
             self._transport.xadd(  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
@@ -298,63 +412,72 @@ class StreamCache(BaseCachex, LocMemCache):
                 exc_info=True,
             )
         finally:
-            # Return budget once the broadcast has actually drained.
+            # Return the budget this publish took, not whichever semaphore is
+            # current: a restart swaps in a fresh one.
             with contextlib.suppress(ValueError):
-                self._publish_budget.release()
+                budget.release()
 
     # -- Consumer thread --
 
     def _consumer_alive(self) -> bool:
-        return self._consumer_thread is not None and self._consumer_thread.is_alive()
+        thread = self._sync.consumer_thread
+        return thread is not None and thread.is_alive()
 
     def _ensure_consumer(self) -> None:
-        """Start (or restart) the consumer thread.
+        """Start (or restart) the consumer thread for this storage key.
 
         Uses double-checked locking. On every call, verifies the thread is
         actually alive. If it died (e.g. due to ``SystemExit`` or an
         unhandled ``BaseException``), it is automatically restarted so the
         pod doesn't silently fall out of sync.
         """
-        if self._initialized and self._consumer_alive():
+        state = self._sync
+        if state.initialized and self._consumer_alive():
             return
-        with self._init_lock:
-            if self._initialized and self._consumer_alive():
+        with state.lock:
+            if state.initialized and self._consumer_alive():
                 return
-            if self._initialized and not self._consumer_alive():
+            if state.initialized:
                 logger.warning(
                     "StreamCache: Consumer thread died, restarting (stream=%s)",
                     self._stream_key,
                 )
             self._start_consumer()
-            self._initialized = True
+            state.initialized = True
 
     def _start_consumer(self) -> None:
+        state = self._sync
         # Recreate executor if it was shut down (e.g. after shutdown() + reuse)
-        if self._publish_executor_shutdown:
-            self._publish_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sync-pub")
-            self._publish_executor_shutdown = False
+        if state.publish_executor_shutdown:
+            state.publish_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sync-pub")
+            state.publish_executor_shutdown = False
             # Reset the publish budget too: the old semaphore may have been
             # drained by in-flight futures that ``cancel_futures=True``
             # rejected without running ``_do_xadd``'s release.
-            self._publish_budget = BoundedSemaphore(self._max_pending_publishes)
-        if self._replay_count > 0:
+            state.publish_budget = BoundedSemaphore(state.max_pending_publishes)
+        if self._replay_count > 0 and state.last_id == "$":
             self._replay_stream(self._replay_count)
-        self._stop_event.clear()
-        self._consumer_thread = Thread(
+        # A fresh event per consumer: reusing one ``shutdown`` set would revive
+        # a thread it abandoned in XREAD alongside its replacement.
+        stop_event = Event()
+        state.stop_event = stop_event
+        state.consumer_thread = Thread(
             target=self._consumer_loop,
+            args=(stop_event,),
             name=f"sync-cache-{self._stream_key}",
             daemon=True,
         )
-        self._consumer_thread.start()
+        state.consumer_thread.start()
 
     def _replay_stream(self, count: int) -> None:
         """Replay the last ``count`` stream entries to warm the local cache.
 
         Called once at startup before the consumer thread begins. Reads
         recent entries via ``XREVRANGE``, applies them oldest-first, and
-        sets ``_last_id`` so the consumer continues from where replay
+        sets ``last_id`` so the consumer continues from where replay
         left off (no duplicates).
         """
+        state = self._sync
         try:
             entries = self._transport.xrevrange(self._stream_key, count=count)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
             if not entries:
@@ -362,7 +485,7 @@ class StreamCache(BaseCachex, LocMemCache):
             with self._lock:
                 for entry_id, fields in reversed(entries):
                     self._apply_message(fields)
-                    self._last_id = entry_id
+                    state.last_id = entry_id
             logger.info(
                 "StreamCache: Replayed %d entries from stream %s",
                 len(entries),
@@ -371,53 +494,82 @@ class StreamCache(BaseCachex, LocMemCache):
         except Exception:
             logger.warning("StreamCache: stream replay failed", exc_info=True)
 
-    def _consumer_loop(self) -> None:
-        while not self._stop_event.is_set():
+    def _consumer_loop(self, stop_event: Event) -> None:
+        state = self._sync
+        # A multiplexed transport (valkey-glide) carries every command on one
+        # connection, so parking in XREAD BLOCK would hold up each publish.
+        block = None if self._transport_is_multiplexed else self._block_timeout
+        while not stop_event.is_set():
             try:
                 result = self._transport.xread(  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-                    streams={self._stream_key: self._last_id},
+                    streams={self._stream_key: state.last_id},
                     count=100,
-                    block=self._block_timeout,
+                    block=block,
                 )
                 # Stamp every poll: ``last_read_age_seconds`` tracks consumer
                 # liveness, so an idle stream would otherwise look stalled.
-                self._last_read_time = time.time()
+                state.last_read_time = time.time()
                 if not result:
+                    if block is None:
+                        stop_event.wait(_MULTIPLEXED_POLL_INTERVAL)
                     continue
                 for entries in result.values():
                     with self._lock:
                         for entry_id, fields in entries:
                             # Advance cursor BEFORE processing so a bad
                             # message is skipped, not retried forever.
-                            self._last_id = entry_id
+                            state.last_id = entry_id
                             try:
                                 self._apply_message(fields)
                             except Exception:
                                 logger.warning(
                                     "StreamCache: Failed to apply message %s, skipping",
-                                    self._last_id,
+                                    state.last_id,
                                     exc_info=True,
                                 )
             except Exception:
-                if not self._stop_event.is_set():
+                if not stop_event.is_set():
                     logger.warning(
                         "StreamCache: Consumer error, retrying in 1s",
                         exc_info=True,
                     )
-                    self._stop_event.wait(1.0)
+                    stop_event.wait(1.0)
 
     def _apply_message(self, fields: dict[str, Any]) -> None:
-        """Apply a single stream message to local cache. Caller holds ``self._lock``."""
+        """Apply a single stream message to local cache. Caller holds ``self._lock``.
+
+        A pod applies its own entries too, which is what makes two pods writing
+        one key converge: a remote entry consumed since the local write may
+        have overwritten it, and stream order is the only order both pods agree
+        on. Keys a later local write already replaced are dropped from an own
+        entry, so the writer never reads back a value it has moved past. An
+        own ``clear`` still runs, since it has to undo remote entries applied
+        between the local call and the entry coming back, but it spares the
+        keys written locally after it.
+        """
         op = fields.get("op", "")
-        pod = fields.get("pod", "")
-
-        # Skip self-messages (already applied locally by the writer)
-        if pod == self._pod_id:
-            return
-
         handler = self._MESSAGE_HANDLERS.get(op)
-        if handler:
-            handler(self, fields)
+        if handler is None:
+            return
+        if fields.get("pod") == self._sync.pod_id:
+            seq = int(fields.get("seq") or 0)
+            pending = self._sync.pending
+            keys = fields.get("keys")
+            if op == "clear":
+                fields = {**fields, "keep": {key for key, key_seq in pending.items() if key_seq > seq}}
+            elif keys is None:
+                key = fields.get("key", "")
+                if pending.get(key) != seq:
+                    return
+                del pending[key]
+            else:
+                live = [key for key in keys if pending.get(key) == seq]
+                if not live:
+                    return
+                for key in live:
+                    del pending[key]
+                fields = {**fields, "keys": live}
+        handler(self, fields)
 
     def _handle_set(self, fields: dict[str, Any]) -> None:
         key = fields["key"]
@@ -436,8 +588,14 @@ class StreamCache(BaseCachex, LocMemCache):
                 self._delete(key)
 
     def _handle_clear(self, fields: dict[str, Any]) -> None:
-        self._cache.clear()
-        self._expire_info.clear()
+        keep = fields.get("keep") or ()
+        if not keep:
+            self._cache.clear()
+            self._expire_info.clear()
+            return
+        for key in [key for key in self._cache if key not in keep]:
+            del self._cache[key]
+            self._expire_info.pop(key, None)
 
     def _handle_touch(self, fields: dict[str, Any]) -> None:
         key = fields["key"]
@@ -460,16 +618,17 @@ class StreamCache(BaseCachex, LocMemCache):
         Submits a no-op and waits; when it completes, all prior submits
         have finished since the executor is single-threaded.
         """
-        self._publish_executor.submit(lambda: None).result(timeout=5.0)
+        self._sync.publish_executor.submit(lambda: None).result(timeout=5.0)
 
     def _drain(self, timeout: float = 1.0) -> None:
         """Process all pending stream messages synchronously. For testing only.
 
-        If the consumer hasn't consumed anything yet (``_last_id`` is still
+        If the consumer hasn't consumed anything yet (``last_id`` is still
         ``$``), this reads from the beginning of the stream so that messages
         published before the drain call are visible.
         """
-        read_from = self._last_id if self._last_id != "$" else "0-0"
+        state = self._sync
+        read_from = state.last_id if state.last_id != "$" else "0-0"
         deadline = time.time() + timeout
         while time.time() < deadline:
             try:
@@ -485,55 +644,13 @@ class StreamCache(BaseCachex, LocMemCache):
                         for entry_id, fields in entries:
                             self._apply_message(fields)
                             read_from = entry_id
-                            self._last_id = entry_id
+                            state.last_id = entry_id
             except Exception:  # noqa: BLE001
                 return
 
     def shutdown(self) -> None:
-        """Stop the consumer thread and publish executor with bounded waits.
-
-        The consumer is parked in ``XREAD BLOCK self._block_timeout`` (ms),
-        so the join grace has to outlast one block window. We give it
-        ``block_timeout + 1s`` (capped at 10s); if the thread is still
-        alive after that it gets dropped, leaking the daemon thread is
-        cheaper than blocking process shutdown.
-
-        The publish executor is bounded by ``_publish_shutdown_timeout``.
-        Pending futures are cancelled up front (``cancel_futures=True``)
-        so a hung transport can't stall ``__del__`` indefinitely. The
-        worker thread is then joined with a timeout; any in-flight XADD
-        that doesn't drain in time is abandoned with a warning.
-        """
-        if self._consumer_thread is not None:
-            self._stop_event.set()
-            join_timeout = min(10.0, (self._block_timeout / 1000.0) + 1.0)
-            self._consumer_thread.join(timeout=join_timeout)
-            if self._consumer_thread.is_alive():
-                logger.warning(
-                    "StreamCache: consumer thread still alive after %.1fs; abandoning it",
-                    join_timeout,
-                )
-            self._consumer_thread = None
-            self._initialized = False
-            self._stop_event.clear()
-        # Drop pending broadcasts and start non-blocking shutdown.
-        self._publish_executor.shutdown(wait=False, cancel_futures=True)
-        self._publish_executor_shutdown = True
-        # Bound the wait by joining the executor's worker threads ourselves
-        # so a hung transport can't block forever. ``_threads`` is a private
-        # attribute, but it's the only way to get a bounded join in 3.14.
-        worker_threads = list(getattr(self._publish_executor, "_threads", ()) or ())
-        deadline = time.time() + self._publish_shutdown_timeout
-        for thread in worker_threads:
-            remaining = max(0.0, deadline - time.time())
-            thread.join(timeout=remaining)
-        still_alive = [t for t in worker_threads if t.is_alive()]
-        if still_alive:
-            logger.warning(
-                "StreamCache: publish worker(s) still alive after %.1fs; abandoning %d thread(s)",
-                self._publish_shutdown_timeout,
-                len(still_alive),
-            )
+        """Stop this storage key's consumer thread and publish executor."""
+        self._sync.shutdown()
 
     # -- Standard Django cache interface (LocMemCache + stream sync) --
 
@@ -541,7 +658,7 @@ class StreamCache(BaseCachex, LocMemCache):
         self._ensure_consumer()
         return super().get(key, default=default, version=version)
 
-    def set(  # type: ignore[override]
+    def set(
         self,
         key: str,
         value: Any,
@@ -551,7 +668,7 @@ class StreamCache(BaseCachex, LocMemCache):
         nx: bool = False,
         xx: bool = False,
         get: bool = False,
-    ) -> bool:
+    ) -> None:
         # Conditional (nx/xx) and read-prior (get) writes need atomic
         # check-and-set, which eventual, last-writer-wins replication cannot
         # provide. Reject them rather than silently ignoring the flag, the same
@@ -568,7 +685,6 @@ class StreamCache(BaseCachex, LocMemCache):
             self._set(made_key, pickled, timeout)
             exp_time = self._expire_info.get(made_key)
             self._publish("set", key=made_key, val=value, exp=exp_time)
-        return True
 
     def add(self, key: str, value: Any, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
         raise NotSupportedError("add", "StreamCache")
@@ -602,17 +718,20 @@ class StreamCache(BaseCachex, LocMemCache):
 
     def delete_many(self, keys: Iterable[str], version: int | None = None) -> int:  # type: ignore[override]
         self._ensure_consumer()
-        keys_list = list(keys)
-        made_keys: list[str] = []
-        deleted = 0
+        made_keys = [self.make_and_validate_key(k, version=version) for k in keys]
         with self._lock:
-            for k in keys_list:
-                mk = self.make_and_validate_key(k, version=version)
-                made_keys.append(mk)
-                if self._delete(mk):
-                    deleted += 1
-            if made_keys:
-                self._publish("delete_many", keys=made_keys)
+            return self._delete_many_locked(made_keys)
+
+    def _delete_many_locked(self, made_keys: list[str]) -> int:
+        """Delete already-made keys locally and broadcast them as one message.
+
+        Caller holds ``self._lock``. One broadcast, not one per key: a
+        per-key burst can exhaust the publish budget and drop deletes that
+        other pods then never see.
+        """
+        deleted = sum(1 for made_key in made_keys if self._delete(made_key))
+        if made_keys:
+            self._publish("delete_many", keys=made_keys)
         return deleted
 
     def has_key(self, key: str, version: int | None = None) -> bool:
@@ -720,7 +839,7 @@ class StreamCache(BaseCachex, LocMemCache):
                 return -2
             exp = self._expire_info.get(made_key)
             if exp is None:
-                return -1
+                return None
             remaining = int(exp - time.time())
             return max(0, remaining)
 
@@ -732,7 +851,7 @@ class StreamCache(BaseCachex, LocMemCache):
                 return -2
             exp = self._expire_info.get(made_key)
             if exp is None:
-                return -1
+                return None
             remaining = int((exp - time.time()) * 1000)
             return max(0, remaining)
 
@@ -754,12 +873,13 @@ class StreamCache(BaseCachex, LocMemCache):
 
     def info(self, section: str | None = None) -> dict[str, Any]:
         self._ensure_consumer()
+        state = self._sync
         now = time.time()
         with self._lock:
             key_count = len(self._cache)
             expires_count = sum(1 for exp in self._expire_info.values() if exp is not None and exp > now)
         consumer_alive = self._consumer_alive()
-        last_read_age = round(now - self._last_read_time, 1) if self._last_read_time else None
+        last_read_age = round(now - state.last_read_time, 1) if state.last_read_time else None
         return {
             "server": {
                 "redis_version": f"StreamCache (stream: {self._stream_key})",
@@ -774,8 +894,8 @@ class StreamCache(BaseCachex, LocMemCache):
             "sync": {
                 "consumer_alive": consumer_alive,
                 "last_read_age_seconds": last_read_age,
-                "last_stream_id": self._last_id,
-                "pod_id": self._pod_id,
+                "last_stream_id": state.last_id,
+                "pod_id": state.pod_id,
             },
         }
 
@@ -821,8 +941,9 @@ class StreamCache(BaseCachex, LocMemCache):
         version: int | None = None,
         itersize: int | None = None,
     ) -> int:
-        matching = self.keys(pattern, version=version)
-        return sum(1 for k in matching if self.delete(k, version=version))
+        made_keys = [self.make_and_validate_key(k, version=version) for k in self.keys(pattern, version=version)]
+        with self._lock:
+            return self._delete_many_locked(made_keys)
 
 
 __all__ = [
