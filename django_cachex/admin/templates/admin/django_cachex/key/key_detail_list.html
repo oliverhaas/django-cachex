@@ -1,5 +1,6 @@
 {% load i18n l10n %}
 {% with input_tpl="admin/django_cachex/key/key_detail_value_input.html#value-input" %}
+{% if can_mutate %}
 <!-- List Operations -->
 <fieldset class="module aligned monospace">
     <h2>{% trans 'Operations' %}</h2>
@@ -9,7 +10,7 @@
             <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="lpush">
-                {% include input_tpl with name="value" rows=4 field_id="id_lpush_value" placeholder=_("value") editable=True only %}
+                {% include input_tpl with name="value" rows=4 field_id="id_lpush_value" placeholder=_("value") editable=True can_mutate=can_mutate only %}
                 <div class="cachex-value-actions">
                     <button type="submit" class="button btn-small">{% trans 'Push' %}</button>
                 </div>
@@ -22,7 +23,7 @@
             <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="rpush">
-                {% include input_tpl with name="value" rows=4 field_id="id_rpush_value" placeholder=_("value") editable=True only %}
+                {% include input_tpl with name="value" rows=4 field_id="id_rpush_value" placeholder=_("value") editable=True can_mutate=can_mutate only %}
                 <div class="cachex-value-actions">
                     <button type="submit" class="button btn-small">{% trans 'Push' %}</button>
                 </div>
@@ -34,7 +35,7 @@
         <form method="post" style="display: inline;">
             {% csrf_token %}
             <input type="hidden" name="action" value="lpop">
-            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" title="{% trans 'Count' %}">
+            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" aria-label="{% trans 'Count' %}">
             <button type="submit" class="button btn-small">{% trans 'Pop' %}</button>
         </form>
     </div>
@@ -43,7 +44,7 @@
         <form method="post" style="display: inline;">
             {% csrf_token %}
             <input type="hidden" name="action" value="rpop">
-            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" title="{% trans 'Count' %}">
+            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" aria-label="{% trans 'Count' %}">
             <button type="submit" class="button btn-small">{% trans 'Pop' %}</button>
         </form>
     </div>
@@ -52,12 +53,13 @@
         <form method="post" style="display: inline;">
             {% csrf_token %}
             <input type="hidden" name="action" value="ltrim">
-            <input type="number" name="trim_start" value="0" class="vIntegerField" style="width: 60px;" title="{% trans 'Start index' %}" placeholder="{% trans 'start' %}">
-            <input type="number" name="trim_stop" value="-1" class="vIntegerField" style="width: 60px;" title="{% trans 'Stop index (-1 for last)' %}" placeholder="{% trans 'stop' %}">
+            <input type="number" name="trim_start" value="0" class="vIntegerField" style="width: 60px;" aria-label="{% trans 'Start index' %}" placeholder="{% trans 'start' %}">
+            <input type="number" name="trim_stop" value="-1" class="vIntegerField" style="width: 60px;" aria-label="{% trans 'Stop index (-1 for last)' %}" placeholder="{% trans 'stop' %}">
             <button type="submit" class="button btn-small" onclick="return confirm('{% trans 'Trim list to this range? Elements outside the range will be removed.' %}');">{% trans 'Trim' %}</button>
         </form>
     </div>
 </fieldset>
+{% endif %}
 <!-- List Items -->
 <fieldset class="module aligned monospace">
     <h2>{% trans 'List Items' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
@@ -68,14 +70,17 @@
                 <tr>
                     <th scope="col" style="width: 60px;">{% trans 'Index' %}</th>
                     <th scope="col">{% trans 'Value' %}</th>
+                    {% if can_mutate %}
                     <th scope="col" style="width: 110px;">{% trans 'Actions' %}</th>
+                    {% endif %}
                 </tr>
             </thead>
             <tbody>
                 {% for index, item, sha1, editable in type_data.item_entries %}
                 <tr class="{% cycle 'row1' 'row2' %}">
                     <td class="quiet">{{ index }}</td>
-                    <td>{% include input_tpl with name="value" value=item rows=2 form_id="list-update-" row_index=forloop.counter0 editable=editable only %}</td>
+                    <td>{% include input_tpl with name="value" value=item rows=2 form_id="list-update-" row_index=forloop.counter0 editable=editable can_mutate=can_mutate only %}</td>
+                    {% if can_mutate %}
                     <td>
                         <div class="cachex-row-actions">
                             {% if editable %}
@@ -87,11 +92,13 @@
                             {% endif %}
                         </div>
                     </td>
+                    {% endif %}
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
+    {% if can_mutate %}
     <!-- Forms for list operations (outside table for valid HTML) -->
     {% for index, item, sha1, editable in type_data.item_entries %}
     <form id="list-update-{{ forloop.counter0 }}" method="post" style="display: none;">
@@ -108,6 +115,7 @@
         <input type="hidden" name="lrem_count" value="1">
     </form>
     {% endfor %}
+    {% endif %}
     {% else %}
     <p class="quiet" style="padding: 10px;">{% trans 'List is empty.' %}</p>
     {% endif %}

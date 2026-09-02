@@ -1,5 +1,5 @@
 {% extends "admin/base_site.html" %}
-{% load i18n static %}
+{% load i18n static django_cachex_admin %}
 
 {% block extrastyle %}
 {{ block.super }}
@@ -13,27 +13,16 @@
 {% block bodyclass %}{{ block.super }} app-django_cachex model-cache change-form{% endblock %}
 
 {% block breadcrumbs %}
-<ol class="breadcrumbs">
-    <li><a href="{% url 'admin:index' %}">{% trans 'Home' %}</a></li>
-    <li><a href="{% url 'admin:django_cachex_cache_changelist' %}">{% trans 'Caches' %}</a></li>
-    <li aria-current="page">{{ cache_name }}</li>
-</ol>
+{% url 'admin:index' as index_href %}
+{% url 'admin:django_cachex_cache_changelist' as cache_list_href %}
+{% cachex_breadcrumbs _("Home") index_href _("Caches") cache_list_href cache_name %}
 {% endblock %}
 
-{% block object-tools %}
-<ul class="object-tools">
-    {% if cache_obj.support_level == "cachex" %}
-    <li>
-        <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name|urlencode }}">{% trans 'List Keys' %}</a>
-    </li>
-    {% endif %}
-    <li>
-        <a href="?{% if not help_active %}help=1{% endif %}">{% trans 'Help' %}</a>
-    </li>
-</ul>
-{% endblock %}
+{% block object-tools %}{% include "admin/django_cachex/cache/_object_tools.html" %}{% endblock %}
 
 {% block content %}
+{% cachex_tools_in_header as tools_in_header %}
+{% if not tools_in_header %}{% include "admin/django_cachex/cache/_object_tools.html" %}{% endif %}
 <div id="content-main">
     {% if cache_obj.support_level != "cachex" %}
     <fieldset class="module aligned info-section">
@@ -166,7 +155,7 @@
     <fieldset class="module aligned info-section">
         <h2>{% trans 'Slow Log' %}</h2>
         {% if slowlog_data.error %}
-        <p class="warningnote">{{ slowlog_data.error }}</p>
+        <p class="warningnote">{% blocktrans with error=slowlog_data.error %}The slow log could not be read: {{ error }}{% endblocktrans %}</p>
         {% elif slowlog_data.entries %}
         <div class="results">
             <table id="result_list" style="width: 100%;">

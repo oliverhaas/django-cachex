@@ -208,7 +208,7 @@ class KeyAdmin(_NoObjectRoutesMixin, KeyAdminMixin, _KeyBase):  # type: ignore[m
             "• <strong>Pop Min/Max</strong>: Remove member(s) with lowest/highest score<br>"
             "• <strong>Remove</strong>: Delete a specific member<br><br>"
             "<strong>Ordering</strong><br>"
-            "Members are displayed by score (lowest first). Rank is the 0-based position.",
+            "Members are displayed by score, lowest first.",
         ),
         "key_detail_stream": mark_safe(
             "<strong>Stream Key</strong><br>"
@@ -229,18 +229,15 @@ class KeyAdmin(_NoObjectRoutesMixin, KeyAdminMixin, _KeyBase):  # type: ignore[m
         ),
         "key_add": mark_safe(
             "<strong>Add Key</strong><br>"
-            "Create a new cache entry with a key name, value, and optional timeout.<br><br>"
+            "Name the new key and pick its data type. Nothing is written yet: "
+            "<strong>Continue</strong> opens the key page, where the first value you "
+            "add creates the key.<br><br>"
             "<strong>Key Name</strong><br>"
             "Enter a unique identifier. Common patterns: <code>user:123</code>, "
             "<code>session:abc</code>, <code>cache:page:home</code><br><br>"
-            "<strong>Value Format</strong><br>"
-            "• Plain text: Stored as a string<br>"
-            '• <code>{"key": "value"}</code>: JSON objects are parsed and stored<br>'
-            "• <code>[1, 2, 3]</code>: JSON arrays are parsed and stored<br><br>"
-            "<strong>Timeout</strong><br>"
-            "• Leave empty: Uses the cache's default timeout<br>"
-            "• Enter seconds: Key expires after this duration<br>"
-            "• Enter 0: Key never expires",
+            "<strong>Type</strong><br>"
+            "String, list, set, hash, sorted set or stream. The key page shows the "
+            "operations that apply to the type you choose.",
         ),
     }
 

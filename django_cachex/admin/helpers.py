@@ -10,6 +10,7 @@ from django.conf import settings
 from django.core.cache import caches
 from django.utils.translation import gettext_lazy as _
 
+from django_cachex.admin.cas import get_hash_field_sha1s_for, get_list_sha1s_range, supports_cas
 from django_cachex.exceptions import CompressorError, NotSupportedError, SerializerError
 from django_cachex.types import KeyType
 from django_cachex.utils import _deep_getsizeof
@@ -18,6 +19,10 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+
+class CacheUnavailableError(Exception):
+    """The alias is missing from ``CACHES`` or its backend cannot be built."""
 
 
 def _row(label: Any, value: Any) -> dict[str, Any] | None:
@@ -89,12 +94,21 @@ def _stats_rows(stats: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 def get_cache(cache_name: str) -> Any:
-    """Get a cache backend for admin use."""
+    """Get a cache backend for admin use.
+
+    Raises:
+        CacheUnavailableError: the alias is missing from ``CACHES`` or its
+            backend cannot be built. Callers turn this into a message.
+    """
     cache_config = settings.CACHES.get(cache_name)
     if not cache_config:
         msg = f"Cache '{cache_name}' is not configured in CACHES setting."
-        raise ValueError(msg)
-    return caches[cache_name]
+        raise CacheUnavailableError(msg)
+    try:
+        return caches[cache_name]
+    except Exception as exc:
+        msg = f"Cache '{cache_name}' could not be loaded: {exc}"
+        raise CacheUnavailableError(msg) from exc
 
 
 def parse_metadata(
@@ -178,6 +192,21 @@ def _paginate(total: int, page: int) -> dict[str, Any]:
     }
 
 
+# Types with a browsable structure. Strings are rendered by the value editor
+# and anything else, ``KeyType.UNKNOWN`` included, is opaque to the admin.
+CONTAINER_TYPES = frozenset(
+    {KeyType.LIST, KeyType.SET, KeyType.HASH, KeyType.ZSET, KeyType.STREAM},
+)
+
+# Types the key detail page knows how to render. A key of any other type, and a
+# key an adapter reports as ``KeyType.UNKNOWN``, is shown read-only.
+RENDERABLE_TYPES = CONTAINER_TYPES | {KeyType.STRING}
+
+# Types the admin can create. ``KeyType.UNKNOWN`` describes a key the package
+# does not model, so it is never something a user asks the admin to write.
+CREATABLE_TYPES = tuple(t for t in KeyType if t is not KeyType.UNKNOWN)
+
+
 def get_type_data(
     cache: Any,
     key: str,
@@ -192,17 +221,37 @@ def get_type_data(
     except NotSupportedError:
         key_type = None
 
-    if not key_type or key_type == KeyType.STRING:
+    if key_type not in CONTAINER_TYPES:
         return {}
 
     result = _fetch_type_data(cache, key, key_type, page=page)
 
     # CAS fingerprints are hashed server-side, so backends without scripting
     # (stock Django, LocMem, Database) get no conflict detection.
-    if result and hasattr(cache, "eval_script"):
+    if result and supports_cas(cache):
         _add_cas_fingerprints(cache, key, key_type, result)
 
     return result
+
+
+def is_json_serializable(value: Any) -> bool:
+    """Check if a value can be safely round-tripped through JSON without loss."""
+    try:
+        serialized = json.dumps(value)
+        deserialized = json.loads(serialized)
+        return deserialized == value
+    except TypeError, ValueError, OverflowError:
+        return False
+
+
+def format_value_for_display(value: Any) -> tuple[str, bool]:
+    """Format a value for display in the admin UI, returning (display_string, is_editable)."""
+    if value is None:
+        return "null", True
+
+    if is_json_serializable(value):
+        return json.dumps(value, indent=2, ensure_ascii=False), True
+    return repr(value), False
 
 
 def _format_entry(value: Any) -> tuple[str, bool]:
@@ -212,10 +261,6 @@ def _format_entry(value: Any) -> tuple[str, bool]:
     strings agree on what is round-trippable. Entries that fall back to repr()
     are marked non-editable: submitting the repr back would store the repr text.
     """
-    # Imported lazily: views.base is reachable from views/__init__, which
-    # imports the modules that import this one.
-    from django_cachex.admin.views.base import format_value_for_display
-
     return format_value_for_display(value)
 
 
@@ -244,6 +289,23 @@ def _zset_rows(entries: Any) -> list[tuple[str, float, bool]]:
         # array or object can be shown but never written.
         rows.append((member, score, editable and is_hashable(parse_json_or_str(member))))
     return rows
+
+
+def _fetch_stream_data(cache: Any, key: str, *, page: int) -> dict[str, Any]:
+    """Fetch one page of stream entries."""
+    if not hasattr(cache, "xrange"):
+        # Falling through would return {} and render "Stream is empty",
+        # which is a different claim entirely.
+        return {"error": "Stream browsing is not supported by this cache backend."}
+    length = cache.xlen(key)
+    pagination = _paginate(length, page)
+    if not length:
+        # XRANGE rejects COUNT 0, which is what an empty stream asks for once
+        # its last entry has been deleted.
+        return {"entries": [], "length": 0, "pagination": pagination}
+    # Fetch up to page*PAGE_SIZE entries and slice to the last page
+    entries = cache.xrange(key, count=pagination["end_index"])
+    return {"entries": entries[pagination["start_index"] :], "length": length, "pagination": pagination}
 
 
 def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> dict[str, Any]:  # noqa: PLR0911
@@ -286,16 +348,7 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
                 zset_members = _zset_rows(cache.zrange(key, start, stop, withscores=True))
                 return {"members": zset_members, "length": length, "pagination": pagination}
             case KeyType.STREAM:
-                if not hasattr(cache, "xrange"):
-                    # Falling through would return {} and render "Stream is
-                    # empty", which is a different claim entirely.
-                    return {"error": "Stream browsing is not supported by this cache backend."}
-                length = cache.xlen(key)
-                pagination = _paginate(length, page)
-                # Fetch up to page*PAGE_SIZE entries and slice to the last page
-                entries = cache.xrange(key, count=pagination["end_index"])
-                sliced = entries[pagination["start_index"] :]
-                return {"entries": sliced, "length": length, "pagination": pagination}
+                return _fetch_stream_data(cache, key, page=page)
     except Exception as e:
         logger.exception("Failed to fetch type-specific admin data for key %r", key)
         return {"error": str(e)}
@@ -309,40 +362,24 @@ def _add_cas_fingerprints(cache: Any, key: str, key_type: str | None, result: di
     (since templates can't do variable-key dict lookups).
     """
     try:
-        pagination = result.get("pagination")
+        # ``_fetch_type_data`` always paginates lists and hashes, so the range
+        # readers are the only ones needed.
+        pagination = result["pagination"]
         match key_type:
             case KeyType.LIST:
-                if pagination:
-                    from django_cachex.admin.cas import get_list_sha1s_range
-
-                    start = pagination["start_index"]
-                    stop = pagination["end_index"] - 1  # inclusive for LRANGE
-                    list_sha1s = get_list_sha1s_range(cache, key, start, stop)
-                else:
-                    from django_cachex.admin.cas import get_list_sha1s
-
-                    list_sha1s = get_list_sha1s(cache, key)
+                start = pagination["start_index"]
+                stop = pagination["end_index"] - 1  # inclusive for LRANGE
+                list_sha1s = get_list_sha1s_range(cache, key, start, stop)
                 result["item_entries"] = [
                     (index, item, list_sha1s[i] if i < len(list_sha1s) else "", editable)
                     for i, (index, item, _, editable) in enumerate(result.get("item_entries", []))
                 ]
             case KeyType.HASH:
                 entries = result.get("field_entries", [])
-                if pagination and entries:
-                    from django_cachex.admin.cas import get_hash_field_sha1s_for
-
-                    hash_sha1s = get_hash_field_sha1s_for(cache, key, [field for field, *_ in entries])
-                else:
-                    from django_cachex.admin.cas import get_hash_field_sha1s
-
-                    hash_sha1s = get_hash_field_sha1s(cache, key)
+                hash_sha1s = get_hash_field_sha1s_for(cache, key, [field for field, *_ in entries])
                 result["field_entries"] = [
                     (field, value, hash_sha1s.get(field, ""), editable) for field, value, _, editable in entries
                 ]
-    except NotSupportedError:
-        # ``BaseCachex`` declares ``eval_script`` and raises, so LocMem and
-        # Database land here: render without CAS fingerprints.
-        return
     except Exception:
         # CAS protection is best-effort. Mirror the warning emitted by
         # ``_key_detail_view`` (key_detail.py) so the operator knows the

@@ -10,6 +10,7 @@ from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect, render
 from django.utils import timezone
+from django.utils.http import urlencode
 
 from django_cachex.admin.cas import (
     cas_rename_hash_field,
@@ -18,11 +19,21 @@ from django_cachex.admin.cas import (
     cas_update_string,
     cas_update_zset_score,
     get_string_sha1,
+    supports_cas,
 )
-from django_cachex.admin.helpers import get_cache, get_type_data, is_hashable, parse_json_or_str
+from django_cachex.admin.helpers import (
+    CREATABLE_TYPES,
+    RENDERABLE_TYPES,
+    CacheUnavailableError,
+    format_value_for_display,
+    get_cache,
+    get_type_data,
+    is_hashable,
+    parse_json_or_str,
+)
 from django_cachex.admin.views.base import (
     ViewConfig,
-    format_value_for_display,
+    cache_list_url,
     key_detail_url,
     key_list_url,
     show_help,
@@ -37,17 +48,25 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_KEY_TYPE_VALUES = frozenset(t.value for t in KeyType)
+_CREATABLE_TYPE_VALUES = frozenset(t.value for t in CREATABLE_TYPES)
 
 
 # -- Small helpers --------------------------------------------------------------
 
 
-def _redirect_to_key(cache_name: str, key: str, page: int) -> HttpResponse:
-    """Return a redirect to the key detail page, preserving pagination."""
-    url = key_detail_url(cache_name, key)
+def _redirect_to_key(request: HttpRequest, cache_name: str, key: str, page: int) -> HttpResponse:
+    """Return a redirect to the key detail page, preserving pagination and create mode.
+
+    Dropping ``type`` bounces a create-mode user off a key that still does not exist.
+    """
+    params: dict[str, Any] = {}
     if page > 1:
-        url += f"?page={page}"
+        params["page"] = page
+    if requested_type := request.GET.get("type", "").strip().lower():
+        params["type"] = requested_type
+    url = key_detail_url(cache_name, key)
+    if params:
+        url += "?" + urlencode(params)
     return redirect(url)
 
 
@@ -91,10 +110,9 @@ def _apply_cas_result(
 def _set_preserving_ttl(cache: Any, key: str, value: Any) -> None:
     """Write ``value`` without disturbing the key's expiry.
 
-    The backends disagree on how they report no-expiry: the RESP adapters
-    normalize it to ``None``, the pure-Python ones return ``-1`` like Redis.
-    ``-2`` means the key is gone. Prefer ``pttl`` so sub-second expiries are
-    not rounded away, and fall back to ``ttl`` on backends without it.
+    Every backend reports no-expiry as ``None`` and a missing key as ``-2``.
+    Prefer ``pttl`` so sub-second expiries are not rounded away, and fall back
+    to ``ttl`` on backends without it.
     """
     for method, scale in (("pttl", 1), ("ttl", 1000)):
         if (read_ttl := getattr(cache, method, None)) is None:
@@ -103,7 +121,7 @@ def _set_preserving_ttl(cache: Any, key: str, value: Any) -> None:
             raw = read_ttl(key)
         except NotSupportedError:
             continue
-        if raw is None or raw == -1:
+        if raw is None:
             cache.set(key, value, timeout=None)
         elif raw < 0:
             break
@@ -150,7 +168,7 @@ def _handle_update(request: HttpRequest, cache: Any, cache_name: str, key: str, 
     try:
         new_value = parse_json_or_str(request.POST.get("value", "").strip())
         original_sha1 = request.POST.get("original_sha1", "").strip()
-        if original_sha1 and hasattr(cache, "eval_script"):
+        if original_sha1 and supports_cas(cache):
             cas_result = cas_update_string(cache, key, original_sha1, new_value)
             _apply_cas_result(
                 request,
@@ -162,9 +180,9 @@ def _handle_update(request: HttpRequest, cache: Any, cache_name: str, key: str, 
         else:
             _set_preserving_ttl(cache, key, new_value)
             messages.success(request, "Key updated successfully.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
+        messages.error(request, f"Could not update the value: {e}")
         return None
 
 
@@ -185,24 +203,12 @@ def _handle_set_ttl(request: HttpRequest, cache: Any, cache_name: str, key: str,
             messages.success(request, f"TTL set to {ttl_int} seconds.")
         else:
             messages.error(request, "Key does not exist or TTL could not be set.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     except ValueError:
         messages.error(request, "Invalid TTL value. Must be a number.")
     except Exception as e:  # noqa: BLE001
         messages.error(request, f"Error setting TTL: {e!s}")
     return None
-
-
-def _handle_persist(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse | None:
-    try:
-        if cache.persist(key):
-            messages.success(request, "TTL removed. Key will not expire.")
-        else:
-            messages.error(request, "Key does not exist or has no TTL.")
-        return _redirect_to_key(cache_name, key, page)
-    except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Error removing TTL: {e!s}")
-        return None
 
 
 def _handle_lpop(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
@@ -211,8 +217,8 @@ def _handle_lpop(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         result = cache.lpop(key, count=count)
         _report_pop(request, result, on_empty="List is empty or key does not exist.", kind="item(s)")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not pop from the list: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_rpop(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
@@ -221,34 +227,34 @@ def _handle_rpop(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         result = cache.rpop(key, count=count)
         _report_pop(request, result, on_empty="List is empty or key does not exist.", kind="item(s)")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not pop from the list: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_lpush(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
     raw = request.POST.get("value", "").strip()
     if not raw:
         messages.error(request, "Value is required.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     try:
         new_len = cache.lpush(key, parse_json_or_str(raw))
         messages.success(request, f"Pushed to left. Length: {new_len}")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not push onto the list: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_rpush(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
     raw = request.POST.get("value", "").strip()
     if not raw:
         messages.error(request, "Value is required.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     try:
         new_len = cache.rpush(key, parse_json_or_str(raw))
         messages.success(request, f"Pushed to right. Length: {new_len}")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not push onto the list: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_lrem(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
@@ -257,7 +263,7 @@ def _handle_lrem(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         # Gate on the raw string: the parsed value rejects legitimate falsy
         # entries like 0, false, null, "" or [].
         messages.error(request, "Value is required.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     value = parse_json_or_str(raw)
     # LREM matches by value, not index, so bound a per-row "Remove" to one
     # occurrence rather than every duplicate.
@@ -273,8 +279,8 @@ def _handle_lrem(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         else:
             messages.warning(request, f"'{value}' not found in list.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not remove the item: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_ltrim(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
@@ -286,8 +292,8 @@ def _handle_ltrim(request: HttpRequest, cache: Any, cache_name: str, key: str, p
     except ValueError:
         messages.error(request, "Start and stop must be integers.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not trim the list: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_lset(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
@@ -295,7 +301,7 @@ def _handle_lset(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         index = int(request.POST.get("index", "0"))
         value = parse_json_or_str(request.POST.get("value", "").strip())
         original_sha1 = request.POST.get("original_sha1", "").strip()
-        if original_sha1 and hasattr(cache, "eval_script"):
+        if original_sha1 and supports_cas(cache):
             cas_result = cas_update_list_element(cache, key, index, original_sha1, value)
             _apply_cas_result(
                 request,
@@ -313,15 +319,15 @@ def _handle_lset(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
     except ValueError:
         messages.error(request, "Index must be an integer.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not update the element: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_sadd(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
     raw = request.POST.get("member", "").strip()
     if not raw:
         messages.error(request, "Member is required.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     try:
         member = parse_json_or_str(raw)
         if cache.sadd(key, member):
@@ -329,15 +335,15 @@ def _handle_sadd(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         else:
             messages.info(request, f"'{member}' already exists in set.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not add the member: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_srem(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
     raw = request.POST.get("member", "").strip()
     if not raw:
         messages.error(request, "Member is required.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     try:
         member = parse_json_or_str(raw)
         if cache.srem(key, member):
@@ -345,8 +351,8 @@ def _handle_srem(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         else:
             messages.warning(request, f"'{member}' not found in set.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not remove the member: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_supdate(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
@@ -355,12 +361,12 @@ def _handle_supdate(request: HttpRequest, cache: Any, cache_name: str, key: str,
     raw_new = request.POST.get("new_member", "").strip()
     if not raw_new:
         messages.error(request, "Member is required.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     member = parse_json_or_str(raw_old)
     new_member = parse_json_or_str(raw_new)
     if new_member == member:
         messages.info(request, "Member unchanged.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     try:
         # Add before removing: an interruption leaves a visible duplicate
         # rather than dropping the member entirely.
@@ -368,8 +374,8 @@ def _handle_supdate(request: HttpRequest, cache: Any, cache_name: str, key: str,
         cache.srem(key, member)
         messages.success(request, f"Replaced '{member}' with '{new_member}'.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not replace the member: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_spop(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
@@ -378,8 +384,8 @@ def _handle_spop(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         result = cache.spop(key, count=count)
         _report_pop(request, result, on_empty="Set is empty or key does not exist.", kind="member(s)")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not pop from the set: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_hset(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
@@ -387,10 +393,10 @@ def _handle_hset(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
     value = parse_json_or_str(request.POST.get("field_value", "").strip())
     if not field:
         messages.error(request, "Field name is required.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     try:
         original_sha1 = request.POST.get("original_sha1", "").strip()
-        if original_sha1 and hasattr(cache, "eval_script"):
+        if original_sha1 and supports_cas(cache):
             cas_result = cas_update_hash_field(cache, key, field, original_sha1, value)
             _apply_cas_result(
                 request,
@@ -405,8 +411,8 @@ def _handle_hset(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
             cache.hset(key, field, value)
             messages.success(request, f"Set field '{field}'.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not set the field: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_hupdate(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
@@ -415,14 +421,14 @@ def _handle_hupdate(request: HttpRequest, cache: Any, cache_name: str, key: str,
     new_field = request.POST.get("new_field", "").strip()
     if not new_field:
         messages.error(request, "Field name is required.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     if new_field == field:
         # Value-only edit: reuse the CAS-protected path.
         return _handle_hset(request, cache, cache_name, key, page)
     value = parse_json_or_str(request.POST.get("field_value", "").strip())
     try:
         original_sha1 = request.POST.get("original_sha1", "").strip()
-        if original_sha1 and hasattr(cache, "eval_script"):
+        if original_sha1 and supports_cas(cache):
             cas_result = cas_rename_hash_field(cache, key, field, new_field, original_sha1, value)
             if cas_result == _CAS_NAME_TAKEN:
                 messages.error(request, f"Field '{new_field}' already exists.")
@@ -446,23 +452,23 @@ def _handle_hupdate(request: HttpRequest, cache: Any, cache_name: str, key: str,
             cache.hdel(key, field)
             messages.success(request, f"Renamed field '{field}' to '{new_field}'.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not update the field: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_hdel(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
     field = request.POST.get("field", "").strip()
     if not field:
         messages.error(request, "Field name is required.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     try:
         if cache.hdel(key, field):
             messages.success(request, f"Deleted field '{field}'.")
         else:
             messages.warning(request, f"Field '{field}' not found.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not delete the field: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_zadd(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
@@ -470,15 +476,15 @@ def _handle_zadd(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
     score_str = request.POST.get("score_value", "").strip()
     if not (raw_member and score_str):
         messages.error(request, "Member and score are required.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     try:
         member = parse_json_or_str(raw_member)
         if not is_hashable(member):
             messages.error(request, _UNHASHABLE_MEMBER_ERROR)
-            return _redirect_to_key(cache_name, key, page)
+            return _redirect_to_key(request, cache_name, key, page)
         score = float(score_str)
         original_score = request.POST.get("original_score", "").strip()
-        if original_score and hasattr(cache, "eval_script"):
+        if original_score and supports_cas(cache):
             cas_result = cas_update_zset_score(cache, key, member, original_score, score)
             _apply_cas_result(
                 request,
@@ -514,15 +520,15 @@ def _handle_zadd(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
     except ValueError:
         messages.error(request, "Score must be a number.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not update the sorted set: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_zrem(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
     raw = request.POST.get("member", "").strip()
     if not raw:
         messages.error(request, "Member is required.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     try:
         member = parse_json_or_str(raw)
         if cache.zrem(key, member):
@@ -530,8 +536,8 @@ def _handle_zrem(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         else:
             messages.warning(request, f"'{member}' not found in sorted set.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not remove the member: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_zupdate(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
@@ -541,7 +547,7 @@ def _handle_zupdate(request: HttpRequest, cache: Any, cache_name: str, key: str,
     score_str = request.POST.get("score_value", "").strip()
     if not (raw_new and score_str):
         messages.error(request, "Member and score are required.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     member = parse_json_or_str(raw_old)
     new_member = parse_json_or_str(raw_new)
     if new_member == member:
@@ -549,12 +555,12 @@ def _handle_zupdate(request: HttpRequest, cache: Any, cache_name: str, key: str,
         return _handle_zadd(request, cache, cache_name, key, page)
     if not is_hashable(new_member):
         messages.error(request, _UNHASHABLE_MEMBER_ERROR)
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     try:
         score = float(score_str)
     except ValueError:
         messages.error(request, "Score must be a number.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     try:
         # Add before removing, so an interruption leaves a visible duplicate
         # rather than dropping the member entirely.
@@ -562,8 +568,8 @@ def _handle_zupdate(request: HttpRequest, cache: Any, cache_name: str, key: str,
         cache.zrem(key, member)
         messages.success(request, f"Renamed '{member}' to '{new_member}' (score {score}).")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not rename the member: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_zpop(
@@ -587,8 +593,8 @@ def _handle_zpop(
             members = [f"{m} ({s})" for m, s in result]
             messages.success(request, f"Popped {len(result)} member(s): {', '.join(members)}")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not pop from the sorted set: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_zpopmin(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
@@ -604,35 +610,35 @@ def _handle_xadd(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
     field_value = request.POST.get("field_value", "").strip()
     if not (field and field_value):
         messages.error(request, "Field name and value are required.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     try:
         entry_id = cache.xadd(key, {field: parse_json_or_str(field_value)})
         messages.success(request, f"Added entry {entry_id}.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not add the entry: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_xdel(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
     entry_id = request.POST.get("entry_id", "").strip()
     if not entry_id:
         messages.error(request, "Entry ID is required.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     try:
         if cache.xdel(key, entry_id):
             messages.success(request, f"Deleted entry {entry_id}.")
         else:
             messages.warning(request, f"Entry {entry_id} not found.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not delete the entry: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 def _handle_xtrim(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
     maxlen_str = request.POST.get("maxlen", "").strip()
     if not maxlen_str:
         messages.error(request, "Max length is required.")
-        return _redirect_to_key(cache_name, key, page)
+        return _redirect_to_key(request, cache_name, key, page)
     try:
         maxlen = int(maxlen_str)
         # The default ``MAXLEN ~`` overshoots, but the confirm dialog promises
@@ -642,8 +648,8 @@ def _handle_xtrim(request: HttpRequest, cache: Any, cache_name: str, key: str, p
     except ValueError:
         messages.error(request, "Max length must be a number.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, str(e))
-    return _redirect_to_key(cache_name, key, page)
+        messages.error(request, f"Could not trim the stream: {e}")
+    return _redirect_to_key(request, cache_name, key, page)
 
 
 # Action → handler dispatch table. Adding a new POST action means adding a
@@ -652,7 +658,6 @@ _POST_HANDLERS: dict[str, Callable[[HttpRequest, Any, str, str, int], HttpRespon
     "delete": _handle_delete,
     "update": _handle_update,
     "set_ttl": _handle_set_ttl,
-    "persist": _handle_persist,
     # List
     "lpop": _handle_lpop,
     "rpop": _handle_rpop,
@@ -701,6 +706,9 @@ _CREATE_ACTIONS = frozenset(
 )
 
 
+_TYPE_AGNOSTIC_ACTIONS = frozenset({"delete", "set_ttl"})
+
+
 def _check_post_permission(request: HttpRequest, action: str | None, cache: Any, key: str) -> None:
     """Raise PermissionDenied if the user lacks the right to perform ``action``."""
     user = request.user
@@ -728,7 +736,11 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
     config: ViewConfig,
 ) -> HttpResponse:
     """Display details of a specific cache key and handle mutations."""
-    cache = get_cache(cache_name)
+    try:
+        cache = get_cache(cache_name)
+    except CacheUnavailableError as exc:
+        messages.error(request, str(exc))
+        return redirect(cache_list_url())
 
     # Read pagination state (query string is preserved on POST to current URL)
     try:
@@ -740,7 +752,10 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
         action = request.POST.get("action")
         _check_post_permission(request, action, cache, key)
         handler = _POST_HANDLERS.get(action) if action else None
-        if handler is not None:
+        key_type = cache.type(key) if handler is not None and action not in _TYPE_AGNOSTIC_ACTIONS else None
+        if key_type is not None and key_type not in RENDERABLE_TYPES:
+            messages.error(request, "This key has a type the cache admin cannot edit.")
+        elif handler is not None:
             response = handler(request, cache, cache_name, key, page)
             if response is not None:
                 return response
@@ -753,7 +768,7 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
     requested_type = request.GET.get("type", "").strip().lower()
     # Anything outside ``KeyType`` would be rendered as a badge class/label and
     # interpolated into the help key, yielding an undefined-state page.
-    create_type = requested_type if requested_type in _KEY_TYPE_VALUES else ""
+    create_type = requested_type if requested_type in _CREATABLE_TYPE_VALUES else ""
     if not key_exists:
         # Materializing a key is an add, so create mode needs ``add_key``.
         may_create = create_type and request.user.has_perm("django_cachex.add_key")  # ty: ignore[unresolved-attribute]
@@ -786,17 +801,20 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
     elif create_mode:
         key_type = create_type
 
+    # A type the admin has no editor for has no operation that is safe to offer.
+    opaque_type = bool(key_type) and key_type not in RENDERABLE_TYPES
+
     # This read fails on data the serializer cannot load, but the page must
     # still render so the user can delete a broken key.
     raw_value = None
     value_is_editable = True
     value_error_display: str | None = None
     string_sha1 = None
-    if key_exists and (not key_type or key_type == KeyType.STRING):
+    if key_exists and not opaque_type and (not key_type or key_type == KeyType.STRING):
         try:
             raw_value = cache.get(key)
         except (CompressorError, SerializerError) as exc:
-            value_error_display = f"<value cannot be decoded: {exc or exc.__class__.__name__}>"
+            value_error_display = f"<value cannot be decoded: {str(exc) or exc.__class__.__name__}>"
             value_is_editable = False
             messages.warning(
                 request,
@@ -806,20 +824,16 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
             )
         except Exception as exc:
             logger.warning("Failed to read value for key %r", key, exc_info=True)
-            value_error_display = f"<value could not be read: {exc or exc.__class__.__name__}>"
+            value_error_display = f"<value could not be read: {str(exc) or exc.__class__.__name__}>"
             value_is_editable = False
             messages.warning(
                 request,
                 f"Value could not be read ({exc.__class__.__name__}: {exc}). You can still delete the key.",
             )
         else:
-            if hasattr(cache, "eval_script"):
+            if supports_cas(cache):
                 try:
                     string_sha1 = get_string_sha1(cache, key)
-                except NotSupportedError:
-                    # BaseCachex declares eval_script and raises, so LocMem and
-                    # Database reach here rather than failing the hasattr probe.
-                    pass
                 except Exception:
                     # Downgrade rather than block the edit page on lookup failure.
                     logger.warning(
@@ -861,36 +875,34 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
     }
     raw_key = cache.make_key(key)
 
-    # In create mode, enable ops based on feature support (not key existence)
-    can_operate = key_exists or create_mode
+    user = request.user
+    # ``_check_post_permission`` rejects the same submissions; hiding the
+    # controls keeps a view-only user from filling in a form that only 403s.
+    can_mutate = (key_exists or create_mode) and user.has_perm("django_cachex.change_key")  # ty: ignore[unresolved-attribute]
+    can_delete = key_exists and user.has_perm("django_cachex.delete_key")  # ty: ignore[unresolved-attribute]
 
     context = admin.site.each_context(request)
     context.update(
         {
             "title": f"Add Key: {key}" if create_mode else f"Key: {key}",
             "cache_name": cache_name,
+            "key_list_href": key_list_url(cache_name),
             "key": key,
             "raw_key": raw_key,
             "cache_metadata": cache_metadata,
-            "key_value": {"value": raw_value, "exists": key_exists},
             "key_exists": key_exists,
             "create_mode": create_mode,
             "value_display": value_display,
             "value_is_editable": value_is_editable,
             "string_sha1": string_sha1,
+            "cas_supported": supports_cas(cache),
             "key_type": key_type,
+            "opaque_type": opaque_type,
             "ttl": ttl,
             "ttl_expires_at": ttl_expires_at,
             "type_data": type_data,
-            "delete_supported": key_exists,
-            "backend_edit_supported": can_operate,
-            "edit_supported": can_operate and value_is_editable,
-            "set_ttl_supported": key_exists,
-            "list_ops_supported": can_operate,
-            "set_ops_supported": can_operate,
-            "hash_ops_supported": can_operate,
-            "zset_ops_supported": can_operate,
-            "stream_ops_supported": can_operate,
+            "can_mutate": can_mutate,
+            "can_delete": can_delete,
             "help_active": help_active,
             "help_url": help_url,
         },

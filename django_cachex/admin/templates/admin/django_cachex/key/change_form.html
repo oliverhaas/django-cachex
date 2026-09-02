@@ -1,5 +1,5 @@
 {% extends "admin/base_site.html" %}
-{% load i18n l10n static %}
+{% load i18n l10n static django_cachex_admin %}
 
 {% block extrastyle %}
 {{ block.super }}
@@ -13,23 +13,16 @@
 {% block bodyclass %}{{ block.super }} app-django_cachex model-key change-form{% endblock %}
 
 {% block breadcrumbs %}
-<ol class="breadcrumbs">
-    <li><a href="{% url 'admin:index' %}">{% trans 'Home' %}</a></li>
-    <li><a href="{% url 'admin:django_cachex_cache_changelist' %}">{% trans 'Caches' %}</a></li>
-    <li><a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name|urlencode }}">{{ cache_name }}</a></li>
-    <li aria-current="page">{{ key }}</li>
-</ol>
+{% url 'admin:index' as index_href %}
+{% url 'admin:django_cachex_cache_changelist' as cache_list_href %}
+{% cachex_breadcrumbs _("Home") index_href _("Caches") cache_list_href cache_name key_list_href key %}
 {% endblock %}
 
-{% block object-tools %}
-<ul class="object-tools">
-    <li>
-        <a href="{{ help_url }}">{% trans 'Help' %}</a>
-    </li>
-</ul>
-{% endblock %}
+{% block object-tools %}{% include "admin/django_cachex/key/_object_tools.html" %}{% endblock %}
 
 {% block content %}
+{% cachex_tools_in_header as tools_in_header %}
+{% if not tools_in_header %}{% include "admin/django_cachex/key/_object_tools.html" %}{% endif %}
 <div id="content-main">
     <!-- Key Information -->
     <fieldset class="module aligned">
@@ -41,8 +34,8 @@
         <div class="form-row">
             <label>{% trans 'Cache:' %}</label>
             <code>{{ cache_name }}</code>
-            {% if cache_metadata.location or cache_metadata.key_prefix or cache_metadata.version != 1 %}
-            <span class="quiet">({% if cache_metadata.location %}{{ cache_metadata.location }}{% if cache_metadata.key_prefix or cache_metadata.version != 1 %}, {% endif %}{% endif %}{% if cache_metadata.key_prefix %}prefix: {{ cache_metadata.key_prefix }}{% if cache_metadata.version != 1 %}, {% endif %}{% endif %}{% if cache_metadata.version != 1 %}version: {{ cache_metadata.version }}{% endif %})</span>
+            {% if cache_metadata.key_prefix or cache_metadata.version != 1 %}
+            <span class="quiet">({% if cache_metadata.key_prefix %}prefix: {{ cache_metadata.key_prefix }}{% if cache_metadata.version != 1 %}, {% endif %}{% endif %}{% if cache_metadata.version != 1 %}version: {{ cache_metadata.version }}{% endif %})</span>
             {% endif %}
         </div>
         <div class="form-row">
@@ -59,6 +52,7 @@
         </div>
         {% endif %}
         <div class="form-row">
+            {% if can_mutate %}
             <label for="id_ttl">{% trans 'TTL (s):' %}</label>
             <form method="post" style="display: inline;">
                 {% csrf_token %}
@@ -73,19 +67,25 @@
                     min="0"
                     value="{% if ttl is not None and ttl >= 0 %}{{ ttl|unlocalize }}{% endif %}"
                     placeholder="{% trans 'no expiry' %}"
+                    aria-describedby="id_ttl_help"
                 >
                 <button type="submit" class="button btn-small" style="margin-left: 10px;">{% trans 'Update' %}</button>
+                <span id="id_ttl_help" class="help quiet">{% trans 'Seconds until the key expires. 0 removes the expiry.' %}</span>
             </form>
+            {% else %}
+            <label>{% trans 'TTL (s):' %}</label>
+            <code>{% if ttl is not None and ttl >= 0 %}{{ ttl|unlocalize }}{% else %}{% trans 'no expiry' %}{% endif %}</code>
+            {% endif %}
         </div>
     </fieldset>
-
-    {% if key_exists or create_mode %}
 
     {% if type_data.error %}
     <p class="errornote">{% blocktrans with error=type_data.error %}Could not load value for this key: {{ error }}{% endblocktrans %}</p>
     {% endif %}
 
-    {% if key_type == 'list' %}
+    {% if opaque_type %}
+    {% include "admin/django_cachex/key/key_detail_opaque.html" %}
+    {% elif key_type == 'list' %}
     {% include "admin/django_cachex/key/key_detail_list.html" %}
     {% elif key_type == 'hash' %}
     {% include "admin/django_cachex/key/key_detail_hash.html" %}
@@ -101,9 +101,7 @@
 
     {% include "admin/django_cachex/key/_key_detail_actions.html" %}
 
-    {% endif %}
-
-    {% if key_exists %}
+    {% if can_delete %}
     <form id="delete-form" method="post" style="display: none;">
         {% csrf_token %}
         <input type="hidden" name="action" value="delete">

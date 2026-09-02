@@ -1,0 +1,8 @@
+{% load i18n %}
+<!-- Opaque type: the admin has no editor for this key's shape -->
+<fieldset class="module aligned">
+    <h2>{% trans 'Value' %} <span class="quiet" style="font-weight: normal; font-size: 0.85em;">({% trans 'read-only' %})</span></h2>
+    <div class="warningnote">
+        {% blocktrans with type=key_type %}This key has type "{{ type }}", which the cache admin cannot display or edit. Use a Redis or Valkey client to inspect it.{% endblocktrans %}
+    </div>
+</fieldset>

@@ -15,6 +15,8 @@
     font-size: 11px;
     font-weight: bold;
     text-transform: uppercase;
+    background: var(--close-button-bg);
+    color: var(--button-fg, white);
 }
 
 .type-string { background: var(--primary); color: var(--primary-fg, white); }
@@ -37,7 +39,6 @@
 }
 
 .support-badge-cachex { background: var(--secondary); color: var(--primary-fg, white); }
-.support-badge-wrapped { background: var(--primary); color: var(--primary-fg, white); }
 .support-badge-limited { background: var(--close-button-bg); color: var(--button-fg, white); }
 
 /* ===== BUTTON VARIANTS ===== */
@@ -148,30 +149,6 @@
     white-space: nowrap;
 }
 
-.count-form {
-    display: inline-flex;
-    gap: 8px;
-    align-items: center;
-    margin-bottom: 15px;
-}
-
-/* ===== KEY ADD FORM ===== */
-/* Type-specific field visibility toggle */
-
-.type-field {
-    display: none;
-}
-
-.type-field.active {
-    display: block;
-}
-
-/* Client-side validation errors, created by the add-form script */
-.error-message {
-    margin-top: 5px;
-    color: var(--error-fg);
-}
-
 /* ===== VALUE INPUTS ===== */
 /* Shared textarea for every value, item and member editor. Height comes from
    the rows attribute, which differs per context; width fills the container. */
@@ -258,28 +235,6 @@ fieldset.monospace input.cachex-value-input {
     text-decoration: none !important;
 }
 
-/* ===== LIST KEYS LINK ===== */
-/* Styled to match object-tools links */
-
-.list-keys-link {
-    display: inline-block;
-    padding: 2px 10px 3px;
-    background: var(--object-tools-bg);
-    color: var(--object-tools-fg) !important;
-    border: none;
-    border-radius: 15px;
-    font-size: 0.6875rem;
-    font-weight: 400;
-    text-decoration: none !important;
-    text-transform: uppercase;
-}
-
-.list-keys-link:hover,
-.list-keys-link:focus {
-    background: var(--object-tools-hover-bg);
-    text-decoration: none;
-}
-
 /* ===== DANGER ZONE ===== */
 /* Destructive operations section in cache detail */
 
@@ -322,12 +277,6 @@ fieldset.monospace input.cachex-value-input {
 }
 
 /* ===== MISC ===== */
-
-/* Backend error display */
-.backend-error {
-    color: var(--error-fg);
-    font-size: 0.85em;
-}
 
 /* Ensure full width table in results */
 #result_list {

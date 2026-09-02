@@ -1,11 +1,5 @@
-"""Pytest configuration for admin view tests.
+"""Pytest configuration for admin view tests."""
 
-This conftest provides simple, non-parametrized fixtures for admin view testing.
-We override the parametrized fixtures from the parent conftest to avoid
-running admin tests with every cache backend combination.
-"""
-
-import os
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -14,6 +8,7 @@ from django.test import Client, override_settings
 
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
+    from tests.fixtures.containers import RedisContainerInfo
 
 
 def get_cache_config(host: str, port: int) -> dict:
@@ -28,19 +23,6 @@ def get_cache_config(host: str, port: int) -> dict:
             "LOCATION": "admin-test-local",
         },
     }
-
-
-# Override parametrized fixtures from parent conftest with simple versions
-@pytest.fixture
-def client_class():
-    """Non-parametrized client_class fixture."""
-    return "default"
-
-
-@pytest.fixture
-def sentinel_mode():
-    """Non-parametrized sentinel_mode fixture."""
-    return False
 
 
 @pytest.fixture
@@ -97,21 +79,13 @@ def stream_alias(test_cache):
 
 
 @pytest.fixture
-def test_cache(db, redis_container):
-    """Provide a cache backend for testing admin views.
-
-    Uses override_settings to configure the cache for the duration of the test.
-    Depends on redis_container to ensure a Redis server is available.
-    """
+def test_cache(db, redis_container: RedisContainerInfo):
+    """Provide a cache backend for testing admin views."""
     from django.core.cache import caches
 
-    # redis_container sets REDIS_HOST and REDIS_PORT env vars
-    host = os.environ.get("REDIS_HOST", "localhost")
-    port = int(os.environ.get("REDIS_PORT", "6379"))
-    cache_config = get_cache_config(host, port)
+    cache_config = get_cache_config(redis_container.host, redis_container.port)
 
     with override_settings(CACHES=cache_config):
-        # Close all caches to force recreation with new settings
         caches.close_all()
 
         cache = cast("RespCache", caches["default"])

@@ -18,6 +18,16 @@ from django_cachex.script import keys_only_pre
 if TYPE_CHECKING:
     from django_cachex.cache.resp import RespCache
 
+
+def supports_cas(cache: Any) -> bool:
+    """Report whether ``cache`` can run the CAS scripts.
+
+    ``BaseCachex`` declares ``eval_script`` and raises from it, so only the
+    ``encode`` that every CAS helper calls tells the backends apart.
+    """
+    return hasattr(cache, "encode") and hasattr(cache, "eval_script")
+
+
 # =============================================================================
 # SHA1 reader scripts (used at page load to fingerprint current values)
 # =============================================================================
@@ -26,25 +36,6 @@ _GET_STRING_SHA1 = """\
 local v = redis.call('GET', KEYS[1])
 if v == false then return false end
 return redis.sha1hex(v)
-"""
-
-_GET_HASH_FIELD_SHA1S = """\
-local fields = redis.call('HGETALL', KEYS[1])
-local result = {}
-for i = 1, #fields, 2 do
-    result[#result+1] = fields[i]
-    result[#result+1] = redis.sha1hex(fields[i+1])
-end
-return result
-"""
-
-_GET_LIST_SHA1S = """\
-local items = redis.call('LRANGE', KEYS[1], 0, -1)
-local result = {}
-for i = 1, #items do
-    result[i] = redis.sha1hex(items[i])
-end
-return result
 """
 
 _GET_LIST_SHA1S_RANGE = """\
@@ -139,31 +130,6 @@ def get_string_sha1(cache: RespCache, key: str) -> str | None:
     if result is None:
         return None
     return result.decode() if isinstance(result, bytes) else str(result)
-
-
-def get_hash_field_sha1s(cache: RespCache, key: str) -> dict[str, str]:
-    """Get SHA1 fingerprints of all hash field values.
-
-    Returns:
-        Dict mapping field names to their SHA1 hex strings.
-    """
-    result = cache.eval_script(_GET_HASH_FIELD_SHA1S, keys=[key], pre_hook=keys_only_pre)
-    if not result:
-        return {}
-    sha1s: dict[str, str] = {}
-    for i in range(0, len(result), 2):
-        field = result[i].decode() if isinstance(result[i], bytes) else str(result[i])
-        sha1 = result[i + 1].decode() if isinstance(result[i + 1], bytes) else str(result[i + 1])
-        sha1s[field] = sha1
-    return sha1s
-
-
-def get_list_sha1s(cache: RespCache, key: str) -> list[str]:
-    """Get SHA1 fingerprints of all list elements."""
-    result = cache.eval_script(_GET_LIST_SHA1S, keys=[key], pre_hook=keys_only_pre)
-    if not result:
-        return []
-    return [r.decode() if isinstance(r, bytes) else str(r) for r in result]
 
 
 def get_list_sha1s_range(cache: RespCache, key: str, start: int, stop: int) -> list[str]:

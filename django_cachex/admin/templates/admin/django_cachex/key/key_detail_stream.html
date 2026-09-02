@@ -1,5 +1,6 @@
 {% load i18n %}
 {% with input_tpl="admin/django_cachex/key/key_detail_value_input.html#value-input" %}
+{% if can_mutate %}
 <!-- Stream Operations -->
 <fieldset class="module aligned monospace">
     <h2>{% trans 'Operations' %}</h2>
@@ -9,8 +10,8 @@
             <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="xadd">
-                <div class="cachex-name-row"><input type="text" name="field" placeholder="{% trans 'field' %}" class="vTextField"></div>
-                {% include input_tpl with name="field_value" rows=4 field_id="id_xadd_value" placeholder=_("value") editable=True only %}
+                <div class="cachex-name-row"><input type="text" name="field" placeholder="{% trans 'field' %}" class="vTextField" aria-label="{% trans 'Field name' %}"></div>
+                {% include input_tpl with name="field_value" rows=4 field_id="id_xadd_value" placeholder=_("value") editable=True can_mutate=can_mutate only %}
                 <div class="cachex-value-actions">
                     <button type="submit" class="button btn-small">{% trans 'Add' %}</button>
                 </div>
@@ -22,11 +23,12 @@
         <form method="post" style="display: inline;">
             {% csrf_token %}
             <input type="hidden" name="action" value="xtrim">
-            <input type="number" name="maxlen" placeholder="{% trans 'max length' %}" class="vIntegerField" style="width: 100px;" min="0">
+            <input type="number" name="maxlen" placeholder="{% trans 'max length' %}" class="vIntegerField" style="width: 100px;" min="0" aria-label="{% trans 'Max length' %}">
             <button type="submit" class="button btn-small" onclick="return confirm('{% trans 'Trim stream to this length? Older entries will be removed.' %}');">{% trans 'Trim' %}</button>
         </form>
     </div>
 </fieldset>
+{% endif %}
 <!-- Stream Entries -->
 <fieldset class="module aligned monospace">
     <h2>{% trans 'Stream Entries' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
@@ -37,7 +39,9 @@
                 <tr>
                     <th scope="col" style="width: 180px;">{% trans 'Entry ID' %}</th>
                     <th scope="col">{% trans 'Fields' %}</th>
+                    {% if can_mutate %}
                     <th scope="col" style="width: 80px;">{% trans 'Actions' %}</th>
+                    {% endif %}
                 </tr>
             </thead>
             <tbody>
@@ -45,6 +49,7 @@
                 <tr class="{% cycle 'row1' 'row2' %}">
                     <td><code class="quiet">{{ entry_id }}</code></td>
                     <td><code>{% for field, value in fields.items %}{{ field }}: {{ value }}{% if not forloop.last %}, {% endif %}{% endfor %}</code></td>
+                    {% if can_mutate %}
                     <td>
                         <form method="post" style="display: inline;">
                             {% csrf_token %}
@@ -53,6 +58,7 @@
                             <button type="submit" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Delete this entry?' %}');">{% trans 'Delete' %}</button>
                         </form>
                     </td>
+                    {% endif %}
                 </tr>
                 {% endfor %}
             </tbody>

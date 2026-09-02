@@ -1,8 +1,6 @@
 """Base utilities and configuration for cache admin views."""
 
-import json
-import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from django.contrib import messages
 from django.contrib.admin.utils import quote
@@ -13,9 +11,6 @@ from django_cachex.admin.models import Key
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
-
-
-logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -75,23 +70,3 @@ def show_help(
             messages.info(request, help_text)
         return True
     return False
-
-
-def is_json_serializable(value: Any) -> bool:
-    """Check if a value can be safely round-tripped through JSON without loss."""
-    try:
-        serialized = json.dumps(value)
-        deserialized = json.loads(serialized)
-        return deserialized == value
-    except TypeError, ValueError, OverflowError:
-        return False
-
-
-def format_value_for_display(value: Any) -> tuple[str, bool]:
-    """Format a value for display in the admin UI, returning (display_string, is_editable)."""
-    if value is None:
-        return "null", True
-
-    if is_json_serializable(value):
-        return json.dumps(value, indent=2, ensure_ascii=False), True
-    return repr(value), False

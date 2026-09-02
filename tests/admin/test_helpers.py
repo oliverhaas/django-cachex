@@ -17,8 +17,8 @@ _DEFAULT = object()
 class _FakeCache:
     """Records the timeout an admin edit would write.
 
-    Subclasses model the TTL surface of one real backend family; the three
-    disagree on how no-expiry is reported and on whether ``pexpire`` exists.
+    Subclasses model the TTL surface of one real backend family; they differ
+    in whether ``pttl`` and ``pexpire`` exist.
     """
 
     def __init__(self, remaining: Any):
@@ -44,9 +44,9 @@ class _RespCache(_FakeCache):
 
 
 class _StreamCache(_FakeCache):
-    """StreamCache reports no-expiry as ``-1`` and has no ``pexpire``."""
+    """StreamCache offers ``pttl`` but no ``pexpire``."""
 
-    def pttl(self, key: str) -> int:
+    def pttl(self, key: str) -> int | None:
         del key
         return self._remaining
 
@@ -57,7 +57,7 @@ class _LocMemCache(_FakeCache):
     def pttl(self, key: str) -> int:
         raise NotSupportedError("pttl", type(self).__name__)
 
-    def ttl(self, key: str) -> int:
+    def ttl(self, key: str) -> int | None:
         del key
         return self._remaining
 
@@ -71,12 +71,12 @@ class TestSetPreservingTtl:
         assert cache.set_timeout is None
 
     def test_stream_persistent_key_stays_persistent(self):
-        cache = _StreamCache(-1)
+        cache = _StreamCache(None)
         _set_preserving_ttl(cache, "k", "v")
         assert cache.set_timeout is None
 
     def test_locmem_persistent_key_stays_persistent(self):
-        cache = _LocMemCache(-1)
+        cache = _LocMemCache(None)
         _set_preserving_ttl(cache, "k", "v")
         assert cache.set_timeout is None
 
@@ -115,8 +115,6 @@ class TestSetPreservingTtl:
 
 
 class TestPaginate:
-    """Test _paginate helper."""
-
     def test_empty_collection(self):
         p = _paginate(0, 1)
         assert p["page"] == 1

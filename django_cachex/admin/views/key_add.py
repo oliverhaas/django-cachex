@@ -4,13 +4,14 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
 from django.contrib import admin, messages
-from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect, render
 
-from django_cachex.admin.helpers import get_cache
+from django_cachex.admin.helpers import CREATABLE_TYPES, CacheUnavailableError, get_cache
 from django_cachex.admin.views.base import (
     ViewConfig,
+    cache_list_url,
     key_detail_url,
+    key_list_url,
     show_help,
 )
 from django_cachex.types import KeyType
@@ -19,20 +20,28 @@ if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
 
 
+_TYPE_LABELS = {
+    KeyType.STRING: "String",
+    KeyType.LIST: "List",
+    KeyType.SET: "Set",
+    KeyType.HASH: "Hash",
+    KeyType.ZSET: "Sorted Set",
+    KeyType.STREAM: "Stream",
+}
+
+
 def _key_add_view(
     request: HttpRequest,
     cache_name: str,
     config: ViewConfig,
 ) -> HttpResponse:
     """Collect a new key's name and type, then redirect to key_detail."""
-    # Mirror ``_key_detail_view``: check the permission up front so users
-    # without ``add_key`` get a 403 on GET instead of filling in the form
-    # and being rejected on submit.
-    if not request.user.has_perm("django_cachex.add_key"):  # ty: ignore[unresolved-attribute]
-        raise PermissionDenied
-
     help_active = show_help(request, "key_add", config.help_messages)
-    cache = get_cache(cache_name)
+    try:
+        cache = get_cache(cache_name)
+    except CacheUnavailableError as exc:
+        messages.error(request, str(exc))
+        return redirect(cache_list_url())
 
     if request.method == "POST":
         key_name = request.POST.get("key", "").strip()
@@ -57,8 +66,10 @@ def _key_add_view(
         {
             "title": f"Add key to '{cache_name}'",
             "cache_name": cache_name,
+            "key_list_href": key_list_url(cache_name),
             "prefill_key": prefill_key,
             "prefill_type": prefill_type,
+            "type_choices": [(t.value, _TYPE_LABELS[t]) for t in CREATABLE_TYPES],
             "help_active": help_active,
         },
     )

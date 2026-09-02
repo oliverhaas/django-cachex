@@ -5,9 +5,10 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect, render
 
-from django_cachex.admin.helpers import get_cache, get_slowlog, parse_metadata
+from django_cachex.admin.helpers import CacheUnavailableError, get_cache, get_slowlog, parse_metadata
 from django_cachex.admin.models import Cache
 from django_cachex.admin.views.base import (
     ViewConfig,
@@ -20,13 +21,19 @@ if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
 
 
+def supports_danger_zone(cache: Any) -> bool:
+    """Report whether ``cache`` implements the destructive admin operations.
+
+    They exist on ``RespCache`` only; every other backend would 500 on the button.
+    """
+    return hasattr(cache, "clear_all_versions") and hasattr(cache, "flush_db")
+
+
 def _handle_danger_zone_post(
     request: HttpRequest,
     cache_name: str,
 ) -> HttpResponse | None:
     """Handle danger zone POST actions. Returns a redirect or None."""
-    from django.core.exceptions import PermissionDenied
-
     if request.method != "POST":
         return None
 
@@ -37,23 +44,23 @@ def _handle_danger_zone_post(
     if action not in ("clear_all_versions", "flush_db"):
         return None
 
-    # The danger-zone buttons are only rendered for cachex backends; a
-    # direct POST against a wrapped/limited backend would otherwise hit
-    # AttributeError on ``clear_all_versions`` / ``flush_db``. Reject up
-    # front with a clean message instead.
-    cache_obj = Cache.get_by_name(cache_name)
-    if cache_obj is None or cache_obj.support_level != "cachex":
-        messages.error(request, "Destructive operations are only available on django-cachex backends.")
+    try:
+        cache = get_cache(cache_name)
+    except CacheUnavailableError as exc:
+        messages.error(request, str(exc))
         return redirect(request.get_full_path())
 
-    cache = get_cache(cache_name)
+    # Guards a hand-crafted POST; the buttons are not rendered for these backends.
+    if not supports_danger_zone(cache):
+        messages.error(request, "Destructive operations are not supported by this cache backend.")
+        return redirect(request.get_full_path())
 
     if action == "clear_all_versions":
         try:
             deleted = cache.clear_all_versions()
             messages.success(request, f"Deleted {deleted} key(s) across all versions of '{cache_name}'.")
         except Exception as exc:  # noqa: BLE001
-            messages.error(request, f"Error: {exc}")
+            messages.error(request, f"Could not clear all versions: {exc}")
         return redirect(request.get_full_path())
 
     # The action == "flush_db" branch.
@@ -61,7 +68,7 @@ def _handle_danger_zone_post(
         cache.flush_db()
         messages.success(request, f"Database flushed for '{cache_name}'.")
     except Exception as exc:  # noqa: BLE001
-        messages.error(request, f"Error: {exc}")
+        messages.error(request, f"Could not flush the database: {exc}")
     return redirect(request.get_full_path())
 
 
@@ -83,7 +90,12 @@ def _cache_detail_view(
 
     help_active = show_help(request, "cache_detail", config.help_messages)
 
-    cache = get_cache(cache_name)
+    try:
+        cache = get_cache(cache_name)
+    except CacheUnavailableError as exc:
+        messages.error(request, str(exc))
+        return redirect(cache_list_url())
+
     cache_config = settings.CACHES.get(cache_name, {})
 
     # ``AttributeError`` and ``NotSupportedError`` mean "this backend
@@ -117,7 +129,6 @@ def _cache_detail_view(
     if raw_info:
         raw_info_json = json.dumps(raw_info, indent=2, default=str)
 
-    is_cachex = cache_obj.support_level == "cachex"
     can_change = request.user.has_perm("django_cachex.change_cache")  # ty: ignore[unresolved-attribute]
 
     context = admin.site.each_context(request)
@@ -129,9 +140,8 @@ def _cache_detail_view(
             "info_data": info_data,
             "raw_info_json": raw_info_json,
             "slowlog_data": slowlog_data,
-            "slowlog_count": slowlog_count,
             "help_active": help_active,
-            "show_danger_zone": is_cachex and can_change,
+            "show_danger_zone": can_change and supports_danger_zone(cache),
         },
     )
     return render(request, config.template("cache/change_form.html"), context)

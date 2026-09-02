@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.admin import ShowFacets
+from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils import timezone
@@ -21,7 +22,7 @@ from django.utils.safestring import mark_safe
 from django.utils.timesince import timeuntil
 from django.utils.translation import gettext_lazy as _
 
-from django_cachex.admin.helpers import get_cache, get_size
+from django_cachex.admin.helpers import CacheUnavailableError, get_cache, get_size
 from django_cachex.admin.models import Cache, Key
 from django_cachex.cache.resp import RespClusterCache
 from django_cachex.exceptions import NotSupportedError
@@ -262,20 +263,14 @@ class CacheAdminMixin:
     def support_display(self, obj: Cache) -> str:
         level = obj.support_level
         if level == "cachex":
-            style = "background:#dcfce7;color:#15803d;"
             title = "Full support (django-cachex backend)"
+        elif hint := obj.cachex_upgrade_hint:
+            title = f"Limited: admin shows configuration only. Switch to {hint} for browsing."
         else:
-            style = "background:#f3f4f6;color:#374151;"
-            hint = obj.cachex_upgrade_hint
-            if hint:
-                title = f"Limited: admin shows configuration only. Switch to {hint} for browsing."
-            else:
-                title = "Limited: admin shows configuration only. Non-cachex backend doesn't expose key listing."
+            title = "Limited: admin shows configuration only. Non-cachex backend doesn't expose key listing."
         return format_html(
-            '<span style="{}padding:2px 8px;border-radius:4px;'
-            'font-size:11px;font-weight:600;text-transform:uppercase" '
-            'title="{}">{}</span>',
-            style,
+            '<span class="support-badge support-badge-{}" title="{}">{}</span>',
+            level,
             title,
             level,
         )
@@ -298,15 +293,15 @@ KEY_TYPES = tuple(KeyType)
 # request could walk the whole keyspace in a single blocking SCAN.
 MAX_SCAN_COUNT = 1000
 
-# Inline styles for type badges (theme-agnostic)
-_TYPE_STYLES: dict[str, str] = {
-    "string": "background:#dbeafe;color:#1d4ed8;",
-    "list": "background:#dbeafe;color:#1d4ed8;",
-    "set": "background:#dcfce7;color:#15803d;",
-    "hash": "background:#ffedd5;color:#c2410c;",
-    "zset": "background:#dcfce7;color:#15803d;",
-    "stream": "background:#ede9fe;color:#7c3aed;",
-}
+
+def _scan_pattern(search_query: str) -> str:
+    """Turn a search box entry into a SCAN MATCH pattern."""
+    if not search_query:
+        return "*"
+    if "*" in search_query or "?" in search_query:
+        return search_query
+    # Django-style contains search.
+    return f"*{search_query}*"
 
 
 class KeyQuerySet:
@@ -502,7 +497,7 @@ class KeyAdminMixin:
     # QuerySet / search
     # ------------------------------------------------------------------
 
-    def get_queryset(self, request: HttpRequest) -> KeyQuerySet:  # noqa: C901
+    def get_queryset(self, request: HttpRequest) -> KeyQuerySet:
         cache_name = request.GET.get("cache") or next(iter(settings.CACHES))
         search_query = request.GET.get("q", "").strip()
         type_filter = request.GET.get("type", "").strip().lower()
@@ -512,16 +507,13 @@ class KeyAdminMixin:
         if type_filter not in KEY_TYPES:
             type_filter = ""
 
-        # Auto-wrap in wildcards for Django-style contains search
-        if search_query:
-            if "*" not in search_query and "?" not in search_query:
-                pattern = f"*{search_query}*"
-            else:
-                pattern = search_query
-        else:
-            pattern = "*"
+        pattern = _scan_pattern(search_query)
 
-        cache = get_cache(cache_name)
+        try:
+            cache = get_cache(cache_name)
+        except CacheUnavailableError as exc:
+            messages.error(request, str(exc))
+            return KeyQuerySet([], cache_name)
 
         # Cluster mode rejects SCAN: per-node cursors aren't combinable into a
         # single int we can hand back to the paginator. Show a clear message
@@ -599,6 +591,24 @@ class KeyAdminMixin:
     # changelist_view - cursor/help/cache handling
     # ------------------------------------------------------------------
 
+    def _handle_clear_cache(self, request: HttpRequest, cache_name: str) -> HttpResponse:
+        """Clear every key in the current cache version, then redirect back."""
+        # Same blast radius as the danger zone, so gate it on ``change_cache``
+        # rather than ``change_key``.
+        if not request.user.has_perm("django_cachex.change_cache"):  # ty: ignore[unresolved-attribute]
+            raise PermissionDenied
+        try:
+            cache = get_cache(cache_name)
+            cache.clear()
+            messages.success(request, f"Cache '{cache_name}' cleared (current version).")
+        except CacheUnavailableError as exc:
+            messages.error(request, str(exc))
+        except Exception as exc:  # noqa: BLE001
+            messages.error(request, f"Could not clear the cache: {exc}")
+        return HttpResponseRedirect(
+            reverse("admin:django_cachex_key_changelist") + "?" + urlencode({"cache": cache_name}),
+        )
+
     def changelist_view(
         self,
         request: HttpRequest,
@@ -614,26 +624,8 @@ class KeyAdminMixin:
         extra_context["cache_name"] = cache_name
         extra_context["title"] = f"Keys in '{cache_name}'"
 
-        # Handle "Clear cache" POST action
         if request.method == "POST" and request.POST.get("action") == "clear_cache":
-            # ``clear_cache`` wipes every key for the current version, which is
-            # the same blast radius as the danger-zone actions on the cache
-            # detail view. Gate it on ``change_cache`` (the docs-advertised
-            # permission for cache mutation) rather than ``change_key`` so the
-            # two paths can't diverge.
-            if not request.user.has_perm("django_cachex.change_cache"):  # ty: ignore[unresolved-attribute]
-                from django.core.exceptions import PermissionDenied
-
-                raise PermissionDenied
-            try:
-                cache = get_cache(cache_name)
-                cache.clear()
-                messages.success(request, f"Cache '{cache_name}' cleared (current version).")
-            except Exception as exc:  # noqa: BLE001
-                messages.error(request, f"Error clearing cache: {exc}")
-            return HttpResponseRedirect(
-                reverse("admin:django_cachex_key_changelist") + "?" + urlencode({"cache": cache_name}),
-            )
+            return self._handle_clear_cache(request, cache_name)
 
         # Help handling
         if request.GET.get("help"):
@@ -694,13 +686,7 @@ class KeyAdminMixin:
         key_type = getattr(obj, "key_type", None)
         if not key_type:
             return "-"
-        style = _TYPE_STYLES.get(str(key_type), "background:#f3f4f6;color:#374151;")
-        return format_html(
-            '<span style="{}padding:2px 8px;border-radius:4px;'
-            'font-size:11px;font-weight:600;text-transform:uppercase">{}</span>',
-            style,
-            key_type,
-        )
+        return format_html('<span class="type-badge type-{}">{}</span>', key_type, key_type)
 
     @admin.display(description=_("TTL"))
     def ttl_display(self, obj: Key) -> str:

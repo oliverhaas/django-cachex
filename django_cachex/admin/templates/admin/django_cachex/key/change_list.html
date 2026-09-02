@@ -1,13 +1,18 @@
 {% extends "admin/change_list.html" %}
-{% load i18n l10n admin_urls %}
+{% load i18n l10n admin_urls django_cachex_admin %}
 
 {% block breadcrumbs %}
-<ol class="breadcrumbs">
-    <li><a href="{% url 'admin:index' %}">{% trans 'Home' %}</a></li>
-    <li><a href="{% url 'admin:django_cachex_cache_changelist' %}">{% trans 'Caches' %}</a></li>
-    <li><a href="{% url 'admin:django_cachex_cache_change' cache_name|admin_urlquote %}">{{ cache_name }}</a></li>
-    <li aria-current="page">{% trans 'Keys' %}</li>
-</ol>
+{% url 'admin:index' as index_href %}
+{% url 'admin:django_cachex_cache_changelist' as cache_list_href %}
+{% url 'admin:django_cachex_cache_change' cache_name|admin_urlquote as cache_detail_href %}
+{% cachex_breadcrumbs _("Home") index_href _("Caches") cache_list_href cache_name cache_detail_href _("Keys") %}
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style type="text/css">
+    {% include "admin/django_cachex/cache/styles.css" %}
+</style>
 {% endblock %}
 
 {% block object-tools %}

@@ -15,8 +15,8 @@
         <div class="form-row">
             <div>
                 <label for="id_value" class="{% if not value_is_editable %}readonly{% endif %}">{% trans 'Value:' %}</label>
-                {% include "admin/django_cachex/key/key_detail_value_input.html#value-input" with name="value" value=value_display rows=12 field_id="id_value" editable=value_is_editable only %}
-                {% if value_is_editable %}
+                {% include "admin/django_cachex/key/key_detail_value_input.html#value-input" with name="value" value=value_display rows=12 field_id="id_value" editable=value_is_editable can_mutate=can_mutate only %}
+                {% if value_is_editable and can_mutate %}
                 <div class="cachex-value-actions">
                     <button type="submit" class="button btn-small">{% trans 'Update' %}</button>
                 </div>

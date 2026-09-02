@@ -1,5 +1,5 @@
 {% extends "admin/base_site.html" %}
-{% load i18n static %}
+{% load i18n static django_cachex_admin %}
 
 {% block extrastyle %}
 {{ block.super }}
@@ -9,26 +9,19 @@
 </style>
 {% endblock %}
 
-{% block bodyclass %}{{ block.super }} app-django_cachex model-cache change-form{% endblock %}
+{% block bodyclass %}{{ block.super }} app-django_cachex model-key change-form{% endblock %}
 
 {% block breadcrumbs %}
-<ol class="breadcrumbs">
-    <li><a href="{% url 'admin:index' %}">{% trans 'Home' %}</a></li>
-    <li><a href="{% url 'admin:django_cachex_cache_changelist' %}">{% trans 'Caches' %}</a></li>
-    <li><a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name|urlencode }}">{{ cache_name }}</a></li>
-    <li aria-current="page">{% trans 'Add Key' %}</li>
-</ol>
+{% url 'admin:index' as index_href %}
+{% url 'admin:django_cachex_cache_changelist' as cache_list_href %}
+{% cachex_breadcrumbs _("Home") index_href _("Caches") cache_list_href cache_name key_list_href _("Add Key") %}
 {% endblock %}
 
-{% block object-tools %}
-<ul class="object-tools">
-    <li>
-        <a href="?cache={{ cache_name|urlencode }}{% if not help_active %}&help=1{% endif %}">{% trans 'Help' %}</a>
-    </li>
-</ul>
-{% endblock %}
+{% block object-tools %}{% include "admin/django_cachex/key/_add_object_tools.html" %}{% endblock %}
 
 {% block content %}
+{% cachex_tools_in_header as tools_in_header %}
+{% if not tools_in_header %}{% include "admin/django_cachex/key/_add_object_tools.html" %}{% endif %}
 <div id="content-main">
     <!-- Add Key Form -->
     <form method="post" id="key-form">
@@ -40,9 +33,9 @@
                 <div>
                     <div class="flex-container">
                         <label class="required" for="id_key">{% trans 'Key name:' %}</label>
-                        <input type="text" name="key" class="vTextField" value="{{ prefill_key }}" required id="id_key">
+                        <input type="text" name="key" class="vTextField" value="{{ prefill_key }}" required id="id_key" aria-describedby="id_key_help">
                     </div>
-                    <div class="help">
+                    <div class="help" id="id_key_help">
                         <div>{% trans 'The unique identifier for this cache entry.' %}</div>
                     </div>
                 </div>
@@ -51,15 +44,13 @@
                 <div>
                     <div class="flex-container">
                         <label class="required" for="id_type">{% trans 'Type:' %}</label>
-                        <select name="type" id="id_type">
-                            <option value="string" {% if prefill_type == "string" %}selected{% endif %}>{% trans 'String' %}</option>
-                            <option value="list" {% if prefill_type == "list" %}selected{% endif %}>{% trans 'List' %}</option>
-                            <option value="set" {% if prefill_type == "set" %}selected{% endif %}>{% trans 'Set' %}</option>
-                            <option value="hash" {% if prefill_type == "hash" %}selected{% endif %}>{% trans 'Hash' %}</option>
-                            <option value="zset" {% if prefill_type == "zset" %}selected{% endif %}>{% trans 'Sorted Set' %}</option>
+                        <select name="type" id="id_type" required aria-describedby="id_type_help">
+                            {% for value, label in type_choices %}
+                            <option value="{{ value }}"{% if prefill_type == value %} selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
                         </select>
                     </div>
-                    <div class="help">
+                    <div class="help" id="id_type_help">
                         <div>{% trans 'Select the data type for this key.' %}</div>
                     </div>
                 </div>
@@ -72,48 +63,4 @@
         </div>
     </form>
 </div>
-{% endblock %}
-
-{% block extrascript %}
-{{ block.super }}
-<script>
-(function() {
-    const form = document.getElementById('key-form');
-    const keyInput = document.getElementById('id_key');
-
-    // Validation helper
-    function showError(rowId, message) {
-        const row = document.getElementById(rowId);
-        if (row) {
-            row.classList.add('field-error');
-            const existing = row.querySelector('.error-message');
-            if (existing) existing.remove();
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'error-message';
-            errorDiv.textContent = message;
-            row.querySelector('div').appendChild(errorDiv);
-        }
-    }
-
-    function clearAllErrors() {
-        document.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
-        document.querySelectorAll('.error-message').forEach(el => el.remove());
-    }
-
-    // Form validation
-    form.addEventListener('submit', function(e) {
-        clearAllErrors();
-        let isValid = true;
-
-        if (!keyInput.value.trim()) {
-            showError('key-row', '{% trans "Key name is required" %}');
-            isValid = false;
-        }
-
-        if (!isValid) {
-            e.preventDefault();
-        }
-    });
-})();
-</script>
 {% endblock %}

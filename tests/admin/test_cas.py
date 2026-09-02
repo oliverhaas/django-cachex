@@ -10,11 +10,10 @@ from django_cachex.admin.cas import (
     cas_update_list_element,
     cas_update_string,
     cas_update_zset_score,
-    get_hash_field_sha1s,
     get_hash_field_sha1s_for,
-    get_list_sha1s,
     get_list_sha1s_range,
     get_string_sha1,
+    supports_cas,
 )
 
 if TYPE_CHECKING:
@@ -22,8 +21,6 @@ if TYPE_CHECKING:
 
 
 class TestStringSHA1:
-    """Test string value SHA1 fingerprinting."""
-
     def test_get_sha1(self, test_cache: RespCache):
         test_cache.set("str_key", "hello")
         sha1 = get_string_sha1(test_cache, "str_key")
@@ -50,54 +47,18 @@ class TestStringSHA1:
         assert sha1_a == sha1_b
 
 
-class TestHashFieldSHA1s:
-    """Test hash field SHA1 fingerprinting."""
+class TestSupportsCAS:
+    def test_resp_cache_supports_cas(self, test_cache: RespCache):
+        assert supports_cas(test_cache) is True
 
-    def test_get_sha1s(self, test_cache: RespCache):
-        test_cache.hset("hash_key", "f1", "v1")
-        test_cache.hset("hash_key", "f2", "v2")
-        sha1s = get_hash_field_sha1s(test_cache, "hash_key")
-        assert len(sha1s) == 2
-        assert "f1" in sha1s
-        assert "f2" in sha1s
-        assert len(sha1s["f1"]) == 40
+    def test_locmem_does_not_support_cas(self, test_cache: RespCache):
+        del test_cache
+        from django.core.cache import caches
 
-    def test_get_sha1s_empty(self, test_cache: RespCache):
-        sha1s = get_hash_field_sha1s(test_cache, "nonexistent")
-        assert sha1s == {}
-
-    def test_sha1_changes_with_field_value(self, test_cache: RespCache):
-        test_cache.hset("hash_key", "f1", "v1")
-        sha1_a = get_hash_field_sha1s(test_cache, "hash_key")["f1"]
-
-        test_cache.hset("hash_key", "f1", "v2")
-        sha1_b = get_hash_field_sha1s(test_cache, "hash_key")["f1"]
-
-        assert sha1_a != sha1_b
-
-
-class TestListSHA1s:
-    """Test list element SHA1 fingerprinting."""
-
-    def test_get_sha1s(self, test_cache: RespCache):
-        test_cache.rpush("list_key", "a", "b", "c")
-        sha1s = get_list_sha1s(test_cache, "list_key")
-        assert len(sha1s) == 3
-        assert all(len(s) == 40 for s in sha1s)
-
-    def test_get_sha1s_empty(self, test_cache: RespCache):
-        sha1s = get_list_sha1s(test_cache, "nonexistent")
-        assert sha1s == []
-
-    def test_different_elements_different_sha1s(self, test_cache: RespCache):
-        test_cache.rpush("list_key", "x", "y")
-        sha1s = get_list_sha1s(test_cache, "list_key")
-        assert sha1s[0] != sha1s[1]
+        assert supports_cas(caches["local"]) is False
 
 
 class TestCASStringUpdate:
-    """Test atomic string value CAS updates."""
-
     def test_success(self, test_cache: RespCache):
         test_cache.set("cas_str", "original")
         sha1 = get_string_sha1(test_cache, "cas_str")
@@ -115,7 +76,6 @@ class TestCASStringUpdate:
 
         result = cas_update_string(test_cache, "cas_str", sha1, "my_update")
         assert result == 0
-        # Value should remain as the other process set it
         assert test_cache.get("cas_str") == "modified_by_other"
 
     def test_key_gone(self, test_cache: RespCache):
@@ -139,11 +99,9 @@ class TestCASStringUpdate:
 
 
 class TestCASHashFieldUpdate:
-    """Test atomic hash field CAS updates."""
-
     def test_success(self, test_cache: RespCache):
         test_cache.hset("cas_hash", "field1", "original")
-        sha1s = get_hash_field_sha1s(test_cache, "cas_hash")
+        sha1s = get_hash_field_sha1s_for(test_cache, "cas_hash", test_cache.hkeys("cas_hash"))
 
         result = cas_update_hash_field(test_cache, "cas_hash", "field1", sha1s["field1"], "updated")
         assert result == 1
@@ -151,7 +109,7 @@ class TestCASHashFieldUpdate:
 
     def test_conflict(self, test_cache: RespCache):
         test_cache.hset("cas_hash", "field1", "original")
-        sha1s = get_hash_field_sha1s(test_cache, "cas_hash")
+        sha1s = get_hash_field_sha1s_for(test_cache, "cas_hash", test_cache.hkeys("cas_hash"))
 
         # Another process modifies the field
         test_cache.hset("cas_hash", "field1", "modified_by_other")
@@ -162,7 +120,7 @@ class TestCASHashFieldUpdate:
 
     def test_field_gone(self, test_cache: RespCache):
         test_cache.hset("cas_hash", "field1", "original")
-        sha1s = get_hash_field_sha1s(test_cache, "cas_hash")
+        sha1s = get_hash_field_sha1s_for(test_cache, "cas_hash", test_cache.hkeys("cas_hash"))
 
         test_cache.hdel("cas_hash", "field1")
 
@@ -172,7 +130,7 @@ class TestCASHashFieldUpdate:
     def test_other_fields_unaffected(self, test_cache: RespCache):
         test_cache.hset("cas_hash", "f1", "v1")
         test_cache.hset("cas_hash", "f2", "v2")
-        sha1s = get_hash_field_sha1s(test_cache, "cas_hash")
+        sha1s = get_hash_field_sha1s_for(test_cache, "cas_hash", test_cache.hkeys("cas_hash"))
 
         result = cas_update_hash_field(test_cache, "cas_hash", "f1", sha1s["f1"], "new_v1")
         assert result == 1
@@ -184,7 +142,7 @@ class TestCASHashFieldRename:
 
     def test_success(self, test_cache: RespCache):
         test_cache.hset("cas_rename", "old", "original")
-        sha1s = get_hash_field_sha1s(test_cache, "cas_rename")
+        sha1s = get_hash_field_sha1s_for(test_cache, "cas_rename", test_cache.hkeys("cas_rename"))
 
         result = cas_rename_hash_field(test_cache, "cas_rename", "old", "new", sha1s["old"], "updated")
         assert result == 1
@@ -192,7 +150,7 @@ class TestCASHashFieldRename:
 
     def test_conflict(self, test_cache: RespCache):
         test_cache.hset("cas_rename", "old", "original")
-        sha1s = get_hash_field_sha1s(test_cache, "cas_rename")
+        sha1s = get_hash_field_sha1s_for(test_cache, "cas_rename", test_cache.hkeys("cas_rename"))
 
         test_cache.hset("cas_rename", "old", "modified_by_other")
 
@@ -202,7 +160,7 @@ class TestCASHashFieldRename:
 
     def test_field_gone(self, test_cache: RespCache):
         test_cache.hset("cas_rename", "old", "original")
-        sha1s = get_hash_field_sha1s(test_cache, "cas_rename")
+        sha1s = get_hash_field_sha1s_for(test_cache, "cas_rename", test_cache.hkeys("cas_rename"))
 
         test_cache.hdel("cas_rename", "old")
 
@@ -212,7 +170,7 @@ class TestCASHashFieldRename:
     def test_target_name_taken(self, test_cache: RespCache):
         test_cache.hset("cas_rename", "old", "original")
         test_cache.hset("cas_rename", "taken", "keep me")
-        sha1s = get_hash_field_sha1s(test_cache, "cas_rename")
+        sha1s = get_hash_field_sha1s_for(test_cache, "cas_rename", test_cache.hkeys("cas_rename"))
 
         result = cas_rename_hash_field(test_cache, "cas_rename", "old", "taken", sha1s["old"], "updated")
         assert result == -2
@@ -221,7 +179,7 @@ class TestCASHashFieldRename:
     def test_other_fields_unaffected(self, test_cache: RespCache):
         test_cache.hset("cas_rename", "old", "v1")
         test_cache.hset("cas_rename", "f2", "v2")
-        sha1s = get_hash_field_sha1s(test_cache, "cas_rename")
+        sha1s = get_hash_field_sha1s_for(test_cache, "cas_rename", test_cache.hkeys("cas_rename"))
 
         result = cas_rename_hash_field(test_cache, "cas_rename", "old", "new", sha1s["old"], "v1")
         assert result == 1
@@ -229,8 +187,6 @@ class TestCASHashFieldRename:
 
 
 class TestCASZsetScoreUpdate:
-    """Test atomic sorted set score CAS updates."""
-
     def test_success(self, test_cache: RespCache):
         test_cache.zadd("cas_zset", {"member1": 10.0})
         score = test_cache.zscore("cas_zset", "member1")
@@ -261,11 +217,9 @@ class TestCASZsetScoreUpdate:
 
 
 class TestCASListElementUpdate:
-    """Test atomic list element CAS updates."""
-
     def test_success(self, test_cache: RespCache):
         test_cache.rpush("cas_list", "a", "b", "c")
-        sha1s = get_list_sha1s(test_cache, "cas_list")
+        sha1s = get_list_sha1s_range(test_cache, "cas_list", 0, -1)
 
         result = cas_update_list_element(test_cache, "cas_list", 1, sha1s[1], "B")
         assert result == 1
@@ -273,7 +227,7 @@ class TestCASListElementUpdate:
 
     def test_conflict_value_changed(self, test_cache: RespCache):
         test_cache.rpush("cas_list", "a", "b", "c")
-        sha1s = get_list_sha1s(test_cache, "cas_list")
+        sha1s = get_list_sha1s_range(test_cache, "cas_list", 0, -1)
 
         # Another process modifies element at index 1
         test_cache.lset("cas_list", 1, "modified")
@@ -284,7 +238,7 @@ class TestCASListElementUpdate:
 
     def test_conflict_index_shifted(self, test_cache: RespCache):
         test_cache.rpush("cas_list", "a", "b", "c")
-        sha1s = get_list_sha1s(test_cache, "cas_list")
+        sha1s = get_list_sha1s_range(test_cache, "cas_list", 0, -1)
 
         # Another process inserts at head, shifting indices
         test_cache.lpush("cas_list", "z")
@@ -296,9 +250,8 @@ class TestCASListElementUpdate:
     @pytest.mark.parametrize("count", [0, 1])
     def test_index_gone(self, test_cache: RespCache, count: int):
         test_cache.rpush("cas_list", *["x"] * (count + 1))
-        sha1s = get_list_sha1s(test_cache, "cas_list")
+        sha1s = get_list_sha1s_range(test_cache, "cas_list", 0, -1)
 
-        # Remove all elements
         test_cache.delete("cas_list")
 
         result = cas_update_list_element(test_cache, "cas_list", count, sha1s[count], "updated")
@@ -306,13 +259,11 @@ class TestCASListElementUpdate:
 
     def test_first_and_last_elements(self, test_cache: RespCache):
         test_cache.rpush("cas_list", "first", "middle", "last")
-        sha1s = get_list_sha1s(test_cache, "cas_list")
+        sha1s = get_list_sha1s_range(test_cache, "cas_list", 0, -1)
 
-        # Update first
         result = cas_update_list_element(test_cache, "cas_list", 0, sha1s[0], "FIRST")
         assert result == 1
 
-        # Update last
         result = cas_update_list_element(test_cache, "cas_list", 2, sha1s[2], "LAST")
         assert result == 1
 
@@ -320,11 +271,9 @@ class TestCASListElementUpdate:
 
 
 class TestListSHA1sRange:
-    """Test range-based list SHA1 fingerprinting."""
-
     def test_range_matches_full(self, test_cache: RespCache):
         test_cache.rpush("range_list", "a", "b", "c", "d", "e")
-        full = get_list_sha1s(test_cache, "range_list")
+        full = get_list_sha1s_range(test_cache, "range_list", 0, -1)
         subset = get_list_sha1s_range(test_cache, "range_list", 1, 3)
         assert subset == full[1:4]
 
@@ -350,8 +299,6 @@ class TestListSHA1sRange:
 
 
 class TestHashFieldSHA1sFor:
-    """Test field-specific hash SHA1 fingerprinting."""
-
     def test_specific_fields(self, test_cache: RespCache):
         test_cache.hset("hash_key", "f1", "v1")
         test_cache.hset("hash_key", "f2", "v2")
@@ -362,12 +309,14 @@ class TestHashFieldSHA1sFor:
         assert "f3" in sha1s
         assert "f2" not in sha1s
 
-    def test_matches_full_fetch(self, test_cache: RespCache):
+    def test_sha1_changes_with_field_value(self, test_cache: RespCache):
         test_cache.hset("hash_key", "f1", "v1")
-        test_cache.hset("hash_key", "f2", "v2")
-        full = get_hash_field_sha1s(test_cache, "hash_key")
-        specific = get_hash_field_sha1s_for(test_cache, "hash_key", ["f1", "f2"])
-        assert specific == full
+        sha1_a = get_hash_field_sha1s_for(test_cache, "hash_key", ["f1"])["f1"]
+
+        test_cache.hset("hash_key", "f1", "v2")
+        sha1_b = get_hash_field_sha1s_for(test_cache, "hash_key", ["f1"])["f1"]
+
+        assert sha1_a != sha1_b
 
     def test_nonexistent_fields(self, test_cache: RespCache):
         test_cache.hset("hash_key", "f1", "v1")

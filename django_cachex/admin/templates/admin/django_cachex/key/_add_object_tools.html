@@ -1,0 +1,6 @@
+{% load i18n %}
+<ul class="object-tools">
+    <li>
+        <a href="?cache={{ cache_name|urlencode }}{% if not help_active %}&help=1{% endif %}">{% trans 'Help' %}</a>
+    </li>
+</ul>
