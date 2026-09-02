@@ -125,12 +125,29 @@ class TieredCache(BaseCachex):
         return cast("BaseCachex", self._resolve_tier(self._l2_alias))
 
     @property
-    def _l1_cap(self) -> float | None:
-        """L1 TTL cap: explicit ``l1_timeout`` option, or L1's own default_timeout."""
-        cap = self._l1_max_timeout
-        return cap if cap is not None else self._l1.default_timeout
+    def _l1_cap(self) -> float:
+        """L1 TTL cap: explicit ``l1_timeout`` option, or L1's own default_timeout.
 
-    def _l1_timeout(self, l2_ttl: int | None = None) -> float | None:
+        A cap is mandatory. It is the only thing that ever evicts an L1 entry
+        this process did not write, so without one a key another process
+        changes in L2 would be served stale from L1 forever. Like a
+        self-referencing tier, it can only be checked on first use, because
+        the tier caches are resolved lazily.
+        """
+        cap = self._l1_max_timeout
+        if cap is None:
+            cap = self._l1.default_timeout
+        if cap is None:
+            msg = (
+                f"TieredCache has no L1 TTL cap: OPTIONS['l1_timeout'] is unset and tier "
+                f"{self._l1_alias!r} has TIMEOUT=None. L1 entries would never expire, so a key "
+                f"another process changes in L2 would be served stale from L1 indefinitely. "
+                f"Set OPTIONS['l1_timeout'] on the tiered alias or TIMEOUT on {self._l1_alias!r}."
+            )
+            raise ImproperlyConfigured(msg)
+        return cap
+
+    def _l1_timeout(self, l2_ttl: int | None = None) -> float:
         """Calculate L1 TTL: min(L1 cap, L2's remaining TTL).
 
         When ``l2_ttl`` is unavailable (e.g. ``ttl`` raised ``NotSupported``),
@@ -139,17 +156,13 @@ class TieredCache(BaseCachex):
         """
         cap = self._l1_cap
         if l2_ttl is not None and l2_ttl > 0:
-            if cap is not None:
-                return min(cap, l2_ttl)
-            return l2_ttl
+            return min(cap, l2_ttl)
         l2_default = self._l2.default_timeout
         if l2_default is None:
             return cap
-        if cap is None:
-            return l2_default
         return min(cap, l2_default)
 
-    def _l1_timeout_for_set(self, timeout: float | None) -> float | None:  # noqa: PLR0911
+    def _l1_timeout_for_set(self, timeout: float | None) -> float:
         """Calculate L1 TTL for a set operation given the user-specified timeout.
 
         When ``timeout is DEFAULT_TIMEOUT``, L2 resolves the effective TTL
@@ -163,18 +176,12 @@ class TieredCache(BaseCachex):
         cap = self._l1_cap
         if timeout is DEFAULT_TIMEOUT:
             l2_default = self._l2.default_timeout
-            if l2_default is None:
-                return cap
-            if cap is None:
-                return l2_default
-            return min(cap, l2_default)
+            return cap if l2_default is None else min(cap, l2_default)
         if timeout is None:
             return cap
         if timeout <= 0:
             return timeout  # 0 means delete immediately
-        if cap is not None:
-            return min(cap, timeout)
-        return timeout
+        return min(cap, timeout)
 
     def _get_l2_ttl(self, key: str, version: int | None = None) -> int | None:
         """Try to get L2's remaining TTL for a key. Returns None if unsupported."""
@@ -433,8 +440,8 @@ class TieredCache(BaseCachex):
             await self._l1.aset(key, value, self._l1_timeout_for_set(timeout), version=version)
         return result
 
-    # Mutate L2 before invalidating L1: the other order lets a concurrent read
-    # repopulate L1 from the pre-mutation L2 value.
+    # Mutate L2 before invalidating L1: a concurrent read can still repopulate L1
+    # with the old value, and ``l1_timeout`` is what bounds how long it survives.
 
     def delete(self, key: str, version: int | None = None) -> bool:
         result = self._l2.delete(key, version=version)

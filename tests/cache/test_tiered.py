@@ -11,6 +11,8 @@ from django.core.cache.backends.locmem import LocMemCache as DjangoLocMemCache
 from django.core.exceptions import ImproperlyConfigured, SynchronousOnlyOperation
 from django.test import override_settings
 
+from django_cachex.cache.locmem import LocMemCache
+from django_cachex.cache.tiered import TieredCache
 from django_cachex.exceptions import NotSupportedError
 from tests.cache.conftest import L1_TIMEOUT
 from tests.fixtures.cache import BACKENDS, _get_client_library_options
@@ -70,8 +72,6 @@ class TestTieredL2WriteDetection:
     combinations that decide L1/L2 coherence, without needing a Redis 7 L2."""
 
     def test_write_happened_matrix(self):
-        from django_cachex.cache.tiered import TieredCache
-
         w = TieredCache._l2_write_happened
         # Plain set always writes (L2 returns None).
         assert w(None, nx=False, xx=False, get=False) is True
@@ -90,8 +90,6 @@ class TestTieredL2WriteDetection:
 
 
 class TestTieredBasicOps:
-    """Basic cache operations work correctly through tiered cache."""
-
     def test_get_set_roundtrip(self, tiered_cache: BaseCache):
         tiered_cache.set("key1", "value1")
         assert tiered_cache.get("key1") == "value1"
@@ -200,8 +198,6 @@ class TestTieredBasicOps:
 
 
 class TestL1Behavior:
-    """Tests specific to L1 in-process cache behavior."""
-
     def _get_l1(self) -> BaseCache:
         return caches["l1"]
 
@@ -209,7 +205,6 @@ class TestL1Behavior:
         return caches["l2"]
 
     def test_l1_serves_cached_value(self, tiered_cache: BaseCache):
-        """After a set, the value is served from L1."""
         tiered_cache.set("l1key", "l1val")
         l1 = self._get_l1()
         assert l1.get("l1key") == "l1val"
@@ -221,7 +216,6 @@ class TestL1Behavior:
         l1.delete("pop_key")
         assert l1.get("pop_key") is None
 
-        # get() should fetch from L2 and populate L1
         assert tiered_cache.get("pop_key") == "pop_val"
         assert l1.get("pop_key") == "pop_val"
 
@@ -251,10 +245,7 @@ class TestL1Behavior:
         # Clear L1 so get() will populate from L2
         l1.delete("short_ttl")
 
-        # get() should populate L1 with TTL capped by L2's remaining TTL
         assert tiered_cache.get("short_ttl") == "val"
-
-        # L1 should have it now but with a short TTL
         assert l1.get("short_ttl") == "val"
 
         # Force both tiers to expire (their TTLs are real but we don't want
@@ -265,7 +256,6 @@ class TestL1Behavior:
         assert l2.get("short_ttl") is None
 
     def test_get_many_partial_l1_hit(self, tiered_cache: BaseCache):
-        """get_many with some keys in L1 and some only in L2."""
         tiered_cache.set_many({"gm1": "a", "gm2": "b", "gm3": "c"})
 
         l1 = self._get_l1()
@@ -275,7 +265,6 @@ class TestL1Behavior:
         result = tiered_cache.get_many(["gm1", "gm2", "gm3"])
         assert result == {"gm1": "a", "gm2": "b", "gm3": "c"}
 
-        # gm2 and gm3 should now be back in L1
         assert l1.get("gm2") == "b"
         assert l1.get("gm3") == "c"
 
@@ -298,7 +287,6 @@ class TestL1Behavior:
         assert l1.get("bt2") == "b"
 
     def test_delete_evicts_from_l1(self, tiered_cache: BaseCache):
-        """delete() removes from both L1 and L2."""
         tiered_cache.set("del_l1", "val")
         l1 = self._get_l1()
         assert l1.get("del_l1") == "val"
@@ -307,7 +295,6 @@ class TestL1Behavior:
         assert l1.get("del_l1") is None
 
     def test_delete_many_evicts_from_l1(self, tiered_cache: BaseCache):
-        """delete_many() removes from both L1 and L2."""
         tiered_cache.set_many({"dml1": 1, "dml2": 2})
         l1 = self._get_l1()
         assert l1.get("dml1") == 1
@@ -323,9 +310,7 @@ class TestL1Behavior:
         assert l1.get("inc_key") == 5
 
         tiered_cache.incr("inc_key", 3)
-        # L1 should be evicted
         assert l1.get("inc_key") is None
-        # But get() fetches from L2 and repopulates L1
         assert tiered_cache.get("inc_key") == 8
         assert l1.get("inc_key") == 8
 
@@ -340,7 +325,6 @@ class TestL1Behavior:
         assert tiered_cache.get("dec_key") == 7
 
     def test_clear_clears_l1(self, tiered_cache: BaseCache):
-        """clear() clears both L1 and L2."""
         tiered_cache.set("cl1", "a")
         tiered_cache.set("cl2", "b")
         l1 = self._get_l1()
@@ -350,10 +334,13 @@ class TestL1Behavior:
         assert l1.get("cl1") is None
         assert l1.get("cl2") is None
 
-    def test_has_key_l1_fast_path(self, tiered_cache: BaseCache):
-        """has_key returns True from L1 without L2 call."""
+    def test_has_key_l1_fast_path(self, tiered_cache: BaseCache, mocker):
         tiered_cache.set("hk_key", "val")
+        l2 = self._get_l2()
+        # ``wraps``, not ``mocker.spy``: autospec evaluates L2's annotations.
+        l2_has_key = mocker.patch.object(l2, "has_key", wraps=l2.has_key)
         assert tiered_cache.has_key("hk_key") is True
+        assert l2_has_key.call_count == 0
 
     def test_add_populates_l1_on_success(self, tiered_cache: BaseCache):
         tiered_cache.delete("add_l1")
@@ -367,7 +354,6 @@ class TestL1Behavior:
         l1.delete("add_exists")
 
         tiered_cache.add("add_exists", "new_val")
-        # L1 should NOT have the new value (add failed)
         assert l1.get("add_exists") is None
 
     def test_touch_refreshes_l1(self, tiered_cache: BaseCache):
@@ -379,12 +365,15 @@ class TestL1Behavior:
         assert result is True
         assert l1.get("touch_l1") == "val"
 
-    def test_l1_serves_without_l2_call(self, tiered_cache: BaseCache):
-        """After set, L1 has the value so get doesn't need L2."""
+    def test_l1_serves_without_l2_call(self, tiered_cache: BaseCache, mocker):
         tiered_cache.set("mock_key", "mock_val")
         l1 = self._get_l1()
         assert l1.get("mock_key") == "mock_val"
+
+        l2 = self._get_l2()
+        l2_get = mocker.patch.object(l2, "get", wraps=l2.get)
         assert tiered_cache.get("mock_key") == "mock_val"
+        assert l2_get.call_count == 0
 
     def test_set_timeout_caps_l1(self, tiered_cache: BaseCache):
         """set(timeout=1) should cap L1 TTL at 1 second (less than L1 default of 2)."""
@@ -400,8 +389,6 @@ class TestL1Behavior:
 
 
 class TestAdminDelegation:
-    """Admin delegation methods forward to L2."""
-
     def test_keys_delegates_to_l2(self, tiered_cache: BaseCache):
         tiered_cache.set("admin_key", "val")
         keys = tiered_cache.keys("*admin*")
@@ -438,11 +425,10 @@ class TestAdminDelegation:
         assert l1.get("pat_b") is None
 
     def test_delete_pattern_preserves_l1_non_matching(self, tiered_cache: BaseCache):
-        """delete_pattern must invalidate only matching keys in L1 (I7).
+        """delete_pattern must invalidate only matching keys in L1.
 
-        Without targeted deletion the implementation called ``L1.clear()``,
-        evicting every cached entry on any pattern. Verify the matching
-        key is gone but the non-matching key still hits L1.
+        Regression: without targeted deletion the implementation called
+        ``L1.clear()``, evicting every cached entry on any pattern.
         """
         tiered_cache.set("user:42:profile", "match")
         tiered_cache.set("session:abc", "keep")
@@ -464,10 +450,7 @@ class TestAdminDelegation:
 
 
 class TestTieredCacheConfig:
-    """Test configuration and initialization."""
-
     def test_missing_tiers_raises(self):
-        """Missing tiers option should raise ImproperlyConfigured."""
         config = {
             "default": {
                 "BACKEND": "django_cachex.cache.TieredCache",
@@ -478,7 +461,6 @@ class TestTieredCacheConfig:
             caches["default"].get("test")
 
     def test_wrong_tier_count_raises(self):
-        """tiers with wrong number of aliases should raise ImproperlyConfigured."""
         config = {
             "l1": {
                 "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
@@ -562,12 +544,12 @@ class TestTieredCacheConfig:
         self,
         redis_container: RedisContainerInfo,
     ):
-        """L1 must not outlive L2 when caller passes DEFAULT_TIMEOUT (B3).
+        """L1 must not outlive L2 when the caller passes DEFAULT_TIMEOUT.
 
-        Configure L1 with a long default_timeout (3600s) and L2 with a
-        short one (5s). A ``set()`` with no explicit timeout resolves to
-        each tier's own default. Without the fix L1 stores for 3600s and
-        would serve stale after L2 expires.
+        L1's default_timeout is long (3600s) and L2's is short (5s). A
+        ``set()`` with no explicit timeout resolves to each tier's own
+        default, which without the clamp stores in L1 for 3600s and serves
+        stale for the rest of the hour after L2 expires.
         """
         options = _get_client_library_options(redis_container.client_library)
         location = f"redis://{redis_container.host}:{redis_container.port}?db=1"
@@ -631,12 +613,61 @@ class TestTieredCacheConfig:
             cache = caches["default"]
             assert cache._l1_cap == 42
 
+    def test_unbounded_l1_rejected(self, redis_container: RedisContainerInfo):
+        options = _get_client_library_options(redis_container.client_library)
+        location = f"redis://{redis_container.host}:{redis_container.port}?db=1"
+        py_adapter = "redis-py" if redis_container.client_library == "redis" else "valkey-py"
+
+        config = {
+            "l1": {
+                "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                "TIMEOUT": None,
+            },
+            "l2": {
+                "BACKEND": BACKENDS[("default", py_adapter)],
+                "LOCATION": location,
+                "TIMEOUT": None,
+                "OPTIONS": options,
+            },
+            "default": {
+                "BACKEND": "django_cachex.cache.TieredCache",
+                "OPTIONS": {"tiers": ["l1", "l2"]},
+            },
+        }
+        with override_settings(CACHES=config), pytest.raises(ImproperlyConfigured, match="no L1 TTL cap"):
+            caches["default"].set("unbounded", "v")
+
+    def test_explicit_l1_timeout_allows_persistent_tiers(self, redis_container: RedisContainerInfo):
+        options = _get_client_library_options(redis_container.client_library)
+        location = f"redis://{redis_container.host}:{redis_container.port}?db=1"
+        py_adapter = "redis-py" if redis_container.client_library == "redis" else "valkey-py"
+
+        config = {
+            "l1": {
+                "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                "TIMEOUT": None,
+            },
+            "l2": {
+                "BACKEND": BACKENDS[("default", py_adapter)],
+                "LOCATION": location,
+                "TIMEOUT": None,
+                "OPTIONS": options,
+            },
+            "default": {
+                "BACKEND": "django_cachex.cache.TieredCache",
+                "OPTIONS": {"tiers": ["l1", "l2"], "l1_timeout": 5},
+            },
+        }
+        with override_settings(CACHES=config):
+            cache = caches["default"]
+            assert cache._l1_cap == 5
+            cache.set("bounded", "v")
+            assert cache.get("bounded") == "v"
+
     def test_cachex_support_level(self, tiered_cache: BaseCache):
         assert tiered_cache._cachex_support == "limited"
 
     def test_locmem_support_level(self):
-        from django_cachex.cache.locmem import LocMemCache
-
         assert LocMemCache._cachex_support == "cachex"
 
 
@@ -700,19 +731,13 @@ class TestTieredStockDjangoL2:
             await stock_tiered.aset("ask", "v", get=True)
 
 
-class TestTieredSetManyOrdering:
-    """Verify set_many writes L2 before L1 so L1 doesn't have phantom data on L2 failure."""
-
+class TestTieredSetMany:
     def test_set_many_data_in_both_tiers(self, tiered_cache: BaseCache):
-        """After set_many, data should be in both L1 and L2."""
         data = {"order_a": "va", "order_b": "vb"}
         tiered_cache.set_many(data)
 
-        # L1 should have the data
         assert tiered_cache._l1.get("order_a") == "va"
         assert tiered_cache._l1.get("order_b") == "vb"
-
-        # L2 should also have the data
         assert tiered_cache._l2.get("order_a") == "va"
         assert tiered_cache._l2.get("order_b") == "vb"
 
@@ -723,8 +748,6 @@ class TestTieredSetManyOrdering:
 
 @pytest.mark.asyncio
 class TestTieredAsync:
-    """Async variants of core operations."""
-
     async def test_aget_aset(self, tiered_cache: BaseCache):
         await tiered_cache.aset("akey", "aval")
         assert await tiered_cache.aget("akey") == "aval"
@@ -883,26 +906,48 @@ class TestTieredNonRespL2:
 
 
 class TestTieredWriteOrdering:
-    """L2 is mutated before L1 is invalidated.
+    """L2 is written before L1.
 
-    The other order lets a concurrent read repopulate L1 from the pre-mutation
-    L2 value, leaving L1 stale for up to ``l1_timeout`` after the call returns.
+    On a write, the reverse order leaves L1 holding a value L2 never accepted
+    if the L2 call fails. On an invalidation it lets a concurrent read
+    repopulate L1 from the pre-mutation L2 value.
     """
 
     @pytest.mark.parametrize(
-        ("op", "l1_method", "l2_method"),
+        ("op", "l1_method", "l2_method", "l2_result"),
         [
-            (lambda c: c.delete("ord"), "delete", "delete"),
-            (lambda c: c.delete_many(["ord"]), "delete", "delete_many"),
-            (lambda c: c.incr("ord"), "delete", "incr"),
-            (lambda c: c.decr("ord"), "delete", "decr"),
-            (lambda c: c.expire("ord", 10), "delete", "expire"),
+            (lambda c: c.set("ord", "v"), "set", "set", None),
+            (lambda c: c.set_many({"ord": "v"}), "set", "set_many", []),
+            (lambda c: c.add("ord_absent", "v"), "set", "add", True),
+            (lambda c: c.touch("ord", 10), "touch", "touch", True),
+            (lambda c: c.delete("ord"), "delete", "delete", True),
+            (lambda c: c.delete_many(["ord"]), "delete", "delete_many", 1),
+            (lambda c: c.incr("ord"), "delete", "incr", 1),
+            (lambda c: c.decr("ord"), "delete", "decr", 1),
+            (lambda c: c.expire("ord", 10), "delete", "expire", True),
         ],
+        ids=["set", "set_many", "add", "touch", "delete", "delete_many", "incr", "decr", "expire"],
     )
-    def test_l2_is_mutated_before_l1_is_invalidated(self, tiered_cache: BaseCache, mocker, op, l1_method, l2_method):
+    def test_l2_is_written_before_l1(
+        self,
+        tiered_cache: BaseCache,
+        mocker,
+        op,
+        l1_method,
+        l2_method,
+        l2_result,
+    ):
         calls: list[str] = []
-        mocker.patch.object(tiered_cache._l1, l1_method, side_effect=lambda *a, **kw: calls.append("l1"))
-        mocker.patch.object(tiered_cache._l2, l2_method, side_effect=lambda *a, **kw: calls.append("l2"))
+
+        def record_l1(*_args, **_kwargs) -> None:
+            calls.append("l1")
+
+        def record_l2(*_args, **_kwargs):
+            calls.append("l2")
+            return l2_result
+
+        mocker.patch.object(tiered_cache._l1, l1_method, side_effect=record_l1)
+        mocker.patch.object(tiered_cache._l2, l2_method, side_effect=record_l2)
 
         op(tiered_cache)
 
@@ -1015,10 +1060,6 @@ class TestTieredTierAliasValidation:
 class TestTieredDelegationErrors:
     """``_delegate`` only translates a missing method or L2's own
     ``NotSupportedError``; it must not swallow bugs inside L2."""
-
-    @pytest.fixture
-    def broken_l2_tiered(self, tiered_cache: BaseCache) -> BaseCache:
-        return tiered_cache
 
     def test_attribute_error_from_l2_propagates(self, tiered_cache: BaseCache, mocker):
         # Regression: an AttributeError raised inside L2's implementation was
