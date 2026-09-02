@@ -29,7 +29,7 @@ A drop-in replacement for Django's built-in Redis cache, plus:
 - Python 3.14+ (free-threaded supported)
 - Django 6.0+
 - valkey-py 6.1+ (redis-py 6.0+ also supported)
-- Valkey 7.0+ or Redis 6.0+ on the server (the admin's compare-and-swap
+- Valkey 7.2+ or Redis 6.0+ on the server (the admin's compare-and-swap
   edits use `SET ... KEEPTTL`, which lands in Redis 6.0)
 
 ## Quick Start

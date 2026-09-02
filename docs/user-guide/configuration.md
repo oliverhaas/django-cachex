@@ -216,6 +216,11 @@ connections and reads none of these keys.
 to the driver's own sync or async `ConnectionPool`. See
 [Async support](async.md#custom-async-pool-class) for the async pool.
 
+On a Sentinel backend, `pool_class` picks the Sentinel-managed pool and so must
+be `SentinelConnectionPool` or a subclass of it; anything else raises
+`ImproperlyConfigured` at startup, because a plain connection pool takes none of
+the primary/replica discovery arguments.
+
 Extra keys you add are forwarded to the underlying pool's `from_url(...)`, so you
 can pin driver-specific options (`socket_keepalive`, `health_check_interval`, etc.)
 the same way. Seven keys are handled by cachex instead of being forwarded:

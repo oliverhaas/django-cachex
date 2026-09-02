@@ -116,7 +116,7 @@ CACHES = {
     },
     # -------------------------------------------------------------------------
     # CLUSTER BACKEND
-    # Note: ValkeyClusterCache unavailable due to upstream bug, use RedisClusterCache
+    # ValkeyClusterCache hits an upstream bug, so this uses RedisClusterCache.
     # -------------------------------------------------------------------------
     "cluster": {
         "BACKEND": "django_cachex.cache.redis_py.RedisClusterCache",
@@ -125,7 +125,7 @@ CACHES = {
     },
     # -------------------------------------------------------------------------
     # SENTINEL BACKEND
-    # Note: ValkeySentinelCache unavailable due to upstream bug, use RedisSentinelCache
+    # ValkeySentinelCache hits an upstream bug, so this uses RedisSentinelCache.
     # -------------------------------------------------------------------------
     "sentinel": {
         "BACKEND": "django_cachex.cache.redis_py.RedisSentinelCache",

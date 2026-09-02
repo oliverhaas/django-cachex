@@ -143,7 +143,16 @@ Separate connection pools are maintained for sync and async operations:
 
 ### Per-Event-Loop Caching
 
-Async pools are stored in a `WeakKeyDictionary` keyed by event loop, providing automatic cleanup when loops are garbage collected, thread safety (each loop gets its own pools), and connection reuse within the same loop.
+Async pools live in a registry keyed by event loop, so each loop gets its own
+pools and reuses them for every call it makes.
+
+A pool cannot outlive its loop: every open connection holds a transport that
+belongs to the loop that opened it. Weak keys alone would never free those
+entries, because the pool keeps its own loop alive. So cachex sweeps the
+registry on every pool lookup and on `close()`, dropping the entry of any loop
+that has been closed. Dropping the entry releases the pool, its client and its
+connections; each socket closes when the garbage collector reclaims the
+connection that owns it.
 
 ## Performance Considerations
 
@@ -168,17 +177,18 @@ async def my_view(request):
 Avoid async methods when event loops are frequently created and destroyed:
 
 ```python
-# BAD: Each asyncio.run() creates a new event loop = new connection pool
+# BAD: each asyncio.run() gets a new event loop, so a new pool and a new
+# TCP connection. The 100 pools do not pile up (each run sweeps out the
+# previous one), but you pay 100 handshakes instead of one.
 def sync_function():
     for i in range(100):
-        # Creates 100 connection pools!
         asyncio.run(cache.aget(f"key:{i}"))
 
 
-# BAD: sync_to_async may create temporary event loops
+# BAD: async_to_sync() called from a plain sync thread runs asyncio.run()
+# per call, with the same one-connection-per-call cost.
 @sync_to_async
 def wrapped_function():
-    # May not reuse connections efficiently
     pass
 ```
 
@@ -217,12 +227,21 @@ CACHES = {
 await cache.aclose()
 ```
 
-`aclose()` exists for Django API compatibility but is a no-op, as is
-`close()`: pools live for the lifetime of the process. Django fires
-`close()` on every `request_finished` signal, and tearing pools down
-there would force a reconnect per request. Async pools are released
-automatically when their event loop is garbage collected (they live in
-a `WeakKeyDictionary` keyed by loop).
+`aclose()` disconnects the async pools belonging to the loop it runs on and
+drops them from the registry. The next `await` on the cache opens fresh ones,
+so call it when you are done with a loop, not between requests. It also sweeps
+the registry, releasing the pools of any loop that has been closed. On a
+cluster backend it closes that loop's cluster client; on a Sentinel backend it
+also closes the loop's Sentinel manager.
+
+`close()` leaves the sync pools connected: Django fires it on every
+`request_finished` signal, and tearing pools down there would force a reconnect
+per request. It does sweep the registry, since that needs no running loop.
+
+Both are safe to skip. A process that only ever runs one loop never
+accumulates anything, and a process that creates loops (`asyncio.run()`, or
+`async_to_sync()` called from a sync thread) has each new loop sweep out the
+pools of the loops that closed before it.
 
 ## Mixed Sync/Async Usage
 

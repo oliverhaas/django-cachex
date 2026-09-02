@@ -23,7 +23,7 @@ The admin uses Django's built-in permission system. Superusers have full access.
 - `django_cachex.view_cache` / `view_key`: view caches and keys
 - `django_cachex.change_cache`: cache-wide actions, meaning flush, clear the current version, and the cache detail page's danger zone (clear all versions, flush the database)
 - `django_cachex.add_key`: create keys
-- `django_cachex.change_key`: every mutation on the key detail page, including editing values, setting a TTL, and making a key persistent
+- `django_cachex.change_key`: every mutation on the key detail page, including editing values and setting or removing a TTL. Without it the page renders read-only.
 - `django_cachex.delete_key`: delete keys
 
 ## Support Levels
@@ -63,7 +63,9 @@ Click a cache name to browse its keys with wildcard search (`*`), data type disp
 
 ### Key Detail
 
-View and edit a specific key's value (formatted JSON for objects/arrays), data type, and TTL. Supports editing values/timeout and deleting the key.
+View and edit a specific key's value (formatted JSON for objects/arrays), data type, and TTL. Supports editing the value, setting the TTL, running the operations for the key's data type, and deleting the key.
+
+A key whose server-side type the admin cannot render is shown read-only: the type is named, the value is not displayed, and no operations are offered.
 
 ![The key detail page, editing a value and its TTL](../assets/screenshot-key-detail.png)
 
@@ -73,7 +75,7 @@ View server information: configuration, server version/uptime, memory usage, con
 
 ### Add Key
 
-Create a new cache entry with key name, value (JSON objects/arrays are parsed automatically), and optional timeout in seconds.
+Name the new key and pick its data type. Nothing is written yet: **Continue** opens the key detail page, where the first value you add creates the key.
 
 ## Backend Abilities
 
@@ -89,10 +91,12 @@ The admin adapts based on backend capabilities:
 | Get type | Yes | Yes (no stream type) | No |
 | Cache info | Yes | Yes | No |
 | Flush cache | Yes | Yes | No |
+| Danger zone (clear all versions, FLUSHDB) | Yes | No | No |
+| Conflict detection on edit | Yes | No | No |
 
 ## Tips
 
 - Use `*` as a wildcard in the key search, so `user:*` finds every key starting with `user:`.
 - Enter valid JSON when editing to store objects or arrays.
 - Each view has a help button with tips for that view.
-- The refresh action re-reads key lists and statistics.
+- On RESP backends an edit is rejected if the value changed since the page loaded. Other backends save without that check.

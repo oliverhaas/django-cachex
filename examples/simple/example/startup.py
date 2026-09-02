@@ -1,8 +1,9 @@
 """
 Example project startup data population.
 
-This module ensures the cache has sample data for demonstration purposes.
-It runs on every Django startup because:
+Populate the configured caches with sample data.
+
+This runs on every Django startup because:
 - LocMemCache doesn't persist between restarts
 - Django's auto-reload restarts the server frequently during development
 
@@ -59,9 +60,8 @@ def populate_cache_if_needed(cache_alias: str) -> None:
 
     cache = caches[cache_alias]
 
-    # Check current key count
-    # Note: Not all backends support key counting, so we wrap in try/except
-    # DatabaseCache cannot count keys without DB queries during startup
+    # Check current key count. Not every backend can count keys, and
+    # DatabaseCache cannot do it without DB queries during startup.
     try:
         if "DatabaseCache" in backend:
             # For database cache, check if we can get a known key

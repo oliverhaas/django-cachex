@@ -38,10 +38,18 @@ CACHES = {
 
 - `add()`, `incr()`, `decr()` raise `NotSupportedError`. Their semantics (atomic check-and-set, atomic increment) can't be honoured under eventual consistency. Use the transport cache directly when you need them.
 
+### Convergence
+
+Every pod applies stream entries in stream order, its own included, and each entry carries the final value rather than a delta. Two pods that write the same key inside the propagation window therefore both end on whichever entry the stream ordered last, instead of each ending up holding the other's value. A pod skips one of its own entries only where a later local write to that key (or a local `clear()`) has already replaced it, so a writer never reads back a value it has moved past.
+
+Broadcasts stay best-effort: an entry is dropped when the publish backlog is full or the transport errors. The stream is a replication feed, not a durable log.
+
 ### Operational notes
 
 - All pods sharing a `stream_key` must use the same transport `BACKEND` and `OPTIONS` so their serializer/compressor agree on the wire format.
+- The consumer thread, the publisher thread and the pod identity are shared per `LOCATION` within a process, not per backend instance. Django hands out one cache instance per thread and per async context, so per-instance state would mean one consumer per ASGI request. Two `StreamCache` aliases sharing a `stream_key` but not a `LOCATION` act as two independent pods, which is how the test suite simulates a cluster in one process.
 - The consumer thread is restarted automatically if it dies; check `info()["sync"]` for consumer health, last-read age, and stream position.
+- On a valkey-glide transport the consumer polls instead of blocking: glide carries every command of a client over one connection, so a parked `XREAD BLOCK` would hold up each publish behind it. `block_timeout` is ignored there and the poll runs every 25 ms.
 - Set `replay` above 0 (up to `maxlen`) so a restarting pod replays the last N mutations and doesn't start with an empty cache.
 - Publishes are queued to a background thread; when more than `max_pending_publishes` are outstanding, new publishes are dropped with a warning instead of blocking the caller.
 
@@ -73,9 +81,11 @@ CACHES = {
 
 L1 TTL is `min(l1_timeout, L2's remaining TTL)`. An L1 entry can never outlive its L2 entry: if you `set(key, value, timeout=60)`, L1 won't keep that entry past 60 seconds, even if `l1_timeout` is larger.
 
-If `l1_timeout` is omitted, the cap falls back to L1's own `TIMEOUT` setting.
+If `l1_timeout` is omitted, the cap falls back to L1's own `TIMEOUT` setting. One of the two is required. With neither (`l1_timeout` unset and `TIMEOUT: None` on the L1 alias) an L1 entry would never expire, so the first operation raises `ImproperlyConfigured` rather than caching indefinitely.
 
 The bound is on TTL, not on cross-process visibility. Writes and deletes through a `TieredCache` update both of its tiers, but when another process changes a key in L2, this process keeps serving its L1 copy until that entry expires, so a read can lag L2 by up to `l1_timeout`.
+
+The same bound applies within a process. Every mutation writes L2 before touching L1, which keeps a concurrent read from repopulating L1 out of the pre-mutation L2 value, but it does not close the window: a read that has already fetched from L2 when the invalidation runs still writes the old value into L1 afterwards. L1 then serves the superseded value for up to `l1_timeout`. Address the tiers directly if a read has to observe a write immediately.
 
 ### What's supported
 

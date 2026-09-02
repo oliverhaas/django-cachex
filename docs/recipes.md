@@ -125,8 +125,8 @@ def get_user_data(user_id: int) -> dict:
 ## Distributed Locking
 
 Prevent concurrent execution of critical sections. `lease` is the TTL of
-the held lock (auto-released if the holder crashes); pass `timeout` to
-`acquire()` for the maximum time to wait before giving up:
+the held lock (auto-released if the holder crashes); `timeout` is the
+maximum time `acquire()` waits before giving up:
 
 ```python
 from django.core.cache import cache
@@ -135,13 +135,17 @@ with cache.lock("process-payments", lease=30):
     process_pending_payments()
 
 # Or, to bound how long we wait for the lock:
-lock = cache.lock("process-payments", lease=30)
-if lock.acquire(timeout=5):
+lock = cache.lock("process-payments", lease=30, timeout=5)
+if lock.acquire():
     try:
         process_pending_payments()
     finally:
         lock.release()
 ```
+
+The redis-py and valkey-py backends hand back their own driver's lock
+object, so `acquire()` there takes the driver's `blocking_timeout` name.
+Setting `timeout` on `cache.lock()` works across every backend.
 
 ## Gate Memory-Heavy Work With a Weighted Semaphore
 

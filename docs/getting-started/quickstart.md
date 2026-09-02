@@ -36,7 +36,7 @@ All backends live in `django_cachex.cache`. See the [configuration reference](..
 
 !!! note "Valkey and Redis Compatibility"
     Valkey and Redis are protocol-compatible, so either backend works with either server.
-    Valkey is recommended as it remains fully open source.
+    Prefer Valkey: it remains fully open source.
 
 ## Connection URL Formats
 

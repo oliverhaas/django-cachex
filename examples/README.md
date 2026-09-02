@@ -6,8 +6,8 @@ Example Django projects demonstrating django-cachex cache admin.
 
 | Example | Description |
 |---------|-------------|
-| [simple](simple/) | Minimal setup with single Valkey instance + locmem |
-| [full](full/) | **All backends**: standalone, cluster, sentinel, Django builtins |
+| [simple](simple/) | Minimal setup with a single Valkey instance plus locmem |
+| [full](full/) | **All backends**: standalone, cluster, sentinel, stream-synced, Django builtins |
 
 ## Quick Start
 
@@ -29,22 +29,26 @@ Login: `admin` / `password`
 The `full` example demonstrates all supported cache backends:
 
 **Standalone:**
-- Valkey (port 6379)
-- Redis (port 6380)
+- Valkey (port 6381)
+- Redis (port 6380; db 0 = cache, db 1 = Celery, db 2 = StreamCache transport)
 
 **Cluster:**
 - Redis Cluster with 6 nodes (ports 7001-7006)
 
 **Sentinel:**
-- Redis Sentinel with 3 sentinels + master/replica setup
+- Redis Sentinel with 3 sentinels (ports 26379-26381) in front of a master (6390) and two replicas (6391, 6392)
+
+**Stream-synced:**
+- `StreamCache`, a local cache kept in sync over a Redis Stream
 
 **Django Builtins:**
 - LocMemCache, DatabaseCache, FileBasedCache, DummyCache
 
-Note: The full example runs 14 Docker containers. Use `./run.sh status` to check their state.
+The compose file defines 15 services; the cluster initializer exits once the
+cluster is formed, so 14 keep running. Run `./run.sh status` to check them.
 
 ## Requirements
 
 - Docker (for Valkey/Redis containers)
-- Python 3.12+ with venv at `../../.venv`
+- Python 3.14+ with venv at `../../.venv`
 - django-cachex installed (editable install from repo root)

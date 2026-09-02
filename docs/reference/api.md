@@ -43,7 +43,7 @@ django-cachex adds these extended methods:
 | `lock(key, ...)` | Get a distributed lock |
 | `keys(pattern)` | Get keys matching pattern |
 | `iter_keys(pattern)` | Iterate keys matching pattern |
-| `scan(cursor, pattern, count)` | Single SCAN iteration |
+| `scan(cursor, pattern, count, key_type=None)` | Single SCAN iteration; `key_type` keeps only keys of that RESP type |
 | `delete_pattern(pattern)` | Delete keys matching pattern |
 | `rename(src, dst)` | Rename a key |
 | `renamenx(src, dst)` | Rename key only if dest doesn't exist |
@@ -260,7 +260,7 @@ await cache.ahset("hash", "field", "value")
 For raw access that skips prefixing/serialization, use `cache.adapter` (e.g. `await cache.adapter.aget(prefixed_key)`).
 
 - `attl`, `apttl`, `aexpire`, `apexpire`, `aexpireat`, `apexpireat`, `apersist`
-- `akeys`, `aiter_keys`, `adelete_pattern`
+- `akeys`, `aiter_keys`, `ascan`, `adelete_pattern`
 - `ahset`, `ahdel`, `ahexists`, `ahget`, `ahgetall`, `ahincrby`, `ahincrbyfloat`, `ahkeys`, `ahlen`, `ahmget`, `ahsetnx`, `ahvals`
 - `asadd`, `asrem`, `asmembers`, `asismember`, `asmismember`, `ascard`, `aspop`, `asrandmember`, `asmove`, `asdiff`, `asdiffstore`, `asinter`, `asinterstore`, `asunion`, `asunionstore`
 - `azadd`, `azcard`, `azcount`, `azincrby`, `azrange`, `azrevrange`, `azrangebyscore`, `azrevrangebyscore`, `azrank`, `azrevrank`, `azrem`, `azremrangebyrank`, `azremrangebyscore`, `azscore`, `azmscore`, `azpopmin`, `azpopmax`
@@ -391,6 +391,8 @@ with cache.semaphore("memory-heavy", weight=100, capacity=500, lease=300):
 | `timeout` | Max time `acquire()` will wait before raising `SemaphoreTimeoutError`. `None` blocks indefinitely. |
 
 `acquire()` accepts `blocking` and `timeout` to override the defaults set on the semaphore object. `release()` returns the claim to the pool; `extend(seconds)` bumps the TTL on RESP backends for tasks that may legitimately exceed their original lease.
+
+On RESP backends the semaphore's bookkeeping keys (`{name}:state`, `{name}:claims`, `{name}:queue`) expire after twice the longest lease seen, refreshed by every acquire, extend and release, so a holder that dies without releasing leaves nothing behind once its lease has run out.
 
 ```python
 sem = cache.semaphore("mysem", capacity=4, lease=30)
@@ -529,7 +531,7 @@ failure.
 | Exception | Description |
 |-----------|-------------|
 | `CachexError` | Base class for every exception raised by django-cachex. |
-| `WrongTypeError` | Operation applied to a key holding the wrong RESP type (subclass of `TypeError`). Mirrors Redis ``WRONGTYPE``; raised consistently across LocMem, redis-py, valkey-py, and valkey-glide. |
+| `WrongTypeError` | Operation applied to a key holding the wrong RESP type (subclass of `TypeError`). Mirrors Redis ``WRONGTYPE``; raised consistently across `LocMemCache`, `DatabaseCache`, redis-py, valkey-py, and valkey-glide. |
 | `CompressorError` | Compression or decompression failed. Triggers the configured compressor fallback chain. |
 | `SerializerError` | Serialization or deserialization failed. Triggers the serializer fallback chain. |
 | `NotSupportedError` | Operation is not supported by this backend (e.g. `lpush` on `TieredCache`). |

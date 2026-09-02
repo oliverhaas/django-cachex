@@ -1,16 +1,16 @@
-# Example Django Project
+# Simple Example
 
 Minimal Django project for testing django-cachex and the cache admin.
 
 ## Requirements
 
 - Docker (for Valkey)
-- Python virtual environment (from repo root)
+- Python virtual environment at the repo root (`../../.venv`)
 
 ## Quick Start
 
 ```bash
-cd example
+cd examples/simple
 
 ./run.sh setup    # Start Valkey, migrate, create admin user
 ./run.sh server   # Start the dev server
@@ -18,7 +18,7 @@ cd example
 
 Open http://127.0.0.1:8000/admin/ and click "Caches" in the sidebar
 
-Login: `admin` / `admin`
+Login: `admin` / `password`
 
 ## Commands
 
@@ -38,7 +38,7 @@ Login: `admin` / `admin`
 docker compose up -d
 
 # Activate venv and run Django
-source ../.venv/bin/activate
+source ../../.venv/bin/activate
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver

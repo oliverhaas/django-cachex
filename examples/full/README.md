@@ -4,15 +4,22 @@ Example demonstrating django-cachex cache admin with multiple cache backends.
 
 ## Cache Backends
 
-| Name | Backend | Description |
-|------|---------|-------------|
-| `default` | ValkeyCache | Primary cache using Valkey |
-| `redis` | RedisCache | Secondary cache using Redis |
-| `celery` | RedisCache | Celery broker & results (Redis db 1) |
-| `locmem` | LocMemCache | Local memory cache |
-| `database` | DatabaseCache | Database-backed cache |
-| `file` | FileBasedCache | File-based cache |
-| `dummy` | DummyCache | No-op cache |
+| Alias | Backend | Description |
+|-------|---------|-------------|
+| `default` | `ValkeyCache` | Valkey standalone (port 6381) |
+| `redis` | `RedisCache` | Redis standalone (port 6380, db 0) |
+| `celery` | `RedisCache` | Celery broker and results (Redis db 1), raw keys via pass-through key functions |
+| `cluster` | `RedisClusterCache` | Redis Cluster, 6 nodes (ports 7001-7006) |
+| `sentinel` | `RedisSentinelCache` | Redis Sentinel, 3 sentinels (ports 26379-26381) |
+| `sync` | `StreamCache` | Local cache synchronized over a Redis Stream |
+| `stream_transport` | `RedisCache` | Stream transport for the `sync` cache (Redis db 2) |
+| `locmem` | `LocMemCache` | Local memory cache (cachex drop-in) |
+| `database` | `DatabaseCache` | Database-backed cache (cachex drop-in) |
+| `file` | Django `FileBasedCache` | File-based cache |
+| `dummy` | Django `DummyCache` | No-op cache |
+
+The cluster and sentinel aliases use the redis-py backends because the
+valkey-py equivalents hit an upstream bug. See `full/settings.py`.
 
 ## Quick Start
 
@@ -41,6 +48,8 @@ Login: `admin` / `password`
 - `./run.sh shell` - Open Django shell
 - `./run.sh stop` - Stop Docker containers
 - `./run.sh clean` - Stop containers and remove all data
+- `./run.sh logs` - Show container logs (optionally for one container)
+- `./run.sh status` - Show container, cluster and sentinel status
 
 ## Feature Demos
 
@@ -89,4 +98,7 @@ Select the `celery` cache in the admin to see:
 ## Docker Services
 
 - **valkey** (port 6381): Valkey 8 server
-- **redis** (port 6380): Redis 7 server (db 0 = cache, db 1 = Celery)
+- **redis** (port 6380): Redis 7 server (db 0 = cache, db 1 = Celery, db 2 = StreamCache transport)
+- **redis-cluster-1 to redis-cluster-6** (ports 7001-7006): Redis 7 cluster nodes, 3 masters and 3 replicas, formed by the one-shot `redis-cluster-init` service
+- **redis-master** (port 6390), **redis-replica-1** (6391), **redis-replica-2** (6392): Redis 7 replication group
+- **sentinel-1 to sentinel-3** (ports 26379-26381): Redis Sentinel quorum monitoring `mymaster`
