@@ -1,5 +1,93 @@
 # Changelog
 
+## 0.7.0 (September 2026)
+
+### Breaking changes
+
+- `LocMemCache.ttl()`, `DatabaseCache.ttl()` and `StreamCache.ttl()` return `None` for a key with no expiry, and so do their `pttl()` twins. They returned Redis's raw `-1`, while the RESP adapters normalize that to `None`, so a caller checking `ttl(key) is None` got different answers from different backends. `-2` still means the key is gone.
+- `DatabaseCache.get()` raises `WrongTypeError` on a key holding a list, set, hash or sorted set, and `get_many()` omits it. A collection came back as the raw tagged container, so `get()` handed out a `_List` that compared equal to a plain list and `get_many()` mixed structures into a string read. `LocMemCache` has behaved this way since the tags were introduced.
+- `Pipeline.zadd()` no longer takes `incr` and `Pipeline.zrange()` no longer takes `desc`. Neither argument exists on `RespCache`, and the pipeline is meant to queue the same calls the client answers directly.
+- `RespCache.adecr()` is gone as an override. It duplicated `BaseCache.adecr()` line for line, which is what callers get now.
+- `RespAdapterProtocol` no longer declares `get_async_client()`. The redis-py and valkey-py adapters keep the method; the protocol only promises what every adapter, glide included, provides.
+- `Pipeline.set()` reports an `nx`/`xx` miss as `False`. It surfaced the driver's `None`, which is what the client-side `set()` never returned.
+- `Pipeline.type()` returns `None` for a missing key and `KeyType.UNKNOWN` for a server type the package does not model, matching `cache.type()`. It used to hand back the raw string `"none"` and raise on module types such as ReJSON-RL.
+- `aclose()` disconnects the async pools of the loop it runs on and drops them from the registry, so the next await opens fresh ones. Call it when a loop is finished, not between requests. On cluster it closes that loop's cluster client; on Sentinel it also closes the loop's Sentinel manager and the clients it discovered with. `close()` still leaves the sync pools connected, since Django fires it on every `request_finished`, but it now sweeps the async registries.
+- `pool_class` on a Sentinel backend selects the Sentinel-managed pool and must be `SentinelConnectionPool` or a subclass. It was accepted and ignored; anything else now raises `ImproperlyConfigured` at startup, because a plain connection pool takes none of the primary/replica discovery arguments.
+- `TieredCache` raises `ImproperlyConfigured` when `OPTIONS["l1_timeout"]` is unset and the L1 tier has `TIMEOUT = None`. The TTL cap is the only thing that evicts an L1 entry this process did not write, so without one a key another process changes in L2 is served stale from L1 forever. Set `l1_timeout` on the tiered alias or `TIMEOUT` on the L1 tier.
+- `StreamCache.set()` returns `None`, matching Django's `BaseCache` and the other backends. It previously returned `True`.
+- `ValkeyGlideAdapter` and `ValkeyGlideClusterAdapter` raise `ImproperlyConfigured` for an empty `LOCATION` instead of failing with an `IndexError` while building the client config.
+- `xpending()` on the valkey-glide backend returns the same summary and range dicts as the other backends, and rejects a filter given without a count. Code that unpacked the raw list replies reads the dict keys instead.
+- `hset()` with an empty mapping raises `ValueError` on the valkey-glide backend in every form, direct, async and pipelined. The pipeline used to queue nothing.
+
+### Improvements
+
+- `DatabaseCache.scan(key_type=...)` pushes the type filter into the query. The tagged class's name appears verbatim in the pickled row, so a `LIKE` pre-filter over its three base64 alignments narrows the result set in SQL; surviving rows are still decoded and confirmed, so the filter stays exact while the per-key round trips disappear.
+- `DatabaseCache.sinter`, `sdiff` and `sunion` read every operand in one query instead of one query per key.
+- `LocMemCache` sorted-set range and count queries bisect to the low bound instead of scanning the whole set, and `LocMemCache.get`/`has_key` no longer unpickle a value they only test for presence.
+- The admin shows a key whose server-side type it cannot render, including a type the package does not model, as read-only: the type is named, the value is not shown and no operation is offered, and a hand-crafted edit request is refused with a message, though delete and TTL changes still go through. Such a type is never offered when adding a key.
+- The admin key detail page hides every mutation control from users without `change_key` or `delete_key` instead of showing forms that fail with a 403 on submit.
+- The admin add-key page takes only a key name and a data type; the key is created by the first operation on the key detail page.
+
+### Fixes
+
+- Sorted-set score edits in the admin no longer fail on backends without server-side scripting (`LocMemCache`, `DatabaseCache`). The conflict check is offered only where it can run.
+- The admin key detail page no longer shows "Could not load value" for a stream whose entries have all been deleted.
+- Admin breadcrumbs render styled on Django 6.0 as well as 6.1, and the Help and List Keys links on the cache detail, key detail and add-key pages render on Django 6.0 again; they were dropped entirely there.
+- A cache whose `BACKEND` cannot be imported shows a message on every admin page instead of returning a 500 on the cache detail, key detail and add-key pages.
+- The admin danger zone (clear all versions, FLUSHDB) is shown only on backends that implement it, instead of failing with an `AttributeError` when the button is pressed.
+- A failed first operation while creating a key in the admin keeps you on the create page instead of bouncing you to the key list with "key does not exist".
+- The native backends read Redis's glob dialect, not `fnmatch`'s. `keys`, `scan` and `delete_pattern` on `LocMemCache` and `DatabaseCache` spelled negation `[!a]` instead of `[^a]`, treated `!` as negation rather than a member, ignored `\` as an escape, and ran the pattern through `os.path.normcase`, which folds case on Windows. One translator now serves both backends and both the regex and SQL `LIKE` forms.
+- `LocMemCache.zpopmin`/`zpopmax` and `DatabaseCache.lpop`/`rpop`/`zpopmin`/`zpopmax` reject a negative count. It sliced from the opposite end, so `zpopmax(key, -2)` popped all but the last two members instead of raising.
+- `LocMemCache.zrangebyscore` honors the Redis rule that a negative `num` means "to the end". The idiomatic `LIMIT 0 -1` sliced `[0:-1]` and dropped the last member. `DatabaseCache` was fixed in 0.6.0; the two now agree.
+- `LocMemCache.zadd` and `zincrby` coerce string scores to `float` the way Redis does. A stored `"1.5"` sorted as a string and made the next numeric write raise from inside `sortedcontainers`. `zadd` parses the whole mapping before it takes the lock, so an invalid score rejects the command instead of applying it halfway.
+- `lpos` rejects `rank=0` on both native backends, with Redis's own message, and a negative rank applies `maxlen` from the tail. `maxlen` truncated the head of the list even when the rank asked for a tail scan, so the matches it was supposed to bound were never examined.
+- `srandmember` with a negative count returns exactly `|count|` members, repeats allowed. Both native backends reached `random.sample` and raised `ValueError`.
+- `LocMemCache.ascan()` works. It was left at the `BaseCachex` default and raised `NotSupportedError` even though `keys()`, which the default paginates over, is implemented; the admin's async key browser could not page a LocMem cache.
+- `DatabaseCache` reports the key in its `WRONGTYPE` messages, matching `LocMemCache`. The message named only the expected type, so a failed compound operation gave no way to tell which key was wrong.
+- Exclusive score bounds (`(1`) raise `NotSupportedError` naming the backend on `LocMemCache` as well, rather than a bare `ValueError` out of `float()`.
+- `StreamCache` polls the stream instead of parking in `XREAD BLOCK` when its transport is a valkey-glide backend. Glide carries every command of a client over one connection, so the blocking read held up each publish behind it: with two pods in one process the publishes queued past glide's request timeout and mutations went missing on the other pod.
+- `StreamCache` shares one consumer thread, one publisher thread and one pod identity per `LOCATION` within a process. Django hands out one cache instance per thread and per async context, so every ASGI request and every WSGI worker thread used to start its own consumer and publisher, neither of them collectable, and mint its own pod id, which made sibling consumers treat this process's own writes as remote.
+- `StreamCache` pods converge when two of them write the same key inside the propagation window. A pod applies its own stream entries as well, so both land on the last entry in stream order instead of permanently holding each other's value. A pod still never reads back a value a later local write superseded, and its own `clear` coming back spares the keys it wrote after clearing.
+- Restarting a `StreamCache` after `shutdown()` no longer leaves two consumers advancing the same stream cursor.
+- `StreamCache.delete_pattern()` publishes one broadcast for the whole match instead of one per key, so a large pattern no longer exhausts the publish budget.
+- The RESP semaphore's `{name}:state` and `{name}:claims` hashes carry a guard TTL of twice the longest lease, refreshed by acquire, extend and release. A holder that died without releasing left two keys per semaphore name behind indefinitely.
+- Async connection pools of closed event loops are released. The per-loop registry used weak keys, but every open connection holds a transport that holds its loop, so a key never expired: a sync process awaiting the cache through `async_to_sync` leaked one pool and one TCP connection per call, and `close()` and `aclose()` were documented no-ops. Every pool lookup and every `close()` now drops the entry of each loop that has closed. Measured on a WSGI-shaped loop, 201 calls went from 201 registry entries and 202 server-side connections to 1 and 2.
+- `type()` and `atype()` return `KeyType.UNKNOWN` for a key created by a Redis module. `KeyType(result)` raised `ValueError` on `ReJSON-RL`, `TSDB-TYPE` and friends, so a single module key took down any scan that reached it. A missing key still reads as `None`.
+- `IntEnum` and `IntegerChoices` members with values 48 to 57 round-trip through the msgpack and ormsgpack serializers. msgpack packs a small int subclass as a single fixint byte, and that byte is an ASCII digit, so `decode()`'s int fast path read the member back as 0 to 9. A value that reads back as a number is now stored as a plain int; pickle still returns the enum member.
+- `sadd()` rejects a member that the configured serializer turns unhashable. A tuple is hashable, but json, orjson, msgpack and ormsgpack all return it as a list, so the 0.6.0 hash check passed at the write and `smembers()` failed on the read. The check now runs on the round-tripped value.
+- `expireat()` and `pexpireat()` with a deadline in the past delete the key on a stampede cache. The buffer was added to past deadlines too, so a key meant to expire immediately lived on for `buffer` seconds.
+- `Pipeline.set()` with `nx` or `xx` and an immediate expiry no longer deletes a key it was not allowed to write. The zero-timeout branch queued an unconditional `DEL`; it now queues `EXISTS` for `nx` and a conditional `DEL` for `xx`, and `nx` together with `xx` reaches the driver, which rejects it.
+- Pipelined `expire()`, `pexpire()`, `expireat()` and `pexpireat()` add the stampede buffer, and pipelined `ttl()`, `pttl()` and `expiretime()` subtract it, matching the client-side methods 0.6.0 fixed. All seven take a keyword-only `stampede_prevention` argument.
+- Pipelined `xpending()` accepts the same arguments as the client. `count` alone is allowed, and a range without `count` raises `ValueError` instead of falling back to the summary form.
+- `SerializerError` and `CompressorError` carry a message naming the codec, the payload and the underlying cause. They were raised bare.
+- valkey-glide: a username configured without a password, which is what a nopass ACL user has, no longer fails client construction. Credentials are built only when there is a password.
+- valkey-glide: `hmget()` with no fields returns an empty list instead of sending a malformed command to the server.
+- valkey-glide: `lpop()` and `rpop()` with a count return `None` for a missing key, so a miss is still distinguishable from an empty pop.
+- valkey-glide: pipelined `xpending()` and `xpending_range()` decode their replies the way the direct calls do, instead of handing back raw driver output.
+- valkey-glide: `xinfo_stream(full=True)` decodes the group and consumer entries nested inside its list values.
+- valkey-glide: async clients belonging to closed event loops are closed and dropped from the per-loop registry. A glide client holds its loop, so the weak key never expired and a process running one `asyncio.run()` per request leaked a client and its connections every time.
+- valkey-glide: `type()` returns `KeyType.UNKNOWN` for a server type the enum does not model and `None` for a missing key, instead of raising.
+- valkey-glide: pipelined `set()` takes the full option set (`px`, `exat`, `pxat`, `keepttl`, `get`), rejects conflicting expiry flags, and returns the old value for `get=True`.
+- valkey-glide: stream, list and server methods use the parameter names the adapter protocol declares (`entry_id`, `start` and `end`, `slowlog_get(count)`), so keyword calls from the cache and pipeline layers bind.
+- valkey-glide: a blocking lock acquire no longer sleeps past its `blocking_timeout`.
+- valkey-glide: cluster pipelines build a `ClusterBatch`, the batch type the cluster client is declared to execute.
+
+### Documentation
+
+- `set_with_flags(get=True)` documents what it returns: the driver's raw previous value, which the cache layer decodes.
+- The documented server requirement said "Valkey 7.0+". Valkey's first release was 7.2, so the README, the docs home page and the installation page now say "Valkey 7.2+ or Redis 6.0+".
+- The distributed-locking recipe passed `timeout` to `lock.acquire()`. On the redis-py and valkey-py backends `cache.lock()` returns the driver's own `Lock`, whose `acquire()` takes `blocking_timeout`, so the snippet raised `TypeError`. The recipe sets `timeout` on `cache.lock()` instead, which every backend accepts.
+- The example projects' READMEs contradicted the code next to them: the wrong Valkey port for the full example, a `cd example` for a directory named `simple`, an `admin`/`admin` login where `run.sh` creates `admin`/`password`, a `../.venv` path one level short, and a cache table missing the `cluster`, `sentinel`, `sync` and `stream_transport` aliases. The full example's `run.sh` also announced a `SyncCache` backend that does not exist; the alias is `StreamCache`.
+
+### Tooling
+
+- The release workflow runs `tests/admin/` as well as `tests/cache/` before tagging.
+- Dropped the `scripts/**` ruff per-file-ignores entry; the directory it covered was removed in 4acfe2e.
+- The cache test matrix is parametrized by topology (`default`, `cluster`, `sentinel`) instead of an independent client class and sentinel flag. The old pair produced six cells of which two were duplicates and one differed only by db number; `client_class` and `sentinel_mode` are now derived from the active topology.
+- Container fixtures hand their addresses to the cache fixtures directly instead of exporting them into the process environment, attach a `LogMessageWaitStrategy` instead of calling testcontainers' deprecated `wait_for_logs`, and pick test db numbers with `crc32` rather than the per-process randomized `hash()`.
+- Tests that toggled `DJANGO_REDIS_SCAN_ITERSIZE` and `DJANGO_REDIS_CLOSE_CONNECTION`, settings the package has never read, now drive the real `itersize` argument and a real close. The vendored `SettingsWrapper` is gone in favour of pytest-django's `settings` fixture.
+- The valkey-glide adapter no longer needs its module-wide `ignore_errors` mypy override or its file-wide `ruff: noqa: ERA001`. It type-checks and lints with the rest of the package.
+
 ## 0.6.0 (August 2026)
 
 ### Breaking changes
