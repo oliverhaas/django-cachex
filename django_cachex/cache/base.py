@@ -241,7 +241,7 @@ class BaseCachex(BaseCache):
         version_src: int | None = None,
         version_dst: int | None = None,
     ) -> bool:
-        """Rename a key atomically."""
+        """Rename a key atomically. Raises :class:`KeyNotFoundError` when ``src`` does not exist."""
         raise NotSupportedError("rename", self.__class__.__name__)
 
     def renamenx(
@@ -252,7 +252,11 @@ class BaseCachex(BaseCache):
         version_src: int | None = None,
         version_dst: int | None = None,
     ) -> bool:
-        """Rename a key only if the destination does not exist."""
+        """Rename a key only if the destination does not exist.
+
+        ``False`` means nothing was renamed, either because ``dst`` already
+        exists or because ``src`` does not. Neither case raises.
+        """
         raise NotSupportedError("renamenx", self.__class__.__name__)
 
     def make_pattern(self, pattern: str, version: int | None = None) -> str:
@@ -304,7 +308,7 @@ class BaseCachex(BaseCache):
         version_src: int | None = None,
         version_dst: int | None = None,
     ) -> bool:
-        """Async: rename a key atomically."""
+        """Async: rename a key atomically. Raises :class:`KeyNotFoundError` when ``src`` does not exist."""
         raise NotSupportedError("arename", self.__class__.__name__)
 
     async def arenamenx(
@@ -315,7 +319,11 @@ class BaseCachex(BaseCache):
         version_src: int | None = None,
         version_dst: int | None = None,
     ) -> bool:
-        """Async: rename a key only if the destination does not exist."""
+        """Async: rename a key only if the destination does not exist.
+
+        ``False`` means nothing was renamed, either because ``dst`` already
+        exists or because ``src`` does not. Neither case raises.
+        """
         raise NotSupportedError("arenamenx", self.__class__.__name__)
 
     # =========================================================================

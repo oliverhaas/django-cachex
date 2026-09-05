@@ -45,8 +45,8 @@ django-cachex adds these extended methods:
 | `iter_keys(pattern)` | Iterate keys matching pattern |
 | `scan(cursor, pattern, count, key_type=None)` | Single SCAN iteration; `key_type` keeps only keys of that RESP type |
 | `delete_pattern(pattern)` | Delete keys matching pattern |
-| `rename(src, dst)` | Rename a key |
-| `renamenx(src, dst)` | Rename key only if dest doesn't exist |
+| `rename(src, dst)` | Rename a key; raises `KeyNotFoundError` when `src` does not exist |
+| `renamenx(src, dst)` | Rename key only if dest doesn't exist; `False` when `dst` exists or `src` does not |
 
 ### Hash Methods
 
@@ -532,6 +532,7 @@ failure.
 |-----------|-------------|
 | `CachexError` | Base class for every exception raised by django-cachex. |
 | `WrongTypeError` | Operation applied to a key holding the wrong RESP type (subclass of `TypeError`). Mirrors Redis ``WRONGTYPE``; raised consistently across `LocMemCache`, `DatabaseCache`, redis-py, valkey-py, and valkey-glide. |
+| `KeyNotFoundError` | An operation needed a key that does not exist (subclass of `ValueError`). Mirrors Redis ``ERR no such key``; raised by `rename()` for a missing source. The missing key is available as `key`. |
 | `CompressorError` | Compression or decompression failed. Triggers the configured compressor fallback chain. |
 | `SerializerError` | Serialization or deserialization failed. Triggers the serializer fallback chain. |
 | `NotSupportedError` | Operation is not supported by this backend (e.g. `lpush` on `TieredCache`). |

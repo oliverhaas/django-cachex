@@ -238,7 +238,10 @@ class RespCache(BaseCachex):
 
         Bare numeric strings are returned as ``int`` or ``float``
         directly; anything else is decompressed and deserialized. The
-        float branch is what makes ``HINCRBYFLOAT``/``INCRBYFLOAT``
+        ``int`` branch only ever fires for values :meth:`encode` stored as
+        bare integers and for ``INCR`` counters; a serialized payload never
+        parses as a number, so ``set("k", "42")`` still reads back as the
+        string. The float branch is what makes ``HINCRBYFLOAT``/``INCRBYFLOAT``
         results readable: they store a bare ``b"2.718"``, which no
         serializer can load, so without it one float field would break
         ``hget()`` and take ``hgetall()``/``hvals()`` down with the
@@ -3400,7 +3403,7 @@ class RespCache(BaseCachex):
         version_src: int | None = None,
         version_dst: int | None = None,
     ) -> bool:
-        """Rename a key atomically."""
+        """Rename a key atomically. Raises :class:`KeyNotFoundError` when ``src`` does not exist."""
         src_ver = version_src if version_src is not None else version
         dst_ver = version_dst if version_dst is not None else version
         src_key = self.make_and_validate_key(src, version=src_ver)
@@ -3415,7 +3418,7 @@ class RespCache(BaseCachex):
         version_src: int | None = None,
         version_dst: int | None = None,
     ) -> bool:
-        """Rename a key atomically asynchronously."""
+        """Rename a key atomically asynchronously. Raises :class:`KeyNotFoundError` when ``src`` does not exist."""
         src_ver = version_src if version_src is not None else version
         dst_ver = version_dst if version_dst is not None else version
         src_key = self.make_and_validate_key(src, version=src_ver)
@@ -3430,7 +3433,11 @@ class RespCache(BaseCachex):
         version_src: int | None = None,
         version_dst: int | None = None,
     ) -> bool:
-        """Rename a key only if the destination does not exist."""
+        """Rename a key only if the destination does not exist.
+
+        ``False`` means nothing was renamed, either because ``dst`` already
+        exists or because ``src`` does not. Neither case raises.
+        """
         src_ver = version_src if version_src is not None else version
         dst_ver = version_dst if version_dst is not None else version
         src_key = self.make_and_validate_key(src, version=src_ver)
@@ -3445,7 +3452,11 @@ class RespCache(BaseCachex):
         version_src: int | None = None,
         version_dst: int | None = None,
     ) -> bool:
-        """Rename a key only if the destination does not exist asynchronously."""
+        """Rename a key only if the destination does not exist asynchronously.
+
+        ``False`` means nothing was renamed, either because ``dst`` already
+        exists or because ``src`` does not. Neither case raises.
+        """
         src_ver = version_src if version_src is not None else version
         dst_ver = version_dst if version_dst is not None else version
         src_key = self.make_and_validate_key(src, version=src_ver)

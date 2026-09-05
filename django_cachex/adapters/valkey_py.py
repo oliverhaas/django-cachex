@@ -35,7 +35,12 @@ from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
 
 from django_cachex.adapters.protocols import RespAdapterProtocol, RespAsyncPipelineProtocol, RespPipelineProtocol
-from django_cachex.exceptions import NotSupportedError, _main_exceptions, maybe_wrap_wrongtype
+from django_cachex.exceptions import (
+    KeyNotFoundError,
+    NotSupportedError,
+    _main_exceptions,
+    maybe_wrap_wrongtype,
+)
 from django_cachex.stampede import (
     StampedeConfig,
     get_timeout_with_buffer,
@@ -1044,23 +1049,20 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         try:
             client.rename(src, dst)
         except _main_exceptions as e:
-            err_msg = str(e).lower()
-            if "no such key" in err_msg:
-                raise ValueError(f"Key {src!r} not found") from e
+            if "no such key" in str(e).lower():
+                raise KeyNotFoundError(src) from e
             raise
         else:
             return True
 
     def renamenx(self, src: str, dst: str) -> bool:
-        """Rename a key only if the destination does not exist."""
         client = self.get_client(src, write=True)
 
         try:
             return bool(client.renamenx(src, dst))
         except _main_exceptions as e:
-            err_msg = str(e).lower()
-            if "no such key" in err_msg:
-                raise ValueError(f"Key {src!r} not found") from e
+            if "no such key" in str(e).lower():
+                return False
             raise
 
     async def akeys(self, pattern: str) -> list[str]:
@@ -1101,9 +1103,8 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         try:
             await client.rename(src, dst)
         except _main_exceptions as e:
-            err_msg = str(e).lower()
-            if "no such key" in err_msg:
-                raise ValueError(f"Key {src!r} not found") from e
+            if "no such key" in str(e).lower():
+                raise KeyNotFoundError(src) from e
             raise
         else:
             return True
@@ -1114,9 +1115,8 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         try:
             return bool(await client.renamenx(src, dst))
         except _main_exceptions as e:
-            err_msg = str(e).lower()
-            if "no such key" in err_msg:
-                raise ValueError(f"Key {src!r} not found") from e
+            if "no such key" in str(e).lower():
+                return False
             raise
 
     def lock(
