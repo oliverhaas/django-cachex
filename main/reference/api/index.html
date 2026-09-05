@@ -1907,11 +1907,11 @@
 </tr>
 <tr>
 <td><code>rename(src, dst)</code></td>
-<td>Rename a key</td>
+<td>Rename a key; raises <code>KeyNotFoundError</code> when <code>src</code> does not exist</td>
 </tr>
 <tr>
 <td><code>renamenx(src, dst)</code></td>
-<td>Rename key only if dest doesn't exist</td>
+<td>Rename key only if dest doesn't exist; <code>False</code> when <code>dst</code> exists or <code>src</code> does not</td>
 </tr>
 </tbody>
 </table>
@@ -2861,6 +2861,10 @@ failure.</p>
 <tr>
 <td><code>WrongTypeError</code></td>
 <td>Operation applied to a key holding the wrong RESP type (subclass of <code>TypeError</code>). Mirrors Redis <code>WRONGTYPE</code>; raised consistently across <code>LocMemCache</code>, <code>DatabaseCache</code>, redis-py, valkey-py, and valkey-glide.</td>
+</tr>
+<tr>
+<td><code>KeyNotFoundError</code></td>
+<td>An operation needed a key that does not exist (subclass of <code>ValueError</code>). Mirrors Redis <code>ERR no such key</code>; raised by <code>rename()</code> for a missing source. The missing key is available as <code>key</code>.</td>
 </tr>
 <tr>
 <td><code>CompressorError</code></td>
