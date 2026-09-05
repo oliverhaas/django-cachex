@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.1 (September 2026)
 
 ### Breaking changes
 
