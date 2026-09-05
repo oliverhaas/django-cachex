@@ -76,6 +76,20 @@ class NotSupportedError(CachexError):
         super().__init__(msg)
 
 
+class KeyNotFoundError(CachexError, ValueError):
+    """Raised when an operation needs a key that does not exist.
+
+    Mirrors Redis ``ERR no such key``. Subclasses both :class:`CachexError`
+    and :class:`ValueError`, so ``except CachexError`` and existing
+    ``except ValueError`` callers both keep working. The missing key is
+    available as ``key``.
+    """
+
+    def __init__(self, key: str) -> None:
+        self.key = key
+        super().__init__(f"Key {key!r} not found")
+
+
 class WrongTypeError(CachexError, TypeError):
     """Raised when an operation is applied to a key holding the wrong RESP type.
 

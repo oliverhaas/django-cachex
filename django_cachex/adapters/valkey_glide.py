@@ -30,7 +30,7 @@ from django.core.exceptions import ImproperlyConfigured
 
 from django_cachex.adapters.protocols import RespAdapterProtocol, RespAsyncPipelineProtocol, RespPipelineProtocol
 from django_cachex.adapters.valkey_py import _check_xpending_args, _options_key
-from django_cachex.exceptions import maybe_wrap_wrongtype
+from django_cachex.exceptions import KeyNotFoundError, maybe_wrap_wrongtype
 from django_cachex.stampede import (
     StampedeConfig,
     get_timeout_with_buffer,
@@ -1722,8 +1722,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             return self._client().rename(src, dst) == "OK"
         except RequestError as exc:
             if "no such key" in str(exc).lower():
-                msg = f"Key {src!r} not found"
-                raise ValueError(msg) from exc
+                raise KeyNotFoundError(src) from exc
             raise
 
     def renamenx(self, src: str, dst: str) -> bool:
@@ -1731,8 +1730,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             return bool(self._client().renamenx(src, dst))
         except RequestError as exc:
             if "no such key" in str(exc).lower():
-                msg = f"Key {src!r} not found"
-                raise ValueError(msg) from exc
+                return False
             raise
 
     # ---- scan / keys ----
@@ -2713,8 +2711,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             return (await (await self.get_async_client()).rename(src, dst)) == "OK"
         except RequestError as exc:
             if "no such key" in str(exc).lower():
-                msg = f"Key {src!r} not found"
-                raise ValueError(msg) from exc
+                raise KeyNotFoundError(src) from exc
             raise
 
     async def arenamenx(self, src: str, dst: str) -> bool:
@@ -2722,8 +2719,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             return bool(await (await self.get_async_client()).renamenx(src, dst))
         except RequestError as exc:
             if "no such key" in str(exc).lower():
-                msg = f"Key {src!r} not found"
-                raise ValueError(msg) from exc
+                return False
             raise
 
     # ---- Async scan ----

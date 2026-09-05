@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from django_cachex.exceptions import CachexError, KeyNotFoundError
+
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
 
@@ -66,8 +68,20 @@ class TestRenameOperations:
         assert ttl > 3500  # Should be close to 3600
 
     def test_rename_nonexistent_raises(self, cache: RespCache):
-        with pytest.raises(ValueError, match="not found"):
+        with pytest.raises(KeyNotFoundError, match="not found"):
             cache.rename("{slot4}:nonexistent", "{slot4}:dest")
+
+    def test_rename_nonexistent_is_catchable_as_value_error(self, cache: RespCache):
+        with pytest.raises(ValueError):
+            cache.rename("{slot4}:nonexistent", "{slot4}:dest")
+
+    def test_key_not_found_error_hierarchy(self):
+        err = KeyNotFoundError("k")
+
+        assert isinstance(err, CachexError)
+        assert isinstance(err, ValueError)
+        assert err.key == "k"
+        assert str(err) == "Key 'k' not found"
 
     def test_renamenx(self, cache: RespCache):
         cache.set("{slot5}:src", "value")
@@ -85,6 +99,12 @@ class TestRenameOperations:
         assert result is False
         assert cache.get("{slot6}:src") == "src_value"
         assert cache.get("{slot6}:dest") == "existing_value"
+
+    def test_renamenx_missing_source_returns_false(self, cache: RespCache):
+        result = cache.renamenx("{slot7}:nonexistent", "{slot7}:dest")
+
+        assert result is False
+        assert cache.get("{slot7}:dest") is None
 
     def test_rename_version_src_dst(self, cache: RespCache):
         cache.set("{vs}:rsrc", "value", version=1)
@@ -307,7 +327,7 @@ class TestAsyncRename:
 
     @pytest.mark.asyncio
     async def test_arename_nonexistent_raises(self, cache: RespCache):
-        with pytest.raises(ValueError, match="not found"):
+        with pytest.raises(KeyNotFoundError, match="not found"):
             await cache.arename("{aslot3}:nonexistent", "{aslot3}:dest")
 
 
@@ -332,6 +352,13 @@ class TestAsyncRenameNX:
         assert result is False
         assert cache.get("{aslot5}:src") == "src_value"
         assert cache.get("{aslot5}:dest") == "existing_value"
+
+    @pytest.mark.asyncio
+    async def test_arenamenx_missing_source_returns_false(self, cache: RespCache):
+        result = await cache.arenamenx("{aslot6}:nonexistent", "{aslot6}:dest")
+
+        assert result is False
+        assert cache.get("{aslot6}:dest") is None
 
 
 class TestAsyncVersionSrcDst:

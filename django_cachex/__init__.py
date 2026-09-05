@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from django_cachex.exceptions import (
         CachexError,
         CompressorError,
+        KeyNotFoundError,
         NotSupportedError,
         SerializerError,
         WrongTypeError,
@@ -43,6 +44,7 @@ _LAZY_EXPORTS = {
     "Pipeline": "django_cachex.adapters.pipeline",
     "CachexError": "django_cachex.exceptions",
     "CompressorError": "django_cachex.exceptions",
+    "KeyNotFoundError": "django_cachex.exceptions",
     "NotSupportedError": "django_cachex.exceptions",
     "SerializerError": "django_cachex.exceptions",
     "WrongTypeError": "django_cachex.exceptions",
@@ -79,6 +81,7 @@ __all__ = [
     "AsyncPipeline",
     "CachexError",
     "CompressorError",
+    "KeyNotFoundError",
     "LockError",
     "LockNotOwnedError",
     "NotSupportedError",

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Breaking changes
+
+- `renamenx()` and `arenamenx()` return `False` for a missing source key instead of raising. The method already answers "did the rename happen" with a bool when the destination is taken, and a missing source is the same answer on the claim-a-key path; callers had to wrap the call in `except ValueError` to get one.
+
+### Improvements
+
+- `rename()` and `arename()` raise `KeyNotFoundError` for a missing source key, and both methods document it. The exception subclasses `CachexError` and `ValueError`, so `except CachexError` now covers it and existing `except ValueError` handlers keep working without swallowing unrelated errors; the missing key is available as `.key`.
+
 ## 0.7.0 (September 2026)
 
 ### Breaking changes
