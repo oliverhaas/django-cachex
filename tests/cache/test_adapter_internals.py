@@ -18,7 +18,7 @@ from django_cachex.adapters.valkey_py import (
     ValkeyPySentinelAdapter,
     _options_key,
 )
-from django_cachex.exceptions import WrongTypeError
+from django_cachex.exceptions import NotSupportedError, WrongTypeError, translate_server_error
 from django_cachex.types import KeyType
 
 SERVER_URL = "rediss://user:secret@example.com:7000/0?socket_timeout=5"
@@ -601,7 +601,7 @@ class TestPipelineWrongTypeTranslation:
             pipeline.execute_command("LPUSH", "key", "value")
 
     def test_other_errors_pass_through_untouched(self):
-        original = _ResponseError("ERR unknown command")
+        original = _ResponseError("ERR syntax error")
         pipeline = ValkeyPyPipelineAdapter(_WrongTypePipeline(original))
         with pytest.raises(_ResponseError) as excinfo:
             pipeline.execute()
@@ -611,6 +611,52 @@ class TestPipelineWrongTypeTranslation:
     async def test_async_execute_raises_wrongtype_error(self):
         pipeline = ValkeyPyAsyncPipelineAdapter(_AsyncWrongTypePipeline())
         with pytest.raises(WrongTypeError):
+            await pipeline.execute()
+
+
+class TestUnknownCommandTranslation:
+    """An unknown-command reply means the server predates the command, so it becomes NotSupportedError.
+
+    The cluster client raises its own lookup error before anything reaches
+    the wire, while resolving the routing key from the server's COMMAND table.
+    """
+
+    SERVER_REPLY = "unknown command 'HEXPIRE', with args beginning with: 'k' '10' 'FIELDS' '1' 'f' "
+    CLUSTER_LOOKUP = "HSETEX command doesn't exist in Redis commands"
+
+    def test_server_reply_becomes_not_supported(self):
+        original = _ResponseError(self.SERVER_REPLY)
+        pipeline = ValkeyPyPipelineAdapter(_WrongTypePipeline(original))
+        with pytest.raises(NotSupportedError) as excinfo:
+            pipeline.execute()
+        assert excinfo.value.operation == "hexpire"
+        assert excinfo.value.__cause__ is original
+        assert "requires Redis 7.4+ or Valkey 9.0+" in str(excinfo.value)
+
+    def test_execute_command_translates_too(self):
+        pipeline = ValkeyPyPipelineAdapter(_WrongTypePipeline(_ResponseError(self.SERVER_REPLY)))
+        with pytest.raises(NotSupportedError):
+            pipeline.execute_command("HEXPIRE", "k", 10, "FIELDS", 1, "f")
+
+    def test_cluster_command_lookup_becomes_not_supported(self):
+        original = _ResponseError(self.CLUSTER_LOOKUP)
+        pipeline = ValkeyPyPipelineAdapter(_WrongTypePipeline(original))
+        with pytest.raises(NotSupportedError) as excinfo:
+            pipeline.execute()
+        assert excinfo.value.operation == "hsetex"
+        assert "requires Redis 8.0+ or Valkey 9.0+" in str(excinfo.value)
+
+    def test_redis_6_backtick_quoting(self):
+        wrapped = translate_server_error(_ResponseError("unknown command `FOOBAR`, with args beginning with: "))
+        assert isinstance(wrapped, NotSupportedError)
+        assert wrapped.operation == "foobar"
+        assert wrapped.backend is None
+        assert wrapped.detail == "the server does not know this command"
+
+    @pytest.mark.asyncio
+    async def test_async_execute_raises_not_supported(self):
+        pipeline = ValkeyPyAsyncPipelineAdapter(_AsyncWrongTypePipeline(_ResponseError(self.SERVER_REPLY)))
+        with pytest.raises(NotSupportedError):
             await pipeline.execute()
 
 

@@ -72,7 +72,7 @@ class TestRedisPyAdapter:
     ):
         mock_client = Mock()
         mock_client.scan_iter.return_value = [":1:foo", ":1:foo-a"]
-        mock_client.delete.return_value = 2
+        mock_client.unlink.return_value = 2
         get_client_mock.return_value = mock_client
 
         client = RedisPyAdapter.__new__(RedisPyAdapter)
@@ -80,5 +80,5 @@ class TestRedisPyAdapter:
 
         result = client.delete_pattern(pattern="prefix:1:foo*")
 
-        mock_client.delete.assert_called_once_with(":1:foo", ":1:foo-a")
+        mock_client.unlink.assert_called_once_with(":1:foo", ":1:foo-a")
         assert result == 2

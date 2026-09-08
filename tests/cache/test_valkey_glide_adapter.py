@@ -10,7 +10,7 @@ pytest.importorskip("glide_sync")
 pytest.importorskip("glide")
 
 from django.core.exceptions import ImproperlyConfigured
-from glide_sync import ClusterBatch, RandomNode, ServerCredentials
+from glide_sync import ClusterBatch, RandomNode, RequestError, ServerCredentials
 
 from django_cachex.adapters.protocols import _RespPipelineCommandsProtocol
 from django_cachex.adapters.valkey_glide import (
@@ -25,6 +25,7 @@ from django_cachex.adapters.valkey_glide import (
     _parse_info,
     _WrongTypeClient,
 )
+from django_cachex.exceptions import NotSupportedError
 from django_cachex.lock import LockError
 from django_cachex.types import KeyType
 
@@ -467,6 +468,47 @@ def test_wrongtype_client_supports_async_with(mocker):
 
     inner.__aenter__.assert_awaited_once()
     inner.__aexit__.assert_awaited_once()
+
+
+# ------------------------------------------ unknown-command translation
+
+# What a pre-7.4 server answers when the adapter sends a hash field TTL command.
+_UNKNOWN_HEXPIRE = (
+    "An error was signalled by the server - ResponseError: unknown command "
+    "'HEXPIRE', with args beginning with: h, 60, FIELDS, 1, a,"
+)
+
+
+def test_wrongtype_client_translates_unknown_command(mocker):
+    original = RequestError(_UNKNOWN_HEXPIRE)
+    inner = mocker.Mock()
+    inner.custom_command.side_effect = original
+    proxy = _WrongTypeClient(inner)
+
+    with pytest.raises(NotSupportedError) as excinfo:
+        proxy.custom_command([b"HEXPIRE", "h", b"60", b"FIELDS", b"1", "a"])
+
+    assert excinfo.value.operation == "hexpire"
+    assert "Redis 7.4+ or Valkey 9.0+" in str(excinfo.value)
+    assert excinfo.value.__cause__ is original
+
+
+def test_wrongtype_client_translates_unknown_command_on_await(mocker):
+    """The async client raises on await, not on call, so the awaitable needs the same seam."""
+    original = RequestError(_UNKNOWN_HEXPIRE)
+    inner = mocker.MagicMock()
+    inner.custom_command = mocker.AsyncMock(side_effect=original)
+    proxy = _WrongTypeClient(inner)
+
+    async def run():
+        with pytest.raises(NotSupportedError) as excinfo:
+            await proxy.custom_command([b"HEXPIRE", "h", b"60", b"FIELDS", b"1", "a"])
+        return excinfo.value
+
+    error = asyncio.run(run())
+
+    assert error.operation == "hexpire"
+    assert error.__cause__ is original
 
 
 # ------------------------------------------------------ timedelta expiry args
@@ -1028,3 +1070,224 @@ def test_closed_loops_do_not_accumulate_in_the_async_registry(mocker):
         asyncio.run(adapter.aget("k"))
 
     assert len(vg._GLIDE_ASYNC_CLIENTS) <= after_first
+
+
+# ------------------------------------------------------ UNLINK instead of DEL
+
+
+def test_delete_sends_unlink(mocker):
+    adapter, client = _adapter(mocker)
+    client.unlink.return_value = 1
+
+    assert adapter.delete("k") is True
+
+    assert client.unlink.call_args[0][0] == ["k"]
+    client.delete.assert_not_called()
+
+
+def test_delete_many_sends_unlink(mocker):
+    adapter, client = _adapter(mocker)
+    client.unlink.return_value = 2
+
+    assert adapter.delete_many(["a", "b"]) == 2
+
+    assert client.unlink.call_args[0][0] == ["a", "b"]
+
+
+def test_pipeline_delete_queues_unlink(mocker):
+    batch = mocker.Mock()
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), batch_factory=lambda *, atomic: batch)
+    pipe.delete("a", "b")
+
+    assert batch.unlink.call_args[0][0] == ["a", "b"]
+    batch.delete.assert_not_called()
+
+
+# ---------------------------------------------------- hash field expiration
+
+
+def test_hexpire_builds_the_wire_form(mocker):
+    adapter, client = _adapter(mocker)
+    adapter.hexpire("h", datetime.timedelta(minutes=2), "a", "b", gt=True)
+
+    assert client.custom_command.call_args[0][0] == [
+        "HEXPIRE",
+        "h",
+        "120",
+        "GT",
+        "FIELDS",
+        "2",
+        "a",
+        "b",
+    ]
+
+
+def test_hpexpire_converts_to_milliseconds(mocker):
+    adapter, client = _adapter(mocker)
+    adapter.hpexpire("h", datetime.timedelta(seconds=1.5), "a")
+
+    assert client.custom_command.call_args[0][0][:3] == ["HPEXPIRE", "h", "1500"]
+
+
+def test_hexpireat_renders_a_datetime_as_unix_seconds(mocker):
+    adapter, client = _adapter(mocker)
+    when = datetime.datetime(2030, 1, 1, tzinfo=datetime.UTC)
+
+    adapter.hexpireat("h", when, "a", nx=True)
+
+    assert client.custom_command.call_args[0][0] == [
+        "HEXPIREAT",
+        "h",
+        str(int(when.timestamp())),
+        "NX",
+        "FIELDS",
+        "1",
+        "a",
+    ]
+
+
+def test_hpexpireat_renders_a_datetime_as_unix_milliseconds(mocker):
+    adapter, client = _adapter(mocker)
+    when = datetime.datetime(2030, 1, 1, tzinfo=datetime.UTC)
+
+    adapter.hpexpireat("h", when, "a")
+
+    assert client.custom_command.call_args[0][0][2] == str(int(when.timestamp() * 1000))
+
+
+def test_hexpire_rejects_two_conditions(mocker):
+    adapter, _client = _adapter(mocker)
+
+    with pytest.raises(ValueError, match="at most one of nx, xx, gt and lt"):
+        adapter.hexpire("h", 60, "a", nx=True, xx=True)
+
+
+def test_httl_normalizes_no_expiry_to_none(mocker):
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = [60, -1, -2]
+
+    assert adapter.httl("h", "a", "b", "missing") == [60, None, -2]
+    assert client.custom_command.call_args[0][0] == ["HTTL", "h", "FIELDS", "3", "a", "b", "missing"]
+
+
+def test_hpersist_leaves_its_codes_alone(mocker):
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = [1, -1, -2]
+
+    assert adapter.hpersist("h", "a", "b", "missing") == [1, -1, -2]
+
+
+def test_hsetex_builds_the_wire_form(mocker):
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = 1
+
+    assert adapter.hsetex("h", {"a": b"1", "b": 2}, ex=60, fnx=True) is True
+
+    assert client.custom_command.call_args[0][0] == [
+        "HSETEX",
+        "h",
+        "FNX",
+        "EX",
+        "60",
+        "FIELDS",
+        "2",
+        "a",
+        b"1",
+        "b",
+        b"2",
+    ]
+
+
+def test_hsetex_zero_timeout_is_passed_through(mocker):
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = 1
+
+    adapter.hsetex("h", {"a": b"1"}, ex=0)
+
+    assert client.custom_command.call_args[0][0][:4] == ["HSETEX", "h", "EX", "0"]
+
+
+def test_hsetex_keepttl_replaces_the_ex_argument(mocker):
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = 1
+
+    adapter.hsetex("h", {"a": b"1"}, keepttl=True)
+
+    assert client.custom_command.call_args[0][0] == ["HSETEX", "h", "KEEPTTL", "FIELDS", "1", "a", b"1"]
+
+
+def test_hsetex_rejects_fnx_with_fxx(mocker):
+    adapter, _client = _adapter(mocker)
+
+    with pytest.raises(ValueError, match="at most one of fnx and fxx"):
+        adapter.hsetex("h", {"a": b"1"}, fnx=True, fxx=True)
+
+
+def test_hgetex_builds_the_wire_form(mocker):
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = [b"1", None]
+
+    assert adapter.hgetex("h", "a", "missing", ex=30) == [b"1", None]
+    assert client.custom_command.call_args[0][0] == [
+        "HGETEX",
+        "h",
+        "EX",
+        "30",
+        "FIELDS",
+        "2",
+        "a",
+        "missing",
+    ]
+
+
+def test_hgetex_persist_replaces_the_ex_argument(mocker):
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = [b"1"]
+
+    adapter.hgetex("h", "a", persist=True)
+
+    assert client.custom_command.call_args[0][0] == ["HGETEX", "h", "PERSIST", "FIELDS", "1", "a"]
+
+
+@pytest.mark.asyncio
+async def test_ahttl_normalizes_no_expiry_to_none(mocker):
+    adapter, client = _async_adapter(mocker)
+    client.custom_command.return_value = [-1, -2]
+
+    assert await adapter.ahttl("h", "a", "missing") == [None, -2]
+
+
+@pytest.mark.asyncio
+async def test_ahsetex_builds_the_wire_form(mocker):
+    adapter, client = _async_adapter(mocker)
+    client.custom_command.return_value = 0
+
+    assert await adapter.ahsetex("h", {"a": b"1"}, ex=60, fxx=True) is False
+
+    assert client.custom_command.await_args[0][0] == [
+        "HSETEX",
+        "h",
+        "FXX",
+        "EX",
+        "60",
+        "FIELDS",
+        "1",
+        "a",
+        b"1",
+    ]
+
+
+def test_pipeline_queues_the_hash_ttl_wire_forms(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+
+    pipe.hexpire("h", 60, "a", lt=True)
+    pipe.httl("h", "a")
+    pipe.hsetex("h", {"a": b"1"}, ex=60)
+    pipe.hgetex("h", "a", persist=True)
+
+    assert [args for _, args in pipe._batch.commands] == [
+        ["HEXPIRE", "h", "60", "LT", "FIELDS", "1", "a"],
+        ["HTTL", "h", "FIELDS", "1", "a"],
+        ["HSETEX", "h", "EX", "60", "FIELDS", "1", "a", b"1"],
+        ["HGETEX", "h", "PERSIST", "FIELDS", "1", "a"],
+    ]

@@ -126,12 +126,12 @@ class TestRedisClusterAdapter:
 
         client.key_func = lambda k, p, v: k
 
-        mock_cluster.delete.return_value = 1
+        mock_cluster.unlink.return_value = 1
 
         # {a} -> slot 15495, {b} -> slot 3300, {c} -> slot 7365
         client.delete_many(["{a}key1", "{b}key2", "{c}key3"])
 
-        assert mock_cluster.delete.call_count == 3
+        assert mock_cluster.unlink.call_count == 3
 
     def test_delete_many_empty_keys(self):
         client = setup_cluster_client()
@@ -139,7 +139,7 @@ class TestRedisClusterAdapter:
         client.delete_many([])
 
     def test_delete_many_same_slot(self):
-        """Test delete_many with keys in the same slot uses single delete."""
+        """Test delete_many with keys in the same slot uses a single UNLINK."""
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
         mock_cluster_cls.from_url.return_value = mock_cluster
@@ -148,11 +148,11 @@ class TestRedisClusterAdapter:
 
         client.key_func = lambda k, p, v: k
 
-        mock_cluster.delete.return_value = 3
+        mock_cluster.unlink.return_value = 3
 
         client.delete_many(["{user}key1", "{user}key2", "{user}key3"])
 
-        mock_cluster.delete.assert_called_once()
+        mock_cluster.unlink.assert_called_once()
 
     def test_clear_flushes_all_primaries(self):
         mock_cluster_cls = MagicMock()
@@ -280,7 +280,7 @@ class TestRedisClusterAdapter:
                 b"prefix:1:temp_3",
             ],
         )
-        mock_cluster.delete.return_value = 1
+        mock_cluster.unlink.return_value = 1
 
         result = client.delete_pattern("temp_*")
 
@@ -306,7 +306,7 @@ class TestRedisClusterAdapter:
         result = client.delete_pattern("nonexistent_*")
 
         assert result == 0
-        mock_cluster.delete.assert_not_called()
+        mock_cluster.unlink.assert_not_called()
 
     def test_delete_pattern_groups_by_slot(self):
         mock_cluster_cls = MagicMock()
@@ -327,12 +327,11 @@ class TestRedisClusterAdapter:
                 b"{b}key3",
             ],
         )
-        mock_cluster.delete.return_value = 2  # First call deletes 2 keys
-        mock_cluster.delete.side_effect = [2, 1]  # 2 keys in slot a, 1 in slot b
+        mock_cluster.unlink.side_effect = [2, 1]  # 2 keys in slot a, 1 in slot b
 
         result = client.delete_pattern("*")
 
-        assert mock_cluster.delete.call_count == 2
+        assert mock_cluster.unlink.call_count == 2
         assert result == 3  # 2 + 1 = 3 total deleted
 
     def test_close_keeps_the_sync_cluster(self):

@@ -5,7 +5,7 @@
 - Python 3.14+ (free-threaded supported)
 - Django 6.0+
 - valkey-py 6.1+ or redis-py 6.0+
-- Valkey server 7.2+ or Redis server 6.0+
+- Valkey server 7.2+ or Redis server 6.0+ (hash field expiration needs Valkey 9.0+ or Redis 7.4+, and `hsetex`/`hgetex` Redis 8.0+; older servers raise `NotSupportedError` for those methods only)
 
 ## Install with uv
 

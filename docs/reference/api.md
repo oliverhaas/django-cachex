@@ -66,6 +66,18 @@ Hash operations for field-value data structures:
 | `hmget(key, *fields)` | Get multiple hash field values |
 | `hsetnx(key, field, value)` | Set hash field only if it doesn't exist |
 | `hvals(key)` | Get all values in a hash |
+| `hexpire(key, timeout, *fields, nx=False, xx=False, gt=False, lt=False)` | Set a TTL in seconds (or a `timedelta`) on hash fields; one reply code per field: `2` deleted, `1` set, `0` condition unmet, `-2` no such field |
+| `hpexpire(key, timeout, *fields, ...)` | Same as `hexpire` with millisecond precision |
+| `hexpireat(key, when, *fields, ...)` | Expire hash fields at a Unix timestamp or `datetime` |
+| `hpexpireat(key, when, *fields, ...)` | Same as `hexpireat` with millisecond precision |
+| `httl(key, *fields)` | Get TTL in seconds per field (`None` = no expiry, `-2` = not found) |
+| `hpttl(key, *fields)` | Same as `httl` in milliseconds |
+| `hexpiretime(key, *fields)` | Absolute Unix timestamp (seconds) per field (`None` = no expiry, `-2` = not found) |
+| `hpersist(key, *fields)` | Remove field expirations; `1` removed, `-1` had none, `-2` no such field |
+| `hsetex(key, field=None, value=None, timeout=DEFAULT_TIMEOUT, mapping=None, items=None, fnx=False, fxx=False, keepttl=False)` | Set hash field(s) and their TTL in one command; `False` when `fnx`/`fxx` blocks the write |
+| `hgetex(key, *fields, timeout=None, persist=False)` | Get hash field(s) and set (`timeout`) or remove (`persist`) their TTL in the same command |
+
+Field expiration needs Redis 7.4+ or Valkey 9.0+, and `hsetex`/`hgetex` Redis 8.0+; an older server raises `NotSupportedError`.
 
 ### Set Methods
 
@@ -262,6 +274,7 @@ For raw access that skips prefixing/serialization, use `cache.adapter` (e.g. `aw
 - `attl`, `apttl`, `aexpire`, `apexpire`, `aexpireat`, `apexpireat`, `apersist`
 - `akeys`, `aiter_keys`, `ascan`, `adelete_pattern`
 - `ahset`, `ahdel`, `ahexists`, `ahget`, `ahgetall`, `ahincrby`, `ahincrbyfloat`, `ahkeys`, `ahlen`, `ahmget`, `ahsetnx`, `ahvals`
+- `ahexpire`, `ahpexpire`, `ahexpireat`, `ahpexpireat`, `ahttl`, `ahpttl`, `ahexpiretime`, `ahpersist`, `ahsetex`, `ahgetex`
 - `asadd`, `asrem`, `asmembers`, `asismember`, `asmismember`, `ascard`, `aspop`, `asrandmember`, `asmove`, `asdiff`, `asdiffstore`, `asinter`, `asinterstore`, `asunion`, `asunionstore`
 - `azadd`, `azcard`, `azcount`, `azincrby`, `azrange`, `azrevrange`, `azrangebyscore`, `azrevrangebyscore`, `azrank`, `azrevrank`, `azrem`, `azremrangebyrank`, `azremrangebyscore`, `azscore`, `azmscore`, `azpopmin`, `azpopmax`
 - `allen`, `alpush`, `arpush`, `alpop`, `arpop`, `alindex`, `alrange`, `alset`, `altrim`, `alrem`, `alpos`, `almove`, `alinsert`, `ablpop`, `abrpop`, `ablmove`
@@ -535,7 +548,7 @@ failure.
 | `KeyNotFoundError` | An operation needed a key that does not exist (subclass of `ValueError`). Mirrors Redis ``ERR no such key``; raised by `rename()` for a missing source. The missing key is available as `key`. |
 | `CompressorError` | Compression or decompression failed. Triggers the configured compressor fallback chain. |
 | `SerializerError` | Serialization or deserialization failed. Triggers the serializer fallback chain. |
-| `NotSupportedError` | Operation is not supported by this backend (e.g. `lpush` on `TieredCache`). |
+| `NotSupportedError` | Operation is not supported by this backend (e.g. `lpush` on `TieredCache`) or by the connected server (e.g. `hexpire` on Redis 7.2). `operation` names the method or command, `backend` the cache class (`None` when the server rejected the command) and `detail` says why, including the server release that adds a missing command. |
 | `LockError` | A lock operation failed (couldn't acquire, releasing an unlocked lock, ...). |
 | `LockNotOwnedError` | Releasing or extending a lock the caller no longer owns (expired or stolen). Subclass of `LockError`. |
 | `SemaphoreError` | A semaphore operation failed (e.g. re-acquiring before release). |

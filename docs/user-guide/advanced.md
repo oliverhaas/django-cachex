@@ -191,6 +191,45 @@ cache.hlen("user:1")  # 2
 cache.hvals("user:1")  # ["Alice", "alice@example.com"]
 ```
 
+#### Field Expiration
+
+Fields can carry their own TTL. This needs Redis 7.4+ or Valkey 9.0+, and `hsetex`/`hgetex` Redis 8.0+; an older server raises `NotSupportedError`.
+
+```python
+from datetime import datetime, timedelta
+
+cache.hset("session:42", mapping={"token": "abc", "csrf": "xyz", "theme": "dark"})
+
+# Expire fields; one reply code per field
+cache.hexpire("session:42", 300, "token", "csrf")  # [1, 1]
+cache.httl("session:42", "token", "theme", "nope")  # [300, None, -2]
+
+# Only lengthen an existing TTL (nx/xx/gt/lt mirror EXPIRE's options)
+cache.hexpire("session:42", timedelta(hours=1), "token", gt=True)  # [1]
+
+# Absolute deadlines and millisecond precision
+cache.hexpireat("session:42", datetime.now() + timedelta(days=1), "csrf")
+cache.hpexpire("session:42", 1500, "theme")
+cache.hpttl("session:42", "theme")  # [1500]
+
+# Set fields and their TTL in one round trip; fnx/fxx guard the write
+cache.hsetex("session:42", "token", "def", timeout=300)  # True
+cache.hsetex("session:42", mapping={"a": 1, "b": 2}, timeout=60, fnx=True)  # False if any exist
+cache.hsetex("session:42", "token", "ghi", keepttl=True)  # rewrite, keep its TTL
+
+# Read fields and refresh (or drop) their TTL in one round trip
+cache.hgetex("session:42", "token", timeout=600)  # ["ghi"]
+cache.hgetex("session:42", "token", persist=True)  # ["ghi"], TTL removed
+
+cache.hpersist("session:42", "csrf")  # [1]
+```
+
+A few things to keep in mind:
+
+- Rewriting a field with `hset`, or with `hsetex` without `keepttl=True`, clears that field's TTL.
+- `hsetex(timeout=...)` follows `set()`: the default uses the backend's `TIMEOUT`, `None` means no expiry, and `timeout=0` deletes the fields immediately.
+- Stampede prevention pads key-level timeouts only; field TTLs are sent as given.
+
 ### Sorted Sets
 
 Unique members with scores, automatically sorted:

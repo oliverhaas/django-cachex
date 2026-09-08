@@ -27,6 +27,7 @@ import threading
 import weakref
 from collections import defaultdict
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 from itertools import batched
 from typing import TYPE_CHECKING, Any, cast, override
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
@@ -39,7 +40,7 @@ from django_cachex.exceptions import (
     KeyNotFoundError,
     NotSupportedError,
     _main_exceptions,
-    maybe_wrap_wrongtype,
+    translate_server_error,
 )
 from django_cachex.stampede import (
     StampedeConfig,
@@ -53,7 +54,6 @@ from django_cachex.types import KeyType
 if TYPE_CHECKING:
     import builtins
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
-    from datetime import datetime, timedelta
 
     from redis.connection import ConnectionPool
 
@@ -201,23 +201,23 @@ _VALKEY_ASYNC_CLUSTERS: AsyncClusterRegistry = weakref.WeakKeyDictionary()
 # would hold it strongly and the client keeps its pool alive.
 _CLIENT_ATTR = "_django_cachex_client"
 
-_WRONGTYPE_INSTALLED_ATTR = "_django_cachex_wrongtype_installed"
+_TRANSLATION_INSTALLED_ATTR = "_django_cachex_error_translation_installed"
 
 
 @contextmanager
-def _wrongtype_translated() -> Iterator[None]:
-    """Re-raise a driver WRONGTYPE reply as :class:`WrongTypeError`."""
+def _errors_translated() -> Iterator[None]:
+    """Re-raise a driver error as the cachex exception it stands for."""
     try:
         yield
     except Exception as e:
-        wrapped = maybe_wrap_wrongtype(e)
+        wrapped = translate_server_error(e)
         if wrapped is e:
             raise
         raise wrapped from e
 
 
-def _install_wrongtype_translation(client: Any) -> Any:
-    """Patch ``client.execute_command`` to surface WRONGTYPE as :class:`WrongTypeError`.
+def _install_error_translation(client: Any) -> Any:
+    """Patch ``client.execute_command`` so driver errors surface as cachex exceptions.
 
     Idempotent: a sentinel attribute prevents re-wrapping if the same client
     is passed in twice. Cluster clients route via the same hook, so this also
@@ -227,22 +227,22 @@ def _install_wrongtype_translation(client: Any) -> Any:
     (see ``get_client``), so the closure cycle this installs is created once
     per pool rather than once per command.
     """
-    if getattr(client, _WRONGTYPE_INSTALLED_ATTR, False):
+    if getattr(client, _TRANSLATION_INSTALLED_ATTR, False):
         return client
     orig = getattr(client, "execute_command", None)
     if orig is None:
         return client
 
     async def _aexecute(*args: Any, **kwargs: Any) -> Any:
-        with _wrongtype_translated():
+        with _errors_translated():
             return await orig(*args, **kwargs)
 
     def _sexecute(*args: Any, **kwargs: Any) -> Any:
-        with _wrongtype_translated():
+        with _errors_translated():
             return orig(*args, **kwargs)
 
     client.execute_command = _aexecute if inspect.iscoroutinefunction(orig) else _sexecute
-    setattr(client, _WRONGTYPE_INSTALLED_ATTR, True)
+    setattr(client, _TRANSLATION_INSTALLED_ATTR, True)
     return client
 
 
@@ -268,6 +268,102 @@ def _missing_valkey() -> ImportError:
     return ImportError(
         "valkey-py is required for ValkeyPyAdapter (and friends). Install it with: pip install django-cachex[valkey-py]",
     )
+
+
+# =============================================================================
+# Hash field expiration argument builders
+# =============================================================================
+
+
+def _expire_arg(timeout: int | timedelta, *, milliseconds: bool = False) -> int:
+    """Render a relative expiry as whole seconds (or milliseconds)."""
+    if isinstance(timeout, timedelta):
+        seconds = timeout.total_seconds()
+        return int(seconds * 1000) if milliseconds else int(seconds)
+    return int(timeout)
+
+
+def _to_unix(when: int | datetime, *, milliseconds: bool = False) -> int:
+    """Render an absolute deadline as a Unix timestamp in seconds (or milliseconds)."""
+    if isinstance(when, datetime):
+        ts = when.timestamp()
+        return int(ts * 1000) if milliseconds else int(ts)
+    return int(when)
+
+
+# Numbers are rendered as str: valkey_glide shares these builders and glide's custom_command takes only str | bytes.
+def _hash_expire_args(
+    command: str,
+    key: str,
+    expiry: int,
+    fields: tuple[str, ...],
+    *,
+    nx: bool,
+    xx: bool,
+    gt: bool,
+    lt: bool,
+) -> list[Any]:
+    """Build ``<command> key <expiry> [NX|XX|GT|LT] FIELDS <n> <field...>``.
+
+    The server accepts at most one condition; rejecting a combination here
+    names the offending arguments instead of returning a bare syntax error.
+    """
+    conditions = [name for name, enabled in (("NX", nx), ("XX", xx), ("GT", gt), ("LT", lt)) if enabled]
+    if len(conditions) > 1:
+        msg = f"{command.lower()}() accepts at most one of nx, xx, gt and lt"
+        raise ValueError(msg)
+    return [command, key, str(expiry), *conditions, "FIELDS", str(len(fields)), *fields]
+
+
+def _hash_fields_args(command: str, key: str, fields: tuple[str, ...]) -> list[Any]:
+    """Build ``<command> key FIELDS <n> <field...>`` for HTTL, HPTTL, HEXPIRETIME and HPERSIST."""
+    return [command, key, "FIELDS", str(len(fields)), *fields]
+
+
+def _hsetex_args(
+    key: str,
+    mapping: Mapping[str, Any],
+    *,
+    ex: int | None,
+    keepttl: bool,
+    fnx: bool,
+    fxx: bool,
+) -> list[Any]:
+    """Build ``HSETEX key [FNX|FXX] [EX <s>] [KEEPTTL] FIELDS <n> <field> <value>...``.
+
+    ``ex=0`` is passed through: the server sets the fields and expires them
+    in the same call, which is what a non-positive cache timeout means.
+    """
+    if fnx and fxx:
+        msg = "hsetex() accepts at most one of fnx and fxx"
+        raise ValueError(msg)
+    args: list[Any] = ["HSETEX", key]
+    if fnx:
+        args.append("FNX")
+    elif fxx:
+        args.append("FXX")
+    if ex is not None:
+        args.extend(["EX", str(ex)])
+    if keepttl:
+        args.append("KEEPTTL")
+    args.extend(["FIELDS", str(len(mapping))])
+    for field, value in mapping.items():
+        args.extend([field, value])
+    return args
+
+
+def _hgetex_args(key: str, fields: tuple[str, ...], *, ex: int | None, persist: bool) -> list[Any]:
+    """Build ``HGETEX key [EX <s> | PERSIST] FIELDS <n> <field...>``."""
+    if ex is not None and persist:
+        msg = "hgetex() accepts at most one of ex and persist"
+        raise ValueError(msg)
+    args: list[Any] = ["HGETEX", key]
+    if persist:
+        args.append("PERSIST")
+    elif ex is not None:
+        args.extend(["EX", str(ex)])
+    args.extend(["FIELDS", str(len(fields)), *fields])
+    return args
 
 
 class ValkeyPyAdapter(RespAdapterProtocol):
@@ -428,7 +524,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         if self._client_class is None:
             msg = "Subclasses must set _client_class"
             raise RuntimeError(msg)
-        return _install_wrongtype_translation(self._client_class(connection_pool=pool))
+        return _install_error_translation(self._client_class(connection_pool=pool))
 
     def get_client(self, key: str | None = None, *, write: bool = False) -> Any:
         """Get the shared client for the pool serving this operation.
@@ -481,7 +577,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         if self._async_client_class is None:
             msg = "Async operations require _async_client_class to be set. Use RedisPyAdapter or ValkeyPyAdapter."
             raise RuntimeError(msg)
-        return _install_wrongtype_translation(self._async_client_class(connection_pool=pool))
+        return _install_error_translation(self._async_client_class(connection_pool=pool))
 
     async def get_async_client(self, key: str | None = None, *, write: bool = False) -> Any:
         """Get an async client connection.
@@ -532,7 +628,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         if actual_timeout == 0:
             if ret := bool(client.set(key, value, nx=True)):
-                client.delete(key)
+                client.unlink(key)
             return ret
         return bool(client.set(key, value, nx=True, ex=actual_timeout))
 
@@ -549,7 +645,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         if actual_timeout == 0:
             if ret := bool(await client.set(key, value, nx=True)):
-                await client.delete(key)
+                await client.unlink(key)
             return ret
         return bool(await client.set(key, value, nx=True, ex=actual_timeout))
 
@@ -591,7 +687,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
-            client.delete(key)
+            client.unlink(key)
         else:
             client.set(key, value, ex=actual_timeout)
 
@@ -607,7 +703,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
-            await client.delete(key)
+            await client.unlink(key)
         else:
             await client.set(key, value, ex=actual_timeout)
 
@@ -637,7 +733,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             else:
                 executed = bool(result)
             if executed:
-                client.delete(key)
+                client.unlink(key)
             return result if get else bool(result)
         result = client.set(key, value, ex=actual_timeout, nx=nx, xx=xx, get=get)
         return result if get else bool(result)
@@ -663,7 +759,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             else:
                 executed = bool(result)
             if executed:
-                await client.delete(key)
+                await client.unlink(key)
             return result if get else bool(result)
         result = await client.set(key, value, ex=actual_timeout, nx=nx, xx=xx, get=get)
         return result if get else bool(result)
@@ -685,14 +781,16 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     def delete(self, key: str) -> bool:
         """Remove a key from the cache."""
+        # UNLINK, not DEL: reclaiming a large hash or set on the server thread
+        # blocks every other client until it finishes.
         client = self.get_client(key, write=True)
 
-        return bool(client.delete(key))
+        return bool(client.unlink(key))
 
     async def adelete(self, key: str) -> bool:
         client = await self.get_async_client(key, write=True)
 
-        return bool(await client.delete(key))
+        return bool(await client.unlink(key))
 
     def get_many(
         self,
@@ -816,7 +914,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
-            client.delete(*data.keys())
+            client.unlink(*data.keys())
         elif actual_timeout is None:
             client.mset(data)
         else:
@@ -841,7 +939,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
-            await client.delete(*data.keys())
+            await client.unlink(*data.keys())
         elif actual_timeout is None:
             await client.mset(data)
         else:
@@ -859,7 +957,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         client = self.get_client(write=True)
 
-        return client.delete(*keys)
+        return client.unlink(*keys)
 
     async def adelete_many(self, keys: Sequence[str]) -> int:
         if not keys:
@@ -867,7 +965,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         client = await self.get_async_client(write=True)
 
-        return await client.delete(*keys)
+        return await client.unlink(*keys)
 
     def clear(self) -> bool:
         """Flush the database."""
@@ -1040,7 +1138,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         count = 0
         for batch in batched(client.scan_iter(match=pattern, count=itersize), itersize, strict=False):
-            count += cast("int", client.delete(*batch))
+            count += cast("int", client.unlink(*batch))
         return count
 
     def rename(self, src: str, dst: str) -> bool:
@@ -1091,10 +1189,10 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         async for key in client.scan_iter(match=pattern, count=itersize):
             batch.append(key)
             if len(batch) >= itersize:
-                count += cast("int", await client.delete(*batch))
+                count += cast("int", await client.unlink(*batch))
                 batch.clear()
         if batch:
-            count += cast("int", await client.delete(*batch))
+            count += cast("int", await client.unlink(*batch))
         return count
 
     async def arename(self, src: str, dst: str) -> bool:
@@ -1342,6 +1440,133 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         return float(client.hincrbyfloat(key, field, amount))
 
+    # -------------------------------------------------------------------------
+    # Hash field expiration
+    # -------------------------------------------------------------------------
+
+    def hexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Set a TTL in seconds on hash fields, one reply code per field."""
+        client = self.get_client(key, write=True)
+        args = _hash_expire_args("HEXPIRE", key, _expire_arg(timeout), fields, nx=nx, xx=xx, gt=gt, lt=lt)
+
+        return cast("list[int]", client.execute_command(*args))
+
+    def hpexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Set a TTL in milliseconds on hash fields."""
+        client = self.get_client(key, write=True)
+        expiry = _expire_arg(timeout, milliseconds=True)
+        args = _hash_expire_args("HPEXPIRE", key, expiry, fields, nx=nx, xx=xx, gt=gt, lt=lt)
+
+        return cast("list[int]", client.execute_command(*args))
+
+    def hexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Set an absolute expiry (Unix seconds) on hash fields."""
+        client = self.get_client(key, write=True)
+        args = _hash_expire_args("HEXPIREAT", key, _to_unix(when), fields, nx=nx, xx=xx, gt=gt, lt=lt)
+
+        return cast("list[int]", client.execute_command(*args))
+
+    def hpexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Set an absolute expiry (Unix milliseconds) on hash fields."""
+        client = self.get_client(key, write=True)
+        deadline = _to_unix(when, milliseconds=True)
+        args = _hash_expire_args("HPEXPIREAT", key, deadline, fields, nx=nx, xx=xx, gt=gt, lt=lt)
+
+        return cast("list[int]", client.execute_command(*args))
+
+    def httl(self, key: str, *fields: str) -> list[int | None]:
+        """Get the remaining TTL in seconds of hash fields, -1 normalized to None."""
+        client = self.get_client(key, write=False)
+
+        results = client.execute_command(*_hash_fields_args("HTTL", key, fields))
+        return [self._normalize_ttl(result) for result in results]
+
+    def hpttl(self, key: str, *fields: str) -> list[int | None]:
+        """Get the remaining TTL in milliseconds of hash fields."""
+        client = self.get_client(key, write=False)
+
+        results = client.execute_command(*_hash_fields_args("HPTTL", key, fields))
+        return [self._normalize_ttl(result) for result in results]
+
+    def hexpiretime(self, key: str, *fields: str) -> list[int | None]:
+        """Get the absolute expiry (Unix seconds) of hash fields."""
+        client = self.get_client(key, write=False)
+
+        results = client.execute_command(*_hash_fields_args("HEXPIRETIME", key, fields))
+        return [self._normalize_ttl(result) for result in results]
+
+    def hpersist(self, key: str, *fields: str) -> list[int]:
+        """Remove the TTL from hash fields, one reply code per field."""
+        client = self.get_client(key, write=True)
+
+        return cast("list[int]", client.execute_command(*_hash_fields_args("HPERSIST", key, fields)))
+
+    def hsetex(
+        self,
+        key: str,
+        mapping: Mapping[str, bytes | int],
+        *,
+        ex: int | None = None,
+        keepttl: bool = False,
+        fnx: bool = False,
+        fxx: bool = False,
+    ) -> bool:
+        """Set hash fields and their TTL in one command."""
+        client = self.get_client(key, write=True)
+        args = _hsetex_args(key, mapping, ex=ex, keepttl=keepttl, fnx=fnx, fxx=fxx)
+
+        return bool(client.execute_command(*args))
+
+    def hgetex(
+        self,
+        key: str,
+        *fields: str,
+        ex: int | None = None,
+        persist: bool = False,
+    ) -> list[bytes | None]:
+        """Get hash field values and update their TTL in one command."""
+        # HGETEX can change the TTL, so it goes to a primary even without one.
+        client = self.get_client(key, write=True)
+        args = _hgetex_args(key, fields, ex=ex, persist=persist)
+
+        return cast("list[bytes | None]", client.execute_command(*args))
+
     async def ahset(
         self,
         key: str,
@@ -1423,6 +1648,119 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         client = await self.get_async_client(key, write=True)
 
         return float(await client.hincrbyfloat(key, field, amount))
+
+    async def ahexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        client = await self.get_async_client(key, write=True)
+        args = _hash_expire_args("HEXPIRE", key, _expire_arg(timeout), fields, nx=nx, xx=xx, gt=gt, lt=lt)
+
+        return cast("list[int]", await client.execute_command(*args))
+
+    async def ahpexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        client = await self.get_async_client(key, write=True)
+        expiry = _expire_arg(timeout, milliseconds=True)
+        args = _hash_expire_args("HPEXPIRE", key, expiry, fields, nx=nx, xx=xx, gt=gt, lt=lt)
+
+        return cast("list[int]", await client.execute_command(*args))
+
+    async def ahexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        client = await self.get_async_client(key, write=True)
+        args = _hash_expire_args("HEXPIREAT", key, _to_unix(when), fields, nx=nx, xx=xx, gt=gt, lt=lt)
+
+        return cast("list[int]", await client.execute_command(*args))
+
+    async def ahpexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        client = await self.get_async_client(key, write=True)
+        deadline = _to_unix(when, milliseconds=True)
+        args = _hash_expire_args("HPEXPIREAT", key, deadline, fields, nx=nx, xx=xx, gt=gt, lt=lt)
+
+        return cast("list[int]", await client.execute_command(*args))
+
+    async def ahttl(self, key: str, *fields: str) -> list[int | None]:
+        client = await self.get_async_client(key, write=False)
+
+        results = await client.execute_command(*_hash_fields_args("HTTL", key, fields))
+        return [self._normalize_ttl(result) for result in results]
+
+    async def ahpttl(self, key: str, *fields: str) -> list[int | None]:
+        client = await self.get_async_client(key, write=False)
+
+        results = await client.execute_command(*_hash_fields_args("HPTTL", key, fields))
+        return [self._normalize_ttl(result) for result in results]
+
+    async def ahexpiretime(self, key: str, *fields: str) -> list[int | None]:
+        client = await self.get_async_client(key, write=False)
+
+        results = await client.execute_command(*_hash_fields_args("HEXPIRETIME", key, fields))
+        return [self._normalize_ttl(result) for result in results]
+
+    async def ahpersist(self, key: str, *fields: str) -> list[int]:
+        client = await self.get_async_client(key, write=True)
+
+        return cast("list[int]", await client.execute_command(*_hash_fields_args("HPERSIST", key, fields)))
+
+    async def ahsetex(
+        self,
+        key: str,
+        mapping: Mapping[str, bytes | int],
+        *,
+        ex: int | None = None,
+        keepttl: bool = False,
+        fnx: bool = False,
+        fxx: bool = False,
+    ) -> bool:
+        client = await self.get_async_client(key, write=True)
+        args = _hsetex_args(key, mapping, ex=ex, keepttl=keepttl, fnx=fnx, fxx=fxx)
+
+        return bool(await client.execute_command(*args))
+
+    async def ahgetex(
+        self,
+        key: str,
+        *fields: str,
+        ex: int | None = None,
+        persist: bool = False,
+    ) -> list[bytes | None]:
+        # HGETEX can change the TTL, so it goes to a primary even without one.
+        client = await self.get_async_client(key, write=True)
+        args = _hgetex_args(key, fields, ex=ex, persist=persist)
+
+        return cast("list[bytes | None]", await client.execute_command(*args))
 
     # =========================================================================
     # List Operations
@@ -3228,7 +3566,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
             if cluster is None:
                 cluster = self._cluster.from_url(self._servers[0], **cluster_options)
                 self._clusters[cache_key] = cluster
-            return _install_wrongtype_translation(cluster)
+            return _install_error_translation(cluster)
 
     @override
     async def get_async_client(self, key: str | None = None, *, write: bool = False) -> Any:
@@ -3242,7 +3580,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         if cluster is None:
             cluster = self._async_cluster.from_url(self._servers[0], **cluster_options)
             slot[cache_key] = cluster
-        return _install_wrongtype_translation(cluster)
+        return _install_error_translation(cluster)
 
     def _group_keys_by_slot(self, keys: Iterable[str]) -> dict[int, list[str]]:
         slots: dict[int, list[str]] = defaultdict(list)
@@ -3308,7 +3646,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
 
         if actual_timeout == 0:
             for slot_keys in self._group_keys_by_slot(data.keys()).values():
-                client.delete(*slot_keys)
+                client.unlink(*slot_keys)
         elif actual_timeout is None:
             client.mset_nonatomic(data)
         else:
@@ -3333,7 +3671,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
 
         total_deleted = 0
         for slot_keys in slots.values():
-            total_deleted += cast("int", client.delete(*slot_keys))
+            total_deleted += cast("int", client.unlink(*slot_keys))
         return total_deleted
 
     @override
@@ -3397,7 +3735,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
             strict=False,
         ):
             for slot_keys in self._group_keys_by_slot(batch).values():
-                total_deleted += cast("int", client.delete(*slot_keys))
+                total_deleted += cast("int", client.unlink(*slot_keys))
         return total_deleted
 
     @override
@@ -3476,7 +3814,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
 
         if actual_timeout == 0:
             for slot_keys in self._group_keys_by_slot(data.keys()).values():
-                await client.delete(*slot_keys)
+                await client.unlink(*slot_keys)
         elif actual_timeout is None:
             await client.mset_nonatomic(data)
         else:
@@ -3500,7 +3838,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
 
         total_deleted = 0
         for slot_keys in slots.values():
-            total_deleted += cast("int", await client.delete(*slot_keys))
+            total_deleted += cast("int", await client.unlink(*slot_keys))
         return total_deleted
 
     @override
@@ -3559,11 +3897,11 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
             batch.append(key)
             if len(batch) >= itersize:
                 for slot_keys in self._group_keys_by_slot(batch).values():
-                    total_deleted += cast("int", await client.delete(*slot_keys))
+                    total_deleted += cast("int", await client.unlink(*slot_keys))
                 batch.clear()
         if batch:
             for slot_keys in self._group_keys_by_slot(batch).values():
-                total_deleted += cast("int", await client.delete(*slot_keys))
+                total_deleted += cast("int", await client.unlink(*slot_keys))
         return total_deleted
 
     @override
@@ -3617,8 +3955,8 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
     def execute(self) -> list[Any]:
         """Run all buffered commands and return their raw results."""
         # The driver pipeline is a fresh object with its own unpatched
-        # ``execute_command``, so WRONGTYPE is translated here instead.
-        with _wrongtype_translated():
+        # ``execute_command``, so driver errors are translated here instead.
+        with _errors_translated():
             return cast("list[Any]", self._raw.execute())
 
     def reset(self) -> None:
@@ -3627,7 +3965,7 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
 
     def execute_command(self, *args: Any) -> Any:
         """Queue a raw Redis command (``EVAL``, etc.)."""
-        with _wrongtype_translated():
+        with _errors_translated():
             return self._raw.execute_command(*args)
 
     # -------------------------------------------------------------------------
@@ -3665,7 +4003,7 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
         return self._raw.get(key)
 
     def delete(self, *keys: Any) -> Any:
-        return self._raw.delete(*keys)
+        return self._raw.unlink(*keys)
 
     def exists(self, *keys: Any) -> Any:
         return self._raw.exists(*keys)
@@ -3854,6 +4192,97 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
 
     def hincrbyfloat(self, key: Any, field: Any, amount: float = 1.0) -> Any:
         return self._raw.hincrbyfloat(key, field, amount)
+
+    # -------------------------------------------------------------------------
+    # Hash field expiration (an unsupported server surfaces from execute())
+    # -------------------------------------------------------------------------
+
+    def hexpire(
+        self,
+        key: Any,
+        timeout: int | timedelta,
+        *fields: Any,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Any:
+        args = _hash_expire_args("HEXPIRE", key, _expire_arg(timeout), fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        return self._raw.execute_command(*args)
+
+    def hpexpire(
+        self,
+        key: Any,
+        timeout: int | timedelta,
+        *fields: Any,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Any:
+        expiry = _expire_arg(timeout, milliseconds=True)
+        args = _hash_expire_args("HPEXPIRE", key, expiry, fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        return self._raw.execute_command(*args)
+
+    def hexpireat(
+        self,
+        key: Any,
+        when: int | datetime,
+        *fields: Any,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Any:
+        args = _hash_expire_args("HEXPIREAT", key, _to_unix(when), fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        return self._raw.execute_command(*args)
+
+    def hpexpireat(
+        self,
+        key: Any,
+        when: int | datetime,
+        *fields: Any,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Any:
+        deadline = _to_unix(when, milliseconds=True)
+        args = _hash_expire_args("HPEXPIREAT", key, deadline, fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        return self._raw.execute_command(*args)
+
+    def httl(self, key: Any, *fields: Any) -> Any:
+        return self._raw.execute_command(*_hash_fields_args("HTTL", key, fields))
+
+    def hpttl(self, key: Any, *fields: Any) -> Any:
+        return self._raw.execute_command(*_hash_fields_args("HPTTL", key, fields))
+
+    def hexpiretime(self, key: Any, *fields: Any) -> Any:
+        return self._raw.execute_command(*_hash_fields_args("HEXPIRETIME", key, fields))
+
+    def hpersist(self, key: Any, *fields: Any) -> Any:
+        return self._raw.execute_command(*_hash_fields_args("HPERSIST", key, fields))
+
+    def hsetex(
+        self,
+        key: Any,
+        mapping: Mapping[str, bytes | int],
+        *,
+        ex: int | None = None,
+        keepttl: bool = False,
+        fnx: bool = False,
+        fxx: bool = False,
+    ) -> Any:
+        return self._raw.execute_command(*_hsetex_args(key, mapping, ex=ex, keepttl=keepttl, fnx=fnx, fxx=fxx))
+
+    def hgetex(
+        self,
+        key: Any,
+        *fields: Any,
+        ex: int | None = None,
+        persist: bool = False,
+    ) -> Any:
+        return self._raw.execute_command(*_hgetex_args(key, fields, ex=ex, persist=persist))
 
     # -------------------------------------------------------------------------
     # Sorted sets
@@ -4168,7 +4597,7 @@ class ValkeyPyAsyncPipelineAdapter(ValkeyPyPipelineAdapter, RespAsyncPipelinePro
     @override
     async def execute(self) -> list[Any]:  # type: ignore[override]
         """Run all buffered commands asynchronously and return their raw results."""
-        with _wrongtype_translated():
+        with _errors_translated():
             return cast("list[Any]", await self._raw.execute())
 
     @override
