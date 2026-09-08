@@ -34,7 +34,7 @@ CACHES = {
 - Lua scripting with automatic key prefixing and value encoding/decoding.
 - Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with fallback chains for safe migrations.
 - Cache stampede prevention (TTL-based XFetch).
-- Two composite backends: `StreamCache` (cross-pod stream-synchronized in-memory cache) and `TieredCache` (L1/L2 with TTL propagation).
+- Three composite backends: `StreamCache` (cross-pod stream-synchronized in-memory cache), `TieredCache` (L1/L2 with TTL propagation) and `TrackingCache` (local read cache invalidated by the server's `CLIENT TRACKING`).
 - Django `LocMemCache` and `DatabaseCache` extensions with the hash, list, set and sorted set ops (no streams) and admin support.
 - Optional `valkey-glide` adapter: Valkey's official Rust-cored client, exposed as `ValkeyGlideCache`. Experimental.
 - Django admin UI for browsing keys, inspecting values, editing, and flushing. See below.

@@ -24,9 +24,10 @@ import asyncio
 import inspect
 import random
 import threading
+import time
 import weakref
-from collections import defaultdict
-from contextlib import contextmanager
+from collections import defaultdict, deque
+from contextlib import contextmanager, suppress
 from itertools import batched
 from typing import TYPE_CHECKING, Any, cast, override
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
@@ -34,7 +35,13 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
 
-from django_cachex.adapters.protocols import RespAdapterProtocol, RespAsyncPipelineProtocol, RespPipelineProtocol
+from django_cachex.adapters.protocols import (
+    Invalidation,
+    InvalidationListenerProtocol,
+    RespAdapterProtocol,
+    RespAsyncPipelineProtocol,
+    RespPipelineProtocol,
+)
 from django_cachex.exceptions import (
     KeyNotFoundError,
     NotSupportedError,
@@ -268,6 +275,112 @@ def _missing_valkey() -> ImportError:
     return ImportError(
         "valkey-py is required for ValkeyPyAdapter (and friends). Install it with: pip install django-cachex[valkey-py]",
     )
+
+
+_INVALIDATE_CHANNEL = "__redis__:invalidate"
+
+
+def _text(value: Any) -> str:
+    return value.decode("utf-8", "replace") if isinstance(value, bytes) else str(value)
+
+
+class _ValkeyPyInvalidationListener(InvalidationListenerProtocol):
+    """CLIENT TRACKING BCAST invalidations over two connections this object owns.
+
+    ``_sub`` is subscribed to ``__redis__:invalidate``; ``_track`` turned on
+    tracking with ``REDIRECT`` to it, and the server drops the tracking the
+    moment ``_track`` disconnects, so both are held for the listener's life.
+    They are built from the pool's connection class and kwargs but never
+    checked out of the pool: they count toward no ``max_connections`` and
+    the pool never disconnects them behind our back. RESP2 is forced because
+    redirected invalidations arrive as plain pub/sub messages there, which
+    every parser handles without push-message support.
+    """
+
+    def __init__(self, pool: Any, prefixes: Sequence[str], *, timeout: float) -> None:
+        self._timeout = timeout
+        # Invalidations read while waiting for a PONG, handed out by the next ``poll``.
+        self._buffered: deque[Invalidation] = deque()
+        kwargs = {
+            **pool.connection_kwargs,
+            "protocol": 2,
+            "decode_responses": False,
+            # The driver's own health check sends PING and expects PONG, which a
+            # subscribed RESP2 connection answers with ["pong", ""] instead.
+            "health_check_interval": 0,
+        }
+        # redis-py 6.4+ pools hand every connection a maintenance-notification
+        # config, which the connection rejects together with a RESP2 parser.
+        if "maint_notifications_config" in kwargs:
+            kwargs["maint_notifications_config"] = None
+            kwargs.pop("maint_notifications_pool_handler", None)
+        self._sub = pool.connection_class(**kwargs)
+        self._track = pool.connection_class(**kwargs)
+        try:
+            self._sub.connect()
+            self._track.connect()
+            sub_id = int(self._command(self._sub, "CLIENT", "ID"))
+            track_id = int(self._command(self._track, "CLIENT", "ID"))
+            self._command(self._sub, "SUBSCRIBE", _INVALIDATE_CHANNEL)
+            args: list[Any] = ["CLIENT", "TRACKING", "ON", "REDIRECT", sub_id, "BCAST"]
+            for prefix in prefixes:
+                if prefix:
+                    args += ["PREFIX", prefix]
+            self._command(self._track, *args)
+        except BaseException:
+            self.close()
+            raise
+        self.client_ids = (sub_id, track_id)
+
+    def _command(self, conn: Any, *args: Any) -> Any:
+        conn.send_command(*args)
+        if not conn.can_read(timeout=self._timeout):
+            msg = f"No reply to {args[0]} from the invalidation listener within {self._timeout}s"
+            raise ConnectionError(msg)
+        return conn.read_response()
+
+    def poll(self, timeout: float) -> Invalidation | None:
+        if self._buffered:
+            return self._buffered.popleft()
+        if not self._sub.can_read(timeout=timeout):
+            return None
+        return self._parse(self._sub.read_response())
+
+    def ping(self) -> None:
+        reply = self._command(self._track, "PING")
+        if _text(reply) != "PONG":
+            msg = f"Unexpected PING reply from the tracking connection: {reply!r}"
+            raise ConnectionError(msg)
+        self._sub.send_command("PING")
+        deadline = time.monotonic() + self._timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not self._sub.can_read(timeout=remaining):
+                msg = f"No PONG from the invalidation subscriber within {self._timeout}s"
+                raise ConnectionError(msg)
+            frame = self._sub.read_response()
+            if isinstance(frame, list | tuple) and len(frame) > 0 and _text(frame[0]) == "pong":
+                return
+            message = self._parse(frame)
+            if message is not None:
+                self._buffered.append(message)
+
+    def close(self) -> None:
+        for conn in (self._sub, self._track):
+            with suppress(Exception):
+                conn.disconnect()
+
+    @staticmethod
+    def _parse(frame: Any) -> Invalidation | None:
+        """Turn a subscriber frame into an ``Invalidation``; subscribe confirmations and pongs give ``None``."""
+        if not isinstance(frame, list | tuple) or len(frame) != 3:
+            return None
+        if _text(frame[0]) != "message" or _text(frame[1]) != _INVALIDATE_CHANNEL:
+            return None
+        payload = frame[2]
+        if payload is None:
+            return Invalidation(keys=None)
+        return Invalidation(keys=tuple(_text(key) for key in payload))
 
 
 class ValkeyPyAdapter(RespAdapterProtocol):
@@ -513,6 +626,10 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         for pool in _pop_loop_slot(self._async_pools, asyncio.get_running_loop()).values():
             await pool.aclose()
         _evict_closed_loops(self._async_pools)
+
+    def invalidation_listener(self, prefixes: Sequence[str], *, timeout: float = 5.0) -> InvalidationListenerProtocol:
+        """Open a CLIENT TRACKING BCAST subscription on the primary; see :class:`_ValkeyPyInvalidationListener`."""
+        return _ValkeyPyInvalidationListener(self._get_connection_pool(write=True), prefixes, timeout=timeout)
 
     # =========================================================================
     # Core Cache Operations
@@ -3418,6 +3535,11 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         The sync cluster client is shared process-wide and stays connected.
         """
         _evict_closed_loops(self._async_clusters)
+
+    @override
+    def invalidation_listener(self, prefixes: Sequence[str], *, timeout: float = 5.0) -> InvalidationListenerProtocol:
+        """BCAST tracking would need a listener per primary that follows slot migrations; not offered."""
+        raise NotSupportedError("invalidation_listener", "cluster")
 
     # =========================================================================
     # Async Override Methods

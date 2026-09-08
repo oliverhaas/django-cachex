@@ -498,8 +498,8 @@ The redis-py and valkey-py adapters forward any key not listed above to the
 driver's `from_url()`, so `retry_on_timeout`, `ssl_ca_certs`, `socket_keepalive`
 and the rest of the driver's own options work there. The valkey-glide adapter
 does not: it reads only the keys marked "all Valkey/Redis" or "valkey-glide" and
-ignores everything else. `LocMemCache`, `DatabaseCache`, `StreamCache` and
-`TieredCache` take their own `OPTIONS`; see
+ignores everything else. `LocMemCache`, `DatabaseCache`, `StreamCache`,
+`TieredCache` and `TrackingCache` take their own `OPTIONS`; see
 [Configuration](../user-guide/configuration.md) and
 [Composite backends](../user-guide/composite-backends.md).
 
@@ -520,7 +520,8 @@ gets the buffer added back.
 | `delta`  | `1.0` | Recompute-cost estimate (seconds); larger = recompute earlier. |
 
 Only the Valkey/Redis backends implement it. `LocMemCache`, `DatabaseCache`,
-`StreamCache` and `TieredCache` ignore both the option and the per-call keyword.
+`StreamCache` and `TieredCache` ignore both the option and the per-call keyword;
+`TrackingCache` follows its transport's setting.
 
 ## Exceptions
 

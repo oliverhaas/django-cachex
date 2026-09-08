@@ -30,7 +30,7 @@ from django.core.exceptions import ImproperlyConfigured
 
 from django_cachex.adapters.protocols import RespAdapterProtocol, RespAsyncPipelineProtocol, RespPipelineProtocol
 from django_cachex.adapters.valkey_py import _check_xpending_args, _options_key
-from django_cachex.exceptions import KeyNotFoundError, maybe_wrap_wrongtype
+from django_cachex.exceptions import KeyNotFoundError, NotSupportedError, maybe_wrap_wrongtype
 from django_cachex.stampede import (
     StampedeConfig,
     get_timeout_with_buffer,
@@ -1691,6 +1691,15 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         """
         del kwargs
         self._sweep_async_clients()
+
+    def invalidation_listener(self, prefixes: Sequence[str], *, timeout: float = 5.0) -> Any:
+        """Not offered: glide refuses pub/sub on RESP2 and drops RESP3 ``invalidate`` pushes.
+
+        Redirected invalidations reach a RESP2 subscriber as pub/sub messages
+        and a RESP3 one as ``invalidate`` push frames; glide's push handler
+        only queues ``message``/``pmessage``/``smessage`` kinds.
+        """
+        raise NotSupportedError("invalidation_listener", "valkey-glide")
 
     # ---- TTL ----
     def ttl(self, key: str) -> int | None:
