@@ -76,8 +76,8 @@ page for the script.)
 - **Dev REPL feedback.** A cache op that takes ~1 ms instead of ~2 µs
   changes the feel of "let me poke this in the shell" from
   instantaneous to noticeable.
-- **`TieredCache` L1 hits.** `LocMemCache` is the default L1 in front
-  of a Redis L2. Inflating the L1 hit cost defeats the point.
+- **`StreamCache` hits.** `StreamCache` serves reads from the `LocMemCache`
+  store it inherits. Inflating that hit cost defeats the point.
 
 ### Where fakeredis would actually be useful
 
@@ -105,5 +105,5 @@ AWS ElastiCache (cross-AZ): ~1000 µs (1.0 ms)
 
 `LocMemCache` is the fastest option by two orders of magnitude. It's
 also the only option that doesn't pay protocol-serialization cost. Use
-it as L1 in `TieredCache`, as the dev/test backend, and anywhere
-in-process caching dominates the access pattern.
+it as the dev/test backend and anywhere in-process caching dominates
+the access pattern.

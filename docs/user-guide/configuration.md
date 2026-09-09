@@ -75,7 +75,6 @@ See the upstream [valkey-glide](https://github.com/valkey-io/valkey-glide) docs 
 | Backend | Description |
 |---------|-------------|
 | `StreamCache` | In-memory store synchronized across pods via a Redis Stream consumer |
-| `TieredCache` | Composes two existing `CACHES` entries as L1/L2 with TTL propagation |
 | `TrackingCache` | Read-through local cache over a Redis/Valkey alias, invalidated by the server's `CLIENT TRACKING` |
 
 !!! note "Valkey and Redis Compatibility"
@@ -266,9 +265,9 @@ Per-call overrides accept the same shapes via the `stampede_prevention=` keyword
 
 !!! warning "Valkey/Redis backends only"
     Stampede prevention is implemented in the RESP cache layer and the
-    valkey-py and valkey-glide adapters. `LocMemCache`, `DatabaseCache`,
-    `StreamCache` and `TieredCache` ignore both `OPTIONS["stampede_prevention"]`
-    and the per-call keyword. `TrackingCache` follows its transport's setting.
+    valkey-py and valkey-glide adapters. `LocMemCache`, `DatabaseCache`
+    and `StreamCache` ignore both `OPTIONS["stampede_prevention"]` and the
+    per-call keyword. `TrackingCache` follows its transport's setting.
 
 ### Valkey-Glide OPTIONS
 
@@ -485,9 +484,9 @@ Only `reverse_key()` consults it, so it changes what `keys()`, `iter_keys()`, `s
 
 !!! warning "RESP backends only"
     `LocMemCache`, `DatabaseCache` and `StreamCache` strip the prefix
-    themselves and ignore `REVERSE_KEY_FUNCTION`. `TieredCache` and
-    `TrackingCache` forward `reverse_key()` to their L2 tier or transport,
-    so it belongs on that alias rather than the composite one.
+    themselves and ignore `REVERSE_KEY_FUNCTION`. `TrackingCache` forwards
+    `reverse_key()` to its transport, so it belongs on that alias rather
+    than the composite one.
 
 ## Complete Example
 

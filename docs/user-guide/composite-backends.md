@@ -1,12 +1,11 @@
 # Composite Backends
 
-Three backend classes don't talk to a server directly. They compose other entries in your `CACHES` setting.
+Two backend classes don't talk to a server directly. They compose other entries in your `CACHES` setting.
 
 | Backend | Reads served from | Consistency | Best for |
 |---------|-------------------|-------------|----------|
 | `StreamCache` | Local in-memory dict | Eventually consistent (last-writer-wins) | Read-heavy data shared across pods (config, feature flags) |
-| `TieredCache` | L1 (typically `LocMemCache`), falling through to L2 | Bounded staleness (L1 may lag L2 by up to `l1_timeout`) | Hot reads where L2 round-trip cost dominates |
-| `TrackingCache` | Local store, falling through to the transport | Coherent within one round trip (server-pushed invalidations), or bounded staleness with `coherence: "ttl"` | Read-heavy keys that must reflect writes promptly |
+| `TrackingCache` | Local store, falling through to the transport | Coherent within one round trip (server-pushed invalidations), or bounded staleness with `coherence: "ttl"` | Hot reads where the transport round trip dominates |
 
 ## StreamCache
 
@@ -54,46 +53,6 @@ Broadcasts stay best-effort: an entry is dropped when the publish backlog is ful
 - Set `replay` above 0 (up to `maxlen`) so a restarting pod replays the last N mutations and doesn't start with an empty cache.
 - Publishes are queued to a background thread; when more than `max_pending_publishes` are outstanding, new publishes are dropped with a warning instead of blocking the caller.
 
-## TieredCache
-
-Two-tier cache referencing two existing `CACHES` entries.
-
-```python
-CACHES = {
-    "l1": {
-        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        "OPTIONS": {"MAX_ENTRIES": 1000},
-    },
-    "l2": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/0",
-    },
-    "default": {
-        "BACKEND": "django_cachex.cache.TieredCache",
-        "OPTIONS": {
-            "tiers": ["l1", "l2"],
-            "l1_timeout": 5,  # cap for how long entries live in L1
-        },
-    },
-}
-```
-
-### TTL bounding
-
-L1 TTL is `min(l1_timeout, L2's remaining TTL)`. An L1 entry can never outlive its L2 entry: if you `set(key, value, timeout=60)`, L1 won't keep that entry past 60 seconds, even if `l1_timeout` is larger.
-
-If `l1_timeout` is omitted, the cap falls back to L1's own `TIMEOUT` setting. One of the two is required. With neither (`l1_timeout` unset and `TIMEOUT: None` on the L1 alias) an L1 entry would never expire, so the first operation raises `ImproperlyConfigured` rather than caching indefinitely.
-
-The bound is on TTL, not on cross-process visibility. Writes and deletes through a `TieredCache` update both of its tiers, but when another process changes a key in L2, this process keeps serving its L1 copy until that entry expires, so a read can lag L2 by up to `l1_timeout`.
-
-The same bound applies within a process. Every mutation writes L2 before touching L1, which keeps a concurrent read from repopulating L1 out of the pre-mutation L2 value, but it does not close the window: a read that has already fetched from L2 when the invalidation runs still writes the old value into L1 afterwards. L1 then serves the superseded value for up to `l1_timeout`. Address the tiers directly if a read has to observe a write immediately.
-
-### What's supported
-
-`TieredCache` exposes the standard Django cache interface (`get`, `set`, `add`, `delete`, `get_many`, `set_many`, ...) plus key metadata helpers delegated to L2 (`keys`, `iter_keys`, `scan`, `ttl`, `pttl`, `type`, `info`, `persist`, `expire`, `delete_pattern`), which is what drives the admin. Data-structure ops (`lpush`, `hset`, `zadd`, ...) raise `NotSupportedError`; for those, pipelines, or scripts, address the tier caches directly via `caches["l1"]` or `caches["l2"]`.
-
-`KEY_PREFIX` is not accepted on a `TieredCache` alias, in either the top-level slot or `OPTIONS`, because keys are passed through to the tiers unprefixed. Set `KEY_PREFIX` on the tier aliases instead; configuring it on the tiered alias raises `ImproperlyConfigured`.
-
 ## TrackingCache
 
 Local read cache over an existing Redis or Valkey alias, kept coherent by the server's `CLIENT TRACKING` broadcast mode.
@@ -132,7 +91,7 @@ CACHES = {
 
 ### Without a listener
 
-`"coherence": "ttl"` runs no listener, so nothing evicts a local copy before it expires: a write elsewhere stays invisible until then, and `local_timeout` is required as the bound. In exchange there is no thread and no extra connection, `prefixes` is not needed, and any transport works, cluster and valkey-glide included. This is `TieredCache`'s staleness model on `TrackingCache`'s store.
+`"coherence": "ttl"` runs no listener, so nothing evicts a local copy before it expires: a write elsewhere stays invisible until then, and `local_timeout` is required as the bound. In exchange there is no thread and no extra connection, `prefixes` is not needed, and any transport works, cluster and valkey-glide included.
 
 ### Prefixes
 
@@ -154,12 +113,12 @@ The standard Django cache interface, the `nx`/`xx`/`get` flags on `set`, and the
 
 ## Choosing between them
 
-|  | `StreamCache` | `TieredCache` | `TrackingCache` |
-|---|---|---|---|
-| Source of truth | Distributed (every pod has the data) | L2 (L1 is just a hot cache) | The transport (the local store is just a cache) |
-| Eviction | LRU on each pod (`MAX_ENTRIES`) | LRU on L1; L2 governs survival | LRU on each pod (`MAX_ENTRIES`); the server evicts on every write |
-| Network on read | Never (after warmup) | Only on L1 miss | Only on local miss |
-| Network on write | One `XADD` per write | One write to each tier | One write to the transport |
-| Failure mode | Stale until consumer recovers | Strict (falls through to L2) | Strict (nothing is cached while the listener is down) |
+|  | `StreamCache` | `TrackingCache` |
+|---|---|---|
+| Source of truth | Distributed (every pod has the data) | The transport (the local store is just a cache) |
+| Eviction | LRU on each pod (`MAX_ENTRIES`) | LRU on each pod (`MAX_ENTRIES`); under tracking coherence every write evicts too |
+| Network on read | Never (after warmup) | Only on local miss |
+| Network on write | One `XADD` per write | One write to the transport |
+| Failure mode | Stale until consumer recovers | Strict (nothing is cached while the listener is down); with `coherence: "ttl"` local copies are served until they expire |
 
-If reads can be served from process memory and writes are infrequent, `StreamCache`. If writes are common and staleness must stay within a known bound, `TieredCache`. If writes must be visible everywhere within a round trip and the transport is a single server or Sentinel group, `TrackingCache`; with `coherence: "ttl"` it gives `TieredCache`'s bounded staleness on any transport.
+If reads can be served from process memory and writes are infrequent, `StreamCache`. Otherwise `TrackingCache`: with tracking coherence a write is visible everywhere within a round trip on a single server or Sentinel group; with `coherence: "ttl"` staleness stays within `local_timeout` on any transport.
