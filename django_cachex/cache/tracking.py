@@ -14,6 +14,7 @@ from django.core.exceptions import ImproperlyConfigured
 
 from django_cachex.cache._delegation import DelegatingCacheMixin
 from django_cachex.cache.base import BaseCachex, CachexSupportLevel
+from django_cachex.cache.resp import RespCache
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.stampede import should_recompute
 
@@ -22,7 +23,6 @@ if TYPE_CHECKING:
     from datetime import timedelta
 
     from django_cachex.adapters.protocols import Invalidation, InvalidationListenerProtocol
-    from django_cachex.cache.resp import RespCache
 
 logger = logging.getLogger(__name__)
 
@@ -267,8 +267,6 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
     @cached_property
     def _transport(self) -> RespCache:
         from django.core.cache import caches
-
-        from django_cachex.cache.resp import RespCache
 
         transport = caches[self._transport_alias]
         if transport is self:

@@ -285,17 +285,7 @@ def _text(value: Any) -> str:
 
 
 class _ValkeyPyInvalidationListener(InvalidationListenerProtocol):
-    """CLIENT TRACKING BCAST invalidations over two connections this object owns.
-
-    ``_sub`` is subscribed to ``__redis__:invalidate``; ``_track`` turned on
-    tracking with ``REDIRECT`` to it, and the server drops the tracking the
-    moment ``_track`` disconnects, so both are held for the listener's life.
-    They are built from the pool's connection class and kwargs but never
-    checked out of the pool: they count toward no ``max_connections`` and
-    the pool never disconnects them behind our back. RESP2 is forced because
-    redirected invalidations arrive as plain pub/sub messages there, which
-    every parser handles without push-message support.
-    """
+    """Owns ``_sub``, subscribed to ``__redis__:invalidate``, and ``_track``, whose BCAST tracking redirects to it."""
 
     def __init__(self, pool: Any, prefixes: Sequence[str], *, timeout: float) -> None:
         self._timeout = timeout
@@ -303,6 +293,8 @@ class _ValkeyPyInvalidationListener(InvalidationListenerProtocol):
         self._buffered: deque[Invalidation] = deque()
         kwargs = {
             **pool.connection_kwargs,
+            # Redirected invalidations arrive as plain pub/sub messages on RESP2,
+            # which every parser handles without push-message support.
             "protocol": 2,
             "decode_responses": False,
             # The driver's own health check sends PING and expects PONG, which a
@@ -314,6 +306,8 @@ class _ValkeyPyInvalidationListener(InvalidationListenerProtocol):
         if "maint_notifications_config" in kwargs:
             kwargs["maint_notifications_config"] = None
             kwargs.pop("maint_notifications_pool_handler", None)
+        # Built from the pool's class and kwargs but never checked out of it: they
+        # count toward no ``max_connections`` and the pool never disconnects them.
         self._sub = pool.connection_class(**kwargs)
         self._track = pool.connection_class(**kwargs)
         try:
@@ -347,6 +341,7 @@ class _ValkeyPyInvalidationListener(InvalidationListenerProtocol):
         return self._parse(self._sub.read_response())
 
     def ping(self) -> None:
+        # The server drops the tracking the moment ``_track`` disconnects, so both connections are checked.
         reply = self._command(self._track, "PING")
         if _text(reply) != "PONG":
             msg = f"Unexpected PING reply from the tracking connection: {reply!r}"

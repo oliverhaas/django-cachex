@@ -4,19 +4,24 @@ import asyncio
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 import pytest
 from django.core.cache import caches
 from django.core.exceptions import ImproperlyConfigured
 from django.test import override_settings
+from django.utils.module_loading import import_string
 
+from django_cachex.adapters.protocols import Invalidation
+from django_cachex.cache.tracking import _TRACKING_REGISTRY, TrackingCache
 from django_cachex.exceptions import NotSupportedError
 from tests.fixtures.cache import (
     ADAPTER_IMAGES,
     BACKENDS,
     _adapter_library_available,
     _get_client_library_options,
+    build_sentinel_cache_config,
 )
 
 if TYPE_CHECKING:
@@ -56,21 +61,16 @@ def _build_tracking_config(
     port: int,
     resp_adapter: str,
     *,
-    location: str | None = None,
     options: dict | None = None,
 ) -> dict:
-    """Build CACHES with a RESP transport plus one TrackingCache alias."""
-    tracking_options = {"transport": "transport", "MAX_ENTRIES": 1000, "poll_timeout": 0.1}
-    if options:
-        tracking_options.update(options)
-    entry: dict = {
-        "BACKEND": "django_cachex.cache.TrackingCache",
-        "OPTIONS": tracking_options,
-        "LOCATION": location or f"tracking:{uuid.uuid4().hex[:8]}",
-    }
+    """Build CACHES with a RESP transport plus one TrackingCache alias under a unique LOCATION."""
     return {
         "transport": _transport_config(host, port, resp_adapter),
-        "default": entry,
+        "default": {
+            "BACKEND": "django_cachex.cache.TrackingCache",
+            "LOCATION": f"tracking:{uuid.uuid4().hex[:8]}",
+            "OPTIONS": {"transport": "transport", "MAX_ENTRIES": 1000, "poll_timeout": 0.1, **(options or {})},
+        },
     }
 
 
@@ -95,8 +95,6 @@ def listener_transport(redis_container: RedisContainerInfo, resp_adapter: str) -
 
 class TestInvalidationListener:
     def test_write_under_prefix_is_reported(self, listener_transport: RespCache):
-        from django_cachex.adapters.protocols import Invalidation
-
         listener = listener_transport.adapter.invalidation_listener([f"{TRANSPORT_PREFIX}:"], timeout=5.0)
         try:
             listener_transport.set("reported", 1)
@@ -136,7 +134,6 @@ class TestInvalidationListener:
         listener = listener_transport.adapter.invalidation_listener([f"{TRANSPORT_PREFIX}:"], timeout=5.0)
         try:
             listener_transport.set("during-ping", 1)
-            # The invalidation is already on the wire when the ping is sent.
             time.sleep(0.1)
             listener.ping()
             assert listener.poll(5.0).keys == (listener_transport.make_key("during-ping"),)
@@ -169,8 +166,6 @@ class TestInvalidationListenerUnsupported:
         ],
     )
     def test_raises_not_supported_before_any_io(self, adapter_path: str):
-        from django.utils.module_loading import import_string
-
         adapter_cls = import_string(adapter_path)
         try:
             adapter = adapter_cls(["redis://127.0.0.1:1/0"])
@@ -186,8 +181,6 @@ def _custom_key_func(key: str, prefix: str, version: int) -> str:
 
 
 def _cleanup_registry(*storage_keys: str) -> None:
-    from django_cachex.cache.tracking import _TRACKING_REGISTRY
-
     for storage_key in storage_keys:
         state = _TRACKING_REGISTRY.pop(storage_key, None)
         if state is not None:
@@ -224,6 +217,28 @@ async def _asettled(cache, action: Callable[[], Awaitable[Any]], count: int = 1)
     return result
 
 
+@contextmanager
+def _tracking(config: dict) -> Iterator[Any]:
+    """Serve the ``default`` alias of ``config`` and stop its listener afterwards, pass or fail."""
+    entry = config["default"]
+    location = entry.get("LOCATION") or entry["OPTIONS"]["transport"]
+    with override_settings(CACHES=config):
+        try:
+            yield caches["default"]
+        finally:
+            _cleanup_registry(location)
+
+
+@contextmanager
+def _connected(config: dict) -> Iterator[Any]:
+    """Like :func:`_tracking`, over a flushed transport and with the listener connected."""
+    with _tracking(config) as cache:
+        caches["transport"].flush_db()
+        cache.get("warm-up")
+        assert _wait_for(lambda: cache._state.connected)
+        yield cache
+
+
 @pytest.fixture
 def tracking_config(redis_container: RedisContainerInfo, resp_adapter: str) -> dict:
     _skip_unless_trackable(resp_adapter)
@@ -232,16 +247,8 @@ def tracking_config(redis_container: RedisContainerInfo, resp_adapter: str) -> d
 
 @pytest.fixture
 def tracking_cache(tracking_config: dict) -> Iterator:
-    """One connected TrackingCache over a flushed transport."""
-    location = tracking_config["default"]["LOCATION"]
-    with override_settings(CACHES=tracking_config):
-        caches["transport"].flush_db()
-        cache = caches["default"]
-        cache.get("warm-up")
-        assert _wait_for(lambda: cache._state.connected)
+    with _connected(tracking_config) as cache:
         yield cache
-        cache.shutdown()
-        _cleanup_registry(location)
 
 
 @pytest.fixture
@@ -249,41 +256,34 @@ def tracking_pair(redis_container: RedisContainerInfo, resp_adapter: str) -> Ite
     """Two TrackingCache aliases with their own local stores sharing one transport (two pods)."""
     _skip_unless_trackable(resp_adapter)
     config = _build_tracking_config(redis_container.host, redis_container.port, resp_adapter)
-    pod1_entry = config.pop("default")
+    entry = config.pop("default")
     locations = [f"tracking:pod{i}:{uuid.uuid4().hex[:6]}" for i in (1, 2)]
     for pod, location in zip(("pod1", "pod2"), locations, strict=True):
-        entry = {**pod1_entry, "OPTIONS": dict(pod1_entry["OPTIONS"]), "LOCATION": location}
-        config[pod] = entry
+        config[pod] = {**entry, "LOCATION": location}
     with override_settings(CACHES=config):
-        caches["transport"].flush_db()
-        pod1, pod2 = caches["pod1"], caches["pod2"]
-        pod1.get("warm-up")
-        pod2.get("warm-up")
-        assert _wait_for(lambda: pod1._state.connected and pod2._state.connected)
-        yield pod1, pod2
-        pod1.shutdown()
-        pod2.shutdown()
-        _cleanup_registry(*locations)
+        try:
+            caches["transport"].flush_db()
+            pod1, pod2 = caches["pod1"], caches["pod2"]
+            pod1.get("warm-up")
+            pod2.get("warm-up")
+            assert _wait_for(lambda: pod1._state.connected and pod2._state.connected)
+            yield pod1, pod2
+        finally:
+            _cleanup_registry(*locations)
 
 
 class TestTrackingConfig:
     def test_missing_transport_raises(self):
-        from django_cachex.cache.tracking import TrackingCache
-
         with pytest.raises(ImproperlyConfigured, match="transport"):
             TrackingCache("", {"OPTIONS": {}})
 
     def test_key_prefix_on_the_tracking_alias_is_rejected(self):
-        from django_cachex.cache.tracking import TrackingCache
-
         with pytest.raises(ImproperlyConfigured, match="KEY_PREFIX"):
             TrackingCache("", {"OPTIONS": {"transport": "t"}, "KEY_PREFIX": "x"})
         with pytest.raises(ImproperlyConfigured, match="KEY_PREFIX"):
             TrackingCache("", {"OPTIONS": {"transport": "t", "KEY_PREFIX": "x"}})
 
     def test_overlapping_prefixes_are_rejected(self):
-        from django_cachex.cache.tracking import TrackingCache
-
         with pytest.raises(ImproperlyConfigured, match="overlap"):
             TrackingCache("", {"OPTIONS": {"transport": "t", "prefixes": ["a:", "a:b:"]}})
 
@@ -296,10 +296,8 @@ class TestTrackingConfig:
                 "OPTIONS": {"transport": "plain"},
             },
         }
-        with override_settings(CACHES=config):
-            with pytest.raises(ImproperlyConfigured, match=r"Redis|Valkey"):
-                caches["default"].get("k")
-            _cleanup_registry("tracking:non-resp")
+        with _tracking(config) as cache, pytest.raises(ImproperlyConfigured, match=r"Redis|Valkey"):
+            cache.get("k")
 
     def test_glide_transport_is_rejected_on_first_use(self, redis_container: RedisContainerInfo, resp_adapter: str):
         if resp_adapter != "valkey-glide":
@@ -307,11 +305,8 @@ class TestTrackingConfig:
         if not _adapter_library_available(resp_adapter):
             pytest.skip("valkey-glide not installed")
         config = _build_tracking_config(redis_container.host, redis_container.port, resp_adapter)
-        location = config["default"]["LOCATION"]
-        with override_settings(CACHES=config):
-            with pytest.raises(ImproperlyConfigured, match="valkey-glide"):
-                caches["default"].get("k")
-            _cleanup_registry(location)
+        with _tracking(config) as cache, pytest.raises(ImproperlyConfigured, match="valkey-glide"):
+            cache.get("k")
 
     def test_cluster_transport_is_rejected_on_first_use(self, resp_adapter: str):
         _skip_unless_trackable(resp_adapter)
@@ -326,10 +321,8 @@ class TestTrackingConfig:
                 "OPTIONS": {"transport": "transport"},
             },
         }
-        with override_settings(CACHES=config):
-            with pytest.raises(ImproperlyConfigured, match="cluster"):
-                caches["default"].get("k")
-            _cleanup_registry("tracking:cluster")
+        with _tracking(config) as cache, pytest.raises(ImproperlyConfigured, match="cluster"):
+            cache.get("k")
 
     def test_default_prefix_follows_the_transport_key_prefix(self, tracking_cache):
         assert _tracking_section(tracking_cache)["prefixes"] == [f"{TRANSPORT_PREFIX}:"]
@@ -338,14 +331,10 @@ class TestTrackingConfig:
         _skip_unless_trackable(resp_adapter)
         config = _build_tracking_config(redis_container.host, redis_container.port, resp_adapter)
         config["transport"]["KEY_FUNCTION"] = _custom_key_func
-        location = config["default"]["LOCATION"]
-        with override_settings(CACHES=config):
-            cache = caches["default"]
+        with _connected(config) as cache:
             cache.set("k", 1)
             assert cache.get("k") == 1
             assert _tracking_section(cache)["prefixes"] == [""]
-            cache.shutdown()
-            _cleanup_registry(location)
 
     def test_key_outside_every_prefix_is_refused(self, redis_container: RedisContainerInfo, resp_adapter: str):
         _skip_unless_trackable(resp_adapter)
@@ -356,26 +345,15 @@ class TestTrackingConfig:
             options={"prefixes": [f"{TRANSPORT_PREFIX}:"]},
         )
         config["transport"]["KEY_FUNCTION"] = _custom_key_func
-        location = config["default"]["LOCATION"]
-        with override_settings(CACHES=config):
-            cache = caches["default"]
-            with pytest.raises(ImproperlyConfigured, match="prefix"):
-                cache.get("k")
-            cache.shutdown()
-            _cleanup_registry(location)
+        with _tracking(config) as cache, pytest.raises(ImproperlyConfigured, match="prefix"):
+            cache.get("k")
 
     def test_location_defaults_to_the_transport_alias(self, redis_container: RedisContainerInfo, resp_adapter: str):
-        from django_cachex.cache.tracking import _TRACKING_REGISTRY
-
         _skip_unless_trackable(resp_adapter)
         config = _build_tracking_config(redis_container.host, redis_container.port, resp_adapter)
         del config["default"]["LOCATION"]
-        with override_settings(CACHES=config):
-            cache = caches["default"]
-            cache.get("k")
+        with _connected(config):
             assert "transport" in _TRACKING_REGISTRY
-            cache.shutdown()
-            _cleanup_registry("transport")
 
     def test_cachex_support_level(self, tracking_cache):
         assert tracking_cache._cachex_support == "limited"
@@ -569,7 +547,7 @@ class TestTrackingTTL:
         _raw, expires_at = tracking_cache._state.store[tracking_cache.make_key("forever")]
         assert expires_at is None
 
-    def test_expired_local_entry_is_refetched(self, tracking_cache, mocker):
+    def test_expired_local_entry_is_refetched(self, tracking_cache):
         tracking_cache.set("short", 1, timeout=1)
         assert tracking_cache.get("short") == 1
         assert _wait_for(lambda: tracking_cache.get("short") is None, timeout=3.0)
@@ -587,11 +565,7 @@ class TestTrackingTTL:
             resp_adapter,
             options={"local_timeout": 0.2},
         )
-        location = config["default"]["LOCATION"]
-        with override_settings(CACHES=config):
-            cache = caches["default"]
-            cache.get("warm-up")
-            assert _wait_for(lambda: cache._state.connected)
+        with _connected(config) as cache:
             _settled(cache, lambda: cache.set("capped", 1))
             spy = mocker.spy(cache._transport.adapter, "pipeline")
             assert cache.get("capped") == 1
@@ -599,8 +573,6 @@ class TestTrackingTTL:
             time.sleep(0.3)
             assert cache.get("capped") == 1
             assert spy.call_count == 2
-            cache.shutdown()
-            _cleanup_registry(location)
 
     def test_stampede_buffer_is_stripped_from_the_local_expiry(
         self,
@@ -610,11 +582,7 @@ class TestTrackingTTL:
         _skip_unless_trackable(resp_adapter)
         config = _build_tracking_config(redis_container.host, redis_container.port, resp_adapter)
         config["transport"]["OPTIONS"]["stampede_prevention"] = {"buffer": 60, "delta": 0}
-        location = config["default"]["LOCATION"]
-        with override_settings(CACHES=config):
-            cache = caches["default"]
-            cache.get("warm-up")
-            assert _wait_for(lambda: cache._state.connected)
+        with _connected(config) as cache:
             _settled(cache, lambda: cache.set("buffered", 1, timeout=30))
             assert cache.get("buffered") == 1
             _raw, expires_at = cache._state.store[cache.make_key("buffered")]
@@ -623,8 +591,6 @@ class TestTrackingTTL:
             assert _wait_for(lambda: cache._state.store == {})
             assert cache.get("buffered") is None
             assert cache._state.store == {}
-            cache.shutdown()
-            _cleanup_registry(location)
 
 
 class TestTrackingRace:
@@ -657,8 +623,7 @@ class TestTrackingRace:
 
 class TestTrackingListenerLifecycle:
     def test_nothing_is_cached_until_the_listener_is_connected(self, tracking_config: dict, mocker):
-        location = tracking_config["default"]["LOCATION"]
-        with override_settings(CACHES=tracking_config):
+        with _tracking(tracking_config) as cache:
             transport = caches["transport"]
             transport.flush_db()
             transport.set("early", 1)
@@ -667,7 +632,6 @@ class TestTrackingListenerLifecycle:
                 "invalidation_listener",
                 side_effect=ConnectionError("simulated outage"),
             )
-            cache = caches["default"]
             assert cache.get("early") == 1
             assert cache._state.connected is False
             assert _tracking_section(cache)["entries"] == 0
@@ -675,8 +639,6 @@ class TestTrackingListenerLifecycle:
             assert _wait_for(lambda: cache._state.connected)
             assert cache.get("early") == 1
             assert _tracking_section(cache)["entries"] == 1
-            cache.shutdown()
-            _cleanup_registry(location)
 
     def test_losing_the_subscriber_flushes_and_reconnects(self, tracking_cache):
         transport = tracking_cache._transport
@@ -702,17 +664,11 @@ class TestTrackingListenerLifecycle:
             resp_adapter,
             options={"health_check_interval": 0.2, "poll_timeout": 0.05},
         )
-        location = config["default"]["LOCATION"]
-        with override_settings(CACHES=config):
-            cache = caches["default"]
-            cache.get("warm-up")
-            assert _wait_for(lambda: cache._state.connected)
+        with _connected(config) as cache:
             _subscriber_id, tracker_id = cache._state.listener.client_ids
             _kill_client(cache._transport, tracker_id)
             assert _wait_for(lambda: _tracking_section(cache)["reconnects"] >= 1)
             assert _wait_for(lambda: cache._state.connected)
-            cache.shutdown()
-            _cleanup_registry(location)
 
     def test_shutdown_then_use_restarts_one_listener(self, tracking_cache):
         storage_key = tracking_cache._storage_key
@@ -731,7 +687,7 @@ class TestTrackingListenerLifecycle:
         location = tracking_config["default"]["LOCATION"]
         states: list[object] = []
         barrier = threading.Barrier(4)
-        with override_settings(CACHES=tracking_config):
+        with _tracking(tracking_config):
 
             def worker() -> None:
                 barrier.wait(10.0)
@@ -747,7 +703,6 @@ class TestTrackingListenerLifecycle:
             assert len({id(state) for state in states}) == 1
             listeners = [t for t in threading.enumerate() if t.name == f"tracking-cache-{location}"]
             assert len(listeners) == 1
-            _cleanup_registry(location)
 
     def test_info_reports_the_tracking_section(self, tracking_cache):
         _settled(tracking_cache, lambda: tracking_cache.set("i", 1))
@@ -779,19 +734,13 @@ class TestTrackingLRU:
             resp_adapter,
             options={"MAX_ENTRIES": 3},
         )
-        location = config["default"]["LOCATION"]
-        with override_settings(CACHES=config):
-            cache = caches["default"]
-            cache.get("warm-up")
-            assert _wait_for(lambda: cache._state.connected)
+        with _connected(config) as cache:
             _settled(cache, lambda: cache.set_many({"k1": 1, "k2": 2, "k3": 3, "k4": 4}), count=4)
             for key in ("k1", "k2", "k3"):
                 cache.get(key)
             cache.get("k1")  # k1 is now the most recently read
             cache.get("k4")
             assert set(cache._state.store) == {cache.make_key(k) for k in ("k1", "k3", "k4")}
-            cache.shutdown()
-            _cleanup_registry(location)
 
 
 class TestTrackingAsync:
@@ -855,8 +804,6 @@ class TestTrackingSurface:
 
 class TestTrackingSentinel:
     def test_invalidation_through_a_sentinel_transport(self, sentinel_container, resp_adapter: str):
-        from tests.fixtures.cache import build_sentinel_cache_config
-
         _skip_unless_trackable(resp_adapter)
         sentinel_config = build_sentinel_cache_config(
             sentinel_container.host,
@@ -865,22 +812,16 @@ class TestTrackingSentinel:
         )
         transport_entry = sentinel_config["default"]
         transport_entry["KEY_PREFIX"] = TRANSPORT_PREFIX
-        location = f"tracking:sentinel:{uuid.uuid4().hex[:6]}"
         config = {
             "transport": transport_entry,
             "default": {
                 "BACKEND": "django_cachex.cache.TrackingCache",
-                "LOCATION": location,
+                "LOCATION": f"tracking:sentinel:{uuid.uuid4().hex[:6]}",
                 "OPTIONS": {"transport": "transport", "poll_timeout": 0.1},
             },
         }
-        with override_settings(CACHES=config):
-            cache = caches["default"]
+        with _connected(config) as cache:
             cache.set("s", "old")
-            assert cache.get("s") == "old"
-            assert _wait_for(lambda: cache._state.connected)
             assert cache.get("s") == "old"
             caches["transport"].set("s", "new")
             assert _wait_for(lambda: cache.get("s") == "new")
-            cache.shutdown()
-            _cleanup_registry(location)
