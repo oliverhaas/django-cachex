@@ -155,7 +155,6 @@ class TestInvalidationListener:
     def test_ping_raises_when_the_tracker_dropped_its_socket(self, listener_transport: RespCache):
         listener = listener_transport.adapter.invalidation_listener([f"{TRANSPORT_PREFIX}:"], timeout=1.0)
         try:
-            # A silently reconnected tracker would answer PING but carry no tracking.
             listener._track.disconnect()
             with pytest.raises(ConnectionError):
                 listener.ping()
@@ -168,7 +167,6 @@ class TestInvalidationListener:
             mocker.patch.object(listener._track, "can_read", return_value=False)
             with pytest.raises(TimeoutError):
                 listener.ping()
-            # The dropped socket is not reopened behind the listener's back.
             with pytest.raises(ConnectionError):
                 listener.ping()
         finally:
