@@ -835,6 +835,78 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#trackingcache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TrackingCache
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="TrackingCache">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#coherence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coherence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#without-a-listener" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Without a listener
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prefixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prefixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#whats-supported_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What's supported
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#operational-notes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operational notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#choosing-between-them" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1265,6 +1337,78 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#trackingcache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TrackingCache
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="TrackingCache">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#coherence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coherence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#without-a-listener" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Without a listener
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prefixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prefixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#whats-supported_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What's supported
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#operational-notes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operational notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#choosing-between-them" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1296,7 +1440,7 @@
 
 
 <h1 id="composite-backends">Composite Backends<a class="headerlink" href="#composite-backends" title="Permanent link">&para;</a></h1>
-<p>Two backend classes don't talk to a server directly. They compose other entries in your <code>CACHES</code> setting.</p>
+<p>Three backend classes don't talk to a server directly. They compose other entries in your <code>CACHES</code> setting.</p>
 <table>
 <thead>
 <tr>
@@ -1318,6 +1462,12 @@
 <td>L1 (typically <code>LocMemCache</code>), falling through to L2</td>
 <td>Bounded staleness (L1 may lag L2 by up to <code>l1_timeout</code>)</td>
 <td>Hot reads where L2 round-trip cost dominates</td>
+</tr>
+<tr>
+<td><code>TrackingCache</code></td>
+<td>Local store, falling through to the transport</td>
+<td>Coherent within one round trip (server-pushed invalidations), or bounded staleness with <code>coherence: "ttl"</code></td>
+<td>Read-heavy keys that must reflect writes promptly</td>
 </tr>
 </tbody>
 </table>
@@ -1387,6 +1537,52 @@
 <h3 id="whats-supported">What's supported<a class="headerlink" href="#whats-supported" title="Permanent link">&para;</a></h3>
 <p><code>TieredCache</code> exposes the standard Django cache interface (<code>get</code>, <code>set</code>, <code>add</code>, <code>delete</code>, <code>get_many</code>, <code>set_many</code>, ...) plus key metadata helpers delegated to L2 (<code>keys</code>, <code>iter_keys</code>, <code>scan</code>, <code>ttl</code>, <code>pttl</code>, <code>type</code>, <code>info</code>, <code>persist</code>, <code>expire</code>, <code>delete_pattern</code>), which is what drives the admin. Data-structure ops (<code>lpush</code>, <code>hset</code>, <code>zadd</code>, ...) raise <code>NotSupportedError</code>; for those, pipelines, or scripts, address the tier caches directly via <code>caches["l1"]</code> or <code>caches["l2"]</code>.</p>
 <p><code>KEY_PREFIX</code> is not accepted on a <code>TieredCache</code> alias, in either the top-level slot or <code>OPTIONS</code>, because keys are passed through to the tiers unprefixed. Set <code>KEY_PREFIX</code> on the tier aliases instead; configuring it on the tiered alias raises <code>ImproperlyConfigured</code>.</p>
+<h2 id="trackingcache">TrackingCache<a class="headerlink" href="#trackingcache" title="Permanent link">&para;</a></h2>
+<p>Local read cache over an existing Redis or Valkey alias, kept coherent by the server's <code>CLIENT TRACKING</code> broadcast mode.</p>
+<p>Reads are served from a bounded in-process store and fall through to the transport on a miss. Writes go to the transport and evict the local copy. One listener thread per process receives the server's invalidation messages for the transport's key prefix, so a write by any client of that database evicts the local copies everywhere. Nothing is cached while the listener is disconnected.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="s2">&quot;redis&quot;</span><span class="p">:</span> <span class="p">{</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.RedisCache&quot;</span><span class="p">,</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;redis://127.0.0.1:6379/0&quot;</span><span class="p">,</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>        <span class="s2">&quot;KEY_PREFIX&quot;</span><span class="p">:</span> <span class="s2">&quot;app&quot;</span><span class="p">,</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="p">},</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="p">{</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.TrackingCache&quot;</span><span class="p">,</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>        <span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>            <span class="s2">&quot;transport&quot;</span><span class="p">:</span> <span class="s2">&quot;redis&quot;</span><span class="p">,</span>  <span class="c1"># alias of a redis-py or valkey-py backend (standalone or Sentinel)</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>            <span class="s2">&quot;coherence&quot;</span><span class="p">:</span> <span class="s2">&quot;tracking&quot;</span><span class="p">,</span>  <span class="c1"># &quot;ttl&quot; runs no listener; see below</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>            <span class="s2">&quot;MAX_ENTRIES&quot;</span><span class="p">:</span> <span class="mi">1000</span><span class="p">,</span>  <span class="c1"># local store bound, LRU</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>            <span class="s2">&quot;local_timeout&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># extra cap on how long a value stays local, in seconds</span>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>            <span class="s2">&quot;prefixes&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># tracked key prefixes; derived from the transport by default</span>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>            <span class="s2">&quot;poll_timeout&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span>  <span class="c1"># seconds the listener waits for a message before checking for shutdown</span>
+</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>            <span class="s2">&quot;health_check_interval&quot;</span><span class="p">:</span> <span class="mf">15.0</span><span class="p">,</span>  <span class="c1"># idle seconds before the listener pings its connections</span>
+</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>            <span class="s2">&quot;reconnect_delay&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span>  <span class="c1"># seconds between reconnection attempts</span>
+</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>        <span class="p">},</span>
+</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>    <span class="p">},</span>
+</span><span id="__span-2-20"><a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="p">}</span>
+</span></code></pre></div>
+<h3 id="coherence">Coherence<a class="headerlink" href="#coherence" title="Permanent link">&para;</a></h3>
+<ul>
+<li>A write is visible locally one network round trip after the server applies it. A read in flight when the invalidation arrives is served but not kept.</li>
+<li>A local copy never outlives its key: it expires with the key's remaining TTL, minus the stampede buffer if the transport uses stampede prevention, and <code>local_timeout</code> caps that further.</li>
+<li><code>FLUSHDB</code>, <code>FLUSHALL</code>, <code>clear()</code> and a lost listener connection flush the local store. The listener reconnects after <code>reconnect_delay</code>; until then every read goes to the transport.</li>
+<li>The transport's stampede prevention applies to local hits too, so early recomputes stay spread across processes.</li>
+</ul>
+<h3 id="without-a-listener">Without a listener<a class="headerlink" href="#without-a-listener" title="Permanent link">&para;</a></h3>
+<p><code>"coherence": "ttl"</code> runs no listener, so nothing evicts a local copy before it expires: a write elsewhere stays invisible until then, and <code>local_timeout</code> is required as the bound. In exchange there is no thread and no extra connection, <code>prefixes</code> is not needed, and any transport works, cluster and valkey-glide included. This is <code>TieredCache</code>'s staleness model on <code>TrackingCache</code>'s store.</p>
+<h3 id="prefixes">Prefixes<a class="headerlink" href="#prefixes" title="Permanent link">&para;</a></h3>
+<p><code>CLIENT TRACKING BCAST</code> subscribes to key prefixes. With Django's default <code>KEY_FUNCTION</code> the tracked prefix is the transport's <code>KEY_PREFIX</code> plus a colon; with a custom <code>KEY_FUNCTION</code> every key in the database is tracked. <code>OPTIONS["prefixes"]</code> overrides that. Prefixes must not overlap, and a key outside every tracked prefix raises <code>ImproperlyConfigured</code>, since writes to it would never be seen.</p>
+<h3 id="whats-supported_1">What's supported<a class="headerlink" href="#whats-supported_1" title="Permanent link">&para;</a></h3>
+<p>The standard Django cache interface, the <code>nx</code>/<code>xx</code>/<code>get</code> flags on <code>set</code>, and the key metadata helpers delegated to the transport (<code>keys</code>, <code>iter_keys</code>, <code>scan</code>, <code>ttl</code>, <code>pttl</code>, <code>type</code>, <code>info</code>, <code>persist</code>, <code>expire</code>, <code>delete_pattern</code>), all with async counterparts. Data-structure ops (<code>lpush</code>, <code>hset</code>, <code>zadd</code>, ...) raise <code>NotSupportedError</code>; use the transport alias for them. <code>info()</code> adds a <code>tracking</code> section with the listener state, the store size and the hit, miss, invalidation and flush counters.</p>
+<p><code>KEY_PREFIX</code> is not accepted on a <code>TrackingCache</code> alias, in either slot: keys are made by the transport, so set it there. <code>TIMEOUT</code> and <code>VERSION</code> on the alias are ignored for the same reason.</p>
+<h3 id="operational-notes_1">Operational notes<a class="headerlink" href="#operational-notes_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>With tracking coherence the transport must be a redis-py or valkey-py backend, standalone or Sentinel. Cluster (tracking is per node) and valkey-glide (cannot receive invalidations) transports raise <code>ImproperlyConfigured</code> on first use. Behind Sentinel, the health check reconnects the listener after a failover.</li>
+<li>Each process holds two extra connections: a subscriber to <code>__redis__:invalidate</code> and the connection that enables tracking. The first operation opens them; a transport that is down at that moment is retried in the background.</li>
+<li>The local store, listener thread and counters are shared per <code>LOCATION</code> (defaulting to the transport alias) within a process, like <code>StreamCache</code>. Two aliases with different <code>LOCATION</code>s over one transport act as two independent pods.</li>
+<li><code>close()</code> is a no-op so the listener outlives requests; <code>shutdown()</code> stops it. A dead listener thread is restarted on the next operation.</li>
+<li>A local miss costs one pipelined <code>GET</code> plus <code>PTTL</code>; <code>get_many</code> fetches all missing keys in one pipeline.</li>
+</ul>
 <h2 id="choosing-between-them">Choosing between them<a class="headerlink" href="#choosing-between-them" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1394,6 +1590,7 @@
 <th></th>
 <th><code>StreamCache</code></th>
 <th><code>TieredCache</code></th>
+<th><code>TrackingCache</code></th>
 </tr>
 </thead>
 <tbody>
@@ -1401,30 +1598,35 @@
 <td>Source of truth</td>
 <td>Distributed (every pod has the data)</td>
 <td>L2 (L1 is just a hot cache)</td>
+<td>The transport (the local store is just a cache)</td>
 </tr>
 <tr>
 <td>Eviction</td>
 <td>LRU on each pod (<code>MAX_ENTRIES</code>)</td>
 <td>LRU on L1; L2 governs survival</td>
+<td>LRU on each pod (<code>MAX_ENTRIES</code>); the server evicts on every write</td>
 </tr>
 <tr>
 <td>Network on read</td>
 <td>Never (after warmup)</td>
 <td>Only on L1 miss</td>
+<td>Only on local miss</td>
 </tr>
 <tr>
 <td>Network on write</td>
 <td>One <code>XADD</code> per write</td>
 <td>One write to each tier</td>
+<td>One write to the transport</td>
 </tr>
 <tr>
 <td>Failure mode</td>
 <td>Stale until consumer recovers</td>
 <td>Strict (falls through to L2)</td>
+<td>Strict (nothing is cached while the listener is down)</td>
 </tr>
 </tbody>
 </table>
-<p>If reads can be served from process memory and writes are infrequent, <code>StreamCache</code>. If writes are common and staleness must stay within a known bound, <code>TieredCache</code>.</p>
+<p>If reads can be served from process memory and writes are infrequent, <code>StreamCache</code>. If writes are common and staleness must stay within a known bound, <code>TieredCache</code>. If writes must be visible everywhere within a round trip and the transport is a single server or Sentinel group, <code>TrackingCache</code>; with <code>coherence: "ttl"</code> it gives <code>TieredCache</code>'s bounded staleness on any transport.</p>
 
 
 

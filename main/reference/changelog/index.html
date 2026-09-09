@@ -957,6 +957,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#improvements" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1107,10 +1118,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#new-features" class="md-nav__link">
+  <a href="#features_1" class="md-nav__link">
     <span class="md-ellipsis">
       
-        New features
+        Features
       
     </span>
   </a>
@@ -1313,10 +1324,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#new-features_1" class="md-nav__link">
+  <a href="#features_2" class="md-nav__link">
     <span class="md-ellipsis">
       
-        New features
+        Features
       
     </span>
   </a>
@@ -1385,7 +1396,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#features" class="md-nav__link">
+  <a href="#features_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Features
@@ -1447,7 +1458,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-features_2" class="md-nav__link">
+  <a href="#new-features" class="md-nav__link">
     <span class="md-ellipsis">
       
         New Features
@@ -1497,7 +1508,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-features_3" class="md-nav__link">
+  <a href="#new-features_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         New Features
@@ -1547,7 +1558,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-features_4" class="md-nav__link">
+  <a href="#new-features_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         New Features
@@ -1575,7 +1586,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-features_5" class="md-nav__link">
+  <a href="#new-features_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         New Features
@@ -1739,6 +1750,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#improvements" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1889,10 +1911,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#new-features" class="md-nav__link">
+  <a href="#features_1" class="md-nav__link">
     <span class="md-ellipsis">
       
-        New features
+        Features
       
     </span>
   </a>
@@ -2095,10 +2117,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#new-features_1" class="md-nav__link">
+  <a href="#features_2" class="md-nav__link">
     <span class="md-ellipsis">
       
-        New features
+        Features
       
     </span>
   </a>
@@ -2167,7 +2189,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#features" class="md-nav__link">
+  <a href="#features_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Features
@@ -2229,7 +2251,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-features_2" class="md-nav__link">
+  <a href="#new-features" class="md-nav__link">
     <span class="md-ellipsis">
       
         New Features
@@ -2279,7 +2301,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-features_3" class="md-nav__link">
+  <a href="#new-features_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         New Features
@@ -2329,7 +2351,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-features_4" class="md-nav__link">
+  <a href="#new-features_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         New Features
@@ -2357,7 +2379,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-features_5" class="md-nav__link">
+  <a href="#new-features_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         New Features
@@ -2399,6 +2421,11 @@
 
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>TrackingCache</code>: a local read cache over an existing redis-py or valkey-py alias, kept coherent by the server's <code>CLIENT TRACKING</code> broadcast mode. Nothing is cached while its listener is down; cluster and valkey-glide transports are rejected. With <code>OPTIONS["coherence"] = "ttl"</code> no listener runs, <code>local_timeout</code> alone bounds staleness, and any transport works. See <a href="../../user-guide/composite-backends/#trackingcache">Composite backends</a>.</li>
+<li>Adapters gained <code>invalidation_listener(prefixes)</code>, a <code>CLIENT TRACKING BCAST</code> subscription; the cluster and valkey-glide adapters raise <code>NotSupportedError</code>.</li>
+</ul>
 <h3 id="improvements">Improvements<a class="headerlink" href="#improvements" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Hash field expiration. <code>hexpire()</code>, <code>hpexpire()</code>, <code>hexpireat()</code>, <code>hpexpireat()</code>, <code>httl()</code>, <code>hpttl()</code>, <code>hexpiretime()</code> and <code>hpersist()</code> set, read and remove a TTL on individual hash fields, and <code>hsetex()</code> / <code>hgetex()</code> write or read fields while setting their TTL in the same command. All ten have async twins and pipeline support on the redis-py, valkey-py and valkey-glide adapters. Field TTLs need Redis 7.4+ or Valkey 9.0+, and <code>hsetex()</code>/<code>hgetex()</code> need Redis 8.0+ or Valkey 9.0+; the package's minimum server versions are unchanged, so on an older server these methods raise <code>NotSupportedError</code>.</li>
@@ -2515,7 +2542,7 @@
 <li><code>RespCache</code>, <code>RespClusterCache</code> and <code>RespSentinelCache</code> raise <code>ImproperlyConfigured</code> when used as a <code>BACKEND</code> directly. They bind no driver and exist to be subclassed; naming one used to fail later with an obscure attribute error.</li>
 <li><code>xpending()</code> rejects filters given without <code>count</code>. Passing <code>start</code>, <code>end</code>, <code>consumer</code> or <code>idle</code> without a <code>count</code> silently fell back to the unfiltered summary form and returned a dict where a per-message list was asked for. It raises <code>ValueError</code> now, on the client, the pipeline and both async twins.</li>
 </ul>
-<h3 id="new-features">New features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h3>
+<h3 id="features_1">Features<a class="headerlink" href="#features_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Async admin surface on <code>TieredCache</code>: <code>akeys</code>, <code>aiter_keys</code>, <code>ascan</code>, <code>attl</code>, <code>apttl</code>, <code>atype</code>, <code>apersist</code>, <code>aexpire</code> and <code>adelete_pattern</code>.</li>
 <li><code>ascan()</code> on <code>DatabaseCache</code>, which had the sync <code>scan</code> but inherited the <code>NotSupportedError</code> default for the async twin.</li>
@@ -2666,7 +2693,7 @@ release.</p>
 <li><code>CachexCompat</code> removed. The mixin class that emulated the cachex ext surface on top of an arbitrary <code>BaseCache</code> is gone, along with the admin's "wrapped" support tier. Django's <code>BaseCache</code> and the stock backends (<code>LocMemCache</code>, <code>RedisCache</code>, <code>DatabaseCache</code>, <code>FileBasedCache</code>, <code>MemcachedCache</code>, <code>DummyCache</code>) deliberately don't expose key listing, so the wrap couldn't drive the admin's browse views meaningfully. Use <code>django_cachex.cache.LocMemCache</code> / <code>DatabaseCache</code> (drop-in replacements) for full admin support; non-cachex backends now show as "limited" (configuration only).</li>
 <li>Cluster <code>LOCATION</code> with a database number now raises on the redis-py and valkey-py cluster backends. Those two are built with the driver's <code>from_url()</code>, which rejects a non-zero <code>db</code> in the URL path or query (<code>RedisClusterException</code> / <code>ValkeyClusterException</code>). The old code read only host and port off the URL, so <code>redis://host:6379/1</code> connected to db 0 without complaint. Cluster has no <code>SELECT</code>, so the number was never honored; drop it from <code>LOCATION</code>. <code>ValkeyGlideClusterCache</code> and <code>RedisRsClusterCache</code> still ignore it silently.</li>
 </ul>
-<h3 id="new-features_1">New features<a class="headerlink" href="#new-features_1" title="Permanent link">&para;</a></h3>
+<h3 id="features_2">Features<a class="headerlink" href="#features_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Rust I/O driver (experimental). Optional native driver built on PyO3 + tokio + redis-rs, shipped as a separate <code>django-cachex-redis-rs</code> package. Interfaces and behavior may change, and it has seen less production testing than the redis-py/valkey-py paths. Opt in via the <code>redis-rs</code> extra (<code>pip install django-cachex[redis-rs]</code>); without it, only the pure-Python backends are pulled in and the <code>RedisRsCache</code> classes raise a clean <code>ImportError</code> on first use. Set <code>BACKEND</code> to one of <code>RedisRsCache</code>, <code>RedisRsClusterCache</code>, or <code>RedisRsSentinelCache</code>. Sync and async share one tokio runtime; async dodges the threadpool round-trip.</li>
 <li><code>valkey-glide</code> adapter (experimental). Optional Rust-cored client from the Valkey project. Interfaces and behavior may change, and it has seen less production testing than the redis-py/valkey-py paths. Opt in via the <code>valkey-glide</code> extra. Standalone (<code>ValkeyGlideCache</code>) and cluster (<code>ValkeyGlideClusterCache</code>) topologies are exposed; Sentinel is not (<code>valkey-glide</code> itself does not ship a Sentinel client).</li>
@@ -2749,7 +2776,7 @@ release.</p>
 <hr />
 <h2 id="010-february-2026">0.1.0 (February 2026)<a class="headerlink" href="#010-february-2026" title="Permanent link">&para;</a></h2>
 <p>Initial stable release of django-cachex.</p>
-<h3 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h3>
+<h3 id="features_3">Features<a class="headerlink" href="#features_3" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Valkey and Redis support in one package.</li>
 <li>Session backend support via Django's cache sessions.</li>
@@ -2790,7 +2817,7 @@ release.</p>
 <hr />
 <h2 id="pre-release-history">Pre-release History<a class="headerlink" href="#pre-release-history" title="Permanent link">&para;</a></h2>
 <h3 id="010b6-february-2026">0.1.0b6 (February 2026)<a class="headerlink" href="#010b6-february-2026" title="Permanent link">&para;</a></h3>
-<h4 id="new-features_2">New Features<a class="headerlink" href="#new-features_2" title="Permanent link">&para;</a></h4>
+<h4 id="new-features">New Features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h4>
 <ul>
 <li>Key type filter: Filter keys by type (string, list, set, hash, zset, stream) in the admin key list sidebar</li>
 <li>LocMemCache data structure operations: List, set, and hash operations now work with LocMemCache wrappers</li>
@@ -2813,7 +2840,7 @@ release.</p>
 <li>Fixed <code>!r</code> format spec for <code>KeyT</code> in error messages</li>
 </ul>
 <h3 id="010b5-february-2026">0.1.0b5 (February 2026)<a class="headerlink" href="#010b5-february-2026" title="Permanent link">&para;</a></h3>
-<h4 id="new-features_3">New Features<a class="headerlink" href="#new-features_3" title="Permanent link">&para;</a></h4>
+<h4 id="new-features_1">New Features<a class="headerlink" href="#new-features_1" title="Permanent link">&para;</a></h4>
 <ul>
 <li>Expanded cache backend support: The admin interface now supports Django's builtin cache backends through wrapper classes</li>
 <li><code>LocMemCache</code>: Full support including key listing, TTL inspection, and memory statistics</li>
@@ -2835,7 +2862,7 @@ release.</p>
 <li>Fixed editing for wrapped cache backends</li>
 </ul>
 <h3 id="010b4-january-2026">0.1.0b4 (January 2026)<a class="headerlink" href="#010b4-january-2026" title="Permanent link">&para;</a></h3>
-<h4 id="new-features_4">New Features<a class="headerlink" href="#new-features_4" title="Permanent link">&para;</a></h4>
+<h4 id="new-features_2">New Features<a class="headerlink" href="#new-features_2" title="Permanent link">&para;</a></h4>
 <ul>
 <li>Django Cache Admin: Built-in admin interface for cache management</li>
 <li>Browse all configured caches</li>
@@ -2862,7 +2889,7 @@ release.</p>
 <li><code>examples/unfold/</code> - Django Unfold theme integration</li>
 </ul>
 <h3 id="010b3-january-2026">0.1.0b3 (January 2026)<a class="headerlink" href="#010b3-january-2026" title="Permanent link">&para;</a></h3>
-<h4 id="new-features_5">New Features<a class="headerlink" href="#new-features_5" title="Permanent link">&para;</a></h4>
+<h4 id="new-features_3">New Features<a class="headerlink" href="#new-features_3" title="Permanent link">&para;</a></h4>
 <ul>
 <li>Lua Script Interface: High-level API for registering and executing Lua scripts with automatic key prefixing and value encoding/decoding</li>
 <li><code>cache.register_script()</code> to register scripts with pre/post processing hooks</li>
