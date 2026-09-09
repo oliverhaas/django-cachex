@@ -32,7 +32,6 @@ All backends live in `django_cachex.cache`. See the [configuration reference](..
 | `LocMemCache` | Drop-in replacement for Django's `LocMemCache` |
 | `DatabaseCache` | Drop-in replacement for Django's `DatabaseCache` |
 | `StreamCache` | In-memory cache synchronized via a Redis Stream |
-| `TieredCache` | L1/L2 composite with TTL propagation |
 | `TrackingCache` | Local read cache over a Redis/Valkey alias, kept coherent by `CLIENT TRACKING` |
 
 !!! note "Valkey and Redis Compatibility"

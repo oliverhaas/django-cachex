@@ -511,8 +511,8 @@ The redis-py and valkey-py adapters forward any key not listed above to the
 driver's `from_url()`, so `retry_on_timeout`, `ssl_ca_certs`, `socket_keepalive`
 and the rest of the driver's own options work there. The valkey-glide adapter
 does not: it reads only the keys marked "all Valkey/Redis" or "valkey-glide" and
-ignores everything else. `LocMemCache`, `DatabaseCache`, `StreamCache`,
-`TieredCache` and `TrackingCache` take their own `OPTIONS`; see
+ignores everything else. `LocMemCache`, `DatabaseCache`, `StreamCache`
+and `TrackingCache` take their own `OPTIONS`; see
 [Configuration](../user-guide/configuration.md) and
 [Composite backends](../user-guide/composite-backends.md).
 
@@ -532,8 +532,8 @@ gets the buffer added back.
 | `beta`   | `1.0` | Multiplier on the recompute probability; higher = recompute earlier. |
 | `delta`  | `1.0` | Recompute-cost estimate (seconds); larger = recompute earlier. |
 
-Only the Valkey/Redis backends implement it. `LocMemCache`, `DatabaseCache`,
-`StreamCache` and `TieredCache` ignore both the option and the per-call keyword;
+Only the Valkey/Redis backends implement it. `LocMemCache`, `DatabaseCache`
+and `StreamCache` ignore both the option and the per-call keyword;
 `TrackingCache` follows its transport's setting.
 
 ## Exceptions
@@ -549,7 +549,7 @@ failure.
 | `KeyNotFoundError` | An operation needed a key that does not exist (subclass of `ValueError`). Mirrors Redis ``ERR no such key``; raised by `rename()` for a missing source. The missing key is available as `key`. |
 | `CompressorError` | Compression or decompression failed. Triggers the configured compressor fallback chain. |
 | `SerializerError` | Serialization or deserialization failed. Triggers the serializer fallback chain. |
-| `NotSupportedError` | Operation is not supported by this backend (e.g. `lpush` on `TieredCache`) or by the connected server (e.g. `hexpire` on Redis 7.2). `operation` names the method or command, `backend` the cache class (`None` when the server rejected the command) and `detail` says why, including the server release that adds a missing command. |
+| `NotSupportedError` | Operation is not supported by this backend (e.g. `lpush` on `TrackingCache`) or by the connected server (e.g. `hexpire` on Redis 7.2). `operation` names the method or command, `backend` the cache class (`None` when the server rejected the command) and `detail` says why, including the server release that adds a missing command. |
 | `LockError` | A lock operation failed (couldn't acquire, releasing an unlocked lock, ...). |
 | `LockNotOwnedError` | Releasing or extending a lock the caller no longer owns (expired or stolen). Subclass of `LockError`. |
 | `SemaphoreError` | A semaphore operation failed (e.g. re-acquiring before release). |

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- `TieredCache` is removed; `TrackingCache` with `OPTIONS["coherence"] = "ttl"` replaces it. Point `transport` at the alias that was L2, rename `l1_timeout` to `local_timeout`, move `MAX_ENTRIES` from the L1 alias to the `TrackingCache` alias and drop the L1 alias. The transport must be a cachex Valkey/Redis backend; an L2 that was a stock Django backend has no replacement.
+
 ### Features
 
 - `TrackingCache`: a local read cache over an existing redis-py or valkey-py alias, kept coherent by the server's `CLIENT TRACKING` broadcast mode. Nothing is cached while its listener is down; cluster and valkey-glide transports are rejected. With `OPTIONS["coherence"] = "ttl"` no listener runs, `local_timeout` alone bounds staleness, and any transport works. See [Composite backends](../user-guide/composite-backends.md#trackingcache).
@@ -11,7 +15,7 @@
 
 - Hash field expiration. `hexpire()`, `hpexpire()`, `hexpireat()`, `hpexpireat()`, `httl()`, `hpttl()`, `hexpiretime()` and `hpersist()` set, read and remove a TTL on individual hash fields, and `hsetex()` / `hgetex()` write or read fields while setting their TTL in the same command. All ten have async twins and pipeline support on the redis-py, valkey-py and valkey-glide adapters. Field TTLs need Redis 7.4+ or Valkey 9.0+, and `hsetex()`/`hgetex()` need Redis 8.0+ or Valkey 9.0+; the package's minimum server versions are unchanged, so on an older server these methods raise `NotSupportedError`.
 - Key deletion sends `UNLINK` instead of `DEL` on every RESP adapter: `delete()`, `delete_many()`, `delete_pattern()`, `set(timeout=0)`, the pipeline `delete()` and the cluster per-slot paths. `UNLINK` reclaims a large hash, list or set in a background thread instead of blocking the server while the value is torn down.
-- `NotSupportedError` gains a `detail` attribute, and the RESP adapters translate the server's "unknown command" reply (and the cluster client's command-table lookup failure) into it. A command the connected server predates now surfaces as the same exception the LocMem, Database and Tiered backends raise for an operation they lack, with `operation` set to the command name, instead of a driver `ResponseError`.
+- `NotSupportedError` gains a `detail` attribute, and the RESP adapters translate the server's "unknown command" reply (and the cluster client's command-table lookup failure) into it. A command the connected server predates now surfaces as the same exception the LocMem, Database and Tracking backends raise for an operation they lack, with `operation` set to the command name, instead of a driver `ResponseError`.
 
 ## 0.7.1 (September 2026)
 
