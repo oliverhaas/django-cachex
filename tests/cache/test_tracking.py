@@ -21,6 +21,7 @@ from tests.fixtures.cache import (
     BACKENDS,
     _adapter_library_available,
     _get_client_library_options,
+    build_cluster_cache_config,
     build_sentinel_cache_config,
 )
 
@@ -200,18 +201,20 @@ def _tracking_section(cache) -> dict:
 
 
 def _settled(cache, action: Callable[[], Any], count: int = 1) -> Any:
-    """Run a write and wait until its own invalidation(s) reached the listener."""
-    before = _tracking_section(cache)["invalidations"]
+    """Run a write and, under tracking coherence, wait until its own invalidation(s) reached the listener."""
+    before = _tracking_section(cache)
     result = action()
-    assert _wait_for(lambda: _tracking_section(cache)["invalidations"] >= before + count)
+    if before["coherence"] == "tracking":
+        assert _wait_for(lambda: _tracking_section(cache)["invalidations"] >= before["invalidations"] + count)
     return result
 
 
 async def _asettled(cache, action: Callable[[], Awaitable[Any]], count: int = 1) -> Any:
     """Async twin of :func:`_settled`."""
-    before = _tracking_section(cache)["invalidations"]
+    before = _tracking_section(cache)
     result = await action()
-    assert _wait_for(lambda: _tracking_section(cache)["invalidations"] >= before + count)
+    if before["coherence"] == "tracking":
+        assert _wait_for(lambda: _tracking_section(cache)["invalidations"] >= before["invalidations"] + count)
     return result
 
 
@@ -268,10 +271,27 @@ def _connected(config: dict) -> Iterator[Any]:
         yield cache
 
 
+BOTH_MODES = pytest.mark.parametrize("coherence", ["tracking", "ttl"])
+TTL_MODE = pytest.mark.parametrize("coherence", ["ttl"])
+
+
+def _coherence_options(coherence: str) -> dict:
+    return {"coherence": "ttl", "local_timeout": 60} if coherence == "ttl" else {}
+
+
 @pytest.fixture
-def tracking_config(redis_container: RedisContainerInfo, resp_adapter: str) -> dict:
-    _skip_unless_trackable(resp_adapter)
-    return _build_tracking_config(redis_container, resp_adapter)
+def coherence() -> str:
+    """Coherence of the shared fixtures; ``BOTH_MODES`` and ``TTL_MODE`` override it."""
+    return "tracking"
+
+
+@pytest.fixture
+def tracking_config(redis_container: RedisContainerInfo, resp_adapter: str, coherence: str) -> dict:
+    if coherence == "tracking":
+        _skip_unless_trackable(resp_adapter)
+    elif not _adapter_library_available(resp_adapter):
+        pytest.skip(f"{resp_adapter} library not installed")
+    return _build_tracking_config(redis_container, resp_adapter, options=_coherence_options(coherence))
 
 
 @pytest.fixture
@@ -319,6 +339,22 @@ class TestTrackingConfig:
     def test_local_timeout_is_coerced_to_float(self):
         cache = TrackingCache("", {"OPTIONS": {"transport": "t", "local_timeout": "2"}})
         assert cache._local_timeout == 2.0
+
+    def test_unknown_coherence_is_rejected(self):
+        with pytest.raises(ImproperlyConfigured, match="coherence"):
+            TrackingCache("", {"OPTIONS": {"transport": "t", "coherence": "eventual"}})
+
+    def test_ttl_coherence_requires_local_timeout(self):
+        with pytest.raises(ImproperlyConfigured, match="local_timeout"):
+            TrackingCache("", {"OPTIONS": {"transport": "t", "coherence": "ttl"}})
+
+    def test_one_storage_key_cannot_mix_coherence_modes(self):
+        try:
+            TrackingCache("tracking:mixed", {"OPTIONS": {"transport": "t"}})
+            with pytest.raises(ImproperlyConfigured, match="coherence"):
+                TrackingCache("tracking:mixed", {"OPTIONS": {"transport": "t", "coherence": "ttl", "local_timeout": 1}})
+        finally:
+            _cleanup_registry("tracking:mixed")
 
     def test_non_resp_transport_is_rejected_on_first_use(self):
         config = {
@@ -387,6 +423,68 @@ class TestTrackingConfig:
         assert tracking_cache._cachex_support == "limited"
 
 
+@TTL_MODE
+class TestTrackingTTLCoherence:
+    def test_serves_locally_without_a_listener(self, tracking_cache):
+        tracking_cache.set("k", 1)
+        assert tracking_cache.get("k") == 1
+        assert tracking_cache.get("k") == 1
+        section = _tracking_section(tracking_cache)
+        assert section["coherence"] == "ttl"
+        assert section["hits"] == 1
+        assert section["listener_alive"] is False
+        assert section["prefixes"] == []
+        assert tracking_cache._state.listener_thread is None
+        assert not [t for t in threading.enumerate() if t.name == f"tracking-cache-{tracking_cache._storage_key}"]
+
+    def test_remote_writes_stay_invisible_until_the_local_copy_expires(self, tracking_config: dict):
+        tracking_config["default"]["OPTIONS"]["local_timeout"] = 1
+        with _connected(tracking_config) as cache:
+            cache.set("k", "old")
+            assert cache.get("k") == "old"
+            caches["transport"].set("k", "new")
+            assert cache.get("k") == "old"
+            assert _wait_for(lambda: cache.get("k") == "new")
+
+    def test_keys_outside_the_tracked_prefixes_are_accepted(self, tracking_config: dict):
+        tracking_config["default"]["OPTIONS"]["prefixes"] = ["nope:"]
+        with _connected(tracking_config) as cache:
+            cache.set("k", 1)
+            assert cache.get("k") == 1
+
+    def test_shutdown_then_use_caches_again_without_a_thread(self, tracking_cache):
+        tracking_cache.set("k", 1)
+        assert tracking_cache.get("k") == 1
+        tracking_cache.shutdown()
+        assert _tracking_section(tracking_cache)["entries"] == 0
+        assert tracking_cache.get("k") == 1
+        assert tracking_cache.get("k") == 1
+        section = _tracking_section(tracking_cache)
+        assert section["hits"] == 1
+        assert section["listener_alive"] is False
+
+    def test_cluster_transport_is_accepted(self, cluster_container, resp_adapter: str, coherence: str):
+        if not _adapter_library_available(resp_adapter):
+            pytest.skip(f"{resp_adapter} library not installed")
+        host, port = cluster_container
+        transport = build_cluster_cache_config(host, port, resp_adapter=resp_adapter)["default"]
+        transport["KEY_PREFIX"] = TRANSPORT_PREFIX
+        config = {
+            "transport": transport,
+            "default": {
+                "BACKEND": "django_cachex.cache.TrackingCache",
+                "LOCATION": f"tracking:cluster:{uuid.uuid4().hex[:6]}",
+                "OPTIONS": {"transport": "transport", **_coherence_options(coherence)},
+            },
+        }
+        with _connected(config) as cache:
+            cache.set("c", 1)
+            assert cache.get("c") == 1
+            assert cache.get("c") == 1
+            assert _tracking_section(cache)["hits"] == 1
+
+
+@BOTH_MODES
 class TestTrackingReads:
     def test_roundtrip(self, tracking_cache):
         tracking_cache.set("rt", {"a": [1, 2]})
@@ -454,6 +552,7 @@ class TestTrackingReads:
         assert tracking_cache.get("ver", version=1) == "v1"
 
 
+@BOTH_MODES
 class TestTrackingWrites:
     def test_set_replaces_the_local_copy(self, tracking_cache):
         tracking_cache.set("w", 1)
@@ -569,6 +668,7 @@ class TestTrackingInvalidation:
 
 
 class TestTrackingTTL:
+    @BOTH_MODES
     def test_local_expiry_never_exceeds_the_key_ttl(self, tracking_cache):
         _settled(tracking_cache, lambda: tracking_cache.set("ttl", 1, timeout=2))
         assert tracking_cache.get("ttl") == 1
@@ -582,6 +682,7 @@ class TestTrackingTTL:
         _raw, expires_at = tracking_cache._state.store[tracking_cache.make_key("forever")]
         assert expires_at is None
 
+    @BOTH_MODES
     def test_expired_local_entry_is_refetched(self, tracking_cache):
         tracking_cache.set("short", 1, timeout=1)
         assert tracking_cache.get("short") == 1
@@ -638,6 +739,7 @@ class TestTrackingTTL:
             assert cache.get_or_set("gos", "fresh", timeout=30) == "fresh"
             assert caches["transport"].get("gos", stampede_prevention=False) == "fresh"
 
+    @BOTH_MODES
     def test_unexpected_pttl_is_served_but_not_kept(self, tracking_cache):
         state = tracking_cache._state
         made_key = tracking_cache.make_key("odd")
@@ -792,6 +894,7 @@ class TestTrackingListenerLifecycle:
         info = tracking_cache.info()
         assert "redis_version" in info
         section = info["tracking"]
+        assert section["coherence"] == "tracking"
         assert section["connected"] is True
         assert section["listener_alive"] is True
         assert section["entries"] == 1
@@ -815,6 +918,7 @@ class TestTrackingLRU:
 
 
 class TestTrackingAsync:
+    @BOTH_MODES
     @pytest.mark.asyncio
     async def test_aget_is_served_locally_after_the_first_fetch(self, tracking_cache, mocker):
         await _asettled(tracking_cache, lambda: tracking_cache.aset("a", {"v": 1}))
@@ -824,6 +928,7 @@ class TestTrackingAsync:
         assert spy.call_count == 1
         assert tracking_cache.get("a") == {"v": 1}
 
+    @BOTH_MODES
     @pytest.mark.asyncio
     async def test_async_writes_evict(self, tracking_cache):
         await tracking_cache.aset("b", 1)
@@ -836,6 +941,7 @@ class TestTrackingAsync:
         assert await tracking_cache.adelete("b") is True
         assert await tracking_cache.aget("b") is None
 
+    @BOTH_MODES
     @pytest.mark.asyncio
     async def test_aget_many_aset_many_adelete_many_aclear(self, tracking_cache):
         await tracking_cache.aset_many({"c1": 1, "c2": 2})
@@ -862,6 +968,7 @@ class TestTrackingAsync:
             assert caches["transport"].get("gos", stampede_prevention=False) == "fresh"
 
 
+@BOTH_MODES
 class TestTrackingSurface:
     def test_data_structure_ops_raise_not_supported(self, tracking_cache):
         with pytest.raises(NotSupportedError, match="TrackingCache"):

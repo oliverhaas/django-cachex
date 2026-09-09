@@ -4,7 +4,7 @@
 
 ### Features
 
-- `TrackingCache`: a local read cache over an existing redis-py or valkey-py alias, kept coherent by the server's `CLIENT TRACKING` broadcast mode. Nothing is cached while its listener is down; cluster and valkey-glide transports are rejected. See [Composite backends](../user-guide/composite-backends.md#trackingcache).
+- `TrackingCache`: a local read cache over an existing redis-py or valkey-py alias, kept coherent by the server's `CLIENT TRACKING` broadcast mode. Nothing is cached while its listener is down; cluster and valkey-glide transports are rejected. With `OPTIONS["coherence"] = "ttl"` no listener runs, `local_timeout` alone bounds staleness, and any transport works. See [Composite backends](../user-guide/composite-backends.md#trackingcache).
 - Adapters gained `invalidation_listener(prefixes)`, a `CLIENT TRACKING BCAST` subscription; the cluster and valkey-glide adapters raise `NotSupportedError`.
 
 ### Improvements

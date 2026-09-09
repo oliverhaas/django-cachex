@@ -37,6 +37,7 @@ class _TrackingState:
     """Per-process store, listener thread and counters shared by every instance of one storage key."""
 
     __slots__ = (
+        "coherence",
         "connected",
         "flushes",
         "hits",
@@ -57,10 +58,11 @@ class _TrackingState:
         "store",
     )
 
-    def __init__(self, *, max_entries: int, poll_timeout: float) -> None:
+    def __init__(self, *, max_entries: int, poll_timeout: float, coherence: str) -> None:
         self.pid = os.getpid()
         self.max_entries = max_entries
         self.poll_timeout = poll_timeout
+        self.coherence = coherence
         # Guards store, pending, connected, listener and the counters.
         self.lock = Lock()
         # Guards listener_thread, stop_event and initialized; never held
@@ -71,7 +73,8 @@ class _TrackingState:
         # Made key -> token of the fetch in flight for it. An invalidation
         # drops the token so a reply that raced the write is never stored.
         self.pending: dict[str, object] = {}
-        self.connected = False
+        # TTL coherence needs no listener, so the store is live from the start.
+        self.connected = coherence == "ttl"
         self.listener: InvalidationListenerProtocol | None = None
         self.listener_thread: Thread | None = None
         self.stop_event = Event()
@@ -202,7 +205,7 @@ class _TrackingState:
             with self.lock:
                 listener = self.listener
                 self.listener = None
-                self.connected = False
+                self.connected = self.coherence == "ttl"
                 self._clear()
             if listener is not None:
                 listener.close()
@@ -213,7 +216,11 @@ _REGISTRY_LOCK = Lock()
 
 
 class TrackingCache(DelegatingCacheMixin, BaseCachex):
-    """Read-through local cache over ``OPTIONS['transport']``, invalidated by ``CLIENT TRACKING BCAST``."""
+    """Read-through local cache over ``OPTIONS['transport']``.
+
+    Invalidated by ``CLIENT TRACKING BCAST``; with ``coherence='ttl'`` no listener
+    runs and ``local_timeout`` alone bounds staleness.
+    """
 
     _cachex_support: CachexSupportLevel = "limited"
 
@@ -238,14 +245,32 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         self._poll_timeout: float = float(options.get("poll_timeout", 1.0))
         self._health_check_interval: float = float(options.get("health_check_interval", 15.0))
         self._reconnect_delay: float = float(options.get("reconnect_delay", 1.0))
+        coherence = options.get("coherence", "tracking")
+        if coherence not in ("tracking", "ttl"):
+            msg = f"TrackingCache OPTIONS['coherence'] must be 'tracking' or 'ttl'. Got: {coherence!r}"
+            raise ImproperlyConfigured(msg)
+        if coherence == "ttl" and self._local_timeout is None:
+            msg = "TrackingCache with coherence='ttl' requires OPTIONS['local_timeout']; nothing else bounds staleness."
+            raise ImproperlyConfigured(msg)
+        self._coherence: str = coherence
 
         # A forked child inherits the registry but none of the parent's threads.
         pid = os.getpid()
         with _REGISTRY_LOCK:
             state = _TRACKING_REGISTRY.get(self._storage_key)
             if state is None or state.pid != pid:
-                state = _TrackingState(max_entries=self._max_entries, poll_timeout=self._poll_timeout)
+                state = _TrackingState(
+                    max_entries=self._max_entries,
+                    poll_timeout=self._poll_timeout,
+                    coherence=coherence,
+                )
                 _TRACKING_REGISTRY[self._storage_key] = state
+            elif state.coherence != coherence:
+                msg = (
+                    f"TrackingCache aliases sharing LOCATION {self._storage_key!r} disagree on coherence: "
+                    f"{state.coherence!r} vs {coherence!r}."
+                )
+                raise ImproperlyConfigured(msg)
         self._state = state
 
         self._cachex_location = f"tracking:{self._storage_key} [transport: {self._transport_alias}]"
@@ -307,8 +332,10 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         return ("",)
 
     def _local_key(self, key: str, version: int | None) -> str:
-        """Make the key and refuse one no tracked prefix covers: writes to it would never be seen."""
+        """Make the key; under tracking, refuse one no tracked prefix covers: writes to it would never be seen."""
         made_key = self.make_and_validate_key(key, version=version)
+        if self._coherence == "ttl":
+            return made_key
         prefixes = self._prefixes
         if "" in prefixes or made_key.startswith(prefixes):
             return made_key
@@ -325,7 +352,9 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         return thread is not None and thread.is_alive()
 
     def _ensure_listener(self) -> None:
-        """Start (or restart) the listener thread with double-checked locking."""
+        """Start (or restart) the listener thread with double-checked locking; TTL coherence has none."""
+        if self._coherence == "ttl":
+            return
         state = self._state
         if state.initialized and self._listener_alive():
             return
@@ -812,6 +841,7 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         state = self._state
         with state.lock:
             snapshot: dict[str, Any] = {
+                "coherence": self._coherence,
                 "connected": state.connected,
                 "entries": len(state.store),
                 "hits": state.hits,
@@ -823,7 +853,7 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
             last_message_time = state.last_message_time
         snapshot["listener_alive"] = self._listener_alive()
         snapshot["last_message_age_seconds"] = round(time.time() - last_message_time, 1) if last_message_time else None
-        snapshot["prefixes"] = list(self._prefixes)
+        snapshot["prefixes"] = list(self._prefixes) if self._coherence == "tracking" else []
         return snapshot
 
 

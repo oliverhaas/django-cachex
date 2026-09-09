@@ -6,7 +6,7 @@ Three backend classes don't talk to a server directly. They compose other entrie
 |---------|-------------------|-------------|----------|
 | `StreamCache` | Local in-memory dict | Eventually consistent (last-writer-wins) | Read-heavy data shared across pods (config, feature flags) |
 | `TieredCache` | L1 (typically `LocMemCache`), falling through to L2 | Bounded staleness (L1 may lag L2 by up to `l1_timeout`) | Hot reads where L2 round-trip cost dominates |
-| `TrackingCache` | Local store, falling through to the transport | Coherent within one round trip (server-pushed invalidations) | Read-heavy keys that must reflect writes promptly |
+| `TrackingCache` | Local store, falling through to the transport | Coherent within one round trip (server-pushed invalidations), or bounded staleness with `coherence: "ttl"` | Read-heavy keys that must reflect writes promptly |
 
 ## StreamCache
 
@@ -111,6 +111,7 @@ CACHES = {
         "BACKEND": "django_cachex.cache.TrackingCache",
         "OPTIONS": {
             "transport": "redis",  # alias of a redis-py or valkey-py backend (standalone or Sentinel)
+            "coherence": "tracking",  # "ttl" runs no listener; see below
             "MAX_ENTRIES": 1000,  # local store bound, LRU
             "local_timeout": None,  # extra cap on how long a value stays local, in seconds
             "prefixes": None,  # tracked key prefixes; derived from the transport by default
@@ -129,6 +130,10 @@ CACHES = {
 - `FLUSHDB`, `FLUSHALL`, `clear()` and a lost listener connection flush the local store. The listener reconnects after `reconnect_delay`; until then every read goes to the transport.
 - The transport's stampede prevention applies to local hits too, so early recomputes stay spread across processes.
 
+### Without a listener
+
+`"coherence": "ttl"` runs no listener, so nothing evicts a local copy before it expires: a write elsewhere stays invisible until then, and `local_timeout` is required as the bound. In exchange there is no thread and no extra connection, `prefixes` is not needed, and any transport works, cluster and valkey-glide included. This is `TieredCache`'s staleness model on `TrackingCache`'s store.
+
 ### Prefixes
 
 `CLIENT TRACKING BCAST` subscribes to key prefixes. With Django's default `KEY_FUNCTION` the tracked prefix is the transport's `KEY_PREFIX` plus a colon; with a custom `KEY_FUNCTION` every key in the database is tracked. `OPTIONS["prefixes"]` overrides that. Prefixes must not overlap, and a key outside every tracked prefix raises `ImproperlyConfigured`, since writes to it would never be seen.
@@ -141,7 +146,7 @@ The standard Django cache interface, the `nx`/`xx`/`get` flags on `set`, and the
 
 ### Operational notes
 
-- The transport must be a redis-py or valkey-py backend, standalone or Sentinel. Cluster (tracking is per node) and valkey-glide (cannot receive invalidations) transports raise `ImproperlyConfigured` on first use. Behind Sentinel, the health check reconnects the listener after a failover.
+- With tracking coherence the transport must be a redis-py or valkey-py backend, standalone or Sentinel. Cluster (tracking is per node) and valkey-glide (cannot receive invalidations) transports raise `ImproperlyConfigured` on first use. Behind Sentinel, the health check reconnects the listener after a failover.
 - Each process holds two extra connections: a subscriber to `__redis__:invalidate` and the connection that enables tracking. The first operation opens them; a transport that is down at that moment is retried in the background.
 - The local store, listener thread and counters are shared per `LOCATION` (defaulting to the transport alias) within a process, like `StreamCache`. Two aliases with different `LOCATION`s over one transport act as two independent pods.
 - `close()` is a no-op so the listener outlives requests; `shutdown()` stops it. A dead listener thread is restarted on the next operation.
@@ -157,4 +162,4 @@ The standard Django cache interface, the `nx`/`xx`/`get` flags on `set`, and the
 | Network on write | One `XADD` per write | One write to each tier | One write to the transport |
 | Failure mode | Stale until consumer recovers | Strict (falls through to L2) | Strict (nothing is cached while the listener is down) |
 
-If reads can be served from process memory and writes are infrequent, `StreamCache`. If writes are common and staleness must stay within a known bound, `TieredCache`. If writes must be visible everywhere within a round trip and the transport is a single server or Sentinel group, `TrackingCache`.
+If reads can be served from process memory and writes are infrequent, `StreamCache`. If writes are common and staleness must stay within a known bound, `TieredCache`. If writes must be visible everywhere within a round trip and the transport is a single server or Sentinel group, `TrackingCache`; with `coherence: "ttl"` it gives `TieredCache`'s bounded staleness on any transport.
