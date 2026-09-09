@@ -16,7 +16,6 @@ Standalone and cluster topologies are supported; Sentinel is not exposed
 
 import asyncio
 import contextlib
-import datetime
 import inspect
 import os
 import threading
@@ -29,8 +28,17 @@ from urllib.parse import parse_qs, unquote, urlparse
 from django.core.exceptions import ImproperlyConfigured
 
 from django_cachex.adapters.protocols import RespAdapterProtocol, RespAsyncPipelineProtocol, RespPipelineProtocol
-from django_cachex.adapters.valkey_py import _check_xpending_args, _options_key
-from django_cachex.exceptions import KeyNotFoundError, maybe_wrap_wrongtype
+from django_cachex.adapters.valkey_py import (
+    _check_xpending_args,
+    _expire_arg,
+    _hash_expire_args,
+    _hash_fields_args,
+    _hgetex_args,
+    _hsetex_args,
+    _options_key,
+    _to_unix,
+)
+from django_cachex.exceptions import KeyNotFoundError, translate_server_error
 from django_cachex.stampede import (
     StampedeConfig,
     get_timeout_with_buffer,
@@ -41,6 +49,7 @@ from django_cachex.stampede import (
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
+    import datetime
     from collections.abc import Iterable, Iterator, Mapping, Sequence
 
 
@@ -97,7 +106,7 @@ _set = set
 
 
 # =============================================================================
-# WRONGTYPE translation
+# Server error translation
 # =============================================================================
 
 
@@ -105,18 +114,20 @@ async def _await_translated(awaitable: Any) -> Any:
     try:
         return await awaitable
     except RequestError as exc:
-        wrapped = maybe_wrap_wrongtype(exc)
+        wrapped = translate_server_error(exc)
         if wrapped is exc:
             raise
         raise wrapped from exc
 
 
 def _translating(fn: Any) -> Any:
+    """Wrap a glide call so a ``RequestError`` surfaces as the cachex exception it stands for."""
+
     def call(*args: Any, **kwargs: Any) -> Any:
         try:
             result = fn(*args, **kwargs)
         except RequestError as exc:
-            wrapped = maybe_wrap_wrongtype(exc)
+            wrapped = translate_server_error(exc)
             if wrapped is exc:
                 raise
             raise wrapped from exc
@@ -128,7 +139,7 @@ def _translating(fn: Any) -> Any:
 
 
 class _WrongTypeClient:
-    """Forward every attribute to a glide client, translating WRONGTYPE responses.
+    """Forward every attribute to a glide client, translating server errors.
 
     Glide's Rust-backed clients have no ``execute_command`` seam for the patch
     :mod:`~django_cachex.adapters.valkey_py` uses, so wrap the client instead.
@@ -350,28 +361,6 @@ def _normalize_ttl(result: int) -> int | None:
     return result
 
 
-def _expire_arg(timeout: int | datetime.timedelta, *, milliseconds: bool = False) -> int:
-    """Render an EXPIRE/PEXPIRE argument as an ``int``.
-
-    ``RespCache.expire``/``pexpire`` accept ``int | timedelta`` and hand the
-    value straight to the adapter. redis-py and valkey-py convert a
-    ``timedelta`` themselves; glide renders arguments with ``str()``, so
-    ``EXPIRE k 0:05:00`` would reach the server. Convert it here.
-    """
-    if isinstance(timeout, datetime.timedelta):
-        seconds = timeout.total_seconds()
-        return int(seconds * 1000) if milliseconds else int(seconds)
-    return int(timeout)
-
-
-def _to_unix(when: int | datetime.datetime, *, milliseconds: bool = False) -> int:
-    """Convert a datetime or unix timestamp to ``int`` epoch seconds (or ms)."""
-    if isinstance(when, datetime.datetime):
-        ts = when.timestamp()
-        return int(ts * 1000) if milliseconds else int(ts)
-    return int(when)
-
-
 def _dec_str(v: Any) -> str:
     """Decode bytes to str; pass through anything else."""
     return v.decode("utf-8") if isinstance(v, (bytes, bytearray)) else v
@@ -556,7 +545,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         return self
 
     def delete(self, *keys: Any) -> Self:
-        self._batch.delete(_enc_list(keys))
+        self._batch.unlink(_enc_list(keys))
         return self
 
     def mget(self, keys: Iterable[Any]) -> Self:
@@ -692,6 +681,98 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
 
     def hincrbyfloat(self, key: Any, field: Any, amount: float = 1.0) -> Self:
         self._batch.hincrbyfloat(key, field, amount)
+        return self
+
+    # ---- hash field expiration ----
+    def hexpire(
+        self,
+        key: Any,
+        timeout: int | datetime.timedelta,
+        *fields: Any,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Self:
+        args = _hash_expire_args("HEXPIRE", key, _expire_arg(timeout), fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        self._batch.custom_command(args)
+        return self
+
+    def hpexpire(
+        self,
+        key: Any,
+        timeout: int | datetime.timedelta,
+        *fields: Any,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Self:
+        expiry = _expire_arg(timeout, milliseconds=True)
+        args = _hash_expire_args("HPEXPIRE", key, expiry, fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        self._batch.custom_command(args)
+        return self
+
+    def hexpireat(
+        self,
+        key: Any,
+        when: int | datetime.datetime,
+        *fields: Any,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Self:
+        args = _hash_expire_args("HEXPIREAT", key, _to_unix(when), fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        self._batch.custom_command(args)
+        return self
+
+    def hpexpireat(
+        self,
+        key: Any,
+        when: int | datetime.datetime,
+        *fields: Any,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Self:
+        deadline = _to_unix(when, milliseconds=True)
+        args = _hash_expire_args("HPEXPIREAT", key, deadline, fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        self._batch.custom_command(args)
+        return self
+
+    def httl(self, key: Any, *fields: Any) -> Self:
+        self._batch.custom_command(_hash_fields_args("HTTL", key, fields))
+        return self
+
+    def hpttl(self, key: Any, *fields: Any) -> Self:
+        self._batch.custom_command(_hash_fields_args("HPTTL", key, fields))
+        return self
+
+    def hexpiretime(self, key: Any, *fields: Any) -> Self:
+        self._batch.custom_command(_hash_fields_args("HEXPIRETIME", key, fields))
+        return self
+
+    def hpersist(self, key: Any, *fields: Any) -> Self:
+        self._batch.custom_command(_hash_fields_args("HPERSIST", key, fields))
+        return self
+
+    def hsetex(
+        self,
+        key: Any,
+        mapping: Mapping[Any, Any],
+        *,
+        ex: int | None = None,
+        keepttl: bool = False,
+        fnx: bool = False,
+        fxx: bool = False,
+    ) -> Self:
+        self._batch.custom_command(_hsetex_args(key, _enc_map(mapping), ex=ex, keepttl=keepttl, fnx=fnx, fxx=fxx))
+        return self
+
+    def hgetex(self, key: Any, *fields: Any, ex: int | None = None, persist: bool = False) -> Self:
+        self._batch.custom_command(_hgetex_args(key, fields, ex=ex, persist=persist))
         return self
 
     # ---- sets ----
@@ -1517,7 +1598,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
                 conditional_set=ConditionalChange.ONLY_IF_DOES_NOT_EXIST,
             )
             if _ok_to_bool(result):
-                client.delete([key])
+                client.unlink([key])
                 return True
             return False
 
@@ -1550,7 +1631,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
-            client.delete([key])
+            client.unlink([key])
         elif actual_timeout is None:
             client.set(key, _enc(value))
         else:
@@ -1587,7 +1668,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             else:
                 executed = _ok_to_bool(result)
             if executed:
-                client.delete([key])
+                client.unlink([key])
             return result if get else _ok_to_bool(result)
 
         if actual_timeout is not None:
@@ -1604,7 +1685,9 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return bool(client.expire(key, timeout))
 
     def delete(self, key: str) -> bool:
-        return bool(self._client().delete([key]))
+        # UNLINK, not DEL: reclaiming a large hash or set on the server thread
+        # blocks every other client until it finishes.
+        return bool(self._client().unlink([key]))
 
     def get_many(
         self,
@@ -1661,7 +1744,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
-            client.delete(list(prepared.keys()))
+            client.unlink(list(prepared.keys()))
         elif actual_timeout is None:
             client.mset(prepared)
         else:
@@ -1677,7 +1760,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def delete_many(self, keys: Sequence[str]) -> int:
         if not keys:
             return 0
-        return self._client().delete(list(keys))
+        return self._client().unlink(list(keys))
 
     def clear(self) -> bool:
         return self._client().flushdb(FlushMode.SYNC) == "OK"
@@ -1769,7 +1852,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             itersize = self._default_scan_itersize
         deleted = 0
         for batch_keys in batched(self.iter_keys(pattern, itersize=itersize), itersize, strict=False):
-            deleted += client.delete(list(batch_keys))
+            deleted += client.unlink(list(batch_keys))
         return deleted
 
     # =========================================================================
@@ -1836,6 +1919,95 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     def hincrbyfloat(self, key: str, field: str, amount: float = 1.0) -> float:
         return self._client().hincrbyfloat(key, field, amount)
+
+    # =========================================================================
+    # Sync hash field expiration
+    # =========================================================================
+
+    def hexpire(
+        self,
+        key: str,
+        timeout: int | datetime.timedelta,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        args = _hash_expire_args("HEXPIRE", key, _expire_arg(timeout), fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        return cast("list[int]", self._cmd(args))
+
+    def hpexpire(
+        self,
+        key: str,
+        timeout: int | datetime.timedelta,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        expiry = _expire_arg(timeout, milliseconds=True)
+        args = _hash_expire_args("HPEXPIRE", key, expiry, fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        return cast("list[int]", self._cmd(args))
+
+    def hexpireat(
+        self,
+        key: str,
+        when: int | datetime.datetime,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        args = _hash_expire_args("HEXPIREAT", key, _to_unix(when), fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        return cast("list[int]", self._cmd(args))
+
+    def hpexpireat(
+        self,
+        key: str,
+        when: int | datetime.datetime,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        deadline = _to_unix(when, milliseconds=True)
+        args = _hash_expire_args("HPEXPIREAT", key, deadline, fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        return cast("list[int]", self._cmd(args))
+
+    def httl(self, key: str, *fields: str) -> list[int | None]:
+        result = cast("list[int]", self._cmd(_hash_fields_args("HTTL", key, fields)))
+        return [_normalize_ttl(item) for item in result]
+
+    def hpttl(self, key: str, *fields: str) -> list[int | None]:
+        result = cast("list[int]", self._cmd(_hash_fields_args("HPTTL", key, fields)))
+        return [_normalize_ttl(item) for item in result]
+
+    def hexpiretime(self, key: str, *fields: str) -> list[int | None]:
+        result = cast("list[int]", self._cmd(_hash_fields_args("HEXPIRETIME", key, fields)))
+        return [_normalize_ttl(item) for item in result]
+
+    def hpersist(self, key: str, *fields: str) -> list[int]:
+        return cast("list[int]", self._cmd(_hash_fields_args("HPERSIST", key, fields)))
+
+    def hsetex(
+        self,
+        key: str,
+        mapping: Mapping[str, Any],
+        *,
+        ex: int | None = None,
+        keepttl: bool = False,
+        fnx: bool = False,
+        fxx: bool = False,
+    ) -> bool:
+        args = _hsetex_args(key, _enc_map(mapping), ex=ex, keepttl=keepttl, fnx=fnx, fxx=fxx)
+        return bool(self._cmd(args))
+
+    def hgetex(self, key: str, *fields: str, ex: int | None = None, persist: bool = False) -> list[Any]:
+        return list(self._cmd(_hgetex_args(key, fields, ex=ex, persist=persist)))
 
     # =========================================================================
     # Sync sets
@@ -2501,7 +2673,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
                 conditional_set=ConditionalChange.ONLY_IF_DOES_NOT_EXIST,
             )
             if _ok_to_bool(result):
-                await client.delete([key])
+                await client.unlink([key])
                 return True
             return False
 
@@ -2534,7 +2706,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
-            await client.delete([key])
+            await client.unlink([key])
         elif actual_timeout is None:
             await client.set(key, _enc(value))
         else:
@@ -2571,7 +2743,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             else:
                 executed = _ok_to_bool(result)
             if executed:
-                await client.delete([key])
+                await client.unlink([key])
             return result if get else _ok_to_bool(result)
 
         if actual_timeout is not None:
@@ -2588,7 +2760,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return bool(await client.expire(key, timeout))
 
     async def adelete(self, key: str) -> bool:
-        return bool(await (await self.get_async_client()).delete([key]))
+        return bool(await (await self.get_async_client()).unlink([key]))
 
     async def aget_many(
         self,
@@ -2645,7 +2817,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
-            await client.delete(list(prepared.keys()))
+            await client.unlink(list(prepared.keys()))
         elif actual_timeout is None:
             await client.mset(prepared)
         else:
@@ -2660,7 +2832,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def adelete_many(self, keys: Sequence[str]) -> int:
         if not keys:
             return 0
-        return await (await self.get_async_client()).delete(list(keys))
+        return await (await self.get_async_client()).unlink(list(keys))
 
     async def aclear(self) -> bool:
         return (await (await self.get_async_client()).flushdb(FlushMode.SYNC)) == "OK"
@@ -2762,10 +2934,10 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         async for k in self.aiter_keys(pattern, itersize=itersize):
             keys.append(k)
             if len(keys) >= itersize:
-                deleted += await client.delete(keys)
+                deleted += await client.unlink(keys)
                 keys = []
         if keys:
-            deleted += await client.delete(keys)
+            deleted += await client.unlink(keys)
         return deleted
 
     # =========================================================================
@@ -2832,6 +3004,95 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     async def ahincrbyfloat(self, key: str, field: str, amount: float = 1.0) -> float:
         return await (await self.get_async_client()).hincrbyfloat(key, field, amount)
+
+    # =========================================================================
+    # Async hash field expiration
+    # =========================================================================
+
+    async def ahexpire(
+        self,
+        key: str,
+        timeout: int | datetime.timedelta,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        args = _hash_expire_args("HEXPIRE", key, _expire_arg(timeout), fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        return cast("list[int]", await self._acmd(args))
+
+    async def ahpexpire(
+        self,
+        key: str,
+        timeout: int | datetime.timedelta,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        expiry = _expire_arg(timeout, milliseconds=True)
+        args = _hash_expire_args("HPEXPIRE", key, expiry, fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        return cast("list[int]", await self._acmd(args))
+
+    async def ahexpireat(
+        self,
+        key: str,
+        when: int | datetime.datetime,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        args = _hash_expire_args("HEXPIREAT", key, _to_unix(when), fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        return cast("list[int]", await self._acmd(args))
+
+    async def ahpexpireat(
+        self,
+        key: str,
+        when: int | datetime.datetime,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        deadline = _to_unix(when, milliseconds=True)
+        args = _hash_expire_args("HPEXPIREAT", key, deadline, fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        return cast("list[int]", await self._acmd(args))
+
+    async def ahttl(self, key: str, *fields: str) -> list[int | None]:
+        result = cast("list[int]", await self._acmd(_hash_fields_args("HTTL", key, fields)))
+        return [_normalize_ttl(item) for item in result]
+
+    async def ahpttl(self, key: str, *fields: str) -> list[int | None]:
+        result = cast("list[int]", await self._acmd(_hash_fields_args("HPTTL", key, fields)))
+        return [_normalize_ttl(item) for item in result]
+
+    async def ahexpiretime(self, key: str, *fields: str) -> list[int | None]:
+        result = cast("list[int]", await self._acmd(_hash_fields_args("HEXPIRETIME", key, fields)))
+        return [_normalize_ttl(item) for item in result]
+
+    async def ahpersist(self, key: str, *fields: str) -> list[int]:
+        return cast("list[int]", await self._acmd(_hash_fields_args("HPERSIST", key, fields)))
+
+    async def ahsetex(
+        self,
+        key: str,
+        mapping: Mapping[str, Any],
+        *,
+        ex: int | None = None,
+        keepttl: bool = False,
+        fnx: bool = False,
+        fxx: bool = False,
+    ) -> bool:
+        args = _hsetex_args(key, _enc_map(mapping), ex=ex, keepttl=keepttl, fnx=fnx, fxx=fxx)
+        return bool(await self._acmd(args))
+
+    async def ahgetex(self, key: str, *fields: str, ex: int | None = None, persist: bool = False) -> list[Any]:
+        return list(await self._acmd(_hgetex_args(key, fields, ex=ex, persist=persist)))
 
     # =========================================================================
     # Async sets

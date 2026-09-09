@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Improvements
+
+- Hash field expiration. `hexpire()`, `hpexpire()`, `hexpireat()`, `hpexpireat()`, `httl()`, `hpttl()`, `hexpiretime()` and `hpersist()` set, read and remove a TTL on individual hash fields, and `hsetex()` / `hgetex()` write or read fields while setting their TTL in the same command. All ten have async twins and pipeline support on the redis-py, valkey-py and valkey-glide adapters. Field TTLs need Redis 7.4+ or Valkey 9.0+, and `hsetex()`/`hgetex()` need Redis 8.0+ or Valkey 9.0+; the package's minimum server versions are unchanged, so on an older server these methods raise `NotSupportedError`.
+- Key deletion sends `UNLINK` instead of `DEL` on every RESP adapter: `delete()`, `delete_many()`, `delete_pattern()`, `set(timeout=0)`, the pipeline `delete()` and the cluster per-slot paths. `UNLINK` reclaims a large hash, list or set in a background thread instead of blocking the server while the value is torn down.
+- `NotSupportedError` gains a `detail` attribute, and the RESP adapters translate the server's "unknown command" reply (and the cluster client's command-table lookup failure) into it. A command the connected server predates now surfaces as the same exception the LocMem, Database and Tiered backends raise for an operation they lack, with `operation` set to the command name, instead of a driver `ResponseError`.
+
 ## 0.7.1 (September 2026)
 
 ### Breaking changes
