@@ -619,7 +619,6 @@ class TestTrackingTTL:
             assert cache.get("buffered") == 1
             _raw, expires_at = cache._state.store[cache.make_key("buffered")]
             assert expires_at <= time.monotonic() + 30.0
-            # A key inside its stampede buffer window reads as a miss and is not kept.
             caches["transport"].expire("buffered", 50, stampede_prevention=False)
             assert _wait_for(lambda: cache._state.store == {})
             assert cache.get("buffered") is None
