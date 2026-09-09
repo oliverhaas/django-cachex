@@ -284,10 +284,16 @@ def _text(value: Any) -> str:
     return value.decode("utf-8", "replace") if isinstance(value, bytes) else str(value)
 
 
+def _is_connected(conn: Any) -> bool:
+    # Both drivers keep the live socket in ``_sock``; only redis-py wraps it in ``is_connected``.
+    return conn._sock is not None
+
+
 class _ValkeyPyInvalidationListener(InvalidationListenerProtocol):
     """Owns ``_sub``, subscribed to ``__redis__:invalidate``, and ``_track``, whose BCAST tracking redirects to it."""
 
     def __init__(self, pool: Any, prefixes: Sequence[str], *, timeout: float) -> None:
+        self._pool = pool
         self._timeout = timeout
         # Invalidations read while waiting for a PONG, handed out by the next ``poll``.
         self._buffered: deque[Invalidation] = deque()
@@ -329,8 +335,10 @@ class _ValkeyPyInvalidationListener(InvalidationListenerProtocol):
     def _command(self, conn: Any, *args: Any) -> Any:
         conn.send_command(*args)
         if not conn.can_read(timeout=self._timeout):
+            # A late reply must never be read as the answer to the next command.
+            conn.disconnect()
             msg = f"No reply to {args[0]} from the invalidation listener within {self._timeout}s"
-            raise ConnectionError(msg)
+            raise TimeoutError(msg)
         return conn.read_response()
 
     def poll(self, timeout: float) -> Invalidation | None:
@@ -341,24 +349,42 @@ class _ValkeyPyInvalidationListener(InvalidationListenerProtocol):
         return self._parse(self._sub.read_response())
 
     def ping(self) -> None:
+        # A socket the driver reopened on its own would answer PING but carry
+        # no subscription or tracking, so a dropped one counts as lost.
+        if not (_is_connected(self._sub) and _is_connected(self._track)):
+            msg = "The invalidation listener lost a connection"
+            raise ConnectionError(msg)
         # The server drops the tracking the moment ``_track`` disconnects, so both connections are checked.
         reply = self._command(self._track, "PING")
         if _text(reply) != "PONG":
             msg = f"Unexpected PING reply from the tracking connection: {reply!r}"
             raise ConnectionError(msg)
+        self._check_primary()
         self._sub.send_command("PING")
         deadline = time.monotonic() + self._timeout
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0 or not self._sub.can_read(timeout=remaining):
+                self._sub.disconnect()
                 msg = f"No PONG from the invalidation subscriber within {self._timeout}s"
-                raise ConnectionError(msg)
+                raise TimeoutError(msg)
             frame = self._sub.read_response()
             if isinstance(frame, list | tuple) and len(frame) > 0 and _text(frame[0]) == "pong":
                 return
             message = self._parse(frame)
             if message is not None:
                 self._buffered.append(message)
+
+    def _check_primary(self) -> None:
+        """A Sentinel failover leaves both sockets on the demoted node, which keeps answering PING."""
+        pool = self._pool
+        if not getattr(pool, "is_master", False):
+            return
+        primary = pool.get_master_address()
+        listening_on = (self._track.host, self._track.port)
+        if primary != listening_on:
+            msg = f"Sentinel reports the primary at {primary!r}; the invalidation listener is on {listening_on!r}"
+            raise ConnectionError(msg)
 
     def close(self) -> None:
         for conn in (self._sub, self._track):

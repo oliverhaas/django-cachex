@@ -16,13 +16,14 @@ from django_cachex.cache._delegation import DelegatingCacheMixin
 from django_cachex.cache.base import BaseCachex, CachexSupportLevel
 from django_cachex.cache.resp import RespCache
 from django_cachex.exceptions import NotSupportedError
-from django_cachex.stampede import should_recompute
+from django_cachex.stampede import should_recompute, should_recompute_remaining
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
     from datetime import timedelta
 
     from django_cachex.adapters.protocols import Invalidation, InvalidationListenerProtocol
+    from django_cachex.stampede import StampedeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -83,16 +84,22 @@ class _TrackingState:
 
     # -- Local store --
 
-    def local_get(self, made_key: str, now: float) -> Any:
-        """Return the encoded value for ``made_key`` or ``_MISS``."""
+    def local_get(self, made_key: str, now: float, stampede: StampedeConfig | None) -> Any:
+        """Return the encoded value for ``made_key`` or ``_MISS``; every hit rolls XFetch's dice."""
         with self.lock:
             entry = self.store.get(made_key)
             if entry is None:
                 return _MISS
             raw, expires_at = entry
-            if expires_at is not None and expires_at <= now:
-                del self.store[made_key]
-                return _MISS
+            if expires_at is not None:
+                remaining = expires_at - now
+                if stampede is not None and isinstance(raw, bytes):
+                    expired = should_recompute_remaining(remaining, stampede)
+                else:
+                    expired = remaining <= 0
+                if expired:
+                    del self.store[made_key]
+                    return _MISS
             self.store.move_to_end(made_key)
             self.hits += 1
             return raw
@@ -190,14 +197,14 @@ class _TrackingState:
                     )
                 self.listener_thread = None
             self.initialized = False
-        with self.lock:
-            listener = self.listener
-            self.listener = None
-            self.connected = False
-            self.store.clear()
-            self.pending.clear()
-        if listener is not None:
-            listener.close()
+            with self.lock:
+                listener = self.listener
+                self.listener = None
+                self.connected = False
+                self.store.clear()
+                self.pending.clear()
+            if listener is not None:
+                listener.close()
 
 
 _TRACKING_REGISTRY: dict[str, _TrackingState] = {}
@@ -225,7 +232,8 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         self._transport_alias: str = transport
         self._storage_key: str = server or transport
         self._explicit_prefixes: tuple[str, ...] | None = self._validate_prefixes(options.get("prefixes"))
-        self._local_timeout: float | None = options.get("local_timeout")
+        local_timeout = options.get("local_timeout")
+        self._local_timeout: float | None = None if local_timeout is None else float(local_timeout)
         self._poll_timeout: float = float(options.get("poll_timeout", 1.0))
         self._health_check_interval: float = float(options.get("health_check_interval", 15.0))
         self._reconnect_delay: float = float(options.get("reconnect_delay", 1.0))
@@ -283,6 +291,10 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
     @property
     def _delegation_target(self) -> RespCache:
         return self._transport
+
+    @cached_property
+    def _stampede(self) -> StampedeConfig | None:
+        return self._transport.adapter.resolve_stampede(None)
 
     @cached_property
     def _prefixes(self) -> tuple[str, ...]:
@@ -355,8 +367,15 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
             name=f"tracking-cache-{self._storage_key}",
             daemon=True,
         )
+        try:
+            thread.start()
+        except BaseException:
+            # Nothing may look connected without a thread to keep it so.
+            state.on_disconnect()
+            if listener is not None:
+                listener.close()
+            raise
         state.listener_thread = thread
-        thread.start()
 
     def _listener_loop(self, stop_event: Event, listener: InvalidationListenerProtocol | None) -> None:
         state = self._state
@@ -442,7 +461,7 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         """Apply the transport's stampede rule, bound the local lifetime, store."""
         state = self._state
         now = time.monotonic()
-        config = self._transport.adapter.resolve_stampede(None)
+        config = self._stampede
         buffer_ms = config.buffer * 1000 if config else 0
         found: dict[str, Any] = {}
         for index, made_key in enumerate(made_keys):
@@ -465,8 +484,8 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
                     keep = False
                 else:
                     expires_at = now + logical_ms / 1000.0
-            elif pttl == -2:
-                # Vanished between GET and PTTL: serve it, but do not keep it.
+            elif pttl != -1:
+                # -2 (vanished between GET and PTTL) or anything unexpected: serve it, but do not keep it.
                 keep = False
             if self._local_timeout is not None:
                 cap = now + self._local_timeout
@@ -487,7 +506,7 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
     def _evict_pattern(self, pattern: str, version: int | None) -> None:
         transport = self._transport
         with self._state.lock:
-            candidates = list(self._state.store)
+            candidates = set(self._state.store) | set(self._state.pending)
         matching = []
         for made_key in candidates:
             original = transport.reverse_key(made_key)
@@ -500,7 +519,7 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
     def get(self, key: str, default: Any = None, version: int | None = None) -> Any:
         self._ensure_listener()
         made_key = self._local_key(key, version)
-        raw = self._state.local_get(made_key, time.monotonic())
+        raw = self._state.local_get(made_key, time.monotonic(), self._stampede)
         if raw is _MISS:
             raw = self._fetch([made_key]).get(made_key, _MISS)
         if raw is _MISS:
@@ -510,12 +529,52 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
     async def aget(self, key: str, default: Any = None, version: int | None = None) -> Any:
         self._ensure_listener()
         made_key = self._local_key(key, version)
-        raw = self._state.local_get(made_key, time.monotonic())
+        raw = self._state.local_get(made_key, time.monotonic(), self._stampede)
         if raw is _MISS:
             raw = (await self._afetch([made_key])).get(made_key, _MISS)
         if raw is _MISS:
             return default
         return self._transport.decode(raw)
+
+    def get_or_set(
+        self,
+        key: str,
+        default: Any,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+    ) -> Any:
+        """Django's ``get_or_set``, writing with ``set`` rather than ``add`` when the transport prevents stampedes."""
+        value = self.get(key, _MISS, version=version)
+        if value is not _MISS:
+            return value
+        if callable(default):
+            default = default()
+        if self._stampede is not None:
+            # The miss may be an early-recompute signal for a key that still
+            # exists, which add (NX) would leave untouched.
+            self.set(key, default, timeout=timeout, version=version)
+        else:
+            self.add(key, default, timeout=timeout, version=version)
+        return self.get(key, default, version=version)
+
+    async def aget_or_set(
+        self,
+        key: str,
+        default: Any,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+    ) -> Any:
+        """Async twin of :meth:`get_or_set`."""
+        value = await self.aget(key, _MISS, version=version)
+        if value is not _MISS:
+            return value
+        if callable(default):
+            default = default()
+        if self._stampede is not None:
+            await self.aset(key, default, timeout=timeout, version=version)
+        else:
+            await self.aadd(key, default, timeout=timeout, version=version)
+        return await self.aget(key, default, version=version)
 
     def _split_local(
         self,
@@ -525,6 +584,7 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         """Map made keys to originals and serve what the local store has."""
         self._ensure_listener()
         now = time.monotonic()
+        stampede = self._stampede
         key_map: dict[str, str] = {}
         local: dict[str, Any] = {}
         missing: list[str] = []
@@ -533,7 +593,7 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
             if made_key in key_map:
                 continue
             key_map[made_key] = key
-            raw = self._state.local_get(made_key, now)
+            raw = self._state.local_get(made_key, now, stampede)
             if raw is _MISS:
                 missing.append(made_key)
             else:
@@ -560,14 +620,14 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
     def has_key(self, key: str, version: int | None = None) -> bool:
         self._ensure_listener()
         made_key = self._local_key(key, version)
-        if self._state.local_get(made_key, time.monotonic()) is not _MISS:
+        if self._state.local_get(made_key, time.monotonic(), self._stampede) is not _MISS:
             return True
         return self._transport.has_key(key, version=version)
 
     async def ahas_key(self, key: str, version: int | None = None) -> bool:
         self._ensure_listener()
         made_key = self._local_key(key, version)
-        if self._state.local_get(made_key, time.monotonic()) is not _MISS:
+        if self._state.local_get(made_key, time.monotonic(), self._stampede) is not _MISS:
             return True
         return await self._transport.ahas_key(key, version=version)
 

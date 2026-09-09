@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from django_cachex.stampede import StampedeConfig, make_stampede_config, should_recompute
+from django_cachex.stampede import StampedeConfig, make_stampede_config, should_recompute, should_recompute_remaining
 from tests.cache.support import make_cache
 
 if TYPE_CHECKING:
@@ -17,6 +17,23 @@ if TYPE_CHECKING:
 # =============================================================================
 # Unit tests for stampede module (no Redis needed)
 # =============================================================================
+
+
+class TestShouldRecomputeRemaining:
+    """Tests for should_recompute_remaining(), the roll on an already buffer-stripped lifetime."""
+
+    def test_no_time_left_always_recomputes(self):
+        config = StampedeConfig(buffer=60, delta=1.0, beta=1.0)
+        assert should_recompute_remaining(0.0, config) is True
+        assert should_recompute_remaining(-1.5, config) is True
+
+    def test_zero_delta_never_rolls(self):
+        config = StampedeConfig(buffer=60, delta=0)
+        assert not any(should_recompute_remaining(0.001, config) for _ in range(1000))
+
+    def test_ample_time_never_recomputes(self):
+        config = StampedeConfig(buffer=60, delta=1.0, beta=1.0)
+        assert not any(should_recompute_remaining(290.0, config) for _ in range(1000))
 
 
 class TestShouldRecompute:
