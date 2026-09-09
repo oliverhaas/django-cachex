@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Features
+
+- `TrackingCache`: a local read cache over an existing redis-py or valkey-py alias, kept coherent by the server's `CLIENT TRACKING` broadcast mode. Nothing is cached while its listener is down; cluster and valkey-glide transports are rejected. With `OPTIONS["coherence"] = "ttl"` no listener runs, `local_timeout` alone bounds staleness, and any transport works. See [Composite backends](../user-guide/composite-backends.md#trackingcache).
+- Adapters gained `invalidation_listener(prefixes)`, a `CLIENT TRACKING BCAST` subscription; the cluster and valkey-glide adapters raise `NotSupportedError`.
+
 ### Improvements
 
 - Hash field expiration. `hexpire()`, `hpexpire()`, `hexpireat()`, `hpexpireat()`, `httl()`, `hpttl()`, `hexpiretime()` and `hpersist()` set, read and remove a TTL on individual hash fields, and `hsetex()` / `hgetex()` write or read fields while setting their TTL in the same command. All ten have async twins and pipeline support on the redis-py, valkey-py and valkey-glide adapters. Field TTLs need Redis 7.4+ or Valkey 9.0+, and `hsetex()`/`hgetex()` need Redis 8.0+ or Valkey 9.0+; the package's minimum server versions are unchanged, so on an older server these methods raise `NotSupportedError`.
@@ -121,7 +126,7 @@
 - `RespCache`, `RespClusterCache` and `RespSentinelCache` raise `ImproperlyConfigured` when used as a `BACKEND` directly. They bind no driver and exist to be subclassed; naming one used to fail later with an obscure attribute error.
 - `xpending()` rejects filters given without `count`. Passing `start`, `end`, `consumer` or `idle` without a `count` silently fell back to the unfiltered summary form and returned a dict where a per-message list was asked for. It raises `ValueError` now, on the client, the pipeline and both async twins.
 
-### New features
+### Features
 
 - Async admin surface on `TieredCache`: `akeys`, `aiter_keys`, `ascan`, `attl`, `apttl`, `atype`, `apersist`, `aexpire` and `adelete_pattern`.
 - `ascan()` on `DatabaseCache`, which had the sync `scan` but inherited the `NotSupportedError` default for the async twin.
@@ -276,7 +281,7 @@
 - `CachexCompat` removed. The mixin class that emulated the cachex ext surface on top of an arbitrary `BaseCache` is gone, along with the admin's "wrapped" support tier. Django's `BaseCache` and the stock backends (`LocMemCache`, `RedisCache`, `DatabaseCache`, `FileBasedCache`, `MemcachedCache`, `DummyCache`) deliberately don't expose key listing, so the wrap couldn't drive the admin's browse views meaningfully. Use `django_cachex.cache.LocMemCache` / `DatabaseCache` (drop-in replacements) for full admin support; non-cachex backends now show as "limited" (configuration only).
 - Cluster `LOCATION` with a database number now raises on the redis-py and valkey-py cluster backends. Those two are built with the driver's `from_url()`, which rejects a non-zero `db` in the URL path or query (`RedisClusterException` / `ValkeyClusterException`). The old code read only host and port off the URL, so `redis://host:6379/1` connected to db 0 without complaint. Cluster has no `SELECT`, so the number was never honored; drop it from `LOCATION`. `ValkeyGlideClusterCache` and `RedisRsClusterCache` still ignore it silently.
 
-### New features
+### Features
 
 - Rust I/O driver (experimental). Optional native driver built on PyO3 + tokio + redis-rs, shipped as a separate `django-cachex-redis-rs` package. Interfaces and behavior may change, and it has seen less production testing than the redis-py/valkey-py paths. Opt in via the `redis-rs` extra (`pip install django-cachex[redis-rs]`); without it, only the pure-Python backends are pulled in and the `RedisRsCache` classes raise a clean `ImportError` on first use. Set `BACKEND` to one of `RedisRsCache`, `RedisRsClusterCache`, or `RedisRsSentinelCache`. Sync and async share one tokio runtime; async dodges the threadpool round-trip.
 - `valkey-glide` adapter (experimental). Optional Rust-cored client from the Valkey project. Interfaces and behavior may change, and it has seen less production testing than the redis-py/valkey-py paths. Opt in via the `valkey-glide` extra. Standalone (`ValkeyGlideCache`) and cluster (`ValkeyGlideClusterCache`) topologies are exposed; Sentinel is not (`valkey-glide` itself does not ship a Sentinel client).

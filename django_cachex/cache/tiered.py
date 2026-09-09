@@ -44,18 +44,19 @@ from typing import TYPE_CHECKING, Any, cast
 from django.core.cache.backends.base import DEFAULT_TIMEOUT, BaseCache
 from django.core.exceptions import ImproperlyConfigured
 
+from django_cachex.cache._delegation import DelegatingCacheMixin
 from django_cachex.cache.base import BaseCachex, CachexSupportLevel
 from django_cachex.exceptions import NotSupportedError
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterable, Iterator
+    from collections.abc import Iterable
     from datetime import timedelta
 
 # Sentinel to distinguish "not in L1" from a stored None
 _L1_MISS = object()
 
 
-class TieredCache(BaseCachex):
+class TieredCache(DelegatingCacheMixin, BaseCachex):
     """Two-tiered cache referencing other CACHES entries as L1 and L2.
 
     L1 is checked first on reads; on miss, L2 is queried and L1 is populated.
@@ -609,106 +610,9 @@ class TieredCache(BaseCachex):
     # Admin delegation methods (delegate to L2)
     # =========================================================================
 
-    def _l2_method(self, method: str) -> Any:
-        """Look up ``method`` on L2, raising NotSupportedError if it has none."""
-        fn = getattr(self._l2, method, None)
-        if fn is None:
-            raise NotSupportedError(method, "TieredCache")
-        return fn
-
-    def _delegate(self, method: str, *args: Any, **kwargs: Any) -> Any:
-        """Delegate a method call to L2, raising NotSupportedError if unavailable.
-
-        Only the attribute lookup and an explicit ``NotSupportedError`` from L2
-        are translated; an ``AttributeError`` raised inside L2's implementation
-        is a bug there and propagates unchanged.
-        """
-        fn = self._l2_method(method)
-        try:
-            return fn(*args, **kwargs)
-        except NotSupportedError as exc:
-            raise NotSupportedError(method, "TieredCache") from exc
-
-    async def _adelegate(self, method: str, *args: Any, **kwargs: Any) -> Any:
-        """Async twin of :meth:`_delegate`."""
-        fn = self._l2_method(method)
-        try:
-            return await fn(*args, **kwargs)
-        except NotSupportedError as exc:
-            raise NotSupportedError(method, "TieredCache") from exc
-
-    @staticmethod
-    def _wrap_iter(method: str, it: Iterator[str]) -> Iterator[str]:
-        """Re-raise a lazily surfaced NotSupportedError as TieredCache's.
-
-        A generator function returns without running its body, so L2's
-        ``NotSupportedError`` escapes :meth:`_delegate` at iteration time.
-        """
-        try:
-            yield from it
-        except NotSupportedError as exc:
-            raise NotSupportedError(method, "TieredCache") from exc
-
-    @staticmethod
-    async def _awrap_iter(method: str, it: AsyncIterator[str]) -> AsyncIterator[str]:
-        """Async twin of :meth:`_wrap_iter`."""
-        try:
-            async for key in it:
-                yield key
-        except NotSupportedError as exc:
-            raise NotSupportedError(method, "TieredCache") from exc
-
-    def make_key(self, key: str, version: int | None = None) -> str:
-        return self._delegate("make_key", key, version=version)
-
-    def reverse_key(self, key: str) -> str:
-        return self._delegate("reverse_key", key)
-
-    def make_pattern(self, pattern: str, version: int | None = None) -> str:
-        return self._delegate("make_pattern", pattern, version=version)
-
-    def keys(self, pattern: str = "*", version: int | None = None) -> list[str]:
-        return self._delegate("keys", pattern, version=version)
-
-    def iter_keys(
-        self,
-        pattern: str = "*",
-        version: int | None = None,
-        itersize: int | None = None,
-    ) -> Iterator[str]:
-        return self._wrap_iter("iter_keys", self._delegate("iter_keys", pattern, version=version, itersize=itersize))
-
-    def scan(
-        self,
-        cursor: int = 0,
-        pattern: str = "*",
-        count: int | None = None,
-        version: int | None = None,
-        key_type: str | None = None,
-    ) -> tuple[int, list[str]]:
-        return self._delegate(
-            "scan",
-            cursor=cursor,
-            pattern=pattern,
-            count=count,
-            version=version,
-            key_type=key_type,
-        )
-
-    def ttl(self, key: str, version: int | None = None) -> int | None:
-        return self._delegate("ttl", key, version=version)
-
-    def pttl(self, key: str, version: int | None = None) -> int | None:
-        return self._delegate("pttl", key, version=version)
-
-    def type(self, key: str, version: int | None = None) -> Any:
-        return self._delegate("type", key, version=version)
-
-    def info(self, section: str | None = None) -> dict[str, Any]:
-        return self._delegate("info", section=section)
-
-    def persist(self, key: str, version: int | None = None) -> bool:
-        return self._delegate("persist", key, version=version)
+    @property
+    def _delegation_target(self) -> BaseCachex:
+        return self._l2
 
     def expire(self, key: str, timeout: int | timedelta, version: int | None = None) -> bool:
         result = self._delegate("expire", key, timeout, version=version)
@@ -787,53 +691,6 @@ class TieredCache(BaseCachex):
         for k in keys:
             await self._l1.adelete(k, version=version)
         return True
-
-    async def akeys(self, pattern: str = "*", version: int | None = None) -> list[str]:
-        return await self._adelegate("akeys", pattern, version=version)
-
-    def aiter_keys(
-        self,
-        pattern: str = "*",
-        version: int | None = None,
-        itersize: int | None = None,
-    ) -> AsyncIterator[str]:
-        # Not ``async def``: L2's ``aiter_keys`` is itself a plain method
-        # returning an async iterator, matching ``BaseCachex``.
-        fn = self._l2_method("aiter_keys")
-        try:
-            it = fn(pattern, version=version, itersize=itersize)
-        except NotSupportedError as exc:
-            raise NotSupportedError("aiter_keys", "TieredCache") from exc
-        return self._awrap_iter("aiter_keys", it)
-
-    async def ascan(
-        self,
-        cursor: int = 0,
-        pattern: str = "*",
-        count: int | None = None,
-        version: int | None = None,
-        key_type: str | None = None,
-    ) -> tuple[int, list[str]]:
-        return await self._adelegate(
-            "ascan",
-            cursor=cursor,
-            pattern=pattern,
-            count=count,
-            version=version,
-            key_type=key_type,
-        )
-
-    async def attl(self, key: str, version: int | None = None) -> int | None:
-        return await self._adelegate("attl", key, version=version)
-
-    async def apttl(self, key: str, version: int | None = None) -> int | None:
-        return await self._adelegate("apttl", key, version=version)
-
-    async def atype(self, key: str, version: int | None = None) -> Any:
-        return await self._adelegate("atype", key, version=version)
-
-    async def apersist(self, key: str, version: int | None = None) -> bool:
-        return await self._adelegate("apersist", key, version=version)
 
     async def aexpire(self, key: str, timeout: int | timedelta, version: int | None = None) -> bool:
         result = await self._adelegate("aexpire", key, timeout, version=version)

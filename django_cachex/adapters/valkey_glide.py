@@ -27,7 +27,12 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from django.core.exceptions import ImproperlyConfigured
 
-from django_cachex.adapters.protocols import RespAdapterProtocol, RespAsyncPipelineProtocol, RespPipelineProtocol
+from django_cachex.adapters.protocols import (
+    InvalidationListenerProtocol,
+    RespAdapterProtocol,
+    RespAsyncPipelineProtocol,
+    RespPipelineProtocol,
+)
 from django_cachex.adapters.valkey_py import (
     _check_xpending_args,
     _expire_arg,
@@ -38,7 +43,7 @@ from django_cachex.adapters.valkey_py import (
     _options_key,
     _to_unix,
 )
-from django_cachex.exceptions import KeyNotFoundError, translate_server_error
+from django_cachex.exceptions import KeyNotFoundError, NotSupportedError, translate_server_error
 from django_cachex.stampede import (
     StampedeConfig,
     get_timeout_with_buffer,
@@ -1774,6 +1779,10 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         """
         del kwargs
         self._sweep_async_clients()
+
+    def invalidation_listener(self, prefixes: Sequence[str], *, timeout: float = 5.0) -> InvalidationListenerProtocol:
+        """Not offered: glide refuses pub/sub on RESP2 and its push handler drops RESP3 ``invalidate`` frames."""
+        raise NotSupportedError("invalidation_listener", "valkey-glide")
 
     # ---- TTL ----
     def ttl(self, key: str) -> int | None:

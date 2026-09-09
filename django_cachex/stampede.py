@@ -37,16 +37,17 @@ def should_recompute(ttl: int, config: StampedeConfig) -> bool:
     """
     if ttl < 0:
         return False
-    remaining = ttl - config.buffer
+    return should_recompute_remaining(ttl - config.buffer, config)
 
+
+def should_recompute_remaining(remaining: float, config: StampedeConfig) -> bool:
+    """Roll XFetch's dice on a buffer-stripped lifetime; ``remaining <= 0`` always recomputes."""
     if remaining <= 0:
         return True
-
     if config.delta > 0:
         threshold = config.delta * config.beta * -random.expovariate(1.0)
         if remaining + threshold <= 0:
             return True
-
     return False
 
 
