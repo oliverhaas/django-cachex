@@ -957,6 +957,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#features" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -996,7 +1007,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#breaking-changes" class="md-nav__link">
+  <a href="#breaking-changes_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Breaking changes
@@ -1035,7 +1046,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#breaking-changes_1" class="md-nav__link">
+  <a href="#breaking-changes_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Breaking changes
@@ -1107,7 +1118,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#breaking-changes_2" class="md-nav__link">
+  <a href="#breaking-changes_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Breaking changes
@@ -1218,7 +1229,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#breaking-changes_3" class="md-nav__link">
+  <a href="#breaking-changes_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         Breaking changes
@@ -1313,7 +1324,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#breaking-changes_4" class="md-nav__link">
+  <a href="#breaking-changes_5" class="md-nav__link">
     <span class="md-ellipsis">
       
         Breaking changes
@@ -1750,6 +1761,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#features" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1789,7 +1811,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#breaking-changes" class="md-nav__link">
+  <a href="#breaking-changes_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Breaking changes
@@ -1828,7 +1850,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#breaking-changes_1" class="md-nav__link">
+  <a href="#breaking-changes_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Breaking changes
@@ -1900,7 +1922,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#breaking-changes_2" class="md-nav__link">
+  <a href="#breaking-changes_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Breaking changes
@@ -2011,7 +2033,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#breaking-changes_3" class="md-nav__link">
+  <a href="#breaking-changes_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         Breaking changes
@@ -2106,7 +2128,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#breaking-changes_4" class="md-nav__link">
+  <a href="#breaking-changes_5" class="md-nav__link">
     <span class="md-ellipsis">
       
         Breaking changes
@@ -2421,6 +2443,10 @@
 
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="breaking-changes">Breaking changes<a class="headerlink" href="#breaking-changes" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>TieredCache</code> is removed; <code>TrackingCache</code> with <code>OPTIONS["coherence"] = "ttl"</code> replaces it. Point <code>transport</code> at the alias that was L2, rename <code>l1_timeout</code> to <code>local_timeout</code>, move <code>MAX_ENTRIES</code> from the L1 alias to the <code>TrackingCache</code> alias and drop the L1 alias. The transport must be a cachex Valkey/Redis backend; an L2 that was a stock Django backend has no replacement.</li>
+</ul>
 <h3 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>TrackingCache</code>: a local read cache over an existing redis-py or valkey-py alias, kept coherent by the server's <code>CLIENT TRACKING</code> broadcast mode. Nothing is cached while its listener is down; cluster and valkey-glide transports are rejected. With <code>OPTIONS["coherence"] = "ttl"</code> no listener runs, <code>local_timeout</code> alone bounds staleness, and any transport works. See <a href="../../user-guide/composite-backends/#trackingcache">Composite backends</a>.</li>
@@ -2430,10 +2456,10 @@
 <ul>
 <li>Hash field expiration. <code>hexpire()</code>, <code>hpexpire()</code>, <code>hexpireat()</code>, <code>hpexpireat()</code>, <code>httl()</code>, <code>hpttl()</code>, <code>hexpiretime()</code> and <code>hpersist()</code> set, read and remove a TTL on individual hash fields, and <code>hsetex()</code> / <code>hgetex()</code> write or read fields while setting their TTL in the same command. All ten have async twins and pipeline support on the redis-py, valkey-py and valkey-glide adapters. Field TTLs need Redis 7.4+ or Valkey 9.0+, and <code>hsetex()</code>/<code>hgetex()</code> need Redis 8.0+ or Valkey 9.0+; the package's minimum server versions are unchanged, so on an older server these methods raise <code>NotSupportedError</code>.</li>
 <li>Key deletion sends <code>UNLINK</code> instead of <code>DEL</code> on every RESP adapter: <code>delete()</code>, <code>delete_many()</code>, <code>delete_pattern()</code>, <code>set(timeout=0)</code>, the pipeline <code>delete()</code> and the cluster per-slot paths. <code>UNLINK</code> reclaims a large hash, list or set in a background thread instead of blocking the server while the value is torn down.</li>
-<li><code>NotSupportedError</code> gains a <code>detail</code> attribute, and the RESP adapters translate the server's "unknown command" reply (and the cluster client's command-table lookup failure) into it. A command the connected server predates now surfaces as the same exception the LocMem, Database and Tiered backends raise for an operation they lack, with <code>operation</code> set to the command name, instead of a driver <code>ResponseError</code>.</li>
+<li><code>NotSupportedError</code> gains a <code>detail</code> attribute, and the RESP adapters translate the server's "unknown command" reply (and the cluster client's command-table lookup failure) into it. A command the connected server predates now surfaces as the same exception the LocMem, Database and Tracking backends raise for an operation they lack, with <code>operation</code> set to the command name, instead of a driver <code>ResponseError</code>.</li>
 </ul>
 <h2 id="071-september-2026">0.7.1 (September 2026)<a class="headerlink" href="#071-september-2026" title="Permanent link">&para;</a></h2>
-<h3 id="breaking-changes">Breaking changes<a class="headerlink" href="#breaking-changes" title="Permanent link">&para;</a></h3>
+<h3 id="breaking-changes_1">Breaking changes<a class="headerlink" href="#breaking-changes_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>renamenx()</code> and <code>arenamenx()</code> return <code>False</code> for a missing source key instead of raising. The method already answers "did the rename happen" with a bool when the destination is taken, and a missing source is the same answer on the claim-a-key path; callers had to wrap the call in <code>except ValueError</code> to get one.</li>
 </ul>
@@ -2442,7 +2468,7 @@
 <li><code>rename()</code> and <code>arename()</code> raise <code>KeyNotFoundError</code> for a missing source key, and both methods document it. The exception subclasses <code>CachexError</code> and <code>ValueError</code>, so <code>except CachexError</code> now covers it and existing <code>except ValueError</code> handlers keep working without swallowing unrelated errors; the missing key is available as <code>.key</code>.</li>
 </ul>
 <h2 id="070-september-2026">0.7.0 (September 2026)<a class="headerlink" href="#070-september-2026" title="Permanent link">&para;</a></h2>
-<h3 id="breaking-changes_1">Breaking changes<a class="headerlink" href="#breaking-changes_1" title="Permanent link">&para;</a></h3>
+<h3 id="breaking-changes_2">Breaking changes<a class="headerlink" href="#breaking-changes_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>LocMemCache.ttl()</code>, <code>DatabaseCache.ttl()</code> and <code>StreamCache.ttl()</code> return <code>None</code> for a key with no expiry, and so do their <code>pttl()</code> twins. They returned Redis's raw <code>-1</code>, while the RESP adapters normalize that to <code>None</code>, so a caller checking <code>ttl(key) is None</code> got different answers from different backends. <code>-2</code> still means the key is gone.</li>
 <li><code>DatabaseCache.get()</code> raises <code>WrongTypeError</code> on a key holding a list, set, hash or sorted set, and <code>get_many()</code> omits it. A collection came back as the raw tagged container, so <code>get()</code> handed out a <code>_List</code> that compared equal to a plain list and <code>get_many()</code> mixed structures into a string read. <code>LocMemCache</code> has behaved this way since the tags were introduced.</li>
@@ -2529,7 +2555,7 @@
 <li>The valkey-glide adapter no longer needs its module-wide <code>ignore_errors</code> mypy override or its file-wide <code>ruff: noqa: ERA001</code>. It type-checks and lints with the rest of the package.</li>
 </ul>
 <h2 id="060-august-2026">0.6.0 (August 2026)<a class="headerlink" href="#060-august-2026" title="Permanent link">&para;</a></h2>
-<h3 id="breaking-changes_2">Breaking changes<a class="headerlink" href="#breaking-changes_2" title="Permanent link">&para;</a></h3>
+<h3 id="breaking-changes_3">Breaking changes<a class="headerlink" href="#breaking-changes_3" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>DatabaseCache</code> stores its collections as tagged subclasses. Lists, sets, hashes and sorted sets are written as <code>_List</code> / <code>_Set</code> / <code>_Hash</code> / <code>_ZSet</code>, the same tagging <code>LocMemCache</code> has used since 0.4.0, and a compound operation on an untagged value raises <code>WrongTypeError</code>. Rows written by an older version hold plain containers, so <code>lpush</code> on a row a previous release wrote will now raise. Clear the cache table, or re-write those keys, before upgrading. Without the tags a plain <code>set("k", ["a"])</code> was indistinguishable from a list key, and <code>type()</code> had to guess from the value's shape.</li>
 <li><code>type()</code> returns <code>None</code> for a key that does not exist. The <code>BaseCachex</code> default answered <code>STRING</code> for every key including missing ones, which contradicted its own <code>KeyType | None</code> annotation and made the admin's type column claim a type for keys that had expired between the scan and the read.</li>
@@ -2642,7 +2668,7 @@
 <li>The <code>username</code> connection option is documented. It works as an <code>OPTIONS</code> key on every adapter and takes precedence over the URL, which matters when an ACL user name would need URL-escaping.</li>
 </ul>
 <h2 id="050-august-2026">0.5.0 (August 2026)<a class="headerlink" href="#050-august-2026" title="Permanent link">&para;</a></h2>
-<h3 id="breaking-changes_3">Breaking changes<a class="headerlink" href="#breaking-changes_3" title="Permanent link">&para;</a></h3>
+<h3 id="breaking-changes_4">Breaking changes<a class="headerlink" href="#breaking-changes_4" title="Permanent link">&para;</a></h3>
 <ul>
 <li>The <code>redis-rs</code> backends are gone. <code>RedisRsCache</code>, <code>RedisRsSentinelCache</code> and <code>RedisRsClusterCache</code>, the <code>django_cachex.adapters.redis_rs</code> module, the <code>redis-rs</code> extra and the <code>django-cachex-redis-rs</code> companion package have all been removed. The Rust driver was never published to PyPI, so no released install can break; switch to <code>ValkeyCache</code>, <code>RedisCache</code> or <code>ValkeyGlideCache</code>. A standalone <a href="https://github.com/oliverhaas/redis-rs-py">redis-rs-py</a> binding is in progress and cachex may grow an adapter for it once that package stands on its own.</li>
 <li><code>django_cachex.Lock</code> and <code>django_cachex.AsyncLock</code> removed. They existed only to wrap the Rust driver's raw lock commands. <code>cache.lock()</code> is unchanged on every remaining backend, and <code>LockError</code> / <code>LockNotOwnedError</code> are still the exceptions it raises.</li>
@@ -2677,7 +2703,7 @@ the package is pure Python again and builds a single wheel with hatchling,
 so the cibuildwheel and cp314t wheel entries no longer describe the current
 release.</p>
 </div>
-<h3 id="breaking-changes_4">Breaking changes<a class="headerlink" href="#breaking-changes_4" title="Permanent link">&para;</a></h3>
+<h3 id="breaking-changes_5">Breaking changes<a class="headerlink" href="#breaking-changes_5" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Python 3.14+ required. Dropped support for 3.12 and 3.13. The package now ships on cp314 and cp314t (free-threaded) wheels.</li>
 <li>Django 6.0+ required. Dropped support for Django 5.2.</li>

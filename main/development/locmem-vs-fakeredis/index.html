@@ -1381,8 +1381,8 @@ page for the script.)</p>
 <li><strong>Dev REPL feedback.</strong> A cache op that takes ~1 ms instead of ~2 µs
   changes the feel of "let me poke this in the shell" from
   instantaneous to noticeable.</li>
-<li><strong><code>TieredCache</code> L1 hits.</strong> <code>LocMemCache</code> is the default L1 in front
-  of a Redis L2. Inflating the L1 hit cost defeats the point.</li>
+<li><strong><code>StreamCache</code> hits.</strong> <code>StreamCache</code> serves reads from the <code>LocMemCache</code>
+  store it inherits. Inflating that hit cost defeats the point.</li>
 </ul>
 <h3 id="where-fakeredis-would-actually-be-useful">Where fakeredis would actually be useful<a class="headerlink" href="#where-fakeredis-would-actually-be-useful" title="Permanent link">&para;</a></h3>
 <p>For testing the <strong>adapter layer</strong> (redis-py / valkey-py command paths,
@@ -1403,8 +1403,8 @@ work without Docker, or if the suite gets meaningfully larger.</p>
 </span></code></pre></div>
 <p><code>LocMemCache</code> is the fastest option by two orders of magnitude. It's
 also the only option that doesn't pay protocol-serialization cost. Use
-it as L1 in <code>TieredCache</code>, as the dev/test backend, and anywhere
-in-process caching dominates the access pattern.</p>
+it as the dev/test backend and anywhere in-process caching dominates
+the access pattern.</p>
 
 
 

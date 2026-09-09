@@ -2844,8 +2844,8 @@ returned <code>bool</code>, leaving the claim held until its lease expires.</p>
 driver's <code>from_url()</code>, so <code>retry_on_timeout</code>, <code>ssl_ca_certs</code>, <code>socket_keepalive</code>
 and the rest of the driver's own options work there. The valkey-glide adapter
 does not: it reads only the keys marked "all Valkey/Redis" or "valkey-glide" and
-ignores everything else. <code>LocMemCache</code>, <code>DatabaseCache</code>, <code>StreamCache</code>,
-<code>TieredCache</code> and <code>TrackingCache</code> take their own <code>OPTIONS</code>; see
+ignores everything else. <code>LocMemCache</code>, <code>DatabaseCache</code>, <code>StreamCache</code>
+and <code>TrackingCache</code> take their own <code>OPTIONS</code>; see
 <a href="../../user-guide/configuration/">Configuration</a> and
 <a href="../../user-guide/composite-backends/">Composite backends</a>.</p>
 <h3 id="stampedeconfig">StampedeConfig<a class="headerlink" href="#stampedeconfig" title="Permanent link">&para;</a></h3>
@@ -2882,8 +2882,8 @@ gets the buffer added back.</p>
 </tr>
 </tbody>
 </table>
-<p>Only the Valkey/Redis backends implement it. <code>LocMemCache</code>, <code>DatabaseCache</code>,
-<code>StreamCache</code> and <code>TieredCache</code> ignore both the option and the per-call keyword;
+<p>Only the Valkey/Redis backends implement it. <code>LocMemCache</code>, <code>DatabaseCache</code>
+and <code>StreamCache</code> ignore both the option and the per-call keyword;
 <code>TrackingCache</code> follows its transport's setting.</p>
 <h2 id="exceptions">Exceptions<a class="headerlink" href="#exceptions" title="Permanent link">&para;</a></h2>
 <p>All importable from the package root (<code>django_cachex</code>). Every exception
@@ -2919,7 +2919,7 @@ failure.</p>
 </tr>
 <tr>
 <td><code>NotSupportedError</code></td>
-<td>Operation is not supported by this backend (e.g. <code>lpush</code> on <code>TieredCache</code>) or by the connected server (e.g. <code>hexpire</code> on Redis 7.2). <code>operation</code> names the method or command, <code>backend</code> the cache class (<code>None</code> when the server rejected the command) and <code>detail</code> says why, including the server release that adds a missing command.</td>
+<td>Operation is not supported by this backend (e.g. <code>lpush</code> on <code>TrackingCache</code>) or by the connected server (e.g. <code>hexpire</code> on Redis 7.2). <code>operation</code> names the method or command, <code>backend</code> the cache class (<code>None</code> when the server rejected the command) and <code>detail</code> says why, including the server release that adds a missing command.</td>
 </tr>
 <tr>
 <td><code>LockError</code></td>

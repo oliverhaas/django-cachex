@@ -2061,10 +2061,6 @@ methods, so one cache alias holds up to one client of each kind.</p>
 <td>In-memory store synchronized across pods via a Redis Stream consumer</td>
 </tr>
 <tr>
-<td><code>TieredCache</code></td>
-<td>Composes two existing <code>CACHES</code> entries as L1/L2 with TTL propagation</td>
-</tr>
-<tr>
 <td><code>TrackingCache</code></td>
 <td>Read-through local cache over a Redis/Valkey alias, invalidated by the server's <code>CLIENT TRACKING</code></td>
 </tr>
@@ -2284,9 +2280,9 @@ parser otherwise. To get the C parser, install the <code>libvalkey</code> or
 <div class="admonition warning">
 <p class="admonition-title">Valkey/Redis backends only</p>
 <p>Stampede prevention is implemented in the RESP cache layer and the
-valkey-py and valkey-glide adapters. <code>LocMemCache</code>, <code>DatabaseCache</code>,
-<code>StreamCache</code> and <code>TieredCache</code> ignore both <code>OPTIONS["stampede_prevention"]</code>
-and the per-call keyword. <code>TrackingCache</code> follows its transport's setting.</p>
+valkey-py and valkey-glide adapters. <code>LocMemCache</code>, <code>DatabaseCache</code>
+and <code>StreamCache</code> ignore both <code>OPTIONS["stampede_prevention"]</code> and the
+per-call keyword. <code>TrackingCache</code> follows its transport's setting.</p>
 </div>
 <h3 id="valkey-glide-options">Valkey-Glide OPTIONS<a class="headerlink" href="#valkey-glide-options" title="Permanent link">&para;</a></h3>
 <p>The valkey-glide adapter builds a <code>GlideClientConfiguration</code> rather than a
@@ -2495,9 +2491,9 @@ effect on valkey-glide, where the only TLS input cachex passes on is the
 <div class="admonition warning">
 <p class="admonition-title">RESP backends only</p>
 <p><code>LocMemCache</code>, <code>DatabaseCache</code> and <code>StreamCache</code> strip the prefix
-themselves and ignore <code>REVERSE_KEY_FUNCTION</code>. <code>TieredCache</code> and
-<code>TrackingCache</code> forward <code>reverse_key()</code> to their L2 tier or transport,
-so it belongs on that alias rather than the composite one.</p>
+themselves and ignore <code>REVERSE_KEY_FUNCTION</code>. <code>TrackingCache</code> forwards
+<code>reverse_key()</code> to its transport, so it belongs on that alias rather
+than the composite one.</p>
 </div>
 <h2 id="complete-example">Complete Example<a class="headerlink" href="#complete-example" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
