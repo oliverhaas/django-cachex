@@ -1,11 +1,10 @@
 """Tests for the CLIENT TRACKING backed local cache (TrackingCache)."""
 
-import asyncio
 import math
 import threading
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -26,12 +25,13 @@ from tests.fixtures.cache import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Iterator
+    from collections.abc import Awaitable, Callable, Iterator, Sequence
 
     from django_cachex.cache.resp import RespCache
     from tests.fixtures.containers import RedisContainerInfo
 
 TRANSPORT_PREFIX = "trk"
+TRACKED_PREFIXES = (f"{TRANSPORT_PREFIX}:",)
 
 
 def _wait_for(predicate: Callable[[], bool], timeout: float = 5.0, interval: float = 0.02) -> bool:
@@ -44,29 +44,35 @@ def _wait_for(predicate: Callable[[], bool], timeout: float = 5.0, interval: flo
     return predicate()
 
 
-def _transport_config(host: str, port: int, resp_adapter: str, *, prefix: str = TRANSPORT_PREFIX) -> dict:
+def _skip_unless_trackable(resp_adapter: str) -> None:
+    if resp_adapter == "valkey-glide":
+        pytest.skip("valkey-glide cannot host an invalidation listener")
+    if not _adapter_library_available(resp_adapter):
+        pytest.skip(f"{resp_adapter} library not installed")
+
+
+def _transport_config(redis_container: RedisContainerInfo, resp_adapter: str) -> dict:
     if resp_adapter in {"redis-py", "valkey-py"}:
         options = _get_client_library_options(ADAPTER_IMAGES[resp_adapter][1])
     else:
         options = {"request_timeout": 5000}
     return {
         "BACKEND": BACKENDS[("default", resp_adapter)],
-        "LOCATION": f"redis://{host}:{port}?db=14",
+        "LOCATION": f"redis://{redis_container.host}:{redis_container.port}?db=14",
         "OPTIONS": options,
-        "KEY_PREFIX": prefix,
+        "KEY_PREFIX": TRANSPORT_PREFIX,
     }
 
 
 def _build_tracking_config(
-    host: str,
-    port: int,
+    redis_container: RedisContainerInfo,
     resp_adapter: str,
     *,
     options: dict | None = None,
 ) -> dict:
-    """Build CACHES with a RESP transport plus one TrackingCache alias under a unique LOCATION."""
+    """CACHES with a RESP transport plus one TrackingCache alias under a unique LOCATION."""
     return {
-        "transport": _transport_config(host, port, resp_adapter),
+        "transport": _transport_config(redis_container, resp_adapter),
         "default": {
             "BACKEND": "django_cachex.cache.TrackingCache",
             "LOCATION": f"tracking:{uuid.uuid4().hex[:8]}",
@@ -79,15 +85,20 @@ def _kill_client(transport: RespCache, client_id: int) -> None:
     transport.adapter.get_client(write=True).execute_command("CLIENT", "KILL", "ID", client_id)
 
 
+@contextmanager
+def _listener(transport: RespCache, prefixes: Sequence[str] = TRACKED_PREFIXES, timeout: float = 5.0) -> Iterator[Any]:
+    listener = transport.adapter.invalidation_listener(prefixes, timeout=timeout)
+    try:
+        yield listener
+    finally:
+        listener.close()
+
+
 @pytest.fixture
 def listener_transport(redis_container: RedisContainerInfo, resp_adapter: str) -> Iterator[RespCache]:
     """A RESP transport whose adapter can host an invalidation listener."""
-    if resp_adapter == "valkey-glide":
-        pytest.skip("valkey-glide cannot host an invalidation listener")
-    if not _adapter_library_available(resp_adapter):
-        pytest.skip(f"{resp_adapter} library not installed")
-    config = {"transport": _transport_config(redis_container.host, redis_container.port, resp_adapter)}
-    with override_settings(CACHES=config):
+    _skip_unless_trackable(resp_adapter)
+    with override_settings(CACHES={"transport": _transport_config(redis_container, resp_adapter)}):
         transport = caches["transport"]
         transport.flush_db()
         yield transport
@@ -96,81 +107,57 @@ def listener_transport(redis_container: RedisContainerInfo, resp_adapter: str) -
 
 class TestInvalidationListener:
     def test_write_under_prefix_is_reported(self, listener_transport: RespCache):
-        listener = listener_transport.adapter.invalidation_listener([f"{TRANSPORT_PREFIX}:"], timeout=5.0)
-        try:
+        with _listener(listener_transport) as listener:
             listener_transport.set("reported", 1)
             message = listener.poll(5.0)
             assert isinstance(message, Invalidation)
             assert message.keys == (listener_transport.make_key("reported"),)
-        finally:
-            listener.close()
 
     def test_flush_is_reported_with_keys_none(self, listener_transport: RespCache):
-        listener = listener_transport.adapter.invalidation_listener([f"{TRANSPORT_PREFIX}:"], timeout=5.0)
-        try:
+        with _listener(listener_transport) as listener:
             listener_transport.set("flushed", 1)
             assert listener.poll(5.0).keys == (listener_transport.make_key("flushed"),)
             listener_transport.flush_db()
             assert listener.poll(5.0).keys is None
-        finally:
-            listener.close()
 
     def test_write_outside_prefix_is_not_reported(self, listener_transport: RespCache):
-        listener = listener_transport.adapter.invalidation_listener(["unrelated:"], timeout=5.0)
-        try:
+        with _listener(listener_transport, ["unrelated:"]) as listener:
             listener_transport.set("silent", 1)
             assert listener.poll(0.3) is None
-        finally:
-            listener.close()
 
     def test_empty_prefix_reports_every_key(self, listener_transport: RespCache):
-        listener = listener_transport.adapter.invalidation_listener([""], timeout=5.0)
-        try:
+        with _listener(listener_transport, [""]) as listener:
             listener_transport.adapter.get_client(write=True).set("no-prefix-at-all", 1)
             assert listener.poll(5.0).keys == ("no-prefix-at-all",)
-        finally:
-            listener.close()
 
     def test_ping_keeps_invalidations_that_arrive_meanwhile(self, listener_transport: RespCache):
-        listener = listener_transport.adapter.invalidation_listener([f"{TRANSPORT_PREFIX}:"], timeout=5.0)
-        try:
+        with _listener(listener_transport) as listener:
             listener_transport.set("during-ping", 1)
             time.sleep(0.1)
             listener.ping()
             assert listener.poll(5.0).keys == (listener_transport.make_key("during-ping"),)
-        finally:
-            listener.close()
 
     def test_ping_raises_once_the_subscriber_is_gone(self, listener_transport: RespCache):
-        listener = listener_transport.adapter.invalidation_listener([f"{TRANSPORT_PREFIX}:"], timeout=1.0)
-        try:
+        with _listener(listener_transport, timeout=1.0) as listener:
             subscriber_id, tracker_id = listener.client_ids
             assert subscriber_id != tracker_id
             _kill_client(listener_transport, subscriber_id)
             with pytest.raises(Exception, match=r"(?i)connection|closed|pong"):
                 listener.ping()
-        finally:
-            listener.close()
 
     def test_ping_raises_when_the_tracker_dropped_its_socket(self, listener_transport: RespCache):
-        listener = listener_transport.adapter.invalidation_listener([f"{TRANSPORT_PREFIX}:"], timeout=1.0)
-        try:
+        with _listener(listener_transport, timeout=1.0) as listener:
             listener._track.disconnect()
             with pytest.raises(ConnectionError):
                 listener.ping()
-        finally:
-            listener.close()
 
     def test_ping_drops_a_tracker_that_stopped_answering(self, listener_transport: RespCache, mocker):
-        listener = listener_transport.adapter.invalidation_listener([f"{TRANSPORT_PREFIX}:"], timeout=0.1)
-        try:
+        with _listener(listener_transport, timeout=0.1) as listener:
             mocker.patch.object(listener._track, "can_read", return_value=False)
             with pytest.raises(TimeoutError):
                 listener.ping()
             with pytest.raises(ConnectionError):
                 listener.ping()
-        finally:
-            listener.close()
 
     def test_overlapping_prefixes_are_rejected_by_the_server(self, listener_transport: RespCache):
         with pytest.raises(Exception, match=r"(?i)overlap"):
@@ -208,13 +195,6 @@ def _cleanup_registry(*storage_keys: str) -> None:
             state.shutdown()
 
 
-def _skip_unless_trackable(resp_adapter: str) -> None:
-    if resp_adapter == "valkey-glide":
-        pytest.skip("valkey-glide cannot host an invalidation listener")
-    if not _adapter_library_available(resp_adapter):
-        pytest.skip(f"{resp_adapter} library not installed")
-
-
 def _tracking_section(cache) -> dict:
     return cache.info()["tracking"]
 
@@ -231,16 +211,37 @@ async def _asettled(cache, action: Callable[[], Awaitable[Any]], count: int = 1)
     """Async twin of :func:`_settled`."""
     before = _tracking_section(cache)["invalidations"]
     result = await action()
-    deadline = time.monotonic() + 5.0
-    while _tracking_section(cache)["invalidations"] < before + count:
-        assert time.monotonic() < deadline, "invalidation never arrived"
-        await asyncio.sleep(0.02)
+    assert _wait_for(lambda: _tracking_section(cache)["invalidations"] >= before + count)
     return result
+
+
+def _run_during_fetch(cache, mocker, hook: Callable[[], Any]) -> None:
+    """Run ``hook`` once, after the next fetch pipeline has executed and before its reply is absorbed."""
+    adapter = cache._transport.adapter
+    real_pipeline = adapter.pipeline
+    fired = False
+
+    def racing_pipeline(*args, **kwargs):
+        pipe = real_pipeline(*args, **kwargs)
+        real_execute = pipe.execute
+
+        def execute():
+            nonlocal fired
+            results = real_execute()
+            if not fired:
+                fired = True
+                hook()
+            return results
+
+        pipe.execute = execute
+        return pipe
+
+    mocker.patch.object(adapter, "pipeline", side_effect=racing_pipeline)
 
 
 def _stampede_transport_config(redis_container: RedisContainerInfo, resp_adapter: str, *, delta: float = 0) -> dict:
     """Tracking config whose transport keeps a 60s stampede buffer; ``delta=0`` never rolls early."""
-    config = _build_tracking_config(redis_container.host, redis_container.port, resp_adapter)
+    config = _build_tracking_config(redis_container, resp_adapter)
     config["transport"]["OPTIONS"]["stampede_prevention"] = {"buffer": 60, "delta": delta}
     return config
 
@@ -270,7 +271,7 @@ def _connected(config: dict) -> Iterator[Any]:
 @pytest.fixture
 def tracking_config(redis_container: RedisContainerInfo, resp_adapter: str) -> dict:
     _skip_unless_trackable(resp_adapter)
-    return _build_tracking_config(redis_container.host, redis_container.port, resp_adapter)
+    return _build_tracking_config(redis_container, resp_adapter)
 
 
 @pytest.fixture
@@ -283,7 +284,7 @@ def tracking_cache(tracking_config: dict) -> Iterator:
 def tracking_pair(redis_container: RedisContainerInfo, resp_adapter: str) -> Iterator[tuple]:
     """Two TrackingCache aliases with their own local stores sharing one transport (two pods)."""
     _skip_unless_trackable(resp_adapter)
-    config = _build_tracking_config(redis_container.host, redis_container.port, resp_adapter)
+    config = _build_tracking_config(redis_container, resp_adapter)
     entry = config.pop("default")
     locations = [f"tracking:pod{i}:{uuid.uuid4().hex[:6]}" for i in (1, 2)]
     for pod, location in zip(("pod1", "pod2"), locations, strict=True):
@@ -336,7 +337,7 @@ class TestTrackingConfig:
             pytest.skip("glide-specific")
         if not _adapter_library_available(resp_adapter):
             pytest.skip("valkey-glide not installed")
-        config = _build_tracking_config(redis_container.host, redis_container.port, resp_adapter)
+        config = _build_tracking_config(redis_container, resp_adapter)
         with _tracking(config) as cache, pytest.raises(ImproperlyConfigured, match="valkey-glide"):
             cache.get("k")
 
@@ -361,7 +362,7 @@ class TestTrackingConfig:
 
     def test_custom_key_function_defaults_to_every_key(self, redis_container: RedisContainerInfo, resp_adapter: str):
         _skip_unless_trackable(resp_adapter)
-        config = _build_tracking_config(redis_container.host, redis_container.port, resp_adapter)
+        config = _build_tracking_config(redis_container, resp_adapter)
         config["transport"]["KEY_FUNCTION"] = _custom_key_func
         with _connected(config) as cache:
             cache.set("k", 1)
@@ -370,19 +371,14 @@ class TestTrackingConfig:
 
     def test_key_outside_every_prefix_is_refused(self, redis_container: RedisContainerInfo, resp_adapter: str):
         _skip_unless_trackable(resp_adapter)
-        config = _build_tracking_config(
-            redis_container.host,
-            redis_container.port,
-            resp_adapter,
-            options={"prefixes": [f"{TRANSPORT_PREFIX}:"]},
-        )
+        config = _build_tracking_config(redis_container, resp_adapter, options={"prefixes": [f"{TRANSPORT_PREFIX}:"]})
         config["transport"]["KEY_FUNCTION"] = _custom_key_func
         with _tracking(config) as cache, pytest.raises(ImproperlyConfigured, match="prefix"):
             cache.get("k")
 
     def test_location_defaults_to_the_transport_alias(self, redis_container: RedisContainerInfo, resp_adapter: str):
         _skip_unless_trackable(resp_adapter)
-        config = _build_tracking_config(redis_container.host, redis_container.port, resp_adapter)
+        config = _build_tracking_config(redis_container, resp_adapter)
         del config["default"]["LOCATION"]
         with _connected(config):
             assert "transport" in _TRACKING_REGISTRY
@@ -522,32 +518,12 @@ class TestTrackingWrites:
         assert tracking_cache.get("user:1") is None
         assert tracking_cache.get("other") == 3
 
-    def test_delete_pattern_drops_a_fetch_in_flight(self, tracking_cache, mocker):
-        transport = tracking_cache._transport
-        state = tracking_cache._state
+    def test_delete_pattern_drops_a_fetch_in_flight_with_the_listener_muted(self, tracking_cache, mocker):
         tracking_cache.set("user:1", "old")
-        # Only delete_pattern itself may drop the pending fetch here; the listener stays out of it.
         mocker.patch.object(_TrackingState, "apply", return_value=None)
-        real_pipeline = transport.adapter.pipeline
-        raced = []
-
-        def racing_pipeline(*args, **kwargs):
-            pipe = real_pipeline(*args, **kwargs)
-            real_execute = pipe.execute
-
-            def execute():
-                results = real_execute()
-                if not raced:
-                    raced.append(True)
-                    tracking_cache.delete_pattern("user:*")
-                return results
-
-            pipe.execute = execute
-            return pipe
-
-        mocker.patch.object(transport.adapter, "pipeline", side_effect=racing_pipeline)
+        _run_during_fetch(tracking_cache, mocker, lambda: tracking_cache.delete_pattern("user:*"))
         assert tracking_cache.get("user:1") == "old"
-        assert tracking_cache.make_key("user:1") not in state.store
+        assert tracking_cache.make_key("user:1") not in tracking_cache._state.store
 
 
 class TestTrackingInvalidation:
@@ -618,12 +594,7 @@ class TestTrackingTTL:
         mocker,
     ):
         _skip_unless_trackable(resp_adapter)
-        config = _build_tracking_config(
-            redis_container.host,
-            redis_container.port,
-            resp_adapter,
-            options={"local_timeout": 0.2},
-        )
+        config = _build_tracking_config(redis_container, resp_adapter, options={"local_timeout": 0.2})
         with _connected(config) as cache:
             _settled(cache, lambda: cache.set("capped", 1))
             spy = mocker.spy(cache._transport.adapter, "pipeline")
@@ -655,7 +626,6 @@ class TestTrackingTTL:
             _settled(cache, lambda: cache.set("rolled", 1, timeout=30))
             assert cache.get("rolled") == 1
             assert _tracking_section(cache)["entries"] == 1
-            # The dice now say "recompute early": the local copy reads as a miss and is dropped.
             mocker.patch("random.expovariate", return_value=math.inf)
             assert cache.get("rolled") is None
             assert _tracking_section(cache)["entries"] == 0
@@ -680,28 +650,17 @@ class TestTrackingTTL:
 class TestTrackingRace:
     def test_invalidation_during_the_fetch_drops_the_result(self, tracking_cache, mocker):
         transport = tracking_cache._transport
-        tracking_cache.set("raced", "old")
         state = tracking_cache._state
-        real_pipeline = transport.adapter.pipeline
+        tracking_cache.set("raced", "old")
 
-        def racing_pipeline(*args, **kwargs):
-            pipe = real_pipeline(*args, **kwargs)
-            real_execute = pipe.execute
+        def overwrite_and_settle() -> None:
+            before = state.invalidations
+            transport.set("raced", "new")
+            assert _wait_for(lambda: state.invalidations > before)
 
-            def execute():
-                results = real_execute()
-                before = state.invalidations
-                transport.set("raced", "new")
-                assert _wait_for(lambda: state.invalidations > before)
-                return results
-
-            pipe.execute = execute
-            return pipe
-
-        mocker.patch.object(transport.adapter, "pipeline", side_effect=racing_pipeline)
+        _run_during_fetch(tracking_cache, mocker, overwrite_and_settle)
         assert tracking_cache.get("raced") == "old"
         assert tracking_cache.make_key("raced") not in state.store
-        mocker.stopall()
         assert tracking_cache.get("raced") == "new"
 
 
@@ -743,8 +702,7 @@ class TestTrackingListenerLifecycle:
     ):
         _skip_unless_trackable(resp_adapter)
         config = _build_tracking_config(
-            redis_container.host,
-            redis_container.port,
+            redis_container,
             resp_adapter,
             options={"health_check_interval": 0.2, "poll_timeout": 0.05},
         )
@@ -778,7 +736,6 @@ class TestTrackingListenerLifecycle:
     def test_shutdown_settles_the_state_before_releasing_the_start_lock(self, tracking_cache, mocker):
         state = tracking_cache._state
         tracking_cache.shutdown()
-        # A listener thread that ignores its stop event, so shutdown has to abandon it.
         hang = threading.Event()
         mocker.patch.object(TrackingCache, "_serve", side_effect=lambda *_: hang.wait())
         assert tracking_cache.get("k") is None
@@ -845,18 +802,9 @@ class TestTrackingListenerLifecycle:
 
 
 class TestTrackingLRU:
-    def test_max_entries_evicts_the_least_recently_read(
-        self,
-        redis_container: RedisContainerInfo,
-        resp_adapter: str,
-    ):
+    def test_max_entries_evicts_the_least_recently_read(self, redis_container: RedisContainerInfo, resp_adapter: str):
         _skip_unless_trackable(resp_adapter)
-        config = _build_tracking_config(
-            redis_container.host,
-            redis_container.port,
-            resp_adapter,
-            options={"MAX_ENTRIES": 3},
-        )
+        config = _build_tracking_config(redis_container, resp_adapter, options={"MAX_ENTRIES": 3})
         with _connected(config) as cache:
             _settled(cache, lambda: cache.set_many({"k1": 1, "k2": 2, "k3": 3, "k4": 4}), count=4)
             for key in ("k1", "k2", "k3"):
@@ -963,15 +911,13 @@ class TestTrackingSentinel:
 
     def test_health_check_notices_a_new_primary(self, sentinel_container, resp_adapter: str, mocker):
         _skip_unless_trackable(resp_adapter)
-        with override_settings(CACHES={"transport": _sentinel_transport(sentinel_container, resp_adapter)}):
-            transport = caches["transport"]
-            listener = transport.adapter.invalidation_listener([f"{TRANSPORT_PREFIX}:"], timeout=5.0)
-            try:
+        with (
+            override_settings(CACHES={"transport": _sentinel_transport(sentinel_container, resp_adapter)}),
+            closing(caches["transport"]) as transport,
+            _listener(transport) as listener,
+        ):
+            listener.ping()
+            pool = transport.adapter._get_connection_pool(write=True)
+            mocker.patch.object(pool, "get_master_address", return_value=("elsewhere", 1))
+            with pytest.raises(ConnectionError, match="primary"):
                 listener.ping()
-                pool = transport.adapter._get_connection_pool(write=True)
-                mocker.patch.object(pool, "get_master_address", return_value=("elsewhere", 1))
-                with pytest.raises(ConnectionError, match="primary"):
-                    listener.ping()
-            finally:
-                listener.close()
-                transport.close()

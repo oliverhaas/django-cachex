@@ -41,11 +41,7 @@ def should_recompute(ttl: int, config: StampedeConfig) -> bool:
 
 
 def should_recompute_remaining(remaining: float, config: StampedeConfig) -> bool:
-    """Roll XFetch's dice for a value whose logical lifetime has ``remaining`` seconds left.
-
-    ``remaining`` has the buffer stripped already, so a non-positive value
-    is logically expired and always recomputes.
-    """
+    """Roll XFetch's dice on a buffer-stripped lifetime; ``remaining <= 0`` always recomputes."""
     if remaining <= 0:
         return True
     if config.delta > 0:

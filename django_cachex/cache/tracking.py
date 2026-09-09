@@ -6,6 +6,7 @@ import time
 from collections import OrderedDict
 from fnmatch import fnmatchcase
 from functools import cached_property
+from itertools import combinations
 from threading import Event, Lock, Thread
 from typing import TYPE_CHECKING, Any
 
@@ -146,17 +147,20 @@ class _TrackingState:
 
     def flush(self) -> None:
         with self.lock:
-            self.store.clear()
-            self.pending.clear()
+            self._clear()
             self.flushes += 1
+
+    def _clear(self) -> None:
+        """Drop the store and every fetch in flight; the caller holds ``lock``."""
+        self.store.clear()
+        self.pending.clear()
 
     # -- Listener events --
 
     def apply(self, message: Invalidation) -> None:
         with self.lock:
             if message.keys is None:
-                self.store.clear()
-                self.pending.clear()
+                self._clear()
                 self.flushes += 1
             else:
                 for made_key in message.keys:
@@ -167,8 +171,7 @@ class _TrackingState:
 
     def on_connect(self, listener: InvalidationListenerProtocol, *, reconnect: bool) -> None:
         with self.lock:
-            self.store.clear()
-            self.pending.clear()
+            self._clear()
             self.listener = listener
             self.connected = True
             if reconnect:
@@ -178,8 +181,7 @@ class _TrackingState:
         with self.lock:
             self.connected = False
             self.listener = None
-            self.store.clear()
-            self.pending.clear()
+            self._clear()
             self.flushes += 1
 
     def shutdown(self) -> None:
@@ -201,8 +203,7 @@ class _TrackingState:
                 listener = self.listener
                 self.listener = None
                 self.connected = False
-                self.store.clear()
-                self.pending.clear()
+                self._clear()
             if listener is not None:
                 listener.close()
 
@@ -260,14 +261,13 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         if not resolved:
             msg = "TrackingCache OPTIONS['prefixes'] must not be empty; use [''] to track every key."
             raise ImproperlyConfigured(msg)
-        for index, first in enumerate(resolved):
-            for second in resolved[index + 1 :]:
-                if first.startswith(second) or second.startswith(first):
-                    msg = (
-                        f"TrackingCache OPTIONS['prefixes'] {first!r} and {second!r} overlap; "
-                        "the server rejects overlapping BCAST prefixes."
-                    )
-                    raise ImproperlyConfigured(msg)
+        for first, second in combinations(resolved, 2):
+            if first.startswith(second) or second.startswith(first):
+                msg = (
+                    f"TrackingCache OPTIONS['prefixes'] {first!r} and {second!r} overlap; "
+                    "the server rejects overlapping BCAST prefixes."
+                )
+                raise ImproperlyConfigured(msg)
         return resolved
 
     # -- Transport --
@@ -465,28 +465,22 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         buffer_ms = config.buffer * 1000 if config else 0
         found: dict[str, Any] = {}
         for index, made_key in enumerate(made_keys):
-            raw = results[2 * index]
-            pttl = results[2 * index + 1]
+            raw, pttl = results[2 * index], results[2 * index + 1]
             token = tokens.get(made_key)
             if raw is None:
                 state.forget(made_key, token)
                 continue
-            keep = True
+            # -1 (no expiry) is kept as is; -2 or an unexpected reply is served but not kept.
+            keep = pttl == -1
             expires_at: float | None = None
             if isinstance(pttl, int) and pttl >= 0:
-                if config and isinstance(raw, bytes):
-                    ttl_s = (pttl + 500) // 1000
-                    if ttl_s > 0 and should_recompute(ttl_s, config):
-                        state.forget(made_key, token)
-                        continue
-                logical_ms = pttl - buffer_ms
-                if logical_ms <= 0:
-                    keep = False
-                else:
-                    expires_at = now + logical_ms / 1000.0
-            elif pttl != -1:
-                # -2 (vanished between GET and PTTL) or anything unexpected: serve it, but do not keep it.
-                keep = False
+                ttl_s = (pttl + 500) // 1000
+                if config and isinstance(raw, bytes) and ttl_s > 0 and should_recompute(ttl_s, config):
+                    state.forget(made_key, token)
+                    continue
+                remaining = (pttl - buffer_ms) / 1000
+                keep = remaining > 0
+                expires_at = now + remaining
             if self._local_timeout is not None:
                 cap = now + self._local_timeout
                 expires_at = cap if expires_at is None else min(expires_at, cap)

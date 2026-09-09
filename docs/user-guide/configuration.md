@@ -268,8 +268,7 @@ Per-call overrides accept the same shapes via the `stampede_prevention=` keyword
     Stampede prevention is implemented in the RESP cache layer and the
     valkey-py and valkey-glide adapters. `LocMemCache`, `DatabaseCache`,
     `StreamCache` and `TieredCache` ignore both `OPTIONS["stampede_prevention"]`
-    and the per-call keyword. `TrackingCache` has neither and follows its
-    transport's setting.
+    and the per-call keyword. `TrackingCache` follows its transport's setting.
 
 ### Valkey-Glide OPTIONS
 
