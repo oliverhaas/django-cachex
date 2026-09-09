@@ -76,6 +76,8 @@ Full documentation at [oliverhaas.github.io/django-cachex](https://oliverhaas.gi
 - valkey-py 6.1+ or redis-py 6.0+
 - Valkey 7.2+ or Redis 6.0+ on the server (the admin's compare-and-swap
   edits use `SET ... KEEPTTL`, which lands in Redis 6.0)
+- Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and `hsetex`/`hgetex`
+  Redis 8.0+; older servers raise `NotSupportedError` for those methods
 
 The `valkey-glide` adapter is optional and experimental: interfaces and
 behavior may still change, and it has seen less production testing than

@@ -31,6 +31,8 @@ A drop-in replacement for Django's built-in Redis cache, plus:
 - valkey-py 6.1+ (redis-py 6.0+ also supported)
 - Valkey 7.2+ or Redis 6.0+ on the server (the admin's compare-and-swap
   edits use `SET ... KEEPTTL`, which lands in Redis 6.0)
+- Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and `hsetex`/`hgetex`
+  Redis 8.0+; older servers raise `NotSupportedError` for those methods
 
 ## Quick Start
 

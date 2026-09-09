@@ -181,6 +181,69 @@ class _RespPipelineCommandsProtocol(Protocol):
     def hincrby(self, key: str, field: str, amount: int = 1) -> Any: ...
     def hincrbyfloat(self, key: str, field: str, amount: float = 1.0) -> Any: ...
 
+    # Hash field expiration.
+    def hexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Any: ...
+    def hpexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Any: ...
+    def hexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Any: ...
+    def hpexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Any: ...
+    def httl(self, key: str, *fields: str) -> Any: ...
+    def hpttl(self, key: str, *fields: str) -> Any: ...
+    def hexpiretime(self, key: str, *fields: str) -> Any: ...
+    def hpersist(self, key: str, *fields: str) -> Any: ...
+    def hsetex(
+        self,
+        key: str,
+        mapping: Mapping[str, bytes | int],
+        *,
+        ex: int | None = None,
+        keepttl: bool = False,
+        fnx: bool = False,
+        fxx: bool = False,
+    ) -> Any: ...
+    def hgetex(
+        self,
+        key: str,
+        *fields: str,
+        ex: int | None = None,
+        persist: bool = False,
+    ) -> Any: ...
+
     # -------------------------------------------------------------------------
     # Sorted sets
     #
@@ -593,6 +656,67 @@ class RespAdapterProtocol(Protocol):
     def hvals(self, key: str) -> list[bytes]: ...
     def hincrby(self, key: str, field: str, amount: int = 1) -> int: ...
     def hincrbyfloat(self, key: str, field: str, amount: float = 1.0) -> float: ...
+    def hexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]: ...
+    def hpexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]: ...
+    def hexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]: ...
+    def hpexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]: ...
+    def httl(self, key: str, *fields: str) -> list[int | None]: ...
+    def hpttl(self, key: str, *fields: str) -> list[int | None]: ...
+    def hexpiretime(self, key: str, *fields: str) -> list[int | None]: ...
+    def hpersist(self, key: str, *fields: str) -> list[int]: ...
+    def hsetex(
+        self,
+        key: str,
+        mapping: Mapping[str, bytes | int],
+        *,
+        ex: int | None = None,
+        keepttl: bool = False,
+        fnx: bool = False,
+        fxx: bool = False,
+    ) -> bool: ...
+    def hgetex(
+        self,
+        key: str,
+        *fields: str,
+        ex: int | None = None,
+        persist: bool = False,
+    ) -> list[bytes | None]: ...
     async def ahset(
         self,
         key: str,
@@ -612,6 +736,67 @@ class RespAdapterProtocol(Protocol):
     async def ahvals(self, key: str) -> list[bytes]: ...
     async def ahincrby(self, key: str, field: str, amount: int = 1) -> int: ...
     async def ahincrbyfloat(self, key: str, field: str, amount: float = 1.0) -> float: ...
+    async def ahexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]: ...
+    async def ahpexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]: ...
+    async def ahexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]: ...
+    async def ahpexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]: ...
+    async def ahttl(self, key: str, *fields: str) -> list[int | None]: ...
+    async def ahpttl(self, key: str, *fields: str) -> list[int | None]: ...
+    async def ahexpiretime(self, key: str, *fields: str) -> list[int | None]: ...
+    async def ahpersist(self, key: str, *fields: str) -> list[int]: ...
+    async def ahsetex(
+        self,
+        key: str,
+        mapping: Mapping[str, bytes | int],
+        *,
+        ex: int | None = None,
+        keepttl: bool = False,
+        fnx: bool = False,
+        fxx: bool = False,
+    ) -> bool: ...
+    async def ahgetex(
+        self,
+        key: str,
+        *fields: str,
+        ex: int | None = None,
+        persist: bool = False,
+    ) -> list[bytes | None]: ...
     def lpush(self, key: str, *values: bytes | int) -> int: ...
     def rpush(self, key: str, *values: bytes | int) -> int: ...
     def lpop(self, key: str, count: int | None = None) -> bytes | list[bytes] | None: ...

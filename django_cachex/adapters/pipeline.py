@@ -125,6 +125,10 @@ class Pipeline:
         """Decode a flat sequence of stored values, keeping ``None`` for misses."""
         return [self._cache.decode(item) if item is not None else None for item in value]
 
+    def _decode_field_ttls(self, value: Sequence[int]) -> list[int | None]:
+        """Normalize an HTTL/HPTTL/HEXPIRETIME reply the way :meth:`RespCache.httl` does: -1 -> None."""
+        return [None if item == -1 else item for item in value]
+
     def _decode_single_or_list(self, value: bytes | list[bytes | None] | None) -> Any:
         """Decode value that may be single item, list, or None (lpop/rpop with count)."""
         if value is None:
@@ -1026,6 +1030,143 @@ class Pipeline:
         """Queue HVALS command (get all values)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.hvals(nkey)
+        self._decoders.append(self._decode_values)
+        return self
+
+    # -------------------------------------------------------------------------
+    # Hash field expiration
+    # -------------------------------------------------------------------------
+
+    def hexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Self:
+        """Queue HEXPIRE. Decodes to the per-field codes :meth:`RespCache.hexpire` returns."""
+        nkey = self._make_key(key, version)
+        self._pipeline_adapter.hexpire(nkey, timeout, *fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        self._decoders.append(self._noop)
+        return self
+
+    def hpexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Self:
+        """Queue HPEXPIRE. See :meth:`hexpire`."""
+        nkey = self._make_key(key, version)
+        self._pipeline_adapter.hpexpire(nkey, timeout, *fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        self._decoders.append(self._noop)
+        return self
+
+    def hexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Self:
+        """Queue HEXPIREAT. See :meth:`hexpire`."""
+        nkey = self._make_key(key, version)
+        self._pipeline_adapter.hexpireat(nkey, when, *fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        self._decoders.append(self._noop)
+        return self
+
+    def hpexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> Self:
+        """Queue HPEXPIREAT. See :meth:`hexpire`."""
+        nkey = self._make_key(key, version)
+        self._pipeline_adapter.hpexpireat(nkey, when, *fields, nx=nx, xx=xx, gt=gt, lt=lt)
+        self._decoders.append(self._noop)
+        return self
+
+    def httl(self, key: str, *fields: str, version: int | None = None) -> Self:
+        """Queue HTTL. Decodes ``-1`` to ``None`` like :meth:`RespCache.httl`."""
+        nkey = self._make_key(key, version)
+        self._pipeline_adapter.httl(nkey, *fields)
+        self._decoders.append(self._decode_field_ttls)
+        return self
+
+    def hpttl(self, key: str, *fields: str, version: int | None = None) -> Self:
+        """Queue HPTTL. See :meth:`httl`."""
+        nkey = self._make_key(key, version)
+        self._pipeline_adapter.hpttl(nkey, *fields)
+        self._decoders.append(self._decode_field_ttls)
+        return self
+
+    def hexpiretime(self, key: str, *fields: str, version: int | None = None) -> Self:
+        """Queue HEXPIRETIME. See :meth:`httl`."""
+        nkey = self._make_key(key, version)
+        self._pipeline_adapter.hexpiretime(nkey, *fields)
+        self._decoders.append(self._decode_field_ttls)
+        return self
+
+    def hpersist(self, key: str, *fields: str, version: int | None = None) -> Self:
+        """Queue HPERSIST. Decodes to the per-field codes :meth:`RespCache.hpersist` returns."""
+        nkey = self._make_key(key, version)
+        self._pipeline_adapter.hpersist(nkey, *fields)
+        self._decoders.append(self._noop)
+        return self
+
+    def hsetex(
+        self,
+        key: str,
+        field: str | None = None,
+        value: Any = None,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+        mapping: dict[str, Any] | None = None,
+        items: list[Any] | None = None,
+        *,
+        fnx: bool = False,
+        fxx: bool = False,
+        keepttl: bool = False,
+    ) -> Self:
+        """Queue HSETEX. Same forms and timeout rules as :meth:`RespCache.hsetex`; decodes to ``bool``."""
+        nkey = self._make_key(key, version)
+        nmapping = self._cache._encode_hash_fields(field, value, mapping, items)
+        ex = None if keepttl else self._cache.get_backend_timeout(timeout)
+        self._pipeline_adapter.hsetex(nkey, nmapping, ex=ex, keepttl=keepttl, fnx=fnx, fxx=fxx)
+        self._decoders.append(bool)
+        return self
+
+    def hgetex(
+        self,
+        key: str,
+        *fields: str,
+        timeout: float | None = None,
+        persist: bool = False,
+        version: int | None = None,
+    ) -> Self:
+        """Queue HGETEX. Same timeout rules as :meth:`RespCache.hgetex`; decodes the values."""
+        nkey = self._make_key(key, version)
+        ex = None if timeout is None else self._cache.get_backend_timeout(timeout)
+        self._pipeline_adapter.hgetex(nkey, *fields, ex=ex, persist=persist)
         self._decoders.append(self._decode_values)
         return self
 

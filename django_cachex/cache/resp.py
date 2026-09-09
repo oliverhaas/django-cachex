@@ -1602,6 +1602,306 @@ class RespCache(BaseCachex):
         return [self.decode(v) for v in await self.adapter.ahvals(key)]
 
     # =========================================================================
+    # Hash Field Expiration (Redis 7.4+ / Valkey 9.0+; hsetex/hgetex Redis 8.0+)
+    # =========================================================================
+
+    def _encode_hash_fields(
+        self,
+        field: str | None,
+        value: Any,
+        mapping: Mapping[str, Any] | None,
+        items: list[Any] | None,
+    ) -> dict[str, bytes | int]:
+        """Fold the hset()-style field/value, ``mapping`` and ``items`` forms into one encoded mapping."""
+        encoded: dict[str, bytes | int] = {}
+        if field is not None:
+            encoded[field] = self.encode(value)
+        if mapping:
+            encoded.update({f: self.encode(v) for f, v in mapping.items()})
+        if items:
+            if len(items) % 2:
+                msg = "items must hold field/value pairs"
+                raise ValueError(msg)
+            for i in range(0, len(items), 2):
+                encoded[items[i]] = self.encode(items[i + 1])
+        if not encoded:
+            msg = "hsetex requires at least one field/value pair"
+            raise ValueError(msg)
+        return encoded
+
+    def hexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Set a TTL in seconds on hash fields, one reply code per field."""
+        if not fields:
+            return []
+        key = self.make_and_validate_key(key, version=version)
+        return self.adapter.hexpire(key, timeout, *fields, nx=nx, xx=xx, gt=gt, lt=lt)
+
+    def hpexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Set a TTL in milliseconds on one or more hash fields. See :meth:`hexpire`."""
+        if not fields:
+            return []
+        key = self.make_and_validate_key(key, version=version)
+        return self.adapter.hpexpire(key, timeout, *fields, nx=nx, xx=xx, gt=gt, lt=lt)
+
+    def hexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Set an absolute expiry (Unix seconds or a datetime) on hash fields. See :meth:`hexpire`."""
+        if not fields:
+            return []
+        key = self.make_and_validate_key(key, version=version)
+        return self.adapter.hexpireat(key, when, *fields, nx=nx, xx=xx, gt=gt, lt=lt)
+
+    def hpexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Set an absolute expiry with millisecond precision on hash fields. See :meth:`hexpireat`."""
+        if not fields:
+            return []
+        key = self.make_and_validate_key(key, version=version)
+        return self.adapter.hpexpireat(key, when, *fields, nx=nx, xx=xx, gt=gt, lt=lt)
+
+    def httl(self, key: str, *fields: str, version: int | None = None) -> list[int | None]:
+        """Get the TTL in seconds of hash fields. Returns None if no expiry, -2 if the field doesn't exist."""
+        if not fields:
+            return []
+        key = self.make_and_validate_key(key, version=version)
+        return self.adapter.httl(key, *fields)
+
+    def hpttl(self, key: str, *fields: str, version: int | None = None) -> list[int | None]:
+        """Get the TTL in milliseconds of hash fields. See :meth:`httl`."""
+        if not fields:
+            return []
+        key = self.make_and_validate_key(key, version=version)
+        return self.adapter.hpttl(key, *fields)
+
+    def hexpiretime(self, key: str, *fields: str, version: int | None = None) -> list[int | None]:
+        """Get the absolute Unix timestamp (seconds) when hash fields expire. See :meth:`httl`."""
+        if not fields:
+            return []
+        key = self.make_and_validate_key(key, version=version)
+        return self.adapter.hexpiretime(key, *fields)
+
+    def hpersist(self, key: str, *fields: str, version: int | None = None) -> list[int]:
+        """Remove the TTL from hash fields, one reply code per field."""
+        if not fields:
+            return []
+        key = self.make_and_validate_key(key, version=version)
+        return self.adapter.hpersist(key, *fields)
+
+    def hsetex(
+        self,
+        key: str,
+        field: str | None = None,
+        value: Any = None,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+        mapping: Mapping[str, Any] | None = None,
+        items: list[Any] | None = None,
+        *,
+        fnx: bool = False,
+        fxx: bool = False,
+        keepttl: bool = False,
+    ) -> bool:
+        """Set hash field(s) and their TTL in one round trip.
+
+        Same forms as :meth:`hset`; ``timeout`` follows :meth:`set` unless ``keepttl``;
+        ``False`` when ``fnx``/``fxx`` blocks the write.
+        """
+        key = self.make_and_validate_key(key, version=version)
+        nmapping = self._encode_hash_fields(field, value, mapping, items)
+        ex = None if keepttl else self.get_backend_timeout(timeout)
+        return self.adapter.hsetex(key, nmapping, ex=ex, keepttl=keepttl, fnx=fnx, fxx=fxx)
+
+    def hgetex(
+        self,
+        key: str,
+        *fields: str,
+        timeout: float | None = None,
+        persist: bool = False,
+        version: int | None = None,
+    ) -> list[Any]:
+        """Get hash field values and update their TTL in the same round trip.
+
+        ``timeout=None`` (the default) leaves each field's TTL alone,
+        ``persist=True`` removes it, any other timeout follows :meth:`set`.
+        """
+        if not fields:
+            return []
+        key = self.make_and_validate_key(key, version=version)
+        ex = None if timeout is None else self.get_backend_timeout(timeout)
+        values = self.adapter.hgetex(key, *fields, ex=ex, persist=persist)
+        return [self.decode(v) if v is not None else None for v in values]
+
+    async def ahexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Set a TTL in seconds on hash fields asynchronously. See :meth:`hexpire`."""
+        if not fields:
+            return []
+        key = self.make_and_validate_key(key, version=version)
+        return await self.adapter.ahexpire(key, timeout, *fields, nx=nx, xx=xx, gt=gt, lt=lt)
+
+    async def ahpexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Set a TTL in milliseconds on hash fields asynchronously. See :meth:`hexpire`."""
+        if not fields:
+            return []
+        key = self.make_and_validate_key(key, version=version)
+        return await self.adapter.ahpexpire(key, timeout, *fields, nx=nx, xx=xx, gt=gt, lt=lt)
+
+    async def ahexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Set an absolute expiry on hash fields asynchronously. See :meth:`hexpireat`."""
+        if not fields:
+            return []
+        key = self.make_and_validate_key(key, version=version)
+        return await self.adapter.ahexpireat(key, when, *fields, nx=nx, xx=xx, gt=gt, lt=lt)
+
+    async def ahpexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Set an absolute expiry in milliseconds on hash fields asynchronously. See :meth:`hexpireat`."""
+        if not fields:
+            return []
+        key = self.make_and_validate_key(key, version=version)
+        return await self.adapter.ahpexpireat(key, when, *fields, nx=nx, xx=xx, gt=gt, lt=lt)
+
+    async def ahttl(self, key: str, *fields: str, version: int | None = None) -> list[int | None]:
+        """Get the TTL in seconds of hash fields asynchronously. See :meth:`httl`."""
+        if not fields:
+            return []
+        key = self.make_and_validate_key(key, version=version)
+        return await self.adapter.ahttl(key, *fields)
+
+    async def ahpttl(self, key: str, *fields: str, version: int | None = None) -> list[int | None]:
+        """Get the TTL in milliseconds of hash fields asynchronously. See :meth:`httl`."""
+        if not fields:
+            return []
+        key = self.make_and_validate_key(key, version=version)
+        return await self.adapter.ahpttl(key, *fields)
+
+    async def ahexpiretime(self, key: str, *fields: str, version: int | None = None) -> list[int | None]:
+        """Get the absolute expiry timestamps of hash fields asynchronously. See :meth:`hexpiretime`."""
+        if not fields:
+            return []
+        key = self.make_and_validate_key(key, version=version)
+        return await self.adapter.ahexpiretime(key, *fields)
+
+    async def ahpersist(self, key: str, *fields: str, version: int | None = None) -> list[int]:
+        """Remove the TTL from hash fields asynchronously. See :meth:`hpersist`."""
+        if not fields:
+            return []
+        key = self.make_and_validate_key(key, version=version)
+        return await self.adapter.ahpersist(key, *fields)
+
+    async def ahsetex(
+        self,
+        key: str,
+        field: str | None = None,
+        value: Any = None,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+        mapping: Mapping[str, Any] | None = None,
+        items: list[Any] | None = None,
+        *,
+        fnx: bool = False,
+        fxx: bool = False,
+        keepttl: bool = False,
+    ) -> bool:
+        """Set hash field(s) and their TTL asynchronously. See :meth:`hsetex`."""
+        key = self.make_and_validate_key(key, version=version)
+        nmapping = self._encode_hash_fields(field, value, mapping, items)
+        ex = None if keepttl else self.get_backend_timeout(timeout)
+        return await self.adapter.ahsetex(key, nmapping, ex=ex, keepttl=keepttl, fnx=fnx, fxx=fxx)
+
+    async def ahgetex(
+        self,
+        key: str,
+        *fields: str,
+        timeout: float | None = None,
+        persist: bool = False,
+        version: int | None = None,
+    ) -> list[Any]:
+        """Get hash field values and update their TTL asynchronously. See :meth:`hgetex`."""
+        if not fields:
+            return []
+        key = self.make_and_validate_key(key, version=version)
+        ex = None if timeout is None else self.get_backend_timeout(timeout)
+        values = await self.adapter.ahgetex(key, *fields, ex=ex, persist=persist)
+        return [self.decode(v) if v is not None else None for v in values]
+
+    # =========================================================================
     # List Operations
     # =========================================================================
 

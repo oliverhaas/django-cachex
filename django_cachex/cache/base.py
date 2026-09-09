@@ -509,6 +509,210 @@ class BaseCachex(BaseCache):
         raise NotSupportedError("ahvals", self.__class__.__name__)
 
     # =========================================================================
+    # Hash Field Expiration
+    # =========================================================================
+
+    def hexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Set a TTL in seconds on hash fields."""
+        raise NotSupportedError("hexpire", self.__class__.__name__)
+
+    def hpexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Set a TTL in milliseconds on hash fields."""
+        raise NotSupportedError("hpexpire", self.__class__.__name__)
+
+    def hexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Set an absolute expiry on hash fields."""
+        raise NotSupportedError("hexpireat", self.__class__.__name__)
+
+    def hpexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Set an absolute expiry in milliseconds on hash fields."""
+        raise NotSupportedError("hpexpireat", self.__class__.__name__)
+
+    def httl(self, key: str, *fields: str, version: int | None = None) -> list[int | None]:
+        """Get the TTL in seconds of hash fields."""
+        raise NotSupportedError("httl", self.__class__.__name__)
+
+    def hpttl(self, key: str, *fields: str, version: int | None = None) -> list[int | None]:
+        """Get the TTL in milliseconds of hash fields."""
+        raise NotSupportedError("hpttl", self.__class__.__name__)
+
+    def hexpiretime(self, key: str, *fields: str, version: int | None = None) -> list[int | None]:
+        """Get the absolute Unix timestamp (seconds) when hash fields expire."""
+        raise NotSupportedError("hexpiretime", self.__class__.__name__)
+
+    def hpersist(self, key: str, *fields: str, version: int | None = None) -> list[int]:
+        """Remove the TTL from hash fields."""
+        raise NotSupportedError("hpersist", self.__class__.__name__)
+
+    def hsetex(
+        self,
+        key: str,
+        field: str | None = None,
+        value: Any = None,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+        mapping: Mapping[str, Any] | None = None,
+        items: list[Any] | None = None,
+        *,
+        fnx: bool = False,
+        fxx: bool = False,
+        keepttl: bool = False,
+    ) -> bool:
+        """Set hash field(s) with a per-field TTL."""
+        raise NotSupportedError("hsetex", self.__class__.__name__)
+
+    def hgetex(
+        self,
+        key: str,
+        *fields: str,
+        timeout: float | None = None,
+        persist: bool = False,
+        version: int | None = None,
+    ) -> list[Any]:
+        """Get hash field values and update their TTL."""
+        raise NotSupportedError("hgetex", self.__class__.__name__)
+
+    async def ahexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Async: set a TTL in seconds on hash fields."""
+        raise NotSupportedError("ahexpire", self.__class__.__name__)
+
+    async def ahpexpire(
+        self,
+        key: str,
+        timeout: int | timedelta,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Async: set a TTL in milliseconds on hash fields."""
+        raise NotSupportedError("ahpexpire", self.__class__.__name__)
+
+    async def ahexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Async: set an absolute expiry on hash fields."""
+        raise NotSupportedError("ahexpireat", self.__class__.__name__)
+
+    async def ahpexpireat(
+        self,
+        key: str,
+        when: int | datetime,
+        *fields: str,
+        version: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> list[int]:
+        """Async: set an absolute expiry in milliseconds on hash fields."""
+        raise NotSupportedError("ahpexpireat", self.__class__.__name__)
+
+    async def ahttl(self, key: str, *fields: str, version: int | None = None) -> list[int | None]:
+        """Async: get the TTL in seconds of hash fields."""
+        raise NotSupportedError("ahttl", self.__class__.__name__)
+
+    async def ahpttl(self, key: str, *fields: str, version: int | None = None) -> list[int | None]:
+        """Async: get the TTL in milliseconds of hash fields."""
+        raise NotSupportedError("ahpttl", self.__class__.__name__)
+
+    async def ahexpiretime(self, key: str, *fields: str, version: int | None = None) -> list[int | None]:
+        """Async: get the absolute Unix timestamp (seconds) when hash fields expire."""
+        raise NotSupportedError("ahexpiretime", self.__class__.__name__)
+
+    async def ahpersist(self, key: str, *fields: str, version: int | None = None) -> list[int]:
+        """Async: remove the TTL from hash fields."""
+        raise NotSupportedError("ahpersist", self.__class__.__name__)
+
+    async def ahsetex(
+        self,
+        key: str,
+        field: str | None = None,
+        value: Any = None,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+        mapping: Mapping[str, Any] | None = None,
+        items: list[Any] | None = None,
+        *,
+        fnx: bool = False,
+        fxx: bool = False,
+        keepttl: bool = False,
+    ) -> bool:
+        """Async: set hash field(s) with a per-field TTL."""
+        raise NotSupportedError("ahsetex", self.__class__.__name__)
+
+    async def ahgetex(
+        self,
+        key: str,
+        *fields: str,
+        timeout: float | None = None,
+        persist: bool = False,
+        version: int | None = None,
+    ) -> list[Any]:
+        """Async: get hash field values and update their TTL."""
+        raise NotSupportedError("ahgetex", self.__class__.__name__)
+
+    # =========================================================================
     # List Operations
     # =========================================================================
 

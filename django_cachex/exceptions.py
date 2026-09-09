@@ -7,6 +7,7 @@
 
 """Exceptions for django-cachex."""
 
+import re
 import socket
 from typing import Any
 
@@ -65,14 +66,20 @@ class SerializerError(CachexError):
 
 
 class NotSupportedError(CachexError):
-    """Raised when an operation is not supported by the cache backend."""
+    """Raised when an operation is not supported by the cache backend or the server.
 
-    def __init__(self, operation: str, backend: str | None = None) -> None:
+    ``backend`` is ``None`` when the server rejected the command; ``detail`` says why.
+    """
+
+    def __init__(self, operation: str, backend: str | None = None, *, detail: str | None = None) -> None:
         self.operation = operation
         self.backend = backend
+        self.detail = detail
         msg = f"Operation '{operation}' is not supported"
         if backend:
             msg += f" by {backend}"
+        if detail:
+            msg += f": {detail}"
         super().__init__(msg)
 
 
@@ -119,3 +126,50 @@ def maybe_wrap_wrongtype(exc: BaseException) -> BaseException:
         wrapped.__cause__ = exc
         return wrapped
     return exc
+
+
+# Commands the RESP adapters send that the advertised minimum servers
+# (Redis 6.0, Valkey 7.2) do not have, with the release that adds them.
+_COMMAND_REQUIREMENTS: dict[str, str] = {
+    **dict.fromkeys(
+        ("hexpire", "hpexpire", "hexpireat", "hpexpireat", "httl", "hpttl", "hexpiretime", "hpersist"),
+        "Redis 7.4+ or Valkey 9.0+",
+    ),
+    "hsetex": "Redis 8.0+ or Valkey 9.0+",
+    "hgetex": "Redis 8.0+ or Valkey 9.0+",
+}
+
+_UNKNOWN_COMMAND_RE = re.compile(
+    r"unknown command [`']?(?P<server>[^`'\s,]+)[`']?"
+    r"|(?P<driver>\S+) command doesn't exist in (?:redis|valkey) commands",
+    re.IGNORECASE,
+)
+
+
+def maybe_wrap_unknown_command(exc: BaseException) -> BaseException:
+    """Return :class:`NotSupportedError` if ``exc`` says the server lacks the command.
+
+    Matches the server's ``unknown command 'HEXPIRE', with args ...`` reply
+    (Redis 6 quotes with backticks, glide prefixes its own text) and the
+    redis-py / valkey-py cluster client's ``HEXPIRE command doesn't exist in
+    Redis commands``, raised while it looks the command up for routing.
+    The original error is kept as ``__cause__``.
+    """
+    if isinstance(exc, NotSupportedError):
+        return exc
+    match = _UNKNOWN_COMMAND_RE.search(str(exc))
+    if match is None:
+        return exc
+    command = (match.group("server") or match.group("driver") or "").lower()
+    detail = "the server does not know this command"
+    requires = _COMMAND_REQUIREMENTS.get(command)
+    if requires:
+        detail += f" (requires {requires})"
+    wrapped = NotSupportedError(command, detail=detail)
+    wrapped.__cause__ = exc
+    return wrapped
+
+
+def translate_server_error(exc: BaseException) -> BaseException:
+    """Map a driver error onto the cachex exception it stands for, or return it unchanged."""
+    return maybe_wrap_unknown_command(maybe_wrap_wrongtype(exc))
