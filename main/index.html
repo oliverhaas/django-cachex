@@ -1232,6 +1232,8 @@
 <li>valkey-py 6.1+ (redis-py 6.0+ also supported)</li>
 <li>Valkey 7.2+ or Redis 6.0+ on the server (the admin's compare-and-swap
   edits use <code>SET ... KEEPTTL</code>, which lands in Redis 6.0)</li>
+<li>Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and <code>hsetex</code>/<code>hgetex</code>
+  Redis 8.0+; older servers raise <code>NotSupportedError</code> for those methods</li>
 </ul>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <p>Install with pip:</p>

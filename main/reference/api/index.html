@@ -1973,8 +1973,49 @@
 <td><code>hvals(key)</code></td>
 <td>Get all values in a hash</td>
 </tr>
+<tr>
+<td><code>hexpire(key, timeout, *fields, nx=False, xx=False, gt=False, lt=False)</code></td>
+<td>Set a TTL in seconds (or a <code>timedelta</code>) on hash fields; one reply code per field: <code>2</code> deleted, <code>1</code> set, <code>0</code> condition unmet, <code>-2</code> no such field</td>
+</tr>
+<tr>
+<td><code>hpexpire(key, timeout, *fields, ...)</code></td>
+<td>Same as <code>hexpire</code> with millisecond precision</td>
+</tr>
+<tr>
+<td><code>hexpireat(key, when, *fields, ...)</code></td>
+<td>Expire hash fields at a Unix timestamp or <code>datetime</code></td>
+</tr>
+<tr>
+<td><code>hpexpireat(key, when, *fields, ...)</code></td>
+<td>Same as <code>hexpireat</code> with millisecond precision</td>
+</tr>
+<tr>
+<td><code>httl(key, *fields)</code></td>
+<td>Get TTL in seconds per field (<code>None</code> = no expiry, <code>-2</code> = not found)</td>
+</tr>
+<tr>
+<td><code>hpttl(key, *fields)</code></td>
+<td>Same as <code>httl</code> in milliseconds</td>
+</tr>
+<tr>
+<td><code>hexpiretime(key, *fields)</code></td>
+<td>Absolute Unix timestamp (seconds) per field (<code>None</code> = no expiry, <code>-2</code> = not found)</td>
+</tr>
+<tr>
+<td><code>hpersist(key, *fields)</code></td>
+<td>Remove field expirations; <code>1</code> removed, <code>-1</code> had none, <code>-2</code> no such field</td>
+</tr>
+<tr>
+<td><code>hsetex(key, field=None, value=None, timeout=DEFAULT_TIMEOUT, mapping=None, items=None, fnx=False, fxx=False, keepttl=False)</code></td>
+<td>Set hash field(s) and their TTL in one command; <code>False</code> when <code>fnx</code>/<code>fxx</code> blocks the write</td>
+</tr>
+<tr>
+<td><code>hgetex(key, *fields, timeout=None, persist=False)</code></td>
+<td>Get hash field(s) and set (<code>timeout</code>) or remove (<code>persist</code>) their TTL in the same command</td>
+</tr>
 </tbody>
 </table>
+<p>Field expiration needs Redis 7.4+ or Valkey 9.0+, and <code>hsetex</code>/<code>hgetex</code> Redis 8.0+; an older server raises <code>NotSupportedError</code>.</p>
 <h3 id="set-methods">Set Methods<a class="headerlink" href="#set-methods" title="Permanent link">&para;</a></h3>
 <p>Set operations for unordered collections of unique elements:</p>
 <table>
@@ -2455,6 +2496,7 @@
 <li><code>attl</code>, <code>apttl</code>, <code>aexpire</code>, <code>apexpire</code>, <code>aexpireat</code>, <code>apexpireat</code>, <code>apersist</code></li>
 <li><code>akeys</code>, <code>aiter_keys</code>, <code>ascan</code>, <code>adelete_pattern</code></li>
 <li><code>ahset</code>, <code>ahdel</code>, <code>ahexists</code>, <code>ahget</code>, <code>ahgetall</code>, <code>ahincrby</code>, <code>ahincrbyfloat</code>, <code>ahkeys</code>, <code>ahlen</code>, <code>ahmget</code>, <code>ahsetnx</code>, <code>ahvals</code></li>
+<li><code>ahexpire</code>, <code>ahpexpire</code>, <code>ahexpireat</code>, <code>ahpexpireat</code>, <code>ahttl</code>, <code>ahpttl</code>, <code>ahexpiretime</code>, <code>ahpersist</code>, <code>ahsetex</code>, <code>ahgetex</code></li>
 <li><code>asadd</code>, <code>asrem</code>, <code>asmembers</code>, <code>asismember</code>, <code>asmismember</code>, <code>ascard</code>, <code>aspop</code>, <code>asrandmember</code>, <code>asmove</code>, <code>asdiff</code>, <code>asdiffstore</code>, <code>asinter</code>, <code>asinterstore</code>, <code>asunion</code>, <code>asunionstore</code></li>
 <li><code>azadd</code>, <code>azcard</code>, <code>azcount</code>, <code>azincrby</code>, <code>azrange</code>, <code>azrevrange</code>, <code>azrangebyscore</code>, <code>azrevrangebyscore</code>, <code>azrank</code>, <code>azrevrank</code>, <code>azrem</code>, <code>azremrangebyrank</code>, <code>azremrangebyscore</code>, <code>azscore</code>, <code>azmscore</code>, <code>azpopmin</code>, <code>azpopmax</code></li>
 <li><code>allen</code>, <code>alpush</code>, <code>arpush</code>, <code>alpop</code>, <code>arpop</code>, <code>alindex</code>, <code>alrange</code>, <code>alset</code>, <code>altrim</code>, <code>alrem</code>, <code>alpos</code>, <code>almove</code>, <code>alinsert</code>, <code>ablpop</code>, <code>abrpop</code>, <code>ablmove</code></li>
@@ -2876,7 +2918,7 @@ failure.</p>
 </tr>
 <tr>
 <td><code>NotSupportedError</code></td>
-<td>Operation is not supported by this backend (e.g. <code>lpush</code> on <code>TieredCache</code>).</td>
+<td>Operation is not supported by this backend (e.g. <code>lpush</code> on <code>TieredCache</code>) or by the connected server (e.g. <code>hexpire</code> on Redis 7.2). <code>operation</code> names the method or command, <code>backend</code> the cache class (<code>None</code> when the server rejected the command) and <code>detail</code> says why, including the server release that adds a missing command.</td>
 </tr>
 <tr>
 <td><code>LockError</code></td>

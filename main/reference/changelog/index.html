@@ -945,6 +945,34 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#unreleased" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unreleased
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Unreleased">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#071-september-2026" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -968,7 +996,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#improvements" class="md-nav__link">
+  <a href="#improvements_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Improvements
@@ -1007,7 +1035,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#improvements_1" class="md-nav__link">
+  <a href="#improvements_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Improvements
@@ -1129,7 +1157,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#improvements_2" class="md-nav__link">
+  <a href="#improvements_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Improvements
@@ -1207,7 +1235,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#improvements_3" class="md-nav__link">
+  <a href="#improvements_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         Improvements
@@ -1430,7 +1458,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#improvements_4" class="md-nav__link">
+  <a href="#improvements_5" class="md-nav__link">
     <span class="md-ellipsis">
       
         Improvements
@@ -1480,7 +1508,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#improvements_5" class="md-nav__link">
+  <a href="#improvements_6" class="md-nav__link">
     <span class="md-ellipsis">
       
         Improvements
@@ -1699,6 +1727,34 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#unreleased" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unreleased
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Unreleased">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#071-september-2026" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1722,7 +1778,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#improvements" class="md-nav__link">
+  <a href="#improvements_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Improvements
@@ -1761,7 +1817,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#improvements_1" class="md-nav__link">
+  <a href="#improvements_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Improvements
@@ -1883,7 +1939,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#improvements_2" class="md-nav__link">
+  <a href="#improvements_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Improvements
@@ -1961,7 +2017,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#improvements_3" class="md-nav__link">
+  <a href="#improvements_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         Improvements
@@ -2184,7 +2240,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#improvements_4" class="md-nav__link">
+  <a href="#improvements_5" class="md-nav__link">
     <span class="md-ellipsis">
       
         Improvements
@@ -2234,7 +2290,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#improvements_5" class="md-nav__link">
+  <a href="#improvements_6" class="md-nav__link">
     <span class="md-ellipsis">
       
         Improvements
@@ -2342,12 +2398,19 @@
 
 
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
+<h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="improvements">Improvements<a class="headerlink" href="#improvements" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Hash field expiration. <code>hexpire()</code>, <code>hpexpire()</code>, <code>hexpireat()</code>, <code>hpexpireat()</code>, <code>httl()</code>, <code>hpttl()</code>, <code>hexpiretime()</code> and <code>hpersist()</code> set, read and remove a TTL on individual hash fields, and <code>hsetex()</code> / <code>hgetex()</code> write or read fields while setting their TTL in the same command. All ten have async twins and pipeline support on the redis-py, valkey-py and valkey-glide adapters. Field TTLs need Redis 7.4+ or Valkey 9.0+, and <code>hsetex()</code>/<code>hgetex()</code> need Redis 8.0+ or Valkey 9.0+; the package's minimum server versions are unchanged, so on an older server these methods raise <code>NotSupportedError</code>.</li>
+<li>Key deletion sends <code>UNLINK</code> instead of <code>DEL</code> on every RESP adapter: <code>delete()</code>, <code>delete_many()</code>, <code>delete_pattern()</code>, <code>set(timeout=0)</code>, the pipeline <code>delete()</code> and the cluster per-slot paths. <code>UNLINK</code> reclaims a large hash, list or set in a background thread instead of blocking the server while the value is torn down.</li>
+<li><code>NotSupportedError</code> gains a <code>detail</code> attribute, and the RESP adapters translate the server's "unknown command" reply (and the cluster client's command-table lookup failure) into it. A command the connected server predates now surfaces as the same exception the LocMem, Database and Tiered backends raise for an operation they lack, with <code>operation</code> set to the command name, instead of a driver <code>ResponseError</code>.</li>
+</ul>
 <h2 id="071-september-2026">0.7.1 (September 2026)<a class="headerlink" href="#071-september-2026" title="Permanent link">&para;</a></h2>
 <h3 id="breaking-changes">Breaking changes<a class="headerlink" href="#breaking-changes" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>renamenx()</code> and <code>arenamenx()</code> return <code>False</code> for a missing source key instead of raising. The method already answers "did the rename happen" with a bool when the destination is taken, and a missing source is the same answer on the claim-a-key path; callers had to wrap the call in <code>except ValueError</code> to get one.</li>
 </ul>
-<h3 id="improvements">Improvements<a class="headerlink" href="#improvements" title="Permanent link">&para;</a></h3>
+<h3 id="improvements_1">Improvements<a class="headerlink" href="#improvements_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>rename()</code> and <code>arename()</code> raise <code>KeyNotFoundError</code> for a missing source key, and both methods document it. The exception subclasses <code>CachexError</code> and <code>ValueError</code>, so <code>except CachexError</code> now covers it and existing <code>except ValueError</code> handlers keep working without swallowing unrelated errors; the missing key is available as <code>.key</code>.</li>
 </ul>
@@ -2369,7 +2432,7 @@
 <li><code>xpending()</code> on the valkey-glide backend returns the same summary and range dicts as the other backends, and rejects a filter given without a count. Code that unpacked the raw list replies reads the dict keys instead.</li>
 <li><code>hset()</code> with an empty mapping raises <code>ValueError</code> on the valkey-glide backend in every form, direct, async and pipelined. The pipeline used to queue nothing.</li>
 </ul>
-<h3 id="improvements_1">Improvements<a class="headerlink" href="#improvements_1" title="Permanent link">&para;</a></h3>
+<h3 id="improvements_2">Improvements<a class="headerlink" href="#improvements_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>DatabaseCache.scan(key_type=...)</code> pushes the type filter into the query. The tagged class's name appears verbatim in the pickled row, so a <code>LIKE</code> pre-filter over its three base64 alignments narrows the result set in SQL; surviving rows are still decoded and confirmed, so the filter stays exact while the per-key round trips disappear.</li>
 <li><code>DatabaseCache.sinter</code>, <code>sdiff</code> and <code>sunion</code> read every operand in one query instead of one query per key.</li>
@@ -2533,7 +2596,7 @@
 <li><code>incr()</code> documents where it diverges from <code>BaseCache.incr</code> and from <code>LocMemCache</code>.</li>
 </ul>
 <h2 id="051-august-2026">0.5.1 (August 2026)<a class="headerlink" href="#051-august-2026" title="Permanent link">&para;</a></h2>
-<h3 id="improvements_2">Improvements<a class="headerlink" href="#improvements_2" title="Permanent link">&para;</a></h3>
+<h3 id="improvements_3">Improvements<a class="headerlink" href="#improvements_3" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>TieredCache.get_many</code> batches its L2 TTL lookups. Repopulating L1 issued one <code>TTL</code> call per key on top of the <code>MGET</code>, so a 100-key miss cost 101 round trips against the very tier it exists to spare. The TTLs now go through a single pipeline, falling back to the per-key path for an L2 that can't pipeline (stock Django backends, LocMem).</li>
 <li>The sdist no longer ships example and benchmark files. <code>README.md</code> and <code>pyproject.toml</code> were unanchored globs in the hatch config, so they matched at any depth and pulled in <code>examples/*/README.md</code>, <code>examples/full/pyproject.toml</code> and <code>benchmarks/README.md</code>.</li>
@@ -2558,7 +2621,7 @@
 <li><code>django_cachex.Lock</code> and <code>django_cachex.AsyncLock</code> removed. They existed only to wrap the Rust driver's raw lock commands. <code>cache.lock()</code> is unchanged on every remaining backend, and <code>LockError</code> / <code>LockNotOwnedError</code> are still the exceptions it raises.</li>
 </ul>
 <h2 id="042-august-2026">0.4.2 (August 2026)<a class="headerlink" href="#042-august-2026" title="Permanent link">&para;</a></h2>
-<h3 id="improvements_3">Improvements<a class="headerlink" href="#improvements_3" title="Permanent link">&para;</a></h3>
+<h3 id="improvements_4">Improvements<a class="headerlink" href="#improvements_4" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Every value input in the key admin is the same textarea. Push, add and set-field forms were single-line <code>&lt;input type="text"&gt;</code> fields 100 to 150px wide, so a multi-line JSON value could not be typed into them at all. They are now four-row textareas laid out like the string editor. Item, field and member rows use a two-row version of the same field, with their buttons stacked beside it so a row stays compact. The field is one Django template partial (<code>{% partialdef value-input %}</code>), and the fieldsets carry the admin's own <code>monospace</code> class instead of five ad-hoc font declarations.</li>
 <li>Sorted set members and set members can be edited. Both rendered as static <code>&lt;code&gt;</code>, so a typo in a member meant remove-and-re-add by hand. Renaming adds the new member before dropping the old one, so an interrupted request leaves a visible duplicate rather than losing the member.</li>
@@ -2734,7 +2797,7 @@ release.</p>
 <li>LocMemCache type detection: Automatically detects stored Python types (list, set, dict) and maps them to Redis equivalents</li>
 <li><code>KeyType</code> StrEnum: Centralized enum for Redis key types, replacing scattered string literals</li>
 </ul>
-<h4 id="improvements_4">Improvements<a class="headerlink" href="#improvements_4" title="Permanent link">&para;</a></h4>
+<h4 id="improvements_5">Improvements<a class="headerlink" href="#improvements_5" title="Permanent link">&para;</a></h4>
 <ul>
 <li>Major admin refactoring: replaced service layer with helpers module, simplified views, restructured templates</li>
 <li>Unified admin views between classic Django admin and Unfold theme</li>
@@ -2759,7 +2822,7 @@ release.</p>
 <li><code>Memcached</code>: Basic stats when available</li>
 <li>Django's <code>RedisCache</code>: Basic support (full features require django-cachex backends)</li>
 </ul>
-<h4 id="improvements_5">Improvements<a class="headerlink" href="#improvements_5" title="Permanent link">&para;</a></h4>
+<h4 id="improvements_6">Improvements<a class="headerlink" href="#improvements_6" title="Permanent link">&para;</a></h4>
 <ul>
 <li>Standardized <code>info()</code> output format across all wrapped cache backends</li>
 <li>Added TTL support (<code>ttl()</code>, <code>expire()</code>, <code>persist()</code>) for LocMemCache</li>
