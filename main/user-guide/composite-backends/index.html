@@ -1470,7 +1470,8 @@
 <h3 id="operational-notes_1">Operational notes<a class="headerlink" href="#operational-notes_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>With tracking coherence the transport must be a redis-py or valkey-py backend, standalone or Sentinel. Cluster (tracking is per node) and valkey-glide (cannot receive invalidations) transports raise <code>ImproperlyConfigured</code> on first use. Behind Sentinel, the health check reconnects the listener after a failover.</li>
-<li>Each process holds two extra connections: a subscriber to <code>__redis__:invalidate</code> and the connection that enables tracking. The first operation opens them; a transport that is down at that moment is retried in the background.</li>
+<li>Each process holds one extra connection, opened outside the pool's accounting. It speaks RESP3, so the server pushes invalidations on the tracking connection itself. The first operation opens it; a transport that is down at that moment is retried in the background.</li>
+<li>The listener always parses with its driver's pure-Python RESP3 parser, whatever <code>parser_class</code> the transport is configured with. <code>hiredis</code> and <code>libvalkey</code> stay on the data path; only the listener's own handful of messages is parsed in Python.</li>
 <li>The local store, listener thread and counters are shared per <code>LOCATION</code> (defaulting to the transport alias) within a process, like <code>StreamCache</code>. Two aliases with different <code>LOCATION</code>s over one transport act as two independent pods.</li>
 <li><code>close()</code> is a no-op so the listener outlives requests; <code>shutdown()</code> stops it. A dead listener thread is restarted on the next operation.</li>
 <li>A local miss costs one pipelined <code>GET</code> plus <code>PTTL</code>; <code>get_many</code> fetches all missing keys in one pipeline.</li>
