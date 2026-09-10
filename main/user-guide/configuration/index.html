@@ -2039,7 +2039,7 @@ methods, so one cache alias holds up to one client of each kind.</p>
 <tbody>
 <tr>
 <td><code>LocMemCache</code></td>
-<td>Drop-in replacement for Django's <code>LocMemCache</code> with data-structure ops, TTL helpers, and admin support</td>
+<td>Drop-in replacement for Django's <code>LocMemCache</code> with data-structure ops, <code>ttl()</code>/<code>expire()</code>/<code>persist()</code>, and admin support</td>
 </tr>
 <tr>
 <td><code>DatabaseCache</code></td>
@@ -2047,6 +2047,30 @@ methods, so one cache alias holds up to one client of each kind.</p>
 </tr>
 </tbody>
 </table>
+<p>The TTL surface is <code>ttl()</code>, <code>expire()</code> and <code>persist()</code>, and <code>ttl()</code> reports
+whole seconds. <code>pttl()</code>, <code>pexpire()</code>, <code>expireat()</code>,
+<code>pexpireat()</code>, <code>expiretime()</code> and the hash-field expiration family
+(<code>hexpire()</code>, <code>httl()</code>, <code>hsetex()</code>, <code>hgetex()</code> and their relatives) raise
+<code>NotSupportedError</code>, and so do <code>lock()</code>, <code>pipeline()</code>, <code>eval_script()</code>,
+<code>get_client()</code>, <code>rename()</code>, <code>renamenx()</code>, <code>slowlog_get()</code>, <code>slowlog_len()</code>,
+the blocking list pops, and the cross-key store commands (<code>lmove()</code>,
+<code>smove()</code>, <code>sinterstore()</code> and friends). Streams are not implemented at all.</p>
+<p>What does work on both: the hash, list, set and sorted-set commands, <code>type()</code>,
+<code>touch()</code>, <code>info()</code>, key listing (<code>keys()</code>, <code>iter_keys()</code>, <code>scan()</code>,
+<code>delete_pattern()</code>) and the admin. Key patterns use Redis's glob dialect on
+both, and <code>DatabaseCache</code> matches case-sensitively on every database vendor.
+<code>LocMemCache</code> also has <code>semaphore()</code>, backed by the in-process
+<code>django_cachex.Semaphore</code>; <code>DatabaseCache</code> has no semaphore.</p>
+<p><code>incr_version()</code> and <code>decr_version()</code> move the key rather than copying it, the
+way Redis <code>RENAME</code> does: any key type moves, collections included, and the key
+keeps its remaining TTL.</p>
+<p>On MySQL, run the connection at <code>READ COMMITTED</code>, which is also Django's own
+recommendation for <code>DatabaseCache</code>. The compound operations (<code>lpush()</code>,
+<code>sadd()</code>, <code>hincrby()</code> and the rest) take a <code>SELECT ... FOR UPDATE</code> row lock,
+and under the InnoDB default of <code>REPEATABLE READ</code> that lock takes a gap lock on
+a row that does not exist yet, so two clients creating the same key at the same
+time deadlock and one gets an <code>OperationalError</code> (MySQL error 1213) instead of
+falling through to the insert retry.</p>
 <h3 id="composite-backends">Composite backends<a class="headerlink" href="#composite-backends" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -2103,6 +2127,18 @@ them elsewhere as shorthand for "every Valkey/Redis backend".</p>
 </span><span id="__span-2-22"><a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a><span class="c1"># Or comma/semicolon separated</span>
 </span><span id="__span-2-23"><a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a><span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey://127.0.0.1:6379/1,valkey://127.0.0.1:6380/1&quot;</span>
 </span></code></pre></div>
+<p>The multi-URL form works on the valkey-glide backends too. There the extra URLs
+become replica node addresses and the client is built with
+<code>read_from=PREFER_REPLICA</code>, so reads go to a replica when one is reachable and
+fall back to the primary otherwise. Two constraints come with it:</p>
+<ul>
+<li>Every URL in the list must agree on TLS scheme, username, password and
+  database, because glide applies one connection setting to the whole address
+  list. A mismatch raises <code>ImproperlyConfigured</code> when the backend first
+  connects.</li>
+<li>Listing the same URL twice does not add a replica: duplicate host/port
+  entries collapse to a single address.</li>
+</ul>
 <h2 id="options-reference">OPTIONS Reference<a class="headerlink" href="#options-reference" title="Permanent link">&para;</a></h2>
 <p>Which keys are honored depends on the backend:</p>
 <table>
@@ -2276,7 +2312,12 @@ parser otherwise. To get the C parser, install the <code>libvalkey</code> or
 </span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>    <span class="p">},</span>
 </span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="p">}</span>
 </span></code></pre></div>
-<p>Per-call overrides accept the same shapes via the <code>stampede_prevention=</code> keyword on <code>get</code>/<code>set</code>/<code>add</code>/<code>touch</code>/<code>get_or_set</code>/<code>get_many</code>/<code>set_many</code>, and on their <code>a</code>-prefixed async counterparts. On <code>touch</code> the keyword decides whether the refreshed TTL gets the buffer added back, so it should match what the original write used.</p>
+<p><code>buffer</code> is a non-negative <code>int</code> (seconds); <code>beta</code> and <code>delta</code> are finite
+non-negative numbers. Zero for <code>beta</code> or <code>delta</code> is valid and means "no
+probabilistic early recompute, the key expires logically at its timeout". An
+out-of-range value raises <code>TypeError</code> or <code>ValueError</code> when the cache is
+configured, not later on a write.</p>
+<p>Per-call overrides accept the same shapes via the <code>stampede_prevention=</code> keyword on <code>get</code>/<code>set</code>/<code>add</code>/<code>touch</code>/<code>get_or_set</code>/<code>get_many</code>/<code>set_many</code>, on the TTL readers and setters (<code>ttl</code>, <code>pttl</code>, <code>expire</code>, <code>expireat</code>, <code>pexpire</code>, <code>pexpireat</code>, <code>expiretime</code>), and on their <code>a</code>-prefixed async counterparts. On <code>touch</code> the keyword decides whether the refreshed TTL gets the buffer added back, so it should match what the original write used.</p>
 <div class="admonition warning">
 <p class="admonition-title">Valkey/Redis backends only</p>
 <p>Stampede prevention is implemented in the RESP cache layer and the

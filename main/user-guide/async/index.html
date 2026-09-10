@@ -1864,12 +1864,17 @@ connection that owns it.</p>
 <h3 id="closing-async-connections">Closing Async Connections<a class="headerlink" href="#closing-async-connections" title="Permanent link">&para;</a></h3>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aclose</span><span class="p">()</span>
 </span></code></pre></div>
-<p><code>aclose()</code> disconnects the async pools belonging to the loop it runs on and
-drops them from the registry. The next <code>await</code> on the cache opens fresh ones,
-so call it when you are done with a loop, not between requests. It also sweeps
-the registry, releasing the pools of any loop that has been closed. On a
-cluster backend it closes that loop's cluster client; on a Sentinel backend it
-also closes the loop's Sentinel manager.</p>
+<p><code>aclose()</code> disconnects the async pools this cache alias opened on the loop it
+runs on and drops them from the registry. The next <code>await</code> on the cache opens
+fresh ones, so call it when you are done with a loop, not between requests. It
+also sweeps the registry, releasing the pools of any loop that has been closed.
+On a cluster backend it closes that loop's cluster client; on a Sentinel
+backend it also closes the loop's Sentinel manager and the clients it
+discovered with.</p>
+<p>Only the calling alias is released. Other aliases sharing the same loop and the
+same driver keep their connections, since disconnecting a pool drops the
+connections another alias's in-flight tasks have checked out of it. Call
+<code>aclose()</code> on each cache you used.</p>
 <p><code>close()</code> leaves the sync pools connected: Django fires it on every
 <code>request_finished</code> signal, and tearing pools down there would force a reconnect
 per request. It does sweep the registry, since that needs no running loop.</p>
@@ -1897,8 +1902,8 @@ pools of the loops that closed before it.</p>
 </span></code></pre></div>
 <p>Both views use the same cache backend configured in settings.</p>
 <h2 id="other-backends">Other backends<a class="headerlink" href="#other-backends" title="Permanent link">&para;</a></h2>
-<p>The async ext surface (<code>alpush</code>, <code>ahset</code>, <code>azadd</code>, <code>attl</code>, <code>aexpire</code>, …)
-is also available on <code>LocMemCache</code> and <code>DatabaseCache</code>. The two backends
+<p>The async ext surface (<code>alpush</code>, <code>ahset</code>, <code>azadd</code>, <code>attl</code>, <code>aexpire</code> and the
+rest) is also available on <code>LocMemCache</code> and <code>DatabaseCache</code>. The two backends
 take different routes because the underlying work is different:</p>
 <ul>
 <li><strong><code>LocMemCache</code></strong> is in-memory: each <code>a*</code> method calls its sync

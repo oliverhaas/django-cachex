@@ -2002,6 +2002,10 @@
 <p>For better performance with many keys:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">cache</span><span class="o">.</span><span class="n">delete_pattern</span><span class="p">(</span><span class="s2">&quot;foo_*&quot;</span><span class="p">,</span> <span class="n">itersize</span><span class="o">=</span><span class="mi">100_000</span><span class="p">)</span>
 </span></code></pre></div>
+<p>The pattern is a Redis glob on every backend, matched case-sensitively. An
+empty pattern matches only the empty key, so <code>delete_pattern("")</code> deletes at
+most one key; pass <code>"*"</code> to clear everything. See
+<a href="../../reference/api/#key-patterns">Key patterns</a>.</p>
 <h2 id="atomic-operations">Atomic Operations<a class="headerlink" href="#atomic-operations" title="Permanent link">&para;</a></h2>
 <h3 id="setnx-set-if-not-exists">SETNX (Set if Not Exists)<a class="headerlink" href="#setnx-set-if-not-exists" title="Permanent link">&para;</a></h3>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">cache</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">&quot;key&quot;</span><span class="p">,</span> <span class="s2">&quot;value1&quot;</span><span class="p">,</span> <span class="n">nx</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># Returns True</span>
@@ -2080,7 +2084,7 @@
 </span><span id="__span-16-25"><a id="__codelineno-16-25" name="__codelineno-16-25" href="#__codelineno-16-25"></a>
 </span><span id="__span-16-26"><a id="__codelineno-16-26" name="__codelineno-16-26" href="#__codelineno-16-26"></a><span class="n">cache</span><span class="o">.</span><span class="n">hpersist</span><span class="p">(</span><span class="s2">&quot;session:42&quot;</span><span class="p">,</span> <span class="s2">&quot;csrf&quot;</span><span class="p">)</span>  <span class="c1"># [1]</span>
 </span></code></pre></div>
-<p>A few things to keep in mind:</p>
+<p>Field TTL rules:</p>
 <ul>
 <li>Rewriting a field with <code>hset</code>, or with <code>hsetex</code> without <code>keepttl=True</code>, clears that field's TTL.</li>
 <li><code>hsetex(timeout=...)</code> follows <code>set()</code>: the default uses the backend's <code>TIMEOUT</code>, <code>None</code> means no expiry, and <code>timeout=0</code> deletes the fields immediately.</li>

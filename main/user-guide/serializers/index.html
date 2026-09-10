@@ -1387,9 +1387,11 @@ Real network or larger payloads dampen the spread. Reproduce with the
   original type on the way back (becomes a <code>dict</code> or the underlying value).</li>
 <li>For arbitrary Django model instances or types not listed above, prefer
   <code>pickle</code> or write a custom serializer.</li>
-<li>If you need maximum speed and your values are JSON-compatible (or you
-  pre-convert <code>Decimal</code>/<code>datetime</code> to strings), <code>orjson</code> and <code>ormsgpack</code> are
-  significantly faster than the pure-Python equivalents.</li>
+<li>If your values are JSON-compatible (or you pre-convert <code>Decimal</code>/<code>datetime</code>
+  to strings), <code>orjson</code> and <code>ormsgpack</code> are the fastest encoders on batch
+  writes: about 45% ahead of <code>json</code> on <code>mset</code> in the
+  <a href="../../reference/benchmarks/">benchmarks</a>. Single-key operations are
+  transport-bound, so the encoder barely moves them.</li>
 </ul>
 <h2 id="fallback-for-migration">Fallback for Migration<a class="headerlink" href="#fallback-for-migration" title="Permanent link">&para;</a></h2>
 <p>Specify a list of serializers to safely migrate between formats. The first is used for writing, all are tried for reading:</p>

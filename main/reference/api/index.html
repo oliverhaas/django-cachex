@@ -920,6 +920,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Extended Methods">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#key-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key patterns
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-structure-calls-with-no-arguments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data-structure calls with no arguments
+      
+    </span>
+  </a>
+  
 </li>
         
           <li class="md-nav__item">
@@ -1440,6 +1468,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Extended Methods">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#key-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key patterns
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-structure-calls-with-no-arguments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data-structure calls with no arguments
+      
+    </span>
+  </a>
+  
 </li>
         
           <li class="md-nav__item">
@@ -1915,6 +1971,24 @@
 </tr>
 </tbody>
 </table>
+<h4 id="key-patterns">Key patterns<a class="headerlink" href="#key-patterns" title="Permanent link">&para;</a></h4>
+<p><code>keys()</code>, <code>iter_keys()</code>, <code>scan()</code> and <code>delete_pattern()</code> take a Redis glob on
+every backend: <code>*</code>, <code>?</code>, <code>[abc]</code>, <code>[a-z]</code>, <code>[^abc]</code> for negation, and <code>\</code> to
+escape any of them. Matching is case-sensitive everywhere, <code>LocMemCache</code> and
+<code>DatabaseCache</code> on SQLite included. A reversed range such as <code>[z-a]</code> reads as
+<code>[a-z]</code>, the way Redis reads it.</p>
+<p>The empty pattern matches only the empty key, again as Redis does. Use <code>"*"</code> to
+match everything; <code>delete_pattern("")</code> deletes at most one key.</p>
+<h3 id="data-structure-calls-with-no-arguments">Data-structure calls with no arguments<a class="headerlink" href="#data-structure-calls-with-no-arguments" title="Permanent link">&para;</a></h3>
+<p><code>sadd</code>, <code>srem</code>, <code>hdel</code>, <code>hset</code>, <code>lpush</code>, <code>rpush</code>, <code>zrem</code>, <code>xdel</code> and <code>xack</code>
+called with no members, fields, values or entry ids return <code>0</code>, and
+<code>smismember</code> and <code>zmscore</code> return an empty list. No command reaches the server,
+so no key is created. Every backend answers the same way, async twins included.</p>
+<p>A pipeline guards the same way: the step contributes <code>0</code> (or an empty list for
+<code>smismember</code> and <code>zmscore</code>) to the <code>execute()</code> result without a command being
+queued, so the results still line up with the calls. The hash-field commands
+called with no fields contribute <code>[]</code> the same way, and async pipelines behave
+identically.</p>
 <h3 id="hash-methods">Hash Methods<a class="headerlink" href="#hash-methods" title="Permanent link">&para;</a></h3>
 <p>Hash operations for field-value data structures:</p>
 <table>
@@ -2016,6 +2090,7 @@
 </tbody>
 </table>
 <p>Field expiration needs Redis 7.4+ or Valkey 9.0+, and <code>hsetex</code>/<code>hgetex</code> Redis 8.0+; an older server raises <code>NotSupportedError</code>.</p>
+<p><code>hset(key, items=[...])</code> raises <code>ValueError("items must hold field/value pairs")</code> for an odd-length list, matching <code>hsetex</code>. On a pipeline the error is raised when the call is queued, so nothing in the batch is sent.</p>
 <h3 id="set-methods">Set Methods<a class="headerlink" href="#set-methods" title="Permanent link">&para;</a></h3>
 <p>Set operations for unordered collections of unique elements:</p>
 <table>
@@ -2097,6 +2172,7 @@
 </tbody>
 </table>
 <p><code>keys</code> on the multi-key set operations takes a single key or a sequence of them, not varargs. <code>sdiff(["a", "b"])</code>, not <code>sdiff("a", "b")</code>: the second positional argument is <code>version</code>.</p>
+<p><code>spop</code> rejects a negative <code>count</code> with Redis's <code>value is out of range, must be positive</code>.</p>
 <h3 id="sorted-set-methods">Sorted Set Methods<a class="headerlink" href="#sorted-set-methods" title="Permanent link">&para;</a></h3>
 <p>Sorted set operations for scored, ordered collections:</p>
 <table>
@@ -2168,11 +2244,11 @@
 <td>Get multiple members' scores</td>
 </tr>
 <tr>
-<td><code>zpopmin(key, count=1)</code></td>
+<td><code>zpopmin(key, count=None)</code></td>
 <td>Remove and return members with lowest scores</td>
 </tr>
 <tr>
-<td><code>zpopmax(key, count=1)</code></td>
+<td><code>zpopmax(key, count=None)</code></td>
 <td>Remove and return members with highest scores</td>
 </tr>
 </tbody>
@@ -2254,6 +2330,7 @@
 </tbody>
 </table>
 <p><code>blpop</code> and <code>brpop</code> take <code>keys</code> the same way: one key or a sequence, followed by <code>timeout</code>.</p>
+<p><code>lpos</code> rejects <code>rank=0</code> and a negative <code>count</code> or <code>maxlen</code>, and <code>linsert</code> rejects a <code>where</code> other than <code>"BEFORE"</code> or <code>"AFTER"</code>. Both raise <code>ValueError</code> carrying Redis's own message.</p>
 <h3 id="stream-methods">Stream Methods<a class="headerlink" href="#stream-methods" title="Permanent link">&para;</a></h3>
 <p>Append-only log structure with consumer groups:</p>
 <table>
@@ -2369,7 +2446,7 @@
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">keys</span><span class="o">=</span><span class="p">(),</span>  <span class="c1"># KEYS to pass to script</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">args</span><span class="o">=</span><span class="p">(),</span>  <span class="c1"># ARGV to pass to script</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">pre_hook</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>  <span class="c1"># Pre-processing hook: (helpers, keys, args) -&gt; (keys, args)</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">post_hook</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>  <span class="c1"># Post-processing hook: (helpers, result) -&gt; result</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">post_hook</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>  <span class="c1"># Post-processing hook: (helpers, result) -&gt; result; None returns the result unchanged</span>
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">version</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>  <span class="c1"># Key version for prefixing</span>
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="p">)</span>
 </span></code></pre></div>
@@ -2400,7 +2477,6 @@
 </tr>
 </tbody>
 </table>
-<p>Pass <code>post_hook=None</code> (the default) when no decoding is needed.</p>
 <h4 id="scripthelpers">ScriptHelpers<a class="headerlink" href="#scripthelpers" title="Permanent link">&para;</a></h4>
 <p>The helpers object passed to pre/post hooks:</p>
 <table>
@@ -2470,6 +2546,11 @@
 </tr>
 </tbody>
 </table>
+<p>Backend coverage: the Valkey/Redis backends, <code>LocMemCache</code> and <code>TrackingCache</code>
+take all three flags. <code>DatabaseCache</code> takes <code>nx</code> and raises
+<code>NotSupportedError</code> for <code>xx</code> and <code>get</code>. <code>StreamCache</code> raises
+<code>NotSupportedError</code> for all three, since eventual replication cannot make a
+conditional write atomic.</p>
 <h2 id="async-methods">Async Methods<a class="headerlink" href="#async-methods" title="Permanent link">&para;</a></h2>
 <p>Standard Django cache methods have async versions on the cache object:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Sync</span>
@@ -2549,8 +2630,8 @@ or vendor-specific calls won't work against the others. For
 adapter-portable code use the cache API directly; reach for
 <code>get_client()</code> only as an escape hatch, since it bypasses the configured
 key prefix, version, serializer, and compressor.</p>
-<p>The async equivalent is <code>get_async_client()</code>, which is <code>async def</code> and
-returns the adapter's async client.</p>
+<p>There is no <code>get_async_client()</code> on the cache object. The async client
+lives on the adapter: <code>await cache.adapter.get_async_client()</code>.</p>
 <h2 id="lock-interface">Lock Interface<a class="headerlink" href="#lock-interface" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sleep</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">thread_local</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </span></code></pre></div>
@@ -2596,51 +2677,63 @@ returns the adapter's async client.</p>
 keyword: <code>cache.lock("k", 30)</code> sets <code>version=30</code> and leaves the lock without a
 TTL.</p>
 <p><code>alock()</code> takes the same parameters.</p>
-<p><code>acquire()</code> accepts the same <code>blocking</code> / <code>timeout</code> arguments to override
-the defaults set on the lock object:</p>
+<p><code>acquire()</code> takes its arguments from whichever lock object the backend
+returns, and the spellings differ. The redis-py and valkey-py backends hand
+back the driver's own lock, whose <code>acquire()</code> signature is
+<code>acquire(sleep=None, blocking=None, blocking_timeout=None, token=None)</code>
+(the async lock drops <code>sleep</code>). The valkey-glide backend returns the
+django-cachex lock, whose <code>acquire()</code> is keyword-only:
+<code>acquire(*, blocking=None, timeout=None)</code>. Passing <code>timeout=</code> to a
+redis-py or valkey-py lock raises <code>TypeError</code>.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">&quot;mylock&quot;</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">if</span> <span class="n">lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">):</span>  <span class="c1"># wait up to 5s</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">if</span> <span class="n">lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">(</span><span class="n">blocking_timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">):</span>  <span class="c1"># redis-py / valkey-py: wait up to 5s</span>
 </span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="o">...</span>
 </span></code></pre></div>
+<p>Set the wait on <code>cache.lock()</code> instead of on <code>acquire()</code> when the code has to
+run against every backend:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">&quot;mylock&quot;</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="k">if</span> <span class="n">lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">():</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="o">...</span>
+</span></code></pre></div>
 <p>Compatible with <code>threading.Lock</code>:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Context manager</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">&quot;mylock&quot;</span><span class="p">):</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="n">do_work</span><span class="p">()</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="c1"># Manual acquire/release</span>
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">&quot;mylock&quot;</span><span class="p">)</span>
-</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="k">if</span> <span class="n">lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">():</span>
-</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>    <span class="k">try</span><span class="p">:</span>
-</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>        <span class="n">do_work</span><span class="p">()</span>
-</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>    <span class="k">finally</span><span class="p">:</span>
-</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a>        <span class="n">lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Context manager</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">&quot;mylock&quot;</span><span class="p">):</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="n">do_work</span><span class="p">()</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="c1"># Manual acquire/release</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">&quot;mylock&quot;</span><span class="p">)</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="k">if</span> <span class="n">lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">():</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>    <span class="k">try</span><span class="p">:</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>        <span class="n">do_work</span><span class="p">()</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>    <span class="k">finally</span><span class="p">:</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>        <span class="n">lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
 </span></code></pre></div>
 <h3 id="async-lock">Async lock<a class="headerlink" href="#async-lock" title="Permanent link">&para;</a></h3>
 <p><code>alock()</code> is <code>async def</code> (parallel to <code>apipeline()</code>):</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Context manager</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="k">async</span> <span class="k">with</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">alock</span><span class="p">(</span><span class="s2">&quot;mylock&quot;</span><span class="p">):</span>
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="k">await</span> <span class="n">do_work</span><span class="p">()</span>
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="c1"># Manual acquire/release</span>
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="n">lock</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">alock</span><span class="p">(</span><span class="s2">&quot;mylock&quot;</span><span class="p">)</span>
-</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="k">if</span> <span class="k">await</span> <span class="n">lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">():</span>
-</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>    <span class="k">try</span><span class="p">:</span>
-</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>        <span class="k">await</span> <span class="n">do_work</span><span class="p">()</span>
-</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>    <span class="k">finally</span><span class="p">:</span>
-</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>        <span class="k">await</span> <span class="n">lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Context manager</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="k">async</span> <span class="k">with</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">alock</span><span class="p">(</span><span class="s2">&quot;mylock&quot;</span><span class="p">):</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="k">await</span> <span class="n">do_work</span><span class="p">()</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="c1"># Manual acquire/release</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="n">lock</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">alock</span><span class="p">(</span><span class="s2">&quot;mylock&quot;</span><span class="p">)</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="k">if</span> <span class="k">await</span> <span class="n">lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">():</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>    <span class="k">try</span><span class="p">:</span>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>        <span class="k">await</span> <span class="n">do_work</span><span class="p">()</span>
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>    <span class="k">finally</span><span class="p">:</span>
+</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>        <span class="k">await</span> <span class="n">lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
 </span></code></pre></div>
 <p>Cluster mode rejects <code>lock()</code> and <code>alock()</code> on every adapter: the release script runs via <code>EVALSHA</code>, which cluster routes to replicas, so <code>release()</code> would fail and the key would stay set until its lease expired. Both raise <code>NotSupportedError</code>. Use <code>semaphore()</code> instead, which colocates its keys under a <code>{name}</code> hash tag.</p>
 <h2 id="semaphore-interface">Semaphore Interface<a class="headerlink" href="#semaphore-interface" title="Permanent link">&para;</a></h2>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">sem</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">semaphore</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">capacity</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">sem</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">semaphore</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">capacity</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 </span></code></pre></div>
 <p>Return a weighted semaphore for concurrency gating. Use as a context manager.</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">semaphore</span><span class="p">(</span><span class="s2">&quot;image-convert&quot;</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">60</span><span class="p">):</span>
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>    <span class="c1"># Up to 4 callers may hold this semaphore concurrently.</span>
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>    <span class="n">convert</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
-</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>
-</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="c1"># Weighted: claim 100 of a 500 budget.</span>
-</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">semaphore</span><span class="p">(</span><span class="s2">&quot;memory-heavy&quot;</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">300</span><span class="p">):</span>
-</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>    <span class="n">convert_huge</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">semaphore</span><span class="p">(</span><span class="s2">&quot;image-convert&quot;</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">60</span><span class="p">):</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>    <span class="c1"># Up to 4 callers may hold this semaphore concurrently.</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    <span class="n">convert</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="c1"># Weighted: claim 100 of a 500 budget.</span>
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">semaphore</span><span class="p">(</span><span class="s2">&quot;memory-heavy&quot;</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">300</span><span class="p">):</span>
+</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>    <span class="n">convert_huge</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
 </span></code></pre></div>
 <table>
 <thead>
@@ -2656,7 +2749,7 @@ the defaults set on the lock object:</p>
 </tr>
 <tr>
 <td><code>capacity</code></td>
-<td>Total budget. The first caller establishes capacity. Subsequent callers passing a different value update it on every backend; the local backend additionally emits a <code>RuntimeWarning</code> (the RESP backend updates silently).</td>
+<td>Total budget. The first caller establishes capacity. Subsequent callers passing a different value update it on every backend; <code>LocMemCache</code> additionally emits a <code>RuntimeWarning</code> (the RESP backends update silently).</td>
 </tr>
 <tr>
 <td><code>weight</code></td>
@@ -2668,36 +2761,37 @@ the defaults set on the lock object:</p>
 </tr>
 <tr>
 <td><code>lease</code></td>
-<td>TTL of the held claim in seconds. Required for the RESP backend (auto-reclaim if the holder crashes); accepted but ignored on the local backend.</td>
+<td>TTL of the held claim in seconds. Required for the RESP backend (auto-reclaim if the holder crashes); accepted but ignored on <code>LocMemCache</code>.</td>
 </tr>
 <tr>
 <td><code>timeout</code></td>
-<td>Max time <code>acquire()</code> will wait before raising <code>SemaphoreTimeoutError</code>. <code>None</code> blocks indefinitely.</td>
+<td>Default wait for <code>acquire()</code> before it raises <code>SemaphoreTimeoutError</code>. <code>None</code> blocks indefinitely.</td>
 </tr>
 </tbody>
 </table>
-<p><code>acquire()</code> accepts <code>blocking</code> and <code>timeout</code> to override the defaults set on the semaphore object. <code>release()</code> returns the claim to the pool; <code>extend(seconds)</code> bumps the TTL on RESP backends for tasks that may legitimately exceed their original lease.</p>
-<p>On RESP backends the semaphore's bookkeeping keys (<code>{name}:state</code>, <code>{name}:claims</code>, <code>{name}:queue</code>) expire after twice the longest lease seen, refreshed by every acquire, extend and release, so a holder that dies without releasing leaves nothing behind once its lease has run out.</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">sem</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">semaphore</span><span class="p">(</span><span class="s2">&quot;mysem&quot;</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="k">if</span> <span class="n">sem</span><span class="o">.</span><span class="n">acquire</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">):</span>
-</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    <span class="k">try</span><span class="p">:</span>
-</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>        <span class="n">do_work</span><span class="p">()</span>
-</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>    <span class="k">finally</span><span class="p">:</span>
-</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>        <span class="n">sem</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+<p><code>acquire()</code> accepts <code>blocking</code> and <code>timeout</code> to override the defaults set on the semaphore object. Omit <code>timeout</code> and the value passed to <code>cache.semaphore(...)</code> applies; pass <code>timeout=None</code> explicitly and the call blocks indefinitely, whatever the instance default is. <code>aacquire()</code> reads it the same way, on both the local and the RESP backends.</p>
+<p><code>release()</code> returns the claim to the pool. <code>extend(seconds)</code> bumps the TTL on RESP backends for tasks that may legitimately exceed their original lease; it raises <code>ValueError</code> unless <code>seconds</code> is positive, and returns <code>False</code> without raising when the claim is no longer ours because it was released or reaped. <code>aextend()</code> behaves the same.</p>
+<p>On RESP backends the semaphore's bookkeeping keys (<code>{name}:state</code>, <code>{name}:claims</code>, <code>{name}:queue</code>) expire after twice the longest lease seen. Acquire and release refresh all three; extend refreshes <code>{name}:state</code> and <code>{name}:claims</code>, and waiters keep <code>{name}:queue</code> alive by polling. A holder that dies without releasing therefore leaves nothing behind once its lease has run out.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">sem</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">semaphore</span><span class="p">(</span><span class="s2">&quot;mysem&quot;</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="k">if</span> <span class="n">sem</span><span class="o">.</span><span class="n">acquire</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">):</span>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>    <span class="k">try</span><span class="p">:</span>
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>        <span class="n">do_work</span><span class="p">()</span>
+</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>    <span class="k">finally</span><span class="p">:</span>
+</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>        <span class="n">sem</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
 </span></code></pre></div>
 <h3 id="async-semaphore">Async semaphore<a class="headerlink" href="#async-semaphore" title="Permanent link">&para;</a></h3>
 <p><code>asemaphore()</code> is <code>async def</code> (parallel to <code>alock()</code>):</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Context manager</span>
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="k">async</span> <span class="k">with</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">asemaphore</span><span class="p">(</span><span class="s2">&quot;mysem&quot;</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">):</span>
-</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>    <span class="k">await</span> <span class="n">do_work</span><span class="p">()</span>
-</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>
-</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="c1"># Manual acquire/release</span>
-</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="n">sem</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">asemaphore</span><span class="p">(</span><span class="s2">&quot;mysem&quot;</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
-</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="k">if</span> <span class="k">await</span> <span class="n">sem</span><span class="o">.</span><span class="n">aacquire</span><span class="p">():</span>
-</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>    <span class="k">try</span><span class="p">:</span>
-</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>        <span class="k">await</span> <span class="n">do_work</span><span class="p">()</span>
-</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>    <span class="k">finally</span><span class="p">:</span>
-</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>        <span class="k">await</span> <span class="n">sem</span><span class="o">.</span><span class="n">arelease</span><span class="p">()</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Context manager</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="k">async</span> <span class="k">with</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">asemaphore</span><span class="p">(</span><span class="s2">&quot;mysem&quot;</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">):</span>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>    <span class="k">await</span> <span class="n">do_work</span><span class="p">()</span>
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="c1"># Manual acquire/release</span>
+</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="n">sem</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">asemaphore</span><span class="p">(</span><span class="s2">&quot;mysem&quot;</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
+</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="k">if</span> <span class="k">await</span> <span class="n">sem</span><span class="o">.</span><span class="n">aacquire</span><span class="p">():</span>
+</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>    <span class="k">try</span><span class="p">:</span>
+</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>        <span class="k">await</span> <span class="n">do_work</span><span class="p">()</span>
+</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a>    <span class="k">finally</span><span class="p">:</span>
+</span><span id="__span-13-11"><a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>        <span class="k">await</span> <span class="n">sem</span><span class="o">.</span><span class="n">arelease</span><span class="p">()</span>
 </span></code></pre></div>
 <p>The awaitable methods are <code>aacquire()</code> and <code>arelease()</code>. <code>acquire()</code> and
 <code>release()</code> are the sync pair and are still present on the same object, so
@@ -2713,20 +2807,30 @@ returned <code>bool</code>, leaving the claim held until its lease expires.</p>
 <h2 id="pipelines">Pipelines<a class="headerlink" href="#pipelines" title="Permanent link">&para;</a></h2>
 <p>Batch multiple operations for efficiency. Queueing methods (<code>set</code>, <code>hset</code>, <code>lpush</code>, ...) stay synchronous in both wrappers; only <code>execute()</code> performs I/O.</p>
 <h3 id="sync">Sync<a class="headerlink" href="#sync" title="Permanent link">&para;</a></h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">pipeline</span><span class="p">()</span> <span class="k">as</span> <span class="n">pipe</span><span class="p">:</span>
-</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">&quot;key1&quot;</span><span class="p">,</span> <span class="s2">&quot;value1&quot;</span><span class="p">)</span>
-</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">&quot;key2&quot;</span><span class="p">,</span> <span class="s2">&quot;value2&quot;</span><span class="p">)</span>
-</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">&quot;hash&quot;</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
-</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>    <span class="n">results</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">pipeline</span><span class="p">()</span> <span class="k">as</span> <span class="n">pipe</span><span class="p">:</span>
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">&quot;key1&quot;</span><span class="p">,</span> <span class="s2">&quot;value1&quot;</span><span class="p">)</span>
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">&quot;key2&quot;</span><span class="p">,</span> <span class="s2">&quot;value2&quot;</span><span class="p">)</span>
+</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">&quot;hash&quot;</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
+</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>    <span class="n">results</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
 </span></code></pre></div>
 <h3 id="async">Async<a class="headerlink" href="#async" title="Permanent link">&para;</a></h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="k">async</span> <span class="k">with</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">apipeline</span><span class="p">()</span> <span class="k">as</span> <span class="n">pipe</span><span class="p">:</span>
-</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">&quot;key1&quot;</span><span class="p">,</span> <span class="s2">&quot;value1&quot;</span><span class="p">)</span>
-</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">&quot;hash&quot;</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
-</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>    <span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">pipe</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="k">async</span> <span class="k">with</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">apipeline</span><span class="p">()</span> <span class="k">as</span> <span class="n">pipe</span><span class="p">:</span>
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">&quot;key1&quot;</span><span class="p">,</span> <span class="s2">&quot;value1&quot;</span><span class="p">)</span>
+</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">&quot;hash&quot;</span><span class="p">,</span> <span class="s2">&quot;field&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
+</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>    <span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">pipe</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
 </span></code></pre></div>
 <p><code>apipeline()</code> is <code>async def</code> so adapters whose async-client construction is itself awaitable (e.g. valkey-glide) can resolve the client before returning the wrapper. Queueing methods stay synchronous; only <code>apipeline()</code> and <code>execute()</code> need to be awaited.</p>
 <p>Single-key commands are available on the pipeline. The multi-key helpers (<code>set_many</code>, <code>get_many</code>, <code>delete_many</code>), the read-modify-write helpers (<code>get_or_set</code>, <code>add</code>, <code>touch</code>, <code>has_key</code>), and the scanning helpers (<code>keys</code>, <code>scan</code>, <code>delete_pattern</code>, <code>clear</code>) are not: queue their underlying commands instead. Results are returned as a list in the same order as the commands.</p>
+<p>The queueing methods take the same signatures as the cache methods they queue,
+so a call reads the same either way. That includes the score-range methods,
+which name their bounds <code>min_score</code> and <code>max_score</code> and take <code>start</code> and <code>num</code>
+by keyword:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="n">pipe</span><span class="o">.</span><span class="n">zcount</span><span class="p">(</span><span class="s2">&quot;z&quot;</span><span class="p">,</span> <span class="n">min_score</span><span class="p">,</span> <span class="n">max_score</span><span class="p">)</span>
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="n">pipe</span><span class="o">.</span><span class="n">zrangebyscore</span><span class="p">(</span><span class="s2">&quot;z&quot;</span><span class="p">,</span> <span class="n">min_score</span><span class="p">,</span> <span class="n">max_score</span><span class="p">,</span> <span class="n">withscores</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">num</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="n">pipe</span><span class="o">.</span><span class="n">zrevrangebyscore</span><span class="p">(</span><span class="s2">&quot;z&quot;</span><span class="p">,</span> <span class="n">max_score</span><span class="p">,</span> <span class="n">min_score</span><span class="p">,</span> <span class="n">withscores</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">num</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="n">pipe</span><span class="o">.</span><span class="n">zremrangebyscore</span><span class="p">(</span><span class="s2">&quot;z&quot;</span><span class="p">,</span> <span class="n">min_score</span><span class="p">,</span> <span class="n">max_score</span><span class="p">)</span>
+</span></code></pre></div>
+<p>A hash field command queued with no fields (<code>pipe.httl("h")</code>, <code>pipe.hexpire("h", 60)</code>, <code>pipe.hgetex("h")</code> and the rest of the nine) contributes <code>[]</code> to the results and sends nothing to the server, the same result <code>cache.httl("h")</code> gives.</p>
 <h2 id="clearing-keys">Clearing keys<a class="headerlink" href="#clearing-keys" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2853,9 +2957,10 @@ and <code>TrackingCache</code> take their own <code>OPTIONS</code>; see
 dataclass that tunes the TTL-based XFetch stampede-prevention algorithm.
 Pass it to <code>OPTIONS["stampede_prevention"]</code> to apply globally, or to the
 <code>stampede_prevention=</code> kwarg on <code>get</code>/<code>set</code>/<code>get_many</code>/<code>set_many</code>/<code>add</code>/
-<code>touch</code>/<code>get_or_set</code>, and their <code>a</code>-prefixed async counterparts, for
-per-call overrides. <code>touch</code> uses it to decide whether the refreshed TTL
-gets the buffer added back.</p>
+<code>touch</code>/<code>get_or_set</code>, on the TTL readers and setters (<code>ttl</code>, <code>pttl</code>,
+<code>expire</code>, <code>expireat</code>, <code>pexpire</code>, <code>pexpireat</code>, <code>expiretime</code>), and on their
+<code>a</code>-prefixed async counterparts, for per-call overrides. <code>touch</code> uses it to
+decide whether the refreshed TTL gets the buffer added back.</p>
 <table>
 <thead>
 <tr>

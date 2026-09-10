@@ -1221,7 +1221,7 @@
 <li>Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with fallback chains for safe migrations.</li>
 <li>Cache stampede prevention (TTL-based XFetch).</li>
 <li>Two composite backends: <code>StreamCache</code> (cross-pod stream-synchronized in-memory cache) and <code>TrackingCache</code> (local read cache over a Redis/Valkey alias, invalidated by the server's <code>CLIENT TRACKING</code> or bounded by a local TTL).</li>
-<li>Django <code>LocMemCache</code> and <code>DatabaseCache</code> extensions with the hash, list, set and sorted set ops (no streams) and admin support.</li>
+<li>Django <code>LocMemCache</code> and <code>DatabaseCache</code> extensions with the hash, list, set and sorted set ops, <code>ttl()</code>/<code>expire()</code>/<code>persist()</code>, key patterns, and admin support (no streams, locks, pipelines or Lua).</li>
 <li>Optional <code>valkey-glide</code> adapter: Valkey's official Rust-cored client, exposed as <code>ValkeyGlideCache</code>. Experimental.</li>
 <li>Django admin UI for browsing keys, inspecting values, editing, and flushing.</li>
 </ul>

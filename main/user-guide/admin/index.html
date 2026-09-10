@@ -605,6 +605,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#browsing-a-trackingcache-alias" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Browsing a TrackingCache alias
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1286,6 +1297,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#browsing-a-trackingcache-alias" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Browsing a TrackingCache alias
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1420,8 +1442,8 @@
 <p>The admin uses Django's built-in permission system. Superusers have full access. Staff users need explicit permissions:</p>
 <ul>
 <li><code>django_cachex.view_cache</code> / <code>view_key</code>: view caches and keys</li>
-<li><code>django_cachex.change_cache</code>: cache-wide actions, meaning flush, clear the current version, and the cache detail page's danger zone (clear all versions, flush the database)</li>
-<li><code>django_cachex.add_key</code>: create keys</li>
+<li><code>django_cachex.change_cache</code>: cache-wide actions, meaning flush, clear the current version, the key browser's Clear tool, and the cache detail page's danger zone (clear all versions, flush the database)</li>
+<li><code>django_cachex.add_key</code>: create keys, including the key browser's Add key tool</li>
 <li><code>django_cachex.change_key</code>: every mutation on the key detail page, including editing values and setting or removing a TTL. Without it the page renders read-only.</li>
 <li><code>django_cachex.delete_key</code>: delete keys</li>
 </ul>
@@ -1444,29 +1466,42 @@
 <tr>
 <td><strong>limited</strong></td>
 <td>Limited Support</td>
-<td>Stock Django backends (<code>django.core.cache.backends.*</code>) and custom backends. The cache is listed and configurable, but key browsing isn't available because Django's <code>BaseCache</code> doesn't expose key listing.</td>
+<td>Stock Django backends (<code>django.core.cache.backends.*</code>), custom backends, and <code>TrackingCache</code>. The cache is listed and configurable, but key browsing isn't available.</td>
 </tr>
 </tbody>
 </table>
 <h3 id="using-djangos-stock-locmemcache-or-databasecache">Using Django's stock LocMemCache or DatabaseCache?<a class="headerlink" href="#using-djangos-stock-locmemcache-or-databasecache" title="Permanent link">&para;</a></h3>
 <p>Switch to <code>django_cachex.cache.LocMemCache</code> / <code>django_cachex.cache.DatabaseCache</code> for full admin support. Both are drop-in replacements for the stock Django classes.</p>
 <h3 id="using-djangos-stock-redis-backend">Using Django's stock Redis backend?<a class="headerlink" href="#using-djangos-stock-redis-backend" title="Permanent link">&para;</a></h3>
-<p>Switch to <code>ValkeyCache</code> / <code>RedisCache</code> for full functionality. See the <a href="../../getting-started/quickstart/">quickstart guide</a> for migration instructions.</p>
+<p>Switch to <code>ValkeyCache</code> / <code>RedisCache</code> for full functionality. See the <a href="../../migration/">migration guide</a> for migration instructions.</p>
+<h3 id="browsing-a-trackingcache-alias">Browsing a <code>TrackingCache</code> alias<a class="headerlink" href="#browsing-a-trackingcache-alias" title="Permanent link">&para;</a></h3>
+<p>A <code>TrackingCache</code> alias is badged <strong>limited</strong>, so the admin lists it and its
+configuration but offers no key browsing. Its keys live on the transport, and
+the local store only mirrors them; browse and edit through the transport alias,
+which is badged <strong>cachex</strong>.</p>
 <h2 id="views">Views<a class="headerlink" href="#views" title="Permanent link">&para;</a></h2>
 <h3 id="caches-index">Caches (Index)<a class="headerlink" href="#caches-index" title="Permanent link">&para;</a></h3>
 <p>Lists all configured caches showing name, backend class, location, and support level.</p>
 <p><img alt="The cache list, showing each configured alias with its backend and support level" src="../../assets/screenshot-cache-list.png" /></p>
 <p><strong>Actions:</strong> Flush selected caches (delete all entries).</p>
+<p>Every <code>LOCATION</code> the admin renders has its URL password replaced with <code>***</code>,
+here, in the cache detail page's Configuration section, and in connection URLs
+quoted inside backend error messages. A <code>***</code> on the page is masking, not a
+misconfiguration: the setting itself is untouched. <code>unix://</code> socket paths and
+non-URL locations such as <code>host:port</code> are shown as they are.</p>
 <h3 id="key-browser">Key Browser<a class="headerlink" href="#key-browser" title="Permanent link">&para;</a></h3>
 <p>Click a cache name to browse its keys with wildcard search (<code>*</code>), data type display, TTL, and pagination.</p>
 <p><img alt="The key browser, with the type filter sidebar and a wildcard search" src="../../assets/screenshot-key-list.png" /></p>
 <p><strong>Actions:</strong> Delete selected keys, add new key.</p>
 <h3 id="key-detail">Key Detail<a class="headerlink" href="#key-detail" title="Permanent link">&para;</a></h3>
 <p>View and edit a specific key's value (formatted JSON for objects/arrays), data type, and TTL. Supports editing the value, setting the TTL, running the operations for the key's data type, and deleting the key.</p>
-<p>A key whose server-side type the admin cannot render is shown read-only: the type is named, the value is not displayed, and no operations are offered.</p>
+<p>A key whose server-side type the admin cannot render is shown read-only: the type is named, the value is not displayed, and no type-specific operations are offered. Delete and the TTL form still work.</p>
+<p>A cache backend with no <code>type()</code> at all (<code>django.core.cache.backends.locmem.LocMemCache</code> and the other stock Django backends) gets the same treatment: the page renders, and any type-specific write is refused with "This cache backend does not report key types, so only deleting the key and setting its TTL are available." Delete and Set TTL stay available.</p>
+<p>Deleting a key that is already gone reports "Key not found, nothing was deleted." rather than success, and the key browser's bulk delete counts those misses separately.</p>
 <p><img alt="The key detail page, editing a value and its TTL" src="../../assets/screenshot-key-detail.png" /></p>
 <h3 id="cache-info">Cache Info<a class="headerlink" href="#cache-info" title="Permanent link">&para;</a></h3>
 <p>View server information: configuration, server version/uptime, memory usage, connected clients, command statistics, and keyspace data.</p>
+<p>Sections a backend cannot answer are omitted rather than rendered empty or with an error box. The Slow Log, which only the Valkey/Redis backends implement, is hidden everywhere else, and a backend with no <code>info()</code> still gets its Configuration section from <code>settings.CACHES</code> while the server, memory and statistics sections are skipped.</p>
 <h3 id="add-key">Add Key<a class="headerlink" href="#add-key" title="Permanent link">&para;</a></h3>
 <p>Name the new key and pick its data type. Nothing is written yet: <strong>Continue</strong> opens the key detail page, where the first value you add creates the key.</p>
 <h2 id="backend-abilities">Backend Abilities<a class="headerlink" href="#backend-abilities" title="Permanent link">&para;</a></h2>
