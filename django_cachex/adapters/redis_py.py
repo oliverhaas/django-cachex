@@ -10,6 +10,7 @@ and friends.
 
 import threading
 import weakref
+from typing import Any
 
 from django_cachex.adapters.valkey_py import (
     AsyncClusterRegistry,
@@ -38,6 +39,7 @@ _REDIS_ASYNC_CLUSTERS: AsyncClusterRegistry = weakref.WeakKeyDictionary()
 _REDIS_AVAILABLE = False
 try:
     import redis
+    from redis._parsers import _RESP3Parser as RedisRESP3Parser
     from redis.asyncio import ConnectionPool as RedisAsyncConnectionPool
     from redis.asyncio import Redis as RedisAsyncClient
     from redis.asyncio.cluster import RedisCluster as AsyncRedisCluster
@@ -75,6 +77,9 @@ class _RedisPyMixin:
 
     _LIB_AVAILABLE: bool = _REDIS_AVAILABLE
     _async_pools = _REDIS_ASYNC_POOLS
+
+    if _REDIS_AVAILABLE:
+        _resp3_parser_class: type[Any] | None = RedisRESP3Parser
 
     @staticmethod
     def _missing_lib_error() -> ImportError:

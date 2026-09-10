@@ -69,9 +69,9 @@ def _skip_unless_trackable(resp_adapter: str) -> None:
         pytest.skip(f"{resp_adapter} library not installed")
 
 
-def _transport_config(redis_container: RedisContainerInfo, resp_adapter: str) -> dict:
+def _transport_config(redis_container: RedisContainerInfo, resp_adapter: str, *, native_parser: bool = False) -> dict:
     if resp_adapter in {"redis-py", "valkey-py"}:
-        options = _get_client_library_options(ADAPTER_IMAGES[resp_adapter][1])
+        options = _get_client_library_options(ADAPTER_IMAGES[resp_adapter][1], native_parser)
     else:
         options = {"request_timeout": 5000}
     return {
@@ -99,6 +99,11 @@ def _build_tracking_config(
     }
 
 
+def _text_lines(reply: Any) -> list[str]:
+    text = reply.decode() if isinstance(reply, bytes) else reply
+    return text.splitlines()
+
+
 def _kill_client(transport: RespCache, client_id: int) -> None:
     transport.adapter.get_client(write=True).execute_command("CLIENT", "KILL", "ID", client_id)
 
@@ -115,7 +120,7 @@ def _listener(transport: RespCache, prefixes: Sequence[str] = TRACKED_PREFIXES, 
 class _StubListener:
     """Stands in for the adapter's listener so the loop can be driven without a server."""
 
-    client_ids = (1, 2)
+    client_id = 1
 
     def __init__(self, message: Invalidation | None = None) -> None:
         self.message = message
@@ -201,23 +206,40 @@ class TestInvalidationListener:
             listener.ping()
             assert listener.poll(5.0).keys == (listener_transport.make_key("during-ping"),)
 
-    def test_ping_raises_once_the_subscriber_is_gone(self, listener_transport: RespCache):
+    def test_one_resp3_connection_carries_the_tracking(self, listener_transport: RespCache):
+        with _listener(listener_transport) as listener:
+            assert listener._conn.protocol == 3
+            clients = listener_transport.adapter.get_client(write=True).execute_command("CLIENT", "LIST")
+            tracking = [line for line in _text_lines(clients) if "flags=t" in line]
+            assert [line for line in tracking if f"id={listener.client_id} " in line] == tracking
+
+    def test_the_data_path_keeps_its_own_parser(self, redis_container: RedisContainerInfo, resp_adapter: str):
+        """The listener pins a RESP3 parser for itself; libvalkey and hiredis stay on the data path."""
+        _skip_unless_trackable(resp_adapter)
+        with override_settings(
+            CACHES={"transport": _transport_config(redis_container, resp_adapter, native_parser=True)},
+        ):
+            transport = caches["transport"]
+            transport.flush_db()
+            with closing(transport), _listener(transport) as listener:
+                transport.set("native-parser", 1)
+                assert listener.poll(5.0).keys == (transport.make_key("native-parser"),)
+
+    def test_ping_raises_once_the_connection_is_killed(self, listener_transport: RespCache):
         with _listener(listener_transport, timeout=1.0) as listener:
-            subscriber_id, tracker_id = listener.client_ids
-            assert subscriber_id != tracker_id
-            _kill_client(listener_transport, subscriber_id)
+            _kill_client(listener_transport, listener.client_id)
             with pytest.raises(LISTENER_ERRORS):
                 listener.ping()
 
-    def test_ping_raises_when_the_tracker_dropped_its_socket(self, listener_transport: RespCache):
+    def test_ping_raises_when_the_connection_dropped_its_socket(self, listener_transport: RespCache):
         with _listener(listener_transport, timeout=1.0) as listener:
-            listener._track.disconnect()
+            listener._conn.disconnect()
             with pytest.raises(ConnectionError):
                 listener.ping()
 
-    def test_ping_drops_a_tracker_that_stopped_answering(self, listener_transport: RespCache, mocker):
+    def test_ping_drops_a_connection_that_stopped_answering(self, listener_transport: RespCache, mocker):
         with _listener(listener_transport, timeout=0.1) as listener:
-            mocker.patch.object(listener._track, "can_read", return_value=False)
+            mocker.patch.object(listener._conn, "can_read", return_value=False)
             with pytest.raises(TimeoutError):
                 listener.ping()
             with pytest.raises(ConnectionError):
@@ -936,22 +958,22 @@ class TestTrackingListenerLifecycle:
             assert cache.get("early") == 1
             assert _tracking_section(cache)["entries"] == 1
 
-    def test_losing_the_subscriber_flushes_and_reconnects(self, tracking_cache):
+    def test_losing_the_listener_flushes_and_reconnects(self, tracking_cache):
         transport = tracking_cache._transport
         _settled(tracking_cache, lambda: tracking_cache.set("survivor", 1))
         assert tracking_cache.get("survivor") == 1
-        subscriber_id, _tracker_id = tracking_cache._state.listener.client_ids
-        _kill_client(transport, subscriber_id)
+        _kill_client(transport, tracking_cache._state.listener.client_id)
         assert _wait_for(lambda: _tracking_section(tracking_cache)["reconnects"] >= 1)
         assert _wait_for(lambda: tracking_cache._state.connected)
         assert _tracking_section(tracking_cache)["flushes"] >= 1
         assert tracking_cache.get("survivor") == 1
         assert _tracking_section(tracking_cache)["entries"] == 1
 
-    def test_losing_the_tracker_is_caught_by_the_health_check(
+    def test_a_dead_listener_is_caught_by_the_health_check(
         self,
         redis_container: RedisContainerInfo,
         resp_adapter: str,
+        mocker,
     ):
         _skip_unless_trackable(resp_adapter)
         config = _build_tracking_config(
@@ -960,8 +982,11 @@ class TestTrackingListenerLifecycle:
             options={"health_check_interval": 0.2, "poll_timeout": 0.05},
         )
         with _connected(config) as cache:
-            _subscriber_id, tracker_id = cache._state.listener.client_ids
-            _kill_client(cache._transport, tracker_id)
+            listener = cache._state.listener
+            # Blind the poll path, so only the health-check ping is left to notice the kill.
+            mocker.patch.object(listener, "poll", side_effect=time.sleep)
+            time.sleep(0.1)
+            _kill_client(cache._transport, listener.client_id)
             assert _wait_for(lambda: _tracking_section(cache)["reconnects"] >= 1)
             assert _wait_for(lambda: cache._state.connected)
 

@@ -24,7 +24,6 @@ import asyncio
 import inspect
 import random
 import threading
-import time
 import weakref
 from collections import defaultdict, deque
 from contextlib import contextmanager, suppress
@@ -271,6 +270,7 @@ def _install_error_translation(client: Any) -> Any:
 _VALKEY_AVAILABLE = False
 try:
     import valkey
+    from valkey._parsers import _RESP3Parser as ValkeyRESP3Parser
     from valkey.asyncio import ConnectionPool as ValkeyAsyncConnectionPool
     from valkey.asyncio import Valkey as ValkeyAsyncClient
     from valkey.asyncio.cluster import ValkeyCluster as AsyncValkeyCluster
@@ -392,9 +392,6 @@ def _hgetex_args(key: str, fields: tuple[str, ...], *, ex: int | None, persist: 
     return args
 
 
-_INVALIDATE_CHANNEL = "__redis__:invalidate"
-
-
 def _text(value: Any) -> str:
     return value.decode("utf-8", "replace") if isinstance(value, bytes) else str(value)
 
@@ -405,113 +402,99 @@ def _is_connected(conn: Any) -> bool:
 
 
 class _ValkeyPyInvalidationListener(InvalidationListenerProtocol):
-    """Owns ``_sub``, subscribed to ``__redis__:invalidate``, and ``_track``, whose BCAST tracking redirects to it."""
+    """One RESP3 connection running ``CLIENT TRACKING ON BCAST``.
 
-    def __init__(self, pool: Any, prefixes: Sequence[str], *, timeout: float) -> None:
+    RESP3 delivers invalidations as out-of-band pushes on the tracking
+    connection itself, so there is no redirect and no second connection.
+    The parser hands each push to :meth:`_on_invalidation`, including the
+    ones it reads while waiting for a command reply, and :meth:`poll`
+    hands them out in arrival order.
+    """
+
+    def __init__(self, pool: Any, prefixes: Sequence[str], *, parser_class: Any, timeout: float) -> None:
         self._pool = pool
         self._timeout = timeout
-        # Invalidations read while waiting for a PONG, handed out by the next ``poll``.
         self._buffered: deque[Invalidation] = deque()
         kwargs = {
             **pool.connection_kwargs,
-            # On RESP2 redirected invalidations are plain pub/sub messages, which every parser handles.
-            "protocol": 2,
+            "protocol": 3,
             "decode_responses": False,
-            # The driver's health check expects PONG; a subscribed RESP2 connection answers ["pong", ""].
+            # libvalkey carries no push support; the data path keeps its own parser.
+            "parser_class": parser_class,
+            # The driver's health check would read a reply out from under
+            # ``poll``; :meth:`ping` does the liveness check instead.
             "health_check_interval": 0,
         }
-        # redis-py 6.4+ rejects its maintenance-notification config together with a RESP2 parser.
-        if "maint_notifications_config" in kwargs:
-            kwargs["maint_notifications_config"] = None
-            kwargs.pop("maint_notifications_pool_handler", None)
         # Built like the pool's connections but never checked out of it, so ``max_connections`` is unaffected.
-        self._sub = pool.connection_class(**kwargs)
-        self._track = pool.connection_class(**kwargs)
+        self._conn = pool.connection_class(**kwargs)
         try:
-            self._sub.connect()
-            self._track.connect()
-            sub_id = int(self._command(self._sub, "CLIENT", "ID"))
-            track_id = int(self._command(self._track, "CLIENT", "ID"))
-            self._command(self._sub, "SUBSCRIBE", _INVALIDATE_CHANNEL)
-            args: list[Any] = ["CLIENT", "TRACKING", "ON", "REDIRECT", sub_id, "BCAST"]
+            self._conn.connect()
+            self._conn._parser.set_invalidation_push_handler(self._on_invalidation)
+            client_id = int(self._command("CLIENT", "ID"))
+            args: list[Any] = ["CLIENT", "TRACKING", "ON", "BCAST"]
             for prefix in prefixes:
                 if prefix:
                     args += ["PREFIX", prefix]
-            self._command(self._track, *args)
+            self._command(*args)
         except BaseException:
             self.close()
             raise
-        self.client_ids = (sub_id, track_id)
+        self.client_id = client_id
 
-    def _command(self, conn: Any, *args: Any) -> Any:
+    def _command(self, *args: Any) -> Any:
+        conn = self._conn
         conn.send_command(*args)
         if not conn.can_read(timeout=self._timeout):
             # A late reply must never be read as the answer to the next command.
             conn.disconnect()
             msg = f"No reply to {args[0]} from the invalidation listener within {self._timeout}s"
             raise TimeoutError(msg)
+        # ``push_request=False``: pushes waiting ahead of the reply reach
+        # ``_on_invalidation`` and the parser reads on to the reply itself.
         return conn.read_response()
+
+    def _on_invalidation(self, push: Any) -> None:
+        """Parser callback for ``[b"invalidate", [key, ...]]``; the key list is nil after FLUSHDB/FLUSHALL."""
+        keys = push[1] if isinstance(push, list | tuple) and len(push) > 1 else None
+        if keys is None:
+            self._buffered.append(Invalidation(keys=None))
+        else:
+            self._buffered.append(Invalidation(keys=tuple(_text(key) for key in keys)))
 
     def poll(self, timeout: float) -> Invalidation | None:
         if self._buffered:
             return self._buffered.popleft()
-        if not self._sub.can_read(timeout=timeout):
+        if not self._conn.can_read(timeout=timeout):
             return None
-        return self._parse(self._sub.read_response())
+        # Straight to the parser: valkey-py's ``read_response`` drops ``push_request``.
+        self._conn._parser.read_response(push_request=True)
+        return self._buffered.popleft() if self._buffered else None
 
     def ping(self) -> None:
-        # A dropped socket counts as lost: the driver would reopen it without the subscription or tracking.
-        if not (_is_connected(self._sub) and _is_connected(self._track)):
-            msg = "The invalidation listener lost a connection"
-            raise ConnectionError(msg)
-        # Tracking dies with ``_track``, so both connections are checked.
-        reply = self._command(self._track, "PING")
-        if _text(reply) != "PONG":
-            msg = f"Unexpected PING reply from the tracking connection: {reply!r}"
+        # A dropped socket counts as lost: the driver would reopen it without tracking.
+        if not _is_connected(self._conn):
+            msg = "The invalidation listener lost its connection"
             raise ConnectionError(msg)
         self._check_primary()
-        self._sub.send_command("PING")
-        deadline = time.monotonic() + self._timeout
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0 or not self._sub.can_read(timeout=remaining):
-                self._sub.disconnect()
-                msg = f"No PONG from the invalidation subscriber within {self._timeout}s"
-                raise TimeoutError(msg)
-            frame = self._sub.read_response()
-            if isinstance(frame, list | tuple) and len(frame) > 0 and _text(frame[0]) == "pong":
-                return
-            message = self._parse(frame)
-            if message is not None:
-                self._buffered.append(message)
+        reply = self._command("PING")
+        if _text(reply) != "PONG":
+            msg = f"Unexpected PING reply from the invalidation listener: {reply!r}"
+            raise ConnectionError(msg)
 
     def _check_primary(self) -> None:
-        """A Sentinel failover leaves both sockets on the demoted node, which keeps answering PING."""
+        """A Sentinel failover leaves the socket on the demoted node, which keeps answering PING."""
         pool = self._pool
         if not getattr(pool, "is_master", False):
             return
         primary = pool.get_master_address()
-        listening_on = (self._track.host, self._track.port)
+        listening_on = (self._conn.host, self._conn.port)
         if primary != listening_on:
             msg = f"Sentinel reports the primary at {primary!r}; the invalidation listener is on {listening_on!r}"
             raise ConnectionError(msg)
 
     def close(self) -> None:
-        for conn in (self._sub, self._track):
-            with suppress(Exception):
-                conn.disconnect()
-
-    @staticmethod
-    def _parse(frame: Any) -> Invalidation | None:
-        """Turn a subscriber frame into an ``Invalidation``; subscribe confirmations and pongs give ``None``."""
-        if not isinstance(frame, list | tuple) or len(frame) != 3:
-            return None
-        if _text(frame[0]) != "message" or _text(frame[1]) != _INVALIDATE_CHANNEL:
-            return None
-        payload = frame[2]
-        if payload is None:
-            return Invalidation(keys=None)
-        return Invalidation(keys=tuple(_text(key) for key in payload))
+        with suppress(Exception):
+            self._conn.disconnect()
 
 
 class ValkeyPyAdapter(RespAdapterProtocol):
@@ -532,6 +515,8 @@ class ValkeyPyAdapter(RespAdapterProtocol):
     _pool_class: builtins.type[Any] | None = None
     _async_client_class: builtins.type[Any] | None = None
     _async_pool_class: builtins.type[Any] | None = None
+    # Pure-Python RESP3 parser, for the invalidation listener only.
+    _resp3_parser_class: builtins.type[Any] | None = None
 
     # Polymorphic availability check: redis-py subclasses override
     # ``_LIB_AVAILABLE`` and ``_missing_lib_error`` (via mixin) to redirect
@@ -550,6 +535,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         _pool_class = valkey.ConnectionPool
         _async_client_class = ValkeyAsyncClient
         _async_pool_class = ValkeyAsyncConnectionPool
+        _resp3_parser_class = ValkeyRESP3Parser
 
     # Default scan iteration batch size
     _default_scan_itersize: int = 100
@@ -772,7 +758,12 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     def invalidation_listener(self, prefixes: Sequence[str], *, timeout: float = 5.0) -> InvalidationListenerProtocol:
         """Open a CLIENT TRACKING BCAST subscription on the primary; see :class:`_ValkeyPyInvalidationListener`."""
-        return _ValkeyPyInvalidationListener(self._get_connection_pool(write=True), prefixes, timeout=timeout)
+        return _ValkeyPyInvalidationListener(
+            self._get_connection_pool(write=True),
+            prefixes,
+            parser_class=self._resp3_parser_class,
+            timeout=timeout,
+        )
 
     # =========================================================================
     # Core Cache Operations

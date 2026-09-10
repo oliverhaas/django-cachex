@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Breaking changes
+
+- `InvalidationListenerProtocol.client_ids`, the `(subscriber, tracker)` pair, is now `client_id`, a single `int`. The listener holds one connection.
+
+### Improvements
+
+- The `CLIENT TRACKING BCAST` listener behind `TrackingCache` runs over one RESP3 connection instead of two RESP2 ones. Invalidations arrive as out-of-band pushes on the tracking connection itself, so there is no `__redis__:invalidate` subscription and no `REDIRECT`, and each process holds one extra connection rather than two. The listener parses with its driver's pure-Python RESP3 parser whatever `parser_class` the transport alias is configured with, so `hiredis` and `libvalkey` keep the data path.
+
 ## 0.8.0 (September 2026)
 
 ### Breaking changes

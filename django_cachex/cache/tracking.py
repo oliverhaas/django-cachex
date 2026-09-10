@@ -469,8 +469,8 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
             message = listener.poll(self._poll_timeout)
             if message is not None:
                 state.apply(message)
-            # Wall clock, not subscriber idle time: a busy subscriber would let
-            # a server that closes idle clients drop this one unnoticed.
+            # Wall clock, not idle time: a busy listener would let a server
+            # that closes idle clients drop this one unnoticed.
             if time.monotonic() >= next_ping:
                 listener.ping()
                 next_ping = time.monotonic() + self._health_check_interval

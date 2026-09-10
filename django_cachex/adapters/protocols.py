@@ -41,8 +41,8 @@ class Invalidation(NamedTuple):
 class InvalidationListenerProtocol(Protocol):
     """A live CLIENT TRACKING BCAST subscription; any exception from ``poll``/``ping`` means it is lost."""
 
-    # (subscriber, tracker) server-side client ids, for diagnostics and tests.
-    client_ids: tuple[int, int]
+    # Server-side id of the tracking connection, for diagnostics and tests.
+    client_id: int
 
     def poll(self, timeout: float) -> Invalidation | None: ...
     def ping(self) -> None: ...

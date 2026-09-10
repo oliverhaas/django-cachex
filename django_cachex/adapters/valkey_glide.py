@@ -1859,7 +1859,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         self._sweep_async_clients()
 
     def invalidation_listener(self, prefixes: Sequence[str], *, timeout: float = 5.0) -> InvalidationListenerProtocol:
-        """Not offered: glide refuses pub/sub on RESP2 and its push handler drops RESP3 ``invalidate`` frames."""
+        """Not offered: glide's push handler drops RESP3 ``invalidate`` frames."""
         raise NotSupportedError("invalidation_listener", "valkey-glide")
 
     # ---- TTL ----

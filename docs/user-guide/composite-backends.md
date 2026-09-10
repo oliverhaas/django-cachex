@@ -112,7 +112,8 @@ In the admin a `TrackingCache` alias is badged limited and offers no key browsin
 ### Operational notes
 
 - With tracking coherence the transport must be a redis-py or valkey-py backend, standalone or Sentinel. Cluster (tracking is per node) and valkey-glide (cannot receive invalidations) transports raise `ImproperlyConfigured` on first use. Behind Sentinel, the health check reconnects the listener after a failover.
-- Each process holds two extra connections: a subscriber to `__redis__:invalidate` and the connection that enables tracking. The first operation opens them; a transport that is down at that moment is retried in the background.
+- Each process holds one extra connection, opened outside the pool's accounting. It speaks RESP3, so the server pushes invalidations on the tracking connection itself. The first operation opens it; a transport that is down at that moment is retried in the background.
+- The listener always parses with its driver's pure-Python RESP3 parser, whatever `parser_class` the transport is configured with. `hiredis` and `libvalkey` stay on the data path; only the listener's own handful of messages is parsed in Python.
 - The local store, listener thread and counters are shared per `LOCATION` (defaulting to the transport alias) within a process, like `StreamCache`. Two aliases with different `LOCATION`s over one transport act as two independent pods.
 - `close()` is a no-op so the listener outlives requests; `shutdown()` stops it. A dead listener thread is restarted on the next operation.
 - A local miss costs one pipelined `GET` plus `PTTL`; `get_many` fetches all missing keys in one pipeline.
