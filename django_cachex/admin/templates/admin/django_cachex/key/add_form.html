@@ -4,7 +4,7 @@
 {% block extrastyle %}
 {{ block.super }}
 <link rel="stylesheet" href="{% static "admin/css/forms.css" %}">
-<style type="text/css">
+<style>
     {% include "admin/django_cachex/cache/styles.css" %}
 </style>
 {% endblock %}
@@ -12,8 +12,8 @@
 {% block bodyclass %}{{ block.super }} app-django_cachex model-key change-form{% endblock %}
 
 {% block breadcrumbs %}
-{% url 'admin:index' as index_href %}
-{% url 'admin:django_cachex_cache_changelist' as cache_list_href %}
+{% url "admin:index" as index_href %}
+{% url "admin:django_cachex_cache_changelist" as cache_list_href %}
 {% cachex_breadcrumbs _("Home") index_href _("Caches") cache_list_href cache_name key_list_href _("Add Key") %}
 {% endblock %}
 
@@ -28,22 +28,22 @@
         {% csrf_token %}
 
         <fieldset class="module aligned wide">
-            <h2>{% trans 'Key Details' %}</h2>
+            <h2>{% trans "Key Details" %}</h2>
             <div class="form-row field-key" id="key-row">
                 <div>
                     <div class="flex-container">
-                        <label class="required" for="id_key">{% trans 'Key name:' %}</label>
+                        <label class="required" for="id_key">{% trans "Key name:" %}</label>
                         <input type="text" name="key" class="vTextField" value="{{ prefill_key }}" required id="id_key" aria-describedby="id_key_help">
                     </div>
                     <div class="help" id="id_key_help">
-                        <div>{% trans 'The unique identifier for this cache entry.' %}</div>
+                        <div>{% trans "The unique identifier for this cache entry." %}</div>
                     </div>
                 </div>
             </div>
             <div class="form-row field-type">
                 <div>
                     <div class="flex-container">
-                        <label class="required" for="id_type">{% trans 'Type:' %}</label>
+                        <label class="required" for="id_type">{% trans "Type:" %}</label>
                         <select name="type" id="id_type" required aria-describedby="id_type_help">
                             {% for value, label in type_choices %}
                             <option value="{{ value }}"{% if prefill_type == value %} selected{% endif %}>{{ label }}</option>
@@ -51,15 +51,15 @@
                         </select>
                     </div>
                     <div class="help" id="id_type_help">
-                        <div>{% trans 'Select the data type for this key.' %}</div>
+                        <div>{% trans "Select the data type for this key." %}</div>
                     </div>
                 </div>
             </div>
         </fieldset>
 
         <div class="submit-row">
-            <input type="submit" value="{% trans 'Continue' %}" class="default" name="_continue">
-            <a href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name|urlencode }}" class="closelink" style="margin-left: auto; text-decoration: none;">{% trans 'Back' %}</a>
+            <input type="submit" value="{% trans "Continue" %}" class="default" name="_continue">
+            <a href="{% url "admin:django_cachex_key_changelist" %}?cache={{ cache_name|urlencode }}" class="closelink" style="margin-left: auto; text-decoration: none;">{% trans "Back" %}</a>
         </div>
     </form>
 </div>

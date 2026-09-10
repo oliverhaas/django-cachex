@@ -3,50 +3,52 @@
 {% if can_mutate %}
 <!-- Stream Operations -->
 <fieldset class="module aligned monospace">
-    <h2>{% trans 'Operations' %}</h2>
+    <h2>{% trans "Operations" %}</h2>
     <div class="form-row">
         <div>
-            <label for="id_xadd_value">{% trans 'Add Entry:' %}</label>
+            <label for="id_xadd_value">{% trans "Add Entry:" %}</label>
             <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="xadd">
-                <div class="cachex-name-row"><input type="text" name="field" placeholder="{% trans 'field' %}" class="vTextField" aria-label="{% trans 'Field name' %}"></div>
+                <div class="cachex-name-row"><input type="text" name="field" placeholder="{% trans "field" %}" class="vTextField" aria-label="{% trans "Field name" %}"></div>
                 {% include input_tpl with name="field_value" rows=4 field_id="id_xadd_value" placeholder=_("value") editable=True can_mutate=can_mutate only %}
                 <div class="cachex-value-actions">
-                    <button type="submit" class="button btn-small">{% trans 'Add' %}</button>
+                    <button type="submit" class="button btn-small">{% trans "Add" %}</button>
                 </div>
             </form>
         </div>
     </div>
     <div class="form-row">
-        <label>{% trans 'Trim:' %}</label>
+        <label>{% trans "Trim:" %}</label>
         <form method="post" style="display: inline;">
             {% csrf_token %}
             <input type="hidden" name="action" value="xtrim">
-            <input type="number" name="maxlen" placeholder="{% trans 'max length' %}" class="vIntegerField" style="width: 100px;" min="0" aria-label="{% trans 'Max length' %}">
-            <button type="submit" class="button btn-small" onclick="return confirm('{% trans 'Trim stream to this length? Older entries will be removed.' %}');">{% trans 'Trim' %}</button>
+            {% translate "max length" as maxlen_placeholder %}
+            {% translate "Max length" as maxlen_label %}
+            <input type="number" name="maxlen" placeholder="{{ maxlen_placeholder }}" class="vIntegerField" style="width: 100px;" min="0" aria-label="{{ maxlen_label }}">
+            <button type="submit" class="button btn-small" onclick="return confirm('{% trans "Trim stream to this length? Older entries will be removed." %}');">{% trans "Trim" %}</button>
         </form>
     </div>
 </fieldset>
 {% endif %}
 <!-- Stream Entries -->
 <fieldset class="module aligned monospace">
-    <h2>{% trans 'Stream Entries' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
+    <h2>{% trans "Stream Entries" %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
     {% if type_data.entries %}
     <div class="results">
         <table id="result_list" class="cachex-entry-table" style="width: 100%;">
             <thead>
                 <tr>
-                    <th scope="col" style="width: 180px;">{% trans 'Entry ID' %}</th>
-                    <th scope="col">{% trans 'Fields' %}</th>
+                    <th scope="col" style="width: 180px;">{% trans "Entry ID" %}</th>
+                    <th scope="col">{% trans "Fields" %}</th>
                     {% if can_mutate %}
-                    <th scope="col" style="width: 80px;">{% trans 'Actions' %}</th>
+                    <th scope="col" style="width: 80px;">{% trans "Actions" %}</th>
                     {% endif %}
                 </tr>
             </thead>
             <tbody>
                 {% for entry_id, fields in type_data.entries %}
-                <tr class="{% cycle 'row1' 'row2' %}">
+                <tr class="{% cycle "row1" "row2" %}">
                     <td><code class="quiet">{{ entry_id }}</code></td>
                     <td><code>{% for field, value in fields.items %}{{ field }}: {{ value }}{% if not forloop.last %}, {% endif %}{% endfor %}</code></td>
                     {% if can_mutate %}
@@ -55,7 +57,7 @@
                             {% csrf_token %}
                             <input type="hidden" name="action" value="xdel">
                             <input type="hidden" name="entry_id" value="{{ entry_id }}">
-                            <button type="submit" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Delete this entry?' %}');">{% trans 'Delete' %}</button>
+                            <button type="submit" class="button delete-btn btn-small" onclick="return confirm('{% trans "Delete this entry?" %}');">{% trans "Delete" %}</button>
                         </form>
                     </td>
                     {% endif %}
@@ -65,7 +67,7 @@
         </table>
     </div>
     {% else %}
-    <p class="quiet" style="padding: 10px;">{% trans 'Stream is empty.' %}</p>
+    <p class="quiet" style="padding: 10px;">{% trans "Stream is empty." %}</p>
     {% endif %}
     {% include "admin/django_cachex/key/key_detail_pagination.html" %}
 </fieldset>

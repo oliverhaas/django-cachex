@@ -5,6 +5,7 @@ import threading
 import time
 import uuid
 from contextlib import closing, contextmanager
+from itertools import pairwise
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -12,6 +13,10 @@ from django.core.cache import caches
 from django.core.exceptions import ImproperlyConfigured
 from django.test import override_settings
 from django.utils.module_loading import import_string
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import ResponseError as RedisResponseError
+from valkey.exceptions import ConnectionError as ValkeyConnectionError
+from valkey.exceptions import ResponseError as ValkeyResponseError
 
 from django_cachex.adapters.protocols import Invalidation
 from django_cachex.cache.tracking import _TRACKING_REGISTRY, TrackingCache, _TrackingState
@@ -33,6 +38,18 @@ if TYPE_CHECKING:
 
 TRANSPORT_PREFIX = "trk"
 TRACKED_PREFIXES = (f"{TRANSPORT_PREFIX}:",)
+
+# A killed listener connection surfaces either as the driver's own connection
+# error or, once the listener notices the socket is gone, as its own.
+LISTENER_ERRORS: tuple[type[Exception], ...] = (
+    RedisConnectionError,
+    ValkeyConnectionError,
+    ConnectionError,
+    TimeoutError,
+)
+
+# A command the server refuses comes back as the driver's own error type.
+SERVER_ERRORS: tuple[type[Exception], ...] = (RedisResponseError, ValkeyResponseError)
 
 
 def _wait_for(predicate: Callable[[], bool], timeout: float = 5.0, interval: float = 0.02) -> bool:
@@ -95,6 +112,52 @@ def _listener(transport: RespCache, prefixes: Sequence[str] = TRACKED_PREFIXES, 
         listener.close()
 
 
+class _StubListener:
+    """Stands in for the adapter's listener so the loop can be driven without a server."""
+
+    client_ids = (1, 2)
+
+    def __init__(self, message: Invalidation | None = None) -> None:
+        self.message = message
+        self.poll_timeouts: list[float] = []
+        self.pings = 0
+        self.closed = False
+
+    def poll(self, timeout: float) -> Invalidation | None:
+        self.poll_timeouts.append(timeout)
+        time.sleep(0.01)
+        return self.message
+
+    def ping(self) -> None:
+        self.pings += 1
+
+    def close(self) -> None:
+        self.closed = True
+
+
+@contextmanager
+def _offline_cache(**options: Any) -> Iterator[TrackingCache]:
+    """A TrackingCache whose listener plumbing can be driven without a transport."""
+    location = f"tracking:offline:{uuid.uuid4().hex[:8]}"
+    try:
+        yield TrackingCache(location, {"OPTIONS": {"transport": "unused", **options}})
+    finally:
+        _cleanup_registry(location)
+
+
+@contextmanager
+def _pumping(target: Callable[..., Any], *args: Any) -> Iterator[None]:
+    """Run a listener loop in a thread and stop it when the block ends."""
+    stop_event = threading.Event()
+    thread = threading.Thread(target=target, args=(stop_event, *args), daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop_event.set()
+        thread.join(5.0)
+
+
 @pytest.fixture
 def listener_transport(redis_container: RedisContainerInfo, resp_adapter: str) -> Iterator[RespCache]:
     """A RESP transport whose adapter can host an invalidation listener."""
@@ -143,7 +206,7 @@ class TestInvalidationListener:
             subscriber_id, tracker_id = listener.client_ids
             assert subscriber_id != tracker_id
             _kill_client(listener_transport, subscriber_id)
-            with pytest.raises(Exception, match=r"(?i)connection|closed|pong"):
+            with pytest.raises(LISTENER_ERRORS):
                 listener.ping()
 
     def test_ping_raises_when_the_tracker_dropped_its_socket(self, listener_transport: RespCache):
@@ -161,7 +224,7 @@ class TestInvalidationListener:
                 listener.ping()
 
     def test_overlapping_prefixes_are_rejected_by_the_server(self, listener_transport: RespCache):
-        with pytest.raises(Exception, match=r"(?i)overlap"):
+        with pytest.raises(SERVER_ERRORS, match=r"(?i)overlap"):
             listener_transport.adapter.invalidation_listener(["a:", "a:b:"], timeout=5.0)
 
 
@@ -337,8 +400,15 @@ class TestTrackingConfig:
             TrackingCache("", {"OPTIONS": {"transport": "t", "prefixes": ["a:", "a:b:"]}})
 
     def test_local_timeout_is_coerced_to_float(self):
-        cache = TrackingCache("", {"OPTIONS": {"transport": "t", "local_timeout": "2"}})
-        assert cache._local_timeout == 2.0
+        try:
+            cache = TrackingCache("", {"OPTIONS": {"transport": "t", "local_timeout": "2"}})
+            assert cache._local_timeout == 2.0
+        finally:
+            _cleanup_registry("t")
+
+    def test_non_iterable_prefixes_are_rejected(self):
+        with pytest.raises(ImproperlyConfigured, match="prefixes"):
+            TrackingCache("", {"OPTIONS": {"transport": "t", "prefixes": 3}})
 
     def test_unknown_coherence_is_rejected(self):
         with pytest.raises(ImproperlyConfigured, match="coherence"):
@@ -617,12 +687,61 @@ class TestTrackingWrites:
         assert tracking_cache.get("user:1") is None
         assert tracking_cache.get("other") == 3
 
+    def test_delete_pattern_reads_the_pattern_as_a_redis_glob(self, tracking_cache):
+        # ``[^0]`` is negation for Redis and a two-member class for fnmatch; the
+        # local store has to read the pattern the way the transport does.
+        _settled(tracking_cache, lambda: tracking_cache.set_many({"user0x": 0, "user1x": 1}), count=2)
+        assert tracking_cache.get_many(["user0x", "user1x"]) == {"user0x": 0, "user1x": 1}
+        assert tracking_cache.delete_pattern("user[^0]*") == 1
+        assert set(tracking_cache._state.store) == {tracking_cache.make_key("user0x")}
+        assert tracking_cache.get("user1x") is None
+
     def test_delete_pattern_drops_a_fetch_in_flight_with_the_listener_muted(self, tracking_cache, mocker):
         tracking_cache.set("user:1", "old")
         mocker.patch.object(_TrackingState, "apply", return_value=None)
         _run_during_fetch(tracking_cache, mocker, lambda: tracking_cache.delete_pattern("user:*"))
         assert tracking_cache.get("user:1") == "old"
         assert tracking_cache.make_key("user:1") not in tracking_cache._state.store
+
+
+@BOTH_MODES
+class TestTrackingVersions:
+    """``VERSION`` lives on the transport alias, which is where the keys are made."""
+
+    @pytest.fixture
+    def versioned_cache(self, tracking_config: dict) -> Iterator[Any]:
+        tracking_config["transport"]["VERSION"] = 2
+        with _connected(tracking_config) as cache:
+            yield cache
+
+    def test_incr_version_moves_the_key_on_the_transport(self, versioned_cache):
+        versioned_cache.set("v", "value")
+        assert versioned_cache.get("v") == "value"
+        assert versioned_cache.incr_version("v") == 3
+        assert versioned_cache._state.store == {}
+        assert versioned_cache.get("v") is None
+        assert versioned_cache.get("v", version=3) == "value"
+        assert caches["transport"].get("v", version=3) == "value"
+
+    def test_decr_version_moves_the_key_back(self, versioned_cache):
+        versioned_cache.set("v", "value", version=3)
+        assert versioned_cache.decr_version("v", version=3) == 2
+        assert versioned_cache.get("v") == "value"
+
+    @pytest.mark.asyncio
+    async def test_aincr_version_moves_the_key_on_the_transport(self, versioned_cache):
+        await versioned_cache.aset("v", "value")
+        assert await versioned_cache.aget("v") == "value"
+        assert await versioned_cache.aincr_version("v") == 3
+        assert versioned_cache._state.store == {}
+        assert await versioned_cache.aget("v") is None
+        assert await versioned_cache.aget("v", version=3) == "value"
+
+    @pytest.mark.asyncio
+    async def test_adecr_version_moves_the_key_back(self, versioned_cache):
+        await versioned_cache.aset("v", "value", version=3)
+        assert await versioned_cache.adecr_version("v", version=3) == 2
+        assert await versioned_cache.aget("v") == "value"
 
 
 class TestTrackingInvalidation:
@@ -730,6 +849,38 @@ class TestTrackingTTL:
             mocker.patch("random.expovariate", return_value=math.inf)
             assert cache.get("rolled") is None
             assert _tracking_section(cache)["entries"] == 0
+
+    def test_a_local_hit_rolls_the_dice_once(self, redis_container: RedisContainerInfo, resp_adapter: str, mocker):
+        # Rolling again in ``_absorb`` after a refetch would square the odds,
+        # making early recompute far rarer locally than on the transport.
+        _skip_unless_trackable(resp_adapter)
+        with _connected(_stampede_transport_config(redis_container, resp_adapter, delta=1.0)) as cache:
+            _settled(cache, lambda: cache.set("once", 1, timeout=30))
+            assert cache.get("once") == 1
+            local_roll = mocker.patch(
+                "django_cachex.cache.tracking.should_recompute_remaining",
+                return_value=True,
+            )
+            transport_roll = mocker.patch("django_cachex.cache.tracking.should_recompute")
+            assert cache.get("once") is None
+            assert local_roll.call_count == 1
+            assert transport_roll.call_count == 0
+            assert _tracking_section(cache)["entries"] == 0
+
+    def test_a_local_hit_that_rolls_drops_out_of_get_many(
+        self,
+        redis_container: RedisContainerInfo,
+        resp_adapter: str,
+        mocker,
+    ):
+        _skip_unless_trackable(resp_adapter)
+        with _connected(_stampede_transport_config(redis_container, resp_adapter, delta=1.0)) as cache:
+            _settled(cache, lambda: cache.set_many({"g1": 1, "g2": 2}, timeout=30), count=2)
+            assert cache.get_many(["g1", "g2"]) == {"g1": 1, "g2": 2}
+            mocker.patch("django_cachex.cache.tracking.should_recompute_remaining", return_value=True)
+            transport_roll = mocker.patch("django_cachex.cache.tracking.should_recompute")
+            assert cache.get_many(["g1", "g2"]) == {}
+            assert transport_roll.call_count == 0
 
     def test_get_or_set_refreshes_a_logically_expired_key(self, redis_container: RedisContainerInfo, resp_adapter: str):
         _skip_unless_trackable(resp_adapter)
@@ -904,6 +1055,61 @@ class TestTrackingListenerLifecycle:
         assert isinstance(section["last_message_age_seconds"], float | type(None))
 
 
+class TestTrackingListenerLoop:
+    """The listener loop and the state it keeps, driven without a server."""
+
+    def test_health_check_pings_while_invalidations_keep_arriving(self):
+        # The tracking connection sees no traffic of its own, so a server that
+        # closes idle clients would drop it unnoticed if the ping waited for
+        # the subscriber to fall idle.
+        with _offline_cache(poll_timeout=0.01, health_check_interval=0.05) as cache:
+            listener = _StubListener(Invalidation(keys=("busy",)))
+            with _pumping(cache._serve, listener):
+                assert _wait_for(lambda: listener.pings >= 2, timeout=5.0)
+            assert cache._state.invalidations > 0
+
+    def test_poll_timeout_is_what_the_listener_waits_on(self):
+        with _offline_cache(poll_timeout=0.25, health_check_interval=60.0) as cache:
+            listener = _StubListener()
+            with _pumping(cache._serve, listener):
+                assert _wait_for(lambda: len(listener.poll_timeouts) >= 2, timeout=5.0)
+            assert set(listener.poll_timeouts) == {0.25}
+            assert listener.pings == 0
+
+    def test_reconnect_delay_paces_reconnect_attempts(self, mocker):
+        with _offline_cache(reconnect_delay=0.3) as cache:
+            assert cache._reconnect_delay == 0.3
+            attempts: list[float] = []
+
+            def failing_open() -> None:
+                attempts.append(time.monotonic())
+                msg = "transport still down"
+                raise ConnectionError(msg)
+
+            mocker.patch.object(cache, "_open_listener", side_effect=failing_open)
+            with _pumping(cache._listener_loop, None):
+                assert _wait_for(lambda: len(attempts) >= 3, timeout=10.0)
+            gaps = [later - earlier for earlier, later in pairwise(attempts)]
+            assert min(gaps) >= 0.25
+
+    def test_an_abandoned_listener_does_not_disconnect_its_replacement(self):
+        state = _TrackingState(max_entries=10, poll_timeout=0.1, coherence="tracking")
+        abandoned, replacement = _StubListener(), _StubListener()
+        state.on_connect(abandoned, reconnect=False)
+        state.on_connect(replacement, reconnect=True)
+        state.store["k"] = (b"v", None)
+
+        state.on_disconnect(abandoned)
+        assert state.connected is True
+        assert state.listener is replacement
+        assert state.store == {"k": (b"v", None)}
+
+        state.on_disconnect(replacement)
+        assert state.connected is False
+        assert state.listener is None
+        assert state.store == {}
+
+
 class TestTrackingLRU:
     def test_max_entries_evicts_the_least_recently_read(self, redis_container: RedisContainerInfo, resp_adapter: str):
         _skip_unless_trackable(resp_adapter)
@@ -918,6 +1124,27 @@ class TestTrackingLRU:
 
 
 class TestTrackingAsync:
+    @pytest.mark.asyncio
+    async def test_the_first_listener_connect_runs_off_the_event_loop(self, tracking_config: dict, mocker):
+        # Two TCP connects, two CLIENT IDs, SUBSCRIBE and CLIENT TRACKING, each
+        # bounded by 5s: blocking socket work no ASGI worker may sit through.
+        threads: list[int] = []
+        real_ensure = TrackingCache._ensure_listener
+
+        def recording_ensure(self) -> None:
+            threads.append(threading.get_ident())
+            real_ensure(self)
+
+        mocker.patch.object(TrackingCache, "_ensure_listener", recording_ensure)
+        with _tracking(tracking_config) as cache:
+            caches["transport"].flush_db()
+            assert await cache.aget("off-loop") is None
+            assert len(threads) == 1
+            assert threads[0] != threading.get_ident()
+            # The listener is up now, so the fast path never leaves the loop.
+            assert await cache.aget("off-loop") is None
+            assert len(threads) == 1
+
     @BOTH_MODES
     @pytest.mark.asyncio
     async def test_aget_is_served_locally_after_the_first_fetch(self, tracking_cache, mocker):
@@ -986,6 +1213,14 @@ class TestTrackingSurface:
         _cursor, keys = tracking_cache.scan(pattern="meta*")
         assert "meta" in keys
         assert list(tracking_cache.iter_keys("meta*")) == ["meta"]
+
+    def test_slowlog_delegates_to_the_transport(self, tracking_cache, mocker):
+        get_spy = mocker.spy(tracking_cache._transport, "slowlog_get")
+        len_spy = mocker.spy(tracking_cache._transport, "slowlog_len")
+        assert tracking_cache.slowlog_get(1) == get_spy.spy_return
+        get_spy.assert_called_once_with(1)
+        assert tracking_cache.slowlog_len() == len_spy.spy_return
+        len_spy.assert_called_once_with()
 
     def test_transport_close_is_not_forwarded_by_close(self, tracking_cache, mocker):
         spy = mocker.spy(tracking_cache._transport, "close")

@@ -5,7 +5,7 @@
 {{ block.super }}
 <link rel="stylesheet" href="{% static "admin/css/forms.css" %}">
 <link rel="stylesheet" href="{% static "admin/css/changelists.css" %}">
-<style type="text/css">
+<style>
     {% include "admin/django_cachex/cache/styles.css" %}
 </style>
 {% endblock %}
@@ -13,8 +13,8 @@
 {% block bodyclass %}{{ block.super }} app-django_cachex model-cache change-form{% endblock %}
 
 {% block breadcrumbs %}
-{% url 'admin:index' as index_href %}
-{% url 'admin:django_cachex_cache_changelist' as cache_list_href %}
+{% url "admin:index" as index_href %}
+{% url "admin:django_cachex_cache_changelist" as cache_list_href %}
 {% cachex_breadcrumbs _("Home") index_href _("Caches") cache_list_href cache_name %}
 {% endblock %}
 
@@ -26,40 +26,41 @@
 <div id="content-main">
     {% if cache_obj.support_level != "cachex" %}
     <fieldset class="module aligned info-section">
-        <h2>{% trans 'Limited backend' %}</h2>
+        <h2>{% trans "Limited backend" %}</h2>
         <p style="padding: 1em;">
             {% blocktrans %}This backend doesn't expose a key-listing API, so the django-cachex admin can only display its configuration. Browsing, type detection, TTL inspection, and edits aren't available.{% endblocktrans %}
-            {% if cache_obj.cachex_upgrade_hint %}
-            <br><br>
-            {% blocktrans with hint=cache_obj.cachex_upgrade_hint %}Switch <code>BACKEND</code> to <code>{{ hint }}</code> for the full admin experience.{% endblocktrans %}
-            {% endif %}
         </p>
+        {% if cache_obj.cachex_upgrade_hint %}
+        <p style="padding: 0 1em 1em;">
+            {% blocktrans with hint=cache_obj.cachex_upgrade_hint %}Switch <code>BACKEND</code> to <code>{{ hint }}</code> for the full admin experience.{% endblocktrans %}
+        </p>
+        {% endif %}
     </fieldset>
     {% endif %}
 
     {% if info_data %}
     <!-- Basic Configuration -->
     <fieldset class="module aligned info-section">
-        <h2>{% trans 'Configuration' %}</h2>
+        <h2>{% trans "Configuration" %}</h2>
         <table class="info-table">
             <tr>
-                <th>{% trans 'Backend' %}</th>
+                <th>{% trans "Backend" %}</th>
                 <td><code>{{ info_data.backend }}</code></td>
             </tr>
             <tr>
-                <th>{% trans 'Location' %}</th>
+                <th>{% trans "Location" %}</th>
                 <td><code>{{ info_data.location|default:"-" }}</code></td>
             </tr>
             <tr>
-                <th>{% trans 'Key Prefix' %}</th>
+                <th>{% trans "Key Prefix" %}</th>
                 <td><code>{{ info_data.key_prefix|default:"-" }}</code></td>
             </tr>
             <tr>
-                <th>{% trans 'Version' %}</th>
+                <th>{% trans "Version" %}</th>
                 <td>{{ info_data.version }}</td>
             </tr>
             <tr>
-                <th>{% trans 'Support' %}</th>
+                <th>{% trans "Support" %}</th>
                 <td><span class="support-badge support-badge-{{ cache_obj.support_level }}">{{ cache_obj.support_level }}</span></td>
             </tr>
         </table>
@@ -67,7 +68,7 @@
 
     {% if info_data.server_rows %}
     <fieldset class="module aligned info-section">
-        <h2>{% trans 'Server' %}</h2>
+        <h2>{% trans "Server" %}</h2>
         <table class="info-table">
             {% for row in info_data.server_rows %}
             <tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>
@@ -78,7 +79,7 @@
 
     {% if info_data.memory_rows %}
     <fieldset class="module aligned info-section">
-        <h2>{% trans 'Memory' %}</h2>
+        <h2>{% trans "Memory" %}</h2>
         <table class="info-table">
             {% for row in info_data.memory_rows %}
             <tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>
@@ -89,7 +90,7 @@
 
     {% if info_data.clients_rows %}
     <fieldset class="module aligned info-section">
-        <h2>{% trans 'Clients' %}</h2>
+        <h2>{% trans "Clients" %}</h2>
         <table class="info-table">
             {% for row in info_data.clients_rows %}
             <tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>
@@ -100,7 +101,7 @@
 
     {% if info_data.stats_rows %}
     <fieldset class="module aligned info-section">
-        <h2>{% trans 'Statistics' %}</h2>
+        <h2>{% trans "Statistics" %}</h2>
         <table class="info-table">
             {% for row in info_data.stats_rows %}
             <tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>
@@ -112,26 +113,26 @@
     {% if info_data.keyspace %}
     <!-- Keyspace Information -->
     <fieldset class="module aligned info-section">
-        <h2>{% trans 'Keyspace' %}</h2>
+        <h2>{% trans "Keyspace" %}</h2>
         <div class="keyspace-grid">
             {% for db_name, db_stats in info_data.keyspace.items %}
             <div class="keyspace-card">
                 <h4>{{ db_name }}</h4>
                 {% if db_stats.keys is not None %}
                 <div class="stat">
-                    <span>{% trans 'Keys' %}</span>
+                    <span>{% trans "Keys" %}</span>
                     <span class="stat-value">{{ db_stats.keys }}</span>
                 </div>
                 {% endif %}
                 {% if db_stats.expires is not None %}
                 <div class="stat">
-                    <span>{% trans 'Expires' %}</span>
+                    <span>{% trans "Expires" %}</span>
                     <span class="stat-value">{{ db_stats.expires }}</span>
                 </div>
                 {% endif %}
                 {% if db_stats.avg_ttl is not None %}
                 <div class="stat">
-                    <span>{% trans 'Avg TTL' %}</span>
+                    <span>{% trans "Avg TTL" %}</span>
                     <span class="stat-value">{{ db_stats.avg_ttl }}ms</span>
                 </div>
                 {% endif %}
@@ -144,7 +145,7 @@
     {% if raw_info_json %}
     <!-- Raw Info -->
     <fieldset class="module aligned">
-        <h2>{% trans 'Raw Info' %}</h2>
+        <h2>{% trans "Raw Info" %}</h2>
         <textarea readonly rows="20" style="width: 100%; box-sizing: border-box; font-family: var(--font-family-monospace); font-size: 12px;">{{ raw_info_json }}</textarea>
     </fieldset>
     {% endif %}
@@ -153,7 +154,7 @@
     {% if slowlog_data %}
     <!-- Slow Log Section -->
     <fieldset class="module aligned info-section">
-        <h2>{% trans 'Slow Log' %}</h2>
+        <h2>{% trans "Slow Log" %}</h2>
         {% if slowlog_data.error %}
         <p class="warningnote">{% blocktrans with error=slowlog_data.error %}The slow log could not be read: {{ error }}{% endblocktrans %}</p>
         {% elif slowlog_data.entries %}
@@ -161,16 +162,16 @@
             <table id="result_list" style="width: 100%;">
                 <thead>
                     <tr>
-                        <th scope="col" style="width: 60px;">{% trans 'ID' %}</th>
-                        <th scope="col" style="width: 160px;">{% trans 'Time' %}</th>
-                        <th scope="col" style="width: 100px;">{% trans 'Duration' %}</th>
-                        <th scope="col">{% trans 'Command' %}</th>
-                        <th scope="col" style="width: 120px;">{% trans 'Client' %}</th>
+                        <th scope="col" style="width: 60px;">{% trans "ID" %}</th>
+                        <th scope="col" style="width: 160px;">{% trans "Time" %}</th>
+                        <th scope="col" style="width: 100px;">{% trans "Duration" %}</th>
+                        <th scope="col">{% trans "Command" %}</th>
+                        <th scope="col" style="width: 120px;">{% trans "Client" %}</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for entry in slowlog_data.entries %}
-                    <tr class="{% cycle 'row1' 'row2' %}">
+                    <tr class="{% cycle "row1" "row2" %}">
                         <td class="quiet">{{ entry.id }}</td>
                         <td class="quiet">
                             {% if entry.timestamp %}
@@ -201,7 +202,7 @@
             </table>
         </div>
         {% else %}
-        <p class="quiet" style="padding: 10px;">{% trans 'No slow queries recorded.' %}</p>
+        <p class="quiet" style="padding: 10px;">{% trans "No slow queries recorded." %}</p>
         {% endif %}
     </fieldset>
     {% endif %}
@@ -209,25 +210,25 @@
     {% if show_danger_zone %}
     <!-- Danger Zone -->
     <fieldset class="module aligned danger-zone">
-        <h2 class="danger-zone-header">{% trans 'Danger Zone' %}</h2>
+        <h2 class="danger-zone-header">{% trans "Danger Zone" %}</h2>
         <div class="danger-zone-content">
             <div class="danger-action">
                 <div>
-                    <strong>{% trans 'Clear all versions' %}</strong>
-                    <p class="help">{% trans 'Delete all keys for this cache across every version. More destructive than the regular clear which only removes the current version.' %}</p>
+                    <strong>{% trans "Clear all versions" %}</strong>
+                    <p class="help">{% trans "Delete all keys for this cache across every version. More destructive than the regular clear which only removes the current version." %}</p>
                 </div>
                 <form method="post" style="flex-shrink: 0;">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="clear_all_versions">
                     <button type="submit" class="button delete-btn"
                         onclick="return confirm('Delete ALL keys across ALL versions for \'{{ cache_name|escapejs }}\'?\n\nThis cannot be undone.');">
-                        {% trans 'Clear all versions' %}
+                        {% trans "Clear all versions" %}
                     </button>
                 </form>
             </div>
             <div class="danger-action">
                 <div>
-                    <strong>{% trans 'Flush database' %}</strong>
+                    <strong>{% trans "Flush database" %}</strong>
                     <p class="help">{% trans "Execute FLUSHDB. Removes every key on the primary you're connected to (single-node only; flushing a cluster requires per-node FLUSHDB). Affects all keys on that primary, not just those belonging to this cache." %}</p>
                 </div>
                 <form method="post" style="flex-shrink: 0;">
@@ -235,7 +236,7 @@
                     <input type="hidden" name="action" value="flush_db">
                     <button type="submit" class="button delete-btn"
                         onclick="return confirm('FLUSH the Redis database for \'{{ cache_name|escapejs }}\'?\n\nThis removes every key on the primary you are connected to, including keys from other applications. On a cluster only the targeted primary is flushed; flushing a cluster requires per-node FLUSHDB.\n\nThis cannot be undone.');">
-                        {% trans 'Flush database' %}
+                        {% trans "Flush database" %}
                     </button>
                 </form>
             </div>
@@ -244,7 +245,7 @@
     {% endif %}
 
     <div class="submit-row">
-        <a role="button" href="{% url 'admin:django_cachex_cache_changelist' %}" class="closelink">{% trans 'Back' %}</a>
+        <a role="button" href="{% url "admin:django_cachex_cache_changelist" %}" class="closelink">{% trans "Back" %}</a>
     </div>
 </div>
 {% endblock %}

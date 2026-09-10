@@ -22,7 +22,7 @@ from django.utils.safestring import mark_safe
 from django.utils.timesince import timeuntil
 from django.utils.translation import gettext_lazy as _
 
-from django_cachex.admin.helpers import CacheUnavailableError, get_cache, get_size
+from django_cachex.admin.helpers import CacheUnavailableError, get_cache, get_size, mask_credentials
 from django_cachex.admin.models import Cache, Key
 from django_cachex.cache.resp import RespClusterCache
 from django_cachex.exceptions import NotSupportedError
@@ -151,7 +151,7 @@ class SupportLevelFilter(admin.SimpleListFilter):
         )
         return {
             f"{i}__c": sum(1 for c in filtered_qs if c.support_level == value)
-            for i, (value, _) in enumerate(self.lookup_choices)
+            for i, (value, _title) in enumerate(self.lookup_choices)
         }
 
 
@@ -249,7 +249,7 @@ class CacheAdminMixin:
             return format_html(
                 '<code>{}</code><br><span style="color:#dc2626;font-size:.75rem">{}</span>',
                 obj.backend,
-                str(exc),
+                mask_credentials(str(exc)),
             )
 
     @admin.display(description=_("Location"))
@@ -536,8 +536,11 @@ class KeyAdminMixin:
             keys: list[str] = []
             next_cursor = cursor
             half = count // 2
-            scan_kw = {"pattern": pattern, "count": count, "key_type": type_filter or None}
-            for _ in range(max_scans):
+            # ``unknown`` is our own label, not a server-side type name, so the
+            # Python filter below applies it instead of SCAN ... TYPE.
+            pushdown_type = type_filter if type_filter != KeyType.UNKNOWN else ""
+            scan_kw = {"pattern": pattern, "count": count, "key_type": pushdown_type or None}
+            for _scan in range(max_scans):
                 next_cursor, batch = cache.scan(cursor=next_cursor, **scan_kw)
                 keys.extend(batch)
                 if next_cursor == 0 or len(keys) >= half:
@@ -616,7 +619,6 @@ class KeyAdminMixin:
     ) -> HttpResponse:
         extra_context = extra_context or {}
 
-        # Cache validation
         cache_name = request.GET.get("cache") or request.POST.get("cache_name") or next(iter(settings.CACHES))
         if Cache.get_by_name(cache_name) is None:
             messages.error(request, f"Cache '{cache_name}' not found.")
@@ -627,7 +629,6 @@ class KeyAdminMixin:
         if request.method == "POST" and request.POST.get("action") == "clear_cache":
             return self._handle_clear_cache(request, cache_name)
 
-        # Help handling
         if request.GET.get("help"):
             help_messages = getattr(self, "_cachex_help_messages", {})
             help_text = help_messages.get("key_list", "")
@@ -635,7 +636,8 @@ class KeyAdminMixin:
                 messages.info(request, help_text)
             extra_context["help_active"] = True
 
-        # Extract cursor/count before ChangeList sees them, store on request
+        # ChangeList treats every remaining GET param as a field lookup, so
+        # the cursor and count are read here and stripped below.
         try:
             cursor = max(0, int(request.GET.get("cursor", 0)))
         except ValueError, TypeError:
@@ -647,7 +649,6 @@ class KeyAdminMixin:
         request._cachex_cursor = cursor  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         request._cachex_count = count  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
 
-        # Strip params ChangeList doesn't understand
         mutable = request.GET.copy()
         for key in ("cursor", "count", "help"):
             mutable.pop(key, None)
@@ -662,16 +663,21 @@ class KeyAdminMixin:
     @admin.action(description=_("Delete selected keys"), permissions=["delete"])
     def delete_selected_keys(self, request: HttpRequest, queryset: KeyQuerySet) -> None:
         deleted = 0
+        missing = 0
         errors: list[str] = []
         for key_obj in queryset:
             try:
                 cache = get_cache(key_obj.cache_name)
-                cache.delete(key_obj.key_name)
-                deleted += 1
+                if cache.delete(key_obj.key_name):
+                    deleted += 1
+                else:
+                    missing += 1
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"'{key_obj.key_name}': {exc}")
         if deleted:
             messages.success(request, f"Successfully deleted {deleted} key(s).")
+        if missing:
+            messages.warning(request, f"{missing} key(s) were already gone.")
         if errors:
             shown = "; ".join(errors[:3])
             more = f" (+{len(errors) - 3} more)" if len(errors) > 3 else ""

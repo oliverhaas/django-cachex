@@ -30,6 +30,7 @@ from django_cachex.admin.helpers import (
     get_type_data,
     is_hashable,
     parse_json_or_str,
+    read_value,
 )
 from django_cachex.admin.views.base import (
     ViewConfig,
@@ -153,11 +154,12 @@ def _report_pop(request: HttpRequest, result: Any, *, on_empty: str, kind: str) 
 # see the current state of the page with the error message).
 
 
-def _handle_delete(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse | None:
-    del page
+def _handle_delete(request: HttpRequest, cache: Any, cache_name: str, key: str, _page: int) -> HttpResponse | None:
     try:
-        cache.delete(key)
-        messages.success(request, "Key deleted successfully.")
+        if cache.delete(key):
+            messages.success(request, "Key deleted successfully.")
+        else:
+            messages.warning(request, "Key not found, nothing was deleted.")
         return redirect(key_list_url(cache_name))
     except Exception as e:  # noqa: BLE001
         messages.error(request, f"Error deleting key: {e!s}")
@@ -652,7 +654,7 @@ def _handle_xtrim(request: HttpRequest, cache: Any, cache_name: str, key: str, p
     return _redirect_to_key(request, cache_name, key, page)
 
 
-# Action → handler dispatch table. Adding a new POST action means adding a
+# Dispatch table from action to handler. Adding a new POST action means adding a
 # handler above and a single entry here.
 _POST_HANDLERS: dict[str, Callable[[HttpRequest, Any, str, str, int], HttpResponse | None]] = {
     "delete": _handle_delete,
@@ -752,7 +754,19 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
         action = request.POST.get("action")
         _check_post_permission(request, action, cache, key)
         handler = _POST_HANDLERS.get(action) if action else None
-        key_type = cache.type(key) if handler is not None and action not in _TYPE_AGNOSTIC_ACTIONS else None
+        key_type = None
+        if handler is not None and action not in _TYPE_AGNOSTIC_ACTIONS:
+            try:
+                key_type = cache.type(key)
+            except AttributeError, NotSupportedError:
+                # Stock Django backends have no ``type()``. The GET path
+                # tolerates that and renders the page; a write cannot.
+                messages.error(
+                    request,
+                    "This cache backend does not report key types, "
+                    "so only deleting the key and setting its TTL are available.",
+                )
+                return _redirect_to_key(request, cache_name, key, page)
         if key_type is not None and key_type not in RENDERABLE_TYPES:
             messages.error(request, "This key has a type the cache admin cannot edit.")
         elif handler is not None:
@@ -812,7 +826,7 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
     string_sha1 = None
     if key_exists and not opaque_type and (not key_type or key_type == KeyType.STRING):
         try:
-            raw_value = cache.get(key)
+            raw_value = read_value(cache, key)
         except (CompressorError, SerializerError) as exc:
             value_error_display = f"<value cannot be decoded: {str(exc) or exc.__class__.__name__}>"
             value_is_editable = False

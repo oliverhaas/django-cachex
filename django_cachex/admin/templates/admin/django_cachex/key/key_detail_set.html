@@ -3,58 +3,58 @@
 {% if can_mutate %}
 <!-- Set Operations -->
 <fieldset class="module aligned monospace">
-    <h2>{% trans 'Operations' %}</h2>
+    <h2>{% trans "Operations" %}</h2>
     <div class="form-row">
         <div>
-            <label for="id_sadd_member">{% trans 'Add:' %}</label>
+            <label for="id_sadd_member">{% trans "Add:" %}</label>
             <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="sadd">
                 {% include input_tpl with name="member" rows=4 field_id="id_sadd_member" placeholder=_("member") editable=True can_mutate=can_mutate only %}
                 <div class="cachex-value-actions">
-                    <button type="submit" class="button btn-small">{% trans 'Add' %}</button>
+                    <button type="submit" class="button btn-small">{% trans "Add" %}</button>
                 </div>
             </form>
         </div>
     </div>
     <div class="form-row">
-        <label>{% trans 'Pop:' %}</label>
+        <label>{% trans "Pop:" %}</label>
         <form method="post" style="display: inline;">
             {% csrf_token %}
             <input type="hidden" name="action" value="spop">
-            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" aria-label="{% trans 'Count' %}">
-            <button type="submit" class="button btn-small" onclick="return confirm('{% trans 'Pop random members? They will be removed from the set.' %}');">{% trans 'Random' %}</button>
+            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" aria-label="{% trans "Count" %}">
+            <button type="submit" class="button btn-small" onclick="return confirm('{% trans "Pop random members? They will be removed from the set." %}');">{% trans "Random" %}</button>
         </form>
     </div>
 </fieldset>
 {% endif %}
 <!-- Set Members -->
 <fieldset class="module aligned monospace">
-    <h2>{% trans 'Set Members' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
+    <h2>{% trans "Set Members" %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
     {% if type_data.members %}
     <div class="results">
         <table id="result_list" class="cachex-entry-table" style="width: 100%;">
             <thead>
                 <tr>
-                    <th scope="col">{% trans 'Member' %}</th>
+                    <th scope="col">{% trans "Member" %}</th>
                     {% if can_mutate %}
-                    <th scope="col" style="width: 110px;">{% trans 'Actions' %}</th>
+                    <th scope="col" style="width: 110px;">{% trans "Actions" %}</th>
                     {% endif %}
                 </tr>
             </thead>
             <tbody>
                 {% for member, editable in type_data.members %}
-                <tr class="{% cycle 'row1' 'row2' %}">
+                <tr class="{% cycle "row1" "row2" %}">
                     <td>{% include input_tpl with name="new_member" value=member rows=2 form_id="set-update-" row_index=forloop.counter0 editable=editable can_mutate=can_mutate only %}</td>
                     {% if can_mutate %}
                     <td>
                         <div class="cachex-row-actions">
                             {% if editable %}
-                            <button type="submit" form="set-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
-                            <button type="submit" form="set-remove-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Remove this member?' %}');">{% trans 'Remove' %}</button>
+                            <button type="submit" form="set-update-{{ forloop.counter0 }}" class="button btn-small">{% trans "Update" %}</button>
+                            <button type="submit" form="set-remove-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{% trans "Remove this member?" %}');">{% trans "Remove" %}</button>
                             {% else %}
-                            <button type="button" class="button btn-small" disabled title="{% trans 'Not JSON-serializable, so this member cannot be edited or matched for removal.' %}">{% trans 'Update' %}</button>
-                            <button type="button" class="button delete-btn btn-small" disabled title="{% trans 'Not JSON-serializable, so this member cannot be edited or matched for removal.' %}">{% trans 'Remove' %}</button>
+                            <button type="button" class="button btn-small" disabled title="{% trans "Not JSON-serializable, so this member cannot be edited or matched for removal." %}">{% trans "Update" %}</button>
+                            <button type="button" class="button delete-btn btn-small" disabled title="{% trans "Not JSON-serializable, so this member cannot be edited or matched for removal." %}">{% trans "Remove" %}</button>
                             {% endif %}
                         </div>
                     </td>
@@ -80,7 +80,7 @@
     {% endfor %}
     {% endif %}
     {% else %}
-    <p class="quiet" style="padding: 10px;">{% trans 'Set is empty.' %}</p>
+    <p class="quiet" style="padding: 10px;">{% trans "Set is empty." %}</p>
     {% endif %}
     {% include "admin/django_cachex/key/key_detail_pagination.html" %}
 </fieldset>

@@ -43,10 +43,14 @@ try:
     from redis.asyncio.cluster import RedisCluster as AsyncRedisCluster
     from redis.asyncio.sentinel import Sentinel as AsyncRedisSentinel
     from redis.asyncio.sentinel import SentinelConnectionPool as AsyncRedisSentinelConnectionPool
+    from redis.asyncio.sentinel import (
+        SentinelManagedSSLConnection as AsyncRedisSentinelManagedSSLConnection,
+    )
     from redis.cluster import RedisCluster
     from redis.cluster import key_slot as redis_key_slot
     from redis.sentinel import Sentinel as RedisSentinel
     from redis.sentinel import SentinelConnectionPool as RedisSentinelConnectionPool
+    from redis.sentinel import SentinelManagedSSLConnection as RedisSentinelManagedSSLConnection
 
     _REDIS_AVAILABLE = True
 except ImportError:
@@ -103,9 +107,11 @@ class RedisPySentinelAdapter(_RedisPyMixin, ValkeyPySentinelAdapter):
         _pool_class = RedisSentinelConnectionPool
         _sentinel_class = RedisSentinel
         _sentinel_pool_class = RedisSentinelConnectionPool
+        _sentinel_ssl_connection_class = RedisSentinelManagedSSLConnection
         _async_client_class = RedisAsyncClient
         _async_sentinel_class = AsyncRedisSentinel
         _async_sentinel_pool_class = AsyncRedisSentinelConnectionPool
+        _async_sentinel_ssl_connection_class = AsyncRedisSentinelManagedSSLConnection
 
 
 class RedisPyClusterAdapter(_RedisPyMixin, ValkeyPyClusterAdapter):

@@ -97,19 +97,20 @@ class TestLocalBlockingAcquire:
         sem_waiter = Semaphore("block", capacity=1)
 
         def waiter():
-            t0 = time.monotonic()
-            ok = sem_waiter.acquire(blocking=True, timeout=2)
-            result["ok"] = ok
-            result["elapsed"] = time.monotonic() - t0
+            result["ok"] = sem_waiter.acquire(blocking=True, timeout=2)
+            result["at"] = time.monotonic()
 
         t = threading.Thread(target=waiter)
+        # Read before the thread starts: a t0 taken inside the waiter can land
+        # after the release, so the measured wait would be near zero.
+        t0 = time.monotonic()
         t.start()
         time.sleep(0.1)
         sem_holder.release()
         t.join(timeout=3)
 
         assert result["ok"] is True
-        assert result["elapsed"] >= 0.1
+        assert result["at"] - t0 >= 0.1
         sem_waiter.release()
 
     def test_blocking_acquire_timeout_raises(self):
@@ -121,6 +122,91 @@ class TestLocalBlockingAcquire:
             sem_waiter.acquire(blocking=True, timeout=0.1)
 
         sem_holder.release()
+
+
+class TestLocalTimeoutOverride:
+    """A call-site ``timeout`` wins over the instance default, ``None`` included."""
+
+    def test_omitted_timeout_uses_the_instance_default(self):
+        holder = Semaphore("timeout_default", capacity=1, timeout=0.05)
+        assert holder.acquire(blocking=False) is True
+
+        waiter = Semaphore("timeout_default", capacity=1, timeout=0.05)
+        with pytest.raises(SemaphoreTimeoutError):
+            waiter.acquire()
+
+        holder.release()
+
+    def test_explicit_none_blocks_past_the_instance_default(self):
+        holder = Semaphore("timeout_none", capacity=1, timeout=0.05)
+        assert holder.acquire(blocking=False) is True
+
+        waiter = Semaphore("timeout_none", capacity=1, timeout=0.05)
+        result: dict[str, object] = {}
+
+        def park() -> None:
+            try:
+                result["ok"] = waiter.acquire(timeout=None)
+            except SemaphoreTimeoutError:
+                result["timed_out"] = True
+
+        t = threading.Thread(target=park)
+        t.start()
+        try:
+            time.sleep(0.3)  # 6x the instance timeout
+            assert result == {}, "explicit None did not override the instance timeout"
+        finally:
+            holder.release()
+            t.join(timeout=3)
+
+        assert result == {"ok": True}
+        waiter.release()
+
+    def test_aacquire_omitted_timeout_uses_the_instance_default(self):
+        async def run() -> None:
+            holder = Semaphore("atimeout_default", capacity=1, timeout=0.05)
+            assert await holder.aacquire(blocking=False) is True
+
+            waiter = Semaphore("atimeout_default", capacity=1, timeout=0.05)
+            with pytest.raises(SemaphoreTimeoutError):
+                await waiter.aacquire()
+
+            await holder.arelease()
+
+        asyncio.run(run())
+
+    def test_aacquire_explicit_none_blocks_past_the_instance_default(self):
+        async def run() -> None:
+            holder = Semaphore("atimeout_none", capacity=1, timeout=0.05)
+            assert await holder.aacquire(blocking=False) is True
+
+            waiter = Semaphore("atimeout_none", capacity=1, timeout=0.05)
+            task = asyncio.create_task(waiter.aacquire(timeout=None))
+            try:
+                await asyncio.sleep(0.3)  # 6x the instance timeout
+                assert not task.done(), "explicit None did not override the instance timeout"
+                await holder.arelease()
+                assert await asyncio.wait_for(task, timeout=3) is True
+                await waiter.arelease()
+            finally:
+                if not task.done():
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
+
+        asyncio.run(run())
+
+
+def _wait_for_waiters(state, count, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with state.lock:
+            queued = len(state.waiters)
+        if queued >= count:
+            return
+        time.sleep(0.001)
+    msg = f"expected {count} queued waiter(s), saw {queued}"
+    raise AssertionError(msg)
 
 
 class TestLocalFifoFairness:
@@ -143,10 +229,10 @@ class TestLocalFifoFairness:
 
         t_big = threading.Thread(target=big_acquire)
         t_big.start()
-        time.sleep(0.05)  # ensure big enqueues first
+        _wait_for_waiters(holder._state, 1)  # big holds the head before small starts
         t_small = threading.Thread(target=small_acquire)
         t_small.start()
-        time.sleep(0.05)
+        _wait_for_waiters(holder._state, 2)
 
         holder.release()
         t_big.join(timeout=2)
@@ -602,20 +688,21 @@ class TestRespSemaphoreBlocking:
 
         def waiter_thread() -> None:
             waiter = cache.semaphore("resp_blk", capacity=1, lease=10, timeout=3)
-            t0 = time.monotonic()
-            ok = waiter.acquire(blocking=True)
-            result["ok"] = ok
-            result["elapsed"] = time.monotonic() - t0
+            result["ok"] = waiter.acquire(blocking=True)
+            result["at"] = time.monotonic()
             waiter.release()
 
         t = threading.Thread(target=waiter_thread)
+        # Read before the thread starts: a t0 taken inside the waiter can land
+        # after the release, so the measured wait would be near zero.
+        t0 = time.monotonic()
         t.start()
         time.sleep(0.3)
         holder.release()
         t.join(timeout=5)
 
         assert result["ok"] is True
-        assert result["elapsed"] >= 0.3
+        assert result["at"] - t0 >= 0.3
 
     def test_resp_blocking_timeout_raises(self, cache):
         holder = cache.semaphore("resp_blk_to", capacity=1, lease=10)
@@ -627,26 +714,56 @@ class TestRespSemaphoreBlocking:
         finally:
             holder.release()
 
+    def test_resp_explicit_none_blocks_past_the_instance_default(self, cache):
+        holder = cache.semaphore("resp_blk_none", capacity=1, lease=10)
+        assert holder.acquire(blocking=False) is True
+
+        waiter = cache.semaphore("resp_blk_none", capacity=1, lease=10, timeout=0.2)
+        result: dict[str, object] = {}
+
+        def park() -> None:
+            try:
+                result["ok"] = waiter.acquire(timeout=None)
+            except SemaphoreTimeoutError:
+                result["timed_out"] = True
+
+        t = threading.Thread(target=park)
+        t.start()
+        try:
+            time.sleep(0.6)  # 3x the instance timeout
+            assert result == {}, "explicit None did not override the instance timeout"
+        finally:
+            holder.release()
+            t.join(timeout=10)
+
+        assert result == {"ok": True}
+        waiter.release()
+
+
+def _expire_claim(cache, name, sem):
+    # Deleting the claim key leaves exactly what an expired lease leaves for
+    # the reaper, and is deterministic where waiting out the lease is not.
+    prefix = "{" + cache.make_and_validate_key(name) + "}"
+    assert cache.adapter.delete(f"{prefix}:state:claim:{sem._token}")
+
 
 class TestRespLeaseReclaim:
     def test_expired_lease_is_reclaimed_on_next_acquire(self, cache):
         """A holder that exits without releasing has its budget reclaimed
         when the next acquirer hits the Lua reap loop."""
 
-        crashed_holder = cache.semaphore("resp_reclaim", capacity=1, lease=0.3)
+        crashed_holder = cache.semaphore("resp_reclaim", capacity=1, lease=60)
         assert crashed_holder.acquire(blocking=False) is True
-
-        time.sleep(0.5)
+        _expire_claim(cache, "resp_reclaim", crashed_holder)
 
         fresh = cache.semaphore("resp_reclaim", capacity=1, lease=10)
         assert fresh.acquire(blocking=False) is True
         fresh.release()
 
     def test_expired_lease_reclaimed_under_weight(self, cache):
-        crashed = cache.semaphore("resp_reclaim_w", capacity=10, weight=6, lease=0.3)
+        crashed = cache.semaphore("resp_reclaim_w", capacity=10, weight=6, lease=60)
         assert crashed.acquire(blocking=False) is True
-
-        time.sleep(0.5)
+        _expire_claim(cache, "resp_reclaim_w", crashed)
 
         a = cache.semaphore("resp_reclaim_w", capacity=10, weight=6, lease=10)
         b = cache.semaphore("resp_reclaim_w", capacity=10, weight=4, lease=10)
@@ -703,14 +820,15 @@ class TestRespQueueReap:
 
         t = threading.Thread(target=waiter_thread)
         t.start()
-        time.sleep(0.3)  # let the waiter enqueue and heartbeat
+        try:
+            time.sleep(0.3)  # let the waiter enqueue and heartbeat
 
-        jumper = cache.semaphore("resp_live_waiter", capacity=1, lease=10)
-        holder.release()
-        assert jumper.acquire(blocking=False) is False
-
-        may_release.set()
-        t.join(timeout=10)
+            jumper = cache.semaphore("resp_live_waiter", capacity=1, lease=10)
+            holder.release()
+            assert jumper.acquire(blocking=False) is False
+        finally:
+            may_release.set()
+            t.join(timeout=10)
         assert result["ok"] is True
 
 
@@ -1112,6 +1230,20 @@ class TestRespExtend:
         with pytest.raises(SemaphoreError):
             sem.extend(5)
 
+    @pytest.mark.parametrize("additional_seconds", [0, -30])
+    def test_extend_rejects_a_non_positive_bump(self, cache, additional_seconds):
+        holder = cache.semaphore("resp_extend_bad", capacity=1, lease=60)
+        assert holder.acquire(blocking=False) is True
+        try:
+            claim_key = "{" + cache.make_and_validate_key("resp_extend_bad") + "}:state:claim:" + holder._token
+            with pytest.raises(ValueError, match="must be a positive number of seconds"):
+                holder.extend(additional_seconds)
+            after = cache.adapter.pttl(claim_key)
+            assert after is not None
+            assert after > 55_000  # untouched, still the original 60 s lease
+        finally:
+            holder.release()
+
 
 class TestRespAsyncSemaphore:
     """``cache.asemaphore`` returns the same ``RespSemaphore`` instance; use
@@ -1119,9 +1251,14 @@ class TestRespAsyncSemaphore:
 
     @pytest.mark.asyncio
     async def test_resp_aacquire(self, cache):
-        sem = await cache.asemaphore("aresp_a", capacity=2, lease=10)
+        sem = await cache.asemaphore("aresp_a", capacity=1, lease=10)
+        other = await cache.asemaphore("aresp_a", capacity=1, lease=10)
         async with sem:
-            pass  # held via context manager
+            assert sem._token is not None
+            assert await other.aacquire(blocking=False) is False
+        assert sem._token is None
+        assert await other.aacquire(blocking=False) is True
+        await other.arelease()
 
     @pytest.mark.asyncio
     async def test_resp_aacquire_non_blocking(self, cache):
@@ -1147,6 +1284,42 @@ class TestRespAsyncSemaphore:
             )
             with pytest.raises(SemaphoreTimeoutError):
                 await waiter.aacquire(blocking=True)
+        finally:
+            await holder.arelease()
+
+    @pytest.mark.asyncio
+    async def test_resp_aacquire_explicit_none_blocks_past_the_instance_default(self, cache):
+        holder = await cache.asemaphore("aresp_to_none", capacity=1, lease=10)
+        assert await holder.aacquire(blocking=False) is True
+
+        waiter = await cache.asemaphore("aresp_to_none", capacity=1, lease=10, timeout=0.2)
+        task = asyncio.create_task(waiter.aacquire(timeout=None))
+        try:
+            await asyncio.sleep(0.6)  # 3x the instance timeout
+            assert not task.done(), "explicit None did not override the instance timeout"
+            await holder.arelease()
+            assert await asyncio.wait_for(task, timeout=10) is True
+            await waiter.arelease()
+        finally:
+            if not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+            with contextlib.suppress(SemaphoreError):
+                await holder.arelease()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("additional_seconds", [0, -30])
+    async def test_resp_aextend_rejects_a_non_positive_bump(self, cache, additional_seconds):
+        holder = await cache.asemaphore("aresp_ext_bad", capacity=1, lease=60)
+        assert await holder.aacquire(blocking=False) is True
+        try:
+            claim_key = "{" + cache.make_and_validate_key("aresp_ext_bad") + "}:state:claim:" + holder._token
+            with pytest.raises(ValueError, match="must be a positive number of seconds"):
+                await holder.aextend(additional_seconds)
+            after = cache.adapter.pttl(claim_key)
+            assert after is not None
+            assert after > 55_000
         finally:
             await holder.arelease()
 

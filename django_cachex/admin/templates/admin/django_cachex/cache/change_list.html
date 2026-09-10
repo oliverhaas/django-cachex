@@ -3,7 +3,7 @@
 
 {% block extrastyle %}
 {{ block.super }}
-<style type="text/css">
+<style>
     {% include "admin/django_cachex/cache/styles.css" %}
 </style>
 {% endblock %}
@@ -12,7 +12,7 @@
 <ul class="object-tools">
     {% block object-tools-items %}
     <li>
-        <a href="?{% if not help_active %}help=1{% endif %}">{% trans 'Help' %}</a>
+        <a href="?{% if not help_active %}help=1{% endif %}">{% trans "Help" %}</a>
     </li>
     {% endblock %}
 </ul>

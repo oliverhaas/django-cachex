@@ -149,8 +149,10 @@ class _StreamSync:
 
         The publish executor is bounded by ``publish_shutdown_timeout``.
         Pending futures are cancelled up front (``cancel_futures=True``), then
-        the worker thread is joined with a timeout; an in-flight XADD that
-        does not drain in time is abandoned with a warning.
+        the worker thread is joined with a timeout, so this call returns even
+        while an XADD is stuck. The worker itself is not abandoned:
+        ``concurrent.futures`` joins it again without a timeout at interpreter
+        exit, so a hung XADD still holds the process up there.
         """
         with self.lock:
             thread = self.consumer_thread
@@ -223,6 +225,10 @@ class StreamCache(BaseCachex, LocMemCache):
     ending up holding each other's value. An entry is skipped only where a
     later local write to the same key (or a local ``clear``) has already
     replaced it, so a writer never reads back a value it has moved past.
+    A dropped broadcast keeps that guarantee too: the local value stands and
+    the own entry it superseded is skipped, at the cost of a window in which
+    the other pods hold the value they last saw until the next write to that
+    key or its expiry.
 
     Write ordering: every mutating operation holds the local lock across both
     the local update and the enqueue of its broadcast, and a single-worker
@@ -289,16 +295,20 @@ class StreamCache(BaseCachex, LocMemCache):
         self._register_interpreter_shutdown()
 
     def _register_interpreter_shutdown(self) -> None:
-        """Run the bounded ``shutdown`` before the executor's unbounded join.
+        """Cancel the queued publish backlog before the executor's unbounded join.
 
         ``ThreadPoolExecutor`` worker threads are non-daemon and joined with
-        no timeout by ``concurrent.futures.thread._python_exit``, so a
-        transport hung inside ``_do_xadd`` would stall interpreter shutdown
-        forever. ``threading._register_atexit`` hooks run at the top of
+        no timeout by ``concurrent.futures.thread._python_exit``, which first
+        lets the worker drain its queue, so a backlog of queued XADDs would
+        otherwise be sent one by one at interpreter exit.
+        ``threading._register_atexit`` hooks run at the top of
         ``threading._shutdown()`` in reverse registration order, i.e. before
-        that join, which ``atexit`` (which runs after it) cannot do. One hook
-        per storage key: it holds the shared sync state, not a cache instance,
-        so a discarded instance is still collectable.
+        that join, which ``atexit`` (which runs after it) cannot do, so this
+        hook gets to drop the backlog first. An XADD already in flight is not
+        abandoned: ``_python_exit`` joins its worker without a timeout, so a
+        transport hung inside ``_do_xadd`` still holds up interpreter exit.
+        One hook per storage key: it holds the shared sync state, not a cache
+        instance, so a discarded instance is still collectable.
         """
         state = self._sync
         with state.lock:
@@ -363,15 +373,19 @@ class StreamCache(BaseCachex, LocMemCache):
         The pending-publish budget caps how many broadcasts may be queued at
         once. When it is exhausted the new publish is dropped with a warning,
         trading durability for bounded memory under sustained write bursts
-        that outpace XADD.
+        that outpace XADD. A dropped broadcast still forgets the key's own
+        entry mark, so the local value it wrote survives the older own entry
+        coming back.
         """
         state = self._sync
+        made_keys = tuple(keys) if keys else ((key,) if key else ())
         if not state.publish_budget.acquire(blocking=False):
             logger.warning(
                 "StreamCache: publish backlog full (cap=%d); dropping %s broadcast",
                 state.max_pending_publishes,
                 op,
             )
+            self._forget_pending(op, made_keys)
             return
         seq = state.next_seq()
         fields: dict[str, Any] = {
@@ -398,14 +412,34 @@ class StreamCache(BaseCachex, LocMemCache):
                 "StreamCache: publish executor closed; dropping %s broadcast",
                 op,
             )
+            self._forget_pending(op, made_keys)
             return
         # Record what this pod has moved past, under the same ``_lock`` hold
         # the caller mutated in, so the consumer cannot read a half-written map.
         if op == "clear":
             state.pending.clear()
         else:
-            for made_key in keys or ((key,) if key else ()):
+            for made_key in made_keys:
                 state.pending[made_key] = seq
+
+    def _forget_pending(self, op: str, made_keys: Sequence[str], seq: int | None = None) -> None:
+        """Forget own-entry marks for a broadcast that will never reach the stream.
+
+        A mark left behind still matches the older own entry for the key, so
+        that entry would be applied and undo the local write the dropped
+        broadcast belongs to. ``seq`` restricts the drop to the marks this one
+        broadcast left. An XADD failure surfaces late, and by then a later local
+        write may have overwritten those marks with newer ones; the newer marks
+        have to be kept.
+        Caller holds ``self._lock``.
+        """
+        pending = self._sync.pending
+        if op == "clear" and seq is None:
+            pending.clear()
+            return
+        for made_key in made_keys:
+            if seq is None or pending.get(made_key) == seq:
+                pending.pop(made_key, None)
 
     def _do_xadd(self, fields: dict[str, Any], budget: BoundedSemaphore) -> None:
         """Execute a single XADD via the transport's high-level API."""
@@ -422,6 +456,9 @@ class StreamCache(BaseCachex, LocMemCache):
                 fields.get("op", "?"),
                 exc_info=True,
             )
+            keys = fields.get("keys") or ((fields["key"],) if fields.get("key") else ())
+            with self._lock:
+                self._forget_pending(fields.get("op", ""), keys, seq=int(fields["seq"]))
         finally:
             # Return the budget this publish took, not whichever semaphore is
             # current: a restart swaps in a fresh one.
@@ -510,6 +547,9 @@ class StreamCache(BaseCachex, LocMemCache):
         # A multiplexed transport (valkey-glide) carries every command on one
         # connection, so parking in XREAD BLOCK would hold up each publish.
         block = None if self._transport_is_multiplexed else self._block_timeout
+        # One traceback per outage: a transport that stays down would log a
+        # full one every second for as long as it is out.
+        traced = False
         while not stop_event.is_set():
             try:
                 result = self._transport.xread(  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
@@ -520,6 +560,7 @@ class StreamCache(BaseCachex, LocMemCache):
                 # Stamp every poll: ``last_read_age_seconds`` tracks consumer
                 # liveness, so an idle stream would otherwise look stalled.
                 state.last_read_time = time.time()
+                traced = False
                 if not result:
                     if block is None:
                         stop_event.wait(_MULTIPLEXED_POLL_INTERVAL)
@@ -530,8 +571,9 @@ class StreamCache(BaseCachex, LocMemCache):
                 if not stop_event.is_set():
                     logger.warning(
                         "StreamCache: Consumer error, retrying in 1s",
-                        exc_info=True,
+                        exc_info=not traced,
                     )
+                    traced = True
                     stop_event.wait(1.0)
 
     def _apply_entries(self, entries: Sequence[tuple[str, dict[str, Any]]]) -> None:
@@ -577,6 +619,10 @@ class StreamCache(BaseCachex, LocMemCache):
         if fields.get("pod") == self._sync.pod_id:
             seq = int(fields.get("seq") or 0)
             pending = self._sync.pending
+            # Own entries arrive in seq order, so a lower mark belongs to a
+            # broadcast that was dropped or trimmed and can never be consumed.
+            for stale in [made_key for made_key, mark in pending.items() if mark < seq]:
+                del pending[stale]
             keys = fields.get("keys")
             if op == "clear":
                 fields = {**fields, "keep": {key for key, key_seq in pending.items() if key_seq > seq}}

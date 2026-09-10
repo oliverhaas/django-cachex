@@ -3,12 +3,14 @@ parametrized container fixtures cannot observe (registry keys, driver-callback
 suppression, stub-shaped driver pipelines)."""
 
 import gc
+import importlib
 import weakref
 from typing import Any
 
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
+from django_cachex.adapters.redis_py import RedisPySentinelAdapter
 from django_cachex.adapters.valkey_py import (
     _VALKEY_AVAILABLE,
     ValkeyPyAdapter,
@@ -546,6 +548,20 @@ class TestXPendingArguments:
 _STREAM_ENTRIES = [(b"1-0", {b"field": b"value"})]
 _DECODED_STREAM = {"stream": [("1-0", {"field": b"value"})]}
 
+# What the server sends for XREAD under RESP3, before the driver parses it.
+_RESP3_XREAD_REPLY = {b"stream": [[b"1-0", [b"field", b"value"]]]}
+
+
+def _resp3_xread_parsers() -> list[Any]:
+    from redis._parsers.helpers import parse_xread_resp3 as redis_parse
+
+    parsers = [redis_parse]
+    if _VALKEY_AVAILABLE:
+        from valkey._parsers.helpers import parse_xread_resp3 as valkey_parse
+
+        parsers.append(valkey_parse)
+    return parsers
+
 
 class TestDecodeStreamResults:
     """xread/xreadgroup replies arrive as pairs on RESP2 and a map on RESP3."""
@@ -554,11 +570,40 @@ class TestDecodeStreamResults:
         adapter = ValkeyPyAdapter.__new__(ValkeyPyAdapter)
         assert adapter._decode_stream_results([(b"stream", _STREAM_ENTRIES)]) == _DECODED_STREAM
 
-    def test_resp3_mapping(self):
-        # Regression: OPTIONS {"protocol": 3} made the driver return a dict,
-        # which unpacked as bytes keys and blew up with a ValueError.
+    @pytest.mark.parametrize("parse_xread_resp3", _resp3_xread_parsers())
+    def test_resp3_mapping(self, parse_xread_resp3: Any):
+        # Regression: under OPTIONS {"protocol": 3} the driver returns
+        # {stream: [entries]}, and reading it as {stream: entries} raised.
         adapter = ValkeyPyAdapter.__new__(ValkeyPyAdapter)
-        assert adapter._decode_stream_results({b"stream": _STREAM_ENTRIES}) == _DECODED_STREAM
+
+        assert adapter._decode_stream_results(parse_xread_resp3(_RESP3_XREAD_REPLY)) == _DECODED_STREAM
+
+    @pytest.mark.parametrize("parse_xread_resp3", _resp3_xread_parsers())
+    def test_resp3_mapping_with_several_entries(self, parse_xread_resp3: Any):
+        adapter = ValkeyPyAdapter.__new__(ValkeyPyAdapter)
+        reply = {b"stream": [[b"1-0", [b"field", b"one"]], [b"2-0", [b"field", b"two"]]]}
+
+        assert adapter._decode_stream_results(parse_xread_resp3(reply)) == {
+            "stream": [("1-0", {"field": b"one"}), ("2-0", {"field": b"two"})],
+        }
+
+    def test_resp3_empty_stream(self):
+        adapter = ValkeyPyAdapter.__new__(ValkeyPyAdapter)
+        assert adapter._decode_stream_results({b"stream": []}) == {"stream": []}
+
+
+class TestDecodeStreamEntries:
+    """A nil entry must not take the whole reply down."""
+
+    def test_nil_entry_decodes_to_empty_fields(self):
+        # Redis 6 XCLAIM answers nil for a pending id that has been XDEL'd,
+        # and the drivers' parse_stream_list turns that into (None, None).
+        adapter = ValkeyPyAdapter.__new__(ValkeyPyAdapter)
+
+        assert adapter._decode_stream_entries([(None, None), (b"1-0", {b"f": b"v"})]) == [
+            (None, {}),
+            ("1-0", {"f": b"v"}),
+        ]
 
 
 class _ResponseError(Exception):
@@ -825,6 +870,71 @@ class TestConnectionOptionsReachThePool:
         assert pool.connection_kwargs["username"] == "user"
         assert pool.connection_kwargs["password"] == "secret"
 
+    def test_pool_tuning_options_are_forwarded(self):
+        captured = self._pool_kwargs(max_connections=42, socket_timeout=1.5, retry_on_timeout=True)
+
+        assert captured["kwargs"]["max_connections"] == 42
+        assert captured["kwargs"]["socket_timeout"] == 1.5
+        assert captured["kwargs"]["retry_on_timeout"] is True
+
+    def test_parser_class_is_imported_and_forwarded(self):
+        from valkey._parsers.resp2 import _RESP2Parser
+
+        captured = self._pool_kwargs(parser_class="valkey._parsers.resp2._RESP2Parser")
+
+        assert captured["kwargs"]["parser_class"] is _RESP2Parser
+
+    def test_parser_class_defaults_to_the_driver_parser(self):
+        import valkey
+
+        captured = self._pool_kwargs()
+
+        assert captured["kwargs"]["parser_class"] is valkey.connection.DefaultParser
+
+    def test_pool_class_is_imported_and_used(self):
+        import valkey
+
+        adapter = ValkeyPyAdapter([SERVER_URL], pool_class="valkey.connection.BlockingConnectionPool")
+
+        assert isinstance(adapter._get_connection_pool(write=True), valkey.BlockingConnectionPool)
+
+    @pytest.mark.asyncio
+    async def test_async_pool_class_is_imported_and_used(self, monkeypatch: pytest.MonkeyPatch):
+        import valkey.asyncio
+
+        monkeypatch.setattr(ValkeyPyAdapter, "_async_pools", weakref.WeakKeyDictionary())
+        adapter = ValkeyPyAdapter(
+            [SERVER_URL],
+            async_pool_class="valkey.asyncio.BlockingConnectionPool",
+            max_connections=7,
+        )
+
+        pool = adapter._get_async_connection_pool(write=True)
+        try:
+            assert isinstance(pool, valkey.asyncio.BlockingConnectionPool)
+            assert pool.max_connections == 7
+        finally:
+            await adapter.aclose()
+
+    @pytest.mark.asyncio
+    async def test_parser_class_stays_out_of_the_async_pool(self, monkeypatch: pytest.MonkeyPatch):
+        # parser_class is sync-only; an async connection raises AttributeError on it.
+        monkeypatch.setattr(ValkeyPyAdapter, "_async_pools", weakref.WeakKeyDictionary())
+        adapter = ValkeyPyAdapter(
+            [SERVER_URL],
+            parser_class="valkey._parsers.resp2._RESP2Parser",
+            socket_connect_timeout=2.5,
+            retry_on_timeout=True,
+        )
+
+        pool = adapter._get_async_connection_pool(write=True)
+        try:
+            assert "parser_class" not in pool.connection_kwargs
+            assert pool.connection_kwargs["socket_connect_timeout"] == 2.5
+            assert pool.connection_kwargs["retry_on_timeout"] is True
+        finally:
+            await adapter.aclose()
+
 
 @requires_valkey
 class TestSentinelPoolClass:
@@ -910,3 +1020,213 @@ class TestKeyTypeMapping:
     @pytest.mark.asyncio
     async def test_async_missing_key_is_none(self):
         assert await _type_adapter(_AsyncTypeClient("none")).atype("key") is None
+
+
+def _sentinel_modules(adapter_class: Any) -> tuple[Any, Any]:
+    lib = adapter_class._lib.__name__
+    return importlib.import_module(f"{lib}.sentinel"), importlib.import_module(f"{lib}.asyncio.sentinel")
+
+
+_SENTINEL_DRIVERS = [
+    pytest.param(RedisPySentinelAdapter, "redis", "rediss", id="redis-py"),
+    pytest.param(ValkeyPySentinelAdapter, "valkey", "valkeys", id="valkey-py"),
+]
+
+
+@requires_valkey
+@pytest.mark.parametrize(("adapter_class", "plain_scheme", "tls_scheme"), _SENTINEL_DRIVERS)
+class TestSentinelTlsUrls:
+    """A TLS LOCATION must keep Sentinel discovery instead of dialling the service name."""
+
+    @staticmethod
+    def _adapter(adapter_class: Any, scheme: str) -> Any:
+        return adapter_class([f"{scheme}://mymaster/0"], sentinels=[("sentinel-a", 26379)])
+
+    def test_tls_url_keeps_a_sentinel_managed_connection(
+        self,
+        adapter_class: Any,
+        plain_scheme: str,
+        tls_scheme: str,
+    ):
+        # Regression: the driver's parse_url injected a plain SSLConnection,
+        # whose host is the literal service name, so Sentinel was never asked
+        # for the primary and failover went unnoticed.
+        del plain_scheme
+        sync_sentinel, _ = _sentinel_modules(adapter_class)
+
+        pool = self._adapter(adapter_class, tls_scheme)._get_connection_pool(write=True)
+
+        assert pool.connection_class is sync_sentinel.SentinelManagedSSLConnection
+        assert issubclass(pool.connection_class, sync_sentinel.SentinelManagedConnection)
+
+    def test_plain_url_keeps_the_plain_managed_connection(
+        self,
+        adapter_class: Any,
+        plain_scheme: str,
+        tls_scheme: str,
+    ):
+        del tls_scheme
+        sync_sentinel, _ = _sentinel_modules(adapter_class)
+
+        pool = self._adapter(adapter_class, plain_scheme)._get_connection_pool(write=True)
+
+        assert pool.connection_class is sync_sentinel.SentinelManagedConnection
+
+    @pytest.mark.asyncio
+    async def test_async_tls_url_keeps_a_sentinel_managed_connection(
+        self,
+        adapter_class: Any,
+        plain_scheme: str,
+        tls_scheme: str,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        del plain_scheme
+        _, async_sentinel = _sentinel_modules(adapter_class)
+        monkeypatch.setattr(adapter_class, "_async_pools", weakref.WeakKeyDictionary())
+        adapter = self._adapter(adapter_class, tls_scheme)
+
+        pool = adapter._get_async_connection_pool(write=True)
+        try:
+            assert pool.connection_class is async_sentinel.SentinelManagedSSLConnection
+            assert issubclass(pool.connection_class, async_sentinel.SentinelManagedConnection)
+        finally:
+            await adapter.aclose()
+
+    @pytest.mark.asyncio
+    async def test_async_plain_url_keeps_the_plain_managed_connection(
+        self,
+        adapter_class: Any,
+        plain_scheme: str,
+        tls_scheme: str,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        del tls_scheme
+        _, async_sentinel = _sentinel_modules(adapter_class)
+        monkeypatch.setattr(adapter_class, "_async_pools", weakref.WeakKeyDictionary())
+        adapter = self._adapter(adapter_class, plain_scheme)
+
+        pool = adapter._get_async_connection_pool(write=True)
+        try:
+            assert pool.connection_class is async_sentinel.SentinelManagedConnection
+        finally:
+            await adapter.aclose()
+
+
+class _AsyncPoolStub:
+    def __init__(self) -> None:
+        self.closed = 0
+
+    async def aclose(self) -> None:
+        self.closed += 1
+
+
+class _AsyncPoolClassStub:
+    @classmethod
+    def from_url(cls, url: str, **kwargs: Any) -> _AsyncPoolStub:
+        del url, kwargs
+        return _AsyncPoolStub()
+
+
+@requires_valkey
+class TestAcloseScope:
+    """aclose() disconnects its own pools and leaves every other alias alone."""
+
+    @staticmethod
+    def _adapter(*servers: str) -> ValkeyPyAdapter:
+        adapter = ValkeyPyAdapter(list(servers))
+        adapter._async_pool_class = _AsyncPoolClassStub
+        return adapter
+
+    @pytest.mark.asyncio
+    async def test_other_aliases_keep_their_pools(self, monkeypatch: pytest.MonkeyPatch):
+        # Regression: the whole loop slot was popped, so closing one alias
+        # disconnected the pool another alias had connections checked out of.
+        monkeypatch.setattr(ValkeyPyAdapter, "_async_pools", weakref.WeakKeyDictionary())
+        first = self._adapter("valkey://one:6379/0")
+        second = self._adapter("valkey://two:6379/0")
+
+        first_pool = first._get_async_connection_pool(write=True)
+        second_pool = second._get_async_connection_pool(write=True)
+        await first.aclose()
+
+        assert first_pool.closed == 1
+        assert second_pool.closed == 0
+        assert second._get_async_connection_pool(write=True) is second_pool
+
+    @pytest.mark.asyncio
+    async def test_every_server_of_the_alias_is_closed(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(ValkeyPyAdapter, "_async_pools", weakref.WeakKeyDictionary())
+        adapter = self._adapter("valkey://primary:6379/0", "valkey://replica:6379/0")
+
+        pools = [adapter._get_async_connection_pool(write=write) for write in (True, False)]
+        await adapter.aclose()
+
+        assert [pool.closed for pool in pools] == [1, 1]
+
+    @pytest.mark.asyncio
+    async def test_second_aclose_is_a_no_op(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(ValkeyPyAdapter, "_async_pools", weakref.WeakKeyDictionary())
+        adapter = self._adapter("valkey://one:6379/0")
+
+        pool = adapter._get_async_connection_pool(write=True)
+        await adapter.aclose()
+        await adapter.aclose()
+
+        assert pool.closed == 1
+
+
+class _StubDiscoveryClient:
+    def __init__(self) -> None:
+        self.closed = 0
+
+    async def aclose(self) -> None:
+        self.closed += 1
+
+
+class _StubAsyncSentinel:
+    def __init__(self, sentinels: Any, sentinel_kwargs: Any = None, **kwargs: Any) -> None:
+        del sentinels, sentinel_kwargs, kwargs
+        self.sentinels = [_StubDiscoveryClient()]
+
+
+class _StubAsyncSentinelPool:
+    def __init__(self, sentinel_manager: Any) -> None:
+        self.sentinel_manager = sentinel_manager
+        self.closed = 0
+
+    @classmethod
+    def from_url(cls, url: str, **kwargs: Any) -> _StubAsyncSentinelPool:
+        del url
+        return cls(kwargs["sentinel_manager"])
+
+    async def aclose(self) -> None:
+        self.closed += 1
+
+
+@requires_valkey
+class TestSentinelAcloseClosesDiscoveryClients:
+    """The discovery clients must close with the pool that owns their manager."""
+
+    @staticmethod
+    def _adapter() -> ValkeyPySentinelAdapter:
+        adapter = ValkeyPySentinelAdapter.__new__(ValkeyPySentinelAdapter)
+        adapter._servers = ["redis://mymaster/0?is_master=1"]
+        adapter._options = {"sentinels": [("sentinel-a", 26379)]}
+        adapter._pool_options = {"socket_timeout": 5}
+        adapter._async_sentinels = weakref.WeakKeyDictionary()
+        return adapter
+
+    @pytest.mark.asyncio
+    async def test_another_instance_closes_the_creators_clients(self, monkeypatch: pytest.MonkeyPatch):
+        # Regression: aclose() read the per-instance _async_sentinels, but
+        # asgiref hands every task a fresh adapter, so the discovery clients
+        # of the instance that built the pool stayed open.
+        monkeypatch.setattr(ValkeyPySentinelAdapter, "_async_sentinel_pool_class", _StubAsyncSentinelPool)
+        monkeypatch.setattr(ValkeyPySentinelAdapter, "_async_sentinel_class", _StubAsyncSentinel)
+        monkeypatch.setattr(ValkeyPySentinelAdapter, "_async_pools", weakref.WeakKeyDictionary())
+
+        pool = self._adapter()._get_async_connection_pool(write=True)
+        await self._adapter().aclose()
+
+        assert pool.closed == 1
+        assert [client.closed for client in pool.sentinel_manager.sentinels] == [1]

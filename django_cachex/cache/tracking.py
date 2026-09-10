@@ -1,10 +1,10 @@
 """Local read cache kept coherent by ``CLIENT TRACKING BCAST`` invalidations from a Redis/Valkey transport."""
 
+import asyncio
 import logging
 import os
 import time
 from collections import OrderedDict
-from fnmatch import fnmatchcase
 from functools import cached_property
 from itertools import combinations
 from threading import Event, Lock, Thread
@@ -18,6 +18,7 @@ from django_cachex.cache.base import BaseCachex, CachexSupportLevel
 from django_cachex.cache.resp import RespCache
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.stampede import should_recompute, should_recompute_remaining
+from django_cachex.utils import _glob_to_regex
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -29,6 +30,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _MISS = object()
+# A local hit whose XFetch dice came up "recompute". Not a miss: refetching
+# would roll again on the transport's TTL and square the odds.
+_RECOMPUTE = object()
 # Per-command timeout for the listener's own connections (connect, CLIENT ID, PING).
 _LISTENER_TIMEOUT = 5.0
 
@@ -89,7 +93,7 @@ class _TrackingState:
     # -- Local store --
 
     def local_get(self, made_key: str, now: float, stampede: StampedeConfig | None) -> Any:
-        """Return the encoded value for ``made_key`` or ``_MISS``; every hit rolls XFetch's dice."""
+        """Return the encoded value for ``made_key``, ``_MISS``, or ``_RECOMPUTE`` when XFetch's dice say so."""
         with self.lock:
             entry = self.store.get(made_key)
             if entry is None:
@@ -97,13 +101,12 @@ class _TrackingState:
             raw, expires_at = entry
             if expires_at is not None:
                 remaining = expires_at - now
-                if stampede is not None and isinstance(raw, bytes):
-                    expired = should_recompute_remaining(remaining, stampede)
-                else:
-                    expired = remaining <= 0
-                if expired:
+                if remaining <= 0:
                     del self.store[made_key]
                     return _MISS
+                if stampede is not None and isinstance(raw, bytes) and should_recompute_remaining(remaining, stampede):
+                    del self.store[made_key]
+                    return _RECOMPUTE
             self.store.move_to_end(made_key)
             self.hits += 1
             return raw
@@ -180,8 +183,17 @@ class _TrackingState:
             if reconnect:
                 self.reconnects += 1
 
-    def on_disconnect(self) -> None:
+    def on_disconnect(self, listener: InvalidationListenerProtocol | None = None) -> None:
+        """Mark the state disconnected and drop the store.
+
+        ``listener`` is the connection that was lost. A thread ``shutdown``
+        abandoned can raise long after its replacement connected, and must
+        not clear the store that live listener keeps coherent. ``None``
+        disconnects whatever is current.
+        """
         with self.lock:
+            if listener is not None and self.listener is not listener:
+                return
             self.connected = False
             self.listener = None
             self._clear()
@@ -279,10 +291,15 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
     def _validate_prefixes(prefixes: Any) -> tuple[str, ...] | None:
         if prefixes is None:
             return None
-        if isinstance(prefixes, str) or not all(isinstance(p, str) for p in prefixes):
-            msg = f"TrackingCache OPTIONS['prefixes'] must be a list of strings. Got: {prefixes!r}"
+        msg = f"TrackingCache OPTIONS['prefixes'] must be a list of strings. Got: {prefixes!r}"
+        if isinstance(prefixes, str):
             raise ImproperlyConfigured(msg)
-        resolved = tuple(prefixes)
+        try:
+            resolved = tuple(prefixes)
+        except TypeError as exc:
+            raise ImproperlyConfigured(msg) from exc
+        if not all(isinstance(p, str) for p in resolved):
+            raise ImproperlyConfigured(msg)
         if not resolved:
             msg = "TrackingCache OPTIONS['prefixes'] must not be empty; use [''] to track every key."
             raise ImproperlyConfigured(msg)
@@ -366,6 +383,15 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
             self._start_listener()
             state.initialized = True
 
+    async def _aensure_listener(self) -> None:
+        """Async twin of :meth:`_ensure_listener`; the first connect is blocking socket work."""
+        if self._coherence == "ttl":
+            return
+        state = self._state
+        if state.initialized and self._listener_alive():
+            return
+        await asyncio.to_thread(self._ensure_listener)
+
     def _open_listener(self) -> InvalidationListenerProtocol:
         return self._transport.adapter.invalidation_listener(list(self._prefixes), timeout=_LISTENER_TIMEOUT)
 
@@ -431,23 +457,23 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
                     self._storage_key,
                     exc,
                 )
-            state.on_disconnect()
+            state.on_disconnect(listener)
             listener.close()
             listener = None
 
     def _serve(self, stop_event: Event, listener: InvalidationListenerProtocol) -> None:
         """Pump invalidations until stopped; any exception means the listener is lost."""
         state = self._state
-        idle_since = time.monotonic()
+        next_ping = time.monotonic() + self._health_check_interval
         while not stop_event.is_set():
             message = listener.poll(self._poll_timeout)
             if message is not None:
                 state.apply(message)
-                idle_since = time.monotonic()
-                continue
-            if time.monotonic() - idle_since >= self._health_check_interval:
+            # Wall clock, not subscriber idle time: a busy subscriber would let
+            # a server that closes idle clients drop this one unnoticed.
+            if time.monotonic() >= next_ping:
                 listener.ping()
-                idle_since = time.monotonic()
+                next_ping = time.monotonic() + self._health_check_interval
 
     def shutdown(self) -> None:
         """Stop this storage key's listener thread and drop its local store."""
@@ -530,10 +556,11 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         transport = self._transport
         with self._state.lock:
             candidates = set(self._state.store) | set(self._state.pending)
+        matcher = _glob_to_regex(pattern)
         matching = []
         for made_key in candidates:
             original = transport.reverse_key(made_key)
-            if fnmatchcase(original, pattern) and transport.make_key(original, version=version) == made_key:
+            if matcher.match(original) and transport.make_key(original, version=version) == made_key:
                 matching.append(made_key)
         self._state.discard(matching)
 
@@ -543,6 +570,8 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         self._ensure_listener()
         made_key = self._local_key(key, version)
         raw = self._state.local_get(made_key, time.monotonic(), self._stampede)
+        if raw is _RECOMPUTE:
+            return default
         if raw is _MISS:
             raw = self._fetch([made_key]).get(made_key, _MISS)
         if raw is _MISS:
@@ -550,9 +579,11 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         return self._transport.decode(raw)
 
     async def aget(self, key: str, default: Any = None, version: int | None = None) -> Any:
-        self._ensure_listener()
+        await self._aensure_listener()
         made_key = self._local_key(key, version)
         raw = self._state.local_get(made_key, time.monotonic(), self._stampede)
+        if raw is _RECOMPUTE:
+            return default
         if raw is _MISS:
             raw = (await self._afetch([made_key])).get(made_key, _MISS)
         if raw is _MISS:
@@ -605,7 +636,6 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         version: int | None,
     ) -> tuple[dict[str, str], dict[str, Any], list[str]]:
         """Map made keys to originals and serve what the local store has."""
-        self._ensure_listener()
         now = time.monotonic()
         stampede = self._stampede
         key_map: dict[str, str] = {}
@@ -617,6 +647,10 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
                 continue
             key_map[made_key] = key
             raw = self._state.local_get(made_key, now, stampede)
+            if raw is _RECOMPUTE:
+                # Same as the transport: the key drops out of the result so
+                # the caller recomputes it.
+                continue
             if raw is _MISS:
                 missing.append(made_key)
             else:
@@ -631,11 +665,13 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         return {key: decode(merged[made_key]) for made_key, key in key_map.items() if made_key in merged}
 
     def get_many(self, keys: Iterable[str], version: int | None = None) -> dict[str, Any]:
+        self._ensure_listener()
         key_map, local, missing = self._split_local(keys, version)
         fetched = self._fetch(missing) if missing else {}
         return self._merge(key_map, local, fetched)
 
     async def aget_many(self, keys: Iterable[str], version: int | None = None) -> dict[str, Any]:
+        await self._aensure_listener()
         key_map, local, missing = self._split_local(keys, version)
         fetched = await self._afetch(missing) if missing else {}
         return self._merge(key_map, local, fetched)
@@ -643,12 +679,13 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
     def has_key(self, key: str, version: int | None = None) -> bool:
         self._ensure_listener()
         made_key = self._local_key(key, version)
+        # A recompute signal is still proof the key is there.
         if self._state.local_get(made_key, time.monotonic(), self._stampede) is not _MISS:
             return True
         return self._transport.has_key(key, version=version)
 
     async def ahas_key(self, key: str, version: int | None = None) -> bool:
-        self._ensure_listener()
+        await self._aensure_listener()
         made_key = self._local_key(key, version)
         if self._state.local_get(made_key, time.monotonic(), self._stampede) is not _MISS:
             return True
@@ -737,6 +774,33 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         result = await self._transport.aincr(key, delta, version=version)
         self._evict(key, version)
         return result
+
+    def incr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        """Rename the key on the transport.
+
+        ``BaseCache.incr_version`` would start from this alias's own
+        ``version`` while the keys are made by the transport, so a transport
+        configured with ``VERSION`` would be read at the wrong version.
+        """
+        new_version = self._transport.incr_version(key, delta, version=version)
+        self._evict(key, version)
+        self._evict(key, new_version)
+        return new_version
+
+    async def aincr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        """Async twin of :meth:`incr_version`."""
+        new_version = await self._transport.aincr_version(key, delta, version=version)
+        self._evict(key, version)
+        self._evict(key, new_version)
+        return new_version
+
+    def decr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        """See :meth:`incr_version`."""
+        return self.incr_version(key, -delta, version)
+
+    async def adecr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        """See :meth:`incr_version`."""
+        return await self.aincr_version(key, -delta, version)
 
     def set_many(
         self,

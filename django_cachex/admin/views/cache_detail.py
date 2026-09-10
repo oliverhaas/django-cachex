@@ -63,7 +63,6 @@ def _handle_danger_zone_post(
             messages.error(request, f"Could not clear all versions: {exc}")
         return redirect(request.get_full_path())
 
-    # The action == "flush_db" branch.
     try:
         cache.flush_db()
         messages.success(request, f"Database flushed for '{cache_name}'.")

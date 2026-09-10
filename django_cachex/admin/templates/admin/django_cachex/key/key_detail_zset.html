@@ -3,76 +3,78 @@
 {% if can_mutate %}
 <!-- Sorted Set Operations -->
 <fieldset class="module aligned monospace">
-    <h2>{% trans 'Operations' %}</h2>
+    <h2>{% trans "Operations" %}</h2>
     <div class="form-row">
         <div>
-            <label for="id_zadd_member">{% trans 'Add:' %}</label>
+            <label for="id_zadd_member">{% trans "Add:" %}</label>
             <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="zadd">
                 {% include input_tpl with name="member" rows=4 field_id="id_zadd_member" placeholder=_("member") editable=True can_mutate=can_mutate only %}
                 <div class="cachex-value-actions">
-                    <input type="number" name="score_value" placeholder="{% trans 'score' %}" style="width: 70px; vertical-align: middle;" step="any" aria-label="{% trans 'Score' %}">
-                    <label class="quiet" title="{% trans 'Only add new' %}" style="display: inline; vertical-align: middle;"><input type="checkbox" name="zadd_nx" style="vertical-align: middle;"> NX</label>
-                    <label class="quiet" title="{% trans 'Only update existing' %}" style="display: inline; vertical-align: middle;"><input type="checkbox" name="zadd_xx" style="vertical-align: middle;"> XX</label>
-                    <label class="quiet" title="{% trans 'Update if score > current' %}" style="display: inline; vertical-align: middle;"><input type="checkbox" name="zadd_gt" style="vertical-align: middle;"> GT</label>
-                    <label class="quiet" title="{% trans 'Update if score < current' %}" style="display: inline; vertical-align: middle;"><input type="checkbox" name="zadd_lt" style="vertical-align: middle;"> LT</label>
-                    <button type="submit" class="button btn-small" style="vertical-align: middle;">{% trans 'Add' %}</button>
+                    <input type="number" name="score_value" placeholder="{% trans "score" %}" style="width: 70px; vertical-align: middle;" step="any" aria-label="{% trans "Score" %}">
+                    <label class="quiet" title="{% trans "Only add new" %}" style="display: inline; vertical-align: middle;"><input type="checkbox" name="zadd_nx" style="vertical-align: middle;"> NX</label>
+                    <label class="quiet" title="{% trans "Only update existing" %}" style="display: inline; vertical-align: middle;"><input type="checkbox" name="zadd_xx" style="vertical-align: middle;"> XX</label>
+                    <label class="quiet" title="{% trans "Update if score > current" %}" style="display: inline; vertical-align: middle;"><input type="checkbox" name="zadd_gt" style="vertical-align: middle;"> GT</label>
+                    <label class="quiet" title="{% trans "Update if score < current" %}" style="display: inline; vertical-align: middle;"><input type="checkbox" name="zadd_lt" style="vertical-align: middle;"> LT</label>
+                    <button type="submit" class="button btn-small" style="vertical-align: middle;">{% trans "Add" %}</button>
                 </div>
             </form>
         </div>
     </div>
     <div class="form-row">
-        <label>{% trans 'Pop Min:' %}</label>
+        <label>{% trans "Pop Min:" %}</label>
         <form method="post" style="display: inline;">
             {% csrf_token %}
             <input type="hidden" name="action" value="zpopmin">
-            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" aria-label="{% trans 'Count' %}">
-            <button type="submit" class="button btn-small" onclick="return confirm('{% trans 'Pop the lowest-scored members? They will be removed from the set.' %}');">{% trans 'Pop' %}</button>
+            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" aria-label="{% trans "Count" %}">
+            {% translate "Pop the lowest-scored members? They will be removed from the set." as confirm_popmin %}
+            <button type="submit" class="button btn-small" onclick="return confirm('{{ confirm_popmin|escapejs }}');">{% trans "Pop" %}</button>
         </form>
     </div>
     <div class="form-row">
-        <label>{% trans 'Pop Max:' %}</label>
+        <label>{% trans "Pop Max:" %}</label>
         <form method="post" style="display: inline;">
             {% csrf_token %}
             <input type="hidden" name="action" value="zpopmax">
-            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" aria-label="{% trans 'Count' %}">
-            <button type="submit" class="button btn-small" onclick="return confirm('{% trans 'Pop the highest-scored members? They will be removed from the set.' %}');">{% trans 'Pop' %}</button>
+            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" aria-label="{% trans "Count" %}">
+            {% translate "Pop the highest-scored members? They will be removed from the set." as confirm_popmax %}
+            <button type="submit" class="button btn-small" onclick="return confirm('{{ confirm_popmax|escapejs }}');">{% trans "Pop" %}</button>
         </form>
     </div>
 </fieldset>
 {% endif %}
 <!-- Sorted Set Members -->
 <fieldset class="module aligned monospace">
-    <h2>{% trans 'Sorted Set Members' %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
+    <h2>{% trans "Sorted Set Members" %}{% if type_data.length %} ({{ type_data.length }}){% endif %}</h2>
     {% if type_data.members %}
     <div class="results">
         <table id="result_list" class="cachex-entry-table" style="width: 100%;">
             <thead>
                 <tr>
-                    <th scope="col">{% trans 'Member' %}</th>
-                    <th scope="col" style="width: 120px;">{% trans 'Score' %}</th>
+                    <th scope="col">{% trans "Member" %}</th>
+                    <th scope="col" style="width: 120px;">{% trans "Score" %}</th>
                     {% if can_mutate %}
-                    <th scope="col" style="width: 110px;">{% trans 'Actions' %}</th>
+                    <th scope="col" style="width: 110px;">{% trans "Actions" %}</th>
                     {% endif %}
                 </tr>
             </thead>
             <tbody>
                 {% for member, score, editable in type_data.members %}
-                <tr class="{% cycle 'row1' 'row2' %}">
+                <tr class="{% cycle "row1" "row2" %}">
                     <td>{% include input_tpl with name="new_member" value=member rows=2 form_id="zset-update-" row_index=forloop.counter0 editable=editable can_mutate=can_mutate only %}</td>
                     {% if can_mutate %}
                     <td>
-                        <input type="number" name="score_value" value="{{ score|unlocalize }}" step="any" class="cachex-value-input" form="zset-update-{{ forloop.counter0 }}" aria-label="{% trans 'Score' %}"{% if not editable %} readonly{% endif %}>
+                        <input type="number" name="score_value" value="{{ score|unlocalize }}" step="any" class="cachex-value-input" form="zset-update-{{ forloop.counter0 }}" aria-label="{% trans "Score" %}"{% if not editable %} readonly{% endif %}>
                     </td>
                     <td>
                         <div class="cachex-row-actions">
                             {% if editable %}
-                            <button type="submit" form="zset-update-{{ forloop.counter0 }}" class="button btn-small">{% trans 'Update' %}</button>
-                            <button type="submit" form="zset-remove-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{% trans 'Remove this member?' %}');">{% trans 'Remove' %}</button>
+                            <button type="submit" form="zset-update-{{ forloop.counter0 }}" class="button btn-small">{% trans "Update" %}</button>
+                            <button type="submit" form="zset-remove-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{% trans "Remove this member?" %}');">{% trans "Remove" %}</button>
                             {% else %}
-                            <button type="button" class="button btn-small" disabled title="{% trans 'This member cannot be safely edited or matched for removal.' %}">{% trans 'Update' %}</button>
-                            <button type="button" class="button delete-btn btn-small" disabled title="{% trans 'This member cannot be safely edited or matched for removal.' %}">{% trans 'Remove' %}</button>
+                            <button type="button" class="button btn-small" disabled title="{% trans "This member cannot be safely edited or matched for removal." %}">{% trans "Update" %}</button>
+                            <button type="button" class="button delete-btn btn-small" disabled title="{% trans "This member cannot be safely edited or matched for removal." %}">{% trans "Remove" %}</button>
                             {% endif %}
                         </div>
                     </td>
@@ -99,7 +101,7 @@
     {% endfor %}
     {% endif %}
     {% else %}
-    <p class="quiet" style="padding: 10px;">{% trans 'Sorted set is empty.' %}</p>
+    <p class="quiet" style="padding: 10px;">{% trans "Sorted set is empty." %}</p>
     {% endif %}
     {% include "admin/django_cachex/key/key_detail_pagination.html" %}
 </fieldset>

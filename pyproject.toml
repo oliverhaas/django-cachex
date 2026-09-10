@@ -33,7 +33,7 @@ libvalkey = ["valkey[libvalkey]>=6.1.0,<7"]
 redis-py = ["redis>=6,<9"]
 hiredis = ["redis[hiredis]<9,>=6"]
 # valkey-glide: Rust-cored Valkey client. Sync and async are separate distributions.
-valkey-glide = ["valkey-glide-sync>=2.3,<3", "valkey-glide>=2.3,<3"]
+valkey-glide = ["valkey-glide-sync>=2.5,<3", "valkey-glide>=2.5,<3"]
 # Compressors
 lz4 = ["lz4>=4.4.0"]
 # Serializers
@@ -53,7 +53,7 @@ dev = [
   "redis[hiredis]==8.1.0",
   "beautifulsoup4==4.15.0",
   "django-stubs==6.1.0",
-  "djlint==1.45.0",
+  "djlint==1.46.1",
   "lz4==4.4.5",
   "msgpack==1.2.2",
   "ormsgpack==1.12.2",
@@ -68,7 +68,7 @@ dev = [
   "pytest==9.1.1",
   "ruff==0.16.6",
   "testcontainers==4.15.0",
-  "ty==0.0.78",
+  "ty==0.0.79",
   "types-docker==7.2.0.20260827",
   # ASGI benchmark only: granian (real ASGI server) plus httpx (load gen).
   "granian>=2.6,<3",

@@ -227,6 +227,12 @@ def _validate_init(capacity: int, weight: int) -> None:
         raise ValueError(msg)
 
 
+def _validate_extend(additional_seconds: float) -> None:
+    if additional_seconds <= 0:
+        msg = "additional_seconds must be a positive number of seconds"
+        raise ValueError(msg)
+
+
 def _decode_status(result: object) -> str:
     """Lua returns bytes in some clients, str in others; coerce to str."""
     if isinstance(result, (list, tuple)) and result:
@@ -237,6 +243,22 @@ def _decode_status(result: object) -> str:
     if isinstance(result, bytes):
         return result.decode("ascii")
     return str(result)
+
+
+class _DefaultTimeout:
+    """Sentinel default for the ``timeout`` argument of ``acquire``.
+
+    At a call site ``None`` means "block indefinitely", so it cannot also
+    stand for "use the instance's own ``timeout``".
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "<instance default>"
+
+
+_DEFAULT_TIMEOUT = _DefaultTimeout()
 
 
 class Semaphore:
@@ -271,12 +293,22 @@ class Semaphore:
 
     # ------------------------------------------------------------------ sync
 
-    def acquire(self, *, blocking: bool = True, timeout: float | None = None) -> bool:  # noqa: C901
-        if timeout is None:
-            timeout = self.timeout
+    def acquire(
+        self,
+        *,
+        blocking: bool = True,
+        timeout: float | _DefaultTimeout | None = _DEFAULT_TIMEOUT,
+    ) -> bool:
+        """Claim ``weight`` units of the budget.
+
+        A ``timeout`` passed here overrides the instance default, including an
+        explicit ``None``, which blocks indefinitely. Omit it to use the
+        instance's own ``timeout``.
+        """
         state = self._state
+        wait_timeout = self.timeout if isinstance(timeout, _DefaultTimeout) else timeout
         waiter: _Waiter | None = None
-        deadline = None if timeout is None else time.monotonic() + timeout
+        deadline = None if wait_timeout is None else time.monotonic() + wait_timeout
 
         while True:
             with state.lock:
@@ -339,13 +371,18 @@ class Semaphore:
 
     # ----------------------------------------------------------------- async
 
-    async def aacquire(self, *, blocking: bool = True, timeout: float | None = None) -> bool:  # noqa: C901, PLR0912
-        if timeout is None:
-            timeout = self.timeout
+    async def aacquire(  # noqa: C901
+        self,
+        *,
+        blocking: bool = True,
+        timeout: float | _DefaultTimeout | None = _DEFAULT_TIMEOUT,
+    ) -> bool:
+        """Async mirror of :meth:`acquire`."""
         state = self._state
+        wait_timeout = self.timeout if isinstance(timeout, _DefaultTimeout) else timeout
         loop = asyncio.get_running_loop()
         waiter: _Waiter | None = None
-        deadline = None if timeout is None else loop.time() + timeout
+        deadline = None if wait_timeout is None else loop.time() + wait_timeout
 
         while True:
             with state.lock:
@@ -554,14 +591,24 @@ class RespSemaphore:
 
     # ------------------------------------------------------------------ sync
 
-    def acquire(self, *, blocking: bool = True, timeout: float | None = None) -> bool:  # noqa: C901
+    def acquire(
+        self,
+        *,
+        blocking: bool = True,
+        timeout: float | _DefaultTimeout | None = _DEFAULT_TIMEOUT,
+    ) -> bool:
+        """Claim ``weight`` units of the budget.
+
+        A ``timeout`` passed here overrides the instance default, including an
+        explicit ``None``, which blocks indefinitely. Omit it to use the
+        instance's own ``timeout``.
+        """
         from django_cachex.cache._semaphore_lua import ACQUIRE_LUA, DEQUEUE_LUA
 
-        if timeout is None:
-            timeout = self.timeout
+        wait_timeout = self.timeout if isinstance(timeout, _DefaultTimeout) else timeout
         token = self._claim()
         lease_ms = self._lease_ms()
-        deadline = None if timeout is None else time.monotonic() + timeout
+        deadline = None if wait_timeout is None else time.monotonic() + wait_timeout
         backoff_ms = 10
 
         def _dequeue_token() -> None:
@@ -636,10 +683,12 @@ class RespSemaphore:
         """Bump the lease TTL of the held claim by ``additional_seconds``.
 
         Returns True if extended, False if the claim isn't ours (already
-        released or reaped).
+        released or reaped). Raises ``ValueError`` unless
+        ``additional_seconds`` is positive.
         """
         from django_cachex.cache._semaphore_lua import EXTEND_LUA
 
+        _validate_extend(additional_seconds)
         token = self._held_token("extend")
         additional_ms = max(1, int(additional_seconds * 1000))
         result = self._adapter.eval(
@@ -654,17 +703,22 @@ class RespSemaphore:
 
     # ----------------------------------------------------------------- async
 
-    async def aacquire(self, *, blocking: bool = True, timeout: float | None = None) -> bool:  # noqa: C901
+    async def aacquire(
+        self,
+        *,
+        blocking: bool = True,
+        timeout: float | _DefaultTimeout | None = _DEFAULT_TIMEOUT,
+    ) -> bool:
+        """Async mirror of :meth:`acquire`."""
         from django_cachex.cache._semaphore_lua import ACQUIRE_LUA, DEQUEUE_LUA
 
-        if timeout is None:
-            timeout = self.timeout
+        wait_timeout = self.timeout if isinstance(timeout, _DefaultTimeout) else timeout
         # ``_claim`` holds a plain lock across no awaits, so the sync and async
         # paths can share it without blocking the loop.
         token = self._claim()
         lease_ms = self._lease_ms()
         loop = asyncio.get_running_loop()
-        deadline = None if timeout is None else loop.time() + timeout
+        deadline = None if wait_timeout is None else loop.time() + wait_timeout
         backoff_ms = 10
 
         async def _dequeue_token() -> None:
@@ -738,6 +792,7 @@ class RespSemaphore:
         """Async mirror of :meth:`extend`."""
         from django_cachex.cache._semaphore_lua import EXTEND_LUA
 
+        _validate_extend(additional_seconds)
         token = self._held_token("extend")
         additional_ms = max(1, int(additional_seconds * 1000))
         result = await self._adapter.aeval(

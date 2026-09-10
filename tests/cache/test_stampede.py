@@ -41,13 +41,13 @@ class TestShouldRecompute:
 
     def test_fresh_value_no_recompute(self):
         config = StampedeConfig(buffer=60, delta=1.0, beta=1.0)
-        # TTL = 350 → remaining = 350 - 60 = 290s
+        # TTL 350 leaves 350 - 60 = 290s of logical lifetime.
         triggers = sum(1 for _ in range(1000) if should_recompute(350, config))
         assert triggers == 0
 
     def test_expired_always_recomputes(self):
         config = StampedeConfig(buffer=60, delta=1.0, beta=1.0)
-        # TTL = 50 → remaining = 50 - 60 = -10 → always True
+        # TTL 50 leaves 50 - 60 = -10s, so it always triggers.
         assert should_recompute(50, config) is True
         assert should_recompute(60, config) is True
         assert should_recompute(0, config) is True
@@ -55,14 +55,14 @@ class TestShouldRecompute:
     def test_near_expiry_likely_triggers(self):
         """With very little logical time remaining and large delta, triggers often."""
         config = StampedeConfig(buffer=60, delta=10.0, beta=1.0)
-        # TTL = 61 → remaining = 1s, delta = 10s → very likely
+        # TTL 61 leaves 1s against a delta of 10s, so it triggers most of the time.
         triggers = sum(1 for _ in range(100) if should_recompute(61, config))
         assert triggers > 50
 
     def test_higher_beta_triggers_more(self):
         low_beta = StampedeConfig(buffer=60, delta=2.0, beta=0.5)
         high_beta = StampedeConfig(buffer=60, delta=2.0, beta=5.0)
-        # TTL = 65 → remaining = 5s
+        # TTL 65 leaves 5s.
         low = sum(1 for _ in range(1000) if should_recompute(65, low_beta))
         high = sum(1 for _ in range(1000) if should_recompute(65, high_beta))
         assert high > low
@@ -70,7 +70,7 @@ class TestShouldRecompute:
     def test_zero_delta_never_triggers_early(self):
         """With delta=0, only triggers when logically expired."""
         config = StampedeConfig(buffer=60, delta=0.0, beta=1.0)
-        # TTL = 65 → remaining = 5s, but delta=0 means no probabilistic trigger
+        # TTL 65 leaves 5s, but delta=0 switches the probabilistic trigger off.
         triggers = sum(1 for _ in range(1000) if should_recompute(65, config))
         assert triggers == 0
         # But when logically expired, still triggers
@@ -91,6 +91,43 @@ class TestStampedeConfig:
         assert config.buffer == 30
         assert config.beta == 2.0
         assert config.delta == 0.5
+
+    def test_zero_beta_and_delta_are_accepted(self):
+        # Both spell "no probabilistic trigger", which should_recompute honors.
+        assert StampedeConfig(beta=0, delta=0).delta == 0
+
+
+class TestStampedeConfigValidation:
+    """A bad policy has to fail where it is configured, not on every timed write.
+
+    A float or string ``buffer`` reaches the driver's ``ex`` argument intact
+    and turns every ``set`` with a timeout into a ``DataError``; a negative
+    one yields a negative TTL the server rejects.
+    """
+
+    @pytest.mark.parametrize("buffer", [60.0, "60", None, True])
+    def test_non_int_buffer_rejected(self, buffer):
+        with pytest.raises(TypeError, match="buffer must be an int"):
+            StampedeConfig(buffer=buffer)
+
+    def test_negative_buffer_rejected(self):
+        with pytest.raises(ValueError, match="buffer must not be negative"):
+            StampedeConfig(buffer=-10)
+
+    @pytest.mark.parametrize("field", ["beta", "delta"])
+    def test_non_numeric_beta_and_delta_rejected(self, field):
+        with pytest.raises(TypeError, match=f"{field} must be a number"):
+            StampedeConfig(**{field: "1.0"})
+
+    @pytest.mark.parametrize("field", ["beta", "delta"])
+    @pytest.mark.parametrize("value", [-1.0, float("inf"), float("nan")])
+    def test_out_of_range_beta_and_delta_rejected(self, field, value):
+        with pytest.raises(ValueError, match=f"{field} must be a finite number"):
+            StampedeConfig(**{field: value})
+
+    def test_options_dict_with_a_bad_value_fails_at_configuration_time(self):
+        with pytest.raises(TypeError, match="buffer must be an int"):
+            make_stampede_config({"buffer": 30.0})
 
 
 class TestMakeStampedeConfig:
@@ -256,7 +293,6 @@ class TestStampedeTouch:
 
     def test_touch_reapplies_buffer(self, stampede_cache: RespCache):
         stampede_cache.set("sp_touch", "val", timeout=300)
-        # Shrink the raw TTL below the buffer → logically expired
         stampede_cache.expire("sp_touch", 50, stampede_prevention=False)
 
         assert stampede_cache.touch("sp_touch", timeout=300) is True
@@ -422,7 +458,6 @@ class TestStampedeGetMany:
 
     def test_get_many_filters_expired(self, stampede_cache: RespCache):
         stampede_cache.set("sp_gm_exp", "val", timeout=300)
-        # Shrink TTL below buffer → logically expired
         stampede_cache.expire("sp_gm_exp", 50, stampede_prevention=False)
 
         result = stampede_cache.get_many(["sp_gm_exp"])
@@ -449,8 +484,9 @@ class TestStampedeEarlyRecompute:
 
     Uses expire() to simulate logical expiry deterministically: set with
     timeout=300 (TTL=360), then expire(key, 50, stampede_prevention=False)
-    → raw TTL=50 < buffer=60 → logically expired. The override is required
-    because expire() otherwise adds the buffer just like set() does.
+    so the raw TTL of 50 sits below the buffer of 60 and the key reads as
+    logically expired. The override is required because expire() otherwise
+    adds the buffer just like set() does.
     """
 
     def test_returns_none_after_logical_expiry(self, stampede_cache: RespCache):
@@ -458,21 +494,8 @@ class TestStampedeEarlyRecompute:
         stampede_cache.set("sp_expire", "val", timeout=300)
         assert stampede_cache.get("sp_expire") == "val"
 
-        # Shrink TTL below buffer → logically expired
         stampede_cache.expire("sp_expire", 50, stampede_prevention=False)
         assert stampede_cache.get("sp_expire") is None
-
-    def test_get_or_set_recomputes_after_expiry(self, stampede_cache: RespCache):
-        """get_or_set() should trigger recomputation after logical expiry."""
-        stampede_cache.set("sp_gos", "old", timeout=300)
-        assert stampede_cache.get("sp_gos") == "old"
-
-        # Shrink TTL below buffer → logically expired
-        stampede_cache.expire("sp_gos", 50, stampede_prevention=False)
-
-        # get_or_set should see None, call the default callable, and set new value
-        result = stampede_cache.get_or_set("sp_gos", lambda: "recomputed", timeout=300)
-        assert result == "recomputed"
 
     def test_recompute_stores_with_buffer(self, stampede_cache: RespCache):
         """After recomputation, the new value should have buffered TTL."""
@@ -506,7 +529,6 @@ class TestStampedePipeline:
     def test_pipeline_serves_stale_data(self, stampede_cache: RespCache):
         """Pipeline should serve stale data (not return None) during buffer window."""
         stampede_cache.set("sp_pipe_stale", "stale_val", timeout=300)
-        # Shrink TTL below buffer → logically expired, but pipeline should still serve
         stampede_cache.expire("sp_pipe_stale", 50, stampede_prevention=False)
 
         with stampede_cache.pipeline() as pipe:
@@ -526,7 +548,6 @@ class TestStampedeOverride:
 
         # Default behavior: returns None (logically expired)
         assert stampede_cache.get("sp_ovr_get") is None
-        # Override: skip stampede check → returns value
         assert stampede_cache.get("sp_ovr_get", stampede_prevention=False) == "val"
 
     def test_false_skips_buffer_on_set(self, stampede_cache: RespCache):
@@ -603,12 +624,6 @@ class TestStampedeOverride:
         result = stampede_cache.get_or_set("sp_ovr_gos", lambda: "fresh", timeout=300, stampede_prevention=False)
         assert result == "stale"
 
-    def test_get_or_set_recomputes_without_the_override(self, stampede_cache: RespCache):
-        stampede_cache.set("sp_ovr_gos_default", "stale", timeout=300)
-        stampede_cache.expire("sp_ovr_gos_default", 50, stampede_prevention=False)
-
-        assert stampede_cache.get_or_set("sp_ovr_gos_default", lambda: "fresh", timeout=300) == "fresh"
-
     def test_config_override_buffer(self, cache: RespCache):
         """``stampede_prevention=StampedeConfig(...)`` should force the supplied policy."""
         # Non-stampede cache with per-call override: buffer=120
@@ -655,11 +670,11 @@ class TestShouldRecomputeEdgeCases:
     def test_expovariate_edge_via_mock(self):
         config = StampedeConfig(buffer=60, delta=1.0, beta=1.0)
 
-        # Very large expovariate value → large negative threshold → always triggers
+        # A large expovariate value makes the threshold very negative, so it always triggers.
         with patch("django_cachex.stampede.random.expovariate", return_value=1000.0):
             assert should_recompute(65, config) is True
 
-        # Very small expovariate value → threshold near 0 → doesn't trigger on fresh key
+        # A tiny expovariate value keeps the threshold near 0, so a fresh key never triggers.
         with patch("django_cachex.stampede.random.expovariate", return_value=0.001):
             assert should_recompute(350, config) is False
 
@@ -671,7 +686,6 @@ class TestStampedeGetOrSetRecompute:
         """get_or_set must use set() (not add/NX) when stampede triggers, so
         the recomputed value actually replaces the stale one."""
         stampede_cache.set("sp_gos_overwrite", "stale", timeout=300)
-        # Shrink TTL below buffer → logically expired
         stampede_cache.expire("sp_gos_overwrite", 50, stampede_prevention=False)
 
         result = stampede_cache.get_or_set(
@@ -682,21 +696,6 @@ class TestStampedeGetOrSetRecompute:
         assert result == "fresh"
         assert stampede_cache.get("sp_gos_overwrite") == "fresh"
 
-    def test_get_or_set_returns_fresh_not_retrigger(self, stampede_cache: RespCache):
-        """After recomputation, get_or_set should return the fresh value, not
-        re-trigger stampede on the confirmation get()."""
-        stampede_cache.set("sp_gos_retrig", "stale", timeout=300)
-        stampede_cache.expire("sp_gos_retrig", 50, stampede_prevention=False)
-
-        # With short timeout, stampede could re-trigger on confirmation get
-        # if stampede_prevention is passed to the final get(). It shouldn't be.
-        result = stampede_cache.get_or_set(
-            "sp_gos_retrig",
-            lambda: "recomputed",
-            timeout=300,
-        )
-        assert result == "recomputed"
-
 
 class TestStampedeGetManyConsistency:
     """get_many() stampede behavior should match get() for various value types."""
@@ -704,7 +703,6 @@ class TestStampedeGetManyConsistency:
     def test_get_many_filters_logically_expired_consistently(self, stampede_cache: RespCache):
         stampede_cache.set("sp_gmc_str", "hello", timeout=300)
         stampede_cache.set("sp_gmc_int", 42, timeout=300)
-        # Shrink TTL below buffer → logically expired
         stampede_cache.expire("sp_gmc_str", 50, stampede_prevention=False)
         stampede_cache.expire("sp_gmc_int", 50, stampede_prevention=False)
 
@@ -760,7 +758,6 @@ class TestAsyncStampedeGetMany:
     @pytest.mark.asyncio
     async def test_aget_many_filters_expired(self, stampede_cache: RespCache):
         await stampede_cache.aset("asp_gm_exp", "val", timeout=300)
-        # Shrink TTL below buffer → logically expired
         await stampede_cache.aexpire("asp_gm_exp", 50, stampede_prevention=False)
 
         result = await stampede_cache.aget_many(["asp_gm_exp"])
@@ -782,7 +779,7 @@ class TestAsyncStampedeEarlyRecompute:
 
     Uses aexpire() to simulate logical expiry deterministically: set with
     timeout=300 (TTL=360), then aexpire(key, 50, stampede_prevention=False)
-    → raw TTL=50 < buffer=60.
+    so the raw TTL of 50 sits below the buffer of 60.
     """
 
     @pytest.mark.asyncio
@@ -792,17 +789,6 @@ class TestAsyncStampedeEarlyRecompute:
 
         await stampede_cache.aexpire("asp_expire", 50, stampede_prevention=False)
         assert await stampede_cache.aget("asp_expire") is None
-
-    @pytest.mark.asyncio
-    async def test_aget_or_set_recomputes_after_expiry(self, stampede_cache: RespCache):
-        """aget_or_set() should trigger recomputation after logical expiry."""
-        await stampede_cache.aset("asp_gos", "old", timeout=300)
-        assert await stampede_cache.aget("asp_gos") == "old"
-
-        await stampede_cache.aexpire("asp_gos", 50, stampede_prevention=False)
-
-        result = await stampede_cache.aget_or_set("asp_gos", lambda: "recomputed", timeout=300)
-        assert result == "recomputed"
 
 
 class TestAsyncStampedeGetOrSetRecompute:
@@ -820,17 +806,3 @@ class TestAsyncStampedeGetOrSetRecompute:
         )
         assert result == "fresh_async"
         assert await stampede_cache.aget("asp_gos_overwrite") == "fresh_async"
-
-    @pytest.mark.asyncio
-    async def test_aget_or_set_returns_fresh_not_retrigger(self, stampede_cache: RespCache):
-        """After recomputation, aget_or_set should return the fresh value, not
-        re-trigger stampede on the confirmation aget()."""
-        await stampede_cache.aset("asp_gos_retrig", "stale", timeout=300)
-        await stampede_cache.aexpire("asp_gos_retrig", 50, stampede_prevention=False)
-
-        result = await stampede_cache.aget_or_set(
-            "asp_gos_retrig",
-            lambda: "recomputed",
-            timeout=300,
-        )
-        assert result == "recomputed"

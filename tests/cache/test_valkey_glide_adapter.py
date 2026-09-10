@@ -3,6 +3,7 @@ on interpreters without a glide wheel, e.g. free-threaded cp314t)."""
 
 import asyncio
 import datetime
+import inspect
 
 import pytest
 
@@ -10,9 +11,20 @@ pytest.importorskip("glide_sync")
 pytest.importorskip("glide")
 
 from django.core.exceptions import ImproperlyConfigured
-from glide_sync import ClusterBatch, RandomNode, RequestError, ServerCredentials
+from glide_sync import (
+    ClusterBatch,
+    NodeAddress,
+    RandomNode,
+    ReadFrom,
+    RequestError,
+    ServerCredentials,
+)
 
-from django_cachex.adapters.protocols import _RespPipelineCommandsProtocol
+from django_cachex.adapters.protocols import (
+    RespAdapterProtocol,
+    RespPipelineProtocol,
+    _RespPipelineCommandsProtocol,
+)
 from django_cachex.adapters.valkey_glide import (
     ValkeyGlideAdapter,
     ValkeyGlideClusterAdapter,
@@ -21,11 +33,12 @@ from django_cachex.adapters.valkey_glide import (
     _coerce_info_value,
     _glide_config_kwargs,
     _GlideLock,
+    _node_addresses,
     _object_type,
     _parse_info,
     _WrongTypeClient,
 )
-from django_cachex.exceptions import NotSupportedError
+from django_cachex.exceptions import CachexError, NotSupportedError
 from django_cachex.lock import LockError
 from django_cachex.types import KeyType
 
@@ -60,6 +73,31 @@ def test_zadd_forwards_lt_flag(mocker):
     adapter, client = _adapter(mocker)
     adapter.zadd("k", {b"m": 2.0}, lt=True)
     assert client.custom_command.call_args[0][0] == [b"ZADD", "k", b"LT", b"2.0", b"m"]
+
+
+def test_zadd_without_flags_keeps_bytes_members(mocker):
+    # Regression: glide's native ``zadd`` builds args with ``str(member)``, so a
+    # serialized member was stored as its repr and never matched again.
+    adapter, client = _adapter(mocker)
+    adapter.zadd("k", {b"\x80m": 2.0})
+    assert client.zadd.call_count == 0
+    assert client.custom_command.call_args[0][0] == [b"ZADD", "k", b"2.0", b"\x80m"]
+
+
+@pytest.mark.asyncio
+async def test_azadd_without_flags_keeps_bytes_members(mocker):
+    adapter = ValkeyGlideAdapter.__new__(ValkeyGlideAdapter)
+    client = mocker.AsyncMock()
+    mocker.patch.object(ValkeyGlideAdapter, "get_async_client", mocker.AsyncMock(return_value=client))
+    await adapter.azadd("k", {b"\x80m": 2.0})
+    assert client.zadd.await_count == 0
+    assert client.custom_command.await_args[0][0] == [b"ZADD", "k", b"2.0", b"\x80m"]
+
+
+def test_pipeline_zadd_without_flags_keeps_bytes_members(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    pipe.zadd("k", {b"\x80m": 2.0})
+    assert pipe._batch.commands[-1][1] == [b"ZADD", "k", b"2.0", b"\x80m"]
 
 
 def test_zadd_orders_gt_after_xx(mocker):
@@ -292,12 +330,31 @@ def test_config_kwargs_ssl_option_enables_tls():
     assert kwargs["use_tls"] is True
 
 
+def test_config_kwargs_use_tls_option_enables_tls():
+    kwargs = _glide_config_kwargs(["redis://h:6379"], {"use_tls": True}, credentials_cls=ServerCredentials)
+    assert kwargs["use_tls"] is True
+
+
+def test_config_kwargs_use_tls_option_overrides_the_url_scheme():
+    kwargs = _glide_config_kwargs(["rediss://h:6379"], {"use_tls": False}, credentials_cls=ServerCredentials)
+    assert "use_tls" not in kwargs
+
+
+def test_config_kwargs_use_tls_wins_over_ssl():
+    kwargs = _glide_config_kwargs(
+        ["redis://h:6379"],
+        {"use_tls": False, "ssl": True},
+        credentials_cls=ServerCredentials,
+    )
+    assert "use_tls" not in kwargs
+
+
 def test_config_kwargs_cluster_drops_database():
     kwargs = _glide_config_kwargs(
         ["redis://h:6379/3"],
         {},
         credentials_cls=ServerCredentials,
-        include_database=False,
+        standalone=False,
     )
     assert "database_id" not in kwargs
 
@@ -383,7 +440,7 @@ def test_pipeline_xpending_range_decodes_the_rows(mocker):
     client = mocker.Mock()
     client.exec.return_value = [[[b"1-1", b"c1", 120, 3]]]
     pipe = ValkeyGlidePipelineAdapter(client, transaction=False)
-    pipe.xpending_range("k", "g", count=10)
+    pipe.xpending_range("k", "g", min="-", max="+", count=10)
     assert pipe.execute() == [
         [{"message_id": "1-1", "consumer": "c1", "time_since_delivered": 120, "times_delivered": 3}],
     ]
@@ -1291,3 +1348,371 @@ def test_pipeline_queues_the_hash_ttl_wire_forms(mocker):
         ["HSETEX", "h", "EX", "60", "FIELDS", "1", "a", b"1"],
         ["HGETEX", "h", "PERSIST", "FIELDS", "1", "a"],
     ]
+
+
+# ------------------------------------------------- primary plus replica URLs
+
+
+def test_config_kwargs_prefers_replicas_for_a_multi_url_location():
+    kwargs = _glide_config_kwargs(
+        ["redis://primary:6379/1", "redis://replica:6380/1"],
+        {},
+        credentials_cls=ServerCredentials,
+    )
+    assert kwargs["read_from"] is ReadFrom.PREFER_REPLICA
+
+
+def test_config_kwargs_leaves_read_from_unset_for_one_url():
+    kwargs = _glide_config_kwargs(["redis://h:6379/1"], {}, credentials_cls=ServerCredentials)
+    assert "read_from" not in kwargs
+
+
+def test_config_kwargs_ignores_a_repeated_url():
+    # The same node listed twice is not a replica, and glide rejects an address
+    # list in which two entries answer as primary.
+    kwargs = _glide_config_kwargs(
+        ["redis://h:6379/1", "redis://h:6379/1"],
+        {},
+        credentials_cls=ServerCredentials,
+    )
+    assert "read_from" not in kwargs
+
+
+def test_node_addresses_drops_a_repeated_url():
+    addresses = _node_addresses(
+        ["redis://h:6379/1", "redis://h:6379/1", "redis://h2:6379/1"],
+        NodeAddress,
+    )
+
+    assert [(a.host, a.port) for a in addresses] == [("h", 6379), ("h2", 6379)]
+
+
+def test_config_kwargs_cluster_does_not_prefer_replicas():
+    # Cluster routes its own reads; the extra URLs are discovery seeds.
+    kwargs = _glide_config_kwargs(
+        ["redis://a:7000", "redis://b:7000"],
+        {},
+        credentials_cls=ServerCredentials,
+        standalone=False,
+    )
+    assert "read_from" not in kwargs
+
+
+@pytest.mark.parametrize(
+    ("servers", "expected"),
+    [
+        (["redis://h:6379/1", "rediss://h2:6379/1"], "TLS"),
+        (["redis://u:pw@h:6379/1", "redis://other:pw@h2:6379/1"], "username"),
+        (["redis://u:pw@h:6379/1", "redis://u:pw2@h2:6379/1"], "password"),
+        (["redis://h:6379/1", "redis://h2:6379/2"], "database"),
+    ],
+)
+def test_config_kwargs_rejects_urls_that_disagree(servers, expected):
+    with pytest.raises(ImproperlyConfigured, match=expected):
+        _glide_config_kwargs(servers, {}, credentials_cls=ServerCredentials)
+
+
+def test_config_kwargs_cluster_tolerates_a_database_mismatch():
+    kwargs = _glide_config_kwargs(
+        ["redis://a:7000", "redis://b:7000/0"],
+        {},
+        credentials_cls=ServerCredentials,
+        standalone=False,
+    )
+    assert "database_id" not in kwargs
+
+
+def test_sync_client_passes_every_url_as_an_address(mocker):
+    # Regression: only servers[0] reached glide, so documented replica URLs
+    # were dropped without a word.
+    import django_cachex.adapters.valkey_glide as vg
+
+    mocker.patch.dict(vg._GLIDE_SYNC_CLIENTS, clear=True)
+    config_cls = mocker.patch.object(vg, "GlideClientConfiguration")
+    mocker.patch.object(vg, "GlideClient")
+    adapter = ValkeyGlideAdapter(["redis://primary:6379/1", "redis://replica:6380/1"])
+
+    adapter._client()
+
+    kwargs = config_cls.call_args.kwargs
+    assert [(a.host, a.port) for a in kwargs["addresses"]] == [("primary", 6379), ("replica", 6380)]
+    assert kwargs["read_from"] is ReadFrom.PREFER_REPLICA
+
+
+def test_async_client_passes_every_url_as_an_address(mocker):
+    import django_cachex.adapters.valkey_glide as vg
+
+    config_cls = mocker.patch.object(vg, "AsyncGlideClientConfiguration")
+    mocker.patch.object(vg, "AsyncGlideClient", mocker.AsyncMock())
+    adapter = ValkeyGlideAdapter(["redis://primary:6379/1", "redis://replica:6380/1"])
+
+    asyncio.run(adapter._create_async_client())
+
+    kwargs = config_cls.call_args.kwargs
+    assert [(a.host, a.port) for a in kwargs["addresses"]] == [("primary", 6379), ("replica", 6380)]
+    assert kwargs["read_from"] is ReadFrom.PREFER_REPLICA
+
+
+def test_cluster_client_passes_every_seed_url(mocker):
+    import django_cachex.adapters.valkey_glide as vg
+
+    mocker.patch.dict(vg._GLIDE_SYNC_CLUSTER_CLIENTS, clear=True)
+    config_cls = mocker.patch.object(vg, "GlideClusterClientConfiguration")
+    mocker.patch.object(vg, "GlideClusterClient")
+    adapter = ValkeyGlideClusterAdapter(["redis://a:7000", "redis://b:7001"])
+
+    adapter._client()
+
+    addresses = config_cls.call_args.kwargs["addresses"]
+    assert [(a.host, a.port) for a in addresses] == [("a", 7000), ("b", 7001)]
+
+
+# ------------------------------------------------ protocol signature conformance
+
+
+def _param_names(fn):
+    # Read the code object rather than ``inspect.signature``: protocols.py
+    # annotates with names it imports under TYPE_CHECKING only.
+    code = fn.__code__
+    n_pos, n_kw = code.co_argcount, code.co_kwonlyargcount
+    names = code.co_varnames
+    positional = list(names[1:n_pos])
+    keyword = set(names[n_pos : n_pos + n_kw])
+    var_positional = names[n_pos + n_kw] if code.co_flags & inspect.CO_VARARGS else None
+    return positional, var_positional, keyword
+
+
+def _protocol_methods(protocol, impl):
+    return sorted(
+        name
+        for name, value in vars(protocol).items()
+        if callable(value) and not name.startswith("_") and name in vars(impl)
+    )
+
+
+_ADAPTER_METHODS = _protocol_methods(RespAdapterProtocol, ValkeyGlideAdapter)
+_PIPELINE_METHODS = sorted(
+    set(_protocol_methods(_RespPipelineCommandsProtocol, ValkeyGlidePipelineAdapter))
+    | set(_protocol_methods(RespPipelineProtocol, ValkeyGlidePipelineAdapter)),
+)
+
+
+def _assert_signature_matches(declared, implemented):
+    # Callers reach the adapter through the protocol, so a parameter the
+    # protocol names by keyword has to answer to that name here.
+    proto_pos, proto_var, proto_kw = _param_names(declared)
+    impl_pos, impl_var, impl_kw = _param_names(implemented)
+    assert impl_pos == proto_pos
+    assert impl_var == proto_var
+    assert proto_kw <= impl_kw
+
+
+@pytest.mark.parametrize("name", _ADAPTER_METHODS)
+def test_adapter_signature_matches_the_protocol(name):
+    _assert_signature_matches(getattr(RespAdapterProtocol, name), getattr(ValkeyGlideAdapter, name))
+
+
+@pytest.mark.parametrize("name", _PIPELINE_METHODS)
+def test_pipeline_signature_matches_the_protocol(name):
+    declared = getattr(_RespPipelineCommandsProtocol, name, None) or getattr(RespPipelineProtocol, name)
+    _assert_signature_matches(declared, getattr(ValkeyGlidePipelineAdapter, name))
+
+
+# --------------------------------------------- protocol keyword call forms
+
+
+def test_zcount_takes_the_score_keywords(mocker):
+    adapter, client = _adapter(mocker)
+    adapter.zcount("k", min_score=1, max_score=5)
+    assert client.custom_command.call_args[0][0] == [b"ZCOUNT", "k", b"1", b"5"]
+
+
+def test_zremrangebyscore_takes_the_score_keywords(mocker):
+    adapter, client = _adapter(mocker)
+    adapter.zremrangebyscore("k", min_score="-inf", max_score="(3")
+    assert client.custom_command.call_args[0][0] == [b"ZREMRANGEBYSCORE", "k", "-inf", "(3"]
+
+
+def test_zrangebyscore_takes_the_score_keywords(mocker):
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = []
+    adapter.zrangebyscore("k", min_score=1, max_score=5, start=0, num=2)
+    assert client.custom_command.call_args[0][0] == [b"ZRANGEBYSCORE", "k", b"1", b"5", b"LIMIT", b"0", b"2"]
+
+
+def test_zrevrangebyscore_takes_the_score_keywords(mocker):
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = []
+    adapter.zrevrangebyscore("k", max_score=5, min_score=1)
+    assert client.custom_command.call_args[0][0] == [b"ZREVRANGEBYSCORE", "k", b"5", b"1"]
+
+
+@pytest.mark.asyncio
+async def test_azcount_takes_the_score_keywords(mocker):
+    adapter, client = _async_adapter(mocker)
+    await adapter.azcount("k", min_score=1, max_score=5)
+    assert client.custom_command.await_args[0][0] == [b"ZCOUNT", "k", b"1", b"5"]
+
+
+@pytest.mark.asyncio
+async def test_azrangebyscore_takes_the_score_keywords(mocker):
+    adapter, client = _async_adapter(mocker)
+    client.custom_command.return_value = []
+    await adapter.azrangebyscore("k", min_score=1, max_score=5)
+    assert client.custom_command.await_args[0][0] == [b"ZRANGEBYSCORE", "k", b"1", b"5"]
+
+
+def test_set_store_commands_take_the_dest_keyword(mocker):
+    adapter, client = _adapter(mocker)
+    adapter.sinterstore(dest="d", keys=["a", "b"])
+    adapter.sunionstore(dest="d", keys=["a"])
+    adapter.sdiffstore(dest="d", keys=["a"])
+    assert client.sinterstore.call_args[0] == ("d", ["a", "b"])
+    assert client.sunionstore.call_args[0] == ("d", ["a"])
+    assert client.sdiffstore.call_args[0] == ("d", ["a"])
+
+
+def test_zadd_rejects_a_flag_outside_the_protocol(mocker):
+    adapter, _client = _adapter(mocker)
+    with pytest.raises(TypeError):
+        adapter.zadd("k", {b"m": 1.0}, nx_=True)
+
+
+def test_pipeline_zcount_takes_the_bound_keywords(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    pipe.zcount("k", min=1, max=5)
+    assert pipe._batch.commands[-1][1] == [b"ZCOUNT", "k", b"1", b"5"]
+
+
+def test_pipeline_zremrangebyscore_takes_the_bound_keywords(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    pipe.zremrangebyscore("k", min=1, max=5)
+    assert pipe._batch.commands[-1][1] == [b"ZREMRANGEBYSCORE", "k", b"1", b"5"]
+
+
+def test_pipeline_pexpire_takes_the_milliseconds_keyword(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    pipe.pexpire("k", milliseconds=1500)
+    assert pipe._batch.commands[-1][1] == ["k", "1500"]
+
+
+def test_pipeline_xclaim_takes_the_message_ids_keyword(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    pipe.xclaim("k", "g", "c", 0, message_ids=["1-1"])
+    assert pipe._batch.commands[-1][1] == [b"XCLAIM", "k", "g", "c", b"0", "1-1"]
+
+
+def test_pipeline_xgroup_create_takes_the_id_keyword(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    pipe.xgroup_create("k", "g", id="0-0")
+    assert pipe._batch.commands[-1][1] == [b"XGROUP", b"CREATE", "k", "g", "0-0"]
+
+
+def test_pipeline_xgroup_setid_takes_the_id_keyword(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    pipe.xgroup_setid("k", "g", id="0-0")
+    assert pipe._batch.commands[-1][1] == [b"XGROUP", b"SETID", "k", "g", "0-0"]
+
+
+def test_pipeline_xpending_range_takes_the_protocol_keywords(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    pipe.xpending_range("k", "g", min="-", max="+", count=5, consumername="c", idle=10)
+    assert pipe._batch.commands[-1][1] == [
+        b"XPENDING",
+        "k",
+        "g",
+        b"IDLE",
+        b"10",
+        "-",
+        "+",
+        b"5",
+        "c",
+    ]
+
+
+# ----------------------------------------------------- MAXLEN with MINID
+
+
+def test_xadd_rejects_maxlen_together_with_minid(mocker):
+    adapter, _client = _adapter(mocker)
+    with pytest.raises(ValueError, match="Only one of"):
+        adapter.xadd("s", {"f": b"v"}, maxlen=5, minid="1-1")
+
+
+def test_xtrim_rejects_maxlen_together_with_minid(mocker):
+    adapter, _client = _adapter(mocker)
+    with pytest.raises(ValueError, match="Only one of"):
+        adapter.xtrim("s", maxlen=5, minid="1-1")
+
+
+def test_pipeline_xadd_rejects_maxlen_together_with_minid(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    with pytest.raises(ValueError, match="Only one of"):
+        pipe.xadd("s", {"f": b"v"}, maxlen=5, minid="1-1")
+
+
+# ------------------------------------------------------- aborted transaction
+
+
+def test_pipeline_execute_reports_an_aborted_transaction(mocker):
+    # glide answers None when the server discarded the MULTI.
+    client = mocker.Mock()
+    client.exec.return_value = None
+    pipe = ValkeyGlidePipelineAdapter(client, transaction=True)
+    pipe.get("a")
+    with pytest.raises(CachexError, match="aborted"):
+        pipe.execute()
+
+
+# ------------------------------------------------------------ registry sweep
+
+
+def test_sweep_skips_a_client_that_closed_itself(mocker):
+    import django_cachex.adapters.valkey_glide as vg
+
+    client = mocker.Mock(_is_closed=True)
+    loop = asyncio.new_event_loop()
+    loop.close()
+    vg._GLIDE_ASYNC_CLIENTS[loop] = {("swept",): client}
+
+    ValkeyGlideAdapter._sweep_async_clients()
+
+    assert loop not in vg._GLIDE_ASYNC_CLIENTS
+    client.close.assert_not_called()
+
+
+def test_sweep_closes_a_live_client_of_a_dead_loop(mocker):
+    import django_cachex.adapters.valkey_glide as vg
+
+    closed = []
+
+    async def close():
+        closed.append(True)
+
+    client = mocker.Mock(_is_closed=False, close=close)
+    loop = asyncio.new_event_loop()
+    loop.close()
+    vg._GLIDE_ASYNC_CLIENTS[loop] = {("swept",): client}
+
+    ValkeyGlideAdapter._sweep_async_clients()
+
+    assert closed == [True]
+
+
+def test_get_async_client_sweeps_only_when_it_creates(mocker):
+    adapter = ValkeyGlideAdapter.__new__(ValkeyGlideAdapter)
+    adapter._config_key = ("sweep-on-create",)
+    mocker.patch.object(
+        ValkeyGlideAdapter,
+        "_create_async_client",
+        mocker.AsyncMock(return_value=mocker.AsyncMock()),
+    )
+    sweep = mocker.patch.object(ValkeyGlideAdapter, "_sweep_async_clients")
+
+    async def scenario():
+        await adapter.get_async_client()
+        after_create = sweep.call_count
+        await adapter.get_async_client()
+        return after_create, sweep.call_count
+
+    assert asyncio.run(scenario()) == (1, 1)

@@ -20,7 +20,7 @@ A drop-in replacement for Django's built-in Redis cache, plus:
 - Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with fallback chains for safe migrations.
 - Cache stampede prevention (TTL-based XFetch).
 - Two composite backends: `StreamCache` (cross-pod stream-synchronized in-memory cache) and `TrackingCache` (local read cache over a Redis/Valkey alias, invalidated by the server's `CLIENT TRACKING` or bounded by a local TTL).
-- Django `LocMemCache` and `DatabaseCache` extensions with the hash, list, set and sorted set ops (no streams) and admin support.
+- Django `LocMemCache` and `DatabaseCache` extensions with the hash, list, set and sorted set ops, `ttl()`/`expire()`/`persist()`, key patterns, and admin support (no streams, locks, pipelines or Lua).
 - Optional `valkey-glide` adapter: Valkey's official Rust-cored client, exposed as `ValkeyGlideCache`. Experimental.
 - Django admin UI for browsing keys, inspecting values, editing, and flushing.
 

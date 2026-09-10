@@ -375,7 +375,11 @@ def stampede_cache(
     redis_container: RedisContainerInfo,
     request: pytest.FixtureRequest,
 ) -> Iterator[RespCache]:
-    """Django cache fixture with stampede prevention enabled."""
+    """Django cache fixture with stampede prevention enabled.
+
+    The buffer is the default 60s, so ``expire(key, 50)`` puts a key past its
+    logical expiry without a sleep.
+    """
     _skip_unsupported_combo(resp_adapter, stampede_topology)
 
     if stampede_topology == "cluster":

@@ -5,7 +5,7 @@
 {{ block.super }}
 <link rel="stylesheet" href="{% static "admin/css/forms.css" %}">
 <link rel="stylesheet" href="{% static "admin/css/changelists.css" %}">
-<style type="text/css">
+<style>
     {% include "admin/django_cachex/cache/styles.css" %}
 </style>
 {% endblock %}
@@ -13,8 +13,8 @@
 {% block bodyclass %}{{ block.super }} app-django_cachex model-key change-form{% endblock %}
 
 {% block breadcrumbs %}
-{% url 'admin:index' as index_href %}
-{% url 'admin:django_cachex_cache_changelist' as cache_list_href %}
+{% url "admin:index" as index_href %}
+{% url "admin:django_cachex_cache_changelist" as cache_list_href %}
 {% cachex_breadcrumbs _("Home") index_href _("Caches") cache_list_href cache_name key_list_href key %}
 {% endblock %}
 
@@ -26,34 +26,34 @@
 <div id="content-main">
     <!-- Key Information -->
     <fieldset class="module aligned">
-        <h2>{% trans 'Key Information' %}</h2>
+        <h2>{% trans "Key Information" %}</h2>
         <div class="form-row">
-            <label>{% trans 'Key:' %}</label>
+            <label>{% trans "Key:" %}</label>
             <code>{{ key }}</code>
         </div>
         <div class="form-row">
-            <label>{% trans 'Cache:' %}</label>
+            <label>{% trans "Cache:" %}</label>
             <code>{{ cache_name }}</code>
             {% if cache_metadata.key_prefix or cache_metadata.version != 1 %}
             <span class="quiet">({% if cache_metadata.key_prefix %}prefix: {{ cache_metadata.key_prefix }}{% if cache_metadata.version != 1 %}, {% endif %}{% endif %}{% if cache_metadata.version != 1 %}version: {{ cache_metadata.version }}{% endif %})</span>
             {% endif %}
         </div>
         <div class="form-row">
-            <label>{% trans 'Raw Key:' %}</label>
+            <label>{% trans "Raw Key:" %}</label>
             <code class="quiet">{{ raw_key }}</code>
         </div>
         {% if key_type %}
         <div class="form-row">
-            <label>{% trans 'Type:' %}</label>
+            <label>{% trans "Type:" %}</label>
             <span class="type-badge type-{{ key_type }}">{{ key_type }}</span>
             {% if type_data.length is not None %}
-            <span class="quiet">({{ type_data.length }} {% if key_type == 'hash' %}{% trans 'fields' %}{% elif key_type == 'list' %}{% trans 'items' %}{% else %}{% trans 'members' %}{% endif %})</span>
+            <span class="quiet">({{ type_data.length }} {% if key_type == "hash" %}{% trans "fields" %}{% elif key_type == "list" %}{% trans "items" %}{% else %}{% trans "members" %}{% endif %})</span>
             {% endif %}
         </div>
         {% endif %}
         <div class="form-row">
             {% if can_mutate %}
-            <label for="id_ttl">{% trans 'TTL (s):' %}</label>
+            <label for="id_ttl">{% trans "TTL (s):" %}</label>
             <form method="post" style="display: inline;">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="set_ttl">
@@ -66,15 +66,15 @@
                     step="1"
                     min="0"
                     value="{% if ttl is not None and ttl >= 0 %}{{ ttl|unlocalize }}{% endif %}"
-                    placeholder="{% trans 'no expiry' %}"
+                    placeholder="{% trans "no expiry" %}"
                     aria-describedby="id_ttl_help"
                 >
-                <button type="submit" class="button btn-small" style="margin-left: 10px;">{% trans 'Update' %}</button>
-                <span id="id_ttl_help" class="help quiet">{% trans 'Seconds until the key expires. 0 removes the expiry.' %}</span>
+                <button type="submit" class="button btn-small" style="margin-left: 10px;">{% trans "Update" %}</button>
+                <span id="id_ttl_help" class="help quiet">{% trans "Seconds until the key expires. 0 removes the expiry." %}</span>
             </form>
             {% else %}
-            <label>{% trans 'TTL (s):' %}</label>
-            <code>{% if ttl is not None and ttl >= 0 %}{{ ttl|unlocalize }}{% else %}{% trans 'no expiry' %}{% endif %}</code>
+            <label>{% trans "TTL (s):" %}</label>
+            <code>{% if ttl is not None and ttl >= 0 %}{{ ttl|unlocalize }}{% else %}{% trans "no expiry" %}{% endif %}</code>
             {% endif %}
         </div>
     </fieldset>
@@ -85,15 +85,15 @@
 
     {% if opaque_type %}
     {% include "admin/django_cachex/key/key_detail_opaque.html" %}
-    {% elif key_type == 'list' %}
+    {% elif key_type == "list" %}
     {% include "admin/django_cachex/key/key_detail_list.html" %}
-    {% elif key_type == 'hash' %}
+    {% elif key_type == "hash" %}
     {% include "admin/django_cachex/key/key_detail_hash.html" %}
-    {% elif key_type == 'set' %}
+    {% elif key_type == "set" %}
     {% include "admin/django_cachex/key/key_detail_set.html" %}
-    {% elif key_type == 'zset' %}
+    {% elif key_type == "zset" %}
     {% include "admin/django_cachex/key/key_detail_zset.html" %}
-    {% elif key_type == 'stream' %}
+    {% elif key_type == "stream" %}
     {% include "admin/django_cachex/key/key_detail_stream.html" %}
     {% else %}
     {% include "admin/django_cachex/key/key_detail_string.html" %}

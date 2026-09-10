@@ -129,6 +129,11 @@ For better performance with many keys:
 cache.delete_pattern("foo_*", itersize=100_000)
 ```
 
+The pattern is a Redis glob on every backend, matched case-sensitively. An
+empty pattern matches only the empty key, so `delete_pattern("")` deletes at
+most one key; pass `"*"` to clear everything. See
+[Key patterns](../reference/api.md#key-patterns).
+
 ## Atomic Operations
 
 ### SETNX (Set if Not Exists)
@@ -224,7 +229,7 @@ cache.hgetex("session:42", "token", persist=True)  # ["ghi"], TTL removed
 cache.hpersist("session:42", "csrf")  # [1]
 ```
 
-A few things to keep in mind:
+Field TTL rules:
 
 - Rewriting a field with `hset`, or with `hsetex` without `keepttl=True`, clears that field's TTL.
 - `hsetex(timeout=...)` follows `set()`: the default uses the backend's `TIMEOUT`, `None` means no expiry, and `timeout=0` deletes the fields immediately.
@@ -356,7 +361,7 @@ from django_cachex import (
 )
 ```
 
-Pass ``post_hook=None`` (the default) when no decoding is needed; the result is
+Pass `post_hook=None` (the default) when no decoding is needed; the result is
 returned unchanged.
 
 #### Key Prefixing

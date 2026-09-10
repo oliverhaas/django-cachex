@@ -1,7 +1,8 @@
 {% load i18n %}
 <div class="submit-row">
-    <a role="button" href="{% url 'admin:django_cachex_key_changelist' %}?cache={{ cache_name|urlencode }}" class="closelink" style="margin-left: auto; text-decoration: none;">{% trans 'Back' %}</a>
+    <a role="button" href="{% url "admin:django_cachex_key_changelist" %}?cache={{ cache_name|urlencode }}" class="closelink" style="margin-left: auto; text-decoration: none;">{% trans "Back" %}</a>
     {% if can_delete %}
-    <a role="button" href="#" class="deletelink" style="margin-left: 0;" onclick="if(confirm('{% trans 'Are you sure you want to delete this key? This action cannot be undone.' %}')) { document.getElementById('delete-form').submit(); } return false;">{% trans 'Delete' %}</a>
+    {% translate "Are you sure you want to delete this key? This action cannot be undone." as confirm_delete %}
+    <a role="button" href="#" class="deletelink" style="margin-left: 0;" onclick="if(confirm('{{ confirm_delete|escapejs }}')) { document.getElementById('delete-form').submit(); } return false;">{% trans "Delete" %}</a>
     {% endif %}
 </div>

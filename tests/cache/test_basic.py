@@ -29,10 +29,13 @@ class TestSetIfNotExists:
         assert result is False
         assert cache.get("nx_existing") == "original"
 
-    def test_set_nx_cleanup(self, cache: RespCache):
-        cache.set("nx_cleanup", "temp", nx=True)
-        cache.delete("nx_cleanup")
-        assert cache.get("nx_cleanup") is None
+    def test_set_nx_creates_again_after_delete(self, cache: RespCache):
+        assert cache.set("nx_recreate", "temp", nx=True) is True
+        cache.delete("nx_recreate")
+        assert cache.get("nx_recreate") is None
+
+        assert cache.set("nx_recreate", "second", nx=True) is True
+        assert cache.get("nx_recreate") == "second"
 
 
 class TestSetWithGet:
@@ -593,10 +596,13 @@ class TestAsyncSetIfNotExists:
         assert await cache.aget("anx_existing") == "original"
 
     @pytest.mark.asyncio
-    async def test_aset_nx_cleanup(self, cache: RespCache):
-        await cache.aset("anx_cleanup", "temp", nx=True)
-        await cache.adelete("anx_cleanup")
-        assert await cache.aget("anx_cleanup") is None
+    async def test_aset_nx_creates_again_after_delete(self, cache: RespCache):
+        assert await cache.aset("anx_recreate", "temp", nx=True) is True
+        await cache.adelete("anx_recreate")
+        assert await cache.aget("anx_recreate") is None
+
+        assert await cache.aset("anx_recreate", "second", nx=True) is True
+        assert await cache.aget("anx_recreate") == "second"
 
 
 class TestAsyncSetWithGet:

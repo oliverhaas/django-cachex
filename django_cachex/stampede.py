@@ -6,6 +6,7 @@ refreshes the value before all clients see a miss simultaneously.
 """
 
 import logging
+import math
 import random
 from dataclasses import dataclass
 from typing import Any
@@ -22,6 +23,23 @@ class StampedeConfig:
     buffer: int = 60
     beta: float = 1.0
     delta: float = 1.0
+
+    def __post_init__(self) -> None:
+        # Zero is allowed for beta and delta: ``should_recompute_remaining``
+        # reads either as "no probabilistic trigger, expire logically instead".
+        if isinstance(self.buffer, bool) or not isinstance(self.buffer, int):
+            msg = f"stampede buffer must be an int, got {type(self.buffer).__name__}"
+            raise TypeError(msg)
+        if self.buffer < 0:
+            msg = f"stampede buffer must not be negative, got {self.buffer}"
+            raise ValueError(msg)
+        for name, value in (("beta", self.beta), ("delta", self.delta)):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                msg = f"stampede {name} must be a number, got {type(value).__name__}"
+                raise TypeError(msg)
+            if not math.isfinite(value) or value < 0:
+                msg = f"stampede {name} must be a finite number >= 0, got {value!r}"
+                raise ValueError(msg)
 
 
 def should_recompute(ttl: int, config: StampedeConfig) -> bool:

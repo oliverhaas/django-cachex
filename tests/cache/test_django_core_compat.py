@@ -5,7 +5,6 @@ Django's builtin django.core.cache.backends.redis.RedisCache.
 Both caches point to the same Redis instance to verify data interoperability.
 """
 
-import time
 from typing import TYPE_CHECKING
 
 import pytest
@@ -375,7 +374,19 @@ class TestDjangoCoreRedisCompatibility:
         assert django_core_cache.get("timeout_dj") == "value"
         assert cachex_cache.get("timeout_cx") == "value"
 
-        time.sleep(1.5)
+        # Assert the TTL, then expire it through the raw clients: sleeping the
+        # second out is both slow and timing-dependent.
+        dj_key = django_core_cache.make_and_validate_key("timeout_dj")
+        cx_key = cachex_cache.make_and_validate_key("timeout_cx")
+        dj_client = django_core_cache._cache.get_client(dj_key)
+        dj_pttl = dj_client.pttl(dj_key)
+        cx_pttl = cachex_cache.adapter.pttl(cx_key)
+        assert 0 < dj_pttl <= 1000
+        assert cx_pttl is not None
+        assert 0 < cx_pttl <= 1000
+
+        dj_client.pexpire(dj_key, 0)
+        cachex_cache.adapter.pexpire(cx_key, 0)
 
         assert django_core_cache.get("timeout_dj") is None
         assert cachex_cache.get("timeout_cx") is None

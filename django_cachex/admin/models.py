@@ -5,6 +5,8 @@ from django.conf import settings
 from django.core.cache import InvalidCacheBackendError
 from django.db import models
 
+from django_cachex.admin.helpers import mask_credentials, mask_location
+
 
 class Cache(models.Model):
     """Unmanaged model representing a Django cache backend for admin display."""
@@ -52,14 +54,8 @@ class Cache(models.Model):
         return str(self.config.get("BACKEND", "Unknown"))
 
     @property
-    def backend_short(self) -> str:
-        """Get the short backend class name."""
-        backend = self.backend
-        return backend.rsplit(".", 1)[-1] if "." in backend else backend
-
-    @property
     def location(self) -> str:
-        """Get the cache location.
+        """Get the cache location, with connection passwords masked.
 
         Checks for a ``_cachex_location`` attribute on the cache instance
         first (used by backends like StreamCache that have no ``LOCATION``
@@ -67,11 +63,8 @@ class Cache(models.Model):
         """
         cache = self._get_cache()
         if cache is not None and hasattr(cache, "_cachex_location"):
-            return cache._cachex_location
-        loc = self.config.get("LOCATION", "")
-        if isinstance(loc, list):
-            return ", ".join(str(item) for item in loc)
-        return str(loc) if loc else ""
+            return mask_credentials(str(cache._cachex_location))
+        return mask_location(self.config.get("LOCATION", ""))
 
     def _get_cache(self) -> Any | None:
         from django.core.cache import caches
@@ -167,8 +160,3 @@ class Key(models.Model):
         """Set primary key and update cache_name/key_name."""
         self.id = value
         self.cache_name, self.key_name = self.parse_pk(value)
-
-    @property
-    def cache(self) -> Cache | None:
-        """Get the parent Cache object."""
-        return Cache.get_by_name(self.cache_name)

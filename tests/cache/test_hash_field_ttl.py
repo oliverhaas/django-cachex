@@ -108,8 +108,8 @@ class TestHexpire:
     def test_field_expires_and_hash_survives(self, field_ttl_cache: RespCache):
         field_ttl_cache.hset("h", mapping={"short": 1, "long": 2})
 
-        assert field_ttl_cache.hpexpire("h", 200, "short") == [1]
-        time.sleep(0.5)
+        # A zero TTL deletes the field on the spot; reply code 2 says so.
+        assert field_ttl_cache.hexpire("h", 0, "short") == [2]
 
         assert field_ttl_cache.hget("h", "short") is None
         assert field_ttl_cache.hexists("h", "short") is False

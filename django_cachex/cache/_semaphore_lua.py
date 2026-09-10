@@ -6,8 +6,10 @@ Three Redis keys cooperate per semaphore name (passed as ``KEYS[1..3]``):
   2. ``{name}:claims`` - hash mapping ``token`` -> ``weight``.
   3. ``{name}:queue`` - sorted set, score = enqueue timestamp (ms), member = ``token``.
 
-All three carry a guard TTL, refreshed by ACQUIRE, EXTEND and RELEASE to twice
-the longest lease (or waiter TTL) seen. A clean RELEASE drops them, so the TTL
+All three carry a guard TTL, set to twice the longest lease (or waiter TTL)
+seen. ACQUIRE and RELEASE refresh all three; EXTEND refreshes only ``state``
+and ``claims``, since it is not passed the queue key and every waiter poll
+refreshes the queue guard itself. A clean RELEASE drops them, so the TTL
 only matters when the last holder dies without releasing: without it, a
 semaphore named per job ("job:<id>") would leak three keys per name until that
 exact name was acquired again. Twice the lease keeps the guard comfortably

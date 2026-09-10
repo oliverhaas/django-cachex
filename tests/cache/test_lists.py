@@ -10,10 +10,8 @@ if TYPE_CHECKING:
 
 class TestListOperations:
     def test_lpush_rpush(self, cache: RespCache):
-        # lpush adds to head
         cache.lpush("mylist", "world")
         cache.lpush("mylist", "hello")
-        # rpush adds to tail
         cache.rpush("mylist", "!")
 
         result = cache.lrange("mylist", 0, -1)
@@ -638,3 +636,36 @@ class TestAsyncBlockingPopExtra:
         assert result is not None
         _key, value = result
         assert value == {"name": "Alice"}
+
+
+class TestListEmptyArgumentCalls:
+    """A push with no values answers locally instead of sending an invalid command."""
+
+    def test_lpush(self, cache: RespCache):
+        assert cache.lpush("empty_list") == 0
+        assert cache.has_key("empty_list") is False
+
+    def test_rpush(self, cache: RespCache):
+        assert cache.rpush("empty_list") == 0
+        assert cache.has_key("empty_list") is False
+
+    @pytest.mark.asyncio
+    async def test_alpush(self, cache: RespCache):
+        assert await cache.alpush("aempty_list") == 0
+        assert await cache.ahas_key("aempty_list") is False
+
+    @pytest.mark.asyncio
+    async def test_arpush(self, cache: RespCache):
+        assert await cache.arpush("aempty_list") == 0
+        assert await cache.ahas_key("aempty_list") is False
+
+    def test_push_no_values_leaves_an_existing_list_alone(self, cache: RespCache):
+        cache.rpush("empty_push_existing", "a", "b")
+        cache.expire("empty_push_existing", 100)
+
+        assert cache.lpush("empty_push_existing") == 0
+        assert cache.rpush("empty_push_existing") == 0
+        assert cache.lrange("empty_push_existing", 0, -1) == ["a", "b"]
+        ttl = cache.ttl("empty_push_existing")
+        assert ttl is not None
+        assert 90 <= ttl <= 100

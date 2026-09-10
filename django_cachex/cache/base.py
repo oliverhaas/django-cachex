@@ -1452,15 +1452,15 @@ class BaseCachex(BaseCache):
 
     def info(self, section: str | None = None) -> dict[str, Any]:
         """Get cache server information."""
-        return {}
+        raise NotSupportedError("info", self.__class__.__name__)
 
     def slowlog_get(self, count: int = 10) -> list[Any]:
         """Get slow query log entries."""
-        return []
+        raise NotSupportedError("slowlog_get", self.__class__.__name__)
 
     def slowlog_len(self) -> int:
         """Get the number of entries in the slow query log."""
-        return 0
+        raise NotSupportedError("slowlog_len", self.__class__.__name__)
 
     # =========================================================================
     # Lua Script Operations

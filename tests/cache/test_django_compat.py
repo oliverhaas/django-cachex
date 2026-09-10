@@ -4,26 +4,49 @@ These tests verify that django-cachex can be used as a drop-in replacement
 for Django's builtin Redis backend (django.core.cache.backends.redis.RedisCache).
 """
 
+import importlib
 import pickle
 from typing import TYPE_CHECKING
 
-import redis
+import pytest
 from django.core.cache import caches
 from django.test import override_settings
+
+from tests.fixtures.cache import ADAPTER_IMAGES
 
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
     from tests.fixtures.containers import RedisContainerInfo
 
+# ``RedisPyAdapter`` subclasses ``ValkeyPyAdapter``, so the pool and parser
+# plumbing is one code path with two sets of driver classes behind it. Each
+# driver runs against its home image, the way ``resp_adapter`` picks one.
+POOL_OPTION_BACKENDS = [
+    pytest.param("django_cachex.cache.RedisCache", "redis", ADAPTER_IMAGES["redis-py"], id="redis-py"),
+    pytest.param("django_cachex.cache.ValkeyCache", "valkey", ADAPTER_IMAGES["valkey-py"], id="valkey-py"),
+]
 
+
+@pytest.mark.parametrize(("backend", "driver", "resp_images"), POOL_OPTION_BACKENDS, indirect=["resp_images"])
 class TestDjangoStyleOptions:
-    """Test that Django-style configuration OPTIONS work."""
+    """Django-style configuration OPTIONS reach the pool on either driver."""
 
-    def test_db_option(self, redis_container: RedisContainerInfo):
+    @pytest.fixture(autouse=True)
+    def _driver_runs_on_its_home_image(
+        self,
+        driver: str,
+        resp_images: tuple[str, str],
+        redis_container: RedisContainerInfo,
+    ):
+        del resp_images
+        assert redis_container.client_library == driver
+
+    def test_db_option(self, backend: str, driver: str, redis_container: RedisContainerInfo):
         """``db`` in OPTIONS, Django-style, with no db in the URL."""
+        del driver
         caches_config = {
             "default": {
-                "BACKEND": "django_cachex.cache.RedisCache",
+                "BACKEND": backend,
                 "LOCATION": f"redis://{redis_container.host}:{redis_container.port}",
                 "OPTIONS": {"db": 2},
             },
@@ -38,12 +61,13 @@ class TestDjangoStyleOptions:
             assert cache.get("test_db_option") == "value"
             cache.delete("test_db_option")
 
-    def test_pool_class_option(self, redis_container: RedisContainerInfo):
+    def test_pool_class_option(self, backend: str, driver: str, redis_container: RedisContainerInfo):
+        pool_class = importlib.import_module(f"{driver}.connection").BlockingConnectionPool
         caches_config = {
             "default": {
-                "BACKEND": "django_cachex.cache.RedisCache",
+                "BACKEND": backend,
                 "LOCATION": f"redis://{redis_container.host}:{redis_container.port}/1",
-                "OPTIONS": {"pool_class": "redis.connection.BlockingConnectionPool"},
+                "OPTIONS": {"pool_class": f"{driver}.connection.BlockingConnectionPool"},
             },
         }
 
@@ -51,17 +75,27 @@ class TestDjangoStyleOptions:
             cache = caches["default"]
             pool = cache.adapter._get_connection_pool(write=True)
 
-            assert isinstance(pool, redis.BlockingConnectionPool)
+            assert isinstance(pool, pool_class)
             cache.set("test_pool_class", "value")
             assert cache.get("test_pool_class") == "value"
             cache.delete("test_pool_class")
 
-    def test_parser_class_option(self, redis_container: RedisContainerInfo):
+    def test_parser_class_option(
+        self,
+        backend: str,
+        driver: str,
+        redis_container: RedisContainerInfo,
+    ):
+        module, name = {
+            "redis": ("redis._parsers.hiredis", "_HiredisParser"),
+            "valkey": ("valkey._parsers.libvalkey", "_LibvalkeyParser"),
+        }[driver]
+        parser_class = getattr(importlib.import_module(module), name)
         caches_config = {
             "default": {
-                "BACKEND": "django_cachex.cache.RedisCache",
+                "BACKEND": backend,
                 "LOCATION": f"redis://{redis_container.host}:{redis_container.port}/1",
-                "OPTIONS": {"parser_class": "redis.connection._HiredisParser"},
+                "OPTIONS": {"parser_class": f"{parser_class.__module__}.{parser_class.__qualname__}"},
             },
         }
 
@@ -69,7 +103,7 @@ class TestDjangoStyleOptions:
             cache = caches["default"]
             pool = cache.adapter._get_connection_pool(write=True)
 
-            assert pool.connection_kwargs["parser_class"] is redis.connection._HiredisParser
+            assert pool.connection_kwargs["parser_class"] is parser_class
             cache.set("test_parser_class", "value")
             assert cache.get("test_parser_class") == "value"
             cache.delete("test_parser_class")

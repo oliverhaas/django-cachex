@@ -2,10 +2,10 @@
 
 Per-backend tests live next to the backends they cover:
 
-* LocMemCache → ``tests/cache/test_locmem.py``
-* DatabaseCache → ``tests/cache/test_database.py``
-* RESP backends (redis-py / valkey-py / valkey-glide) →
-  the parametrized ``cache`` fixture in ``tests/cache/``.
+* LocMemCache: ``tests/cache/test_locmem.py``
+* DatabaseCache: ``tests/cache/test_database.py``
+* RESP backends (redis-py / valkey-py / valkey-glide): the parametrized
+  ``cache`` fixture in ``tests/cache/``.
 """
 
 import pytest
@@ -51,6 +51,9 @@ UNSUPPORTED_OPERATIONS = [
     ("zpopmin", ("key",)),
     ("zpopmax", ("key",)),
     ("xlen", ("key",)),
+    ("info", ()),
+    ("slowlog_get", ()),
+    ("slowlog_len", ()),
 ]
 
 

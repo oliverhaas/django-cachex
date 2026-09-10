@@ -134,9 +134,15 @@ class TestRedisClusterAdapter:
         assert mock_cluster.unlink.call_count == 3
 
     def test_delete_many_empty_keys(self):
-        client = setup_cluster_client()
+        mock_cluster_cls = MagicMock()
+        mock_cluster = MagicMock()
+        mock_cluster_cls.from_url.return_value = mock_cluster
+
+        client = setup_cluster_client(mock_cluster_cls)
 
         client.delete_many([])
+
+        mock_cluster.unlink.assert_not_called()
 
     def test_delete_many_same_slot(self):
         """Test delete_many with keys in the same slot uses a single UNLINK."""
@@ -371,5 +377,29 @@ class TestRedisClusterAdapter:
 
         await client.aclose()
 
-        assert loop not in client._async_clusters
+        assert client._async_clusters[loop] == {}
         mock_async_cluster.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_aclose_leaves_another_aliases_cluster_open(self):
+        # Regression: the whole loop slot was popped, so closing one alias
+        # dropped the cluster client another alias was still using.
+        registry: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+        cluster_class = MagicMock()
+        clusters = [AsyncMock(), AsyncMock()]
+        clients = []
+        for cluster, port in zip(clusters, (7000, 7001), strict=True):
+            client = setup_cluster_client(cluster_class)
+            client._servers = [f"redis://localhost:{port}"]
+            client._async_clusters = registry
+            client._async_cluster_class = MagicMock()
+            client._async_cluster_class.from_url.return_value = cluster
+            clients.append(client)
+
+        for client in clients:
+            await client.get_async_client()
+        await clients[0].aclose()
+
+        clusters[0].aclose.assert_awaited_once()
+        clusters[1].aclose.assert_not_awaited()
+        assert await clients[1].get_async_client() is clusters[1]

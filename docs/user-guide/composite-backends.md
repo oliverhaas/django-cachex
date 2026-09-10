@@ -37,12 +37,13 @@ CACHES = {
 ### What's not supported
 
 - `add()`, `incr()`, `decr()` raise `NotSupportedError`. Their semantics (atomic check-and-set, atomic increment) can't be honoured under eventual consistency. Use the transport cache directly when you need them.
+- `set()` with `nx=True`, `xx=True` or `get=True` raises `NotSupportedError` for the same reason. Plain `set()` works.
 
 ### Convergence
 
-Every pod applies stream entries in stream order, its own included, and each entry carries the final value rather than a delta. Two pods that write the same key inside the propagation window therefore both end on whichever entry the stream ordered last, instead of each ending up holding the other's value. A pod skips one of its own entries only where a later local write to that key (or a local `clear()`) has already replaced it, so a writer never reads back a value it has moved past.
+Every pod applies stream entries in stream order, its own included, and each entry carries the final value rather than a delta. Two pods that write the same key inside the propagation window therefore both end on whichever entry the stream ordered last, instead of each ending up holding the other's value. A pod skips one of its own entries where a later local write to that key (or a local `clear()`) has already replaced it, and where the broadcast for that later write was dropped and the older entry would otherwise undo it. Either way a writer never reads back a value it has moved past.
 
-Broadcasts stay best-effort: an entry is dropped when the publish backlog is full or the transport errors. The stream is a replication feed, not a durable log.
+Broadcasts stay best-effort: one is dropped when the publish backlog is full, when the publisher has been shut down, or when the `XADD` errors. The write still applies locally and stays readable on the pod that made it; the other pods keep the value they last saw until the next write to that key or its expiry. The stream is a replication feed, not a durable log.
 
 ### Operational notes
 
@@ -51,7 +52,7 @@ Broadcasts stay best-effort: an entry is dropped when the publish backlog is ful
 - The consumer thread is restarted automatically if it dies; check `info()["sync"]` for consumer health, last-read age, and stream position.
 - On a valkey-glide transport the consumer polls instead of blocking: glide carries every command of a client over one connection, so a parked `XREAD BLOCK` would hold up each publish behind it. `block_timeout` is ignored there and the poll runs every 25 ms.
 - Set `replay` above 0 (up to `maxlen`) so a restarting pod replays the last N mutations and doesn't start with an empty cache.
-- Publishes are queued to a background thread; when more than `max_pending_publishes` are outstanding, new publishes are dropped with a warning instead of blocking the caller.
+- Publishes are queued to a background thread; when more than `max_pending_publishes` are outstanding, new publishes are dropped with a warning instead of blocking the caller. A dropped publish costs the other pods that one update, not the local write: this pod keeps the value it wrote.
 
 ## TrackingCache
 
@@ -75,7 +76,7 @@ CACHES = {
             "local_timeout": None,  # extra cap on how long a value stays local, in seconds
             "prefixes": None,  # tracked key prefixes; derived from the transport by default
             "poll_timeout": 1.0,  # seconds the listener waits for a message before checking for shutdown
-            "health_check_interval": 15.0,  # idle seconds before the listener pings its connections
+            "health_check_interval": 15.0,  # wall-clock seconds between listener pings
             "reconnect_delay": 1.0,  # seconds between reconnection attempts
         },
     },
@@ -87,7 +88,8 @@ CACHES = {
 - A write is visible locally one network round trip after the server applies it. A read in flight when the invalidation arrives is served but not kept.
 - A local copy never outlives its key: it expires with the key's remaining TTL, minus the stampede buffer if the transport uses stampede prevention, and `local_timeout` caps that further.
 - `FLUSHDB`, `FLUSHALL`, `clear()` and a lost listener connection flush the local store. The listener reconnects after `reconnect_delay`; until then every read goes to the transport.
-- The transport's stampede prevention applies to local hits too, so early recomputes stay spread across processes.
+- The listener pings its tracking connection every `health_check_interval` seconds of wall clock, busy or idle. A connection the server drops silently is therefore noticed within `health_check_interval + reconnect_delay` plus the reconnect itself, and the local store is flushed at that point, so that sum bounds how long a stale local copy can be served.
+- The transport's stampede prevention applies to local hits too, so early recomputes stay spread across processes. A local hit whose XFetch roll fires returns the default; it is not refetched from the transport and rolled a second time.
 
 ### Without a listener
 
@@ -99,9 +101,13 @@ CACHES = {
 
 ### What's supported
 
-The standard Django cache interface, the `nx`/`xx`/`get` flags on `set`, and the key metadata helpers delegated to the transport (`keys`, `iter_keys`, `scan`, `ttl`, `pttl`, `type`, `info`, `persist`, `expire`, `delete_pattern`), all with async counterparts. Data-structure ops (`lpush`, `hset`, `zadd`, ...) raise `NotSupportedError`; use the transport alias for them. `info()` adds a `tracking` section with the listener state, the store size and the hit, miss, invalidation and flush counters.
+The standard Django cache interface, the `nx`/`xx`/`get` flags on `set`, and the key metadata helpers delegated to the transport (`keys`, `iter_keys`, `scan`, `ttl`, `pttl`, `type`, `info`, `slowlog_get`, `slowlog_len`, `persist`, `expire`, `delete_pattern`), all with async counterparts. Data-structure ops (`lpush`, `hset`, `zadd`, ...) raise `NotSupportedError`; use the transport alias for them. `info()` adds a `tracking` section with the listener state, the store size and the hit, miss, invalidation and flush counters.
 
-`KEY_PREFIX` is not accepted on a `TrackingCache` alias, in either slot: keys are made by the transport, so set it there. `TIMEOUT` and `VERSION` on the alias are ignored for the same reason.
+`delete_pattern` takes a Redis glob on both sides: the same pattern picks the local entries to evict and the keys the transport deletes, so `[^0]` negates the way it does on the server.
+
+`KEY_PREFIX` is not accepted on a `TrackingCache` alias, in either slot: keys are made by the transport, so set it there. `TIMEOUT` and `VERSION` on the alias are ignored for the same reason. Key versions come from the transport, and `incr_version` / `decr_version` (with their async twins) honor that: they delegate the rename to the transport and forget the local copies of both versions. `VERSION` on the transport alias works.
+
+In the admin a `TrackingCache` alias is badged limited and offers no key browsing, because its keys live on the transport; browse and edit through the transport alias.
 
 ### Operational notes
 

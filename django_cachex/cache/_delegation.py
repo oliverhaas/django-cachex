@@ -13,8 +13,9 @@ if TYPE_CHECKING:
 class DelegatingCacheMixin:
     """Forward the admin/metadata surface to ``_delegation_target``.
 
-    A ``NotSupportedError`` raised by the target is re-raised as this
-    backend's own so callers see the alias they actually used.
+    A ``NotSupportedError`` raised by the target is re-raised carrying this
+    backend's class name, so the error names the backend the caller reached
+    for rather than the one behind it.
     """
 
     @property
@@ -120,6 +121,12 @@ class DelegatingCacheMixin:
 
     def info(self, section: str | None = None) -> dict[str, Any]:
         return self._delegate("info", section=section)
+
+    def slowlog_get(self, count: int = 10) -> list[Any]:
+        return self._delegate("slowlog_get", count)
+
+    def slowlog_len(self) -> int:
+        return self._delegate("slowlog_len")
 
     def persist(self, key: str, version: int | None = None) -> bool:
         return self._delegate("persist", key, version=version)

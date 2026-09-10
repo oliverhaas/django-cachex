@@ -3,6 +3,7 @@
 import contextlib
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -11,6 +12,7 @@ from django.core.cache import caches
 from django.utils.translation import gettext_lazy as _
 
 from django_cachex.admin.cas import get_hash_field_sha1s_for, get_list_sha1s_range, supports_cas
+from django_cachex.cache.resp import RespCache
 from django_cachex.exceptions import CompressorError, NotSupportedError, SerializerError
 from django_cachex.types import KeyType
 from django_cachex.utils import _deep_getsizeof
@@ -23,6 +25,43 @@ if TYPE_CHECKING:
 
 class CacheUnavailableError(Exception):
     """The alias is missing from ``CACHES`` or its backend cannot be built."""
+
+
+# The password runs to the last ``@`` before the path, the way ``urllib.parse``
+# splits userinfo, so one holding a colon or an ``@`` is masked whole.
+_URL_PASSWORD_RE = re.compile(r"([a-zA-Z][a-zA-Z0-9+.\-]*://[^/@\s:]*:)[^/\s]*(@)")
+
+
+def mask_credentials(text: str) -> str:
+    """Replace the password of every connection URL in ``text`` with ``***``.
+
+    Anyone holding ``view_cache`` sees the rendered ``LOCATION``, and the error
+    strings the list view echoes can quote it back.
+    """
+    return _URL_PASSWORD_RE.sub(r"\1***\2", text)
+
+
+def mask_location(location: Any) -> str:
+    """Render a ``LOCATION`` setting for display, without its password.
+
+    A sequence of URLs (replica or sentinel lists) joins into one
+    comma-separated string.
+    """
+    if isinstance(location, (list, tuple)):
+        return ", ".join(mask_credentials(str(item)) for item in location)
+    return mask_credentials(str(location)) if location else ""
+
+
+def read_value(cache: Any, key: str) -> Any:
+    """Read a value for display, bypassing stampede prevention.
+
+    With stampede prevention on, ``get()`` returns ``None`` once a key is past
+    its logical expiry, so the admin would show ``null`` for a key that still
+    holds a value and write that ``None`` back on the next update.
+    """
+    if isinstance(cache, RespCache):
+        return cache.get(key, stampede_prevention=False)
+    return cache.get(key)
 
 
 def _row(label: Any, value: Any) -> dict[str, Any] | None:
@@ -98,7 +137,8 @@ def get_cache(cache_name: str) -> Any:
 
     Raises:
         CacheUnavailableError: the alias is missing from ``CACHES`` or its
-            backend cannot be built. Callers turn this into a message.
+            backend cannot be built. Callers turn this into a message, so the
+            wrapped construction error is masked: it can quote the ``LOCATION``.
     """
     cache_config = settings.CACHES.get(cache_name)
     if not cache_config:
@@ -107,7 +147,7 @@ def get_cache(cache_name: str) -> Any:
     try:
         return caches[cache_name]
     except Exception as exc:
-        msg = f"Cache '{cache_name}' could not be loaded: {exc}"
+        msg = f"Cache '{cache_name}' could not be loaded: {mask_credentials(str(exc))}"
         raise CacheUnavailableError(msg) from exc
 
 
@@ -121,17 +161,11 @@ def parse_metadata(
     Pure parsing; does not call ``cache.info()`` itself, so the caller can fetch
     once and reuse the same payload for both metadata display and raw JSON dump.
     """
-    location = cache_config.get("LOCATION", "")
-    if isinstance(location, list):
-        location = ", ".join(location)
-    else:
-        location = str(location) if location else ""
-
     base_info: dict[str, Any] = {
         "backend": str(cache_config.get("BACKEND", "")),
         "key_prefix": cache.key_prefix,
         "version": cache.version,
-        "location": location,
+        "location": mask_location(cache_config.get("LOCATION", "")),
         "server_rows": [],
         "keyspace": None,
         "memory_rows": [],
@@ -254,16 +288,6 @@ def format_value_for_display(value: Any) -> tuple[str, bool]:
     return repr(value), False
 
 
-def _format_entry(value: Any) -> tuple[str, bool]:
-    """Format one container entry as (display_string, editable).
-
-    Shares ``format_value_for_display`` with the string editor so containers and
-    strings agree on what is round-trippable. Entries that fall back to repr()
-    are marked non-editable: submitting the repr back would store the repr text.
-    """
-    return format_value_for_display(value)
-
-
 def parse_json_or_str(value: str) -> Any:
     """Try to interpret a string as JSON, falling back to the raw string."""
     with contextlib.suppress(json.JSONDecodeError, ValueError):
@@ -284,7 +308,7 @@ def _zset_rows(entries: Any) -> list[tuple[str, float, bool]]:
     """Format ``(member, score)`` pairs as display rows."""
     rows = []
     for raw, score in entries:
-        member, editable = _format_entry(raw)
+        member, editable = format_value_for_display(raw)
         # ZADD takes members as dict keys, so a member that parses back as an
         # array or object can be shown but never written.
         rows.append((member, score, editable and is_hashable(parse_json_or_str(member))))
@@ -321,7 +345,7 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
                 # the template sees the same tuple shape on backends without scripting.
                 item_entries = []
                 for i, raw in enumerate(cache.lrange(key, start, stop)):
-                    item, editable = _format_entry(raw)
+                    item, editable = format_value_for_display(raw)
                     item_entries.append((start + i, item, "", editable))
                 return {"length": length, "pagination": pagination, "item_entries": item_entries}
             case KeyType.HASH:
@@ -331,11 +355,11 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
                 s, e = pagination["start_index"], pagination["end_index"]
                 field_entries = []
                 for field, raw in list(fields.items())[s:e]:
-                    value, editable = _format_entry(raw)
+                    value, editable = format_value_for_display(raw)
                     field_entries.append((field, value, "", editable))
                 return {"length": length, "pagination": pagination, "field_entries": field_entries}
             case KeyType.SET:
-                members = sorted(_format_entry(m) for m in cache.smembers(key))
+                members = sorted(format_value_for_display(m) for m in cache.smembers(key))
                 length = len(members)
                 pagination = _paginate(length, page)
                 s, e = pagination["start_index"], pagination["end_index"]
@@ -416,7 +440,7 @@ def get_size(cache: Any, key: str, key_type: str | None = None) -> int | None:
         # failures for stale data must not break the size column, return None
         # so the row still renders and the user can delete the broken key.
         try:
-            value = cache.get(key)
+            value = read_value(cache, key)
         except CompressorError, SerializerError:
             return None
         return _deep_getsizeof(value) if value is not None else None
@@ -470,30 +494,29 @@ def _parse_slowlog_entry(entry: Any) -> dict[str, Any]:
 
 
 def get_slowlog(cache: Any, count: int = 25) -> dict[str, Any]:
-    """Get slow query log entries."""
+    """Get slow query log entries.
+
+    Raises:
+        AttributeError, NotSupportedError: the backend has no slow log. The
+            cache detail view hides the section rather than showing an empty one.
+    """
     result: dict[str, Any] = {
         "entries": [],
         "length": 0,
         "error": None,
     }
 
-    # Try cache's slowlog_get first - wrappers return structured result
-    if hasattr(cache, "slowlog_get"):
-        try:
-            slowlog_result = cache.slowlog_get(count)
-            # Wrappers return structured dict with "entries" key
-            if isinstance(slowlog_result, dict) and "entries" in slowlog_result:
-                return slowlog_result
-            # Native backends return raw entries list - need length too
-            if hasattr(cache, "slowlog_len"):
-                result["length"] = cache.slowlog_len()
-            result["entries"] = [_parse_slowlog_entry(entry) for entry in slowlog_result]
-            return result
-        except NotSupportedError:
-            raise
-        except Exception as e:  # noqa: BLE001
-            result["error"] = str(e)
-            return result
-
-    result["error"] = "Slow log not available for this backend."
+    try:
+        slowlog_result = cache.slowlog_get(count)
+        # Wrappers return a structured dict with an "entries" key.
+        if isinstance(slowlog_result, dict) and "entries" in slowlog_result:
+            return slowlog_result
+        # Native backends return a raw entries list, so the length is a second call.
+        with contextlib.suppress(AttributeError, NotSupportedError):
+            result["length"] = cache.slowlog_len()
+        result["entries"] = [_parse_slowlog_entry(entry) for entry in slowlog_result]
+    except AttributeError, NotSupportedError:
+        raise
+    except Exception as e:  # noqa: BLE001
+        result["error"] = str(e)
     return result

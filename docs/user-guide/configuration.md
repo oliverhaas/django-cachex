@@ -67,8 +67,36 @@ See the upstream [valkey-glide](https://github.com/valkey-io/valkey-glide) docs 
 
 | Backend | Description |
 |---------|-------------|
-| `LocMemCache` | Drop-in replacement for Django's `LocMemCache` with data-structure ops, TTL helpers, and admin support |
+| `LocMemCache` | Drop-in replacement for Django's `LocMemCache` with data-structure ops, `ttl()`/`expire()`/`persist()`, and admin support |
 | `DatabaseCache` | Drop-in replacement for Django's `DatabaseCache` with the same extensions |
+
+The TTL surface is `ttl()`, `expire()` and `persist()`, and `ttl()` reports
+whole seconds. `pttl()`, `pexpire()`, `expireat()`,
+`pexpireat()`, `expiretime()` and the hash-field expiration family
+(`hexpire()`, `httl()`, `hsetex()`, `hgetex()` and their relatives) raise
+`NotSupportedError`, and so do `lock()`, `pipeline()`, `eval_script()`,
+`get_client()`, `rename()`, `renamenx()`, `slowlog_get()`, `slowlog_len()`,
+the blocking list pops, and the cross-key store commands (`lmove()`,
+`smove()`, `sinterstore()` and friends). Streams are not implemented at all.
+
+What does work on both: the hash, list, set and sorted-set commands, `type()`,
+`touch()`, `info()`, key listing (`keys()`, `iter_keys()`, `scan()`,
+`delete_pattern()`) and the admin. Key patterns use Redis's glob dialect on
+both, and `DatabaseCache` matches case-sensitively on every database vendor.
+`LocMemCache` also has `semaphore()`, backed by the in-process
+`django_cachex.Semaphore`; `DatabaseCache` has no semaphore.
+
+`incr_version()` and `decr_version()` move the key rather than copying it, the
+way Redis `RENAME` does: any key type moves, collections included, and the key
+keeps its remaining TTL.
+
+On MySQL, run the connection at `READ COMMITTED`, which is also Django's own
+recommendation for `DatabaseCache`. The compound operations (`lpush()`,
+`sadd()`, `hincrby()` and the rest) take a `SELECT ... FOR UPDATE` row lock,
+and under the InnoDB default of `REPEATABLE READ` that lock takes a gap lock on
+a row that does not exist yet, so two clients creating the same key at the same
+time deadlock and one gets an `OperationalError` (MySQL error 1213) instead of
+falling through to the insert retry.
 
 ### Composite backends
 
@@ -118,6 +146,18 @@ Server URL(s):
 # Or comma/semicolon separated
 "LOCATION": "valkey://127.0.0.1:6379/1,valkey://127.0.0.1:6380/1"
 ```
+
+The multi-URL form works on the valkey-glide backends too. There the extra URLs
+become replica node addresses and the client is built with
+`read_from=PREFER_REPLICA`, so reads go to a replica when one is reachable and
+fall back to the primary otherwise. Two constraints come with it:
+
+- Every URL in the list must agree on TLS scheme, username, password and
+  database, because glide applies one connection setting to the whole address
+  list. A mismatch raises `ImproperlyConfigured` when the backend first
+  connects.
+- Listing the same URL twice does not add a replica: duplicate host/port
+  entries collapse to a single address.
 
 ## OPTIONS Reference
 
@@ -261,7 +301,13 @@ Probabilistic early recompute (XFetch) to avoid thundering-herd recompute when a
 }
 ```
 
-Per-call overrides accept the same shapes via the `stampede_prevention=` keyword on `get`/`set`/`add`/`touch`/`get_or_set`/`get_many`/`set_many`, and on their `a`-prefixed async counterparts. On `touch` the keyword decides whether the refreshed TTL gets the buffer added back, so it should match what the original write used.
+`buffer` is a non-negative `int` (seconds); `beta` and `delta` are finite
+non-negative numbers. Zero for `beta` or `delta` is valid and means "no
+probabilistic early recompute, the key expires logically at its timeout". An
+out-of-range value raises `TypeError` or `ValueError` when the cache is
+configured, not later on a write.
+
+Per-call overrides accept the same shapes via the `stampede_prevention=` keyword on `get`/`set`/`add`/`touch`/`get_or_set`/`get_many`/`set_many`, on the TTL readers and setters (`ttl`, `pttl`, `expire`, `expireat`, `pexpire`, `pexpireat`, `expiretime`), and on their `a`-prefixed async counterparts. On `touch` the keyword decides whether the refreshed TTL gets the buffer added back, so it should match what the original write used.
 
 !!! warning "Valkey/Redis backends only"
     Stampede prevention is implemented in the RESP cache layer and the
@@ -299,7 +345,7 @@ handled above the adapter. Every other key is ignored.
 ### Choosing an adapter
 
 The adapter (the layer that talks to the underlying client lib) is
-selected by your ``BACKEND``. Each cache class has a fixed adapter:
+selected by your `BACKEND`. Each cache class has a fixed adapter:
 
 | Backend                                         | Adapter      |
 |-------------------------------------------------|--------------|

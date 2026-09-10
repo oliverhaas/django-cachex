@@ -75,7 +75,7 @@ network latency to amplify connection-lifetime issues), run the script
 inside a Docker container with `--cap-add NET_ADMIN` and apply
 `tc qdisc add dev eth0 root netem delay 1ms` against the cache server's
 interface. Without latency the directional ranking is the same; with it,
-the magnitude grows dramatically.
+the gaps widen.
 
 **Async** gets two views via `aget` / `aset` / `aget_many` / etc.:
 
@@ -213,12 +213,15 @@ six async cache ops, the shape closest to real production load.
 
 | Adapter              | req/s | avg ms | p99 ms | RSS peak (MiB) | conns peak | conns settled |
 | -------------------- | ----: | -----: | -----: | -------------: | ---------: | ------------: |
-| redis-py             |   424 |    235 |  1,486 |            413 |        216 |           216 |
-| redis-py+hiredis     |   467 |    213 |  1,509 |            414 |        209 |           209 |
-| valkey-py            |   519 |    192 |  1,375 |            420 |        211 |           211 |
-| valkey-py+libvalkey  |   498 |    200 |  1,599 |            432 |        211 |           211 |
-| **valkey-glide**     |   553 |    180 |  1,395 |            446 |        172 |           172 |
-| django (builtin)     |   156 |    634 |  3,117 |            466 |        337 |           337 |
+| redis-py             |   413 |    241 |  1,507 |            435 |        209 |           209 |
+| redis-py+hiredis     |   586 |    170 |  2,422 |            427 |        209 |           209 |
+| valkey-py            |   380 |    262 |  1,467 |            434 |        220 |           220 |
+| valkey-py+libvalkey  |   626 |    159 |  1,181 |            434 |        216 |           216 |
+| valkey-glide         |   324 |    306 |  1,682 |            438 |        115 |           115 |
+| django (builtin)     |   200 |    494 |  2,422 |            523 |        316 |           316 |
+
+These numbers come from a later re-run than the tables above; req/s is noisy
+run to run on this benchmark.
 
 ### Takeaways
 
@@ -226,19 +229,21 @@ six async cache ops, the shape closest to real production load.
   / 8.9k incr / 4k delete** ops/sec, ~2.5× the fastest pure-Python adapter,
   and uses ~4× less Python memory.
 - **Django request cycle.** `valkey-glide` leads at ~1.2-1.9k ops/sec.
-  An earlier version failed this benchmark entirely because ``close()``
-  was tearing down the connection on every ``request_finished`` signal;
+  An earlier version failed this benchmark entirely because `close()`
+  was tearing down the connection on every `request_finished` signal;
   now it outperforms the Python adapters.
 - **Async serial.** `valkey-glide` runs ~1.5-1.8x faster than the C-parser
   Python adapters on every phase (3.3k get, 3.7k incr).
 - **Async concurrent (50 in flight).** `valkey-glide` peaks at **10k get /
   12.5k get-miss / 12.2k incr** ops/sec, roughly **4-5x** the fastest
   Python adapter.
-- **ASGI full-stack** (granian × 4 workers, httpx × 100 concurrent).
-  `valkey-glide` leads on req/s at 553 (180 ms avg, 1.4 s p99) and uses
-  fewer connections than every Python adapter (172 vs ~210). Process-wide
-  client sharing, added after this benchmark first surfaced 4,577 conn
-  counts, brought it in line with its transport's claim.
+- **ASGI full-stack** (granian × 4 workers, httpx × 100 concurrent). req/s
+  swings run to run, so read the rough buckets (~600 / ~400 / ~200) rather
+  than the exact ranks. What holds across runs: `valkey-glide` settles at
+  roughly half the connections of the Python adapters (115 vs ~210), and
+  Django's builtin `RedisCache` opens 316 (it builds a fresh `redis.Redis`
+  per cache call) while paying the highest average latency and the largest
+  RSS.
 - **Connection stability.** Across every shape the cachex path keeps
   `Δ` at 0 between phases, so there are no per-phase connection leaks on
   any adapter.

@@ -10,10 +10,15 @@ Notable design points:
   ``SELECT ... FOR UPDATE`` row lock (PostgreSQL, MySQL/InnoDB; no-op on
   SQLite). Two concurrent ``lpush``/``sadd``/``hincrby`` calls against the
   same key are serialized at the database, eliminating the GET-then-SET
-  race the naive emulation path is exposed to.
+  race the naive emulation path is exposed to. On MySQL, run the connection
+  at ``READ COMMITTED`` (Django's own recommendation). Under the InnoDB
+  default of ``REPEATABLE READ``, the ``FOR UPDATE`` on a row that does not
+  exist yet takes a gap lock, so two clients creating the same key at the
+  same time deadlock and one gets an ``OperationalError`` instead of the
+  insert retry.
 - One pickle round-trip per op, the same shape Django's stock backend
-  uses (``pickle.dumps`` → base64 → ``TEXT`` column). No double encoding
-  through the public ``set``/``get`` surface.
+  uses (``pickle.dumps``, then base64, into a ``TEXT`` column). No double
+  encoding through the public ``set``/``get`` surface.
 - Existing keys preserve their ``expires`` column on in-place mutation;
   only new rows get a fresh ``expires`` (set to ``datetime.max``,
   matching Django's "no expiry" sentinel for compound ops).
@@ -59,7 +64,7 @@ from django_cachex.utils import (
     _glob_to_regex,
     _lpos_positions,
     _score_bound,
-    _validate_lpos_rank,
+    _validate_lpos_args,
     _validate_pop_count,
 )
 
@@ -126,11 +131,13 @@ def _now() -> datetime:
 
 
 def _no_expiry_dt() -> datetime:
-    """The ``datetime.max`` value Django writes for ``timeout=None``."""
-    far_future = datetime.max.replace(microsecond=0)  # noqa: DTZ901
-    if settings.USE_TZ:
-        return far_future.replace(tzinfo=UTC)
-    return far_future
+    """The naive ``datetime.max`` Django writes for ``timeout=None``.
+
+    Naive under ``USE_TZ`` too, mirroring ``_base_set``: attaching UTC here
+    would make ``adapt_datetimefield_value`` convert to the database
+    ``TIME_ZONE``, and any zone east of UTC pushes the year past 9999.
+    """
+    return datetime.max.replace(microsecond=0)  # noqa: DTZ901
 
 
 def _adapt_dt(conn: BaseDatabaseWrapper, dt: datetime) -> Any:
@@ -155,7 +162,9 @@ def _normalize_expires(raw: Any, conn: BaseDatabaseWrapper) -> datetime | None:
         if not isinstance(dt, datetime):
             return None
     if settings.USE_TZ and dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
+        # The column holds a wall clock in the database ``TIME_ZONE``, which is
+        # what ``adapt_datetimefield_value`` wrote; ``conn.timezone`` defaults to UTC.
+        dt = dt.replace(tzinfo=conn.timezone or UTC)
     elif not settings.USE_TZ and dt.tzinfo is not None:
         dt = dt.replace(tzinfo=None)
     return dt
@@ -421,6 +430,39 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         found = super().get_many(keys, version)
         return {k: v for k, v in found.items() if not isinstance(v, _TAGGED_COLLECTIONS)}
 
+    def incr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        """Move a key to a new version, mirroring Redis ``RENAME``.
+
+        ``BaseCache.incr_version`` is a ``get``/``set``/``delete`` round trip,
+        so it would raise :class:`~django_cachex.exceptions.WrongTypeError` on
+        a collection key and reset the TTL on a string one. Renaming the row
+        moves any type and keeps ``expires``, matching ``LocMemCache`` and
+        ``RespCache``. ``aincr_version`` dispatches here.
+        """
+        if version is None:
+            version = self.version
+        old_key = self.make_and_validate_key(key, version=version)
+        new_key = self.make_and_validate_key(key, version=version + delta)
+        db = router.db_for_write(self.cache_model_class)
+        conn = connections[db]
+        quote = conn.ops.quote_name
+        table = quote(self._get_table_name())
+        with transaction.atomic(using=db), conn.cursor() as cursor:
+            cursor.execute(
+                f"DELETE FROM {table} WHERE {quote('cache_key')} = %s",  # noqa: S608
+                [new_key],
+            )
+            cursor.execute(
+                f"UPDATE {table} SET {quote('cache_key')} = %s "  # noqa: S608
+                f"WHERE {quote('cache_key')} = %s AND {quote('expires')} > %s",
+                [new_key, old_key, _adapt_dt(conn, _now())],
+            )
+            if cursor.rowcount <= 0:
+                # Raising inside the block rolls the destination delete back.
+                msg = f"Key '{key}' not found"
+                raise ValueError(msg)
+        return version + delta
+
     # =========================================================================
     # TTL Operations
     # =========================================================================
@@ -578,16 +620,14 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         prep = conn.ops.prep_for_like_query
         # Anchor to ``KEY_PREFIX:VERSION:`` so ``pattern="*"`` can't leak
         # other versions or prefixes.
-        pattern = pattern or "*"
         prefixed = self.make_key(pattern, version=version)
         key_prefix = self.make_key("", version=version)
         # Translate glob wildcards over the user-supplied tail only: a ``*`` in
         # KEY_PREFIX or the version segment is data, so it stays escaped.
         if prefixed.startswith(key_prefix):
-            like_tail, exact = _glob_to_like(prefixed[len(key_prefix) :], prep)
-            sql_pattern = prep(key_prefix) + like_tail
+            sql_pattern = prep(key_prefix) + _glob_to_like(prefixed[len(key_prefix) :], prep)
         else:
-            sql_pattern, exact = _glob_to_like(prefixed, prep)
+            sql_pattern = _glob_to_like(prefixed, prep)
         # ``operators`` is set per vendor on the concrete wrapper; the
         # django-stubs surface omits it, hence the ``cast``.
         like_clause = cast("Any", conn).operators["contains"]
@@ -616,6 +656,8 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
                 params,
             )
             rows = cursor.fetchall()
+        # ``LIKE`` only narrows the row set: it has no character classes and
+        # SQLite folds ASCII case, so every row is re-checked against the glob.
         matches = _glob_to_regex(pattern).match
         # Anchor the prefix match with a trailing ``:`` so a key_prefix like
         # ``"cache"`` doesn't claim rows from a sibling prefix ``"cache_buster:"``.
@@ -631,7 +673,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             else:
                 parts = cache_key.split(":", 2)
                 user_key = parts[2] if len(parts) >= 3 else cache_key
-            if exact or matches(user_key):
+            if matches(user_key):
                 result.append(user_key)
         return result
 
@@ -742,6 +784,10 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         return current
 
     def lpush(self, key: str, *values: Any, version: int | None = None) -> int:
+        if not values:
+            # Returning early leaves the row, its list and its expiry alone.
+            return 0
+
         def transform(current: Any) -> tuple[Any, int]:
             existing: list[Any] = self._coerce_list(key, current) or []
             new_list = _List(list(reversed(values)) + existing)
@@ -750,6 +796,10 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
 
     def rpush(self, key: str, *values: Any, version: int | None = None) -> int:
+        if not values:
+            # See :meth:`lpush`: no values, no write.
+            return 0
+
         def transform(current: Any) -> tuple[Any, int]:
             existing: list[Any] = self._coerce_list(key, current) or []
             new_list = _List(existing + list(values))
@@ -765,6 +815,9 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             if not existing:
                 return _DELETE if existing is not None else _MISSING, None
             n = count if count is not None else 1
+            if n == 0:
+                # Redis pops nothing and returns an empty array for ``count=0``.
+                return _MISSING, []
             popped = existing[:n]
             remaining = _List(existing[n:])
             return (remaining or _DELETE), (popped if count is not None else popped[0])
@@ -878,6 +931,10 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         return cast("bool", self._atomic_compound(self._internal_key(key, version=version), transform))
 
     def linsert(self, key: str, where: str, pivot: Any, value: Any, version: int | None = None) -> int:
+        if where.upper() not in {"BEFORE", "AFTER"}:
+            msg = "syntax error"
+            raise ValueError(msg)
+
         def transform(current: Any) -> tuple[Any, int]:
             existing = self._coerce_list(key, current)
             if not existing:
@@ -902,7 +959,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         maxlen: int | None = None,
         version: int | None = None,
     ) -> int | list[int] | None:
-        _validate_lpos_rank(rank)
+        _validate_lpos_args(rank, count, maxlen)
         existing = self._coerce_list(key, self._read(self._internal_key(key, version=version)))
         if not existing:
             return [] if count is not None else None
@@ -964,6 +1021,8 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         return set() if existing is None else set(existing)
 
     def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | _set[Any] | None:
+        _validate_pop_count(count)
+
         def transform(current: Any) -> tuple[Any, Any]:
             existing = self._coerce_set(key, current)
             if not existing:
@@ -1483,13 +1542,11 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         return await sync_to_async(self.keys, thread_sensitive=True)(*args, **kwargs)
 
     async def ascan(self, *args: Any, **kwargs: Any) -> Any:
-        # ``BaseCachex.scan`` paginates over ``keys()``, which this backend
-        # implements, so the async twin just offloads it.
         return await sync_to_async(self.scan, thread_sensitive=True)(*args, **kwargs)
 
     async def aiter_keys(self, *args: Any, **kwargs: Any) -> Any:
-        # iter_keys is a generator over a list snapshot, materializing once
-        # in the worker thread, then yielding from the coroutine, is fine.
+        # ``iter_keys`` walks a list snapshot, so materializing it once in the
+        # worker thread and yielding from the coroutine costs nothing extra.
         items = await sync_to_async(lambda: list(self.iter_keys(*args, **kwargs)), thread_sensitive=True)()
         for item in items:
             yield item

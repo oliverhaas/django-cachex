@@ -107,10 +107,22 @@ def _loop_slot(registry: AsyncPoolsRegistry, loop: asyncio.AbstractEventLoop) ->
         return slot
 
 
-def _pop_loop_slot(registry: AsyncPoolsRegistry, loop: asyncio.AbstractEventLoop) -> dict[tuple[Any, ...], Any]:
-    """Remove ``loop``'s slot from ``registry`` and return what it held."""
+def _pop_loop_entries(
+    registry: AsyncPoolsRegistry,
+    loop: asyncio.AbstractEventLoop,
+    keys: Iterable[tuple[Any, ...]],
+) -> list[Any]:
+    """Remove and return ``loop``'s entries under ``keys``.
+
+    Only the caller's own keys go. The registry is shared by every alias on
+    the driver, and disconnecting a pool drops the connections another
+    alias's in-flight tasks have checked out of it.
+    """
     with _ASYNC_REGISTRY_LOCK:
-        return registry.pop(loop, {})
+        slot = registry.get(loop)
+        if slot is None:
+            return []
+        return [slot.pop(key) for key in keys if key in slot]
 
 
 # How deep ``_stable_value`` walks a nested option value before giving up.
@@ -190,6 +202,9 @@ def _check_xpending_args(
         raise ValueError(msg)
 
 
+# URL schemes both drivers turn into a TLS connection class.
+_TLS_SCHEMES = frozenset({"rediss", "valkeys"})
+
 _VALKEY_ASYNC_POOLS: AsyncPoolsRegistry = weakref.WeakKeyDictionary()
 
 # Cluster-client caches, shared process-wide. Sync clusters are pooled by
@@ -261,10 +276,14 @@ try:
     from valkey.asyncio.cluster import ValkeyCluster as AsyncValkeyCluster
     from valkey.asyncio.sentinel import Sentinel as AsyncValkeySentinel
     from valkey.asyncio.sentinel import SentinelConnectionPool as AsyncValkeySentinelConnectionPool
+    from valkey.asyncio.sentinel import (
+        SentinelManagedSSLConnection as AsyncValkeySentinelManagedSSLConnection,
+    )
     from valkey.cluster import ValkeyCluster
     from valkey.cluster import key_slot as valkey_key_slot
     from valkey.sentinel import Sentinel as ValkeySentinel
     from valkey.sentinel import SentinelConnectionPool as ValkeySentinelConnectionPool
+    from valkey.sentinel import SentinelManagedSSLConnection as ValkeySentinelManagedSSLConnection
 
     _VALKEY_AVAILABLE = True
 except ImportError:
@@ -629,7 +648,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
     def _normalize_ttl(result: int) -> int | None:
         """Normalize Redis TTL/PTTL/EXPIRETIME results.
 
-        -1 (no expiry) → None, -2 (key missing) → -2, positive → as-is.
+        -1 (no expiry) becomes None; -2 (key missing) and positive values pass through.
         """
         if result == -1:
             return None
@@ -692,7 +711,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             raise RuntimeError(msg)
 
         url = self._servers[index]
-        key = (self._async_pool_class, url, self._async_pool_options_key, index)
+        key = self._async_pool_key(index)
 
         slot = _loop_slot(self._async_pools, loop)
         pool = slot.get(key)
@@ -700,6 +719,9 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             pool = self._async_pool_class.from_url(url, **self._async_pool_options)
             slot[key] = pool
         return pool
+
+    def _async_pool_key(self, index: int) -> tuple[Any, ...]:
+        return (self._async_pool_class, self._servers[index], self._async_pool_options_key, index)
 
     def _new_async_client(self, pool: Any) -> Any:
         """Build a fresh async client for ``pool``, safe for a caller to mutate."""
@@ -734,10 +756,19 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         _evict_closed_loops(self._async_pools)
 
     async def aclose(self, **kwargs: Any) -> None:
-        """Disconnect this event loop's async pools, and release those of closed loops."""
-        for pool in _pop_loop_slot(self._async_pools, asyncio.get_running_loop()).values():
-            await pool.aclose()
+        """Disconnect this adapter's async pools on this event loop, and release those of closed loops.
+
+        Pools another alias opened on the same loop stay up: ``aclose()`` on a
+        driver pool drops in-use connections along with idle ones.
+        """
+        keys = {self._async_pool_key(index) for index in range(len(self._servers))}
+        for pool in _pop_loop_entries(self._async_pools, asyncio.get_running_loop(), keys):
+            await self._aclose_pool(pool)
         _evict_closed_loops(self._async_pools)
+
+    async def _aclose_pool(self, pool: Any) -> None:
+        # Sentinel overrides this to also close its discovery clients.
+        await pool.aclose()
 
     def invalidation_listener(self, prefixes: Sequence[str], *, timeout: float = 5.0) -> InvalidationListenerProtocol:
         """Open a CLIENT TRACKING BCAST subscription on the primary; see :class:`_ValkeyPyInvalidationListener`."""
@@ -1949,7 +1980,6 @@ class ValkeyPyAdapter(RespAdapterProtocol):
     ) -> int | list[int] | None:
         """Find position(s) of element in list."""
         client = self.get_client(key, write=False)
-        encoded_value = value
 
         kwargs: dict[str, Any] = {}
         if rank is not None:
@@ -1959,7 +1989,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         if maxlen is not None:
             kwargs["maxlen"] = maxlen
 
-        return client.lpos(key, encoded_value, **kwargs)
+        return client.lpos(key, value, **kwargs)
 
     def lmove(
         self,
@@ -2105,7 +2135,6 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         maxlen: int | None = None,
     ) -> int | list[int] | None:
         client = await self.get_async_client(key, write=False)
-        encoded_value = value
 
         kwargs: dict[str, Any] = {}
         if rank is not None:
@@ -2115,7 +2144,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         if maxlen is not None:
             kwargs["maxlen"] = maxlen
 
-        return await client.lpos(key, encoded_value, **kwargs)
+        return await client.lpos(key, value, **kwargs)
 
     async def almove(
         self,
@@ -2462,9 +2491,8 @@ class ValkeyPyAdapter(RespAdapterProtocol):
     ) -> int:
         """Add members to a sorted set."""
         client = self.get_client(key, write=True)
-        scored_mapping = dict(mapping.items())
 
-        return cast("int", client.zadd(key, scored_mapping, nx=nx, xx=xx, gt=gt, lt=lt, ch=ch))
+        return cast("int", client.zadd(key, mapping, nx=nx, xx=xx, gt=gt, lt=lt, ch=ch))
 
     def zrem(self, key: str, *members: Any) -> int:
         """Remove members from a sorted set."""
@@ -2636,9 +2664,8 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         ch: bool = False,
     ) -> int:
         client = await self.get_async_client(key, write=True)
-        scored_mapping = dict(mapping.items())
 
-        return cast("int", await client.zadd(key, scored_mapping, nx=nx, xx=xx, gt=gt, lt=lt, ch=ch))
+        return cast("int", await client.zadd(key, mapping, nx=nx, xx=xx, gt=gt, lt=lt, ch=ch))
 
     async def azrem(self, key: str, *members: Any) -> int:
         client = await self.get_async_client(key, write=True)
@@ -2799,11 +2826,10 @@ class ValkeyPyAdapter(RespAdapterProtocol):
     ) -> str:
         """Add an entry to a stream."""
         client = self.get_client(key, write=True)
-        encoded_fields = dict(fields.items())
 
         result = client.xadd(
             key,
-            encoded_fields,
+            fields,
             id=entry_id,
             maxlen=maxlen,
             approximate=approximate,
@@ -2815,28 +2841,36 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     def _decode_stream_entries(
         self,
-        results: list[tuple[Any, dict[Any, Any]]],
+        results: list[tuple[Any, dict[Any, Any] | None]],
     ) -> list[tuple[str, dict[str, Any]]]:
-        """Decode raw stream entries (entry_id + field dict) from Redis."""
+        """Decode raw stream entries (entry_id + field dict) from Redis.
+
+        ``fields`` is None for a nil entry, which Redis 6 returns from XCLAIM
+        when the pending id has since been XDEL'd.
+        """
         return [
             (
                 entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
-                {k.decode() if isinstance(k, bytes) else k: v for k, v in fields.items()},
+                {k.decode() if isinstance(k, bytes) else k: v for k, v in (fields or {}).items()},
             )
             for entry_id, fields in results
         ]
 
     def _decode_stream_results(
         self,
-        results: Mapping[Any, list[tuple[Any, dict[Any, Any]]]] | list[tuple[Any, list[tuple[Any, dict[Any, Any]]]]],
+        results: Mapping[Any, list[Any]] | list[tuple[Any, list[tuple[Any, dict[Any, Any] | None]]]],
     ) -> dict[str, list[tuple[str, dict[str, Any]]]]:
         """Decode multi-stream results (xread/xreadgroup) from Redis."""
-        # RESP2 hands back a list of (stream, entries) pairs; RESP3 (``protocol: 3``
-        # in OPTIONS) hands back a mapping keyed by stream name.
-        pairs = results.items() if isinstance(results, dict) else results
+        # RESP2: a list of (stream, entries) pairs. RESP3: {stream: [entries]},
+        # the drivers' ``parse_xread_resp3`` wraps the entry list in a one-element list.
+        pairs: Iterable[tuple[Any, Any]]
+        if isinstance(results, dict):
+            pairs = ((stream_key, wrapper[0] if wrapper else None) for stream_key, wrapper in results.items())
+        else:
+            pairs = results
         return {
             (stream_key.decode() if isinstance(stream_key, bytes) else stream_key): self._decode_stream_entries(
-                entries,
+                entries or [],
             )
             for stream_key, entries in pairs
         }
@@ -3115,11 +3149,10 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         limit: int | None = None,
     ) -> str:
         client = await self.get_async_client(key, write=True)
-        encoded_fields = dict(fields.items())
 
         result = await client.xadd(
             key,
-            encoded_fields,
+            fields,
             id=entry_id,
             maxlen=maxlen,
             approximate=approximate,
@@ -3402,8 +3435,10 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
     _pool_class: builtins.type[Any] | None
     _sentinel_class: builtins.type[Any] | None = None
     _sentinel_pool_class: builtins.type[Any] | None = None
+    _sentinel_ssl_connection_class: builtins.type[Any] | None = None
     _async_sentinel_class: builtins.type[Any] | None = None
     _async_sentinel_pool_class: builtins.type[Any] | None = None
+    _async_sentinel_ssl_connection_class: builtins.type[Any] | None = None
 
     # Sentinel-managed pools live on ``_async_sentinel_pool_class``; clear the
     # generic ``_async_pool_class`` inherited from ``ValkeyPyAdapter`` so callers
@@ -3418,8 +3453,10 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
         _pool_class = ValkeySentinelConnectionPool
         _sentinel_class = ValkeySentinel
         _sentinel_pool_class = ValkeySentinelConnectionPool
+        _sentinel_ssl_connection_class = ValkeySentinelManagedSSLConnection
         _async_sentinel_class = AsyncValkeySentinel
         _async_sentinel_pool_class = AsyncValkeySentinelConnectionPool
+        _async_sentinel_ssl_connection_class = AsyncValkeySentinelManagedSSLConnection
 
     @override
     def __init__(
@@ -3513,6 +3550,23 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
         )
         return service_name, is_master, clean_url
 
+    def _tls_connection_class(self, url: str, *, is_async: bool) -> builtins.type[Any] | None:
+        """The Sentinel-managed TLS connection class ``url`` calls for, or None if it is plain TCP.
+
+        Left to itself the driver's ``parse_url`` reads ``rediss://`` /
+        ``valkeys://`` as an ordinary SSL connection class, and the pool dials
+        the service name over TLS instead of asking Sentinel for the primary.
+        """
+        if urlparse(url).scheme not in _TLS_SCHEMES:
+            return None
+        connection_class = (
+            self._async_sentinel_ssl_connection_class if is_async else self._sentinel_ssl_connection_class
+        )
+        if connection_class is None:
+            msg = "Subclasses must set the Sentinel-managed TLS connection classes"
+            raise RuntimeError(msg)
+        return connection_class
+
     @override
     def _get_connection_pool(self, *, write: bool) -> ConnectionPool:
         index = self._get_connection_pool_index(write=write)
@@ -3528,6 +3582,9 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
             sentinel_manager=self._sentinel,
             is_master=is_master,
         )
+        tls_connection_class = self._tls_connection_class(clean_url, is_async=False)
+        if tls_connection_class is not None:
+            pool_options["connection_class"] = tls_connection_class
 
         if self._sentinel_pool_class is None:
             msg = "Subclasses must set _sentinel_pool_class"
@@ -3580,23 +3637,8 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
             raise RuntimeError(msg)
 
         service_name, is_master, clean_url = self._parse_sentinel_url(index)
-
-        # Filter out parser_class - it's sync-specific and causes AttributeError on async connections
-        pool_options: dict[str, Any] = {k: v for k, v in self._pool_options.items() if k != "parser_class"}
-
-        # The key must be stable across adapter instances (asgiref hands each
-        # task a fresh one), so the fleet stands in for its sentinel manager.
-        sentinels = self._options.get("sentinels") or ()
-        key = (
-            self._async_sentinel_pool_class,
-            clean_url,
-            service_name,
-            is_master,
-            tuple(tuple(entry) for entry in sentinels),
-            _options_key(self._options.get("sentinel_kwargs") or {}),
-            _options_key(pool_options),
-            index,
-        )
+        pool_options = self._async_sentinel_pool_options()
+        key = self._async_sentinel_pool_key(index, service_name, is_master, clean_url)
 
         slot = _loop_slot(self._async_pools, loop)
         pool = slot.get(key)
@@ -3608,8 +3650,46 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
                 is_master=is_master,
                 **pool_options,
             )
+            tls_connection_class = self._tls_connection_class(clean_url, is_async=True)
+            if tls_connection_class is not None:
+                # The async ``from_url`` lets the URL scheme's connection class
+                # beat an explicit kwarg, so the override lands on the pool.
+                pool.connection_class = tls_connection_class
             slot[key] = pool
         return pool
+
+    def _async_sentinel_pool_options(self) -> dict[str, Any]:
+        """Pool kwargs for an async Sentinel-managed pool.
+
+        ``parser_class`` is sync-only and raises AttributeError on an async
+        connection, so it is dropped here.
+        """
+        return {k: v for k, v in self._pool_options.items() if k != "parser_class"}
+
+    def _async_sentinel_pool_key(
+        self,
+        index: int,
+        service_name: str,
+        is_master: bool,
+        clean_url: str,
+    ) -> tuple[Any, ...]:
+        # The key must be stable across adapter instances (asgiref hands each
+        # task a fresh one), so the fleet stands in for its sentinel manager.
+        sentinels = self._options.get("sentinels") or ()
+        return (
+            self._async_sentinel_pool_class,
+            clean_url,
+            service_name,
+            is_master,
+            tuple(tuple(entry) for entry in sentinels),
+            _options_key(self._options.get("sentinel_kwargs") or {}),
+            _options_key(self._async_sentinel_pool_options()),
+            index,
+        )
+
+    @override
+    def _async_pool_key(self, index: int) -> tuple[Any, ...]:
+        return self._async_sentinel_pool_key(index, *self._parse_sentinel_url(index))
 
     @override
     def close(self, **kwargs: Any) -> None:
@@ -3618,13 +3698,23 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
         _evict_closed_loops(self._async_sentinels)
 
     @override
-    async def aclose(self, **kwargs: Any) -> None:
-        """Also close this event loop's Sentinel manager and its own clients."""
-        await super().aclose(**kwargs)
-        sentinel = self._async_sentinels.pop(asyncio.get_running_loop(), None)
+    async def _aclose_pool(self, pool: Any) -> None:
+        """Also close the discovery clients of the pool's Sentinel manager.
+
+        The manager hangs off the pool, so the clients close even when the
+        adapter instance calling ``aclose()`` is not the one that built them
+        (asgiref hands every task a fresh instance).
+        """
+        await pool.aclose()
         # valkey-py's Sentinel has no aclose(); close the discovery clients it owns.
-        for client in getattr(sentinel, "sentinels", ()):
+        for client in getattr(getattr(pool, "sentinel_manager", None), "sentinels", ()):
             await client.aclose()
+
+    @override
+    async def aclose(self, **kwargs: Any) -> None:
+        """Also drop this event loop's Sentinel manager, and release those of closed loops."""
+        await super().aclose(**kwargs)
+        self._async_sentinels.pop(asyncio.get_running_loop(), None)
         _evict_closed_loops(self._async_sentinels)
 
 
@@ -4055,8 +4145,13 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
 
     @override
     async def aclose(self, **kwargs: Any) -> None:
-        """Close this event loop's async cluster client, and release those of closed loops."""
-        for cluster in _pop_loop_slot(self._async_clusters, asyncio.get_running_loop()).values():
+        """Close this adapter's async cluster client on this loop, and release those of closed loops.
+
+        A client another alias opened on the same loop stays up; closing it
+        would drop the connections its in-flight tasks are using.
+        """
+        cache_key = self._cluster_options()[1]
+        for cluster in _pop_loop_entries(self._async_clusters, asyncio.get_running_loop(), [cache_key]):
             await cluster.aclose()
         _evict_closed_loops(self._async_clusters)
 

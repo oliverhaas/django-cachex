@@ -49,7 +49,7 @@ from django_cachex.utils import (
     _glob_to_regex,
     _lpos_positions,
     _score_bound,
-    _validate_lpos_rank,
+    _validate_lpos_args,
     _validate_pop_count,
 )
 
@@ -138,6 +138,11 @@ class _ZSet(dict[Any, float]):
     def clear(self) -> None:
         super().clear()
         self._sorted.clear()
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        # ``dict``'s own reduce replays items through ``__setitem__`` before
+        # restoring ``__dict__``, so ``_sorted`` is missing or doubled.
+        return (self.__class__, (dict(self),))
 
     def sorted_members(self) -> list[tuple[Any, float]]:
         """All ``(member, score)`` pairs in ``(score, str(member))`` order. O(N)."""
@@ -599,7 +604,9 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         op the consumer runs), then filtered lazily.
         """
         prefix = self.make_key("", version=version)
-        matches = None if pattern in {"", "*"} else _glob_to_regex(pattern).match
+        # ``""`` is not a shorthand for "everything": like Redis, it matches
+        # the empty key alone. Only ``*`` skips the regex.
+        matches = None if pattern == "*" else _glob_to_regex(pattern).match
         with self._lock:
             internal_keys = [k for k in [*self._cache, *self._collections] if not self._has_expired(k)]
         for internal_key in internal_keys:
@@ -698,14 +705,13 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def lpush(self, key: str, *values: Any, version: int | None = None) -> int:
         """Prepend values to the head of a list."""
+        if not values:
+            # An empty list here would be an immortal key no list op can reap.
+            return 0
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_list(internal_key, key)
             if current is None:
-                # Redis never creates an empty list; an empty one here would be
-                # unreachable (every list op bails on a falsy list) and immortal.
-                if not values:
-                    return 0
                 current = _List(reversed(values))
                 self._native_write(internal_key, current)
             else:
@@ -715,13 +721,13 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def rpush(self, key: str, *values: Any, version: int | None = None) -> int:
         """Append values to the tail of a list."""
+        if not values:
+            # See :meth:`lpush`: no values, no write.
+            return 0
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_list(internal_key, key)
             if current is None:
-                # See :meth:`lpush`: no values, no key.
-                if not values:
-                    return 0
                 current = _List(values)
                 self._native_write(internal_key, current)
             else:
@@ -874,6 +880,9 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def linsert(self, key: str, where: str, pivot: Any, value: Any, version: int | None = None) -> int:
         """Insert value before or after pivot in list."""
+        if where.upper() not in {"BEFORE", "AFTER"}:
+            msg = "syntax error"
+            raise ValueError(msg)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_list(internal_key, key)
@@ -898,7 +907,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         version: int | None = None,
     ) -> int | list[int] | None:
         """Find position(s) of element in list."""
-        _validate_lpos_rank(rank)
+        _validate_lpos_args(rank, count, maxlen)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_list(internal_key, key)
@@ -980,6 +989,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def spop(self, key: str, count: int | None = None, version: int | None = None) -> Any | _PySet[Any] | None:
         """Remove and return random member(s) from set."""
+        _validate_pop_count(count)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_set(internal_key, key)

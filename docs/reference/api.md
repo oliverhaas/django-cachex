@@ -48,6 +48,30 @@ django-cachex adds these extended methods:
 | `rename(src, dst)` | Rename a key; raises `KeyNotFoundError` when `src` does not exist |
 | `renamenx(src, dst)` | Rename key only if dest doesn't exist; `False` when `dst` exists or `src` does not |
 
+#### Key patterns
+
+`keys()`, `iter_keys()`, `scan()` and `delete_pattern()` take a Redis glob on
+every backend: `*`, `?`, `[abc]`, `[a-z]`, `[^abc]` for negation, and `\` to
+escape any of them. Matching is case-sensitive everywhere, `LocMemCache` and
+`DatabaseCache` on SQLite included. A reversed range such as `[z-a]` reads as
+`[a-z]`, the way Redis reads it.
+
+The empty pattern matches only the empty key, again as Redis does. Use `"*"` to
+match everything; `delete_pattern("")` deletes at most one key.
+
+### Data-structure calls with no arguments
+
+`sadd`, `srem`, `hdel`, `hset`, `lpush`, `rpush`, `zrem`, `xdel` and `xack`
+called with no members, fields, values or entry ids return `0`, and
+`smismember` and `zmscore` return an empty list. No command reaches the server,
+so no key is created. Every backend answers the same way, async twins included.
+
+A pipeline guards the same way: the step contributes `0` (or an empty list for
+`smismember` and `zmscore`) to the `execute()` result without a command being
+queued, so the results still line up with the calls. The hash-field commands
+called with no fields contribute `[]` the same way, and async pipelines behave
+identically.
+
 ### Hash Methods
 
 Hash operations for field-value data structures:
@@ -79,6 +103,8 @@ Hash operations for field-value data structures:
 
 Field expiration needs Redis 7.4+ or Valkey 9.0+, and `hsetex`/`hgetex` Redis 8.0+; an older server raises `NotSupportedError`.
 
+`hset(key, items=[...])` raises `ValueError("items must hold field/value pairs")` for an odd-length list, matching `hsetex`. On a pipeline the error is raised when the call is queued, so nothing in the batch is sent.
+
 ### Set Methods
 
 Set operations for unordered collections of unique elements:
@@ -105,6 +131,8 @@ Set operations for unordered collections of unique elements:
 
 `keys` on the multi-key set operations takes a single key or a sequence of them, not varargs. `sdiff(["a", "b"])`, not `sdiff("a", "b")`: the second positional argument is `version`.
 
+`spop` rejects a negative `count` with Redis's `value is out of range, must be positive`.
+
 ### Sorted Set Methods
 
 Sorted set operations for scored, ordered collections:
@@ -126,8 +154,8 @@ Sorted set operations for scored, ordered collections:
 | `zremrangebyscore(key, min_score, max_score)` | Remove members by score range |
 | `zscore(key, member)` | Get member's score |
 | `zmscore(key, *members)` | Get multiple members' scores |
-| `zpopmin(key, count=1)` | Remove and return members with lowest scores |
-| `zpopmax(key, count=1)` | Remove and return members with highest scores |
+| `zpopmin(key, count=None)` | Remove and return members with lowest scores |
+| `zpopmax(key, count=None)` | Remove and return members with highest scores |
 
 ### List Methods
 
@@ -153,6 +181,8 @@ List operations for ordered, indexable collections:
 | `blmove(src, dst, timeout, ...)` | Blocking move between lists |
 
 `blpop` and `brpop` take `keys` the same way: one key or a sequence, followed by `timeout`.
+
+`lpos` rejects `rank=0` and a negative `count` or `maxlen`, and `linsert` rejects a `where` other than `"BEFORE"` or `"AFTER"`. Both raise `ValueError` carrying Redis's own message.
 
 ### Stream Methods
 
@@ -199,7 +229,7 @@ result = cache.eval_script(
     keys=(),  # KEYS to pass to script
     args=(),  # ARGV to pass to script
     pre_hook=None,  # Pre-processing hook: (helpers, keys, args) -> (keys, args)
-    post_hook=None,  # Post-processing hook: (helpers, result) -> result
+    post_hook=None,  # Post-processing hook: (helpers, result) -> result; None returns the result unchanged
     version=None,  # Key version for prefixing
 )
 ```
@@ -212,8 +242,6 @@ result = cache.eval_script(
 | `full_encode_pre` | Prefix keys AND encode all args |
 | `decode_single_post` | Decode a single returned value |
 | `decode_list_post` | Decode a list of returned values |
-
-Pass ``post_hook=None`` (the default) when no decoding is needed.
 
 #### ScriptHelpers
 
@@ -241,6 +269,12 @@ cache.set(key, value, timeout=300, nx=False, xx=False, get=False)
 | `nx` | Only set if key doesn't exist (SETNX) |
 | `xx` | Only set if key exists |
 | `get` | Return the previous value (atomic get-and-set) |
+
+Backend coverage: the Valkey/Redis backends, `LocMemCache` and `TrackingCache`
+take all three flags. `DatabaseCache` takes `nx` and raises
+`NotSupportedError` for `xx` and `get`. `StreamCache` raises
+`NotSupportedError` for all three, since eventual replication cannot make a
+conditional write atomic.
 
 ## Async Methods
 
@@ -306,8 +340,8 @@ adapter-portable code use the cache API directly; reach for
 `get_client()` only as an escape hatch, since it bypasses the configured
 key prefix, version, serializer, and compressor.
 
-The async equivalent is `get_async_client()`, which is `async def` and
-returns the adapter's async client.
+There is no `get_async_client()` on the cache object. The async client
+lives on the adapter: `await cache.adapter.get_async_client()`.
 
 ## Lock Interface
 
@@ -331,12 +365,27 @@ TTL.
 
 `alock()` takes the same parameters.
 
-`acquire()` accepts the same `blocking` / `timeout` arguments to override
-the defaults set on the lock object:
+`acquire()` takes its arguments from whichever lock object the backend
+returns, and the spellings differ. The redis-py and valkey-py backends hand
+back the driver's own lock, whose `acquire()` signature is
+`acquire(sleep=None, blocking=None, blocking_timeout=None, token=None)`
+(the async lock drops `sleep`). The valkey-glide backend returns the
+django-cachex lock, whose `acquire()` is keyword-only:
+`acquire(*, blocking=None, timeout=None)`. Passing `timeout=` to a
+redis-py or valkey-py lock raises `TypeError`.
 
 ```python
 lock = cache.lock("mylock", lease=30)
-if lock.acquire(timeout=5):  # wait up to 5s
+if lock.acquire(blocking_timeout=5):  # redis-py / valkey-py: wait up to 5s
+    ...
+```
+
+Set the wait on `cache.lock()` instead of on `acquire()` when the code has to
+run against every backend:
+
+```python
+lock = cache.lock("mylock", lease=30, timeout=5)
+if lock.acquire():
     ...
 ```
 
@@ -397,15 +446,17 @@ with cache.semaphore("memory-heavy", weight=100, capacity=500, lease=300):
 | Parameter | Description |
 |-----------|-------------|
 | `key` | Logical name of the semaphore. Callers with the same name share budget. |
-| `capacity` | Total budget. The first caller establishes capacity. Subsequent callers passing a different value update it on every backend; the local backend additionally emits a `RuntimeWarning` (the RESP backend updates silently). |
+| `capacity` | Total budget. The first caller establishes capacity. Subsequent callers passing a different value update it on every backend; `LocMemCache` additionally emits a `RuntimeWarning` (the RESP backends update silently). |
 | `weight` | How much of the capacity this caller claims (default `1`, i.e. counting semaphore). |
 | `version` | Optional cache version namespace. |
-| `lease` | TTL of the held claim in seconds. Required for the RESP backend (auto-reclaim if the holder crashes); accepted but ignored on the local backend. |
-| `timeout` | Max time `acquire()` will wait before raising `SemaphoreTimeoutError`. `None` blocks indefinitely. |
+| `lease` | TTL of the held claim in seconds. Required for the RESP backend (auto-reclaim if the holder crashes); accepted but ignored on `LocMemCache`. |
+| `timeout` | Default wait for `acquire()` before it raises `SemaphoreTimeoutError`. `None` blocks indefinitely. |
 
-`acquire()` accepts `blocking` and `timeout` to override the defaults set on the semaphore object. `release()` returns the claim to the pool; `extend(seconds)` bumps the TTL on RESP backends for tasks that may legitimately exceed their original lease.
+`acquire()` accepts `blocking` and `timeout` to override the defaults set on the semaphore object. Omit `timeout` and the value passed to `cache.semaphore(...)` applies; pass `timeout=None` explicitly and the call blocks indefinitely, whatever the instance default is. `aacquire()` reads it the same way, on both the local and the RESP backends.
 
-On RESP backends the semaphore's bookkeeping keys (`{name}:state`, `{name}:claims`, `{name}:queue`) expire after twice the longest lease seen, refreshed by every acquire, extend and release, so a holder that dies without releasing leaves nothing behind once its lease has run out.
+`release()` returns the claim to the pool. `extend(seconds)` bumps the TTL on RESP backends for tasks that may legitimately exceed their original lease; it raises `ValueError` unless `seconds` is positive, and returns `False` without raising when the claim is no longer ours because it was released or reaped. `aextend()` behaves the same.
+
+On RESP backends the semaphore's bookkeeping keys (`{name}:state`, `{name}:claims`, `{name}:queue`) expire after twice the longest lease seen. Acquire and release refresh all three; extend refreshes `{name}:state` and `{name}:claims`, and waiters keep `{name}:queue` alive by polling. A holder that dies without releasing therefore leaves nothing behind once its lease has run out.
 
 ```python
 sem = cache.semaphore("mysem", capacity=4, lease=30)
@@ -475,6 +526,20 @@ async with await cache.apipeline() as pipe:
 
 Single-key commands are available on the pipeline. The multi-key helpers (`set_many`, `get_many`, `delete_many`), the read-modify-write helpers (`get_or_set`, `add`, `touch`, `has_key`), and the scanning helpers (`keys`, `scan`, `delete_pattern`, `clear`) are not: queue their underlying commands instead. Results are returned as a list in the same order as the commands.
 
+The queueing methods take the same signatures as the cache methods they queue,
+so a call reads the same either way. That includes the score-range methods,
+which name their bounds `min_score` and `max_score` and take `start` and `num`
+by keyword:
+
+```python
+pipe.zcount("z", min_score, max_score)
+pipe.zrangebyscore("z", min_score, max_score, withscores=False, start=None, num=None)
+pipe.zrevrangebyscore("z", max_score, min_score, withscores=False, start=None, num=None)
+pipe.zremrangebyscore("z", min_score, max_score)
+```
+
+A hash field command queued with no fields (`pipe.httl("h")`, `pipe.hexpire("h", 60)`, `pipe.hgetex("h")` and the rest of the nine) contributes `[]` to the results and sends nothing to the server, the same result `cache.httl("h")` gives.
+
 ## Clearing keys
 
 | Method | Description |
@@ -522,9 +587,10 @@ and `TrackingCache` take their own `OPTIONS`; see
 dataclass that tunes the TTL-based XFetch stampede-prevention algorithm.
 Pass it to `OPTIONS["stampede_prevention"]` to apply globally, or to the
 `stampede_prevention=` kwarg on `get`/`set`/`get_many`/`set_many`/`add`/
-`touch`/`get_or_set`, and their `a`-prefixed async counterparts, for
-per-call overrides. `touch` uses it to decide whether the refreshed TTL
-gets the buffer added back.
+`touch`/`get_or_set`, on the TTL readers and setters (`ttl`, `pttl`,
+`expire`, `expireat`, `pexpire`, `pexpireat`, `expiretime`), and on their
+`a`-prefixed async counterparts, for per-call overrides. `touch` uses it to
+decide whether the refreshed TTL gets the buffer added back.
 
 | Field | Default | Description |
 |-------|---------|-------------|
@@ -545,8 +611,8 @@ failure.
 | Exception | Description |
 |-----------|-------------|
 | `CachexError` | Base class for every exception raised by django-cachex. |
-| `WrongTypeError` | Operation applied to a key holding the wrong RESP type (subclass of `TypeError`). Mirrors Redis ``WRONGTYPE``; raised consistently across `LocMemCache`, `DatabaseCache`, redis-py, valkey-py, and valkey-glide. |
-| `KeyNotFoundError` | An operation needed a key that does not exist (subclass of `ValueError`). Mirrors Redis ``ERR no such key``; raised by `rename()` for a missing source. The missing key is available as `key`. |
+| `WrongTypeError` | Operation applied to a key holding the wrong RESP type (subclass of `TypeError`). Mirrors Redis `WRONGTYPE`; raised consistently across `LocMemCache`, `DatabaseCache`, redis-py, valkey-py, and valkey-glide. |
+| `KeyNotFoundError` | An operation needed a key that does not exist (subclass of `ValueError`). Mirrors Redis `ERR no such key`; raised by `rename()` for a missing source. The missing key is available as `key`. |
 | `CompressorError` | Compression or decompression failed. Triggers the configured compressor fallback chain. |
 | `SerializerError` | Serialization or deserialization failed. Triggers the serializer fallback chain. |
 | `NotSupportedError` | Operation is not supported by this backend (e.g. `lpush` on `TrackingCache`) or by the connected server (e.g. `hexpire` on Redis 7.2). `operation` names the method or command, `backend` the cache class (`None` when the server rejected the command) and `detail` says why, including the server release that adds a missing command. |

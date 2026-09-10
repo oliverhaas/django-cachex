@@ -11,6 +11,14 @@ For basic sentinel setup, see [Configuration](configuration.md#sentinel-configur
 
 The `LOCATION` URL format is `redis://service_name/db` (or `valkey://service_name/db` for ValkeySentinelCache) where `service_name` is the master name configured in Sentinel.
 
+## TLS
+
+A TLS scheme in `LOCATION` (`rediss://service_name/db` for `RedisSentinelCache`,
+`valkeys://service_name/db` for `ValkeySentinelCache`) gives TLS data
+connections to the primary and replicas Sentinel discovers, and discovery keeps
+running. The connection to the Sentinel nodes themselves is configured through
+`sentinel_kwargs`, separately from the scheme.
+
 ## How It Works
 
 The Sentinel backend automatically:

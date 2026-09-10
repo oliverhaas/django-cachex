@@ -227,12 +227,18 @@ CACHES = {
 await cache.aclose()
 ```
 
-`aclose()` disconnects the async pools belonging to the loop it runs on and
-drops them from the registry. The next `await` on the cache opens fresh ones,
-so call it when you are done with a loop, not between requests. It also sweeps
-the registry, releasing the pools of any loop that has been closed. On a
-cluster backend it closes that loop's cluster client; on a Sentinel backend it
-also closes the loop's Sentinel manager.
+`aclose()` disconnects the async pools this cache alias opened on the loop it
+runs on and drops them from the registry. The next `await` on the cache opens
+fresh ones, so call it when you are done with a loop, not between requests. It
+also sweeps the registry, releasing the pools of any loop that has been closed.
+On a cluster backend it closes that loop's cluster client; on a Sentinel
+backend it also closes the loop's Sentinel manager and the clients it
+discovered with.
+
+Only the calling alias is released. Other aliases sharing the same loop and the
+same driver keep their connections, since disconnecting a pool drops the
+connections another alias's in-flight tasks have checked out of it. Call
+`aclose()` on each cache you used.
 
 `close()` leaves the sync pools connected: Django fires it on every
 `request_finished` signal, and tearing pools down there would force a reconnect
@@ -269,22 +275,22 @@ Both views use the same cache backend configured in settings.
 
 ## Other backends
 
-The async ext surface (`alpush`, `ahset`, `azadd`, `attl`, `aexpire`, …)
-is also available on `LocMemCache` and `DatabaseCache`. The two backends
+The async ext surface (`alpush`, `ahset`, `azadd`, `attl`, `aexpire` and the
+rest) is also available on `LocMemCache` and `DatabaseCache`. The two backends
 take different routes because the underlying work is different:
 
 - **`LocMemCache`** is in-memory: each `a*` method calls its sync
   counterpart directly with no thread offload. There's no I/O to await,
   so awaiting from an event loop is harmless.
 - **`DatabaseCache`** does real DB queries, so each `a*` method offloads
-  the sync call via ``asgiref.sync.sync_to_async`` (Django's own pattern
+  the sync call via `asgiref.sync.sync_to_async` (Django's own pattern
   for `BaseCache.aget`). Native async DB cursors will replace this path
   once Django exposes them, without changing the public surface.
 
-Stock Django backends (``django.core.cache.backends.*``) and any other
+Stock Django backends (`django.core.cache.backends.*`) and any other
 non-cachex backend don't get an ext surface from django-cachex. The admin
 shows them with a "limited" badge (configuration only, no key browsing)
-and recommends switching ``BACKEND`` to a cachex equivalent if available.
+and recommends switching `BACKEND` to a cachex equivalent if available.
 
 ## Cluster and Sentinel
 

@@ -39,7 +39,9 @@ def _deep_getsizeof(obj: Any, seen: set[int] | None = None) -> int:
         size += sum(_deep_getsizeof(k, seen) + _deep_getsizeof(v, seen) for k, v in obj.items())
     elif isinstance(obj, (list, tuple, set, frozenset)):
         size += sum(_deep_getsizeof(item, seen) for item in obj)
-    elif hasattr(obj, "__dict__"):
+    if hasattr(obj, "__dict__"):
+        # A container subclass can carry an index sidecar (LocMemCache's
+        # ``_ZSet``), which the branches above do not reach.
         size += _deep_getsizeof(obj.__dict__, seen)
     return size
 
@@ -100,7 +102,9 @@ def _glob_to_regex(pattern: str) -> re.Pattern[str]:
                 members.append(re.escape(body[i + 1]))
                 i += 2
             elif i + 2 < end and body[i + 1] == "-":
-                members.append(f"{re.escape(body[i])}-{re.escape(body[i + 2])}")
+                # Redis reads ``[z-a]`` as ``[a-z]``; ``re`` rejects it.
+                low, high = sorted((body[i], body[i + 2]))
+                members.append(f"{re.escape(low)}-{re.escape(high)}")
                 i += 3
             else:
                 members.append(re.escape(body[i]))
@@ -114,28 +118,25 @@ def _glob_to_regex(pattern: str) -> re.Pattern[str]:
     return re.compile("".join(parts) + r"\Z", re.DOTALL)
 
 
-def _glob_to_like(pattern: str, escape: Callable[[str], str]) -> tuple[str, bool]:
+def _glob_to_like(pattern: str, escape: Callable[[str], str]) -> str:
     """Translate a Redis glob to a SQL ``LIKE`` pattern for ``DatabaseCache``.
 
-    Returns the pattern and whether it is exact. ``LIKE`` has no character
-    classes, so a ``[...]`` widens to ``_`` and the caller has to re-filter
-    the rows with :func:`_glob_to_regex`. ``escape`` is the connection's
+    The result only narrows the rows the query returns: ``LIKE`` has no
+    character classes, so a ``[...]`` widens to ``_``, and SQLite's ``LIKE``
+    folds ASCII case. The caller re-filters every row with
+    :func:`_glob_to_regex`. ``escape`` is the connection's
     ``prep_for_like_query``, applied per literal character so that the
     pattern's own metacharacters survive the escaping.
     """
     out: list[str] = []
-    exact = True
     for kind, text in _glob_tokens(pattern):
         if kind == "star":
             out.append("%")
-        elif kind == "any":
+        elif kind in {"any", "class"}:
             out.append("_")
-        elif kind == "class":
-            out.append("_")
-            exact = False
         else:
             out.append(escape(text))
-    return "".join(out), exact
+    return "".join(out)
 
 
 def _as_score(value: Any) -> float:
@@ -171,12 +172,23 @@ def _validate_pop_count(count: int | None) -> None:
         raise ValueError(msg)
 
 
-def _validate_lpos_rank(rank: int | None) -> None:
+def _validate_lpos_args(rank: int | None, count: int | None, maxlen: int | None) -> None:
+    """Reject the ``LPOS`` arguments Redis rejects before the scan runs.
+
+    A negative ``count`` or ``maxlen`` would slice from the wrong end of the
+    list and answer with the wrong positions instead of erroring.
+    """
     if rank == 0:
         msg = (
             "RANK can't be zero. Use 1 to start searching from the first matching element "
             "in the head of the list or a negative rank to start searching from the tail."
         )
+        raise ValueError(msg)
+    if count is not None and count < 0:
+        msg = "COUNT can't be negative"
+        raise ValueError(msg)
+    if maxlen is not None and maxlen < 0:
+        msg = "MAXLEN can't be negative"
         raise ValueError(msg)
 
 

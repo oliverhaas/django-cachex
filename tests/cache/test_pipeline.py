@@ -2,6 +2,7 @@
 
 import time
 import warnings
+from importlib import import_module
 from typing import TYPE_CHECKING
 
 import pytest
@@ -961,6 +962,24 @@ class TestAsyncPipeline:
         assert await pipe.execute() == [True]
         assert await cache.aget("adecoder_leak_after") == "ok"
 
+    @pytest.mark.asyncio
+    async def test_apipeline_fixed_results_stay_aligned(self, cache: RespCache):
+        pipe = await cache.apipeline()
+        pipe.httl("apipe_fixed")
+        pipe.set("apipe_fixed", "v")
+        pipe.hgetex("apipe_fixed")
+
+        assert await pipe.execute() == [[], True, []]
+
+    @pytest.mark.asyncio
+    async def test_apipeline_empty_sadd_resolves_to_zero(self, cache: RespCache):
+        pipe = await cache.apipeline()
+        pipe.sadd("apipe_empty_set")
+        pipe.sadd("apipe_empty_set", "a")
+        pipe.scard("apipe_empty_set")
+
+        assert await pipe.execute() == [0, 1, 1]
+
 
 class TestPipelineErrorRecovery:
     """The wrapper stays usable after a failed execute()."""
@@ -1059,7 +1078,15 @@ class TestPipelineSetTimeoutSemantics:
         pipe = cache.pipeline()
         pipe.set("pipe_parity_pipe_default", "value")
         pipe.execute()
-        assert cache.ttl("pipe_parity_pipe_default") == cache.ttl("pipe_parity_direct_default")
+
+        pipe = cache.pipeline()
+        pipe.ttl("pipe_parity_pipe_default")
+        pipe.ttl("pipe_parity_direct_default")
+        piped_ttl, direct_ttl = pipe.execute()
+        # Both writes carry the backend timeout, but the two SET calls can land
+        # on either side of a second boundary, so the TTLs may differ by one.
+        assert piped_ttl in {122, 123}
+        assert abs(piped_ttl - direct_ttl) <= 1
 
 
 class TestPipelineTtlNormalization:
@@ -1302,3 +1329,243 @@ class TestPipelineZsetSignatureParity:
         pipe = cache.pipeline()
         with pytest.raises(TypeError, match="desc"):
             pipe.zrange("pipe_zrange_desc", 0, -1, desc=True)
+
+
+class TestPipelineSaddMemberGuard:
+    """``pipe.sadd()`` applies the hashability guard ``cache.sadd()`` applies."""
+
+    @pytest.mark.parametrize("member", [[1, 2], {"a": 1}, {1, 2}])
+    def test_rejects_an_unhashable_member(self, cache: RespCache, member):
+        pipe = cache.pipeline()
+        with pytest.raises(TypeError, match="hashable"):
+            pipe.sadd("pipe_sadd_guard", member)
+
+        assert pipe.execute() == []
+        assert cache.smembers("pipe_sadd_guard") == set()
+
+    def test_rejects_the_whole_call_on_one_bad_member(self, cache: RespCache):
+        pipe = cache.pipeline()
+        with pytest.raises(TypeError, match="hashable"):
+            pipe.sadd("pipe_sadd_partial", "ok", [1, 2])
+
+        pipe.smembers("pipe_sadd_partial")
+        assert pipe.execute() == [set()]
+
+    def test_accepts_hashable_members(self, cache: RespCache):
+        pipe = cache.pipeline()
+        pipe.sadd("pipe_sadd_ok", "a", 4, None)
+        pipe.smembers("pipe_sadd_ok")
+        results = pipe.execute()
+
+        assert results[0] == 3
+        assert results[1] == {"a", 4, None}
+
+
+class TestPipelineScoreRangeSignatureParity:
+    """Score-range methods take the names and keyword-only options the cache takes."""
+
+    def test_score_range_methods_take_the_cache_keywords(self, cache: RespCache):
+        cache.zadd("pipe_score_kw", {"a": 1, "b": 2, "c": 3, "d": 4})
+
+        pipe = cache.pipeline()
+        pipe.zcount("pipe_score_kw", min_score=2, max_score=3)
+        pipe.zrangebyscore("pipe_score_kw", min_score=2, max_score=4, start=0, num=2)
+        pipe.zrevrangebyscore("pipe_score_kw", max_score=4, min_score=3, withscores=True)
+        pipe.zremrangebyscore("pipe_score_kw", min_score=2, max_score=3)
+        results = pipe.execute()
+
+        assert results[0] == 2
+        assert results[1] == ["b", "c"]
+        assert results[2] == [("d", 4.0), ("c", 3.0)]
+        assert results[3] == 2
+
+    def test_zrangebyscore_matches_the_cache(self, cache: RespCache):
+        cache.zadd("pipe_score_parity", {"a": 1, "b": 2, "c": 3, "d": 4})
+
+        pipe = cache.pipeline()
+        pipe.zrangebyscore("pipe_score_parity", min_score="-inf", max_score="+inf", start=1, num=2)
+        assert pipe.execute()[0] == cache.zrangebyscore("pipe_score_parity", "-inf", "+inf", start=1, num=2)
+
+    def test_start_and_num_are_keyword_only(self, cache: RespCache):
+        pipe = cache.pipeline()
+        with pytest.raises(TypeError):
+            pipe.zrangebyscore("pipe_score_positional", 1, 4, 0, 2)
+
+
+class TestPipelineHashFieldMethodsWithoutFields:
+    """A hash-field command with no fields resolves to ``[]`` and sends nothing."""
+
+    HASH_FIELD_CALLS = (
+        ("hexpire", (100,)),
+        ("hpexpire", (100000,)),
+        ("hexpireat", (2000000000,)),
+        ("hpexpireat", (2000000000000,)),
+        ("httl", ()),
+        ("hpttl", ()),
+        ("hexpiretime", ()),
+        ("hpersist", ()),
+        ("hgetex", ()),
+    )
+
+    def test_every_method_resolves_to_empty(self, cache: RespCache):
+        pipe = cache.pipeline()
+        for name, args in self.HASH_FIELD_CALLS:
+            getattr(pipe, name)("pipe_hfields_empty", *args)
+
+        assert pipe.execute() == [[]] * len(self.HASH_FIELD_CALLS)
+
+    def test_matches_the_cache(self, cache: RespCache):
+        pipe = cache.pipeline()
+        for name, args in self.HASH_FIELD_CALLS:
+            getattr(pipe, name)("pipe_hfields_parity", *args)
+        piped = pipe.execute()
+
+        direct = [getattr(cache, name)("pipe_hfields_parity", *args) for name, args in self.HASH_FIELD_CALLS]
+        assert piped == direct
+
+    def test_a_fixed_result_keeps_the_batch_aligned(self, cache: RespCache):
+        cache.hset("pipe_hfields_mixed", "f", "v")
+
+        pipe = cache.pipeline()
+        pipe.hget("pipe_hfields_mixed", "f")
+        pipe.httl("pipe_hfields_mixed")
+        pipe.hlen("pipe_hfields_mixed")
+        pipe.hgetex("pipe_hfields_mixed")
+        pipe.hkeys("pipe_hfields_mixed")
+
+        assert pipe.execute() == ["v", [], 1, [], ["f"]]
+
+    def test_reuse_after_a_fixed_result(self, cache: RespCache):
+        pipe = cache.pipeline()
+        pipe.httl("pipe_hfields_reuse")
+        assert pipe.execute() == [[]]
+
+        pipe.set("pipe_hfields_reuse", "value")
+        assert pipe.execute() == [True]
+
+
+class TestPipelineEmptyArgumentCalls:
+    """A queued write with no members, fields or IDs resolves locally, like the cache method."""
+
+    EMPTY_CALLS = (
+        ("sadd", ("pipe_empty_args",), {}, 0),
+        ("srem", ("pipe_empty_args",), {}, 0),
+        ("smismember", ("pipe_empty_args",), {}, []),
+        ("lpush", ("pipe_empty_args",), {}, 0),
+        ("rpush", ("pipe_empty_args",), {}, 0),
+        ("hset", ("pipe_empty_args",), {}, 0),
+        ("hset", ("pipe_empty_args",), {"mapping": {}}, 0),
+        ("hset", ("pipe_empty_args",), {"items": []}, 0),
+        ("hdel", ("pipe_empty_args",), {}, 0),
+        ("zrem", ("pipe_empty_args",), {}, 0),
+        ("zmscore", ("pipe_empty_args",), {}, []),
+        ("xdel", ("pipe_empty_args",), {}, 0),
+        ("xack", ("pipe_empty_args", "pipe_empty_group"), {}, 0),
+    )
+
+    def _queue_all(self, pipe: Pipeline) -> None:
+        for name, args, kwargs, _ in self.EMPTY_CALLS:
+            getattr(pipe, name)(*args, **kwargs)
+
+    def test_every_call_resolves_without_a_command(self, cache: RespCache):
+        pipe = cache.pipeline()
+        self._queue_all(pipe)
+
+        assert pipe.execute() == [expected for *_, expected in self.EMPTY_CALLS]
+        assert cache.has_key("pipe_empty_args") is False
+
+    def test_matches_the_cache(self, cache: RespCache):
+        pipe = cache.pipeline()
+        self._queue_all(pipe)
+        piped = pipe.execute()
+
+        direct = [getattr(cache, name)(*args, **kwargs) for name, args, kwargs, _ in self.EMPTY_CALLS]
+        assert piped == direct
+
+    def test_fixed_results_keep_the_batch_aligned(self, cache: RespCache):
+        cache.sadd("pipe_empty_align_set", "a")
+        cache.hset("pipe_empty_align_hash", "f", "v")
+
+        pipe = cache.pipeline()
+        pipe.sadd("pipe_empty_align_set")
+        pipe.scard("pipe_empty_align_set")
+        pipe.smismember("pipe_empty_align_set")
+        pipe.srem("pipe_empty_align_set")
+        pipe.hset("pipe_empty_align_hash", items=[])
+        pipe.hget("pipe_empty_align_hash", "f")
+        pipe.hdel("pipe_empty_align_hash")
+        pipe.hlen("pipe_empty_align_hash")
+
+        assert pipe.execute() == [0, 1, [], 0, 0, "v", 0, 1]
+
+    def test_list_zset_and_stream_forms_keep_the_batch_aligned(self, cache: RespCache):
+        cache.rpush("pipe_empty_align_list", "a")
+        cache.zadd("pipe_empty_align_zset", {"m": 1.0})
+        cache.xadd("pipe_empty_align_stream", {"msg": "hello"})
+
+        pipe = cache.pipeline()
+        pipe.lpush("pipe_empty_align_list")
+        pipe.rpush("pipe_empty_align_list")
+        pipe.llen("pipe_empty_align_list")
+        pipe.zrem("pipe_empty_align_zset")
+        pipe.zmscore("pipe_empty_align_zset")
+        pipe.zcard("pipe_empty_align_zset")
+        pipe.xdel("pipe_empty_align_stream")
+        pipe.xack("pipe_empty_align_stream", "pipe_empty_align_group")
+        pipe.xlen("pipe_empty_align_stream")
+
+        assert pipe.execute() == [0, 0, 1, 0, [], 1, 0, 0, 1]
+
+    def test_a_field_beside_an_empty_mapping_still_writes(self, cache: RespCache):
+        pipe = cache.pipeline()
+        pipe.hset("pipe_empty_field_mapping", "f", "v", mapping={})
+        pipe.hgetall("pipe_empty_field_mapping")
+
+        assert pipe.execute() == [1, {"f": "v"}]
+
+    def test_hset_rejects_unpaired_items_at_queue_time(self, cache: RespCache):
+        pipe = cache.pipeline()
+        pipe.set("pipe_empty_items", "kept")
+        with pytest.raises(ValueError, match="field/value pairs"):
+            pipe.hset("pipe_empty_items_hash", items=["a", 1, "b"])
+
+        assert pipe.execute() == [True]
+        assert cache.has_key("pipe_empty_items_hash") is False
+
+
+class TestPipelineXreadResp3Shape:
+    """``OPTIONS {"protocol": 3}`` routes XREAD through the driver's dict-shaped parser."""
+
+    @staticmethod
+    def _resp3_reply(driver: str, stream_key: str, value: bytes) -> dict:
+        parse_xread_resp3 = import_module(f"{driver}._parsers.helpers").parse_xread_resp3
+        return parse_xread_resp3({stream_key.encode(): [[b"1-1", [b"msg", value]]]})
+
+    @pytest.mark.parametrize("driver", ["redis", "valkey"])
+    def test_xread_decodes_the_resp3_reply(self, cache: RespCache, driver: str):
+        with cache.pipeline() as pipe:
+            pipe.xread({"pipe_resp3_xread": "0-0"})
+            decode = pipe._decoders[-1]
+            nkey = pipe._make_key("pipe_resp3_xread")
+
+        reply = self._resp3_reply(driver, nkey, cache.encode("hello"))
+        assert decode(reply) == {"pipe_resp3_xread": [("1-1", {"msg": "hello"})]}
+
+    @pytest.mark.parametrize("driver", ["redis", "valkey"])
+    def test_xreadgroup_decodes_the_resp3_reply(self, cache: RespCache, driver: str):
+        with cache.pipeline() as pipe:
+            pipe.xreadgroup("grp", "c1", {"pipe_resp3_xrg": ">"})
+            decode = pipe._decoders[-1]
+            nkey = pipe._make_key("pipe_resp3_xrg")
+
+        reply = self._resp3_reply(driver, nkey, cache.encode("world"))
+        assert decode(reply) == {"pipe_resp3_xrg": [("1-1", {"msg": "world"})]}
+
+    def test_resp2_reply_still_decodes(self, cache: RespCache):
+        with cache.pipeline() as pipe:
+            pipe.xread({"pipe_resp2_xread": "0-0"})
+            decode = pipe._decoders[-1]
+            nkey = pipe._make_key("pipe_resp2_xread")
+
+        reply = [[nkey.encode(), [(b"1-1", {b"msg": cache.encode("hello")})]]]
+        assert decode(reply) == {"pipe_resp2_xread": [("1-1", {"msg": "hello"})]}

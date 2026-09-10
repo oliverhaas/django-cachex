@@ -35,6 +35,15 @@ from django_cachex.types import KeyType
 _set = set
 
 
+class _FixedResult:
+    """A queued step that resolves to a constant with no command on the wire."""
+
+    __slots__ = ("value",)
+
+    def __init__(self, value: Any) -> None:
+        self.value = value
+
+
 class Pipeline:
     """Pipeline wrapper that handles key prefixing and value serialization.
 
@@ -54,33 +63,41 @@ class Pipeline:
         self._adapter = cache.adapter
         self._pipeline_adapter = pipeline_adapter
         self._version = version
-        self._decoders: list[Callable[[Any], Any]] = []
+        self._decoders: list[Callable[[Any], Any] | _FixedResult] = []
 
     def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *args: object) -> None:
-        """Exit context manager, resetting the underlying pipeline."""
         self._pipeline_adapter.reset()
         self._decoders.clear()
 
     def execute(self) -> list[Any]:
         """Execute all queued commands and decode the results."""
-        decoders = self._decoders
+        steps = self._decoders
         try:
             results = self._pipeline_adapter.execute()
         finally:
             # The driver pipeline discards its queue on error; stale decoders
             # would misalign against the next batch.
             self._decoders = []
-        decoded = []
-        for result, decoder in zip(results, decoders, strict=True):
-            decoded.append(decoder(result))
-        return decoded
+        return self._decode_steps(results, steps)
+
+    @staticmethod
+    def _decode_steps(results: list[Any], steps: list[Callable[[Any], Any] | _FixedResult]) -> list[Any]:
+        """Pair each driver reply with the step that queued it, skipping fixed results."""
+        decoders = [step for step in steps if not isinstance(step, _FixedResult)]
+        decoded = iter([decoder(result) for result, decoder in zip(results, decoders, strict=True)])
+        return [step.value if isinstance(step, _FixedResult) else next(decoded) for step in steps]
 
     # -------------------------------------------------------------------------
     # Decoder helpers
     # -------------------------------------------------------------------------
+
+    def _fixed(self, value: Any) -> Self:
+        """Queue a step that resolves to ``value`` with no command on the wire."""
+        self._decoders.append(_FixedResult(value))
+        return self
 
     def _noop(self, value: Any) -> Any:
         return value
@@ -191,6 +208,28 @@ class Pipeline:
             for entry_id, fields in results
         ]
 
+    @staticmethod
+    def _stream_key_pairs(
+        results: Sequence[Sequence[Any]] | dict[Any, Any],
+    ) -> Sequence[Sequence[Any]]:
+        """Normalize an xread/xreadgroup reply to ``(stream key, entries)`` pairs.
+
+        RESP2 hands back a list of pairs. Under ``OPTIONS {"protocol": 3}``
+        redis-py and valkey-py run the reply through ``parse_xread_resp3``,
+        which returns ``{stream: [entries]}`` with the entry list wrapped in a
+        one-element list; glide's batch post-processor already reshapes to the
+        RESP2 form.
+        """
+        if not isinstance(results, dict):
+            return results
+        pairs: list[tuple[Any, Any]] = []
+        for stream_key, value in results.items():
+            # An entry is a ``(id, fields)`` pair, so a lone list element is the
+            # RESP3 wrapper around the entry list rather than an entry itself.
+            wrapped = len(value) == 1 and isinstance(value[0], list)
+            pairs.append((stream_key, value[0] if wrapped else value))
+        return pairs
+
     def _make_stream_key_decoder(
         self,
         key_map: dict[str, Any],
@@ -198,12 +237,12 @@ class Pipeline:
         """Create a decoder that un-prefixes stream keys in xread/xreadgroup results."""
 
         def decode(
-            results: list[tuple[Any, list[tuple[Any, dict[Any, Any]]]]] | None,
+            results: list[tuple[Any, list[tuple[Any, dict[Any, Any]]]]] | dict[Any, Any] | None,
         ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
             if results is None:
                 return None
             decoded: dict[str, list[tuple[str, dict[str, Any]]]] = {}
-            for stream_key, entries in results:
+            for stream_key, entries in self._stream_key_pairs(results):
                 sk = stream_key.decode() if isinstance(stream_key, bytes) else str(stream_key)
                 decoded[key_map.get(sk, sk)] = self._decode_stream_entries(entries)
             return decoded
@@ -222,6 +261,10 @@ class Pipeline:
     def _encode(self, value: Any) -> bytes | int:
         """Encode a value for storage."""
         return self._cache.encode(value)
+
+    def _encode_member(self, member: Any) -> bytes | int:
+        """Encode a set member through the guard :meth:`RespCache.sadd` applies."""
+        return self._cache._encode_member(member)
 
     # -------------------------------------------------------------------------
     # Core cache operations
@@ -496,7 +539,13 @@ class Pipeline:
         *values: Any,
         version: int | None = None,
     ) -> Self:
-        """Queue LPUSH command (insert at head)."""
+        """Queue LPUSH command (insert at head).
+
+        With no values the step resolves to ``0`` and no command is sent, the
+        result :meth:`RespCache.lpush` gives for the same call.
+        """
+        if not values:
+            return self._fixed(0)
         nkey = self._make_key(key, version)
         encoded_values = [self._encode(value) for value in values]
         self._pipeline_adapter.lpush(nkey, *encoded_values)
@@ -509,7 +558,13 @@ class Pipeline:
         *values: Any,
         version: int | None = None,
     ) -> Self:
-        """Queue RPUSH command (insert at tail)."""
+        """Queue RPUSH command (insert at tail).
+
+        With no values the step resolves to ``0`` and no command is sent, the
+        result :meth:`RespCache.rpush` gives for the same call.
+        """
+        if not values:
+            return self._fixed(0)
         nkey = self._make_key(key, version)
         encoded_values = [self._encode(value) for value in values]
         self._pipeline_adapter.rpush(nkey, *encoded_values)
@@ -678,9 +733,19 @@ class Pipeline:
         *values: Any,
         version: int | None = None,
     ) -> Self:
-        """Queue SADD command (add members to set)."""
+        """Queue SADD command (add members to set).
+
+        Members go through the same hashability guard as :meth:`RespCache.sadd`,
+        so a member no reader could put back into a Python ``set`` is rejected
+        here instead of breaking every later read of the key.
+
+        With no members the step resolves to ``0`` and no command is sent, the
+        result :meth:`RespCache.sadd` gives for the same call.
+        """
+        if not values:
+            return self._fixed(0)
         nkey = self._make_key(key, version)
-        encoded_values = [self._encode(value) for value in values]
+        encoded_values = [self._encode_member(value) for value in values]
         self._pipeline_adapter.sadd(nkey, *encoded_values)
         self._decoders.append(self._noop)
         return self
@@ -775,7 +840,13 @@ class Pipeline:
         *members: Any,
         version: int | None = None,
     ) -> Self:
-        """Queue SMISMEMBER command (check multiple memberships)."""
+        """Queue SMISMEMBER command (check multiple memberships).
+
+        With no members the step resolves to ``[]`` and no command is sent, the
+        result :meth:`RespCache.smismember` gives for the same call.
+        """
+        if not members:
+            return self._fixed([])
         nkey = self._make_key(key, version)
         encoded_members = [self._encode(member) for member in members]
         self._pipeline_adapter.smismember(nkey, *encoded_members)
@@ -842,7 +913,13 @@ class Pipeline:
         *members: Any,
         version: int | None = None,
     ) -> Self:
-        """Queue SREM command (remove members)."""
+        """Queue SREM command (remove members).
+
+        With no members the step resolves to ``0`` and no command is sent, the
+        result :meth:`RespCache.srem` gives for the same call.
+        """
+        if not members:
+            return self._fixed(0)
         nkey = self._make_key(key, version)
         nmembers = [self._encode(member) for member in members]
         self._pipeline_adapter.srem(nkey, *nmembers)
@@ -892,7 +969,17 @@ class Pipeline:
         mapping: dict[str, Any] | None = None,
         items: list[Any] | None = None,
     ) -> Self:
-        """Queue HSET command. Use field/value, mapping, or items (flat key-value pairs)."""
+        """Queue HSET command. Use field/value, mapping, or items (flat key-value pairs).
+
+        Same empty-argument contract as :meth:`RespCache.hset`: an ``items`` list
+        of odd length raises ``ValueError`` here, at queue time, and a call with
+        no field, no mapping and no items resolves to ``0`` with no command sent.
+        """
+        if items and len(items) % 2:
+            msg = "items must hold field/value pairs"
+            raise ValueError(msg)
+        if field is None and not mapping and not items:
+            return self._fixed(0)
         nkey = self._make_key(key, version)
         nvalue = self._encode(value) if field is not None else None
         nmapping = {f: self._encode(v) for f, v in mapping.items()} if mapping else None
@@ -907,7 +994,13 @@ class Pipeline:
         *fields: str,
         version: int | None = None,
     ) -> Self:
-        """Queue HDEL command (delete one or more fields)."""
+        """Queue HDEL command (delete one or more fields).
+
+        With no fields the step resolves to ``0`` and no command is sent, the
+        result :meth:`RespCache.hdel` gives for the same call.
+        """
+        if not fields:
+            return self._fixed(0)
         nkey = self._make_key(key, version)
         self._pipeline_adapter.hdel(nkey, *fields)
         self._decoders.append(self._noop)
@@ -1048,7 +1141,13 @@ class Pipeline:
         gt: bool = False,
         lt: bool = False,
     ) -> Self:
-        """Queue HEXPIRE. Decodes to the per-field codes :meth:`RespCache.hexpire` returns."""
+        """Queue HEXPIRE. Decodes to the per-field codes :meth:`RespCache.hexpire` returns.
+
+        With no fields the step resolves to ``[]`` and no command is sent, the
+        result :meth:`RespCache.hexpire` gives for the same call.
+        """
+        if not fields:
+            return self._fixed([])
         nkey = self._make_key(key, version)
         self._pipeline_adapter.hexpire(nkey, timeout, *fields, nx=nx, xx=xx, gt=gt, lt=lt)
         self._decoders.append(self._noop)
@@ -1066,6 +1165,8 @@ class Pipeline:
         lt: bool = False,
     ) -> Self:
         """Queue HPEXPIRE. See :meth:`hexpire`."""
+        if not fields:
+            return self._fixed([])
         nkey = self._make_key(key, version)
         self._pipeline_adapter.hpexpire(nkey, timeout, *fields, nx=nx, xx=xx, gt=gt, lt=lt)
         self._decoders.append(self._noop)
@@ -1083,6 +1184,8 @@ class Pipeline:
         lt: bool = False,
     ) -> Self:
         """Queue HEXPIREAT. See :meth:`hexpire`."""
+        if not fields:
+            return self._fixed([])
         nkey = self._make_key(key, version)
         self._pipeline_adapter.hexpireat(nkey, when, *fields, nx=nx, xx=xx, gt=gt, lt=lt)
         self._decoders.append(self._noop)
@@ -1100,13 +1203,21 @@ class Pipeline:
         lt: bool = False,
     ) -> Self:
         """Queue HPEXPIREAT. See :meth:`hexpire`."""
+        if not fields:
+            return self._fixed([])
         nkey = self._make_key(key, version)
         self._pipeline_adapter.hpexpireat(nkey, when, *fields, nx=nx, xx=xx, gt=gt, lt=lt)
         self._decoders.append(self._noop)
         return self
 
     def httl(self, key: str, *fields: str, version: int | None = None) -> Self:
-        """Queue HTTL. Decodes ``-1`` to ``None`` like :meth:`RespCache.httl`."""
+        """Queue HTTL. Decodes ``-1`` to ``None`` like :meth:`RespCache.httl`.
+
+        With no fields the step resolves to ``[]`` and no command is sent, the
+        result :meth:`RespCache.httl` gives for the same call.
+        """
+        if not fields:
+            return self._fixed([])
         nkey = self._make_key(key, version)
         self._pipeline_adapter.httl(nkey, *fields)
         self._decoders.append(self._decode_field_ttls)
@@ -1114,6 +1225,8 @@ class Pipeline:
 
     def hpttl(self, key: str, *fields: str, version: int | None = None) -> Self:
         """Queue HPTTL. See :meth:`httl`."""
+        if not fields:
+            return self._fixed([])
         nkey = self._make_key(key, version)
         self._pipeline_adapter.hpttl(nkey, *fields)
         self._decoders.append(self._decode_field_ttls)
@@ -1121,13 +1234,21 @@ class Pipeline:
 
     def hexpiretime(self, key: str, *fields: str, version: int | None = None) -> Self:
         """Queue HEXPIRETIME. See :meth:`httl`."""
+        if not fields:
+            return self._fixed([])
         nkey = self._make_key(key, version)
         self._pipeline_adapter.hexpiretime(nkey, *fields)
         self._decoders.append(self._decode_field_ttls)
         return self
 
     def hpersist(self, key: str, *fields: str, version: int | None = None) -> Self:
-        """Queue HPERSIST. Decodes to the per-field codes :meth:`RespCache.hpersist` returns."""
+        """Queue HPERSIST. Decodes to the per-field codes :meth:`RespCache.hpersist` returns.
+
+        With no fields the step resolves to ``[]`` and no command is sent, the
+        result :meth:`RespCache.hpersist` gives for the same call.
+        """
+        if not fields:
+            return self._fixed([])
         nkey = self._make_key(key, version)
         self._pipeline_adapter.hpersist(nkey, *fields)
         self._decoders.append(self._noop)
@@ -1163,7 +1284,13 @@ class Pipeline:
         persist: bool = False,
         version: int | None = None,
     ) -> Self:
-        """Queue HGETEX. Same timeout rules as :meth:`RespCache.hgetex`; decodes the values."""
+        """Queue HGETEX. Same timeout rules as :meth:`RespCache.hgetex`; decodes the values.
+
+        With no fields the step resolves to ``[]`` and no command is sent, the
+        result :meth:`RespCache.hgetex` gives for the same call.
+        """
+        if not fields:
+            return self._fixed([])
         nkey = self._make_key(key, version)
         ex = None if timeout is None else self._cache.get_backend_timeout(timeout)
         self._pipeline_adapter.hgetex(nkey, *fields, ex=ex, persist=persist)
@@ -1215,13 +1342,13 @@ class Pipeline:
     def zcount(
         self,
         key: str,
-        min: float | str,
-        max: float | str,
+        min_score: float | str,
+        max_score: float | str,
         version: int | None = None,
     ) -> Self:
         """Queue ZCOUNT command (count members in score range)."""
         nkey = self._make_key(key, version)
-        self._pipeline_adapter.zcount(nkey, min, max)
+        self._pipeline_adapter.zcount(nkey, min_score, max_score)
         self._decoders.append(self._noop)
         return self
 
@@ -1286,20 +1413,20 @@ class Pipeline:
     def zrangebyscore(
         self,
         key: str,
-        min: float | str,
-        max: float | str,
-        start: int | None = None,
-        num: int | None = None,
+        min_score: float | str,
+        max_score: float | str,
         *,
         withscores: bool = False,
+        start: int | None = None,
+        num: int | None = None,
         version: int | None = None,
     ) -> Self:
         """Queue ZRANGEBYSCORE command (get members by score range)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.zrangebyscore(
             nkey,
-            min,
-            max,
+            min_score,
+            max_score,
             start=start,
             num=num,
             withscores=withscores,
@@ -1326,7 +1453,13 @@ class Pipeline:
         *values: Any,
         version: int | None = None,
     ) -> Self:
-        """Queue ZREM command (remove members)."""
+        """Queue ZREM command (remove members).
+
+        With no members the step resolves to ``0`` and no command is sent, the
+        result :meth:`RespCache.zrem` gives for the same call.
+        """
+        if not values:
+            return self._fixed(0)
         nkey = self._make_key(key, version)
         encoded_values = [self._encode(value) for value in values]
         self._pipeline_adapter.zrem(nkey, *encoded_values)
@@ -1336,13 +1469,13 @@ class Pipeline:
     def zremrangebyscore(
         self,
         key: str,
-        min: float | str,
-        max: float | str,
+        min_score: float | str,
+        max_score: float | str,
         version: int | None = None,
     ) -> Self:
         """Queue ZREMRANGEBYSCORE command (remove by score range)."""
         nkey = self._make_key(key, version)
-        self._pipeline_adapter.zremrangebyscore(nkey, min, max)
+        self._pipeline_adapter.zremrangebyscore(nkey, min_score, max_score)
         self._decoders.append(self._noop)
         return self
 
@@ -1382,20 +1515,20 @@ class Pipeline:
     def zrevrangebyscore(
         self,
         key: str,
-        max: float | str,
-        min: float | str,
-        start: int | None = None,
-        num: int | None = None,
+        max_score: float | str,
+        min_score: float | str,
         *,
         withscores: bool = False,
+        start: int | None = None,
+        num: int | None = None,
         version: int | None = None,
     ) -> Self:
         """Queue ZREVRANGEBYSCORE command (get by score, high to low)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.zrevrangebyscore(
             nkey,
-            max,
-            min,
+            max_score,
+            min_score,
             start=start,
             num=num,
             withscores=withscores,
@@ -1435,7 +1568,13 @@ class Pipeline:
         *members: Any,
         version: int | None = None,
     ) -> Self:
-        """Queue ZMSCORE command (get multiple members' scores)."""
+        """Queue ZMSCORE command (get multiple members' scores).
+
+        With no members the step resolves to ``[]`` and no command is sent, the
+        result :meth:`RespCache.zmscore` gives for the same call.
+        """
+        if not members:
+            return self._fixed([])
         nkey = self._make_key(key, version)
         encoded_members = [self._encode(member) for member in members]
         self._pipeline_adapter.zmscore(nkey, encoded_members)
@@ -1543,7 +1682,13 @@ class Pipeline:
         return self
 
     def xdel(self, key: str, *entry_ids: str, version: int | None = None) -> Self:
-        """Queue XDEL command (delete stream entries)."""
+        """Queue XDEL command (delete stream entries).
+
+        With no entry IDs the step resolves to ``0`` and no command is sent, the
+        result :meth:`RespCache.xdel` gives for the same call.
+        """
+        if not entry_ids:
+            return self._fixed(0)
         nkey = self._make_key(key, version)
         self._pipeline_adapter.xdel(nkey, *entry_ids)
         self._decoders.append(self._noop)
@@ -1635,7 +1780,13 @@ class Pipeline:
         return self
 
     def xack(self, key: str, group: str, *entry_ids: str, version: int | None = None) -> Self:
-        """Queue XACK command (acknowledge messages)."""
+        """Queue XACK command (acknowledge messages).
+
+        With no entry IDs the step resolves to ``0`` and no command is sent, the
+        result :meth:`RespCache.xack` gives for the same call.
+        """
+        if not entry_ids:
+            return self._fixed(0)
         nkey = self._make_key(key, version)
         self._pipeline_adapter.xack(nkey, group, *entry_ids)
         self._decoders.append(self._noop)
@@ -1785,10 +1936,7 @@ class Pipeline:
         version: int | None = None,
     ) -> Self:
         """Queue a Lua script for pipelined execution."""
-        # Determine version for key prefixing
         v = version if version is not None else self._version
-
-        # Create helpers for pre/post processing
         helpers = ScriptHelpers(
             make_key=self._make_key,
             encode=self._cache.encode,
@@ -1843,7 +1991,6 @@ class AsyncPipeline(Pipeline):
         return self
 
     async def __aexit__(self, *args: object) -> None:
-        """Exit async context manager, resetting the underlying pipeline."""
         await self._pipeline_adapter.reset()
         self._decoders.clear()
 
@@ -1861,14 +2008,14 @@ class AsyncPipeline(Pipeline):
 
     async def execute(self) -> list[Any]:  # type: ignore[override]
         """Execute all queued commands asynchronously and decode the results."""
-        decoders = self._decoders
+        steps = self._decoders
         try:
             results = await self._pipeline_adapter.execute()
         finally:
             # The driver pipeline discards its queue on error; stale decoders
             # would misalign against the next batch.
             self._decoders = []
-        return [decoder(result) for result, decoder in zip(results, decoders, strict=True)]
+        return self._decode_steps(results, steps)
 
 
 __all__ = ["AsyncPipeline", "Pipeline"]

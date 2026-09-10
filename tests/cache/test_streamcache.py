@@ -5,6 +5,7 @@ import logging
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
@@ -114,6 +115,24 @@ def _cleanup_globals(*storage_keys: str) -> None:
         _SYNC_REGISTRY.pop(storage_key, None)
 
 
+def _storage_key(entry: dict) -> str:
+    """The key a StreamCache alias uses for its locmem globals and its sync state."""
+    return entry.get("LOCATION") or entry["OPTIONS"].get("stream_key", "cache:sync")
+
+
+@contextmanager
+def _serving(config: dict, *aliases: str) -> Iterator[None]:
+    """Serve ``config``, then stop each alias's threads and drop its globals, pass or fail."""
+    names = aliases or ("default",)
+    with override_settings(CACHES=config):
+        try:
+            yield
+        finally:
+            for alias in names:
+                caches[alias].shutdown()
+            _cleanup_globals(*(_storage_key(config[alias]) for alias in names))
+
+
 @pytest.fixture
 def stream_cache(redis_container: RedisContainerInfo, resp_adapter: str) -> Iterator[BaseCache]:
     """Single StreamCache instance for basic operations, parametrized over ``resp_adapter``."""
@@ -179,11 +198,9 @@ class TestSyncConfig:
             resp_adapter=resp_adapter,
         )
         del config["default"]["OPTIONS"]["stream_key"]
-        with override_settings(CACHES=config):
+        with _serving(config):
             cache = caches["default"]
             assert cache._stream_key == "cache:sync"
-            cache.shutdown()
-            _cleanup_globals("cache:sync")
 
     def test_custom_stream_key_carries_the_writes(
         self,
@@ -199,15 +216,13 @@ class TestSyncConfig:
             resp_adapter=resp_adapter,
             stream_key=stream_key,
         )
-        with override_settings(CACHES=config):
+        with _serving(config):
             cache = caches["default"]
             transport = caches["transport"]
             cache.set("custom_key_target", "v")
             cache._flush_publishes()
             entries = transport.xrevrange(stream_key, count=10)
             assert [f["key"] for _id, f in entries] == [cache.make_key("custom_key_target")]
-            cache.shutdown()
-            _cleanup_globals(stream_key)
 
     def test_maxlen_trims_the_stream(self, redis_container: RedisContainerInfo, resp_adapter: str):
         if not _adapter_library_available(resp_adapter):
@@ -221,7 +236,7 @@ class TestSyncConfig:
         )
         config["default"]["OPTIONS"]["maxlen"] = 10
         writes = 400
-        with override_settings(CACHES=config):
+        with _serving(config):
             cache = caches["default"]
             for i in range(writes):
                 cache.set(f"trim_{i}", i)
@@ -229,8 +244,6 @@ class TestSyncConfig:
             # Trimming is approximate: whole macro nodes only.
             length = caches["transport"].xlen(stream_key)
             assert 10 <= length < writes
-            cache.shutdown()
-            _cleanup_globals(stream_key)
 
     def test_block_timeout_is_passed_to_xread(
         self,
@@ -248,7 +261,7 @@ class TestSyncConfig:
             stream_key=stream_key,
         )
         config["default"]["OPTIONS"]["block_timeout"] = 250
-        with override_settings(CACHES=config):
+        with _serving(config):
             cache = caches["default"]
             # Resolve the transport here so the consumer thread, which caches
             # the same attribute, reads the instance carrying the spy.
@@ -261,8 +274,6 @@ class TestSyncConfig:
             assert spy.call_args_list, "consumer never issued an xread"
             expected = None if cache._transport_is_multiplexed else 250
             assert {call.kwargs["block"] for call in spy.call_args_list} == {expected}
-            cache.shutdown()
-            _cleanup_globals(stream_key)
 
     def test_cachex_support_level(self, stream_cache: BaseCache):
         assert stream_cache._cachex_support == "cachex"
@@ -295,7 +306,7 @@ class TestSyncSharedState:
         states: list[object] = []
         barrier = threading.Barrier(6)
 
-        with override_settings(CACHES=config):
+        with _serving(config):
 
             def worker(index: int) -> None:
                 barrier.wait(10.0)
@@ -319,8 +330,6 @@ class TestSyncSharedState:
             assert len(consumers) == 1
             publishers = [t for t in threading.enumerate() if t.name.startswith("sync-pub")]
             assert len(publishers) == 1
-            cache.shutdown()
-            _cleanup_globals(stream_key)
 
     def test_shutdown_then_restart_leaves_one_consumer(
         self,
@@ -336,7 +345,7 @@ class TestSyncSharedState:
             resp_adapter=resp_adapter,
             stream_key=stream_key,
         )
-        with override_settings(CACHES=config):
+        with _serving(config):
             cache = caches["default"]
             cache.set("restart", 1)
             first_stop = cache._sync.stop_event
@@ -348,8 +357,6 @@ class TestSyncSharedState:
             consumers = [t for t in threading.enumerate() if t.name == f"sync-cache-{stream_key}"]
             assert len(consumers) == 1
             assert cache.get("restart") == 2
-            cache.shutdown()
-            _cleanup_globals(stream_key)
 
 
 # =============================================================================
@@ -502,7 +509,7 @@ class TestSyncExpiry:
         assert ttl is not None
         assert 50 <= ttl <= 60
 
-    def test_ttl_returns_minus_one_for_persistent(self, stream_cache: BaseCache):
+    def test_ttl_returns_none_for_persistent(self, stream_cache: BaseCache):
         stream_cache.set("persist_key", "val", timeout=None)
         assert stream_cache.ttl("persist_key") is None
 
@@ -777,6 +784,91 @@ class TestSyncCrossInstance:
 
 
 # =============================================================================
+# Dropped and failed broadcasts
+# =============================================================================
+
+
+def _consumer_errors(caplog) -> list:
+    return [record for record in caplog.records if "Consumer error" in record.getMessage()]
+
+
+class TestSyncDroppedBroadcasts:
+    """A broadcast that never reaches the stream must not undo the write it belongs to."""
+
+    def test_a_dropped_broadcast_keeps_the_local_value(
+        self,
+        redis_container: RedisContainerInfo,
+        resp_adapter: str,
+    ):
+        # Regression: the dropped write left the previous own entry's mark in
+        # place, so that entry came back and wrote the superseded value.
+        if not _adapter_library_available(resp_adapter):
+            pytest.skip(f"{resp_adapter} library not installed")
+        config = _build_sync_config(
+            redis_container.host,
+            redis_container.port,
+            resp_adapter=resp_adapter,
+        )
+        config["default"]["OPTIONS"]["max_pending_publishes"] = 1
+        config["default"]["OPTIONS"]["publish_shutdown_timeout"] = 0.5
+
+        with _serving(config):
+            cache = caches["default"]
+            cache.set("warm", "v")  # boot consumer + executor
+            cache._flush_publishes()
+            made_key = cache.make_key("reverted")
+            blocked = threading.Event()
+            cache._sync.publish_executor.submit(blocked.wait)
+            try:
+                cache.set("reverted", "v1")  # queued behind the parked worker
+                cache.set("reverted", "v2")  # budget exhausted, broadcast dropped
+                assert made_key not in cache._sync.pending
+            finally:
+                blocked.set()
+            cache._flush_publishes()
+            cache._drain()
+            assert cache.get("reverted") == "v2"
+
+    def test_a_failed_publish_forgets_its_pending_mark(self, stream_cache: BaseCache, mocker):
+        cache = stream_cache
+        cache.set("warm", "v")
+        cache._flush_publishes()
+        mocker.patch.object(cache._transport, "xadd", side_effect=RuntimeError("transport down"))
+        cache.set("orphan", "v")
+        cache._flush_publishes()
+        assert cache.make_key("orphan") not in cache._sync.pending
+        assert cache.get("orphan") == "v"
+
+    def test_marks_below_a_later_own_entry_are_dropped(self, stream_cache: BaseCache):
+        # An entry trimmed by ``maxlen`` before the consumer reached it never
+        # arrives, and its mark would sit in ``pending`` for the process life.
+        cache = stream_cache
+        cache.get("warm")  # boot the consumer
+        sync = cache._sync
+        lost, later = cache.make_key("lost"), cache.make_key("later")
+        with cache._lock:
+            sync.pending[lost] = 1
+            sync.pending[later] = 5
+            cache._apply_message(
+                {"op": "set", "pod": sync.pod_id, "seq": 3, "key": cache.make_key("other"), "val": "v"},
+            )
+        assert lost not in sync.pending
+        assert sync.pending[later] == 5
+
+    def test_a_consumer_outage_logs_one_traceback(self, stream_cache: BaseCache, mocker, caplog):
+        cache = stream_cache
+        cache.get("warm")  # boot the consumer
+        with caplog.at_level(logging.WARNING, logger="django_cachex.cache.stream"):
+            mocker.patch.object(cache._transport, "xread", side_effect=RuntimeError("transport down"))
+            deadline = time.time() + 10.0
+            while time.time() < deadline and len(_consumer_errors(caplog)) < 2:
+                time.sleep(0.05)
+        errors = _consumer_errors(caplog)
+        assert len(errors) >= 2
+        assert sum(1 for record in errors if record.exc_info) == 1
+
+
+# =============================================================================
 # Cull tests
 # =============================================================================
 
@@ -791,17 +883,14 @@ class TestSyncCull:
             resp_adapter=resp_adapter,
             max_entries=10,
         )
-        stream_key = config["default"]["OPTIONS"]["stream_key"]
 
-        with override_settings(CACHES=config):
+        with _serving(config):
             cache = caches["default"]
             for i in range(15):
                 cache.set(f"cull_{i}", f"v{i}")
             count = sum(1 for i in range(15) if cache.get(f"cull_{i}") is not None)
             assert count <= 10
             assert cache.get("cull_14") == "v14"
-            cache.shutdown()
-            _cleanup_globals(stream_key)
 
 
 # =============================================================================
@@ -851,9 +940,8 @@ class TestSyncAdmin:
             resp_adapter=resp_adapter,
         )
         config["default"]["KEY_FUNCTION"] = "tests.cache.test_streamcache._custom_key_func"
-        stream_key = config["default"]["OPTIONS"]["stream_key"]
 
-        with override_settings(CACHES=config):
+        with _serving(config):
             cache = caches["default"]
             cache.set("kf_a", 1)
             cache.set("kf_b", 2)
@@ -861,8 +949,6 @@ class TestSyncAdmin:
             assert cache.keys() == ["kf_a", "kf_b"]
             assert cache.keys("kf_a*") == ["kf_a"]
             assert cache.reverse_key(cache.make_key("kf_a")) == "kf_a"
-            cache.shutdown()
-            _cleanup_globals(stream_key)
 
     def test_info(self, stream_cache: BaseCache):
         stream_cache.set("info_key", "val")
@@ -995,7 +1081,7 @@ class TestSyncReplay:
         )
         config["consumer"]["OPTIONS"]["replay"] = 100
 
-        with override_settings(CACHES=config):
+        with _serving(config, "producer", "consumer"):
             producer = caches["producer"]
             producer.set("replay_a", "alpha")
             producer.set("replay_b", "beta")
@@ -1007,12 +1093,6 @@ class TestSyncReplay:
             assert consumer.get("replay_a") == "alpha"
             assert consumer.get("replay_b") == "beta"
             assert consumer.get("replay_c") == "gamma"
-            consumer.shutdown()
-
-        _cleanup_globals(
-            _pod_storage_key(stream_key, "producer"),
-            _pod_storage_key(stream_key, "consumer"),
-        )
 
     def test_replay_zero_starts_empty(self, redis_container: RedisContainerInfo, resp_adapter: str):
         if not _adapter_library_available(resp_adapter):
@@ -1026,7 +1106,7 @@ class TestSyncReplay:
             pods=("producer", "consumer"),
         )
 
-        with override_settings(CACHES=config):
+        with _serving(config, "producer", "consumer"):
             producer = caches["producer"]
             producer.set("no_replay_key", "value")
             producer._flush_publishes()
@@ -1034,12 +1114,6 @@ class TestSyncReplay:
 
             consumer = caches["consumer"]
             assert consumer.get("no_replay_key") is None
-            consumer.shutdown()
-
-        _cleanup_globals(
-            _pod_storage_key(stream_key, "producer"),
-            _pod_storage_key(stream_key, "consumer"),
-        )
 
 
 class TestSyncShutdown:
@@ -1051,15 +1125,13 @@ class TestSyncShutdown:
             redis_container.port,
             resp_adapter=resp_adapter,
         )
-        stream_key = config["default"]["OPTIONS"]["stream_key"]
 
-        with override_settings(CACHES=config):
+        with _serving(config):
             cache = caches["default"]
             cache.set("k", "v")  # triggers consumer start
             assert cache._consumer_alive()
             cache.shutdown()
             assert not cache._consumer_alive()
-            _cleanup_globals(stream_key)
 
     def test_shutdown_bounded_when_transport_hangs(
         self,

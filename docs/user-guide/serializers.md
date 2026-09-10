@@ -69,9 +69,11 @@ Notes:
   original type on the way back (becomes a `dict` or the underlying value).
 - For arbitrary Django model instances or types not listed above, prefer
   `pickle` or write a custom serializer.
-- If you need maximum speed and your values are JSON-compatible (or you
-  pre-convert `Decimal`/`datetime` to strings), `orjson` and `ormsgpack` are
-  significantly faster than the pure-Python equivalents.
+- If your values are JSON-compatible (or you pre-convert `Decimal`/`datetime`
+  to strings), `orjson` and `ormsgpack` are the fastest encoders on batch
+  writes: about 45% ahead of `json` on `mset` in the
+  [benchmarks](../reference/benchmarks.md). Single-key operations are
+  transport-bound, so the encoder barely moves them.
 
 ## Fallback for Migration
 

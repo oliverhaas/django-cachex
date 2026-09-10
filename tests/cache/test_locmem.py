@@ -5,14 +5,17 @@ against a RESP server, so these tests cover the same contract the
 parametrized RESP tests do, without a container.
 """
 
+import copy
+import pickle
 from typing import TYPE_CHECKING
 
 import pytest
 from django.core.cache import caches
 from django.test import override_settings
 
-from django_cachex.cache.locmem import LocMemCache
+from django_cachex.cache.locmem import LocMemCache, _ZSet
 from django_cachex.exceptions import NotSupportedError, WrongTypeError
+from django_cachex.utils import _deep_getsizeof, _glob_to_regex
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -44,9 +47,13 @@ class TestBackend:
         assert isinstance(locmem_cache, LocMemCache)
         assert locmem_cache._cachex_support == "cachex"
 
-    def test_locmem_has_extension_methods(self, locmem_cache: LocMemCache):
-        for name in ("lpush", "sadd", "hset", "zadd"):
-            assert hasattr(locmem_cache, name)
+    def test_extension_methods_are_implemented_not_inherited_stubs(self, locmem_cache: LocMemCache):
+        # ``BaseCachex`` defines a raising stub for every extension, so
+        # ``hasattr`` proves nothing; answering for a missing key does.
+        assert locmem_cache.llen("missing") == 0
+        assert locmem_cache.scard("missing") == 0
+        assert locmem_cache.hlen("missing") == 0
+        assert locmem_cache.zcard("missing") == 0
 
 
 class TestSharedLocation:
@@ -369,6 +376,23 @@ class TestKeysAndAdmin:
         locmem_cache.set("kx", 2)
         assert locmem_cache.keys(r"k\*") == ["k*"]
 
+    def test_empty_pattern_matches_only_the_empty_key(self, locmem_cache: LocMemCache):
+        # ``KEYS ""`` on Redis matches the empty key, not everything.
+        locmem_cache.set("a", 1)
+        assert locmem_cache.keys("") == []
+        assert list(locmem_cache.iter_keys("")) == []
+        locmem_cache.set("", 2)
+        assert locmem_cache.keys("") == [""]
+        assert locmem_cache.delete_pattern("") == 1
+        assert locmem_cache.keys("*") == ["a"]
+
+    def test_keys_with_a_reversed_character_range(self, locmem_cache: LocMemCache):
+        # Redis swaps the bounds of ``[z-a]``; ``re`` would reject the range.
+        locmem_cache.set("km", 1)
+        locmem_cache.set("k1", 2)
+        assert locmem_cache.keys("k[z-a]") == ["km"]
+        assert locmem_cache.keys("k[9-0]") == ["k1"]
+
     def test_scan_filters_by_key_type(self, locmem_cache: LocMemCache):
         locmem_cache.set("plain", 1)
         locmem_cache.rpush("alist", "a")
@@ -525,9 +549,11 @@ class TestListOps:
 
     def test_push_no_values_leaves_existing_list_alone(self, locmem_cache: LocMemCache):
         locmem_cache.rpush("k", "a")
-        assert locmem_cache.lpush("k") == 1
-        assert locmem_cache.rpush("k") == 1
+        locmem_cache.expire("k", 100)
+        assert locmem_cache.lpush("k") == 0
+        assert locmem_cache.rpush("k") == 0
         assert locmem_cache.lrange("k", 0, -1) == ["a"]
+        assert 90 <= locmem_cache.ttl("k") <= 100
 
     def test_lpush_wrongtype_on_string(self, locmem_cache: LocMemCache):
         locmem_cache.set("k", "string")
@@ -725,6 +751,12 @@ class TestListOps:
     def test_linsert_missing_key(self, locmem_cache: LocMemCache):
         assert locmem_cache.linsert("missing", "BEFORE", "a", "x") == 0
 
+    def test_linsert_rejects_an_unknown_position(self, locmem_cache: LocMemCache):
+        locmem_cache.rpush("k", "a", "c")
+        with pytest.raises(ValueError, match="syntax error"):
+            locmem_cache.linsert("k", "SIDEWAYS", "c", "b")
+        assert locmem_cache.lrange("k", 0, -1) == ["a", "c"]
+
     def test_lpos_basic(self, locmem_cache: LocMemCache):
         locmem_cache.rpush("k", "a", "b", "c", "b")
         assert locmem_cache.lpos("k", "b") == 1
@@ -752,6 +784,16 @@ class TestListOps:
         locmem_cache.rpush("k", "a")
         with pytest.raises(ValueError, match="RANK can't be zero"):
             locmem_cache.lpos("k", "a", rank=0)
+
+    def test_lpos_negative_count_rejected(self, locmem_cache: LocMemCache):
+        locmem_cache.rpush("k", "a", "b", "a", "c", "a")
+        with pytest.raises(ValueError, match="COUNT can't be negative"):
+            locmem_cache.lpos("k", "a", count=-1)
+
+    def test_lpos_negative_maxlen_rejected(self, locmem_cache: LocMemCache):
+        locmem_cache.rpush("k", "a", "b", "a")
+        with pytest.raises(ValueError, match="MAXLEN can't be negative"):
+            locmem_cache.lpos("k", "a", maxlen=-1)
 
     def test_lpos_not_found(self, locmem_cache: LocMemCache):
         locmem_cache.rpush("k", "a")
@@ -889,6 +931,12 @@ class TestSetOps:
         locmem_cache.sadd("k", "a")
         locmem_cache.spop("k")
         assert locmem_cache.has_key("k") is False
+
+    def test_spop_negative_count_rejected(self, locmem_cache: LocMemCache):
+        locmem_cache.sadd("k", "a", "b")
+        with pytest.raises(ValueError, match="must be positive"):
+            locmem_cache.spop("k", count=-1)
+        assert locmem_cache.scard("k") == 2
 
     def test_srandmember_single(self, locmem_cache: LocMemCache):
         locmem_cache.sadd("k", "a", "b", "c")
@@ -1590,3 +1638,47 @@ class TestStringReads:
         locmem_cache.set("plain", 1)
         locmem_cache.rpush("lst", "a")
         assert await locmem_cache.aget_many(["plain", "lst"]) == {"plain": 1}
+
+
+# =============================================================================
+# ``_ZSet`` sidecar
+# =============================================================================
+
+
+class TestZSetSidecar:
+    """``_ZSet`` keeps a ``SortedList`` beside the mapping.
+
+    ``dict``'s own reduce replays the items through ``__setitem__`` before it
+    restores ``__dict__``, so the sidecar has to be rebuilt from the mapping
+    instead of carried through the pickle.
+    """
+
+    def test_pickle_round_trip_keeps_one_entry_per_member(self):
+        restored = pickle.loads(pickle.dumps(_ZSet({"a": 1.0, "b": 2.0})))
+        assert isinstance(restored, _ZSet)
+        assert restored.sorted_members() == [("a", 1.0), ("b", 2.0)]
+        assert restored.rank_of("b") == 1
+
+    def test_deepcopy_does_not_duplicate_members(self):
+        copied = copy.deepcopy(_ZSet({"a": 1.0, "b": 2.0}))
+        assert copied.sorted_members() == [("a", 1.0), ("b", 2.0)]
+        assert copied.revrank_of("a") == 1
+
+    def test_reported_memory_counts_the_sidecar(self):
+        assert _deep_getsizeof(_ZSet({"a": 1.0})) > _deep_getsizeof({"a": 1.0})
+
+
+class TestGlobRanges:
+    """``_glob_to_regex`` follows Redis's ``stringmatchlen`` on ranges."""
+
+    def test_reversed_range_is_swapped(self):
+        assert _glob_to_regex("[z-a]").match("m")
+        assert _glob_to_regex("[9-0]").match("5")
+
+    def test_escaped_range_end_stays_a_bound(self):
+        # Redis reads the end of a range raw, so ``[a-\z]`` is ``\``..``a``
+        # followed by a literal ``z``.
+        pattern = _glob_to_regex(r"[a-\z]")
+        assert pattern.match("_")
+        assert pattern.match("z")
+        assert not pattern.match("m")

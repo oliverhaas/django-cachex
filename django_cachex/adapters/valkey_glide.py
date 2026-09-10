@@ -43,7 +43,13 @@ from django_cachex.adapters.valkey_py import (
     _options_key,
     _to_unix,
 )
-from django_cachex.exceptions import KeyNotFoundError, NotSupportedError, translate_server_error
+from django_cachex.exceptions import (
+    CachexError,
+    KeyNotFoundError,
+    NotSupportedError,
+    translate_server_error,
+)
+from django_cachex.lock import LockError, LockNotOwnedError
 from django_cachex.stampede import (
     StampedeConfig,
     get_timeout_with_buffer,
@@ -85,6 +91,7 @@ try:
         NodeAddress,
         ObjectType,
         RandomNode,
+        ReadFrom,
         RequestError,
         ServerCredentials,
     )
@@ -195,13 +202,6 @@ class _WrongTypeClient:
 # Glide clients are expensive and Django hands out a fresh ``BaseCache`` per
 # asyncio task, so these registries share one per loop (async) or config (sync).
 
-if TYPE_CHECKING:
-    _GlideSyncRegistry = dict[tuple[Any, ...], "GlideClient"]
-    _GlideAsyncRegistry = weakref.WeakKeyDictionary[
-        asyncio.AbstractEventLoop,
-        dict[tuple[Any, ...], "AsyncGlideClient"],
-    ]
-
 _GLIDE_SYNC_CLIENTS: dict[tuple[Any, ...], Any] = {}
 _GLIDE_SYNC_LOCK = threading.Lock()
 _GLIDE_ASYNC_CLIENTS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], Any]] = (
@@ -247,18 +247,65 @@ def _parse_db(u: Any, options: dict[str, Any]) -> int | None:
     return None
 
 
+def _hostports(servers: list[str]) -> list[tuple[str, int]]:
+    """Distinct ``(host, port)`` pairs from the URL list, in the order given.
+
+    A URL repeated in ``LOCATION`` names one node, not a replica of itself, and
+    glide refuses a standalone list in which two addresses answer as primary.
+    """
+    seen: dict[tuple[str, int], None] = {}
+    for raw in servers:
+        u = urlparse(raw)
+        seen.setdefault((u.hostname or "localhost", u.port or 6379), None)
+    return list(seen)
+
+
+def _node_addresses(servers: list[str], node_address_cls: Any) -> list[Any]:
+    return [node_address_cls(host, port) for host, port in _hostports(servers)]
+
+
+def _check_uniform_servers(servers: list[str], *, check_database: bool) -> None:
+    """Reject a URL list whose entries disagree on how to connect.
+
+    Glide takes one set of credentials, one TLS flag and one database for the
+    whole address list, so a list that mixes them cannot be honored.
+    """
+    first = urlparse(servers[0])
+    for raw in servers[1:]:
+        u = urlparse(raw)
+        differing = [
+            name
+            for name, a, b in (
+                ("TLS", first.scheme in _TLS_SCHEMES, u.scheme in _TLS_SCHEMES),
+                ("username", first.username, u.username),
+                ("password", first.password, u.password),
+                ("database", _parse_db(first, {}), _parse_db(u, {})),
+            )
+            if a != b and (check_database or name != "database")
+        ]
+        if differing:
+            msg = (
+                f"LOCATION URLs must agree on {', '.join(differing)}: "
+                f"{servers[0]!r} and {raw!r} differ. valkey-glide applies one "
+                f"connection setting to the whole primary-plus-replicas list."
+            )
+            raise ImproperlyConfigured(msg)
+
+
 def _glide_config_kwargs(
     servers: list[str],
     options: dict[str, Any],
     *,
     credentials_cls: Any,
-    include_database: bool = True,
+    standalone: bool = True,
 ) -> dict[str, Any]:
-    """``Glide*ClientConfiguration`` kwargs from the first URL plus OPTIONS.
+    """``Glide*ClientConfiguration`` kwargs from the URL list plus OPTIONS.
 
-    ``credentials_cls`` is the sync or async ``ServerCredentials`` flavor;
-    cluster configs pass ``include_database=False`` (cluster only serves db 0).
+    ``credentials_cls`` is the sync or async ``ServerCredentials`` flavor.
+    Cluster configs pass ``standalone=False``: cluster serves db 0 only and
+    routes its own reads, so neither ``database_id`` nor ``read_from`` applies.
     """
+    _check_uniform_servers(servers, check_database=standalone)
     u = urlparse(servers[0])
     kwargs: dict[str, Any] = {}
 
@@ -278,8 +325,13 @@ def _glide_config_kwargs(
         # glide rejects a username without a password, so nopass users connect unauthenticated.
         kwargs["credentials"] = credentials_cls(password=password, username=username)
 
-    if include_database and (db := _parse_db(u, options)) is not None:
+    if standalone and (db := _parse_db(u, options)) is not None:
         kwargs["database_id"] = db
+
+    if standalone and len(_hostports(servers)) > 1:
+        # The URLs after the first are replicas; glide routes reads to them
+        # natively, falling back to the primary when none is reachable.
+        kwargs["read_from"] = ReadFrom.PREFER_REPLICA
 
     if (request_timeout := options.get("request_timeout")) is not None:
         kwargs["request_timeout"] = int(request_timeout)
@@ -327,6 +379,69 @@ def _enc_map(mapping: Mapping[Any, Any]) -> dict[Any, bytes | str]:
     return {k: _enc(v) for k, v in mapping.items()}
 
 
+def _zadd_args(
+    key: Any,
+    mapping: Mapping[Any, float],
+    *,
+    nx: bool = False,
+    xx: bool = False,
+    ch: bool = False,
+    gt: bool = False,
+    lt: bool = False,
+    incr: bool = False,
+) -> list[Any]:
+    """ZADD argv.
+
+    Glide's native ``zadd`` builds its arguments with ``str(member)``, which
+    turns a serialized ``bytes`` member into its repr, and it exposes no
+    ``INCR``, so every call goes through the raw command instead.
+    """
+    args: list[Any] = [b"ZADD", key]
+    if nx:
+        args.append(b"NX")
+    elif xx:
+        args.append(b"XX")
+    if gt:
+        args.append(b"GT")
+    elif lt:
+        args.append(b"LT")
+    if ch:
+        args.append(b"CH")
+    if incr:
+        args.append(b"INCR")
+    for member, score in mapping.items():
+        args.extend([_enc(score), _enc(member)])
+    return args
+
+
+def _trim_args(
+    *,
+    maxlen: int | None = None,
+    approximate: bool = True,
+    minid: str | None = None,
+    limit: int | None = None,
+) -> list[Any]:
+    if maxlen is not None and minid is not None:
+        # redis-py and valkey-py raise for the pair, so glide must not silently
+        # trim by one of them.
+        msg = "Only one of `maxlen` or `minid` may be specified"
+        raise ValueError(msg)
+    args: list[Any] = []
+    if maxlen is not None:
+        args.append(b"MAXLEN")
+        if approximate:
+            args.append(b"~")
+        args.append(str(maxlen).encode())
+    elif minid is not None:
+        args.append(b"MINID")
+        if approximate:
+            args.append(b"~")
+        args.append(_enc(minid))
+    if limit is not None:
+        args.extend([b"LIMIT", str(limit).encode()])
+    return args
+
+
 def _xadd_args(
     key: Any,
     fields: Mapping[Any, Any],
@@ -341,18 +456,7 @@ def _xadd_args(
     args: list[Any] = [b"XADD", key]
     if nomkstream:
         args.append(b"NOMKSTREAM")
-    if maxlen is not None:
-        args.append(b"MAXLEN")
-        if approximate:
-            args.append(b"~")
-        args.append(str(maxlen).encode())
-    elif minid is not None:
-        args.append(b"MINID")
-        if approximate:
-            args.append(b"~")
-        args.append(_enc(minid))
-    if limit is not None:
-        args.extend([b"LIMIT", str(limit).encode()])
+    args.extend(_trim_args(maxlen=maxlen, approximate=approximate, minid=minid, limit=limit))
     args.append(_enc(entry_id))
     for field, value in fields.items():
         args.extend([_enc(field), _enc(value)])
@@ -486,6 +590,14 @@ def _decode_xread_pipeline(raw: Any) -> Any:
     return out
 
 
+def _checked_exec(raw: Any) -> list[Any]:
+    """Glide answers ``None`` when an atomic batch was discarded; say so."""
+    if raw is None:
+        msg = "The transaction was aborted by the server; no command in it ran."
+        raise CachexError(msg)
+    return raw
+
+
 class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
     """Pipeline adapter that buffers cachex ops into glide's ``Batch``."""
 
@@ -553,14 +665,6 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         self._batch.unlink(_enc_list(keys))
         return self
 
-    def mget(self, keys: Iterable[Any]) -> Self:
-        self._batch.mget(_enc_list(keys))
-        return self
-
-    def mset(self, mapping: Mapping[Any, Any]) -> Self:
-        self._batch.mset(_enc_map(mapping))
-        return self
-
     def incrby(self, key: Any, amount: int) -> Self:
         self._batch.incrby(key, amount)
         return self
@@ -578,8 +682,8 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         self._batch.expire(key, _expire_arg(seconds))
         return self
 
-    def pexpire(self, key: Any, ms: int | datetime.timedelta) -> Self:
-        self._batch.pexpire(key, _expire_arg(ms, milliseconds=True))
+    def pexpire(self, key: Any, milliseconds: int | datetime.timedelta) -> Self:
+        self._batch.pexpire(key, _expire_arg(milliseconds, milliseconds=True))
         return self
 
     def expireat(self, key: Any, when: int | datetime.datetime) -> Self:
@@ -848,26 +952,19 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         return self
 
     # ---- sorted sets ----
-    def zadd(self, key: Any, mapping: Mapping[Any, float], **kwargs: Any) -> Self:
-        if kwargs:
-            args: list[Any] = [b"ZADD", key]
-            if kwargs.get("nx"):
-                args.append(b"NX")
-            elif kwargs.get("xx"):
-                args.append(b"XX")
-            if kwargs.get("gt"):
-                args.append(b"GT")
-            elif kwargs.get("lt"):
-                args.append(b"LT")
-            if kwargs.get("ch"):
-                args.append(b"CH")
-            if kwargs.get("incr"):
-                args.append(b"INCR")
-            for member, score in mapping.items():
-                args.extend([_enc(score), _enc(member)])
-            self._batch.custom_command(args)
-        else:
-            self._batch.zadd(key, {_enc(m): float(s) for m, s in mapping.items()})
+    def zadd(
+        self,
+        key: Any,
+        mapping: Mapping[Any, float],
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        ch: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+        incr: bool = False,
+    ) -> Self:
+        self._batch.custom_command(_zadd_args(key, mapping, nx=nx, xx=xx, ch=ch, gt=gt, lt=lt, incr=incr))
         return self
 
     def zrem(self, key: Any, *members: Any) -> Self:
@@ -898,16 +995,16 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         self._batch.zremrangebyrank(key, start, end)
         return self
 
-    def zremrangebyscore(self, key: Any, mn: Any, mx: Any) -> Self:
-        self._batch.custom_command([b"ZREMRANGEBYSCORE", key, _enc(mn), _enc(mx)])
+    def zremrangebyscore(self, key: Any, min: Any, max: Any) -> Self:
+        self._batch.custom_command([b"ZREMRANGEBYSCORE", key, _enc(min), _enc(max)])
         return self
 
     def zcard(self, key: Any) -> Self:
         self._batch.zcard(key)
         return self
 
-    def zcount(self, key: Any, mn: Any, mx: Any) -> Self:
-        self._batch.custom_command([b"ZCOUNT", key, _enc(mn), _enc(mx)])
+    def zcount(self, key: Any, min: Any, max: Any) -> Self:
+        self._batch.custom_command([b"ZCOUNT", key, _enc(min), _enc(max)])
         return self
 
     def zrange(
@@ -915,6 +1012,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         key: Any,
         start: int,
         end: int,
+        *,
         withscores: bool = False,
         desc: bool = False,
     ) -> Self:
@@ -932,6 +1030,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         key: Any,
         start: int,
         end: int,
+        *,
         withscores: bool = False,
     ) -> Self:
         return self.zrange(key, start, end, withscores=withscores, desc=True)
@@ -1068,8 +1167,8 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         self,
         key: Any,
         fields: Mapping[Any, Any],
-        id: str = "*",
         *,
+        id: str = "*",
         maxlen: int | None = None,
         approximate: bool = True,
         nomkstream: bool = False,
@@ -1160,26 +1259,25 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         self,
         key: Any,
         group: str,
-        min: str = "-",
-        max: str = "+",
-        count: int = 10,
-        **kwargs: Any,
+        *,
+        min: str,
+        max: str,
+        count: int,
+        consumername: str | None = None,
+        idle: int | None = None,
     ) -> Self:
         args: list[Any] = [b"XPENDING", key, _enc(group)]
-        if (idle := kwargs.get("idle")) is not None:
+        if idle is not None:
             args.extend([b"IDLE", str(idle).encode()])
         args.extend([_enc(min), _enc(max), str(count).encode()])
-        # ``pipeline.py`` writes ``kwargs["consumername"] = consumer``;
-        # tolerate the older ``"consumer"`` spelling too.
-        consumer = kwargs.get("consumername", kwargs.get("consumer"))
-        if consumer is not None:
-            args.append(_enc(consumer))
+        if consumername is not None:
+            args.append(_enc(consumername))
         self._batch.custom_command(args)
         self._track(_decode_xpending_range)
         return self
 
-    def xdel(self, key: Any, *ids: Any) -> Self:
-        self._batch.custom_command([b"XDEL", key, *_enc_list(ids)])
+    def xdel(self, key: Any, *entry_ids: Any) -> Self:
+        self._batch.custom_command([b"XDEL", key, *_enc_list(entry_ids)])
         return self
 
     def xtrim(
@@ -1191,23 +1289,12 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         limit: int | None = None,
     ) -> Self:
         args: list[Any] = [b"XTRIM", key]
-        if maxlen is not None:
-            args.append(b"MAXLEN")
-            if approximate:
-                args.append(b"~")
-            args.append(str(maxlen).encode())
-        elif minid is not None:
-            args.append(b"MINID")
-            if approximate:
-                args.append(b"~")
-            args.append(_enc(minid))
-        if limit is not None:
-            args.extend([b"LIMIT", str(limit).encode()])
+        args.extend(_trim_args(maxlen=maxlen, approximate=approximate, minid=minid, limit=limit))
         self._batch.custom_command(args)
         return self
 
-    def xack(self, key: Any, group: str, *ids: Any) -> Self:
-        self._batch.custom_command([b"XACK", key, _enc(group), *_enc_list(ids)])
+    def xack(self, key: Any, group: str, *entry_ids: Any) -> Self:
+        self._batch.custom_command([b"XACK", key, _enc(group), *_enc_list(entry_ids)])
         return self
 
     def xclaim(
@@ -1216,7 +1303,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         group: str,
         consumer: str,
         min_idle_time: int,
-        entry_ids: Sequence[str],
+        message_ids: Sequence[str],
         idle: int | None = None,
         time: int | None = None,
         retrycount: int | None = None,
@@ -1229,7 +1316,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
             _enc(group),
             _enc(consumer),
             str(min_idle_time).encode(),
-            *_enc_list(entry_ids),
+            *_enc_list(message_ids),
         ]
         if idle is not None:
             args.extend([b"IDLE", str(idle).encode()])
@@ -1289,11 +1376,12 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         self,
         key: Any,
         group: str,
-        entry_id: str = "$",
+        id: str = "$",
+        *,
         mkstream: bool = False,
         entries_read: int | None = None,
     ) -> Self:
-        args: list[Any] = [b"XGROUP", b"CREATE", key, _enc(group), _enc(entry_id)]
+        args: list[Any] = [b"XGROUP", b"CREATE", key, _enc(group), _enc(id)]
         if mkstream:
             args.append(b"MKSTREAM")
         if entries_read is not None:
@@ -1306,8 +1394,8 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         self._batch.custom_command([b"XGROUP", b"DESTROY", key, _enc(group)])
         return self
 
-    def xgroup_setid(self, key: Any, group: str, entry_id: str, *, entries_read: int | None = None) -> Self:
-        args: list[Any] = [b"XGROUP", b"SETID", key, _enc(group), _enc(entry_id)]
+    def xgroup_setid(self, key: Any, group: str, id: str, *, entries_read: int | None = None) -> Self:
+        args: list[Any] = [b"XGROUP", b"SETID", key, _enc(group), _enc(id)]
         if entries_read is not None:
             args.extend([b"ENTRIESREAD", str(entries_read).encode()])
         self._batch.custom_command(args)
@@ -1363,7 +1451,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         self._post = {}
         if not batch.commands:
             return []
-        raw = self._client.exec(batch, raise_on_error=True) or []
+        raw = _checked_exec(self._client.exec(batch, raise_on_error=True))
         if not post:
             return list(raw)
         return [post[i](r) if i in post else r for i, r in enumerate(raw)]
@@ -1394,18 +1482,6 @@ class ValkeyGlideAsyncPipelineAdapter(ValkeyGlidePipelineAdapter, RespAsyncPipel
     divergent copy would reject kwargs the cache layer sends.
     """
 
-    def __init__(
-        self,
-        client: AsyncGlideClient,
-        *,
-        transaction: bool = False,
-        batch_factory: Any = None,
-    ) -> None:
-        self._client = client
-        self._new_batch = batch_factory or _new_batch
-        self._batch = self._new_batch(atomic=transaction)
-        self._post: dict[int, Any] = {}
-
     async def execute(self) -> list[Any]:  # type: ignore[override]
         # Capture before awaiting so a transform raising mid-decode doesn't
         # leave the next ``execute()`` replaying the same commands.
@@ -1414,7 +1490,7 @@ class ValkeyGlideAsyncPipelineAdapter(ValkeyGlidePipelineAdapter, RespAsyncPipel
         self._post = {}
         if not batch.commands:
             return []
-        raw = await self._client.exec(batch, raise_on_error=True) or []
+        raw = _checked_exec(await self._client.exec(batch, raise_on_error=True))
         if not post:
             return list(raw)
         return [post[i](r) if i in post else r for i, r in enumerate(raw)]
@@ -1486,9 +1562,8 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         with _GLIDE_SYNC_LOCK:
             client = _GLIDE_SYNC_CLIENTS.get(self._config_key)
             if client is None:
-                u = urlparse(self._servers[0])
                 cfg = GlideClientConfiguration(
-                    addresses=[NodeAddress(u.hostname or "localhost", u.port or 6379)],
+                    addresses=_node_addresses(self._servers, NodeAddress),
                     **_glide_config_kwargs(self._servers, self._options, credentials_cls=ServerCredentials),
                 )
                 client = _WrongTypeClient(GlideClient.create(cfg))
@@ -1522,8 +1597,10 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         with _GLIDE_ASYNC_REGISTRY_LOCK:
             for loop in [dead for dead in registry if dead.is_closed()]:
                 for client in registry.pop(loop, {}).values():
-                    # ``close()`` is a coroutine that never awaits, so one
-                    # ``send`` runs it to completion; the dead loop can't.
+                    if getattr(client, "_is_closed", False):
+                        continue
+                    # ``close()`` is an FFI teardown wrapped in a coroutine that
+                    # never awaits, so one ``send`` runs it; the dead loop can't.
                     closer = getattr(client, "close", None)
                     coro = closer() if closer is not None else None
                     if inspect.iscoroutine(coro):
@@ -1533,9 +1610,8 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
                 locks.pop(loop, None)
 
     async def _create_async_client(self) -> Any:
-        u = urlparse(self._servers[0])
         cfg = AsyncGlideClientConfiguration(
-            addresses=[AsyncNodeAddress(u.hostname or "localhost", u.port or 6379)],
+            addresses=_node_addresses(self._servers, AsyncNodeAddress),
             **_glide_config_kwargs(self._servers, self._options, credentials_cls=AsyncServerCredentials),
         )
         return await AsyncGlideClient.create(cfg)
@@ -1548,7 +1624,6 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         gets us a Redis instance whose connection is opened on first use.
         """
         del key, write
-        self._sweep_async_clients()
         registry = self._async_registry()
         locks = self._async_locks()
         loop = asyncio.get_running_loop()
@@ -1567,6 +1642,9 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         async with lock:
             client = sub.get(self._config_key)
             if client is None:
+                # Only a miss grows the registry, so the dead-loop sweep runs
+                # here rather than on every call under the process-wide lock.
+                self._sweep_async_clients()
                 client = _WrongTypeClient(await self._create_async_client())
                 sub[self._config_key] = client
         return cast("AsyncGlideClient", client)
@@ -2064,14 +2142,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def sdiff(self, keys: Sequence[str]) -> _set[Any]:
         return set(self._client().sdiff(list(keys)))
 
-    def sinterstore(self, dst: str, keys: Sequence[str]) -> int:
-        return self._client().sinterstore(dst, list(keys))
+    def sinterstore(self, dest: str, keys: Sequence[str]) -> int:
+        return self._client().sinterstore(dest, list(keys))
 
-    def sunionstore(self, dst: str, keys: Sequence[str]) -> int:
-        return self._client().sunionstore(dst, list(keys))
+    def sunionstore(self, dest: str, keys: Sequence[str]) -> int:
+        return self._client().sunionstore(dest, list(keys))
 
-    def sdiffstore(self, dst: str, keys: Sequence[str]) -> int:
-        return self._client().sdiffstore(dst, list(keys))
+    def sdiffstore(self, dest: str, keys: Sequence[str]) -> int:
+        return self._client().sdiffstore(dest, list(keys))
 
     def sscan(
         self,
@@ -2097,26 +2175,18 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     # Sync sorted sets
     # =========================================================================
 
-    def zadd(self, key: str, mapping: Mapping[Any, float], **kwargs: Any) -> int:
-        client = self._client()
-        if kwargs:
-            args: list[Any] = [b"ZADD", key]
-            if kwargs.get("nx"):
-                args.append(b"NX")
-            elif kwargs.get("xx"):
-                args.append(b"XX")
-            if kwargs.get("gt"):
-                args.append(b"GT")
-            elif kwargs.get("lt"):
-                args.append(b"LT")
-            if kwargs.get("ch"):
-                args.append(b"CH")
-            if kwargs.get("incr"):
-                args.append(b"INCR")
-            for member, score in mapping.items():
-                args.extend([_enc(score), _enc(member)])
-            return self._cmd(args)
-        return client.zadd(key, {_enc(m): float(s) for m, s in mapping.items()})
+    def zadd(
+        self,
+        key: str,
+        mapping: Mapping[Any, float],
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        ch: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> int:
+        return self._cmd(_zadd_args(key, mapping, nx=nx, xx=xx, ch=ch, gt=gt, lt=lt))
 
     def zrem(self, key: str, *members: Any) -> int:
         return self._client().zrem(key, [_enc(m) for m in members])
@@ -2139,20 +2209,21 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def zremrangebyrank(self, key: str, start: int, end: int) -> int:
         return self._client().zremrangebyrank(key, start, end)
 
-    def zremrangebyscore(self, key: str, mn: Any, mx: Any) -> int:
-        return self._cmd([b"ZREMRANGEBYSCORE", key, _enc(mn), _enc(mx)])
+    def zremrangebyscore(self, key: str, min_score: Any, max_score: Any) -> int:
+        return self._cmd([b"ZREMRANGEBYSCORE", key, _enc(min_score), _enc(max_score)])
 
     def zcard(self, key: str) -> int:
         return self._client().zcard(key)
 
-    def zcount(self, key: str, mn: Any, mx: Any) -> int:
-        return self._cmd([b"ZCOUNT", key, _enc(mn), _enc(mx)])
+    def zcount(self, key: str, min_score: Any, max_score: Any) -> int:
+        return self._cmd([b"ZCOUNT", key, _enc(min_score), _enc(max_score)])
 
     def zrange(
         self,
         key: str,
         start: int,
         end: int,
+        *,
         withscores: bool = False,
         desc: bool = False,
     ) -> list[Any]:
@@ -2169,6 +2240,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         key: str,
         start: int,
         end: int,
+        *,
         withscores: bool = False,
     ) -> list[Any]:
         return self.zrange(key, start, end, withscores=withscores, desc=True)
@@ -2176,13 +2248,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def zrangebyscore(
         self,
         key: str,
-        mn: Any,
-        mx: Any,
-        withscores: bool = False,
+        min_score: Any,
+        max_score: Any,
+        *,
         start: int | None = None,
         num: int | None = None,
+        withscores: bool = False,
     ) -> list[Any]:
-        args = [b"ZRANGEBYSCORE", key, _enc(mn), _enc(mx)]
+        args = [b"ZRANGEBYSCORE", key, _enc(min_score), _enc(max_score)]
         if withscores:
             args.append(b"WITHSCORES")
         if start is not None and num is not None:
@@ -2192,13 +2265,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def zrevrangebyscore(
         self,
         key: str,
-        mx: Any,
-        mn: Any,
-        withscores: bool = False,
+        max_score: Any,
+        min_score: Any,
+        *,
         start: int | None = None,
         num: int | None = None,
+        withscores: bool = False,
     ) -> list[Any]:
-        args = [b"ZREVRANGEBYSCORE", key, _enc(mx), _enc(mn)]
+        args = [b"ZREVRANGEBYSCORE", key, _enc(max_score), _enc(min_score)]
         if withscores:
             args.append(b"WITHSCORES")
         if start is not None and num is not None:
@@ -2374,8 +2448,8 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.extend([b"COUNT", str(count).encode()])
         return _decode_stream_entries(self._cmd(args))
 
-    def xdel(self, key: str, *ids: Any) -> int:
-        return self._cmd([b"XDEL", key, *_enc_list(ids)])
+    def xdel(self, key: str, *entry_ids: Any) -> int:
+        return self._cmd([b"XDEL", key, *_enc_list(entry_ids)])
 
     def xtrim(
         self,
@@ -2386,22 +2460,11 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         limit: int | None = None,
     ) -> int:
         args: list[Any] = [b"XTRIM", key]
-        if maxlen is not None:
-            args.append(b"MAXLEN")
-            if approximate:
-                args.append(b"~")
-            args.append(str(maxlen).encode())
-        elif minid is not None:
-            args.append(b"MINID")
-            if approximate:
-                args.append(b"~")
-            args.append(_enc(minid))
-        if limit is not None:
-            args.extend([b"LIMIT", str(limit).encode()])
+        args.extend(_trim_args(maxlen=maxlen, approximate=approximate, minid=minid, limit=limit))
         return self._cmd(args)
 
-    def xack(self, key: str, group: str, *ids: Any) -> int:
-        return self._cmd([b"XACK", key, _enc(group), *_enc_list(ids)])
+    def xack(self, key: str, group: str, *entry_ids: Any) -> int:
+        return self._cmd([b"XACK", key, _enc(group), *_enc_list(entry_ids)])
 
     def xclaim(
         self,
@@ -3149,14 +3212,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def asdiff(self, keys: Sequence[str]) -> _set[Any]:
         return set(await (await self.get_async_client()).sdiff(list(keys)))
 
-    async def asinterstore(self, dst: str, keys: Sequence[str]) -> int:
-        return await (await self.get_async_client()).sinterstore(dst, list(keys))
+    async def asinterstore(self, dest: str, keys: Sequence[str]) -> int:
+        return await (await self.get_async_client()).sinterstore(dest, list(keys))
 
-    async def asunionstore(self, dst: str, keys: Sequence[str]) -> int:
-        return await (await self.get_async_client()).sunionstore(dst, list(keys))
+    async def asunionstore(self, dest: str, keys: Sequence[str]) -> int:
+        return await (await self.get_async_client()).sunionstore(dest, list(keys))
 
-    async def asdiffstore(self, dst: str, keys: Sequence[str]) -> int:
-        return await (await self.get_async_client()).sdiffstore(dst, list(keys))
+    async def asdiffstore(self, dest: str, keys: Sequence[str]) -> int:
+        return await (await self.get_async_client()).sdiffstore(dest, list(keys))
 
     async def asscan(
         self,
@@ -3183,26 +3246,18 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     # Async sorted sets
     # =========================================================================
 
-    async def azadd(self, key: str, mapping: Mapping[Any, float], **kwargs: Any) -> int:
-        client = await self.get_async_client()
-        if kwargs:
-            args: list[Any] = [b"ZADD", key]
-            if kwargs.get("nx"):
-                args.append(b"NX")
-            elif kwargs.get("xx"):
-                args.append(b"XX")
-            if kwargs.get("gt"):
-                args.append(b"GT")
-            elif kwargs.get("lt"):
-                args.append(b"LT")
-            if kwargs.get("ch"):
-                args.append(b"CH")
-            if kwargs.get("incr"):
-                args.append(b"INCR")
-            for member, score in mapping.items():
-                args.extend([_enc(score), _enc(member)])
-            return await self._acmd(args)
-        return await client.zadd(key, {_enc(m): float(s) for m, s in mapping.items()})
+    async def azadd(
+        self,
+        key: str,
+        mapping: Mapping[Any, float],
+        *,
+        nx: bool = False,
+        xx: bool = False,
+        ch: bool = False,
+        gt: bool = False,
+        lt: bool = False,
+    ) -> int:
+        return await self._acmd(_zadd_args(key, mapping, nx=nx, xx=xx, ch=ch, gt=gt, lt=lt))
 
     async def azrem(self, key: str, *members: Any) -> int:
         return await (await self.get_async_client()).zrem(key, [_enc(m) for m in members])
@@ -3225,20 +3280,21 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def azremrangebyrank(self, key: str, start: int, end: int) -> int:
         return await (await self.get_async_client()).zremrangebyrank(key, start, end)
 
-    async def azremrangebyscore(self, key: str, mn: Any, mx: Any) -> int:
-        return await self._acmd([b"ZREMRANGEBYSCORE", key, _enc(mn), _enc(mx)])
+    async def azremrangebyscore(self, key: str, min_score: Any, max_score: Any) -> int:
+        return await self._acmd([b"ZREMRANGEBYSCORE", key, _enc(min_score), _enc(max_score)])
 
     async def azcard(self, key: str) -> int:
         return await (await self.get_async_client()).zcard(key)
 
-    async def azcount(self, key: str, mn: Any, mx: Any) -> int:
-        return await self._acmd([b"ZCOUNT", key, _enc(mn), _enc(mx)])
+    async def azcount(self, key: str, min_score: Any, max_score: Any) -> int:
+        return await self._acmd([b"ZCOUNT", key, _enc(min_score), _enc(max_score)])
 
     async def azrange(
         self,
         key: str,
         start: int,
         end: int,
+        *,
         withscores: bool = False,
         desc: bool = False,
     ) -> list[Any]:
@@ -3257,6 +3313,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         key: str,
         start: int,
         end: int,
+        *,
         withscores: bool = False,
     ) -> list[Any]:
         return await self.azrange(key, start, end, withscores=withscores, desc=True)
@@ -3264,13 +3321,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def azrangebyscore(
         self,
         key: str,
-        mn: Any,
-        mx: Any,
-        withscores: bool = False,
+        min_score: Any,
+        max_score: Any,
+        *,
         start: int | None = None,
         num: int | None = None,
+        withscores: bool = False,
     ) -> list[Any]:
-        args = [b"ZRANGEBYSCORE", key, _enc(mn), _enc(mx)]
+        args = [b"ZRANGEBYSCORE", key, _enc(min_score), _enc(max_score)]
         if withscores:
             args.append(b"WITHSCORES")
         if start is not None and num is not None:
@@ -3283,13 +3341,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def azrevrangebyscore(
         self,
         key: str,
-        mx: Any,
-        mn: Any,
-        withscores: bool = False,
+        max_score: Any,
+        min_score: Any,
+        *,
         start: int | None = None,
         num: int | None = None,
+        withscores: bool = False,
     ) -> list[Any]:
-        args = [b"ZREVRANGEBYSCORE", key, _enc(mx), _enc(mn)]
+        args = [b"ZREVRANGEBYSCORE", key, _enc(max_score), _enc(min_score)]
         if withscores:
             args.append(b"WITHSCORES")
         if start is not None and num is not None:
@@ -3475,8 +3534,8 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             args.extend([b"COUNT", str(count).encode()])
         return _decode_stream_entries(await self._acmd(args))
 
-    async def axdel(self, key: str, *ids: Any) -> int:
-        return await self._acmd([b"XDEL", key, *_enc_list(ids)])
+    async def axdel(self, key: str, *entry_ids: Any) -> int:
+        return await self._acmd([b"XDEL", key, *_enc_list(entry_ids)])
 
     async def axtrim(
         self,
@@ -3487,22 +3546,11 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         limit: int | None = None,
     ) -> int:
         args: list[Any] = [b"XTRIM", key]
-        if maxlen is not None:
-            args.append(b"MAXLEN")
-            if approximate:
-                args.append(b"~")
-            args.append(str(maxlen).encode())
-        elif minid is not None:
-            args.append(b"MINID")
-            if approximate:
-                args.append(b"~")
-            args.append(_enc(minid))
-        if limit is not None:
-            args.extend([b"LIMIT", str(limit).encode()])
+        args.extend(_trim_args(maxlen=maxlen, approximate=approximate, minid=minid, limit=limit))
         return await self._acmd(args)
 
-    async def axack(self, key: str, group: str, *ids: Any) -> int:
-        return await self._acmd([b"XACK", key, _enc(group), *_enc_list(ids)])
+    async def axack(self, key: str, group: str, *entry_ids: Any) -> int:
+        return await self._acmd([b"XACK", key, _enc(group), *_enc_list(entry_ids)])
 
     async def axclaim(
         self,
@@ -3821,12 +3869,12 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
             client = _GLIDE_SYNC_CLUSTER_CLIENTS.get(self._config_key)
             if client is None:
                 cfg = GlideClusterClientConfiguration(
-                    addresses=self._cluster_addresses(),
+                    addresses=_node_addresses(self._servers, NodeAddress),
                     **_glide_config_kwargs(
                         self._servers,
                         self._options,
                         credentials_cls=ServerCredentials,
-                        include_database=False,
+                        standalone=False,
                     ),
                 )
                 client = _WrongTypeClient(GlideClusterClient.create(cfg))
@@ -3843,29 +3891,15 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
 
     async def _create_async_client(self) -> Any:
         cfg = AsyncGlideClusterClientConfiguration(
-            addresses=self._cluster_addresses_async(),
+            addresses=_node_addresses(self._servers, AsyncNodeAddress),
             **_glide_config_kwargs(
                 self._servers,
                 self._options,
                 credentials_cls=AsyncServerCredentials,
-                include_database=False,
+                standalone=False,
             ),
         )
         return await AsyncGlideClusterClient.create(cfg)
-
-    def _cluster_addresses(self) -> list[NodeAddress]:
-        out: list[NodeAddress] = []
-        for raw in self._servers:
-            u = urlparse(raw)
-            out.append(NodeAddress(u.hostname or "localhost", u.port or 6379))
-        return out
-
-    def _cluster_addresses_async(self) -> list[AsyncNodeAddress]:
-        out: list[AsyncNodeAddress] = []
-        for raw in self._servers:
-            u = urlparse(raw)
-            out.append(AsyncNodeAddress(u.hostname or "localhost", u.port or 6379))
-        return out
 
 
 # =============================================================================
@@ -3891,7 +3925,6 @@ def _decode_zpop(result: Any) -> list[tuple[Any, float]]:
         return []
     if isinstance(result, dict):
         return [(m, float(s)) for m, s in result.items()]
-    # list shape
     return [(m, float(s)) for m, s in result]
 
 
@@ -4033,8 +4066,6 @@ class _GlideLock:
             time.sleep(min(self._sleep, remaining))
 
     def release(self) -> None:
-        from django_cachex.lock import LockError, LockNotOwnedError
-
         if self._token is None:
             msg = "Cannot release un-acquired lock"
             raise LockError(msg)
@@ -4048,8 +4079,6 @@ class _GlideLock:
 
     def extend(self, additional_time: float, *, replace_ttl: bool = False) -> bool:
         """Extend the lock's TTL by ``additional_time`` seconds (or replace it)."""
-        from django_cachex.lock import LockError, LockNotOwnedError
-
         if self._token is None:
             msg = "Cannot extend un-acquired lock"
             raise LockError(msg)
@@ -4076,8 +4105,6 @@ class _GlideLock:
         return True
 
     def __enter__(self) -> Self:
-        from django_cachex.lock import LockError
-
         if not self.acquire():
             msg = f"Could not acquire lock on {self._key}"
             raise LockError(msg)
@@ -4155,8 +4182,6 @@ class _AsyncGlideLock:
             await asyncio.sleep(min(self._sleep, remaining))
 
     async def release(self) -> None:
-        from django_cachex.lock import LockError, LockNotOwnedError
-
         if self._token is None:
             msg = "Cannot release un-acquired lock"
             raise LockError(msg)
@@ -4170,8 +4195,6 @@ class _AsyncGlideLock:
             raise LockNotOwnedError(msg)
 
     async def extend(self, additional_time: float, *, replace_ttl: bool = False) -> bool:
-        from django_cachex.lock import LockError, LockNotOwnedError
-
         if self._token is None:
             msg = "Cannot extend un-acquired lock"
             raise LockError(msg)
@@ -4198,8 +4221,6 @@ class _AsyncGlideLock:
         return True
 
     async def __aenter__(self) -> Self:
-        from django_cachex.lock import LockError
-
         if not await self.acquire():
             msg = f"Could not acquire lock on {self._key}"
             raise LockError(msg)

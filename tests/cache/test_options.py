@@ -114,3 +114,17 @@ class TestDefaultReverseKey:
         assert cache.reverse_key("plainkey") == "plainkey"
         # Prefix matches but there is no version:key remainder.
         assert cache.reverse_key("myprefix:1") == "myprefix:1"
+
+
+class TestDjangoGenericOptions:
+    def test_max_entries_and_cull_frequency_stay_out_of_the_pool(self):
+        cache = make_cache(MAX_ENTRIES=99, CULL_FREQUENCY=7)
+
+        assert cache._max_entries == 99
+        assert cache._cull_frequency == 7
+        assert "MAX_ENTRIES" not in cache._options
+        assert "CULL_FREQUENCY" not in cache._options
+
+        pool_options = cache.adapter._pool_options
+        assert "MAX_ENTRIES" not in pool_options
+        assert "CULL_FREQUENCY" not in pool_options

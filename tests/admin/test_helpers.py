@@ -6,7 +6,13 @@ import pytest
 from django.template.loader import render_to_string
 from django.test import override_settings
 
-from django_cachex.admin.helpers import PAGE_SIZE, _fetch_type_data, _paginate
+from django_cachex.admin.helpers import (
+    PAGE_SIZE,
+    _fetch_type_data,
+    _paginate,
+    mask_credentials,
+    mask_location,
+)
 from django_cachex.admin.views.key_detail import _set_preserving_ttl
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
@@ -248,3 +254,56 @@ class TestPaginationTemplateLocalization:
         assert "?page=1,235" not in html
         assert "?page=2000" in html
         assert "?page=2,000" not in html
+
+
+class TestMaskLocation:
+    """``LOCATION`` reaches the page for anyone holding ``view_cache``, and a
+    RESP URL carries the password in its userinfo field.
+    """
+
+    @pytest.mark.parametrize(
+        ("location", "expected"),
+        [
+            (
+                "redis://user:hunter2@redis.example.test:6379/0",
+                "redis://user:***@redis.example.test:6379/0",
+            ),
+            ("rediss://:hunter2@redis.example.test:6379", "rediss://:***@redis.example.test:6379"),
+            # ``urllib.parse`` splits userinfo on its first colon and its last
+            # ``@``, so a password holding either is masked whole.
+            ("redis://user:pa:ss@h", "redis://user:***@h"),
+            ("redis://:pa:ss@h", "redis://:***@h"),
+            ("redis://user:p@ss@h", "redis://user:***@h"),
+            ("valkey://user@valkey.example.test:6379", "valkey://user@valkey.example.test:6379"),
+            ("redis://redis.example.test:6379/0", "redis://redis.example.test:6379/0"),
+            ("unix:///var/run/redis/redis.sock?db=1", "unix:///var/run/redis/redis.sock?db=1"),
+            ("127.0.0.1:11211", "127.0.0.1:11211"),
+            ("", ""),
+        ],
+    )
+    def test_string_locations(self, location: str, expected: str):
+        assert mask_location(location) == expected
+
+    def test_every_url_in_a_sequence_is_masked(self):
+        assert mask_location(
+            [
+                "redis://user:hunter2@replica-a.example.test:6379",
+                "redis://user:hunter2@replica-b.example.test:6379",
+            ],
+        ) == ("redis://user:***@replica-a.example.test:6379, redis://user:***@replica-b.example.test:6379")
+
+    def test_non_string_entries_are_rendered(self):
+        """Sentinel lists are ``(host, port)`` pairs, not strings."""
+        assert mask_location([("sentinel.example.test", 26379)]) == "('sentinel.example.test', 26379)"
+
+    def test_a_url_quoted_inside_a_sentence_is_masked(self):
+        text = "Error 111 connecting to redis://user:hunter2@redis.example.test:6379/0. Connection refused."
+        assert mask_credentials(text) == (
+            "Error 111 connecting to redis://user:***@redis.example.test:6379/0. Connection refused."
+        )
+
+    def test_every_url_in_a_sentence_is_masked(self):
+        text = "redis://a:pw1@one.example.test failed over to redis://b:pw2@two.example.test"
+        masked = mask_credentials(text)
+        assert "pw1" not in masked
+        assert "pw2" not in masked

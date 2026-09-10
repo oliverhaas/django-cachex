@@ -488,3 +488,56 @@ class TestAsyncHashKeyPrefixing:
         raw_fields = {f.decode() if isinstance(f, bytes) else f for f in await adapter.ahkeys(prefixed_key)}
         assert "balance" in raw_fields
         assert "currency" in raw_fields
+
+
+class TestHashEmptyArgumentCalls:
+    """A write with no field/value pairs answers locally instead of sending an invalid command."""
+
+    def test_hset_without_fields(self, cache: RespCache):
+        assert cache.hset("empty_hash") == 0
+        assert cache.has_key("empty_hash") is False
+
+    def test_hset_with_empty_mapping(self, cache: RespCache):
+        assert cache.hset("empty_hash", mapping={}) == 0
+        assert cache.has_key("empty_hash") is False
+
+    def test_hset_with_empty_items(self, cache: RespCache):
+        assert cache.hset("empty_hash", items=[]) == 0
+        assert cache.has_key("empty_hash") is False
+
+    def test_hset_rejects_unpaired_items(self, cache: RespCache):
+        with pytest.raises(ValueError, match="field/value pairs"):
+            cache.hset("empty_hash", items=["a", 1, "b"])
+        assert cache.has_key("empty_hash") is False
+
+    def test_hdel_without_fields(self, cache: RespCache):
+        cache.hset("empty_hash", "a", 1)
+        assert cache.hdel("empty_hash") == 0
+        assert cache.hgetall("empty_hash") == {"a": 1}
+
+    @pytest.mark.asyncio
+    async def test_ahset_without_fields(self, cache: RespCache):
+        assert await cache.ahset("aempty_hash") == 0
+        assert await cache.ahas_key("aempty_hash") is False
+
+    @pytest.mark.asyncio
+    async def test_ahset_with_empty_mapping(self, cache: RespCache):
+        assert await cache.ahset("aempty_hash", mapping={}) == 0
+        assert await cache.ahas_key("aempty_hash") is False
+
+    @pytest.mark.asyncio
+    async def test_ahset_with_empty_items(self, cache: RespCache):
+        assert await cache.ahset("aempty_hash", items=[]) == 0
+        assert await cache.ahas_key("aempty_hash") is False
+
+    @pytest.mark.asyncio
+    async def test_ahset_rejects_unpaired_items(self, cache: RespCache):
+        with pytest.raises(ValueError, match="field/value pairs"):
+            await cache.ahset("aempty_hash", items=["a", 1, "b"])
+        assert await cache.ahas_key("aempty_hash") is False
+
+    @pytest.mark.asyncio
+    async def test_ahdel_without_fields(self, cache: RespCache):
+        await cache.ahset("aempty_hash", "a", 1)
+        assert await cache.ahdel("aempty_hash") == 0
+        assert await cache.ahgetall("aempty_hash") == {"a": 1}

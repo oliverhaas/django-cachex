@@ -13,7 +13,6 @@ class TestSortedSetOperations:
         assert cache.zcard("scores") == 2
 
     def test_zadd_with_nx(self, cache: RespCache):
-        """Test zadd with nx flag (only add new)."""
         cache.zadd("scores", {"alice": 10.0})
         result = cache.zadd("scores", {"alice": 20.0}, nx=True)
         assert result == 0
@@ -484,3 +483,27 @@ class TestAsyncSortedSetSerialization:
         await cache.azadd("atemps", {"freezing": -10.0, "cold": 0.0, "warm": 20.0})
         result = await cache.azrange("atemps", 0, -1)
         assert result == ["freezing", "cold", "warm"]
+
+
+class TestSortedSetEmptyArgumentCalls:
+    """A zero-member call answers locally instead of sending an invalid command."""
+
+    def test_zrem(self, cache: RespCache):
+        cache.zadd("empty_zset", {"a": 1.0})
+        assert cache.zrem("empty_zset") == 0
+        assert cache.zcard("empty_zset") == 1
+
+    def test_zmscore(self, cache: RespCache):
+        cache.zadd("empty_zset", {"a": 1.0})
+        assert cache.zmscore("empty_zset") == []
+
+    @pytest.mark.asyncio
+    async def test_azrem(self, cache: RespCache):
+        await cache.azadd("aempty_zset", {"a": 1.0})
+        assert await cache.azrem("aempty_zset") == 0
+        assert await cache.azcard("aempty_zset") == 1
+
+    @pytest.mark.asyncio
+    async def test_azmscore(self, cache: RespCache):
+        await cache.azadd("aempty_zset", {"a": 1.0})
+        assert await cache.azmscore("aempty_zset") == []

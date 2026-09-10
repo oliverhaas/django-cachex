@@ -1227,6 +1227,8 @@ class RespAdapterProtocol(Protocol):
 
 
 __all__ = [
+    "Invalidation",
+    "InvalidationListenerProtocol",
     "RespAdapterProtocol",
     "RespAsyncPipelineProtocol",
     "RespPipelineProtocol",

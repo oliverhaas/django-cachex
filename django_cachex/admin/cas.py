@@ -100,7 +100,7 @@ if v == false then return -1 end
 -- come from ZSCORE so identical scores yield identical strings without
 -- going through ``tonumber``. Fall back to numeric equality only if the
 -- literal strings differ, so a Python round-trip of an unchanged value
--- (e.g. ``0.5`` ↔ ``"0.5"``) doesn't trigger a spurious CAS conflict.
+-- (``0.5`` read back as the string ``"0.5"``) doesn't trigger a spurious CAS conflict.
 if v == ARGV[2] or tonumber(v) == tonumber(ARGV[2]) then
     redis.call('ZADD', KEYS[1], ARGV[3], ARGV[1])
     return 1

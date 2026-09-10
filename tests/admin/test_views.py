@@ -18,11 +18,13 @@ from django.contrib.admin import site
 from django.contrib.admin.utils import quote
 from django.contrib.auth.models import Permission, User
 from django.core.cache import caches
+from django.core.exceptions import ImproperlyConfigured
 from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
 from django.utils import translation
 
 from django_cachex.admin.models import Cache, Key
+from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
@@ -64,6 +66,15 @@ def _table_containing(content: bytes, needle: str):
     pytest.fail(f"No table containing {needle!r} in the rendered page")
 
 
+def _result_column(content: bytes, field: str) -> list[str]:
+    """Return the ``field`` cell of every changelist result row."""
+    soup = BeautifulSoup(content, "html.parser")
+    table = soup.find("table", id="result_list")
+    if table is None:
+        return []
+    return [cell.get_text(strip=True) for cell in table.select(f"tbody .field-{field}")]
+
+
 def _key_detail_create_url(cache_name: str, key_name: str, key_type: str = "string") -> str:
     """Get URL for key detail in create mode (key doesn't exist yet)."""
     pk = Key.make_pk(cache_name, key_name)
@@ -76,7 +87,6 @@ class TestIndexView:
     """Tests for the caches index view (CacheAdmin changelist)."""
 
     def test_index_returns_200(self, admin_client: Client, test_cache):
-        """Index view should return 200 for authenticated staff."""
         url = _cache_list_url()
         response = admin_client.get(url)
         assert response.status_code == 200
@@ -162,9 +172,9 @@ class TestIndexView:
         url = _cache_list_url()
         response = admin_client.get(url + "?q=default")
         assert response.status_code == 200
-        content = response.content.decode()
-        assert "default" in content
-        assert "with_prefix" not in content
+        # "local" is the other configured alias; the location column carries
+        # "localhost", so only the result rows can prove it was filtered out.
+        assert _result_column(response.content, "name") == ["default"]
 
 
 class TestKeyListView:
@@ -439,8 +449,12 @@ class TestKeyListView:
         url = _key_list_url("default")
         response = admin_client.get(url + "&q=count:*")
         assert response.status_code == 200
-        content = response.content.decode()
-        assert "3" in content
+        assert sorted(_result_column(response.content, "key_name")) == [
+            "count:key:1",
+            "count:key:2",
+            "count:key:3",
+        ]
+        assert "3 keys shown" in response.content.decode()
 
     def test_key_list_type_filter(
         self,
@@ -494,9 +508,7 @@ class TestKeyListView:
         url = reverse("admin:django_cachex_key_changelist")
         response = admin_client.get(url)
         assert response.status_code == 200
-        content = response.content.decode()
-        # Should default to "default" (first cache in settings.CACHES)
-        assert "Keys in" in content
+        assert "Keys in &#x27;default&#x27;" in response.content.decode()
 
     def test_key_list_cache_links_are_admin_quoted(self, admin_client: Client):
         """Regression: the breadcrumb and 'Cache Details' links passed the raw
@@ -566,7 +578,7 @@ class TestKeyDetailView:
         url = _key_detail_url("default", "list:test")
         response = admin_client.get(url)
         assert response.status_code == 200
-        assert b"list" in response.content.lower()
+        assert 'type-list">list</span>' in response.content.decode()
 
     def test_set_key_detail(
         self,
@@ -578,7 +590,7 @@ class TestKeyDetailView:
         url = _key_detail_url("default", "set:test")
         response = admin_client.get(url)
         assert response.status_code == 200
-        assert b"set" in response.content.lower()
+        assert 'type-set">set</span>' in response.content.decode()
 
     def test_hash_key_detail(
         self,
@@ -711,8 +723,7 @@ class TestKeyDetailView:
         url = _key_detail_url("default", "cache:name:test")
         response = admin_client.get(url)
         assert response.status_code == 200
-        content = response.content.decode()
-        assert "default" in content
+        assert "<code>default</code>" in response.content.decode()
 
     def test_key_detail_shows_type_badge(
         self,
@@ -1779,37 +1790,6 @@ class TestKeyOperations:
         score = test_cache.zscore("zscore:test", "b")
         assert score == 5.5
 
-    def test_set_ttl(
-        self,
-        admin_client: Client,
-        test_cache: RespCache,
-    ):
-        test_cache.set("ttl:test", "value")
-
-        url = _key_detail_url("default", "ttl:test")
-        response = admin_client.post(
-            url,
-            {"action": "set_ttl", "ttl_value": "300"},
-        )
-        assert response.status_code == 302
-
-        ttl = test_cache.ttl("ttl:test")
-        assert 290 <= ttl <= 300
-
-    def test_set_ttl_to_zero_removes_expiry(
-        self,
-        admin_client: Client,
-        test_cache: RespCache,
-    ):
-        test_cache.set("persist:test", "value", timeout=300)
-
-        url = _key_detail_url("default", "persist:test")
-        response = admin_client.post(url, {"action": "set_ttl", "ttl_value": "0"})
-        assert response.status_code == 302
-
-        ttl = test_cache.ttl("persist:test")
-        assert ttl is None or ttl == -1
-
     def test_unknown_action_is_rejected(
         self,
         admin_client: Client,
@@ -2323,15 +2303,6 @@ class TestKeyPkRoundTrip:
 
 
 class TestCacheAdmin:
-    """Tests for the CacheAdmin class."""
-
-    def test_changelist_view_returns_200(self, admin_client: Client, test_cache):
-        """Changelist view should return 200 (it IS the cache list view)."""
-        url = reverse("admin:django_cachex_cache_changelist")
-        response = admin_client.get(url)
-
-        assert response.status_code == 200
-
     def test_querysets_declare_total_ordering(self):
         """Regression: Django 6.1 ChangeList reads queryset.totally_ordered.
 
@@ -2362,7 +2333,6 @@ class TestCacheAdmin:
         assert cache_admin.has_delete_permission(request) is False
 
     def test_non_staff_has_no_permissions(self, db, test_cache):
-
         cache_admin = site._registry[Cache]
 
         non_staff_user = User.objects.create_user(
@@ -2380,7 +2350,6 @@ class TestCacheAdmin:
         assert cache_admin.has_module_permission(request) is False
 
     def test_superuser_has_all_permissions(self, admin_user, test_cache):
-
         cache_admin = site._registry[Cache]
 
         factory = RequestFactory()
@@ -2409,7 +2378,6 @@ class TestCacheAdmin:
         assert cache_admin.has_change_permission(request) is False
 
     def test_staff_with_view_perm_can_view(self, db, test_cache):
-
         cache_admin = site._registry[Cache]
 
         staff_user = User.objects.create_user(
@@ -2433,7 +2401,6 @@ class TestCacheAdmin:
         assert cache_admin.has_change_permission(request) is False
 
     def test_staff_with_change_perm_can_change(self, db, test_cache):
-
         cache_admin = site._registry[Cache]
 
         staff_user = User.objects.create_user(
@@ -2508,7 +2475,6 @@ class TestKeyAdminPermissions:
     """Test KeyAdmin permission methods with Django's permission system."""
 
     def test_module_permission_true(self, admin_user, test_cache):
-
         key_admin = site._registry[Key]
 
         factory = RequestFactory()
@@ -2518,7 +2484,6 @@ class TestKeyAdminPermissions:
         assert key_admin.has_module_permission(request) is True
 
     def test_superuser_has_all_key_permissions(self, admin_user, test_cache):
-
         key_admin = site._registry[Key]
 
         factory = RequestFactory()
@@ -2550,7 +2515,6 @@ class TestKeyAdminPermissions:
         assert key_admin.has_delete_permission(request) is False
 
     def test_staff_with_view_key_perm(self, db, test_cache):
-
         key_admin = site._registry[Key]
 
         staff_user = User.objects.create_user(
@@ -2579,7 +2543,6 @@ class TestPermissionViewAccess:
     """Test that views enforce permissions via HTTP requests."""
 
     def test_staff_without_perms_denied_cache_list(self, db, test_cache):
-        """Staff user without permissions gets 403 on cache list."""
         staff_user = User.objects.create_user(
             username="staff_no_perms",
             password="password",  # noqa: S106
@@ -2592,7 +2555,6 @@ class TestPermissionViewAccess:
         assert response.status_code == 403
 
     def test_staff_without_perms_denied_cache_detail(self, db, test_cache):
-        """Staff user without permissions gets 403 on cache detail."""
         staff_user = User.objects.create_user(
             username="staff_no_perms",
             password="password",  # noqa: S106
@@ -2605,7 +2567,6 @@ class TestPermissionViewAccess:
         assert response.status_code == 403
 
     def test_staff_without_perms_denied_key_list(self, db, test_cache):
-        """Staff user without permissions gets 403 on key list."""
         staff_user = User.objects.create_user(
             username="staff_no_perms",
             password="password",  # noqa: S106
@@ -2618,7 +2579,6 @@ class TestPermissionViewAccess:
         assert response.status_code == 403
 
     def test_staff_without_perms_denied_key_add(self, db, test_cache):
-        """Staff user without permissions gets 403 on key add."""
         staff_user = User.objects.create_user(
             username="staff_no_perms",
             password="password",  # noqa: S106
@@ -2631,7 +2591,6 @@ class TestPermissionViewAccess:
         assert response.status_code == 403
 
     def test_staff_with_view_perm_can_access_cache_list(self, db, test_cache):
-
         staff_user = User.objects.create_user(
             username="staff_viewer",
             password="password",  # noqa: S106
@@ -2669,7 +2628,6 @@ class TestPermissionViewAccess:
         client = Client()
         client.force_login(staff_user)
 
-        # Set a key so we can verify it wasn't flushed
         test_cache.set("flush_test_key", "value")
 
         response = client.post(
@@ -2785,7 +2743,6 @@ class TestKeyAddPermissionOnGet:
     """
 
     def test_staff_without_add_perm_denied_on_get(self, db, test_cache):
-
         staff_user = User.objects.create_user(
             username="staff_view_key_only",
             password="password",  # noqa: S106
@@ -2902,7 +2859,6 @@ class TestUndecodableValueResilience:
     def test_delete_works_for_broken_value(self, admin_client, test_cache):
         self._inject_broken_value(test_cache)
 
-        # Sanity: key exists in Redis (raw client doesn't decode).
         client = test_cache.get_client(write=True)
         full_key = test_cache.make_key(self.BROKEN_KEY)
         assert client.exists(full_key) == 1
@@ -3667,7 +3623,7 @@ class TestOpaqueKeyType:
 
 
 class TestViewOnlyUserSeesNoMutationControls:
-    def test_string_key_page(self, test_cache: RespCache):
+    def test_string_key_page(self, db, test_cache: RespCache):
         test_cache.set("viewonly:string", "value")
         client = _staff_client(["view_key"])
 
@@ -3680,7 +3636,7 @@ class TestViewOnlyUserSeesNoMutationControls:
         assert 'name="ttl_value"' not in content
         assert 'id="delete-form"' not in content
 
-    def test_list_key_page(self, test_cache: RespCache):
+    def test_list_key_page(self, db, test_cache: RespCache):
         test_cache.rpush("viewonly:list", "a")
         client = _staff_client(["view_key"])
 
@@ -3692,7 +3648,7 @@ class TestViewOnlyUserSeesNoMutationControls:
         assert 'name="action" value="rpush"' not in content
         assert 'name="action" value="lrem"' not in content
 
-    def test_change_permission_restores_them(self, test_cache: RespCache):
+    def test_change_permission_restores_them(self, db, test_cache: RespCache):
         test_cache.set("viewonly:changeable", "value")
         client = _staff_client(["view_key", "change_key"])
 
@@ -3702,3 +3658,343 @@ class TestViewOnlyUserSeesNoMutationControls:
         content = response.content.decode()
         assert ">Update</button>" in content
         assert 'name="ttl_value"' in content
+
+
+_SECRET_LOCATION = "redis://cachexuser:s3cr3t-pw@cache.example.test:6379/1"
+
+
+def _extra_cache(alias: str, config: dict) -> override_settings:
+    """Add one more alias to the caches the running test has configured."""
+    return override_settings(CACHES={**settings.CACHES, alias: config})
+
+
+class TestLocationPasswordsAreMasked:
+    """``view_cache`` is the weakest admin permission on a cache, and both the
+    list and the detail page render its ``LOCATION``. A connection URL carries
+    the password in plain sight, so it has to be masked on the way out.
+    """
+
+    def test_cache_list_masks_the_password(self, db, test_cache):
+        client = _staff_client(["view_cache"])
+
+        with _extra_cache(
+            "secret",
+            {"BACKEND": "django_cachex.cache.LocMemCache", "LOCATION": _SECRET_LOCATION},
+        ):
+            response = client.get(_cache_list_url())
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "s3cr3t-pw" not in content
+        assert "redis://cachexuser:***@cache.example.test:6379/1" in content
+
+    def test_cache_detail_masks_the_password(self, db, test_cache):
+        client = _staff_client(["view_cache"])
+
+        with _extra_cache(
+            "secret",
+            {"BACKEND": "django_cachex.cache.LocMemCache", "LOCATION": _SECRET_LOCATION},
+        ):
+            response = client.get(_cache_detail_url("secret"))
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "s3cr3t-pw" not in content
+        assert "redis://cachexuser:***@cache.example.test:6379/1" in content
+
+    def test_every_entry_of_a_location_list_is_masked(self, db, test_cache):
+        client = _staff_client(["view_cache"])
+        location = [
+            "redis://cachexuser:s3cr3t-pw@replica-a.example.test:6379/1",
+            "redis://cachexuser:s3cr3t-pw@replica-b.example.test:6379/1",
+        ]
+        # An unimportable backend keeps ``Cache.location`` on its settings
+        # fallback, which is the branch that renders a sequence.
+        with _extra_cache(
+            "secret",
+            {"BACKEND": "django_cachex.cache.NoSuchCache", "LOCATION": location},
+        ):
+            response = client.get(_cache_list_url())
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "s3cr3t-pw" not in content
+        assert "redis://cachexuser:***@replica-a.example.test:6379/1" in content
+        assert "redis://cachexuser:***@replica-b.example.test:6379/1" in content
+
+    def test_a_unix_socket_location_is_left_alone(self, db, test_cache):
+        client = _staff_client(["view_cache"])
+        location = "unix:///var/run/redis/redis.sock?db=1"
+
+        with _extra_cache(
+            "secret",
+            {"BACKEND": "django_cachex.cache.LocMemCache", "LOCATION": location},
+        ):
+            response = client.get(_cache_detail_url("secret"))
+
+        assert response.status_code == 200
+        assert location in response.content.decode()
+
+    def test_a_connection_error_quoting_the_url_is_masked(self, db, test_cache, mocker):
+        client = _staff_client(["view_cache"])
+        mocker.patch(
+            "django_cachex.admin.queryset.get_cache",
+            side_effect=OSError(f"Error 111 connecting to {_SECRET_LOCATION}. Connection refused."),
+        )
+
+        response = client.get(_cache_list_url())
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "s3cr3t-pw" not in content
+        assert "***@cache.example.test" in content
+
+    def test_a_backend_that_fails_to_build_is_masked(self, db, test_cache, mocker):
+        """Building the backend parses the URL, so the failure can quote it."""
+        client = _staff_client(["view_cache"])
+
+        def build(name: str):
+            if name == "secret":
+                msg = f"Sentinel URL {_SECRET_LOCATION} has no hostname (service name)."
+                raise ImproperlyConfigured(msg)
+            return caches[name]
+
+        handler = mocker.patch("django_cachex.admin.helpers.caches")
+        handler.__getitem__.side_effect = build
+
+        with _extra_cache(
+            "secret",
+            {"BACKEND": "django_cachex.cache.LocMemCache", "LOCATION": _SECRET_LOCATION},
+        ):
+            response = client.get(_cache_detail_url("secret"), follow=True)
+
+        assert response.status_code == 200
+        assert response.redirect_chain[-1][0] == _cache_list_url()
+        content = response.content.decode()
+        assert "s3cr3t-pw" not in content
+        assert "could not be loaded: Sentinel URL redis://cachexuser:***@cache.example.test:6379/1" in content
+
+
+class TestBackendWithoutTypeSupport:
+    """Stock Django backends have no ``type()``.
+
+    The key page still has to render, but a type-specific write cannot run:
+    it would have to guess which editor the value belongs to.
+    """
+
+    @staticmethod
+    def _stock_alias() -> override_settings:
+        return _extra_cache(
+            "stock",
+            {
+                "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                "LOCATION": "admin-test-stock-locmem",
+            },
+        )
+
+    def test_cache_detail_renders(self, admin_client: Client, test_cache):
+        """No ``info()`` and no slow log, so both sections drop out quietly."""
+        with self._stock_alias():
+            response = admin_client.get(_cache_detail_url("stock"))
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Cache: stock" in content
+        assert "Slow Log" not in content
+        assert "could not be read" not in content
+
+    def test_key_page_still_renders(self, admin_client: Client, test_cache):
+        with self._stock_alias():
+            caches["stock"].set("stock:readable", "stock-only-payload")
+
+            response = admin_client.get(_key_detail_url("stock", "stock:readable"))
+
+        assert response.status_code == 200
+        assert "stock-only-payload" in response.content.decode()
+
+    def test_update_is_refused(self, admin_client: Client, test_cache):
+        with self._stock_alias():
+            cache = caches["stock"]
+            cache.set("stock:frozen", "original")
+
+            response = admin_client.post(
+                _key_detail_url("stock", "stock:frozen"),
+                {"action": "update", "value": '"replacement"'},
+                follow=True,
+            )
+
+            assert cache.get("stock:frozen") == "original"
+
+        assert response.status_code == 200
+        assert "does not report key types" in response.content.decode()
+
+    def test_delete_still_works(self, admin_client: Client, test_cache):
+        with self._stock_alias():
+            cache = caches["stock"]
+            cache.set("stock:doomed", "value")
+
+            response = admin_client.post(
+                _key_detail_url("stock", "stock:doomed"),
+                {"action": "delete"},
+                follow=True,
+            )
+
+            assert cache.get("stock:doomed") is None
+
+        assert response.status_code == 200
+
+
+class TestStampedePreventionDoesNotHideValues:
+    """With stampede prevention on, ``get()`` returns ``None`` once the XFetch
+    formula fires, telling the caller to recompute. The admin is not a
+    recomputing caller: it must show what the key actually holds, or the next
+    update writes that ``None`` back.
+    """
+
+    def test_value_survives_a_recompute_signal(self, admin_client: Client, test_cache):
+        config = {
+            "BACKEND": "django_cachex.cache.ValkeyCache",
+            "LOCATION": settings.CACHES["default"]["LOCATION"],
+            "OPTIONS": {"stampede_prevention": True},
+        }
+        with _extra_cache("stampede", config):
+            cache = caches["stampede"]
+            cache.set("stampede:key", "unmistakable-payload", timeout=300)
+            # The default buffer is 60s, so a raw 50s TTL puts the logical
+            # remaining lifetime below zero and every get() asks to recompute.
+            cache.expire("stampede:key", 50, stampede_prevention=False)
+            assert cache.get("stampede:key") is None
+
+            response = admin_client.get(_key_detail_url("stampede", "stampede:key"))
+            caches.close_all()
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "unmistakable-payload" in content
+        assert ">null</textarea>" not in content
+
+
+class TestUnknownTypeFilter:
+    """``unknown`` is this package's label for a type it does not model, not a
+    server-side type name, so ``SCAN ... TYPE unknown`` matched nothing and the
+    filter could never list the keys it names.
+    """
+
+    def test_unknown_is_not_pushed_into_scan(self, admin_client: Client, test_cache: RespCache, mocker):
+        test_cache.set("scan:plain", "value")
+        spy = mocker.spy(type(test_cache), "scan")
+
+        response = admin_client.get(_key_list_url("default") + "&type=unknown")
+
+        assert response.status_code == 200
+        assert spy.call_args.kwargs["key_type"] is None
+
+    def test_a_modelled_type_is_still_pushed_into_scan(self, admin_client: Client, test_cache: RespCache, mocker):
+        test_cache.set("scan:plain", "value")
+        spy = mocker.spy(type(test_cache), "scan")
+
+        response = admin_client.get(_key_list_url("default") + "&type=string")
+
+        assert response.status_code == 200
+        assert spy.call_args.kwargs["key_type"] == "string"
+
+    def test_unknown_typed_keys_are_listed(self, admin_client: Client, test_cache: RespCache, mocker):
+        test_cache.set("scan:opaque", "value")
+        mocker.patch.object(type(test_cache), "type", return_value=KeyType.UNKNOWN)
+
+        response = admin_client.get(_key_list_url("default") + "&type=unknown")
+
+        assert response.status_code == 200
+        assert _result_column(response.content, "key_name") == ["scan:opaque"]
+
+
+class TestKeyListToolsAreGatedOnPermissions:
+    """Clear wipes the whole cache and Add key writes one, so neither belongs
+    on the page of a user who holds only ``view_key``.
+    """
+
+    def test_view_only_user_gets_neither(self, db, test_cache):
+        client = _staff_client(["view_key"])
+
+        response = client.get(_key_list_url("default"))
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'value="clear_cache"' not in content
+        assert 'class="addlink"' not in content
+
+    def test_the_permissions_bring_them_back(self, db, test_cache):
+        client = _staff_client(["view_key", "add_key", "view_cache", "change_cache"])
+
+        response = client.get(_key_list_url("default"))
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'value="clear_cache"' in content
+        assert 'class="addlink"' in content
+
+    def test_clear_is_refused_without_the_cache_permission(self, db, test_cache: RespCache):
+        test_cache.set("survivor", "value")
+        client = _staff_client(["view_key"])
+
+        response = client.post(_key_list_url("default"), {"action": "clear_cache", "cache_name": "default"})
+
+        assert response.status_code == 403
+        assert test_cache.get("survivor") == "value"
+
+
+class TestDeletingAKeyThatIsAlreadyGone:
+    """``delete()`` returns False when there was nothing to remove. Reporting
+    that as a success told the user a key had been deleted that never existed,
+    which reads as "the wrong key was targeted".
+    """
+
+    def test_key_page_delete_warns(self, admin_client: Client, test_cache):
+        response = admin_client.post(
+            _key_detail_url("default", "never:existed"),
+            {"action": "delete"},
+            follow=True,
+        )
+
+        assert response.status_code == 200
+        assert "Key not found, nothing was deleted." in response.content.decode()
+
+    def test_bulk_delete_counts_it_separately(self, admin_client: Client, test_cache: RespCache):
+        test_cache.set("bulk:present", "value")
+
+        response = admin_client.post(
+            _key_list_url("default"),
+            {
+                "action": "delete_selected_keys",
+                "_selected_action": [
+                    Key.make_pk("default", "bulk:present"),
+                    Key.make_pk("default", "bulk:never:existed"),
+                ],
+            },
+            follow=True,
+        )
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Successfully deleted 1 key(s)." in content
+        assert "1 key(s) were already gone." in content
+
+
+class TestSlowLogOnBackendsWithoutOne:
+    """A missing slow log is not a failure, so the detail page drops the
+    section instead of showing a red box quoting NotSupportedError.
+    """
+
+    def test_locmem_detail_hides_the_section(self, admin_client: Client, test_cache, mocker):
+        mocker.patch.object(
+            type(caches["local"]),
+            "slowlog_get",
+            side_effect=NotSupportedError("slowlog_get", "LocMemCache"),
+        )
+
+        response = admin_client.get(_cache_detail_url("local"))
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Slow Log" not in content
+        assert "could not be read" not in content

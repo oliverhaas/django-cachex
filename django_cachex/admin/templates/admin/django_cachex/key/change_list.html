@@ -2,15 +2,15 @@
 {% load i18n l10n admin_urls django_cachex_admin %}
 
 {% block breadcrumbs %}
-{% url 'admin:index' as index_href %}
-{% url 'admin:django_cachex_cache_changelist' as cache_list_href %}
-{% url 'admin:django_cachex_cache_change' cache_name|admin_urlquote as cache_detail_href %}
+{% url "admin:index" as index_href %}
+{% url "admin:django_cachex_cache_changelist" as cache_list_href %}
+{% url "admin:django_cachex_cache_change" cache_name|admin_urlquote as cache_detail_href %}
 {% cachex_breadcrumbs _("Home") index_href _("Caches") cache_list_href cache_name cache_detail_href _("Keys") %}
 {% endblock %}
 
 {% block extrastyle %}
 {{ block.super }}
-<style type="text/css">
+<style>
     {% include "admin/django_cachex/cache/styles.css" %}
 </style>
 {% endblock %}
@@ -19,22 +19,26 @@
 <ul class="object-tools">
     {% block object-tools-items %}
     <li>
-        <a href="?cache={{ cache_name|urlencode }}{% if not help_active %}&amp;help=1{% endif %}">{% trans 'Help' %}</a>
+        <a href="?cache={{ cache_name|urlencode }}{% if not help_active %}&amp;help=1{% endif %}">{% trans "Help" %}</a>
     </li>
     <li>
-        <a href="{% url 'admin:django_cachex_cache_change' cache_name|admin_urlquote %}">{% trans 'Cache Details' %}</a>
+        <a href="{% url "admin:django_cachex_cache_change" cache_name|admin_urlquote %}">{% trans "Cache Details" %}</a>
     </li>
+    {% if perms.django_cachex.change_cache %}
     <li>
         <form method="post" style="display: inline;" id="clear-cache-form">
             {% csrf_token %}
             <input type="hidden" name="action" value="clear_cache">
             <input type="hidden" name="cache_name" value="{{ cache_name }}">
-            <a href="#" onclick="if(confirm('Clear all keys in \'{{ cache_name|escapejs }}\'? This removes keys for the current cache version.')) document.getElementById('clear-cache-form').submit(); return false;" class="deletelink">{% trans 'Clear' %}</a>
+            <a href="#" onclick="if(confirm('Clear all keys in \'{{ cache_name|escapejs }}\'? This removes keys for the current cache version.')) document.getElementById('clear-cache-form').submit(); return false;" class="deletelink">{% trans "Clear" %}</a>
         </form>
     </li>
+    {% endif %}
+    {% if has_add_permission %}
     <li>
-        <a href="{% url 'admin:django_cachex_key_add' %}?cache={{ cache_name|urlencode }}" class="addlink">{% trans 'Add key' %}</a>
+        <a href="{% url "admin:django_cachex_key_add" %}?cache={{ cache_name|urlencode }}" class="addlink">{% trans "Add key" %}</a>
     </li>
+    {% endif %}
     {% endblock %}
 </ul>
 {% endblock %}
@@ -43,12 +47,12 @@
 <nav class="paginator">
     <ul>
         {% if cl.result_list.cursor > 0 %}
-        <li><a role="button" href="?cache={{ cache_name|urlencode }}{% for k, v in cl.params.items %}{% if k != 'cursor' and k != 'cache' %}&amp;{{ k }}={{ v|urlencode }}{% endif %}{% endfor %}&amp;count={{ cl.result_list.scan_count|unlocalize }}">{% trans 'Start' %}</a></li>
+        <li><a role="button" href="?cache={{ cache_name|urlencode }}{% for k, v in cl.params.items %}{% if k != "cursor" and k != "cache" %}&amp;{{ k }}={{ v|urlencode }}{% endif %}{% endfor %}&amp;count={{ cl.result_list.scan_count|unlocalize }}">{% trans "Start" %}</a></li>
         {% endif %}
         {% if cl.result_list.has_next %}
-        <li><a role="button" href="?cache={{ cache_name|urlencode }}{% for k, v in cl.params.items %}{% if k != 'cursor' and k != 'cache' %}&amp;{{ k }}={{ v|urlencode }}{% endif %}{% endfor %}&amp;count={{ cl.result_list.scan_count|unlocalize }}&amp;cursor={{ cl.result_list.next_cursor|unlocalize }}">{% trans 'Next' %}</a></li>
+        <li><a role="button" href="?cache={{ cache_name|urlencode }}{% for k, v in cl.params.items %}{% if k != "cursor" and k != "cache" %}&amp;{{ k }}={{ v|urlencode }}{% endif %}{% endfor %}&amp;count={{ cl.result_list.scan_count|unlocalize }}&amp;cursor={{ cl.result_list.next_cursor|unlocalize }}">{% trans "Next" %}</a></li>
         {% endif %}
     </ul>
-    {{ cl.result_list|length }} {% trans 'keys shown' %}
+    {{ cl.result_list|length }} {% trans "keys shown" %}
 </nav>
 {% endblock %}

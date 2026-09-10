@@ -41,7 +41,6 @@ from django_cachex.script import ScriptHelpers
 # subscript through mypy's name resolution.
 _set = set
 
-# Regex for escaping glob special characters
 _special_re = re.compile("([*?[])")
 
 # Consumed by Django's ``BaseCache.__init__``. Forwarding them to the
@@ -73,7 +72,7 @@ def _has_hash_tag(key: str) -> bool:
 
 
 def _load_codec(config: str | type | Any) -> Any:
-    """Resolve a serializer/compressor config: dotted-path / class / instance → instance."""
+    """Resolve a serializer/compressor config (dotted path, class or instance) to an instance."""
     if isinstance(config, str):
         config = import_string(config)
     if callable(config):
@@ -96,15 +95,13 @@ class RespCache(BaseCachex):
     Concrete cache classes pick a specific adapter via ``_adapter_class``.
     """
 
-    # Support level marker for admin interface
     _cachex_support: CachexSupportLevel = "cachex"
 
-    # Class attribute - subclasses override this
     _adapter_class: builtins.type[RespAdapterProtocol]
 
     def __init__(self, server: str, params: dict[str, Any]) -> None:
         super().__init__(params)
-        # Parse server(s) - matches Django's RedisCache behavior
+        # Django's own RedisCache accepts both separators.
         if isinstance(server, str):
             self._servers = re.split("[;,]", server)
         else:
@@ -124,26 +121,23 @@ class RespCache(BaseCachex):
         else:
             self._reverse_key_func = None
 
-        # Setup serializer chain (multi-serializer fallback)
         serializer_config = self._options.get(
             "serializer",
             "django_cachex.serializers.pickle.PickleSerializer",
         )
         self._serializers: list[Any] = self._create_serializers(serializer_config)
 
-        # Setup compressor chain (optional; empty = no compression)
         self._compressors: list[Any] = self._create_compressors(self._options.get("compressor"))
 
     @cached_property
     def adapter(self) -> RespAdapterProtocol:
-        """Get the adapter instance (matches Django's pattern).
+        """Build this cache's adapter, or reject an abstract backend.
 
         :class:`RespCache`, :class:`RespClusterCache` and
-        :class:`RespSentinelCache` are abstract bases: they declare
-        ``_adapter_class`` but never assign it. Naming one of them as
-        ``BACKEND`` used to construct fine and then die with a bare
-        ``AttributeError`` on the first operation, so report the
-        misconfiguration properly instead.
+        :class:`RespSentinelCache` declare ``_adapter_class`` without
+        assigning it, so naming one of them as ``BACKEND`` raises
+        ``ImproperlyConfigured`` here instead of an ``AttributeError`` on
+        the first operation.
         """
         adapter_class = getattr(self, "_adapter_class", None)
         if adapter_class is None:
@@ -784,7 +778,7 @@ class RespCache(BaseCachex):
     @override
     def delete_many(self, keys: list[str], version: int | None = None) -> int:  # type: ignore[override]
         """Delete multiple keys from the cache."""
-        keys = list(keys)  # Convert generator to list
+        keys = list(keys)
         if not keys:
             return 0
         safe_keys = [self.make_and_validate_key(key, version=version) for key in keys]
@@ -793,7 +787,7 @@ class RespCache(BaseCachex):
     @override
     async def adelete_many(self, keys: list[str], version: int | None = None) -> int:  # type: ignore[override]
         """Delete multiple keys from the cache asynchronously."""
-        keys = list(keys)  # Convert generator to list
+        keys = list(keys)
         if not keys:
             return 0
         safe_keys = [self.make_and_validate_key(key, version=version) for key in keys]
@@ -1361,6 +1355,11 @@ class RespCache(BaseCachex):
         items: list[Any] | None = None,
     ) -> int:
         """Set hash field(s). Use field/value, mapping, or items (flat key-value pairs)."""
+        if items and len(items) % 2:
+            msg = "items must hold field/value pairs"
+            raise ValueError(msg)
+        if field is None and not mapping and not items:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         nvalue = self.encode(value) if field is not None else None
         nmapping = {f: self.encode(v) for f, v in mapping.items()} if mapping else None
@@ -1374,6 +1373,8 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Delete one or more hash fields."""
+        if not fields:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         return self.adapter.hdel(key, *fields)
 
@@ -1488,6 +1489,11 @@ class RespCache(BaseCachex):
         items: list[Any] | None = None,
     ) -> int:
         """Set hash field(s) asynchronously."""
+        if items and len(items) % 2:
+            msg = "items must hold field/value pairs"
+            raise ValueError(msg)
+        if field is None and not mapping and not items:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         nvalue = self.encode(value) if field is not None else None
         nmapping = {f: self.encode(v) for f, v in mapping.items()} if mapping else None
@@ -1501,6 +1507,8 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Delete one or more hash fields asynchronously."""
+        if not fields:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.ahdel(key, *fields)
 
@@ -1912,6 +1920,8 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Push values onto head of list at key."""
+        if not values:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         return self.adapter.lpush(key, *(self.encode(v) for v in values))
 
@@ -1922,6 +1932,8 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Push values onto tail of list at key."""
+        if not values:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         return self.adapter.rpush(key, *(self.encode(v) for v in values))
 
@@ -2070,7 +2082,6 @@ class RespCache(BaseCachex):
         result = self.adapter.blpop(nkeys, timeout=timeout)
         if result is None:
             return None
-        # Reverse the key back to original
         return (self.reverse_key(result[0]), self.decode(result[1]))
 
     def brpop(
@@ -2085,7 +2096,6 @@ class RespCache(BaseCachex):
         result = self.adapter.brpop(nkeys, timeout=timeout)
         if result is None:
             return None
-        # Reverse the key back to original
         return (self.reverse_key(result[0]), self.decode(result[1]))
 
     def blmove(
@@ -2114,6 +2124,8 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Push values onto head of list at key asynchronously."""
+        if not values:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.alpush(key, *(self.encode(v) for v in values))
 
@@ -2124,6 +2136,8 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Push values onto tail of list at key asynchronously."""
+        if not values:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.arpush(key, *(self.encode(v) for v in values))
 
@@ -2327,6 +2341,8 @@ class RespCache(BaseCachex):
         rule are rejected here rather than at read time, where a single bad
         member would raise ``TypeError`` and take down the whole key.
         """
+        if not members:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         return self.adapter.sadd(key, *(self._encode_member(m) for m in members))
 
@@ -2355,7 +2371,6 @@ class RespCache(BaseCachex):
     ) -> int:
         """Store the difference of sets at dest."""
         keys = [keys] if isinstance(keys, str) else keys
-        # Use specific versions if provided, otherwise fall back to version
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
         dest = self.make_and_validate_key(dest, version=dest_ver)
@@ -2382,7 +2397,6 @@ class RespCache(BaseCachex):
     ) -> int:
         """Store the intersection of sets at dest."""
         keys = [keys] if isinstance(keys, str) else keys
-        # Use specific versions if provided, otherwise fall back to version
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
         dest = self.make_and_validate_key(dest, version=dest_ver)
@@ -2466,6 +2480,8 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Remove members from a set."""
+        if not members:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         return self.adapter.srem(key, *(self.encode(m) for m in members))
 
@@ -2489,7 +2505,6 @@ class RespCache(BaseCachex):
     ) -> int:
         """Store the union of sets at dest."""
         keys = [keys] if isinstance(keys, str) else keys
-        # Use specific versions if provided, otherwise fall back to version
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
         dest = self.make_and_validate_key(dest, version=dest_ver)
@@ -2503,6 +2518,8 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> list[bool]:
         """Check if multiple values are members of a set."""
+        if not members:
+            return []
         key = self.make_and_validate_key(key, version=version)
         return self.adapter.smismember(key, *(self.encode(m) for m in members))
 
@@ -2550,6 +2567,8 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Add members to a set asynchronously. Members must be hashable, see :meth:`sadd`."""
+        if not members:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.asadd(key, *(self._encode_member(m) for m in members))
 
@@ -2682,6 +2701,8 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Remove members from a set asynchronously."""
+        if not members:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.asrem(key, *(self.encode(m) for m in members))
 
@@ -2718,6 +2739,8 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> list[bool]:
         """Check if multiple values are members of a set asynchronously."""
+        if not members:
+            return []
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.asmismember(key, *(self.encode(m) for m in members))
 
@@ -2875,6 +2898,8 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Remove members from a sorted set."""
+        if not members:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         return self.adapter.zrem(key, *(self.encode(m) for m in members))
 
@@ -2961,6 +2986,8 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> list[float | None]:
         """Get the scores of multiple members."""
+        if not members:
+            return []
         key = self.make_and_validate_key(key, version=version)
         return self.adapter.zmscore(key, *(self.encode(m) for m in members))
 
@@ -3086,6 +3113,8 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Remove members from a sorted set asynchronously."""
+        if not members:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.azrem(key, *(self.encode(m) for m in members))
 
@@ -3179,6 +3208,8 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> list[float | None]:
         """Get the scores of multiple members asynchronously."""
+        if not members:
+            return []
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.azmscore(key, *(self.encode(m) for m in members))
 
@@ -3361,11 +3392,15 @@ class RespCache(BaseCachex):
 
     def xdel(self, key: str, *entry_ids: str, version: int | None = None) -> int:
         """Delete entries from a stream."""
+        if not entry_ids:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         return self.adapter.xdel(key, *entry_ids)
 
     async def axdel(self, key: str, *entry_ids: str, version: int | None = None) -> int:
         """Delete entries from a stream asynchronously."""
+        if not entry_ids:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.axdel(key, *entry_ids)
 
@@ -3507,11 +3542,15 @@ class RespCache(BaseCachex):
 
     def xack(self, key: str, group: str, *entry_ids: str, version: int | None = None) -> int:
         """Acknowledge message processing."""
+        if not entry_ids:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         return self.adapter.xack(key, group, *entry_ids)
 
     async def axack(self, key: str, group: str, *entry_ids: str, version: int | None = None) -> int:
         """Acknowledge message processing asynchronously."""
+        if not entry_ids:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.axack(key, group, *entry_ids)
 
@@ -3573,7 +3612,6 @@ class RespCache(BaseCachex):
             force=force,
             justid=justid,
         )
-        # justid=True returns list[str] (entry IDs only); else list[(id, fields_dict)].
         if justid:
             return result
         return self._decode_stream_entries(cast("list[tuple[str, dict[str, Any]]]", result))
@@ -3883,6 +3921,7 @@ class RespClusterCache(RespCache):
     their specific cluster adapter.
     """
 
+    @override
     def pipeline(
         self,
         *,
@@ -3899,6 +3938,7 @@ class RespClusterCache(RespCache):
             raise NotSupportedError("MULTI/EXEC pipelines", backend="cluster")
         return super().pipeline(transaction=False, version=version)
 
+    @override
     async def apipeline(
         self,
         *,

@@ -299,7 +299,9 @@ class TestConnectionCleanup:
 
         await cache.adapter.aclose()
 
-        assert loop not in cache.adapter._async_pools
+        # Only this adapter's own entries go; another alias on the loop keeps
+        # its pool, so the loop slot itself survives.
+        assert pool not in cache.adapter._async_pools.get(loop, {}).values()
         assert cache.adapter._get_async_connection_pool(write=True) is not pool
 
     @pytest.mark.asyncio
@@ -435,9 +437,14 @@ class TestConnectionCleanup:
             assert cache.get("wsgi_key") == "wsgi_value"
 
             async def async_work():
-                await cache.aset("async_key", "async_value")
-                assert await cache.aget("async_key") == "async_value"
-                await cache.adelete("async_key")
+                try:
+                    await cache.aset("async_key", "async_value")
+                    assert await cache.aget("async_key") == "async_value"
+                    await cache.adelete("async_key")
+                finally:
+                    # The pools belong to this loop; closing it without
+                    # disconnecting them leaves their sockets to the collector.
+                    await cache.aclose()
 
             loop = asyncio.new_event_loop()
             loop.run_until_complete(async_work())
@@ -462,8 +469,11 @@ class TestConnectionCleanup:
         with redis_cache(location) as cache:
 
             async def async_set_get(key, value):
-                await cache.aset(key, value)
-                return await cache.aget(key)
+                try:
+                    await cache.aset(key, value)
+                    return await cache.aget(key)
+                finally:
+                    await cache.aclose()
 
             for index in (1, 2, 3):
                 cache.set(f"sync_{index}", f"value_{index}")

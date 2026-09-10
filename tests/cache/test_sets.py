@@ -328,3 +328,36 @@ class TestAsyncSetOperations:
         async for item in cache.asscan_iter("afoo"):
             items.add(item)
         assert items == {"bar1", "bar2"}
+
+
+class TestSetEmptyArgumentCalls:
+    """A zero-member call answers locally instead of sending an invalid command."""
+
+    def test_sadd(self, cache: RespCache):
+        assert cache.sadd("empty_set") == 0
+        assert cache.has_key("empty_set") is False
+
+    def test_srem(self, cache: RespCache):
+        cache.sadd("empty_set", "a")
+        assert cache.srem("empty_set") == 0
+        assert cache.smembers("empty_set") == {"a"}
+
+    def test_smismember(self, cache: RespCache):
+        cache.sadd("empty_set", "a")
+        assert cache.smismember("empty_set") == []
+
+    @pytest.mark.asyncio
+    async def test_asadd(self, cache: RespCache):
+        assert await cache.asadd("aempty_set") == 0
+        assert await cache.ahas_key("aempty_set") is False
+
+    @pytest.mark.asyncio
+    async def test_asrem(self, cache: RespCache):
+        await cache.asadd("aempty_set", "a")
+        assert await cache.asrem("aempty_set") == 0
+        assert await cache.asmembers("aempty_set") == {"a"}
+
+    @pytest.mark.asyncio
+    async def test_asmismember(self, cache: RespCache):
+        await cache.asadd("aempty_set", "a")
+        assert await cache.asmismember("aempty_set") == []

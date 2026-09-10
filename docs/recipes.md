@@ -202,9 +202,12 @@ CACHES = {
 ```
 
 `django_cachex.cache.LocMemCache` extends Django's built-in `LocMemCache`
-with the full data-structure surface (`hset`, `lpush`, `zadd`, …), TTL
-helpers, and admin support. See
-[LocMemCache vs fakeredis](development/locmem-vs-fakeredis.md) for the
+with the hash, list, set and sorted-set commands (`hset`, `lpush`, `zadd` and
+the rest), the `ttl()` / `expire()` / `persist()` helpers, and admin support.
+It has no streams, locks, pipelines or Lua;
+[Local backends](user-guide/configuration.md#local-backends) lists the exact
+surface, and
+[LocMemCache vs fakeredis](development/locmem-vs-fakeredis.md) covers the
 performance comparison and rationale.
 
 !!! tip "For testing"

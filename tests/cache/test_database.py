@@ -9,13 +9,13 @@ fixtures.
 from typing import TYPE_CHECKING
 
 import pytest
+from asgiref.sync import async_to_sync
 from django.core.cache import caches
 from django.core.management import call_command
+from django.db import connections
 from django.test import override_settings
 
-from django_cachex.cache.base import BaseCachex
 from django_cachex.cache.database import _MISSING, _List
-from django_cachex.cache.database import DatabaseCache as DatabaseCacheClass
 from django_cachex.exceptions import NotSupportedError, WrongTypeError
 from django_cachex.types import KeyType
 
@@ -288,6 +288,14 @@ class TestNoEmptyCollectionRows:
     def test_rpush_no_values_creates_no_row(self, db_cache: DatabaseCache):
         assert db_cache.rpush("l") == 0
         assert db_cache.has_key("l") is False
+
+    def test_push_no_values_leaves_existing_list_alone(self, db_cache: DatabaseCache):
+        db_cache.rpush("l", "a")
+        db_cache.expire("l", 100)
+        assert db_cache.lpush("l") == 0
+        assert db_cache.rpush("l") == 0
+        assert db_cache.lrange("l", 0, -1) == ["a"]
+        assert 90 <= db_cache.ttl("l") <= 100
 
     def test_zadd_xx_on_existing_key_still_updates(self, db_cache: DatabaseCache):
         db_cache.zadd("z", {"m": 1.0})
@@ -711,7 +719,168 @@ class TestScanSurface:
         typed_cache.rpush("blist", "b")
         assert typed_cache.scan(pattern="a*", key_type=KeyType.LIST) == (0, ["alist"])
 
-    def test_ascan_is_overridden(self):
+    def test_ascan_mirrors_scan(self, typed_cache: DatabaseCache):
         # Regression: ``ascan`` was left at the BaseCachex default and raised
         # NotSupportedError even though the sync ``scan`` works.
-        assert DatabaseCacheClass.ascan is not BaseCachex.ascan
+        #
+        # Driven through ``async_to_sync`` rather than an ``asyncio`` test so
+        # that ``sync_to_async(thread_sensitive=True)`` runs the query back on
+        # this thread, which owns the test transaction and its connection.
+        result = async_to_sync(typed_cache.ascan)(pattern="*", key_type=KeyType.LIST)
+        assert result == (0, ["alist"])
+
+
+class TestPatternCaseSensitivity:
+    """SQLite's ``LIKE`` folds ASCII case, so every row is re-checked in Python."""
+
+    @pytest.fixture
+    def mixed_case_cache(self, db_cache: DatabaseCache) -> DatabaseCache:
+        db_cache.set("Foo", 1)
+        db_cache.set("foo", 2)
+        db_cache.set("FOO", 3)
+        return db_cache
+
+    def test_keys_are_case_sensitive(self, mixed_case_cache: DatabaseCache):
+        assert mixed_case_cache.keys("Foo*") == ["Foo"]
+        assert mixed_case_cache.keys("foo") == ["foo"]
+
+    def test_scan_is_case_sensitive(self, mixed_case_cache: DatabaseCache):
+        assert mixed_case_cache.scan(pattern="Foo*") == (0, ["Foo"])
+
+    def test_iter_keys_is_case_sensitive(self, mixed_case_cache: DatabaseCache):
+        assert list(mixed_case_cache.iter_keys("Foo*")) == ["Foo"]
+
+    def test_delete_pattern_only_deletes_the_exact_case(self, mixed_case_cache: DatabaseCache):
+        assert mixed_case_cache.delete_pattern("Foo*") == 1
+        assert sorted(mixed_case_cache.keys("*")) == ["FOO", "foo"]
+
+
+class TestEmptyPattern:
+    """``KEYS ""`` matches the empty key alone, not the whole keyspace."""
+
+    def test_empty_pattern_matches_nothing_without_an_empty_key(self, db_cache: DatabaseCache):
+        db_cache.set("a", 1)
+        assert db_cache.keys("") == []
+        assert list(db_cache.iter_keys("")) == []
+
+    def test_empty_pattern_matches_the_empty_key(self, db_cache: DatabaseCache):
+        db_cache.set("a", 1)
+        db_cache.set("", 2)
+        assert db_cache.keys("") == [""]
+        assert db_cache.delete_pattern("") == 1
+        assert db_cache.keys("*") == ["a"]
+
+
+class TestVersionMove:
+    """``incr_version`` renames the row: any type moves and ``expires`` survives."""
+
+    def test_collection_key_moves(self, db_cache: DatabaseCache):
+        db_cache.rpush("l", 1, 2)
+        assert db_cache.incr_version("l") == 2
+        assert db_cache.lrange("l", 0, -1, version=2) == [1, 2]
+        assert db_cache.llen("l", version=1) == 0
+
+    def test_string_key_keeps_its_ttl(self, db_cache: DatabaseCache):
+        db_cache.set("s", "v", timeout=300)
+        db_cache.incr_version("s")
+        ttl = db_cache.ttl("s", version=2)
+        assert ttl is not None
+        assert 290 < ttl <= 300
+
+    def test_persistent_key_stays_persistent(self, db_cache: DatabaseCache):
+        db_cache.set("s", "v", timeout=None)
+        db_cache.incr_version("s")
+        assert db_cache.ttl("s", version=2) is None
+
+    def test_destination_is_replaced(self, db_cache: DatabaseCache):
+        db_cache.set("k", "new", version=1)
+        db_cache.set("k", "old", version=2)
+        assert db_cache.incr_version("k") == 2
+        assert db_cache.get("k", version=2) == "new"
+
+    def test_missing_key_raises_and_keeps_the_destination(self, db_cache: DatabaseCache):
+        db_cache.set("k", "old", version=2)
+        with pytest.raises(ValueError, match="not found"):
+            db_cache.incr_version("k")
+        assert db_cache.get("k", version=2) == "old"
+
+    def test_decr_version_moves_back(self, db_cache: DatabaseCache):
+        db_cache.rpush("l", 1, version=2)
+        assert db_cache.decr_version("l", version=2) == 1
+        assert db_cache.lrange("l", 0, -1, version=1) == [1]
+
+
+class TestDatabaseTimeZone:
+    """``timeout=None`` writes a naive ``datetime.max``, as Django's ``_base_set`` does.
+
+    Regression: the compound-op insert and ``persist`` handed an aware
+    ``datetime.max`` to the adapter, and converting it to a database
+    ``TIME_ZONE`` east of UTC pushed the year past 9999.
+    """
+
+    @pytest.fixture
+    def tokyo_cache(self, db_cache: DatabaseCache) -> Iterator[DatabaseCache]:
+        conn = connections["default"]
+        original = conn.settings_dict["TIME_ZONE"]
+        with override_settings(USE_TZ=True):
+            conn.settings_dict["TIME_ZONE"] = "Asia/Tokyo"
+            self._reset_connection_timezone(conn)
+            try:
+                yield db_cache
+            finally:
+                conn.settings_dict["TIME_ZONE"] = original
+                self._reset_connection_timezone(conn)
+
+    @staticmethod
+    def _reset_connection_timezone(conn) -> None:
+        for attr in ("timezone", "timezone_name"):
+            conn.__dict__.pop(attr, None)
+
+    def test_compound_insert_writes_a_persistent_row(self, tokyo_cache: DatabaseCache):
+        tokyo_cache.rpush("l", 1, 2)
+        assert tokyo_cache.lrange("l", 0, -1) == [1, 2]
+        assert tokyo_cache.ttl("l") is None
+
+    def test_persist_clears_the_expiry(self, tokyo_cache: DatabaseCache):
+        tokyo_cache.set("k", 1, timeout=300)
+        assert tokyo_cache.persist("k") is True
+        assert tokyo_cache.ttl("k") is None
+
+    def test_ttl_is_reported_in_the_database_time_zone(self, tokyo_cache: DatabaseCache):
+        tokyo_cache.set("k", 1, timeout=300)
+        ttl = tokyo_cache.ttl("k")
+        assert ttl is not None
+        assert 290 < ttl <= 300
+
+    def test_info_excludes_the_no_expiry_sentinel(self, tokyo_cache: DatabaseCache):
+        tokyo_cache.set("forever", 1, timeout=None)
+        tokyo_cache.set("ticking", 1, timeout=600)
+        keyspace = tokyo_cache.info()["keyspace"]["db0"]
+        assert keyspace["keys"] == 2
+        assert keyspace["expires"] == 1
+
+
+class TestListArgumentValidation:
+    """``lpos``/``spop``/``linsert`` reject what Redis rejects."""
+
+    def test_lpos_negative_count_rejected(self, db_cache: DatabaseCache):
+        db_cache.rpush("l", "a", "b", "a", "c", "a")
+        with pytest.raises(ValueError, match="COUNT can't be negative"):
+            db_cache.lpos("l", "a", count=-1)
+
+    def test_lpos_negative_maxlen_rejected(self, db_cache: DatabaseCache):
+        db_cache.rpush("l", "a", "b", "a")
+        with pytest.raises(ValueError, match="MAXLEN can't be negative"):
+            db_cache.lpos("l", "a", maxlen=-1)
+
+    def test_spop_negative_count_rejected(self, db_cache: DatabaseCache):
+        db_cache.sadd("s", "a", "b")
+        with pytest.raises(ValueError, match="must be positive"):
+            db_cache.spop("s", count=-1)
+        assert db_cache.scard("s") == 2
+
+    def test_linsert_rejects_an_unknown_position(self, db_cache: DatabaseCache):
+        db_cache.rpush("l", "a", "c")
+        with pytest.raises(ValueError, match="syntax error"):
+            db_cache.linsert("l", "SIDEWAYS", "c", "b")
+        assert db_cache.lrange("l", 0, -1) == ["a", "c"]

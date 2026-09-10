@@ -172,7 +172,6 @@ class TestStreamConsumerGroups:
         cache.xgroup_create("stream_delc", "delc_grp", entry_id="0")
         cache.xreadgroup("delc_grp", "consumer1", {"stream_delc": ">"})
 
-        # The consumer read one entry and never acked it, so it is still pending.
         result = cache.xgroup_delconsumer("stream_delc", "delc_grp", "consumer1")
         assert result == 1
         assert cache.xinfo_consumers("stream_delc", "delc_grp") == []
@@ -327,10 +326,13 @@ class TestAsyncStreamInfo:
 
     @pytest.mark.asyncio
     async def test_axinfo_stream(self, cache: RespCache):
-        await cache.axadd("astream_info", {"data": "test"})
+        first = await cache.axadd("astream_info", {"data": "test"})
+        last = await cache.axadd("astream_info", {"data": "test2"})
 
         info = await cache.axinfo_stream("astream_info")
-        assert isinstance(info, dict)
+        assert info["length"] == 2
+        assert _text(info["first-entry"][0]) == first
+        assert _text(info["last-entry"][0]) == last
 
     @pytest.mark.asyncio
     async def test_axinfo_groups_empty(self, cache: RespCache):
@@ -390,7 +392,8 @@ class TestAsyncStreamConsumerGroups:
         await cache.axreadgroup("pend_grp", "consumer1", {"astream_pend": ">"})
 
         pending = await cache.axpending("astream_pend", "pend_grp")
-        assert isinstance(pending, dict)
+        assert pending["pending"] == 1
+        assert [_text(c["name"]) for c in pending["consumers"]] == ["consumer1"]
 
     @pytest.mark.asyncio
     async def test_axpending_range(self, cache: RespCache):
@@ -416,7 +419,8 @@ class TestAsyncStreamConsumerGroups:
         await cache.axreadgroup("delc_grp", "consumer1", {"astream_delc": ">"})
 
         result = await cache.axgroup_delconsumer("astream_delc", "delc_grp", "consumer1")
-        assert isinstance(result, int)
+        assert result == 1
+        assert await cache.axinfo_consumers("astream_delc", "delc_grp") == []
 
     @pytest.mark.asyncio
     async def test_axinfo_consumers(self, cache: RespCache):
@@ -475,3 +479,29 @@ class TestAsyncStreamConsumerGroups:
         )
         assert isinstance(claimed, list)
         assert eid in claimed
+
+
+class TestStreamEmptyArgumentCalls:
+    """A call with no entry ids answers locally instead of sending an invalid command."""
+
+    def test_xdel(self, cache: RespCache):
+        cache.xadd("empty_stream", {"a": 1})
+        assert cache.xdel("empty_stream") == 0
+        assert cache.xlen("empty_stream") == 1
+
+    def test_xack(self, cache: RespCache):
+        cache.xadd("empty_stream", {"a": 1})
+        cache.xgroup_create("empty_stream", "grp", entry_id="0")
+        assert cache.xack("empty_stream", "grp") == 0
+
+    @pytest.mark.asyncio
+    async def test_axdel(self, cache: RespCache):
+        await cache.axadd("aempty_stream", {"a": 1})
+        assert await cache.axdel("aempty_stream") == 0
+        assert await cache.axlen("aempty_stream") == 1
+
+    @pytest.mark.asyncio
+    async def test_axack(self, cache: RespCache):
+        await cache.axadd("aempty_stream", {"a": 1})
+        await cache.axgroup_create("aempty_stream", "grp", entry_id="0")
+        assert await cache.axack("aempty_stream", "grp") == 0
