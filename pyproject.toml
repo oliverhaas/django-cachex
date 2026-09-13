@@ -68,7 +68,7 @@ dev = [
   "pytest==9.1.1",
   "ruff==0.16.6",
   "testcontainers==4.15.0",
-  "ty==0.0.79",
+  "ty==0.0.80",
   "types-docker==7.2.0.20260827",
   # ASGI benchmark only: granian (real ASGI server) plus httpx (load gen).
   "granian>=2.6,<3",
