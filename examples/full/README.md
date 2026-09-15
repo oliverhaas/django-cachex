@@ -13,13 +13,15 @@ Example demonstrating django-cachex cache admin with multiple cache backends.
 | `sentinel` | `RedisSentinelCache` | Redis Sentinel, 3 sentinels (ports 26379-26381) |
 | `sync` | `StreamCache` | Local cache synchronized over a Redis Stream |
 | `stream_transport` | `RedisCache` | Stream transport for the `sync` cache (Redis db 2) |
+| `tracking` | `TrackingCache` | Local cache invalidated by `CLIENT TRACKING BCAST`, over the `redis` alias |
 | `locmem` | `LocMemCache` | Local memory cache (cachex drop-in) |
 | `database` | `DatabaseCache` | Database-backed cache (cachex drop-in) |
 | `file` | Django `FileBasedCache` | File-based cache |
 | `dummy` | Django `DummyCache` | No-op cache |
 
-The cluster and sentinel aliases use the redis-py backends because the
-valkey-py equivalents hit an upstream bug. See `full/settings.py`.
+The cluster and sentinel containers run Redis images, so those aliases use
+the redis-py backends. `ValkeyClusterCache` and `ValkeySentinelCache` talk to
+them just as well; swap the `BACKEND` in `full/settings.py` to see for yourself.
 
 ## Quick Start
 
@@ -40,7 +42,7 @@ Login: `admin` / `password`
 
 ## Commands
 
-- `./run.sh setup` - Start containers, install Celery, run migrations, create admin
+- `./run.sh setup` - Start containers, run migrations, create admin
 - `./run.sh server` - Start Django development server
 - `./run.sh test-data` - Add sample cache entries to all backends
 - `./run.sh worker` - Start Celery worker (processes tasks from the queue)

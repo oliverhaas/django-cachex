@@ -1,12 +1,16 @@
 """
 Django settings for full example project.
 
-Setup covering every supported cache backend:
+Setup covering the backends this example ships:
 - Standalone: Valkey, Redis
 - Cluster: Redis Cluster (6 nodes)
 - Sentinel: Redis Sentinel (1 master + 2 replicas + 3 sentinels)
-- Sync: Stream-synchronized local cache (zero-latency reads, cross-pod sync)
-- Django builtins: LocMem, Database, File, Dummy
+- Composite: StreamCache (stream-synchronized) and TrackingCache (CLIENT TRACKING)
+- Local drop-ins (cachex): LocMem, Database
+- Stock Django: File, Dummy
+
+The valkey-glide backends are not wired up here; they need their own
+container set. See examples/README.md.
 """
 
 from pathlib import Path
@@ -85,7 +89,7 @@ DATABASES = {
 }
 
 # =============================================================================
-# CACHE CONFIGURATION - All supported backends
+# CACHE CONFIGURATION
 # =============================================================================
 
 CACHES = {
@@ -116,7 +120,6 @@ CACHES = {
     },
     # -------------------------------------------------------------------------
     # CLUSTER BACKEND
-    # ValkeyClusterCache hits an upstream bug, so this uses RedisClusterCache.
     # -------------------------------------------------------------------------
     "cluster": {
         "BACKEND": "django_cachex.cache.redis_py.RedisClusterCache",
@@ -125,7 +128,6 @@ CACHES = {
     },
     # -------------------------------------------------------------------------
     # SENTINEL BACKEND
-    # ValkeySentinelCache hits an upstream bug, so this uses RedisSentinelCache.
     # -------------------------------------------------------------------------
     "sentinel": {
         "BACKEND": "django_cachex.cache.redis_py.RedisSentinelCache",
@@ -140,7 +142,7 @@ CACHES = {
         },
     },
     # -------------------------------------------------------------------------
-    # SYNC BACKEND (stream-synchronized local cache)
+    # COMPOSITE BACKENDS (local cache kept coherent through a transport)
     # Zero-latency local reads, writes broadcast via Redis Stream.
     # Uses a dedicated transport for stream I/O and atomic operations.
     # -------------------------------------------------------------------------
@@ -159,8 +161,16 @@ CACHES = {
         "LOCATION": "redis://127.0.0.1:6380/2",
         "KEY_PREFIX": "sync",
     },
+    "tracking": {
+        "BACKEND": "django_cachex.cache.TrackingCache",
+        "OPTIONS": {
+            "transport": "redis",
+            "coherence": "tracking",
+            "MAX_ENTRIES": 1000,
+        },
+    },
     # -------------------------------------------------------------------------
-    # DJANGO BUILTIN BACKENDS (cachex drop-in replacements)
+    # LOCAL BACKENDS
     # -------------------------------------------------------------------------
     "locmem": {
         "BACKEND": "django_cachex.cache.LocMemCache",

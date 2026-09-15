@@ -7,7 +7,7 @@ Example Django projects demonstrating django-cachex cache admin.
 | Example | Description |
 |---------|-------------|
 | [simple](simple/) | Minimal setup with a single Valkey instance plus locmem |
-| [full](full/) | Standalone, cluster, sentinel, stream-synced, the cachex local drop-ins, and two stock Django backends |
+| [full](full/) | Standalone, cluster, sentinel, stream-synced, tracking-invalidated, the cachex local drop-ins, and two stock Django backends |
 
 ## Quick Start
 
@@ -26,7 +26,7 @@ Login: `admin` / `password`
 
 ## Full Example Details
 
-The `full` example wires up eleven cache aliases:
+The `full` example wires up twelve cache aliases:
 
 **Standalone:**
 - Valkey (port 6381)
@@ -41,13 +41,16 @@ The `full` example wires up eleven cache aliases:
 **Stream-synced:**
 - `StreamCache`, a local cache kept in sync over a Redis Stream
 
+**Tracking-invalidated:**
+- `TrackingCache`, a local cache the server invalidates over `CLIENT TRACKING BCAST`
+
 **Local drop-ins (cachex):**
 - `LocMemCache`, `DatabaseCache`
 
 **Stock Django backends:**
 - `FileBasedCache`, `DummyCache`
 
-`TrackingCache` and `ValkeyGlideCache` are not part of this example.
+`ValkeyGlideCache` is not part of this example; it needs its own container set.
 
 The compose file defines 15 services; the cluster initializer exits once the
 cluster is formed, so 14 keep running. Run `./run.sh status` to check them.

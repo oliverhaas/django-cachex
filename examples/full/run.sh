@@ -12,12 +12,6 @@ case "${1:-}" in
         echo "Waiting for cluster initialization (10s)..."
         sleep 10
 
-        echo "Checking for celery[redis]..."
-        source "$VENV" && python -c "import celery" 2>/dev/null || {
-            echo "Installing celery[redis]..."
-            uv pip install "celery[redis]" 2>/dev/null || pip install "celery[redis]"
-        }
-
         # createcachetable must run before migrate, otherwise the startup
         # populate (triggered by AppConfig.ready() during migrate) fails for
         # the database backend with "no such table: django_cache_table".

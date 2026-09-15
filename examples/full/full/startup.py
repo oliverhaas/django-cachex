@@ -7,7 +7,7 @@ This runs on every Django startup because:
 - LocMemCache doesn't persist between restarts
 - Django's auto-reload restarts the server frequently during development
 
-The full example showcases ALL supported cache backends, so we populate
+The full example wires up the backends listed in settings.py, so we populate
 each with appropriate sample data including Redis-specific data types.
 
 The logic is intentionally verbose so developers can see what's happening.
@@ -21,6 +21,8 @@ from typing import Any
 
 from django.conf import settings
 from django.core.cache import caches
+
+from django_cachex.cache.base import BaseCachex
 
 # Minimum number of keys expected in each cache
 MIN_KEYS = 5
@@ -41,11 +43,22 @@ def get_basic_sample_data() -> dict:
     }
 
 
+def supports(cache: Any, operation: str) -> bool:
+    """Whether this backend really implements ``operation``.
+
+    ``hasattr`` cannot answer that: :class:`BaseCachex` declares every
+    extension operation and raises ``NotSupportedError`` from it, so the
+    attribute exists on backends that do not support the command.
+    """
+    implementation = getattr(type(cache), operation, None)
+    return implementation is not None and implementation is not getattr(BaseCachex, operation, None)
+
+
 def populate_redis_data_types(cache: Any, cache_alias: str) -> int:
     """
-    Populate Redis-specific data types (list, set, hash, zset).
+    Populate the collection types (list, set, hash, zset).
 
-    Only works with native Redis/Valkey backends that expose these methods.
+    Skips any operation the backend does not implement.
 
     Returns:
         Number of keys successfully created.
@@ -53,7 +66,7 @@ def populate_redis_data_types(cache: Any, cache_alias: str) -> int:
     created = 0
 
     # List
-    if hasattr(cache, "rpush"):
+    if supports(cache, "rpush"):
         try:
             cache.rpush("mylist", "item1", "item2", "item3")
             created += 1
@@ -61,7 +74,7 @@ def populate_redis_data_types(cache: Any, cache_alias: str) -> int:
             print(f"    [{cache_alias}] Warning: Failed to create list: {e}")
 
     # Set
-    if hasattr(cache, "sadd"):
+    if supports(cache, "sadd"):
         try:
             cache.sadd("myset", "member1", "member2", "member3")
             created += 1
@@ -69,7 +82,7 @@ def populate_redis_data_types(cache: Any, cache_alias: str) -> int:
             print(f"    [{cache_alias}] Warning: Failed to create set: {e}")
 
     # Hash
-    if hasattr(cache, "hset"):
+    if supports(cache, "hset"):
         try:
             cache.hset("myhash", "field1", "value1")
             cache.hset("myhash", "field2", "value2")
@@ -78,7 +91,7 @@ def populate_redis_data_types(cache: Any, cache_alias: str) -> int:
             print(f"    [{cache_alias}] Warning: Failed to create hash: {e}")
 
     # Sorted Set
-    if hasattr(cache, "zadd"):
+    if supports(cache, "zadd"):
         try:
             cache.zadd("myzset", {"one": 1.0, "two": 2.0, "three": 3.0})
             created += 1
@@ -122,7 +135,7 @@ def populate_cache_if_needed(cache_alias: str) -> None:
             # For database cache, check if we can get a known key
             # If not found, assume it needs population
             count = 0 if cache.get("config:version") is None else MIN_KEYS
-        elif hasattr(cache, "keys"):
+        elif supports(cache, "keys"):
             # Count keys via keys() if available
             count = len(list(cache.keys("*")))  # type: ignore[operator]
         else:
@@ -147,12 +160,8 @@ def populate_cache_if_needed(cache_alias: str) -> None:
         except Exception as e:
             print(f"    [{cache_alias}] Warning: Failed to set {key}: {e}")
 
-    # Add data structures if supported (RESP-backed and LocMem/Database cachex backends)
-    has_data_structures = hasattr(cache, "rpush") and "Cluster" not in backend
-
-    if has_data_structures:
-        extra = populate_redis_data_types(cache, cache_alias)
-        populated += extra
+    if supports(cache, "rpush"):
+        populated += populate_redis_data_types(cache, cache_alias)
 
     print(f"  [{cache_alias}] Added {populated} sample keys/structures")
 
@@ -172,6 +181,7 @@ def ensure_sample_data() -> None:
     cache_order = [
         "default",
         "redis",
+        "tracking",
         "celery",
         "cluster",
         "sentinel",
