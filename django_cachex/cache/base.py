@@ -113,6 +113,22 @@ class BaseCachex(BaseCache):
         """Get the TTL of a key in milliseconds."""
         raise NotSupportedError("pttl", self.__class__.__name__)
 
+    def memory_usage(self, key: str, version: int | None = None, *, samples: int | None = None) -> int | None:
+        """Bytes the key and its value take on the server, or None if the key is missing."""
+        raise NotSupportedError("memory_usage", self.__class__.__name__)
+
+    def largest_keys(
+        self,
+        pattern: str = "*",
+        count: int = 10,
+        version: int | None = None,
+        *,
+        samples: int | None = None,
+        itersize: int | None = None,
+    ) -> list[tuple[str, int]]:
+        """The ``count`` largest keys matching ``pattern`` as ``(key, bytes)``, largest first."""
+        raise NotSupportedError("largest_keys", self.__class__.__name__)
+
     def type(self, key: str, version: int | None = None) -> KeyType | None:
         """Get the data type of a key.
 

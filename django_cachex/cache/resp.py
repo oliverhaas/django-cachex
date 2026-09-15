@@ -10,11 +10,13 @@ concrete subclasses live in:
 - :mod:`django_cachex.cache.valkey_glide`: ``valkey-glide``
 """
 
+import heapq
 import inspect
 import re
 import time
 from datetime import datetime, timedelta
 from functools import cached_property
+from itertools import batched
 from typing import TYPE_CHECKING, Any, cast, override
 
 from django.core.cache.backends.base import DEFAULT_TIMEOUT
@@ -891,6 +893,99 @@ class RespCache(BaseCachex):
         """Get the Redis data type of a key asynchronously."""
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.atype(key)
+
+    def memory_usage(self, key: str, version: int | None = None, *, samples: int | None = None) -> int | None:
+        """Bytes the key and its value take on the server (``MEMORY USAGE``), or None if missing.
+
+        ``samples`` bounds how many elements of a hash, list, set or sorted
+        set are sampled to estimate the total (the server default is 5;
+        0 samples every element for an exact figure).
+        """
+        key = self.make_and_validate_key(key, version=version)
+        return self.adapter.memory_usage(key, samples=samples)
+
+    async def amemory_usage(self, key: str, version: int | None = None, *, samples: int | None = None) -> int | None:
+        """See :meth:`memory_usage`."""
+        key = self.make_and_validate_key(key, version=version)
+        return await self.adapter.amemory_usage(key, samples=samples)
+
+    # Keys per MEMORY USAGE pipeline round trip while ranking keys by size.
+    _LARGEST_KEYS_BATCH = 100
+
+    def _largest_keys_heap(
+        self,
+        heap: list[tuple[int, str]],
+        keys: tuple[str, ...],
+        sizes: list[int | None],
+        count: int,
+    ) -> None:
+        for key, size in zip(keys, sizes, strict=True):
+            if size is None:
+                continue  # expired or deleted between SCAN and MEMORY USAGE
+            if len(heap) < count:
+                heapq.heappush(heap, (size, key))
+            elif size > heap[0][0]:
+                heapq.heapreplace(heap, (size, key))
+
+    async def _amemory_usage_batch(
+        self,
+        keys: tuple[str, ...],
+        version: int | None,
+        samples: int | None,
+    ) -> list[int | None]:
+        pipe = await self.apipeline(transaction=False)
+        for key in keys:
+            pipe.memory_usage(key, version=version, samples=samples)
+        return await pipe.execute()
+
+    def largest_keys(
+        self,
+        pattern: str = "*",
+        count: int = 10,
+        version: int | None = None,
+        *,
+        samples: int | None = None,
+        itersize: int | None = None,
+    ) -> list[tuple[str, int]]:
+        """The ``count`` largest keys matching ``pattern`` as ``(key, bytes)``, largest first.
+
+        Walks the keyspace with ``SCAN`` (``itersize`` is its ``COUNT`` hint)
+        and pipelines ``MEMORY USAGE`` in batches, keeping a heap of the top
+        ``count``. Keys come back without prefix or version, as
+        :meth:`iter_keys` returns them; ``samples`` is passed through to
+        :meth:`memory_usage`.
+        """
+        heap: list[tuple[int, str]] = []
+        scan = self.iter_keys(pattern, version=version, itersize=itersize)
+        for keys in batched(scan, self._LARGEST_KEYS_BATCH, strict=False):
+            pipe = self.pipeline(transaction=False)
+            for key in keys:
+                pipe.memory_usage(key, version=version, samples=samples)
+            self._largest_keys_heap(heap, keys, pipe.execute(), count)
+        return [(key, size) for size, key in sorted(heap, reverse=True)]
+
+    async def alargest_keys(
+        self,
+        pattern: str = "*",
+        count: int = 10,
+        version: int | None = None,
+        *,
+        samples: int | None = None,
+        itersize: int | None = None,
+    ) -> list[tuple[str, int]]:
+        """See :meth:`largest_keys`."""
+        heap: list[tuple[int, str]] = []
+        batch: list[str] = []
+        async for key in self.aiter_keys(pattern, version=version, itersize=itersize):
+            batch.append(key)
+            if len(batch) == self._LARGEST_KEYS_BATCH:
+                keys = tuple(batch)
+                batch.clear()
+                self._largest_keys_heap(heap, keys, await self._amemory_usage_batch(keys, version, samples), count)
+        if batch:
+            keys = tuple(batch)
+            self._largest_keys_heap(heap, keys, await self._amemory_usage_batch(keys, version, samples), count)
+        return [(key, size) for size, key in sorted(heap, reverse=True)]
 
     def persist(self, key: str, version: int | None = None) -> bool:
         """Remove the expiry from a key, making it persistent."""

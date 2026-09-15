@@ -403,6 +403,13 @@ class Pipeline:
         self._decoders.append(self._noop)
         return self
 
+    def memory_usage(self, key: str, version: int | None = None, *, samples: int | None = None) -> Self:
+        """Queue a MEMORY USAGE command (bytes for the key, None if missing)."""
+        nkey = self._make_key(key, version)
+        self._pipeline_adapter.memory_usage(nkey, samples=samples)
+        self._decoders.append(self._noop)
+        return self
+
     def persist(self, key: str, version: int | None = None) -> Self:
         """Queue a PERSIST command (remove expiry)."""
         nkey = self._make_key(key, version)
@@ -1950,12 +1957,8 @@ class Pipeline:
             proc_keys, proc_args = pre_hook(helpers, proc_keys, proc_args)
         reject_stray_encoded(keys, proc_args)
 
-        # EVAL, not the EVALSHA the direct ``eval_script`` sends: a NOSCRIPT
-        # reply only shows up at ``execute()``, after the commands queued
-        # around it have run, so there is no safe point to load and retry.
-        # Cluster pipelines also block EVALSHA outright, and
-        # ``ClusterPipeline.eval`` has a different signature than the
-        # standalone one, hence ``execute_command``.
+        # EVAL, not EVALSHA: a NOSCRIPT reply only surfaces at execute(), too
+        # late to load and retry, and cluster pipelines reject EVALSHA anyway.
         self._pipeline_adapter.execute_command("EVAL", script, len(proc_keys), *proc_keys, *proc_args)
 
         if post_hook is None:

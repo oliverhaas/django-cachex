@@ -1142,6 +1142,20 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             result = result.decode("utf-8")
         return _as_key_type(result)
 
+    def memory_usage(self, key: str, *, samples: int | None = None) -> int | None:
+        """Bytes the key and its value take (``MEMORY USAGE``), or None if it is missing.
+
+        ``samples`` bounds how many elements of a nested value are sampled
+        (the server default is 5; 0 samples every element).
+        """
+        client = self.get_client(key, write=False)
+        return client.memory_usage(key, samples=samples)
+
+    async def amemory_usage(self, key: str, *, samples: int | None = None) -> int | None:
+        """See :meth:`memory_usage`."""
+        client = await self.get_async_client(key, write=False)
+        return await client.memory_usage(key, samples=samples)
+
     def incr(self, key: str, delta: int = 1) -> int:
         client = self.get_client(key, write=True)
         return client.incr(key, delta)
@@ -4368,6 +4382,9 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
 
     def type(self, key: Any) -> Any:
         return self._raw.type(key)
+
+    def memory_usage(self, key: Any, *, samples: int | None = None) -> Any:
+        return self._raw.memory_usage(key, samples=samples)
 
     def rename(self, src: Any, dst: Any) -> Any:
         return self._raw.rename(src, dst)
