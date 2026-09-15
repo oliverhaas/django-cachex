@@ -119,6 +119,20 @@ class DelegatingCacheMixin:
     def type(self, key: str, version: int | None = None) -> Any:
         return self._delegate("type", key, version=version)
 
+    def memory_usage(self, key: str, version: int | None = None, *, samples: int | None = None) -> int | None:
+        return self._delegate("memory_usage", key, version=version, samples=samples)
+
+    def largest_keys(
+        self,
+        pattern: str = "*",
+        count: int = 10,
+        version: int | None = None,
+        *,
+        samples: int | None = None,
+        itersize: int | None = None,
+    ) -> list[tuple[str, int]]:
+        return self._delegate("largest_keys", pattern, count, version=version, samples=samples, itersize=itersize)
+
     def info(self, section: str | None = None) -> dict[str, Any]:
         return self._delegate("info", section=section)
 
@@ -174,6 +188,27 @@ class DelegatingCacheMixin:
 
     async def atype(self, key: str, version: int | None = None) -> Any:
         return await self._adelegate("atype", key, version=version)
+
+    async def amemory_usage(self, key: str, version: int | None = None, *, samples: int | None = None) -> int | None:
+        return await self._adelegate("amemory_usage", key, version=version, samples=samples)
+
+    async def alargest_keys(
+        self,
+        pattern: str = "*",
+        count: int = 10,
+        version: int | None = None,
+        *,
+        samples: int | None = None,
+        itersize: int | None = None,
+    ) -> list[tuple[str, int]]:
+        return await self._adelegate(
+            "alargest_keys",
+            pattern,
+            count,
+            version=version,
+            samples=samples,
+            itersize=itersize,
+        )
 
     async def apersist(self, key: str, version: int | None = None) -> bool:
         return await self._adelegate("apersist", key, version=version)

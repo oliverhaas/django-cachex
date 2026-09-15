@@ -504,6 +504,13 @@ def _xadd_args(
     return args
 
 
+def _memory_usage_args(key: Any, samples: int | None) -> list[bytes | str]:
+    args: list[bytes | str] = [b"MEMORY", b"USAGE", _enc(key)]
+    if samples is not None:
+        args.extend((b"SAMPLES", str(samples).encode()))
+    return args
+
+
 def _normalize_ttl(result: int) -> int | None:
     """Normalize TTL/PTTL/EXPIRETIME results: -1 (no expiry) -> None."""
     if result == -1:
@@ -753,6 +760,10 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
 
     def type(self, key: Any) -> Self:
         self._batch.type(key)
+        return self
+
+    def memory_usage(self, key: Any, *, samples: int | None = None) -> Self:
+        self._batch.custom_command(_memory_usage_args(key, samples))
         return self
 
     def rename(self, src: Any, dst: Any) -> Self:
@@ -1848,6 +1859,9 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         result: Any = self._client().type(key)
         return _key_type(result.decode() if isinstance(result, bytes) else result)
 
+    def memory_usage(self, key: str, *, samples: int | None = None) -> int | None:
+        return self._cmd(_memory_usage_args(key, samples))
+
     def incr(self, key: str, delta: int = 1) -> int:
         client = self._client()
         if delta == 1:
@@ -2909,6 +2923,9 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def atype(self, key: str) -> KeyType | None:
         result: Any = await (await self.get_async_client()).type(key)
         return _key_type(result.decode() if isinstance(result, bytes) else result)
+
+    async def amemory_usage(self, key: str, *, samples: int | None = None) -> int | None:
+        return await self._acmd(_memory_usage_args(key, samples))
 
     async def aincr(self, key: str, delta: int = 1) -> int:
         client = await self.get_async_client()

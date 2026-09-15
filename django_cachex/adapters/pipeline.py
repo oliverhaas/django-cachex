@@ -403,6 +403,13 @@ class Pipeline:
         self._decoders.append(self._noop)
         return self
 
+    def memory_usage(self, key: str, version: int | None = None, *, samples: int | None = None) -> Self:
+        """Queue a MEMORY USAGE command (bytes for the key, None if missing)."""
+        nkey = self._make_key(key, version)
+        self._pipeline_adapter.memory_usage(nkey, samples=samples)
+        self._decoders.append(self._noop)
+        return self
+
     def persist(self, key: str, version: int | None = None) -> Self:
         """Queue a PERSIST command (remove expiry)."""
         nkey = self._make_key(key, version)
