@@ -40,6 +40,8 @@ django-cachex adds these extended methods:
 | `expiretime(key)` | Absolute Unix timestamp (seconds) when the key expires |
 | `persist(key)` | Remove expiration |
 | `type(key)` | Get the data type of a key |
+| `memory_usage(key, *, samples=None)` | Bytes the key and its value take on the server (`MEMORY USAGE`); `None` if the key is missing. `samples` bounds how many elements of a container are sampled (server default 5, `0` = all) |
+| `largest_keys(pattern, count=10, *, samples=None, itersize=None)` | The `count` largest keys matching `pattern` as `(key, bytes)` pairs, largest first. Scans with `iter_keys()` and pipelines `MEMORY USAGE` in batches of 100 |
 | `lock(key, ...)` | Get a distributed lock |
 | `keys(pattern)` | Get keys matching pattern |
 | `iter_keys(pattern)` | Iterate keys matching pattern |
@@ -221,6 +223,13 @@ Execute Lua scripts with optional key prefixing and value encoding/decoding:
 | `eval_script(script, *, keys, args, ...)` | Execute a Lua script |
 | `aeval_script(script, *, keys, args, ...)` | Execute a Lua script (async) |
 
+`eval_script()` sends `EVALSHA` with the SHA-1 of the script source. On the
+first `NOSCRIPT` reply it loads the script with `SCRIPT LOAD` and retries, so
+after that only the 40-byte digest crosses the wire. A `SCRIPT FLUSH` or a
+server restart costs one extra round trip. Scripts queued in a pipeline still
+go out as plain `EVAL`: a pipeline has no safe point to retry a `NOSCRIPT`
+reply, and cluster pipelines reject `EVALSHA`.
+
 #### eval_script / aeval_script
 
 ```python
@@ -309,7 +318,7 @@ await cache.ahset("hash", "field", "value")
 For raw access that skips prefixing/serialization, use `cache.adapter` (e.g. `await cache.adapter.aget(prefixed_key)`).
 
 - `attl`, `apttl`, `aexpire`, `apexpire`, `aexpireat`, `apexpireat`, `apersist`
-- `akeys`, `aiter_keys`, `ascan`, `adelete_pattern`
+- `akeys`, `aiter_keys`, `ascan`, `adelete_pattern`, `amemory_usage`, `alargest_keys`
 - `ahset`, `ahdel`, `ahexists`, `ahget`, `ahgetall`, `ahincrby`, `ahincrbyfloat`, `ahkeys`, `ahlen`, `ahmget`, `ahsetnx`, `ahvals`
 - `ahexpire`, `ahpexpire`, `ahexpireat`, `ahpexpireat`, `ahttl`, `ahpttl`, `ahexpiretime`, `ahpersist`, `ahsetex`, `ahgetex`
 - `asadd`, `asrem`, `asmembers`, `asismember`, `asmismember`, `ascard`, `aspop`, `asrandmember`, `asmove`, `asdiff`, `asdiffstore`, `asinter`, `asinterstore`, `asunion`, `asunionstore`
@@ -370,7 +379,7 @@ TTL.
 
 `acquire()` takes its arguments from whichever lock object the backend
 returns, and the spellings differ. The redis-py and valkey-py backends hand
-back the driver's own lock, whose `acquire()` signature is
+back a thin wrapper around the driver's own lock, whose `acquire()` signature is
 `acquire(sleep=None, blocking=None, blocking_timeout=None, token=None)`
 (the async lock drops `sleep`). The valkey-glide backend returns the
 django-cachex lock, whose `acquire()` is keyword-only:
@@ -390,6 +399,27 @@ run against every backend:
 lock = cache.lock("mylock", lease=30, timeout=5)
 if lock.acquire():
     ...
+```
+
+Lock failures raise `django_cachex.lock.LockError` on every backend, and
+`LockNotOwnedError` (a subclass) when the lock was lost before `release()` or
+`extend()`. redis-py and valkey-py raise their driver's own `LockError`
+internally; the backend translates it, keeping the driver error as
+`__cause__`. Both classes subclass `ValueError` like the driver classes and
+`threading.Lock`, so `except ValueError` keeps working.
+
+```python
+from django_cachex.lock import LockError, LockNotOwnedError
+
+lock = cache.lock("mylock", lease=30)
+try:
+    lock.acquire()
+    do_work()
+    lock.release()
+except LockNotOwnedError:
+    ...  # the lease ran out during do_work()
+except LockError:
+    ...  # could not acquire, or released twice
 ```
 
 Compatible with `threading.Lock`:
@@ -541,6 +571,10 @@ pipe.zrevrangebyscore("z", max_score, min_score, withscores=False, start=None, n
 pipe.zremrangebyscore("z", min_score, max_score)
 ```
 
+`memory_usage(key, version=None, *, samples=None)` is also available on the
+pipeline and contributes the byte count (or `None` for a missing key) to the
+results.
+
 A hash field command queued with no fields (`pipe.httl("h")`, `pipe.hexpire("h", 60)`, `pipe.hgetex("h")` and the rest of the nine) contributes `[]` to the results and sends nothing to the server, the same result `cache.httl("h")` gives.
 
 ## Clearing keys
@@ -619,7 +653,7 @@ failure.
 | `CompressorError` | Compression or decompression failed. Triggers the configured compressor fallback chain. |
 | `SerializerError` | Serialization or deserialization failed. Triggers the serializer fallback chain. |
 | `NotSupportedError` | Operation is not supported by this backend (e.g. `lpush` on `TrackingCache`) or by the connected server (e.g. `hexpire` on Redis 7.2). `operation` names the method or command, `backend` the cache class (`None` when the server rejected the command) and `detail` says why, including the server release that adds a missing command. |
-| `LockError` | A lock operation failed (couldn't acquire, releasing an unlocked lock, ...). |
+| `LockError` | A lock operation failed (couldn't acquire, releasing an unlocked lock, ...). Raised by every backend; where the driver's own lock raised, that error is the `__cause__`. Subclass of `ValueError`. |
 | `LockNotOwnedError` | Releasing or extending a lock the caller no longer owns (expired or stolen). Subclass of `LockError`. |
 | `SemaphoreError` | A semaphore operation failed (e.g. re-acquiring before release). |
 | `SemaphoreTimeoutError` | `timeout` elapsed before the semaphore could be acquired. Subclass of `SemaphoreError`. |

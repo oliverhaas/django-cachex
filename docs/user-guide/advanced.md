@@ -346,6 +346,12 @@ count = cache.eval_script(
 )
 ```
 
+`eval_script()` runs the script by its SHA-1 (`EVALSHA`), loading it with
+`SCRIPT LOAD` on the first `NOSCRIPT` reply. The full source is sent once per
+script per server; every later call sends the 40-byte digest. Scripts queued
+in a pipeline are sent as plain `EVAL`, since a pipeline cannot retry a
+`NOSCRIPT` reply.
+
 ### Pre/Post Processing Hooks
 
 Scripts support `pre_hook` (transform keys/args before execution) and `post_hook` (transform results after execution).
