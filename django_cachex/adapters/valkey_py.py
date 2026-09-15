@@ -48,6 +48,7 @@ from django_cachex.exceptions import (
     _main_exceptions,
     translate_server_error,
 )
+from django_cachex.lock import LockError, LockNotOwnedError
 from django_cachex.stampede import (
     StampedeConfig,
     get_timeout_with_buffer,
@@ -265,6 +266,100 @@ def _install_error_translation(client: Any) -> Any:
     client.execute_command = _aexecute if inspect.iscoroutinefunction(orig) else _sexecute
     setattr(client, _TRANSLATION_INSTALLED_ATTR, True)
     return client
+
+
+class _DriverLock:
+    """Forward every attribute to the driver's ``Lock``, raising cachex lock errors.
+
+    redis-py and valkey-py locks raise their own ``LockError`` /
+    ``LockNotOwnedError``, which neither subclass nor share a base with
+    :class:`django_cachex.lock.LockError`. Wrapping the lock (rather than
+    subclassing it) keeps the driver's ``acquire()`` signature and attributes
+    (``timeout``, ``blocking_timeout``, ``locked()``, ``owned()``) intact while
+    every call surfaces the cachex classes, with the driver error as
+    ``__cause__``. Callables come back wrapped (cached per name); anything
+    else passes through. The async lock's ``release()`` and ``extend()`` are
+    plain ``def`` returning an awaitable, so the wrapper translates on the
+    call and again on the await.
+    """
+
+    __slots__ = ("_lock", "_lock_error", "_not_owned_error", "_wrappers")
+
+    def __init__(self, lock: Any, exceptions: Any) -> None:
+        self._lock = lock
+        self._lock_error: type[Exception] = exceptions.LockError
+        self._not_owned_error: type[Exception] = exceptions.LockNotOwnedError
+        self._wrappers: dict[str, Any] = {}
+
+    def _translate(self, exc: Exception) -> LockError | None:
+        if isinstance(exc, self._not_owned_error):
+            return LockNotOwnedError(str(exc))
+        if isinstance(exc, self._lock_error):
+            return LockError(str(exc))
+        return None
+
+    async def _await_translated(self, awaitable: Any) -> Any:
+        try:
+            return await awaitable
+        except Exception as exc:
+            wrapped = self._translate(exc)
+            if wrapped is None:
+                raise
+            raise wrapped from exc
+
+    def _translating(self, fn: Any) -> Any:
+        def call(*args: Any, **kwargs: Any) -> Any:
+            try:
+                result = fn(*args, **kwargs)
+            except Exception as exc:
+                wrapped = self._translate(exc)
+                if wrapped is None:
+                    raise
+                raise wrapped from exc
+            return self._await_translated(result) if inspect.isawaitable(result) else result
+
+        return call
+
+    def __getattr__(self, name: str) -> Any:
+        wrapper = self._wrappers.get(name)
+        if wrapper is not None:
+            return wrapper
+        attr = getattr(self._lock, name)
+        if not callable(attr):
+            return attr
+        wrapper = self._translating(attr)
+        self._wrappers[name] = wrapper
+        return wrapper
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self._lock!r})"
+
+    # Python looks dunders up on the type, so __getattr__ never sees them.
+    # The driver's __enter__ returns the driver lock; return the wrapper so
+    # ``with cache.lock(...) as lock:`` keeps the translation.
+
+    def _dunder(self, name: str) -> Any:
+        # One proxy class serves both the sync and the async driver lock, so
+        # ``with`` on an async lock (or ``async with`` on a sync one) must
+        # fail the way it does on the bare driver lock: with a TypeError.
+        method = getattr(self._lock, name, None)
+        if method is None:
+            raise TypeError(f"{self._lock!r} does not support {name}")
+        return self._translating(method)
+
+    def __enter__(self) -> Any:
+        self._dunder("__enter__")()
+        return self
+
+    def __exit__(self, *args: object) -> Any:
+        return self._dunder("__exit__")(*args)
+
+    async def __aenter__(self) -> Any:
+        await self._dunder("__aenter__")()
+        return self
+
+    async def __aexit__(self, *args: object) -> Any:
+        return await self._dunder("__aexit__")(*args)
 
 
 _VALKEY_AVAILABLE = False
@@ -1387,10 +1482,11 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         Translates our ``lease``/``timeout`` to redis-py's library names:
         library ``timeout`` is the held-lock TTL (our ``lease``), library
         ``blocking_timeout`` is the max wait before acquire gives up
-        (our ``timeout``).
+        (our ``timeout``). The driver lock comes back wrapped in
+        :class:`_DriverLock` so its errors are the cachex lock errors.
         """
         client = self.get_client(key, write=True)
-        return client.lock(
+        lock = client.lock(
             key,
             timeout=lease,
             sleep=sleep,
@@ -1398,6 +1494,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             blocking_timeout=timeout,
             thread_local=thread_local,
         )
+        return _DriverLock(lock, self._lib.exceptions)
 
     async def alock(
         self,
@@ -1409,15 +1506,9 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         timeout: float | None = None,
         thread_local: bool = True,
     ) -> Any:
-        """Get an async distributed lock.
-
-        Translates our ``lease``/``timeout`` to redis-py's library names:
-        library ``timeout`` is the held-lock TTL (our ``lease``), library
-        ``blocking_timeout`` is the max wait before acquire gives up
-        (our ``timeout``).
-        """
+        """Get an async distributed lock. See :meth:`lock`."""
         client = await self.get_async_client(key, write=True)
-        return client.lock(
+        lock = client.lock(
             key,
             timeout=lease,
             sleep=sleep,
@@ -1425,6 +1516,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             blocking_timeout=timeout,
             thread_local=thread_local,
         )
+        return _DriverLock(lock, self._lib.exceptions)
 
     def pipeline(self, *, transaction: bool = True) -> ValkeyPyPipelineAdapter:
         """Construct a pipeline adapter (raw command queue) for this driver.

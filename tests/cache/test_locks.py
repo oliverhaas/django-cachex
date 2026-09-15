@@ -4,11 +4,9 @@ import threading
 from typing import TYPE_CHECKING
 
 import pytest
-from redis.exceptions import LockError as RedisLockError
-from valkey.exceptions import LockError as ValkeyLockError
 
-from django_cachex.exceptions import NotSupportedError
-from django_cachex.lock import LockError
+from django_cachex.exceptions import CachexError, NotSupportedError
+from django_cachex.lock import LockError, LockNotOwnedError
 
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
@@ -27,13 +25,20 @@ def _skip_cluster_lock_tests(request: pytest.FixtureRequest) -> None:
     cls = request.cls
     if cls is not None and getattr(cls, "cluster_supported", False):
         return
-    try:
-        client_class = request.getfixturevalue("client_class")
-        sentinel_mode = request.getfixturevalue("sentinel_mode")
-    except pytest.FixtureLookupError:
+    if "cache" not in request.fixturenames:
         return
+    client_class = request.getfixturevalue("client_class")
+    sentinel_mode = request.getfixturevalue("sentinel_mode")
     if client_class == "cluster" and not sentinel_mode:
         pytest.skip("RespClusterCache rejects lock/alock; see TestClusterLockRejection")
+
+
+def test_lock_error_hierarchy():
+    # ``ValueError`` for parity with ``threading.Lock`` and the driver
+    # classes, so ``except ValueError`` callers keep working.
+    assert issubclass(LockError, CachexError)
+    assert issubclass(LockError, ValueError)
+    assert issubclass(LockNotOwnedError, LockError)
 
 
 class TestBasicLockOperations:
@@ -97,11 +102,112 @@ class TestLockRelease:
         lock = cache.lock("dbl_release_resource", lease=5)
         lock.acquire()
         lock.release()
-        # redis-py / valkey-py raise their library's ``LockError``; valkey-glide
-        # raises ``django_cachex.lock.LockError``. All fulfill the
-        # "double release is loud" contract.
-        with pytest.raises((LockError, RedisLockError, ValkeyLockError)):
+        with pytest.raises(LockError):
             lock.release()
+
+
+class TestLockErrors:
+    """Every adapter raises ``django_cachex.lock.LockError`` and ``LockNotOwnedError``.
+
+    redis-py and valkey-py hand back their driver's own ``Lock``, whose
+    errors are ``redis.exceptions.LockError`` / ``valkey.exceptions.LockError``.
+    The adapter translates them so callers have one importable name that
+    does not pin app code to the driver.
+    """
+
+    def test_release_unacquired_raises_lock_error(self, cache: RespCache):
+        lock = cache.lock("unacquired_release", lease=5)
+        with pytest.raises(LockError) as excinfo:
+            lock.release()
+        assert not isinstance(excinfo.value, LockNotOwnedError)
+
+    def test_release_after_expiry_raises_not_owned(self, cache: RespCache):
+        lock = cache.lock("expired_release", lease=30)
+        assert lock.acquire(blocking=False) is True
+        # Simulate the lease running out from under the holder.
+        cache.delete("expired_release")
+        with pytest.raises(LockNotOwnedError):
+            lock.release()
+
+    def test_extend_after_expiry_raises_not_owned(self, cache: RespCache):
+        lock = cache.lock("expired_extend", lease=30)
+        assert lock.acquire(blocking=False) is True
+        cache.delete("expired_extend")
+        with pytest.raises(LockNotOwnedError):
+            lock.extend(10)
+
+    def test_extend_without_lease_raises_lock_error(self, cache: RespCache):
+        lock = cache.lock("leaseless_extend")
+        assert lock.acquire(blocking=False) is True
+        try:
+            with pytest.raises(LockError):
+                lock.extend(10)
+        finally:
+            lock.release()
+
+    def test_context_manager_raises_lock_error_when_held(self, cache: RespCache):
+        holder = cache.lock("held_ctx", lease=30)
+        assert holder.acquire(blocking=False) is True
+        try:
+            with pytest.raises(LockError), cache.lock("held_ctx", lease=30, blocking=False):
+                pass
+        finally:
+            holder.release()
+
+    def test_translated_error_keeps_the_driver_error_as_cause(self, cache: RespCache, resp_adapter: str):
+        if resp_adapter == "valkey-glide":
+            pytest.skip("valkey-glide's lock raises the cachex classes directly")
+        lock = cache.lock("cause_check", lease=30)
+        with pytest.raises(LockError) as excinfo:
+            lock.release()
+        assert excinfo.value.__cause__ is not None
+        assert type(excinfo.value.__cause__).__name__ == "LockError"
+
+    def test_native_lock_attributes_pass_through(self, cache: RespCache, resp_adapter: str):
+        if resp_adapter == "valkey-glide":
+            pytest.skip("valkey-glide's lock has no driver lock underneath")
+        lock = cache.lock("attr_check", lease=30, timeout=5)
+        assert lock.timeout == 30
+        assert lock.blocking_timeout == 5
+        assert lock.acquire(blocking=False) is True
+        try:
+            assert lock.locked() is True
+            assert lock.owned() is True
+        finally:
+            lock.release()
+
+    @pytest.mark.asyncio
+    async def test_async_release_after_expiry_raises_not_owned(self, cache: RespCache):
+        lock = await cache.alock("async_expired_release", lease=30)
+        assert await lock.acquire(blocking=False) is True
+        await cache.adelete("async_expired_release")
+        with pytest.raises(LockNotOwnedError):
+            await lock.release()
+
+    @pytest.mark.asyncio
+    async def test_async_release_unacquired_raises_lock_error(self, cache: RespCache):
+        lock = await cache.alock("async_unacquired_release", lease=30)
+        with pytest.raises(LockError):
+            await lock.release()
+
+    @pytest.mark.asyncio
+    async def test_async_extend_after_expiry_raises_not_owned(self, cache: RespCache):
+        lock = await cache.alock("async_expired_extend", lease=30)
+        assert await lock.acquire(blocking=False) is True
+        await cache.adelete("async_expired_extend")
+        with pytest.raises(LockNotOwnedError):
+            await lock.extend(10)
+
+    @pytest.mark.asyncio
+    async def test_async_context_manager_raises_lock_error_when_held(self, cache: RespCache):
+        holder = await cache.alock("async_held_ctx", lease=30)
+        assert await holder.acquire(blocking=False) is True
+        try:
+            with pytest.raises(LockError):
+                async with await cache.alock("async_held_ctx", lease=30, blocking=False):
+                    pass
+        finally:
+            await holder.release()
 
 
 class TestCrossThreadLockRelease:

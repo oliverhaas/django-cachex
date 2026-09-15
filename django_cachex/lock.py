@@ -1,17 +1,21 @@
-"""Lock exceptions raised by the valkey-glide adapter's ``cache.lock()`` only.
+"""Lock exceptions raised by ``cache.lock()`` and ``cache.alock()`` on every adapter.
 
-There is no single catchable base across backends: redis-py and valkey-py
-hand back their driver's own ``Lock``, which raises
+The valkey-glide adapter's lock raises these directly. The redis-py and
+valkey-py adapters hand back their driver's own ``Lock`` wrapped so that
 ``redis.exceptions.LockError`` / ``valkey.exceptions.LockError`` (and their
-``LockNotOwnedError`` subclasses). Neither subclasses the classes below, so
-portable code has to catch all three (see ``tests/cache/test_locks.py``).
+``LockNotOwnedError`` subclasses) surface as the classes below, with the
+driver error kept as ``__cause__``.
 """
 
 from django_cachex.exceptions import CachexError
 
 
-class LockError(CachexError):
-    """Raised when a lock operation fails."""
+class LockError(CachexError, ValueError):
+    """Raised when a lock operation fails.
+
+    Subclasses :class:`ValueError` like ``threading.Lock`` and the driver
+    lock errors do, so existing ``except ValueError`` callers keep working.
+    """
 
 
 class LockNotOwnedError(LockError):
