@@ -2,9 +2,19 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- `lock()` and `alock()` on the redis-py and valkey-py backends return a wrapper around the driver's lock that raises `django_cachex.lock.LockError` and `LockNotOwnedError` instead of `redis.exceptions.LockError` / `valkey.exceptions.LockError`. The driver error is kept as `__cause__`, and both cachex classes now subclass `ValueError` like the driver classes do, so `except ValueError` still catches them; only `except redis.exceptions.LockError` needs to change. The wrapper forwards every other attribute, so `acquire(blocking_timeout=...)`, `owned()` and `locked()` keep their driver signatures.
+
 ### Features
 
 - `Encoded` and `encoded_pre` for `eval_script()`: wrap the ARGV entries that must go through the serializer and compressor, and leave the scalars Lua reads with `tonumber` or a string compare bare. The existing hooks are the two extremes (`keys_only_pre` encodes nothing, `full_encode_pre` encodes everything); `encoded_pre` covers the scripts in between without a hand-rolled `encode()` at the call site. An `Encoded` that reaches the adapter unwrapped raises `TypeError` naming the missing hook, as do `Encoded` in `keys` and `Encoded(Encoded(...))`.
+- `memory_usage(key, *, samples=None)` and `amemory_usage()` return the bytes a key and its value take on the server (`MEMORY USAGE`), `None` for a missing key. Also available on pipelines.
+- `largest_keys(pattern="*", count=10, *, samples=None, itersize=None)` and `alargest_keys()` return the `count` largest keys matching `pattern` as `(key, bytes)` pairs, largest first, scanning with `iter_keys()` and pipelining `MEMORY USAGE` in batches.
+
+### Improvements
+
+- `eval_script()` and `aeval_script()` send `EVALSHA` and fall back to `SCRIPT LOAD` plus a retry on `NOSCRIPT`, so the script body crosses the wire once per server instead of on every call. The valkey-glide backend uses its `Script` objects for the same effect, and its lock release and extend scripts go through the same path. Scripts queued in a pipeline still go out as `EVAL`.
 
 ### Fixes
 
