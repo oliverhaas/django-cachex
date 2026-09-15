@@ -45,7 +45,7 @@ orjson = ["orjson>=3.10.0"]
 Homepage = "https://github.com/oliverhaas/django-cachex"
 Documentation = "https://oliverhaas.github.io/django-cachex/"
 Repository = "https://github.com/oliverhaas/django-cachex.git"
-Changelog = "https://oliverhaas.github.io/django-cachex/reference/changelog/"
+Changelog = "https://oliverhaas.github.io/django-cachex/latest/reference/changelog/"
 
 [dependency-groups]
 dev = [

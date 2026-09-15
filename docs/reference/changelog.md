@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- The `Changelog` link in the package metadata, shown on PyPI, pointed at `reference/changelog/` on the docs site, a path that does not exist because the site is versioned with mike and every page lives under a version prefix. It now points at `latest/reference/changelog/`.
+
 ## 0.9.0 (September 2026)
 
 ### Breaking changes
