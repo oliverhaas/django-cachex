@@ -26,6 +26,7 @@ from django_cachex.adapters.protocols import (
     _RespPipelineCommandsProtocol,
 )
 from django_cachex.adapters.valkey_glide import (
+    _EXTEND_LUA,
     ValkeyGlideAdapter,
     ValkeyGlideClusterAdapter,
     ValkeyGlidePipelineAdapter,
@@ -40,6 +41,7 @@ from django_cachex.adapters.valkey_glide import (
 )
 from django_cachex.exceptions import CachexError, NotSupportedError
 from django_cachex.lock import LockError
+from django_cachex.script import script_sha
 from django_cachex.types import KeyType
 
 
@@ -232,7 +234,7 @@ def test_lock_generates_fresh_token_per_acquire(mocker):
     # lock re-acquired under the same token.
     client = mocker.Mock()
     client.set.return_value = "OK"
-    client.custom_command.return_value = 1
+    client.invoke_script.return_value = 1
     lock = _GlideLock(client, "k", lease=1.0)
 
     assert lock.acquire()
@@ -269,7 +271,7 @@ def test_lock_blocking_sleeps_between_attempts(mocker):
 def test_async_lock_generates_fresh_token_per_acquire(mocker):
     client = mocker.AsyncMock()
     client.set.return_value = "OK"
-    client.custom_command.return_value = 1
+    client.invoke_script.return_value = 1
     adapter = mocker.Mock()
     adapter.get_async_client = mocker.AsyncMock(return_value=client)
     lock = _AsyncGlideLock(adapter, "k", lease=1.0)
@@ -788,6 +790,35 @@ def test_config_kwargs_percent_decodes_credentials():
     assert kwargs["credentials"].password == "p@ss"
 
 
+# ------------------------------------------------------------ eval via EVALSHA
+
+
+def test_eval_invokes_a_registered_script(mocker):
+    adapter, client = _adapter(mocker)
+    client.invoke_script.return_value = 7
+    assert adapter.eval("return 7", 2, "k1", "k2", "a", 3) == 7
+    script = client.invoke_script.call_args[0][0]
+    assert script.get_hash() == script_sha("return 7")
+    assert client.invoke_script.call_args[1] == {"keys": ["k1", "k2"], "args": ["a", b"3"]}
+
+
+def test_eval_reuses_one_script_object_per_source(mocker):
+    adapter, client = _adapter(mocker)
+    adapter.eval("return 1", 0)
+    adapter.eval("return 1", 0)
+    first, second = (c[0][0] for c in client.invoke_script.call_args_list)
+    assert first is second
+
+
+def test_aeval_invokes_a_registered_script(mocker):
+    adapter, client = _async_adapter(mocker)
+    client.invoke_script.return_value = b"x"
+    assert asyncio.run(adapter.aeval("return 'x'", 1, "k", "v")) == b"x"
+    script = client.invoke_script.await_args[0][0]
+    assert script.get_hash() == script_sha("return 'x'")
+    assert client.invoke_script.await_args[1] == {"keys": ["k"], "args": ["v"]}
+
+
 # ----------------------------------------------------------------- lock errors
 
 
@@ -808,16 +839,20 @@ def test_lock_extend_refuses_a_leaseless_lock(mocker):
     assert lock.acquire()
     with pytest.raises(LockError, match="no lease"):
         lock.extend(30)
-    client.custom_command.assert_not_called()
+    client.invoke_script.assert_not_called()
 
 
 def test_lock_extend_still_works_with_a_lease(mocker):
     client = mocker.Mock()
     client.set.return_value = "OK"
-    client.custom_command.return_value = 1
+    client.invoke_script.return_value = 1
     lock = _GlideLock(client, "k", lease=10.0)
     assert lock.acquire()
     assert lock.extend(30) is True
+    script, kwargs = client.invoke_script.call_args[0][0], client.invoke_script.call_args[1]
+    assert script.get_hash() == script_sha(_EXTEND_LUA)
+    assert kwargs["keys"] == ["k"]
+    assert kwargs["args"] == [lock._token, b"30000", b"0"]
 
 
 def test_async_lock_enter_raises_lock_error(mocker):
@@ -843,7 +878,7 @@ def test_async_lock_extend_refuses_a_leaseless_lock(mocker):
 
     with pytest.raises(LockError, match="no lease"):
         asyncio.run(scenario())
-    client.custom_command.assert_not_awaited()
+    client.invoke_script.assert_not_awaited()
 
 
 # --------------------------------------------------------- async client close

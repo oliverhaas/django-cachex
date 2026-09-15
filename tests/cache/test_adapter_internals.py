@@ -21,6 +21,7 @@ from django_cachex.adapters.valkey_py import (
     _options_key,
 )
 from django_cachex.exceptions import NotSupportedError, WrongTypeError, translate_server_error
+from django_cachex.script import script_sha
 from django_cachex.types import KeyType
 
 SERVER_URL = "rediss://user:secret@example.com:7000/0?socket_timeout=5"
@@ -1020,6 +1021,73 @@ class TestKeyTypeMapping:
     @pytest.mark.asyncio
     async def test_async_missing_key_is_none(self):
         assert await _type_adapter(_AsyncTypeClient("none")).atype("key") is None
+
+
+class _ScriptClient:
+    """Driver stub with a server-side script cache: EVALSHA fails until SCRIPT LOAD."""
+
+    def __init__(self) -> None:
+        self.loaded: set[str] = set()
+        self.calls: list[tuple[str, Any]] = []
+
+    def evalsha(self, sha: str, numkeys: int, *keys_and_args: Any) -> Any:
+        from valkey.exceptions import NoScriptError
+
+        self.calls.append(("evalsha", sha))
+        if sha not in self.loaded:
+            raise NoScriptError("No matching script.")
+        return (numkeys, keys_and_args)
+
+    def script_load(self, script: str) -> str:
+        sha = script_sha(script)
+        self.calls.append(("script_load", sha))
+        self.loaded.add(sha)
+        return sha
+
+    def eval(self, *args: Any) -> Any:
+        raise AssertionError("EVAL must not be sent; the adapter uses EVALSHA")
+
+
+class _AsyncScriptClient(_ScriptClient):
+    async def evalsha(self, sha: str, numkeys: int, *keys_and_args: Any) -> Any:  # type: ignore[override]
+        return super().evalsha(sha, numkeys, *keys_and_args)
+
+    async def script_load(self, script: str) -> str:  # type: ignore[override]
+        return super().script_load(script)
+
+
+@requires_valkey
+class TestEvalSha:
+    """``eval`` sends EVALSHA, loads on NOSCRIPT once, then never loads again."""
+
+    def test_loads_once_then_evalsha_only(self):
+        client = _ScriptClient()
+        adapter = _type_adapter(client)
+        sha = script_sha("return 1")
+
+        assert adapter.eval("return 1", 1, "k", "v") == (1, ("k", "v"))
+        assert adapter.eval("return 1", 1, "k", "v") == (1, ("k", "v"))
+
+        assert client.calls == [("evalsha", sha), ("script_load", sha), ("evalsha", sha), ("evalsha", sha)]
+
+    def test_reloads_after_the_server_forgets(self):
+        client = _ScriptClient()
+        adapter = _type_adapter(client)
+        adapter.eval("return 1", 0)
+        client.loaded.clear()  # SCRIPT FLUSH / restart / failover to a fresh node
+        assert adapter.eval("return 1", 0) == (0, ())
+        assert client.calls[-2:] == [("script_load", script_sha("return 1")), ("evalsha", script_sha("return 1"))]
+
+    @pytest.mark.asyncio
+    async def test_async_loads_once_then_evalsha_only(self):
+        client = _AsyncScriptClient()
+        adapter = _type_adapter(client)
+        sha = script_sha("return 2")
+
+        assert await adapter.aeval("return 2", 0) == (0, ())
+        assert await adapter.aeval("return 2", 0) == (0, ())
+
+        assert client.calls == [("evalsha", sha), ("script_load", sha), ("evalsha", sha), ("evalsha", sha)]
 
 
 def _sentinel_modules(adapter_class: Any) -> tuple[Any, Any]:

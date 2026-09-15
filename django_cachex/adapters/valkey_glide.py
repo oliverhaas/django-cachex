@@ -75,6 +75,7 @@ try:
         GlideClusterClientConfiguration as AsyncGlideClusterClientConfiguration,
     )
     from glide import NodeAddress as AsyncNodeAddress  # ty: ignore[unresolved-import]
+    from glide import Script as AsyncScript  # ty: ignore[unresolved-import]
     from glide import ServerCredentials as AsyncServerCredentials  # ty: ignore[unresolved-import]
     from glide_sync import (  # ty: ignore[unresolved-import]
         Batch,
@@ -93,6 +94,7 @@ try:
         RandomNode,
         ReadFrom,
         RequestError,
+        Script,
         ServerCredentials,
     )
     from glide_sync.glide_client import GlideClient  # ty: ignore[unresolved-import]
@@ -213,6 +215,45 @@ _GLIDE_ASYNC_LOCKS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio
 # Guards the sweep, which iterates the registries while other threads insert.
 # Matches :mod:`~django_cachex.adapters.valkey_py`'s ``_ASYNC_REGISTRY_LOCK``.
 _GLIDE_ASYNC_REGISTRY_LOCK = threading.RLock()
+
+
+# =============================================================================
+# Script registry
+# =============================================================================
+# ``Script`` stores its source in glide-core's script container and
+# ``invoke_script`` sends EVALSHA, loading the source on NOSCRIPT. The sync and
+# async packages have separate containers, so each gets its own registry.
+# Keyed by source and process-wide, so a script is stored once however many
+# adapter instances Django hands out.
+
+_GLIDE_SYNC_SCRIPTS: dict[str, Any] = {}
+_GLIDE_ASYNC_SCRIPTS: dict[str, Any] = {}
+_GLIDE_SCRIPTS_LOCK = threading.Lock()
+
+
+def _sync_script(source: str) -> Any:
+    script = _GLIDE_SYNC_SCRIPTS.get(source)
+    if script is None:
+        with _GLIDE_SCRIPTS_LOCK:
+            script = _GLIDE_SYNC_SCRIPTS.get(source)
+            if script is None:
+                script = _GLIDE_SYNC_SCRIPTS[source] = Script(source)
+    return script
+
+
+def _split_script_args(numkeys: int, keys_and_args: tuple[Any, ...]) -> tuple[list[Any], list[Any]]:
+    """Split the flat ``EVAL`` argument tail into ``invoke_script``'s keys and args."""
+    return _enc_list(keys_and_args[:numkeys]), _enc_list(keys_and_args[numkeys:])
+
+
+def _async_script(source: str) -> Any:
+    script = _GLIDE_ASYNC_SCRIPTS.get(source)
+    if script is None:
+        with _GLIDE_SCRIPTS_LOCK:
+            script = _GLIDE_ASYNC_SCRIPTS.get(source)
+            if script is None:
+                script = _GLIDE_ASYNC_SCRIPTS[source] = AsyncScript(source)
+    return script
 
 
 async def _aclose_glide_client(client: Any) -> None:
@@ -2649,9 +2690,9 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     # =========================================================================
 
     def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any:
-        return self._cmd(
-            [b"EVAL", _enc(script), str(numkeys).encode(), *_enc_list(keys_and_args)],
-        )
+        """Execute a Lua script via ``invoke_script`` (EVALSHA, loaded on NOSCRIPT)."""
+        keys, args = _split_script_args(numkeys, keys_and_args)
+        return self._client().invoke_script(_sync_script(script), keys=keys, args=args)
 
     # =========================================================================
     # Sync server
@@ -3736,9 +3777,10 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     # =========================================================================
 
     async def aeval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any:
-        return await self._acmd(
-            [b"EVAL", _enc(script), str(numkeys).encode(), *_enc_list(keys_and_args)],
-        )
+        """See :meth:`eval`."""
+        client = await self.get_async_client()
+        keys, args = _split_script_args(numkeys, keys_and_args)
+        return await client.invoke_script(_async_script(script), keys=keys, args=args)
 
     # =========================================================================
     # Async lock
@@ -4069,9 +4111,7 @@ class _GlideLock:
         if self._token is None:
             msg = "Cannot release un-acquired lock"
             raise LockError(msg)
-        result = self._client.custom_command(
-            [b"EVAL", _RELEASE_LUA.encode(), b"1", _enc(self._key), self._token],
-        )
+        result = self._client.invoke_script(_sync_script(_RELEASE_LUA), keys=[_enc(self._key)], args=[self._token])
         self._token = None
         if not result:
             msg = "Cannot release a lock that's no longer owned"
@@ -4088,16 +4128,10 @@ class _GlideLock:
             msg = "Cannot extend a lock with no lease"
             raise LockError(msg)
         added_ms = int(additional_time * 1000)
-        result = self._client.custom_command(
-            [
-                b"EVAL",
-                _EXTEND_LUA.encode(),
-                b"1",
-                _enc(self._key),
-                self._token,
-                str(added_ms).encode(),
-                b"1" if replace_ttl else b"0",
-            ],
+        result = self._client.invoke_script(
+            _sync_script(_EXTEND_LUA),
+            keys=[_enc(self._key)],
+            args=[self._token, str(added_ms).encode(), b"1" if replace_ttl else b"0"],
         )
         if not result:
             msg = "Cannot extend a lock that's no longer owned"
@@ -4186,9 +4220,7 @@ class _AsyncGlideLock:
             msg = "Cannot release un-acquired lock"
             raise LockError(msg)
         client = await self._adapter.get_async_client()
-        result = await client.custom_command(
-            [b"EVAL", _RELEASE_LUA.encode(), b"1", _enc(self._key), self._token],
-        )
+        result = await client.invoke_script(_async_script(_RELEASE_LUA), keys=[_enc(self._key)], args=[self._token])
         self._token = None
         if not result:
             msg = "Cannot release a lock that's no longer owned"
@@ -4204,16 +4236,10 @@ class _AsyncGlideLock:
             raise LockError(msg)
         client = await self._adapter.get_async_client()
         added_ms = int(additional_time * 1000)
-        result = await client.custom_command(
-            [
-                b"EVAL",
-                _EXTEND_LUA.encode(),
-                b"1",
-                _enc(self._key),
-                self._token,
-                str(added_ms).encode(),
-                b"1" if replace_ttl else b"0",
-            ],
+        result = await client.invoke_script(
+            _async_script(_EXTEND_LUA),
+            keys=[_enc(self._key)],
+            args=[self._token, str(added_ms).encode(), b"1" if replace_ttl else b"0"],
         )
         if not result:
             msg = "Cannot extend a lock that's no longer owned"

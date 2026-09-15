@@ -49,6 +49,7 @@ from django_cachex.exceptions import (
     translate_server_error,
 )
 from django_cachex.lock import LockError, LockNotOwnedError
+from django_cachex.script import script_sha
 from django_cachex.stampede import (
     StampedeConfig,
     get_timeout_with_buffer,
@@ -3495,9 +3496,20 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         numkeys: int,
         *keys_and_args: Any,
     ) -> Any:
-        """Execute a Lua script server-side."""
+        """Execute a Lua script server-side.
+
+        Sends ``EVALSHA`` so only the digest crosses the wire; on ``NOSCRIPT``
+        (first use, or the server restarted or ran ``SCRIPT FLUSH``) the
+        source is loaded and the call retried. On cluster ``SCRIPT LOAD``
+        fans out to every primary, the same nodes ``EVALSHA`` routes to.
+        """
         client = self.get_client(write=True)
-        return client.eval(script, numkeys, *keys_and_args)
+        sha = script_sha(script)
+        try:
+            return client.evalsha(sha, numkeys, *keys_and_args)
+        except self._lib.exceptions.NoScriptError:
+            client.script_load(script)
+            return client.evalsha(sha, numkeys, *keys_and_args)
 
     async def aeval(
         self,
@@ -3505,8 +3517,14 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         numkeys: int,
         *keys_and_args: Any,
     ) -> Any:
+        """See :meth:`eval`."""
         client = await self.get_async_client(write=True)
-        return await client.eval(script, numkeys, *keys_and_args)
+        sha = script_sha(script)
+        try:
+            return await client.evalsha(sha, numkeys, *keys_and_args)
+        except self._lib.exceptions.NoScriptError:
+            await client.script_load(script)
+            return await client.evalsha(sha, numkeys, *keys_and_args)
 
 
 class ValkeyPySentinelAdapter(ValkeyPyAdapter):

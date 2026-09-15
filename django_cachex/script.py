@@ -1,10 +1,22 @@
 """Lua script support: pre/post hooks for key prefixing and value coding."""
 
+import functools
+import hashlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+
+
+@functools.lru_cache(maxsize=256)
+def script_sha(script: str) -> str:
+    """SHA1 of a Lua script's source, as the server names it for ``EVALSHA``.
+
+    Cached per source string: scripts are module constants in practice, so
+    the digest is computed once per process rather than once per call.
+    """
+    return hashlib.sha1(script.encode(), usedforsecurity=False).hexdigest()
 
 
 @dataclass

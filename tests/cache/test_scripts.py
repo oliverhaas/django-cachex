@@ -12,6 +12,7 @@ from django_cachex.script import (
     encoded_pre,
     full_encode_pre,
     keys_only_pre,
+    script_sha,
 )
 
 if TYPE_CHECKING:
@@ -102,6 +103,67 @@ class TestEvalScript:
     def test_eval_script_no_keys(self, cache: RespCache):
         result = cache.eval_script("return 1 + 2")
         assert result == 3
+
+
+def _flush_scripts(cache: RespCache, resp_adapter: str) -> None:
+    """SCRIPT FLUSH on every primary, so the next EVALSHA hits NOSCRIPT."""
+    if resp_adapter == "valkey-glide":
+        cache.adapter._client().script_flush()
+    else:
+        cache.adapter.get_client(write=True).script_flush()
+
+
+def _script_exists(cache: RespCache, resp_adapter: str, sha: str) -> bool:
+    if resp_adapter == "valkey-glide":
+        return bool(cache.adapter._client().script_exists([sha])[0])
+    return bool(cache.adapter.get_client(write=True).script_exists(sha)[0])
+
+
+def _script_calls(cache: RespCache) -> dict[str, int]:
+    stats = cache.info("commandstats")
+    return {name: stats.get(f"cmdstat_{name}", {}).get("calls", 0) for name in ("eval", "evalsha")}
+
+
+class TestEvalSha:
+    """``eval_script`` sends EVALSHA and loads the script only when the server lacks it."""
+
+    def test_script_sha_matches_the_server(self, cache: RespCache, resp_adapter: str):
+        script = "return 'sha-check'"
+        _flush_scripts(cache, resp_adapter)
+        assert _script_exists(cache, resp_adapter, script_sha(script)) is False
+        assert cache.eval_script(script) == b"sha-check"
+        assert _script_exists(cache, resp_adapter, script_sha(script)) is True
+
+    def test_eval_script_sends_evalsha_not_eval(self, cache: RespCache, client_class: str, sentinel_mode: str | bool):
+        if client_class == "cluster" and not sentinel_mode:
+            pytest.skip("INFO commandstats is per node; the script may run on a different primary")
+        before = _script_calls(cache)
+        cache.eval_script("return 'counted'")
+        cache.eval_script("return 'counted'")
+        after = _script_calls(cache)
+        assert after["evalsha"] - before["evalsha"] >= 2
+        assert after["eval"] == before["eval"]
+
+    def test_eval_script_survives_script_flush(self, cache: RespCache, resp_adapter: str):
+        script = "redis.call('SET', KEYS[1], ARGV[1]); return redis.call('GET', KEYS[1])"
+        assert cache.eval_script(script, keys=["flushed"], args=["one"], pre_hook=keys_only_pre) == b"one"
+        _flush_scripts(cache, resp_adapter)
+        assert cache.eval_script(script, keys=["flushed"], args=["two"], pre_hook=keys_only_pre) == b"two"
+
+    @pytest.mark.asyncio
+    async def test_aeval_script_survives_script_flush(self, cache: RespCache, resp_adapter: str):
+        script = "redis.call('SET', KEYS[1], ARGV[1]); return redis.call('GET', KEYS[1])"
+        assert await cache.aeval_script(script, keys=["aflushed"], args=["one"], pre_hook=keys_only_pre) == b"one"
+        _flush_scripts(cache, resp_adapter)
+        assert await cache.aeval_script(script, keys=["aflushed"], args=["two"], pre_hook=keys_only_pre) == b"two"
+
+    def test_semaphore_survives_script_flush(self, cache: RespCache, resp_adapter: str):
+        sem = cache.semaphore("flushed_sem", capacity=1, lease=10)
+        with sem:
+            pass
+        _flush_scripts(cache, resp_adapter)
+        with sem:
+            pass
 
 
 class TestScriptHelpers:
