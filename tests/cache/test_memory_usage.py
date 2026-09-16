@@ -84,9 +84,7 @@ class TestLargestKeys:
         assert [key for key, _ in cache.largest_keys("lk:*", version=3)] == ["lk:v"]
 
     def test_batches_across_many_keys(self, cache: RespCache):
-        # More keys than one pipeline batch, so the heap has to merge batches.
-        # Sizes are far apart because MEMORY USAGE reports allocator size
-        # classes, not exact byte counts.
+        # MEMORY USAGE reports allocator size classes, so sizes must be far apart.
         big = {"lk:many:7": 1_000, "lk:many:130": 10_000, "lk:many:249": 100_000}
         for i in range(250):
             cache.set(f"lk:many:{i}", "x" * big.get(f"lk:many:{i}", 1))
