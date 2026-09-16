@@ -25,12 +25,17 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture
-def django_core_cache(redis_container: RedisContainerInfo) -> DjangoCoreRedisCache:
+def django_core_cache(redis_container: RedisContainerInfo) -> Iterator[DjangoCoreRedisCache]:
     """Create Django's core RedisCache pointing to the test Redis."""
     location = f"redis://{redis_container.host}:{redis_container.port}/15"  # Use db 15 for compat tests
     cache = DjangoCoreRedisCache(location, {"OPTIONS": {}})
     cache.clear()
-    return cache
+    try:
+        yield cache
+    finally:
+        # Django's close() is a no-op; drop the sockets its pools opened.
+        for pool in cache._cache._pools.values():
+            pool.disconnect()
 
 
 @pytest.fixture
@@ -38,8 +43,14 @@ def cachex_cache(redis_container: RedisContainerInfo) -> Iterator[CachexRedisCac
     """Create django-cachex cache pointing to the same Redis."""
     location = f"redis://{redis_container.host}:{redis_container.port}/15"  # Same db as django_core_cache
     cache = CachexRedisCache(location, {"OPTIONS": {}})
-    yield cache
-    cache.flush_db()
+    try:
+        yield cache
+    finally:
+        cache.flush_db()
+        cache.close()
+        # close() keeps sync pools for reuse; this instance is discarded, so disconnect them.
+        for pool in cache.adapter._pools.values():
+            pool.disconnect()
 
 
 class TestDjangoCoreRedisCompatibility:

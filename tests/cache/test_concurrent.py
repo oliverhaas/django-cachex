@@ -17,8 +17,9 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 import pytest
+from django.core.cache.backends.locmem import _caches, _expire_info, _locks
 
-from django_cachex.cache.locmem import LocMemCache
+from django_cachex.cache.locmem import LocMemCache, _collections, _semaphore_registries
 from django_cachex.exceptions import WrongTypeError
 
 if TYPE_CHECKING:
@@ -51,11 +52,16 @@ def fast_thread_switching() -> Iterator[None]:
 @pytest.fixture
 def locmem_cache() -> Iterator[LocMemCache]:
     """Fresh ``LocMemCache`` with a unique name (no shared storage)."""
-    cache = LocMemCache(name=f"test-concurrent-{uuid.uuid4().hex}", params={})
+    name = f"test-concurrent-{uuid.uuid4().hex}"
+    cache = LocMemCache(name=name, params={})
     try:
         yield cache
     finally:
         cache.clear()
+        # Every name leaves an entry in the module-level registries; drop them
+        # so the unique-name fixture does not grow them by one per test.
+        for registry in (_caches, _expire_info, _locks, _collections, _semaphore_registries):
+            registry.pop(name, None)
 
 
 def _run_in_threads(worker: Callable[[int], None], n_threads: int = N_THREADS) -> None:

@@ -1,8 +1,12 @@
 """Tests for key operations: version, delete_pattern, iter_keys, etc."""
 
+import copy
 from typing import TYPE_CHECKING
 
 import pytest
+from django.conf import settings
+from django.core.cache import caches
+from django.test import override_settings
 
 from django_cachex.exceptions import CachexError, KeyNotFoundError
 
@@ -156,6 +160,23 @@ class TestDeletePatternOperations:
         assert res == len(matching)
 
         assert cache.keys("itersize-*") == ["itersize-bar"]
+
+
+class TestKeyPrefixEscaping:
+    def test_glob_characters_in_key_prefix_match_literally(self, cache: RespCache):
+        """A prefix with glob metacharacters is escaped in patterns, and a backslash escapes itself."""
+        config = copy.deepcopy(settings.CACHES)
+        config["escaped"] = {**config["default"], "KEY_PREFIX": "pre\\fix*?[x]"}
+        config["decoy"] = {**config["default"], "KEY_PREFIX": "prefix*?[x]"}
+        with override_settings(CACHES=config):
+            escaped, decoy = caches["escaped"], caches["decoy"]
+            escaped.set("esc-a", 1)
+            escaped.set("esc-b", 2)
+            decoy.set("esc-c", 3)
+
+            assert set(escaped.keys("esc-*")) == {"esc-a", "esc-b"}
+            assert escaped.delete_pattern("esc-*") == 2
+            assert decoy.keys("esc-*") == ["esc-c"]
 
 
 class TestIterKeysOperations:

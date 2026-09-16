@@ -155,6 +155,12 @@ class TestSetMemberHashability:
         cache.sadd("hashable", (1, 2), frozenset({3}), None, 4, 5.5)
         assert cache.smembers("hashable") == {(1, 2), frozenset({3}), None, 4, 5.5}
 
+    def test_python_equal_members_collapse_on_read(self, cache: RespCache):
+        """Documented limitation: 1, True and 1.0 are three server members but one set entry."""
+        assert cache.sadd("equal_members", 1, True, 1.0) == 3
+        assert cache.scard("equal_members") == 3
+        assert cache.smembers("equal_members") == {1}
+
     @pytest.mark.asyncio
     async def test_asadd_rejects_unhashable_member(self, cache: RespCache):
         with pytest.raises(TypeError, match="hashable"):

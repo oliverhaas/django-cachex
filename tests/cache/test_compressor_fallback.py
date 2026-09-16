@@ -46,6 +46,7 @@ class TestCompressorConfig:
         with override_settings(CACHES=caches):
             cache.set("test_key", "test_value" * 100)
             assert [type(c).__name__ for c in cache._compressors] == ["GzipCompressor", "ZlibCompressor"]
+            assert cache.adapter.get(cache.make_key("test_key"))[:2] == b"\x1f\x8b"
             assert cache.get("test_key") == "test_value" * 100
             cache.delete("test_key")
 

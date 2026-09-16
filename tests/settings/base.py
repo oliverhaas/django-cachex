@@ -55,6 +55,7 @@ CACHES = {
     "default": {
         "BACKEND": "django_cachex.cache.RedisCache",
         "LOCATION": "redis://127.0.0.1:6379?db=1",
+        "TIMEOUT": 180,
     },
     "with_prefix": {
         "BACKEND": "django_cachex.cache.RedisCache",

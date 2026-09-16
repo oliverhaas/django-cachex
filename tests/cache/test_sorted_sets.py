@@ -247,6 +247,11 @@ class TestAsyncSortedSetRemove:
     """Tests for azrem."""
 
     @pytest.mark.asyncio
+    async def test_azadd(self, cache: RespCache):
+        assert await cache.azadd("aempty_zset", {}) == 0
+        assert await cache.azcard("aempty_zset") == 0
+
+    @pytest.mark.asyncio
     async def test_azrem(self, cache: RespCache):
         cache.zadd("ascores_rem", {"a": 1.0, "b": 2.0, "c": 3.0})
         result = await cache.azrem("ascores_rem", "b")
@@ -487,6 +492,10 @@ class TestAsyncSortedSetSerialization:
 
 class TestSortedSetEmptyArgumentCalls:
     """A zero-member call answers locally instead of sending an invalid command."""
+
+    def test_zadd(self, cache: RespCache):
+        assert cache.zadd("empty_zset", {}) == 0
+        assert cache.zcard("empty_zset") == 0
 
     def test_zrem(self, cache: RespCache):
         cache.zadd("empty_zset", {"a": 1.0})

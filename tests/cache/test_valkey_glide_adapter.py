@@ -967,8 +967,6 @@ def test_aclose_keeps_the_loop_entries_while_another_config_remains(mocker):
 
 
 def test_aclose_keeps_the_loop_entries_while_a_create_holds_the_lock(mocker):
-    # A creator that took the lock before aclose ran is about to insert its
-    # client into ``sub``; dropping the dict now would strand that client.
     import django_cachex.adapters.valkey_glide as vg
 
     adapter = ValkeyGlideAdapter.__new__(ValkeyGlideAdapter)

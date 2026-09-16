@@ -78,6 +78,13 @@ class TestLargestKeys:
     def test_no_match_is_empty(self, cache: RespCache):
         assert cache.largest_keys("nothing:*") == []
 
+    def test_count_zero_is_empty(self, cache: RespCache, sized_keys: dict[str, int]):
+        assert cache.largest_keys("lk:*", count=0) == []
+
+    def test_negative_count_is_rejected(self, cache: RespCache, sized_keys: dict[str, int]):
+        with pytest.raises(ValueError, match="count must not be negative"):
+            cache.largest_keys("lk:*", count=-1)
+
     def test_version_is_honoured(self, cache: RespCache):
         cache.set("lk:v", "x" * 5000, version=3)
         assert cache.largest_keys("lk:*") == []
@@ -95,6 +102,12 @@ class TestLargestKeys:
     async def test_alargest_keys(self, cache: RespCache, sized_keys: dict[str, int]):
         result = await cache.alargest_keys("lk:*", count=2)
         assert [key for key, _ in result] == ["lk:huge", "lk:big"]
+
+    @pytest.mark.asyncio
+    async def test_alargest_keys_count_zero_and_negative(self, cache: RespCache, sized_keys: dict[str, int]):
+        assert await cache.alargest_keys("lk:*", count=0) == []
+        with pytest.raises(ValueError, match="count must not be negative"):
+            await cache.alargest_keys("lk:*", count=-1)
 
 
 class TestUnsupportedBackends:

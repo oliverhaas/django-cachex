@@ -44,7 +44,6 @@ _ROUND_TRIPS = [_pickle_round_trip, copy.copy, copy.deepcopy]
 
 
 def test_module_scan_finds_the_exception_classes():
-    # The parametrization below iterates the module so new classes are covered automatically.
     found = _public_exception_classes()
     assert exceptions.CachexError in found
     assert exceptions.NotSupportedError in found

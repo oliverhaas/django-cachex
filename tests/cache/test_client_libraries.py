@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from tests.fixtures.cache import POOL_OPTION_ADAPTERS
+
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
 
@@ -25,6 +27,8 @@ class TestClientLibraries:
         cache.set("int_key", 42)
         assert cache.get("int_key") == 42, f"image={image}, client_library={client_library}"
 
+    # valkey-glide ignores parser_class, so both parser cells would run the same thing.
+    @pytest.mark.parametrize("resp_adapter", sorted(POOL_OPTION_ADAPTERS), indirect=True)
     def test_native_parser_round_trips_nested_values(self, cache: RespCache, native_parser: bool):
         """hiredis / libvalkey must decode what the pure-Python parser decodes."""
         parser = "native" if native_parser else "python"

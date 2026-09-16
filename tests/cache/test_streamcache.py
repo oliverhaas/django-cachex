@@ -885,7 +885,6 @@ class TestSyncDroppedBroadcasts:
                 blocked.set()
             cache._flush_publishes()
             cache._drain()
-            # The own ``set_many`` entry still applies the key nothing replaced.
             assert cache.get("sm_a") == 2
             assert cache.get("sm_b") == 1
 
@@ -904,8 +903,6 @@ class TestSyncDroppedBroadcasts:
         mocker.patch.object(state.publish_executor, "submit", side_effect=swap_then_refuse)
         cache.set("swapped", "v")
         assert cache.make_key("swapped") not in state.pending
-        # Both semaphores are back at capacity: the one this publish took was
-        # released, the fresh one never touched.
         for budget in (taken, fresh):
             with pytest.raises(ValueError, match="released too many times"):
                 budget.release()

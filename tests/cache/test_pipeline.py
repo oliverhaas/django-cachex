@@ -1820,7 +1820,6 @@ class TestPipelineSignatureParity:
         assert mismatches == {}
 
     def test_pipeline_only_params_are_really_pipeline_only(self):
-        # Once the cache grows one of these, drop it from the allowlist.
         for name, params in self.PIPELINE_ONLY_PARAMS.items():
             cache_names = {p[0] for p in self._params(getattr(RespCache, name))}
             assert not params & cache_names, name

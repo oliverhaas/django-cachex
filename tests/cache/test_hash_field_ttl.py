@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from django_cachex.exceptions import NotSupportedError
+from tests.fixtures.cache import TEST_DEFAULT_TIMEOUT
 
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
@@ -197,10 +198,10 @@ class TestHsetex:
         assert setex_cache.hgetall("h") == {"a": 1, "b": "two", "c": 3.5, "d": None}
         assert all(ttl is not None for ttl in setex_cache.httl("h", "a", "b", "c", "d"))
 
-    def test_default_timeout_is_the_backend_default(self, setex_cache: RespCache):
+    def test_default_timeout_is_the_configured_backend_timeout(self, setex_cache: RespCache):
         setex_cache.hsetex("h", "a", 1)
 
-        assert_seconds(setex_cache.httl("h", "a")[0], setex_cache.default_timeout)
+        assert_seconds(setex_cache.httl("h", "a")[0], TEST_DEFAULT_TIMEOUT)
 
     def test_none_timeout_drops_the_ttl(self, setex_cache: RespCache):
         setex_cache.hsetex("h", "a", 1, timeout=60)

@@ -765,7 +765,6 @@ class TestOptionsKeyStability:
     def test_key_stays_hashable_for_container_options(self):
         options = {"nodes": [{"host": "a"}, {"host": "b"}], "flags": {"x", "y"}}
         key = _options_key(options)
-        # Usable as a dict key: hashable, and equal to a key built from equal options.
         assert {key: "pool"}[_options_key({"flags": {"y", "x"}, "nodes": [{"host": "a"}, {"host": "b"}]})] == "pool"
 
     def test_self_referencing_value_does_not_recurse_forever(self):
@@ -1015,7 +1014,6 @@ class TestSentinelPoolClass:
         )
 
         assert adapter._async_sentinel_pool_class is CustomAsyncSentinelPool
-        # The generic slot stays clear: it marks adapters that manage their own async pools.
         assert adapter._async_pool_class is None
 
     @pytest.mark.asyncio

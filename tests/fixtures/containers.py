@@ -92,23 +92,29 @@ def _check_cluster_nodes(host: str, port: int) -> bool:
     """Check that all master nodes report cluster_state:ok and slots are covered."""
     for offset in range(CLUSTER_MASTER_COUNT):
         client = redis.Redis(host=host, port=port + offset, socket_connect_timeout=2)
-        info = client.execute_command("CLUSTER", "INFO")
-        client.close()
+        try:
+            info = client.execute_command("CLUSTER", "INFO")
+        finally:
+            client.close()
         if not (isinstance(info, bytes) and b"cluster_state:ok" in info):
             return False
 
     client = redis.Redis(host=host, port=port, socket_connect_timeout=2)
-    slots = client.execute_command("CLUSTER", "SLOTS")
-    client.close()
+    try:
+        slots = client.execute_command("CLUSTER", "SLOTS")
+    finally:
+        client.close()
     covered = sum(end - start + 1 for start, end, *_ in slots)
     if covered < CLUSTER_TOTAL_SLOTS:
         return False
 
     cluster = redis.RedisCluster(host=host, port=port, socket_connect_timeout=2)
-    cluster.set("__cluster_ready_check__", "1")
-    val = cluster.get("__cluster_ready_check__")
-    cluster.delete("__cluster_ready_check__")
-    cluster.close()
+    try:
+        cluster.set("__cluster_ready_check__", "1")
+        val = cluster.get("__cluster_ready_check__")
+        cluster.delete("__cluster_ready_check__")
+    finally:
+        cluster.close()
     return val == b"1"
 
 

@@ -212,7 +212,7 @@ class TestListOperations:
         result = cache.blpop("blpop_list", timeout=1)
         assert result is not None
         key, value = result
-        assert "blpop_list" in key  # Key includes prefix/version
+        assert key == "blpop_list"
         assert value == "a"
         assert cache.lrange("blpop_list", 0, -1) == ["b", "c"]
 
@@ -228,7 +228,7 @@ class TestListOperations:
         result = cache.blpop(["{blpop}list1", "{blpop}list2"], timeout=1)
         assert result is not None
         key, value = result
-        assert "{blpop}list2" in key
+        assert key == "{blpop}list2"
         assert value == "x"
 
     def test_brpop_immediate(self, cache: RespCache):
@@ -237,7 +237,7 @@ class TestListOperations:
         result = cache.brpop("brpop_list", timeout=1)
         assert result is not None
         key, value = result
-        assert "brpop_list" in key
+        assert key == "brpop_list"
         assert value == "c"
         assert cache.lrange("brpop_list", 0, -1) == ["a", "b"]
 
@@ -625,7 +625,7 @@ class TestAsyncBlockingPopExtra:
         result = await cache.ablpop(["{ablpop}list1", "{ablpop}list2"], timeout=1)
         assert result is not None
         key, value = result
-        assert "{ablpop}list2" in key
+        assert key == "{ablpop}list2"
         assert value == "x"
 
     @pytest.mark.asyncio

@@ -54,6 +54,10 @@ ADAPTER_IMAGES = {
     "valkey-glide": ("valkey/valkey:latest", "valkey"),
 }
 
+# Non-default TIMEOUT for the ``default`` alias, so the default-timeout paths
+# are exercised against something other than Django's 300s.
+TEST_DEFAULT_TIMEOUT = 180
+
 # Adapters that accept ``pool_class`` / ``parser_class``; valkey-glide ignores both.
 POOL_OPTION_ADAPTERS = frozenset({"redis-py", "valkey-py"})
 
@@ -176,6 +180,7 @@ def build_cache_config(
         "default": {
             "BACKEND": backend_class,
             "LOCATION": [location, location],
+            "TIMEOUT": TEST_DEFAULT_TIMEOUT,
             "OPTIONS": options,
         },
         "with_prefix": {
@@ -213,6 +218,7 @@ def build_sentinel_cache_config(
         "default": {
             "BACKEND": backend_class,
             "LOCATION": [f"{scheme}://mymaster?db={db}"],
+            "TIMEOUT": TEST_DEFAULT_TIMEOUT,
             "OPTIONS": base_options.copy(),
         },
         "with_prefix": {
@@ -254,6 +260,7 @@ def build_cluster_cache_config(
         "default": {
             "BACKEND": backend_class,
             "LOCATION": location,
+            "TIMEOUT": TEST_DEFAULT_TIMEOUT,
             "OPTIONS": options.copy(),
         },
         "with_prefix": {
@@ -287,8 +294,10 @@ def _yield_default_cache(caches: dict) -> Iterator[RespCache]:
         from django.core.cache import cache as default_cache
 
         default_cache.flush_db()
-        yield cast("RespCache", default_cache)
-        default_cache.flush_db()
+        try:
+            yield cast("RespCache", default_cache)
+        finally:
+            default_cache.flush_db()
 
 
 def _adapter_library_available(resp_adapter: str) -> bool:

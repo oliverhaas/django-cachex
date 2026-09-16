@@ -2,6 +2,7 @@
 
 import pytest
 from django.core.cache import caches
+from django.core.exceptions import ImproperlyConfigured
 from django.test import override_settings
 
 
@@ -46,3 +47,20 @@ def test_url_credentials_reach_the_pool(redis_container):
 
         assert kwargs["username"] == "alice"
         assert kwargs["password"] == "s3cret"
+
+
+@pytest.mark.parametrize("location", ["", "  ", [], [""]], ids=["empty", "blank", "empty-list", "blank-list"])
+def test_blank_location_is_rejected_at_construction(location):
+    """A missing URL fails with ImproperlyConfigured on ``caches[...]``, not inside the driver on the first command."""
+    caches_config = {"default": {"BACKEND": "django_cachex.cache.RedisCache", "LOCATION": location}}
+
+    with override_settings(CACHES=caches_config), pytest.raises(ImproperlyConfigured, match="requires a LOCATION"):
+        caches["default"]
+
+
+def test_missing_location_is_rejected_at_construction():
+    with (
+        override_settings(CACHES={"default": {"BACKEND": "django_cachex.cache.RedisCache"}}),
+        pytest.raises(ImproperlyConfigured, match="requires a LOCATION"),
+    ):
+        caches["default"]

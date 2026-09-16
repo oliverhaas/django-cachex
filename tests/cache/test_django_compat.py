@@ -213,8 +213,9 @@ class TestIntegerOptimization:
     """Test that integer optimization works correctly."""
 
     def test_integer_stored_efficiently(self, cache: RespCache):
-        """Integers should be stored without serialization overhead."""
+        """Integers are stored as bare decimal strings, not serialized payloads."""
         cache.set("test_int", 42)
+        assert cache.adapter.get(cache.make_key("test_int")) == b"42"
         result = cache.get("test_int")
         assert result == 42
         assert isinstance(result, int)

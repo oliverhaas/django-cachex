@@ -95,8 +95,7 @@ class TestRedisCacheInternals:
         if len(cache.adapter._servers) == 1:
             assert pool_index == 0
         else:
-            assert pool_index >= 0
-            assert pool_index < len(cache.adapter._servers)
+            assert 1 <= pool_index < len(cache.adapter._servers)
 
     def test_get_connection_pool(self, cache: RespCache):
         import redis
@@ -161,12 +160,17 @@ class TestRedisCacheInternals:
 
 
 class TestRedisAdapterMethods:
-    def test_get_client_write_vs_read(self, cache: RespCache):
+    def test_get_client_write_vs_read_bind_their_own_pools(self, cache: RespCache, client_class: str):
         write_client = cache.adapter.get_client(write=True)
         read_client = cache.adapter.get_client(write=False)
 
-        assert write_client is not None
-        assert read_client is not None
+        if client_class == "cluster":
+            assert write_client is read_client
+            return
+        assert write_client.connection_pool is cache.adapter._pools[0]
+        assert read_client.connection_pool in cache.adapter._pools.values()
+        if len(cache.adapter._servers) > 1:
+            assert read_client.connection_pool is not write_client.connection_pool
 
     def test_connection_pool_caching(self, cache: RespCache):
         pool1 = cache.adapter._get_connection_pool(write=True)
