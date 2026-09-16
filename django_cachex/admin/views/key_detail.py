@@ -18,7 +18,6 @@ from django_cachex.admin.cas import (
     cas_update_list_element,
     cas_update_string,
     cas_update_zset_score,
-    get_string_sha1,
     supports_cas,
 )
 from django_cachex.admin.helpers import (
@@ -29,8 +28,10 @@ from django_cachex.admin.helpers import (
     get_cache,
     get_type_data,
     is_hashable,
+    mask_credentials,
     parse_json_or_str,
-    read_value,
+    read_value_with_sha1,
+    unreachable_message,
 )
 from django_cachex.admin.views.base import (
     ViewConfig,
@@ -162,7 +163,7 @@ def _handle_delete(request: HttpRequest, cache: Any, cache_name: str, key: str, 
             messages.warning(request, "Key not found, nothing was deleted.")
         return redirect(key_list_url(cache_name))
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Error deleting key: {e!s}")
+        messages.error(request, f"Error deleting key: {mask_credentials(str(e))}")
         return None
 
 
@@ -184,11 +185,23 @@ def _handle_update(request: HttpRequest, cache: Any, cache_name: str, key: str, 
             messages.success(request, "Key updated successfully.")
         return _redirect_to_key(request, cache_name, key, page)
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not update the value: {e}")
+        messages.error(request, f"Could not update the value: {mask_credentials(str(e))}")
         return None
 
 
+def supports_ttl_edit(cache: Any) -> bool:
+    """Report whether ``cache`` has the ``expire``/``persist`` pair the TTL form submits to.
+
+    Stock Django backends have neither; ``BaseCachex`` declares both.
+    """
+    return hasattr(cache, "expire") and hasattr(cache, "persist")
+
+
 def _handle_set_ttl(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse | None:
+    if not supports_ttl_edit(cache):
+        # Guards a hand-crafted POST; the form is not rendered for these backends.
+        messages.error(request, "This cache backend does not support changing a key's TTL.")
+        return _redirect_to_key(request, cache_name, key, page)
     try:
         ttl_str = request.POST.get("ttl_value", "").strip()
         # Compare the parsed int: "00" and "+0" also mean no expiry, and a
@@ -209,7 +222,7 @@ def _handle_set_ttl(request: HttpRequest, cache: Any, cache_name: str, key: str,
     except ValueError:
         messages.error(request, "Invalid TTL value. Must be a number.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Error setting TTL: {e!s}")
+        messages.error(request, f"Error setting TTL: {mask_credentials(str(e))}")
     return None
 
 
@@ -219,7 +232,7 @@ def _handle_lpop(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         result = cache.lpop(key, count=count)
         _report_pop(request, result, on_empty="List is empty or key does not exist.", kind="item(s)")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not pop from the list: {e}")
+        messages.error(request, f"Could not pop from the list: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -229,7 +242,7 @@ def _handle_rpop(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         result = cache.rpop(key, count=count)
         _report_pop(request, result, on_empty="List is empty or key does not exist.", kind="item(s)")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not pop from the list: {e}")
+        messages.error(request, f"Could not pop from the list: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -242,7 +255,7 @@ def _handle_lpush(request: HttpRequest, cache: Any, cache_name: str, key: str, p
         new_len = cache.lpush(key, parse_json_or_str(raw))
         messages.success(request, f"Pushed to left. Length: {new_len}")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not push onto the list: {e}")
+        messages.error(request, f"Could not push onto the list: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -255,7 +268,7 @@ def _handle_rpush(request: HttpRequest, cache: Any, cache_name: str, key: str, p
         new_len = cache.rpush(key, parse_json_or_str(raw))
         messages.success(request, f"Pushed to right. Length: {new_len}")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not push onto the list: {e}")
+        messages.error(request, f"Could not push onto the list: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -281,7 +294,7 @@ def _handle_lrem(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         else:
             messages.warning(request, f"'{value}' not found in list.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not remove the item: {e}")
+        messages.error(request, f"Could not remove the item: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -294,7 +307,7 @@ def _handle_ltrim(request: HttpRequest, cache: Any, cache_name: str, key: str, p
     except ValueError:
         messages.error(request, "Start and stop must be integers.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not trim the list: {e}")
+        messages.error(request, f"Could not trim the list: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -321,7 +334,7 @@ def _handle_lset(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
     except ValueError:
         messages.error(request, "Index must be an integer.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not update the element: {e}")
+        messages.error(request, f"Could not update the element: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -337,7 +350,7 @@ def _handle_sadd(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         else:
             messages.info(request, f"'{member}' already exists in set.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not add the member: {e}")
+        messages.error(request, f"Could not add the member: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -353,7 +366,7 @@ def _handle_srem(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         else:
             messages.warning(request, f"'{member}' not found in set.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not remove the member: {e}")
+        messages.error(request, f"Could not remove the member: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -376,7 +389,7 @@ def _handle_supdate(request: HttpRequest, cache: Any, cache_name: str, key: str,
         cache.srem(key, member)
         messages.success(request, f"Replaced '{member}' with '{new_member}'.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not replace the member: {e}")
+        messages.error(request, f"Could not replace the member: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -386,7 +399,7 @@ def _handle_spop(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         result = cache.spop(key, count=count)
         _report_pop(request, result, on_empty="Set is empty or key does not exist.", kind="member(s)")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not pop from the set: {e}")
+        messages.error(request, f"Could not pop from the set: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -413,7 +426,7 @@ def _handle_hset(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
             cache.hset(key, field, value)
             messages.success(request, f"Set field '{field}'.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not set the field: {e}")
+        messages.error(request, f"Could not set the field: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -454,7 +467,7 @@ def _handle_hupdate(request: HttpRequest, cache: Any, cache_name: str, key: str,
             cache.hdel(key, field)
             messages.success(request, f"Renamed field '{field}' to '{new_field}'.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not update the field: {e}")
+        messages.error(request, f"Could not update the field: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -469,7 +482,7 @@ def _handle_hdel(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         else:
             messages.warning(request, f"Field '{field}' not found.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not delete the field: {e}")
+        messages.error(request, f"Could not delete the field: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -522,7 +535,7 @@ def _handle_zadd(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
     except ValueError:
         messages.error(request, "Score must be a number.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not update the sorted set: {e}")
+        messages.error(request, f"Could not update the sorted set: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -538,7 +551,7 @@ def _handle_zrem(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         else:
             messages.warning(request, f"'{member}' not found in sorted set.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not remove the member: {e}")
+        messages.error(request, f"Could not remove the member: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -570,7 +583,7 @@ def _handle_zupdate(request: HttpRequest, cache: Any, cache_name: str, key: str,
         cache.zrem(key, member)
         messages.success(request, f"Renamed '{member}' to '{new_member}' (score {score}).")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not rename the member: {e}")
+        messages.error(request, f"Could not rename the member: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -595,7 +608,7 @@ def _handle_zpop(
             members = [f"{m} ({s})" for m, s in result]
             messages.success(request, f"Popped {len(result)} member(s): {', '.join(members)}")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not pop from the sorted set: {e}")
+        messages.error(request, f"Could not pop from the sorted set: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -617,7 +630,7 @@ def _handle_xadd(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         entry_id = cache.xadd(key, {field: parse_json_or_str(field_value)})
         messages.success(request, f"Added entry {entry_id}.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not add the entry: {e}")
+        messages.error(request, f"Could not add the entry: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -632,7 +645,7 @@ def _handle_xdel(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         else:
             messages.warning(request, f"Entry {entry_id} not found.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not delete the entry: {e}")
+        messages.error(request, f"Could not delete the entry: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -650,7 +663,7 @@ def _handle_xtrim(request: HttpRequest, cache: Any, cache_name: str, key: str, p
     except ValueError:
         messages.error(request, "Max length must be a number.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Could not trim the stream: {e}")
+        messages.error(request, f"Could not trim the stream: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
 
 
@@ -710,9 +723,24 @@ _CREATE_ACTIONS = frozenset(
 
 _TYPE_AGNOSTIC_ACTIONS = frozenset({"delete", "set_ttl"})
 
+# A key can change type between page load and submit; a string ``update``
+# applied to what is now a hash would overwrite it.
+_ACTION_TYPES: dict[str, KeyType] = {
+    "update": KeyType.STRING,
+    **dict.fromkeys(("lpop", "rpop", "lpush", "rpush", "lrem", "ltrim", "lset"), KeyType.LIST),
+    **dict.fromkeys(("sadd", "srem", "supdate", "spop"), KeyType.SET),
+    **dict.fromkeys(("hset", "hupdate", "hdel"), KeyType.HASH),
+    **dict.fromkeys(("zadd", "zrem", "zupdate", "zpopmin", "zpopmax"), KeyType.ZSET),
+    **dict.fromkeys(("xadd", "xdel", "xtrim"), KeyType.STREAM),
+}
 
-def _check_post_permission(request: HttpRequest, action: str | None, cache: Any, key: str) -> None:
-    """Raise PermissionDenied if the user lacks the right to perform ``action``."""
+
+def _check_post_permission(request: HttpRequest, action: str | None, cache: Any, cache_name: str, key: str) -> None:
+    """Raise PermissionDenied if the user lacks the right to perform ``action``.
+
+    The existence check behind ``add_key`` raises ``CacheUnavailableError``
+    when it cannot reach the server.
+    """
     user = request.user
     if action == "delete":
         if not user.has_perm("django_cachex.delete_key"):  # ty: ignore[unresolved-attribute]
@@ -723,15 +751,16 @@ def _check_post_permission(request: HttpRequest, action: str | None, cache: Any,
     if not user.has_perm("django_cachex.change_key"):  # ty: ignore[unresolved-attribute]
         raise PermissionDenied
     # ``has_key`` only runs for users who would actually be blocked by it.
-    if (
-        action in _CREATE_ACTIONS
-        and not user.has_perm("django_cachex.add_key")  # ty: ignore[unresolved-attribute]
-        and not cache.has_key(key)
-    ):
-        raise PermissionDenied
+    if action in _CREATE_ACTIONS and not user.has_perm("django_cachex.add_key"):  # ty: ignore[unresolved-attribute]
+        try:
+            exists = cache.has_key(key)
+        except Exception as exc:
+            raise CacheUnavailableError(unreachable_message(cache_name, exc)) from exc
+        if not exists:
+            raise PermissionDenied
 
 
-def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
+def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     request: HttpRequest,
     cache_name: str,
     key: str,
@@ -752,7 +781,11 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
 
     if request.method == "POST":
         action = request.POST.get("action")
-        _check_post_permission(request, action, cache, key)
+        try:
+            _check_post_permission(request, action, cache, cache_name, key)
+        except CacheUnavailableError as exc:
+            messages.error(request, str(exc))
+            return redirect(cache_list_url())
         handler = _POST_HANDLERS.get(action) if action else None
         key_type = None
         if handler is not None and action not in _TYPE_AGNOSTIC_ACTIONS:
@@ -761,14 +794,21 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
             except AttributeError, NotSupportedError:
                 # Stock Django backends have no ``type()``. The GET path
                 # tolerates that and renders the page; a write cannot.
-                messages.error(
-                    request,
-                    "This cache backend does not report key types, "
-                    "so only deleting the key and setting its TTL are available.",
-                )
+                available = "deleting the key and setting its TTL are" if supports_ttl_edit(cache) else "deleting it is"
+                messages.error(request, f"This cache backend does not report key types, so only {available} available.")
                 return _redirect_to_key(request, cache_name, key, page)
+            except Exception as exc:  # noqa: BLE001
+                messages.error(request, unreachable_message(cache_name, exc))
+                return redirect(cache_list_url())
         if key_type is not None and key_type not in RENDERABLE_TYPES:
             messages.error(request, "This key has a type the cache admin cannot edit.")
+        elif key_type is not None and action in _ACTION_TYPES and key_type != _ACTION_TYPES[action]:
+            messages.error(
+                request,
+                f"Key '{key}' is now a {key_type}, not a {_ACTION_TYPES[action]}: "
+                "it changed since you loaded the page, so nothing was written. Review the current value below.",
+            )
+            return _redirect_to_key(request, cache_name, key, page)
         elif handler is not None:
             response = handler(request, cache, cache_name, key, page)
             if response is not None:
@@ -776,7 +816,11 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
         else:
             messages.error(request, f"Unknown action: {action!r}." if action else "No action specified.")
 
-    key_exists = cache.has_key(key)
+    try:
+        key_exists = cache.has_key(key)
+    except Exception as exc:  # noqa: BLE001
+        messages.error(request, unreachable_message(cache_name, exc))
+        return redirect(cache_list_url())
 
     create_mode = False
     requested_type = request.GET.get("type", "").strip().lower()
@@ -826,40 +870,35 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
     string_sha1 = None
     if key_exists and not opaque_type and (not key_type or key_type == KeyType.STRING):
         try:
-            raw_value = read_value(cache, key)
+            raw_value, string_sha1 = read_value_with_sha1(cache, key)
         except (CompressorError, SerializerError) as exc:
-            value_error_display = f"<value cannot be decoded: {str(exc) or exc.__class__.__name__}>"
+            detail = mask_credentials(str(exc)) or exc.__class__.__name__
+            value_error_display = f"<value cannot be decoded: {detail}>"
             value_is_editable = False
             messages.warning(
                 request,
-                f"Value cannot be decoded ({exc.__class__.__name__}: {exc}). "
+                f"Value cannot be decoded ({exc.__class__.__name__}: {detail}). "
                 "The key was likely written with a different compressor or serializer. "
                 "You can still delete the key.",
             )
         except Exception as exc:
             logger.warning("Failed to read value for key %r", key, exc_info=True)
-            value_error_display = f"<value could not be read: {str(exc) or exc.__class__.__name__}>"
+            detail = mask_credentials(str(exc)) or exc.__class__.__name__
+            value_error_display = f"<value could not be read: {detail}>"
             value_is_editable = False
             messages.warning(
                 request,
-                f"Value could not be read ({exc.__class__.__name__}: {exc}). You can still delete the key.",
+                f"Value could not be read ({exc.__class__.__name__}: {detail}). You can still delete the key.",
             )
         else:
-            if supports_cas(cache):
-                try:
-                    string_sha1 = get_string_sha1(cache, key)
-                except Exception:
-                    # Downgrade rather than block the edit page on lookup failure.
-                    logger.warning(
-                        "CAS fingerprint lookup failed for key %r; edit will skip conflict check",
-                        key,
-                        exc_info=True,
-                    )
-                    messages.warning(
-                        request,
-                        "Conflict detection unavailable for this key. "
-                        "Concurrent edits won't be caught; the next save will overwrite blindly.",
-                    )
+            # A missing fingerprint next to a value means the script failed
+            # (a vanished key has neither); the page still renders.
+            if string_sha1 is None and raw_value is not None and supports_cas(cache):
+                messages.warning(
+                    request,
+                    "Conflict detection unavailable for this key. "
+                    "Concurrent edits won't be caught; the next save will overwrite blindly.",
+                )
 
     if value_error_display is not None:
         value_display = value_error_display
@@ -871,8 +910,11 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
     # Show type-specific help message if requested. ``key_type`` is either a
     # ``KeyType`` enum (existing key, set by ``cache.type()``) or the raw
     # string from the ``?type=`` query param (create mode); both interpolate
-    # the same way since ``KeyType`` is a ``StrEnum``.
+    # the same way since ``KeyType`` is a ``StrEnum``. A type without its own
+    # text (``unknown``, or one a subclass left out) gets the generic help.
     help_key = f"key_detail_{key_type}" if key_type else "key_detail"
+    if help_key not in config.help_messages:
+        help_key = "key_detail"
     help_active = show_help(request, help_key, config.help_messages)
 
     # Keep ``page`` and ``type``: dropping ``type`` in create mode points Help
@@ -894,6 +936,7 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
     # controls keeps a view-only user from filling in a form that only 403s.
     can_mutate = (key_exists or create_mode) and user.has_perm("django_cachex.change_key")  # ty: ignore[unresolved-attribute]
     can_delete = key_exists and user.has_perm("django_cachex.delete_key")  # ty: ignore[unresolved-attribute]
+    can_edit_ttl = can_mutate and supports_ttl_edit(cache)
 
     context = admin.site.each_context(request)
     context.update(
@@ -917,6 +960,7 @@ def _key_detail_view(  # noqa: C901, PLR0912, PLR0915
             "type_data": type_data,
             "can_mutate": can_mutate,
             "can_delete": can_delete,
+            "can_edit_ttl": can_edit_ttl,
             "help_active": help_active,
             "help_url": help_url,
         },

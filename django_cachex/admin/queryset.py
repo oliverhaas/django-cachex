@@ -229,7 +229,7 @@ class CacheAdminMixin:
                 cache.clear()
                 flushed += 1
             except Exception as exc:  # noqa: BLE001
-                messages.error(request, f"Error flushing '{cache_obj.name}': {exc}")
+                messages.error(request, f"Error flushing '{cache_obj.name}': {mask_credentials(str(exc))}")
         if flushed:
             messages.success(
                 request,
@@ -448,17 +448,104 @@ class TypeFilter(admin.SimpleListFilter):
         return queryset  # No-op: type filtering handled via SCAN in get_queryset
 
 
+def _key_row(cache_name: str, user_key: str, ttl: int | None, key_type: KeyType | None) -> Key:
+    key_obj = Key.from_cache_key(cache_name, user_key)
+    key_obj.ttl = ttl  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    if ttl is not None and ttl >= 0:
+        key_obj.ttl_expires_at = timezone.now() + timedelta(seconds=ttl)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    key_obj.key_type = key_type  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    return key_obj
+
+
 def _describe_key(cache: Any, cache_name: str, user_key: str) -> Key:
     """Build one list row, tolerating backends without ``ttl()`` or ``type()``."""
-    key_obj = Key.from_cache_key(cache_name, user_key)
+    ttl = key_type = None
     with contextlib.suppress(Exception):
         ttl = cache.ttl(user_key)
-        key_obj.ttl = ttl  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-        if ttl is not None and ttl >= 0:
-            key_obj.ttl_expires_at = timezone.now() + timedelta(seconds=ttl)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     with contextlib.suppress(Exception):
-        key_obj.key_type = cache.type(user_key)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-    return key_obj
+        key_type = cache.type(user_key)
+    return _key_row(cache_name, user_key, ttl, key_type)
+
+
+_SIZE_COMMANDS = {
+    KeyType.LIST: "llen",
+    KeyType.SET: "scard",
+    KeyType.HASH: "hlen",
+    KeyType.ZSET: "zcard",
+    KeyType.STREAM: "xlen",
+}
+
+
+def _pipelined_sizes(cache: Any, rows: list[Key]) -> None:
+    """Fill ``key_size`` for every row in two round trips.
+
+    Collections go through the cache pipeline. Strings are measured with
+    STRLEN like :func:`get_size` does, on the driver client's own pipeline
+    since the ``Pipeline`` wrapper has no ``strlen``; a driver without one
+    (glide batches differently) keeps the per-key STRLEN.
+    """
+    collections = [(row, _SIZE_COMMANDS[row.key_type]) for row in rows if row.key_type in _SIZE_COMMANDS]  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    if collections:
+        with cache.pipeline(transaction=False) as pipe:
+            for row, command in collections:
+                getattr(pipe, command)(row.key_name)
+            for (row, _command), size in zip(collections, pipe.execute(), strict=True):
+                row.key_size = size  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    strings = [row for row in rows if row.key_type == KeyType.STRING]  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    if not strings:
+        return
+    client = cache.get_client(write=False)
+    if not hasattr(client, "pipeline"):
+        for row in strings:
+            row.key_size = get_size(cache, row.key_name, KeyType.STRING)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        return
+    with client.pipeline(transaction=False) as raw:
+        for row in strings:
+            raw.strlen(cache.make_key(row.key_name))
+        for row, size in zip(strings, raw.execute(), strict=True):
+            row.key_size = size  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+
+
+def _describe_keys(cache: Any, cache_name: str, keys: list[str], type_filter: str) -> list[Key]:
+    """Build the list rows for one SCAN batch.
+
+    TTL and TYPE go out in one pipeline and the sizes in two more, so a page
+    costs a few round trips instead of three per key. Backends without
+    ``pipeline()`` (LocMem, Database) fall back to one call per key, as does
+    the size pass when a key changes type under it.
+    """
+    try:
+        with cache.pipeline(transaction=False) as pipe:
+            for user_key in keys:
+                pipe.ttl(user_key)
+                pipe.type(user_key)
+            replies = pipe.execute()
+    except AttributeError, NotSupportedError:
+        pipelined = False
+        rows = [_describe_key(cache, cache_name, user_key) for user_key in keys]
+    else:
+        pipelined = True
+        rows = [
+            _key_row(cache_name, user_key, ttl, key_type)
+            for user_key, ttl, key_type in zip(keys, replies[::2], replies[1::2], strict=True)
+        ]
+
+    # ``key_type`` is only a hint to ``scan()``; a backend that can't push it
+    # down would otherwise return every key.
+    if type_filter:
+        rows = [row for row in rows if row.key_type == type_filter]  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+
+    if pipelined:
+        try:
+            _pipelined_sizes(cache, rows)
+        except Exception:
+            logger.warning("Pipelined size lookup failed for cache '%s'; retrying per key", cache_name, exc_info=True)
+        else:
+            return rows
+    for row in rows:
+        with contextlib.suppress(Exception):
+            row.key_size = get_size(cache, row.key_name, row.key_type)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    return rows
 
 
 class KeyAdminMixin:
@@ -546,20 +633,7 @@ class KeyAdminMixin:
                 if next_cursor == 0 or len(keys) >= half:
                     break
 
-            data: list[Key] = []
-            for user_key in keys:
-                key_obj = _describe_key(cache, cache_name, user_key)
-
-                # ``key_type`` is only a hint to ``scan()``; a backend that
-                # can't push it down would otherwise return every key.
-                if type_filter and getattr(key_obj, "key_type", None) != type_filter:
-                    continue
-
-                with contextlib.suppress(Exception):
-                    key_obj.key_size = get_size(cache, user_key, getattr(key_obj, "key_type", None))  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-
-                data.append(key_obj)
-
+            data = _describe_keys(cache, cache_name, keys, type_filter)
             return KeyQuerySet(data, cache_name, next_cursor=next_cursor, cursor=cursor, scan_count=count)
 
         except AttributeError, NotSupportedError:
@@ -577,7 +651,7 @@ class KeyAdminMixin:
             # cache" when the cause is e.g. a connection error.
             messages.error(
                 request,
-                f"Error querying cache '{cache_name}': {exc}",
+                f"Error querying cache '{cache_name}': {mask_credentials(str(exc))}",
             )
             return KeyQuerySet([], cache_name)
 
@@ -607,7 +681,7 @@ class KeyAdminMixin:
         except CacheUnavailableError as exc:
             messages.error(request, str(exc))
         except Exception as exc:  # noqa: BLE001
-            messages.error(request, f"Could not clear the cache: {exc}")
+            messages.error(request, f"Could not clear the cache: {mask_credentials(str(exc))}")
         return HttpResponseRedirect(
             reverse("admin:django_cachex_key_changelist") + "?" + urlencode({"cache": cache_name}),
         )
@@ -673,7 +747,7 @@ class KeyAdminMixin:
                 else:
                     missing += 1
             except Exception as exc:  # noqa: BLE001
-                errors.append(f"'{key_obj.key_name}': {exc}")
+                errors.append(f"'{key_obj.key_name}': {mask_credentials(str(exc))}")
         if deleted:
             messages.success(request, f"Successfully deleted {deleted} key(s).")
         if missing:

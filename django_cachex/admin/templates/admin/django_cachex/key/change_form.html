@@ -52,7 +52,7 @@
         </div>
         {% endif %}
         <div class="form-row">
-            {% if can_mutate %}
+            {% if can_edit_ttl %}
             <label for="id_ttl">{% trans "TTL (s):" %}</label>
             <form method="post" style="display: inline;">
                 {% csrf_token %}

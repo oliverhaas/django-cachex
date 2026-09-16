@@ -1,13 +1,13 @@
 """Views for the django-cachex cache admin."""
 
 from .base import ViewConfig
-from .cache_detail import _cache_detail_view
-from .key_add import _key_add_view
-from .key_detail import _key_detail_view
+from .cache_detail import cache_detail_view
+from .key_add import key_add_view
+from .key_detail import key_detail_view
 
 __all__ = [
     "ViewConfig",
-    "_cache_detail_view",
-    "_key_add_view",
-    "_key_detail_view",
+    "cache_detail_view",
+    "key_add_view",
+    "key_detail_view",
 ]

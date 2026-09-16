@@ -565,9 +565,8 @@ class _ValkeyPyInvalidationListener(InvalidationListenerProtocol):
     def poll(self, timeout: float) -> Invalidation | None:
         if self._buffered:
             return self._buffered.popleft()
-        # ``can_read`` on a dropped socket would reconnect through the driver,
-        # without CLIENT TRACKING and under a new client id. Fail instead;
-        # TrackingCache rebuilds the listener.
+        # A driver reconnect would come back untracked; fail and let
+        # TrackingCache rebuild the listener.
         if not _is_connected(self._conn):
             msg = "The invalidation listener lost its connection"
             raise ConnectionError(msg)
@@ -895,9 +894,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
-            # A deadline already in the past: the reply is that of a plain
-            # SET NX and the key is expired the moment it lands, with no
-            # window in which it exists without a TTL.
+            # A past deadline: plain SET NX semantics, key expires on landing.
             return bool(client.set(key, value, nx=True, pxat=1))
         return bool(client.set(key, value, nx=True, ex=actual_timeout))
 

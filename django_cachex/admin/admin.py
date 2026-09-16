@@ -12,7 +12,7 @@ from django.utils.safestring import mark_safe
 
 from .models import Cache, Key
 from .queryset import CacheAdminMixin, KeyAdminMixin
-from .views import ViewConfig, _cache_detail_view, _key_add_view, _key_detail_view
+from .views import ViewConfig, cache_detail_view, key_add_view, key_detail_view
 
 if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
@@ -121,7 +121,7 @@ class CacheAdmin(_NoObjectRoutesMixin, CacheAdminMixin, _CacheBase):  # type: ig
         """Display cache details (info + slowlog combined)."""
         if not self.has_view_or_change_permission(request):
             raise PermissionDenied
-        return _cache_detail_view(request, unquote(object_id), self._get_config())
+        return cache_detail_view(request, unquote(object_id), self._get_config())
 
 
 @admin.register(Key)
@@ -270,7 +270,7 @@ class KeyAdmin(_NoObjectRoutesMixin, KeyAdminMixin, _KeyBase):  # type: ignore[m
                 reverse("admin:django_cachex_cache_changelist"),
             )
 
-        return _key_detail_view(request, cache_name, key_name, self._get_config())
+        return key_detail_view(request, cache_name, key_name, self._get_config())
 
     def add_view(
         self,
@@ -290,4 +290,4 @@ class KeyAdmin(_NoObjectRoutesMixin, KeyAdminMixin, _KeyBase):  # type: ignore[m
                 reverse("admin:django_cachex_cache_changelist"),
             )
 
-        return _key_add_view(request, cache_name, self._get_config())
+        return key_add_view(request, cache_name, self._get_config())

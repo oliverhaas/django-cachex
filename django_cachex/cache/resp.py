@@ -143,9 +143,8 @@ class RespCache(BaseCachex):
 
         self._compressors: list[Any] = self._create_compressors(self._options.get("compressor"))
 
-        # Building the adapter opens no connection, so a missing driver or a
-        # bad OPTIONS entry surfaces at ``caches[alias]`` rather than on the
-        # first command.
+        # Opens no connection; a missing driver or bad OPTIONS entry
+        # surfaces at ``caches[alias]``.
         self.adapter  # noqa: B018
 
     @cached_property

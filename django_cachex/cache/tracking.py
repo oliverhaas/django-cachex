@@ -76,9 +76,8 @@ class _TrackingState:
         # Guards listener_thread, stop_event and initialized; never held
         # together with ``lock`` while the transport is being called.
         self.start_lock = Lock()
-        # Made key -> (encoded value, local monotonic expiry or None, logical
-        # server expiry or None); LRU by access. The local expiry is the
-        # server one capped by ``local_timeout``; XFetch rolls on the server one.
+        # Made key -> (encoded value, local expiry capped by ``local_timeout``,
+        # server expiry used by XFetch); LRU by access.
         self.store: OrderedDict[str, tuple[Any, float | None, float | None]] = OrderedDict()
         # Made key -> token of the fetch in flight for it. An invalidation
         # drops the token so a reply that raced the write is never stored.

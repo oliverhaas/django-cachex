@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 from django.contrib import admin, messages
 from django.shortcuts import redirect, render
 
-from django_cachex.admin.helpers import CREATABLE_TYPES, CacheUnavailableError, get_cache
+from django_cachex.admin.helpers import CREATABLE_TYPES, CacheUnavailableError, get_cache, unreachable_message
 from django_cachex.admin.views.base import (
     ViewConfig,
     cache_list_url,
@@ -30,7 +30,7 @@ _TYPE_LABELS = {
 }
 
 
-def _key_add_view(
+def key_add_view(
     request: HttpRequest,
     cache_name: str,
     config: ViewConfig,
@@ -49,8 +49,16 @@ def _key_add_view(
 
         if not key_name:
             messages.error(request, "Key name is required.")
+        elif key_type not in _TYPE_LABELS:
+            # The select only offers ``CREATABLE_TYPES``; anything else is a hand-crafted POST.
+            messages.error(request, f"Unknown key type '{key_type}'.")
         else:
-            if cache.has_key(key_name):
+            try:
+                exists = cache.has_key(key_name)
+            except Exception as exc:  # noqa: BLE001
+                messages.error(request, unreachable_message(cache_name, exc))
+                return redirect(cache_list_url())
+            if exists:
                 messages.warning(request, f"Key '{key_name}' already exists.")
                 return redirect(key_detail_url(cache_name, key_name))
             base_url = key_detail_url(cache_name, key_name)

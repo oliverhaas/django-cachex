@@ -8,7 +8,13 @@ from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect, render
 
-from django_cachex.admin.helpers import CacheUnavailableError, get_cache, get_slowlog, parse_metadata
+from django_cachex.admin.helpers import (
+    CacheUnavailableError,
+    get_cache,
+    get_slowlog,
+    mask_credentials,
+    parse_metadata,
+)
 from django_cachex.admin.models import Cache
 from django_cachex.admin.views.base import (
     ViewConfig,
@@ -60,18 +66,18 @@ def _handle_danger_zone_post(
             deleted = cache.clear_all_versions()
             messages.success(request, f"Deleted {deleted} key(s) across all versions of '{cache_name}'.")
         except Exception as exc:  # noqa: BLE001
-            messages.error(request, f"Could not clear all versions: {exc}")
+            messages.error(request, f"Could not clear all versions: {mask_credentials(str(exc))}")
         return redirect(request.get_full_path())
 
     try:
         cache.flush_db()
         messages.success(request, f"Database flushed for '{cache_name}'.")
     except Exception as exc:  # noqa: BLE001
-        messages.error(request, f"Could not flush the database: {exc}")
+        messages.error(request, f"Could not flush the database: {mask_credentials(str(exc))}")
     return redirect(request.get_full_path())
 
 
-def _cache_detail_view(
+def cache_detail_view(
     request: HttpRequest,
     cache_name: str,
     config: ViewConfig,
@@ -107,7 +113,7 @@ def _cache_detail_view(
     except AttributeError, NotSupportedError:
         raw_info = None
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Error retrieving cache info: {e!s}")
+        messages.error(request, f"Error retrieving cache info: {mask_credentials(str(e))}")
 
     info_data = parse_metadata(cache, cache_config, raw_info)
 
@@ -122,7 +128,7 @@ def _cache_detail_view(
     except AttributeError, NotSupportedError:
         slowlog_data = None
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Error retrieving slow log: {e!s}")
+        messages.error(request, f"Error retrieving slow log: {mask_credentials(str(e))}")
 
     raw_info_json = None
     if raw_info:

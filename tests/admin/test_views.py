@@ -23,6 +23,7 @@ from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
 from django.utils import translation
 
+from django_cachex.adapters.pipeline import Pipeline
 from django_cachex.admin.models import Cache, Key
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
@@ -3192,6 +3193,7 @@ class TestUnreadableValueResilience:
         turned the detail page into a 500 with no way to delete the key.
         """
         test_cache.set("unreadable:key", "value")
+        mocker.patch.object(test_cache, "eval_script", side_effect=RuntimeError("boom"))
         mocker.patch.object(test_cache, "get", side_effect=RuntimeError("boom"))
 
         response = admin_client.get(_key_detail_url("default", "unreadable:key"))
@@ -3214,6 +3216,8 @@ class TestTypeFilterFallback:
         fake = MagicMock()
         fake.scan.return_value = (0, ["typefilter:str", "typefilter:lst"])
         fake.type.side_effect = lambda k: "string" if k.endswith("str") else "list"
+        fake.ttl.return_value = None
+        fake.pipeline.side_effect = NotSupportedError("pipeline", "fake")
         mocker.patch("django_cachex.admin.queryset.get_cache", return_value=fake)
         mocker.patch("django_cachex.admin.queryset.get_size", return_value=10)
 
@@ -3344,7 +3348,12 @@ class TestBlankMemberFeedback:
         """A blank field used to redirect with no message at all, which reads as
         a successful no-op.
         """
-        test_cache.sadd("blank:set", "a")
+        if action == "srem":
+            test_cache.sadd("blank:set", "a")
+        elif action == "zrem":
+            test_cache.zadd("blank:set", {"a": 1.0})
+        else:
+            test_cache.hset("blank:set", "a", "1")
 
         response = admin_client.post(
             _key_detail_url("default", "blank:set"),
@@ -3901,6 +3910,7 @@ class TestUnknownTypeFilter:
     def test_unknown_typed_keys_are_listed(self, admin_client: Client, test_cache: RespCache, mocker):
         test_cache.set("scan:opaque", "value")
         mocker.patch.object(type(test_cache), "type", return_value=KeyType.UNKNOWN)
+        mocker.patch.object(Pipeline, "_decode_type", return_value=KeyType.UNKNOWN)
 
         response = admin_client.get(_key_list_url("default") + "&type=unknown")
 
@@ -3998,3 +4008,359 @@ class TestSlowLogOnBackendsWithoutOne:
         content = response.content.decode()
         assert "Slow Log" not in content
         assert "could not be read" not in content
+
+
+class TestUnreachableCacheOnKeyPages:
+    """``get_cache()`` only builds the backend; the first command that reaches
+    the server is ``has_key``. When that fails the key pages used to 500
+    instead of reporting the outage like the cache pages do.
+    """
+
+    _down = OSError(f"Error 111 connecting to {_SECRET_LOCATION}. Connection refused.")
+
+    def _assert_redirected_with_masked_error(self, response) -> None:
+        assert response.status_code == 200
+        assert response.redirect_chain[-1][0] == _cache_list_url()
+        content = response.content.decode()
+        assert "is unreachable" in content
+        assert "s3cr3t-pw" not in content
+        assert "***@cache.example.test" in content
+
+    def test_key_detail_get(self, admin_client: Client, test_cache: RespCache, mocker):
+        mocker.patch.object(type(test_cache), "type", side_effect=self._down)
+        mocker.patch.object(type(test_cache), "has_key", side_effect=self._down)
+
+        response = admin_client.get(_key_detail_url("default", "down:key"), follow=True)
+
+        self._assert_redirected_with_masked_error(response)
+
+    def test_key_detail_post(self, admin_client: Client, test_cache: RespCache, mocker):
+        mocker.patch.object(type(test_cache), "has_key", side_effect=self._down)
+
+        response = admin_client.post(
+            _key_detail_url("default", "down:key"),
+            {"action": "update", "value": '"x"'},
+            follow=True,
+        )
+
+        self._assert_redirected_with_masked_error(response)
+
+    def test_key_add_post(self, admin_client: Client, test_cache: RespCache, mocker):
+        mocker.patch.object(type(test_cache), "has_key", side_effect=self._down)
+
+        response = admin_client.post(_key_add_url("default"), {"key": "down:key", "type": "string"}, follow=True)
+
+        self._assert_redirected_with_masked_error(response)
+
+
+class TestActionMustMatchCurrentType:
+    """A form rendered for one type must not write through to a key that has
+    since been recreated as another type.
+    """
+
+    def test_string_update_does_not_overwrite_a_hash(self, admin_client: Client, test_cache: RespCache):
+        test_cache.hset("retyped:key", "field", "kept")
+
+        response = admin_client.post(
+            _key_detail_url("default", "retyped:key"),
+            {"action": "update", "value": '"replacement"'},
+            follow=True,
+        )
+
+        assert response.status_code == 200
+        assert test_cache.type("retyped:key") == KeyType.HASH
+        assert test_cache.hget("retyped:key", "field") == "kept"
+        assert "is now a hash, not a string" in response.content.decode()
+
+    def test_list_push_does_not_touch_a_set(self, admin_client: Client, test_cache: RespCache):
+        test_cache.sadd("retyped:set", "a")
+
+        response = admin_client.post(
+            _key_detail_url("default", "retyped:set"),
+            {"action": "rpush", "value": '"b"'},
+            follow=True,
+        )
+
+        assert response.status_code == 200
+        assert test_cache.smembers("retyped:set") == {"a"}
+        assert "is now a set, not a list" in response.content.decode()
+
+    def test_delete_and_ttl_are_type_agnostic(self, admin_client: Client, test_cache: RespCache):
+        test_cache.hset("retyped:ttl", "field", "v")
+
+        admin_client.post(_key_detail_url("default", "retyped:ttl"), {"action": "set_ttl", "ttl_value": "120"})
+        assert test_cache.ttl("retyped:ttl") > 0
+
+        admin_client.post(_key_detail_url("default", "retyped:ttl"), {"action": "delete"})
+        assert not test_cache.has_key("retyped:ttl")
+
+
+class TestContainerPagesFetchOnlyThePage:
+    """Hash and set pages used to HGETALL/SMEMBERS the whole key and slice in
+    Python. Now only the requested page's values cross the wire.
+    """
+
+    def test_hash_second_page_reads_only_its_fields(self, admin_client: Client, test_cache: RespCache, mocker):
+        from django_cachex.admin.helpers import PAGE_SIZE
+
+        test_cache.hset("paged:hash", mapping={f"f{i:04d}": f"v{i}" for i in range(PAGE_SIZE + 5)})
+        mocker.patch.object(type(test_cache), "hgetall", side_effect=AssertionError("whole hash fetched"))
+        script_args: list[list[str]] = []
+        eval_script = test_cache.eval_script
+
+        def record(*args, **kwargs):
+            script_args.append(kwargs["args"])
+            return eval_script(*args, **kwargs)
+
+        mocker.patch.object(test_cache, "eval_script", side_effect=record)
+
+        response = admin_client.get(_key_detail_url("default", "paged:hash") + "?page=2")
+
+        assert response.status_code == 200
+        assert script_args == [[f"f{i:04d}" for i in range(PAGE_SIZE, PAGE_SIZE + 5)]]
+        content = response.content.decode()
+        assert set(re.findall(r"&quot;v(\d+)&quot;", content)) == {str(i) for i in range(PAGE_SIZE, PAGE_SIZE + 5)}
+
+    def test_hash_page_on_locmem_uses_hmget(self, admin_client: Client, test_cache: RespCache, mocker):
+        from django_cachex.admin.helpers import PAGE_SIZE
+
+        cache = caches["local"]
+        cache.hset("paged:hash", mapping={f"f{i:04d}": f"v{i}" for i in range(PAGE_SIZE + 5)})
+        hmget = mocker.patch.object(cache, "hmget", wraps=cache.hmget)
+
+        response = admin_client.get(_key_detail_url("local", "paged:hash") + "?page=2")
+
+        assert response.status_code == 200
+        assert len(hmget.call_args.args) - 1 == 5  # (key, *fields)
+        assert "&quot;v104&quot;" in response.content.decode()
+
+    def test_set_page_uses_sscan(self, admin_client: Client, test_cache: RespCache, mocker):
+        from django_cachex.admin.helpers import PAGE_SIZE
+
+        members = [f"m{i:04d}" for i in range(PAGE_SIZE + 5)]
+        test_cache.sadd("paged:set", *members)
+        mocker.patch.object(type(test_cache), "smembers", side_effect=AssertionError("whole set fetched"))
+
+        first = admin_client.get(_key_detail_url("default", "paged:set"))
+        second = admin_client.get(_key_detail_url("default", "paged:set") + "?page=2")
+
+        assert first.status_code == second.status_code == 200
+        shown = sorted(set(re.findall(r"&quot;(m\d{4})&quot;", first.content.decode())))
+        assert len(shown) == PAGE_SIZE
+        shown += set(re.findall(r"&quot;(m\d{4})&quot;", second.content.decode()))
+        assert sorted(shown) == members
+        assert f"({PAGE_SIZE + 5} members)" in first.content.decode()
+
+    def test_set_page_on_locmem_falls_back_to_smembers(self, admin_client: Client, test_cache: RespCache):
+        from django_cachex.admin.helpers import PAGE_SIZE
+
+        cache = caches["local"]
+        cache.sadd("paged:set", *(f"m{i:04d}" for i in range(PAGE_SIZE + 5)))
+
+        response = admin_client.get(_key_detail_url("local", "paged:set") + "?page=2")
+
+        assert response.status_code == 200
+        shown = dict.fromkeys(re.findall(r"&quot;(m\d{4})&quot;", response.content.decode()))
+        assert list(shown) == [f"m{i:04d}" for i in range(PAGE_SIZE, PAGE_SIZE + 5)]
+
+
+class TestKeyListPipelinesPerKeyLookups:
+    def test_ttl_type_and_size_are_batched(self, admin_client: Client, test_cache: RespCache, mocker):
+        test_cache.set("batched:s", "value")
+        test_cache.rpush("batched:l", "a", "b")
+        test_cache.hset("batched:h", "f", "v")
+        for per_key in ("ttl", "type", "llen", "hlen"):
+            mocker.patch.object(type(test_cache), per_key, side_effect=AssertionError(f"{per_key} called per key"))
+        pipeline = mocker.patch.object(test_cache, "pipeline", wraps=test_cache.pipeline)
+
+        response = admin_client.get(_key_list_url("default") + "&q=batched:*")
+
+        assert response.status_code == 200
+        assert pipeline.call_count == 2  # ttl/type, then collection sizes
+        rows = dict(
+            zip(
+                _result_column(response.content, "key_name"),
+                _result_column(response.content, "size_display"),
+                strict=True,
+            ),
+        )
+        assert rows["batched:l"].startswith("2")
+        assert rows["batched:h"].startswith("1")
+        assert rows["batched:s"].startswith(str(len(test_cache.encode("value"))))
+
+    def test_locmem_still_lists(self, admin_client: Client, test_cache: RespCache):
+        cache = caches["local"]
+        cache.set("plain:s", "value")
+        cache.rpush("plain:l", "a", "b")
+
+        response = admin_client.get(_key_list_url("local") + "&q=plain:*")
+
+        assert response.status_code == 200
+        assert sorted(_result_column(response.content, "key_name")) == ["plain:l", "plain:s"]
+
+    def test_size_pipeline_failure_falls_back_per_key(self, admin_client: Client, test_cache: RespCache, mocker):
+        test_cache.rpush("fallback:l", "a", "b", "c")
+        mocker.patch("django_cachex.admin.queryset._pipelined_sizes", side_effect=RuntimeError("boom"))
+
+        response = admin_client.get(_key_list_url("default") + "&q=fallback:*")
+
+        assert response.status_code == 200
+        assert _result_column(response.content, "size_display")[0].startswith("3")
+
+
+class TestTtlEditingNeedsExpireAndPersist:
+    """Stock Django backends have neither ``expire`` nor ``persist``, so the TTL
+    form used to promise something the handler could not deliver.
+    """
+
+    _stock_alias = staticmethod(TestBackendWithoutTypeSupport._stock_alias)
+
+    def test_ttl_form_is_hidden(self, admin_client: Client, test_cache):
+        with self._stock_alias():
+            caches["stock"].set("stock:ttl", "value")
+            response = admin_client.get(_key_detail_url("stock", "stock:ttl"))
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'name="ttl_value"' not in content
+        assert 'id="delete-form"' in content
+
+    def test_hand_crafted_set_ttl_is_refused(self, admin_client: Client, test_cache):
+        with self._stock_alias():
+            caches["stock"].set("stock:ttl", "value")
+            response = admin_client.post(
+                _key_detail_url("stock", "stock:ttl"),
+                {"action": "set_ttl", "ttl": "60"},
+                follow=True,
+            )
+            assert caches["stock"].get("stock:ttl") == "value"
+
+        assert response.status_code == 200
+        assert "does not support changing a key" in response.content.decode()
+
+    def test_ttl_form_is_shown_on_cachex_locmem(self, admin_client: Client, test_cache):
+        caches["local"].set("local:ttl", "value")
+
+        response = admin_client.get(_key_detail_url("local", "local:ttl"))
+
+        assert 'name="ttl_value"' in response.content.decode()
+
+
+class TestKeyAddRejectsUnknownTypes:
+    @pytest.mark.parametrize("bad_type", ["unknown", "bitmap", "<script>"])
+    def test_unknown_type_is_a_form_error(self, admin_client: Client, test_cache, bad_type: str):
+        response = admin_client.post(_key_add_url("default"), {"key": "add:odd", "type": bad_type})
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Unknown key type" in content
+        assert 'name="key"' in content
+        assert not test_cache.has_key("add:odd")
+
+
+class TestHelpFallsBackForUnmodelledTypes:
+    def test_unknown_type_gets_the_generic_help(self, admin_client: Client, test_cache: RespCache, mocker):
+        test_cache.set("help:opaque", "value")
+        mocker.patch.object(type(test_cache), "type", return_value=KeyType.UNKNOWN)
+
+        response = admin_client.get(_key_detail_url("default", "help:opaque") + "?help=1")
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "<strong>Key Details</strong>" in content
+
+
+class TestDriverErrorsAreMasked:
+    """Any message that quotes a driver exception can leak the connection URL."""
+
+    _error = OSError(f"Error 111 connecting to {_SECRET_LOCATION}. Connection refused.")
+
+    def _assert_masked(self, content: str) -> None:
+        assert "s3cr3t-pw" not in content
+        assert "***@cache.example.test" in content
+
+    def test_key_detail_action_error(self, admin_client: Client, test_cache: RespCache, mocker):
+        test_cache.rpush("masked:list", "a")
+        mocker.patch.object(type(test_cache), "lpop", side_effect=self._error)
+
+        response = admin_client.post(_key_detail_url("default", "masked:list"), {"action": "lpop"}, follow=True)
+
+        assert response.status_code == 200
+        self._assert_masked(response.content.decode())
+
+    def test_key_detail_value_read_error(self, admin_client: Client, test_cache: RespCache, mocker):
+        test_cache.set("masked:str", "value")
+        mocker.patch.object(type(test_cache), "eval_script", side_effect=self._error)
+        mocker.patch.object(type(test_cache), "get", side_effect=self._error)
+
+        response = admin_client.get(_key_detail_url("default", "masked:str"))
+
+        assert response.status_code == 200
+        self._assert_masked(response.content.decode())
+
+    def test_container_page_error(self, admin_client: Client, test_cache: RespCache, mocker):
+        test_cache.rpush("masked:page", "a")
+        mocker.patch.object(type(test_cache), "llen", side_effect=self._error)
+
+        response = admin_client.get(_key_detail_url("default", "masked:page"))
+
+        assert response.status_code == 200
+        self._assert_masked(response.content.decode())
+
+    def test_cache_detail_flush_error(self, admin_client: Client, test_cache: RespCache, mocker):
+        mocker.patch.object(type(test_cache), "flush_db", side_effect=self._error)
+
+        response = admin_client.post(_cache_detail_url("default"), {"action": "flush_db"}, follow=True)
+
+        assert response.status_code == 200
+        self._assert_masked(response.content.decode())
+
+    def test_cache_detail_info_error(self, admin_client: Client, test_cache: RespCache, mocker):
+        mocker.patch.object(type(test_cache), "info", side_effect=self._error)
+
+        response = admin_client.get(_cache_detail_url("default"))
+
+        assert response.status_code == 200
+        self._assert_masked(response.content.decode())
+
+    def test_key_list_query_error(self, admin_client: Client, test_cache: RespCache, mocker):
+        mocker.patch.object(type(test_cache), "scan", side_effect=self._error)
+
+        response = admin_client.get(_key_list_url("default"))
+
+        assert response.status_code == 200
+        self._assert_masked(response.content.decode())
+
+    def test_bulk_delete_error(self, admin_client: Client, test_cache: RespCache, mocker):
+        test_cache.set("masked:bulk", "value")
+        mocker.patch.object(type(test_cache), "delete", side_effect=self._error)
+
+        response = admin_client.post(
+            reverse("admin:django_cachex_key_changelist") + "?cache=default",
+            {"action": "delete_selected_keys", "_selected_action": [Key.make_pk("default", "masked:bulk")]},
+            follow=True,
+        )
+
+        assert response.status_code == 200
+        self._assert_masked(response.content.decode())
+
+
+class TestGatedPostsDenyStaffWithoutPermission:
+    @pytest.mark.parametrize("action", ["flush_db", "clear_all_versions"])
+    def test_cache_detail_actions_need_change_cache(self, db, test_cache: RespCache, action: str):
+        client = _staff_client(["view_cache"])
+        test_cache.set("gated:cache", "value")
+
+        response = client.post(_cache_detail_url("default"), {"action": action})
+
+        assert response.status_code == 403
+        assert test_cache.get("gated:cache") == "value"
+
+    def test_key_delete_needs_delete_key(self, db, test_cache: RespCache):
+        client = _staff_client(["view_key", "change_key"])
+        test_cache.set("gated:key", "value")
+
+        response = client.post(_key_detail_url("default", "gated:key"), {"action": "delete"})
+
+        assert response.status_code == 403
+        assert test_cache.get("gated:key") == "value"

@@ -1,6 +1,7 @@
 """Helper functions for cache admin views."""
 
 import contextlib
+import itertools
 import json
 import logging
 import re
@@ -11,7 +12,12 @@ from django.conf import settings
 from django.core.cache import caches
 from django.utils.translation import gettext_lazy as _
 
-from django_cachex.admin.cas import get_hash_field_sha1s_for, get_list_sha1s_range, supports_cas
+from django_cachex.admin.cas import (
+    get_hash_fields_with_sha1s,
+    get_list_range_with_sha1s,
+    get_string_with_sha1,
+    supports_cas,
+)
 from django_cachex.cache.resp import RespCache
 from django_cachex.exceptions import CompressorError, NotSupportedError, SerializerError
 from django_cachex.types import KeyType
@@ -52,6 +58,16 @@ def mask_location(location: Any) -> str:
     return mask_credentials(str(location)) if location else ""
 
 
+def unreachable_message(cache_name: str, exc: BaseException) -> str:
+    """Describe a failed cache command for a message, with the connection URL masked.
+
+    ``get_cache`` only builds the backend; when the server is down, the first
+    command (``has_key``, ``type``) is what raises, and driver text can quote
+    the URL it failed to reach.
+    """
+    return f"Cache '{cache_name}' is unreachable: {mask_credentials(str(exc))}"
+
+
 def read_value(cache: Any, key: str) -> Any:
     """Read a value for display, bypassing stampede prevention.
 
@@ -62,6 +78,37 @@ def read_value(cache: Any, key: str) -> Any:
     if isinstance(cache, RespCache):
         return cache.get(key, stampede_prevention=False)
     return cache.get(key)
+
+
+def read_value_with_sha1(cache: Any, key: str) -> tuple[Any, str | None]:
+    """Read a value for display together with its CAS fingerprint.
+
+    Both come from one script call, so a concurrent SET cannot pair the old
+    value with the new fingerprint (which would let the next save pass the
+    conflict check and overwrite the newer value). The fingerprint is None
+    without scripting, when the script fails, and for a key that is gone.
+    """
+    if supports_cas(cache):
+        try:
+            found = get_string_with_sha1(cache, key)
+        except CompressorError, SerializerError:
+            raise
+        except Exception:  # noqa: BLE001
+            _log_cas_fallback(key, KeyType.STRING)
+        else:
+            return found if found is not None else (None, None)
+    return read_value(cache, key), None
+
+
+def _log_cas_fallback(key: str, key_type: str) -> None:
+    # Called from the ``except`` clause. CAS protection is best-effort: the
+    # page still renders, the next update just skips conflict detection.
+    logger.warning(
+        "CAS fingerprint collection failed for key %r (type=%s); edits will skip conflict checks",
+        key,
+        key_type,
+        exc_info=True,  # noqa: LOG014
+    )
 
 
 def _row(label: Any, value: Any) -> dict[str, Any] | None:
@@ -258,14 +305,7 @@ def get_type_data(
     if key_type not in CONTAINER_TYPES:
         return {}
 
-    result = _fetch_type_data(cache, key, key_type, page=page)
-
-    # CAS fingerprints are hashed server-side, so backends without scripting
-    # (stock Django, LocMem, Database) get no conflict detection.
-    if result and supports_cas(cache):
-        _add_cas_fingerprints(cache, key, key_type, result)
-
-    return result
+    return _fetch_type_data(cache, key, key_type, page=page)
 
 
 def is_json_serializable(value: Any) -> bool:
@@ -332,8 +372,43 @@ def _fetch_stream_data(cache: Any, key: str, *, page: int) -> dict[str, Any]:
     return {"entries": entries[pagination["start_index"] :], "length": length, "pagination": pagination}
 
 
+def _list_entries(cache: Any, key: str, start: int, stop: int) -> list[tuple[Any, str]]:
+    """One page of list elements as ``(raw, sha1)`` pairs.
+
+    CAS fingerprints are hashed server-side, so backends without scripting
+    (stock Django, LocMem, Database) get an empty slot and no conflict
+    detection; the template sees the same tuple shape either way.
+    """
+    if supports_cas(cache):
+        try:
+            return get_list_range_with_sha1s(cache, key, start, stop)
+        except CompressorError, SerializerError:
+            raise
+        except Exception:  # noqa: BLE001
+            _log_cas_fallback(key, KeyType.LIST)
+    return [(raw, "") for raw in cache.lrange(key, start, stop)]
+
+
+def _hash_entries(cache: Any, key: str, fields: list[str]) -> list[tuple[str, Any, str]]:
+    """The given hash fields as ``(field, raw, sha1)`` triples. See :func:`_list_entries`."""
+    if not fields:
+        return []
+    if supports_cas(cache):
+        try:
+            return get_hash_fields_with_sha1s(cache, key, fields)
+        except CompressorError, SerializerError:
+            raise
+        except Exception:  # noqa: BLE001
+            _log_cas_fallback(key, KeyType.HASH)
+    return [(field, raw, "") for field, raw in zip(fields, cache.hmget(key, *fields), strict=True)]
+
+
 def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> dict[str, Any]:  # noqa: PLR0911
-    """Fetch type-specific data from cache, paginated."""
+    """Fetch type-specific data from cache, paginated.
+
+    Only the requested page travels: lists and sorted sets are ranged, a hash
+    is read through HKEYS plus the page's fields, a set through SSCAN.
+    """
     try:
         match key_type:
             case KeyType.LIST:
@@ -341,29 +416,33 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
                 pagination = _paginate(length, page)
                 start = pagination["start_index"]
                 stop = pagination["end_index"] - 1  # LRANGE stop is inclusive
-                # Every entry carries an empty SHA1 slot that CAS fills in later, so
-                # the template sees the same tuple shape on backends without scripting.
                 item_entries = []
-                for i, raw in enumerate(cache.lrange(key, start, stop)):
+                for i, (raw, sha1) in enumerate(_list_entries(cache, key, start, stop)):
                     item, editable = format_value_for_display(raw)
-                    item_entries.append((start + i, item, "", editable))
+                    item_entries.append((start + i, item, sha1, editable))
                 return {"length": length, "pagination": pagination, "item_entries": item_entries}
             case KeyType.HASH:
-                fields = {str(k): v for k, v in cache.hgetall(key).items()}
-                length = len(fields)
+                length = cache.hlen(key)
                 pagination = _paginate(length, page)
                 s, e = pagination["start_index"], pagination["end_index"]
+                fields = [str(f) for f in cache.hkeys(key)][s:e]
                 field_entries = []
-                for field, raw in list(fields.items())[s:e]:
+                for field, raw, sha1 in _hash_entries(cache, key, fields):
                     value, editable = format_value_for_display(raw)
-                    field_entries.append((field, value, "", editable))
+                    field_entries.append((field, value, sha1, editable))
                 return {"length": length, "pagination": pagination, "field_entries": field_entries}
             case KeyType.SET:
-                members = sorted(format_value_for_display(m) for m in cache.smembers(key))
-                length = len(members)
+                length = cache.scard(key)
                 pagination = _paginate(length, page)
                 s, e = pagination["start_index"], pagination["end_index"]
-                return {"members": members[s:e], "length": length, "pagination": pagination}
+                try:
+                    # SSCAN stops once the page is full instead of pulling
+                    # every member; the page comes out in server order.
+                    page_members = list(itertools.islice(cache.sscan_iter(key, count=PAGE_SIZE), s, e))
+                    members = [format_value_for_display(m) for m in page_members]
+                except NotSupportedError:
+                    members = sorted(format_value_for_display(m) for m in cache.smembers(key))[s:e]
+                return {"members": members, "length": length, "pagination": pagination}
             case KeyType.ZSET:
                 length = cache.zcard(key)
                 pagination = _paginate(length, page)
@@ -375,45 +454,8 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
                 return _fetch_stream_data(cache, key, page=page)
     except Exception as e:
         logger.exception("Failed to fetch type-specific admin data for key %r", key)
-        return {"error": str(e)}
+        return {"error": mask_credentials(str(e))}
     return {}
-
-
-def _add_cas_fingerprints(cache: Any, key: str, key_type: str | None, result: dict[str, Any]) -> None:
-    """Add SHA1 fingerprints to type data for CAS protection.
-
-    Produces combined list structures usable in Django templates
-    (since templates can't do variable-key dict lookups).
-    """
-    try:
-        # ``_fetch_type_data`` always paginates lists and hashes, so the range
-        # readers are the only ones needed.
-        pagination = result["pagination"]
-        match key_type:
-            case KeyType.LIST:
-                start = pagination["start_index"]
-                stop = pagination["end_index"] - 1  # inclusive for LRANGE
-                list_sha1s = get_list_sha1s_range(cache, key, start, stop)
-                result["item_entries"] = [
-                    (index, item, list_sha1s[i] if i < len(list_sha1s) else "", editable)
-                    for i, (index, item, _, editable) in enumerate(result.get("item_entries", []))
-                ]
-            case KeyType.HASH:
-                entries = result.get("field_entries", [])
-                hash_sha1s = get_hash_field_sha1s_for(cache, key, [field for field, *_ in entries])
-                result["field_entries"] = [
-                    (field, value, hash_sha1s.get(field, ""), editable) for field, value, _, editable in entries
-                ]
-    except Exception:
-        # CAS protection is best-effort. Mirror the warning emitted by
-        # ``_key_detail_view`` (key_detail.py) so the operator knows the
-        # next update will skip conflict detection.
-        logger.warning(
-            "CAS fingerprint collection failed for key %r (type=%s); edits will skip conflict checks",
-            key,
-            key_type,
-            exc_info=True,
-        )
 
 
 def get_size(cache: Any, key: str, key_type: str | None = None) -> int | None:
@@ -518,5 +560,5 @@ def get_slowlog(cache: Any, count: int = 25) -> dict[str, Any]:
     except AttributeError, NotSupportedError:
         raise
     except Exception as e:  # noqa: BLE001
-        result["error"] = str(e)
+        result["error"] = mask_credentials(str(e))
     return result

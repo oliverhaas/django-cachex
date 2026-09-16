@@ -1519,9 +1519,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         return self
 
     # ---- raw ----
-    # No ``__getattr__`` command fallback: a typo or an introspection probe
-    # (``hasattr``, ``copy``, ``pickle``) must not queue a stray command.
-    # Anything outside the protocol goes through ``execute_command``.
+    # No ``__getattr__`` fallback: ``hasattr``/``copy`` must not queue a command.
     def execute_command(self, *args: Any) -> Self:
         self._batch.custom_command(_enc_list(args))
         return self
@@ -1727,9 +1725,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
                 return client
             async with lock:
                 if locks.get(loop) is not lock:
-                    # ``aclose`` dropped the loop's entries while this task
-                    # waited for the lock; a client stored in the detached
-                    # ``sub`` would never be closed, so start over.
+                    # ``aclose`` ran while we waited for the lock; start over.
                     continue
                 client = sub.get(self._config_key)
                 if client is None:

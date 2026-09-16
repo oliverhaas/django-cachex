@@ -11,8 +11,11 @@ from django_cachex.admin.cas import (
     cas_update_string,
     cas_update_zset_score,
     get_hash_field_sha1s_for,
+    get_hash_fields_with_sha1s,
+    get_list_range_with_sha1s,
     get_list_sha1s_range,
     get_string_sha1,
+    get_string_with_sha1,
     supports_cas,
 )
 
@@ -334,3 +337,39 @@ class TestHashFieldSHA1sFor:
     def test_nonexistent_key(self, test_cache: RespCache):
         sha1s = get_hash_field_sha1s_for(test_cache, "nonexistent", ["f1"])
         assert sha1s == {}
+
+
+class TestValueWithSHA1Readers:
+    """The page shows a value next to the fingerprint the next save is checked
+    against, so both must come from the same read.
+    """
+
+    def test_string(self, test_cache: RespCache):
+        test_cache.set("pair_str", {"n": 1})
+        found = get_string_with_sha1(test_cache, "pair_str")
+        assert found is not None
+        value, sha1 = found
+        assert value == {"n": 1}
+        assert sha1 == get_string_sha1(test_cache, "pair_str")
+
+    def test_string_missing(self, test_cache: RespCache):
+        assert get_string_with_sha1(test_cache, "nonexistent") is None
+
+    def test_list_range(self, test_cache: RespCache):
+        test_cache.rpush("pair_list", "a", "b", "c", "d")
+        pairs = get_list_range_with_sha1s(test_cache, "pair_list", 1, 2)
+        assert [v for v, _ in pairs] == ["b", "c"]
+        assert [s for _, s in pairs] == get_list_sha1s_range(test_cache, "pair_list", 1, 2)
+
+    def test_list_missing(self, test_cache: RespCache):
+        assert get_list_range_with_sha1s(test_cache, "nonexistent", 0, 10) == []
+
+    def test_hash_fields(self, test_cache: RespCache):
+        test_cache.hset("pair_hash", mapping={"f1": "v1", "f2": 2, "f3": "v3"})
+        triples = get_hash_fields_with_sha1s(test_cache, "pair_hash", ["f1", "missing", "f2"])
+        assert [(f, v) for f, v, _ in triples] == [("f1", "v1"), ("f2", 2)]
+        assert {f: s for f, _, s in triples} == get_hash_field_sha1s_for(test_cache, "pair_hash", ["f1", "f2"])
+
+    def test_hash_empty_fields(self, test_cache: RespCache):
+        test_cache.hset("pair_hash", "f1", "v1")
+        assert get_hash_fields_with_sha1s(test_cache, "pair_hash", []) == []

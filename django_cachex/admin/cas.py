@@ -59,6 +59,38 @@ end
 return result
 """
 
+# One script per type, so a concurrent write cannot pair a stale value
+# with a fresh SHA1 between two separate reads.
+
+_GET_STRING_WITH_SHA1 = """\
+local v = redis.call('GET', KEYS[1])
+if v == false then return false end
+return {v, redis.sha1hex(v)}
+"""
+
+_GET_LIST_RANGE_WITH_SHA1S = """\
+local items = redis.call('LRANGE', KEYS[1], tonumber(ARGV[1]), tonumber(ARGV[2]))
+local result = {}
+for i = 1, #items do
+    result[#result+1] = items[i]
+    result[#result+1] = redis.sha1hex(items[i])
+end
+return result
+"""
+
+_GET_HASH_FIELDS_WITH_SHA1S = """\
+local result = {}
+for i = 1, #ARGV do
+    local v = redis.call('HGET', KEYS[1], ARGV[i])
+    if v ~= false then
+        result[#result+1] = ARGV[i]
+        result[#result+1] = v
+        result[#result+1] = redis.sha1hex(v)
+    end
+end
+return result
+"""
+
 # =============================================================================
 # CAS write scripts (used at form submit to atomically check-then-update)
 # =============================================================================
@@ -172,6 +204,58 @@ def get_hash_field_sha1s_for(cache: RespCache, key: str, fields: list[str]) -> d
         sha1 = result[i + 1].decode() if isinstance(result[i + 1], bytes) else str(result[i + 1])
         sha1s[field] = sha1
     return sha1s
+
+
+def _text(value: bytes | str) -> str:
+    return value.decode() if isinstance(value, bytes) else str(value)
+
+
+def get_string_with_sha1(cache: RespCache, key: str) -> tuple[Any, str] | None:
+    """Read a string value and its SHA1 fingerprint in one atomic call.
+
+    Returns the decoded value with the fingerprint, or None for a missing key.
+    """
+    result = cache.eval_script(_GET_STRING_WITH_SHA1, keys=[key], pre_hook=keys_only_pre)
+    if not result:
+        return None
+    raw, sha1 = result
+    return cache.decode(raw), _text(sha1)
+
+
+def get_list_range_with_sha1s(cache: RespCache, key: str, start: int, stop: int) -> list[tuple[Any, str]]:
+    """Read a range of list elements with their SHA1 fingerprints in one atomic call.
+
+    Args:
+        start: Start index (inclusive), same semantics as LRANGE.
+        stop: Stop index (inclusive), same semantics as LRANGE.
+    """
+    result = cache.eval_script(
+        _GET_LIST_RANGE_WITH_SHA1S,
+        keys=[key],
+        args=[start, stop],
+        pre_hook=keys_only_pre,
+    )
+    if not result:
+        return []
+    return [(cache.decode(result[i]), _text(result[i + 1])) for i in range(0, len(result), 2)]
+
+
+def get_hash_fields_with_sha1s(cache: RespCache, key: str, fields: list[str]) -> list[tuple[str, Any, str]]:
+    """Read the given hash fields with their SHA1 fingerprints in one atomic call.
+
+    Fields that no longer exist are left out.
+    """
+    if not fields:
+        return []
+    result = cache.eval_script(
+        _GET_HASH_FIELDS_WITH_SHA1S,
+        keys=[key],
+        args=fields,
+        pre_hook=keys_only_pre,
+    )
+    if not result:
+        return []
+    return [(_text(result[i]), cache.decode(result[i + 1]), _text(result[i + 2])) for i in range(0, len(result), 3)]
 
 
 # =============================================================================
