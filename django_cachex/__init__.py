@@ -32,6 +32,7 @@ if TYPE_CHECKING:
         encoded_pre,
         full_encode_pre,
         keys_only_pre,
+        script_sha,
     )
     from django_cachex.semaphore import (
         Semaphore,
@@ -59,6 +60,7 @@ _LAZY_EXPORTS = {
     "encoded_pre": "django_cachex.script",
     "full_encode_pre": "django_cachex.script",
     "keys_only_pre": "django_cachex.script",
+    "script_sha": "django_cachex.script",
     "Semaphore": "django_cachex.semaphore",
     "SemaphoreError": "django_cachex.semaphore",
     "SemaphoreTimeoutError": "django_cachex.semaphore",
@@ -104,6 +106,7 @@ __all__ = [
     "encoded_pre",
     "full_encode_pre",
     "keys_only_pre",
+    "script_sha",
 ]
 
 # Keep the metadata helpers out of ``django_cachex``'s public namespace.

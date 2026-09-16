@@ -43,7 +43,7 @@ from django_cachex.script import ScriptHelpers, reject_stray_encoded
 # subscript through mypy's name resolution.
 _set = set
 
-_special_re = re.compile("([*?[])")
+_special_re = re.compile(r"([*?[\\])")
 
 # Consumed by Django's ``BaseCache.__init__``. Forwarding them to the
 # connection pool raises "unexpected keyword argument" on the first command.
@@ -55,12 +55,16 @@ _ALWAYS_HASHABLE = (str, bytes, int, float, type(None))
 
 
 def _glob_escape(s: str) -> str:
-    """Escape glob special characters in a string."""
-    return _special_re.sub(r"[\1]", s)
+    """Escape glob special characters in a string.
+
+    Backslash-escaped, the server's own escape: it also covers the
+    backslash itself, which a ``[\\]`` class could not.
+    """
+    return _special_re.sub(r"\\\1", s)
 
 
-def _has_hash_tag(key: str) -> bool:
-    """Return True if ``key`` contains a Redis hash tag (a ``{...}`` with content).
+def _hash_tag(key: str) -> str | None:
+    """Return the Redis hash tag of ``key`` (the content of its first ``{...}``), or None.
 
     Cluster slot computation uses the first ``{`` followed by a non-empty
     ``...}``. ``"foo}bar{baz"`` and ``"foo{}bar"`` don't qualify, even
@@ -68,9 +72,11 @@ def _has_hash_tag(key: str) -> bool:
     """
     open_idx = key.find("{")
     if open_idx == -1:
-        return False
+        return None
     close_idx = key.find("}", open_idx + 1)
-    return close_idx > open_idx + 1
+    if close_idx <= open_idx + 1:
+        return None
+    return key[open_idx + 1 : close_idx]
 
 
 def _load_codec(config: str | type | Any) -> Any:
@@ -108,6 +114,12 @@ class RespCache(BaseCachex):
             self._servers = re.split("[;,]", server)
         else:
             self._servers = server
+        if not any(s.strip() for s in self._servers):
+            msg = (
+                f"{type(self).__name__} requires a LOCATION. Set it to a URL such as "
+                f"'redis://127.0.0.1:6379/0' (or a list of them, primary first)."
+            )
+            raise ImproperlyConfigured(msg)
 
         # ``super().__init__`` already read these off ``params``, so dropping
         # them here just keeps them out of the pool kwargs.
@@ -130,6 +142,11 @@ class RespCache(BaseCachex):
         self._serializers: list[Any] = self._create_serializers(serializer_config)
 
         self._compressors: list[Any] = self._create_compressors(self._options.get("compressor"))
+
+        # Building the adapter opens no connection, so a missing driver or a
+        # bad OPTIONS entry surfaces at ``caches[alias]`` rather than on the
+        # first command.
+        self.adapter  # noqa: B018
 
     @cached_property
     def adapter(self) -> RespAdapterProtocol:
@@ -953,8 +970,13 @@ class RespCache(BaseCachex):
         and pipelines ``MEMORY USAGE`` in batches, keeping a heap of the top
         ``count``. Keys come back without prefix or version, as
         :meth:`iter_keys` returns them; ``samples`` is passed through to
-        :meth:`memory_usage`.
+        :meth:`memory_usage`. ``count=0`` returns ``[]`` without scanning.
         """
+        if count < 0:
+            msg = f"count must not be negative, got {count}"
+            raise ValueError(msg)
+        if count == 0:
+            return []
         heap: list[tuple[int, str]] = []
         scan = self.iter_keys(pattern, version=version, itersize=itersize)
         for keys in batched(scan, self._LARGEST_KEYS_BATCH, strict=False):
@@ -974,6 +996,11 @@ class RespCache(BaseCachex):
         itersize: int | None = None,
     ) -> list[tuple[str, int]]:
         """See :meth:`largest_keys`."""
+        if count < 0:
+            msg = f"count must not be negative, got {count}"
+            raise ValueError(msg)
+        if count == 0:
+            return []
         heap: list[tuple[int, str]] = []
         batch: list[str] = []
         async for key in self.aiter_keys(pattern, version=version, itersize=itersize):
@@ -2435,6 +2462,11 @@ class RespCache(BaseCachex):
         deduplicated semantics of a Redis set. Members that fail either
         rule are rejected here rather than at read time, where a single bad
         member would raise ``TypeError`` and take down the whole key.
+
+        Python equality decides membership on the way back: ``1``, ``True``
+        and ``1.0`` are three distinct members on the server (``scard``
+        counts three) but one entry in the returned ``set``, exactly as in
+        ``{1, True, 1.0}``.
         """
         if not members:
             return 0
@@ -2891,6 +2923,8 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Add members to a sorted set."""
+        if not mapping:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         encoded = {self.encode(member): score for member, score in mapping.items()}
         return self.adapter.zadd(key, encoded, nx=nx, xx=xx, ch=ch, gt=gt, lt=lt)
@@ -3099,6 +3133,8 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Add members to a sorted set asynchronously."""
+        if not mapping:
+            return 0
         key = self.make_and_validate_key(key, version=version)
         encoded = {self.encode(member): score for member, score in mapping.items()}
         return await self.adapter.azadd(key, encoded, nx=nx, xx=xx, ch=ch, gt=gt, lt=lt)
@@ -3323,8 +3359,16 @@ class RespCache(BaseCachex):
         minid: str | None = None,
         limit: int | None = None,
         version: int | None = None,
-    ) -> str:
-        """Add an entry to a stream."""
+    ) -> str | None:
+        """Add an entry to a stream and return its id.
+
+        ``fields`` needs at least one pair; the server rejects an empty entry.
+        With ``nomkstream=True`` a missing stream is left alone and ``None``
+        comes back instead of an id.
+        """
+        if not fields:
+            msg = "xadd requires at least one field/value pair"
+            raise ValueError(msg)
         key = self.make_and_validate_key(key, version=version)
         encoded_fields = {f: self.encode(v) for f, v in fields.items()}
         return self.adapter.xadd(
@@ -3349,8 +3393,11 @@ class RespCache(BaseCachex):
         minid: str | None = None,
         limit: int | None = None,
         version: int | None = None,
-    ) -> str:
-        """Add an entry to a stream asynchronously."""
+    ) -> str | None:
+        """Add an entry to a stream asynchronously. See :meth:`xadd`."""
+        if not fields:
+            msg = "xadd requires at least one field/value pair"
+            raise ValueError(msg)
         key = self.make_and_validate_key(key, version=version)
         encoded_fields = {f: self.encode(v) for f, v in fields.items()}
         return await self.adapter.axadd(
@@ -4052,29 +4099,42 @@ class RespClusterCache(RespCache):
             raise NotSupportedError("MULTI/EXEC pipelines", backend="cluster")
         return await super().apipeline(transaction=False, version=version)
 
+    def _check_version_rename(self, key: str, delta: int, version: int | None) -> None:
+        """Reject a version change whose ``RENAME`` would cross slots.
+
+        ``KEY_PREFIX:V:key`` and ``KEY_PREFIX:V+delta:key`` only land in
+        the same slot when both *made* keys carry the same hash tag
+        (``{...}`` segment), which means one that excludes the version.
+        Without that the rename hits CROSSSLOT. Reject up front instead of
+        leaving users with a runtime cluster error and a half-renamed state.
+
+        The made keys are what gets checked, not the raw one, so a
+        ``KEY_PREFIX`` of ``"{app}"`` colocates every key it produces and
+        works here just as well as a ``{...}`` inside the key itself, while
+        a ``KEY_FUNCTION`` that tags the version is caught.
+        """
+        if version is None:
+            version = self.version
+        old_key = self.make_and_validate_key(key, version=version)
+        new_key = self.make_and_validate_key(key, version=version + delta)
+        tag = _hash_tag(old_key)
+        if tag is None or tag != _hash_tag(new_key):
+            raise NotSupportedError(
+                "incr_version/decr_version without a shared hash tag",
+                backend="cluster",
+                detail=f"{old_key!r} and {new_key!r} need the same {{...}} segment to stay in one slot",
+            )
+
     @override
     def incr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
-        """Cluster mode can't ``RENAME`` across slots.
-
-        ``KEY_PREFIX:V:key`` and ``KEY_PREFIX:V+1:key`` only land in the
-        same slot when the *made* key includes a hash tag (``{...}``
-        segment) that excludes the version. Without one the rename hits
-        CROSSSLOT. Reject up front instead of leaving users with a runtime
-        cluster error and a half-renamed state.
-
-        The made key is what gets checked, not the raw one, so a
-        ``KEY_PREFIX`` of ``"{app}"`` colocates every key it produces and
-        works here just as well as a ``{...}`` inside the key itself.
-        """
-        if not _has_hash_tag(self.make_and_validate_key(key, version=version)):
-            raise NotSupportedError("incr_version (without hash tag)", backend="cluster")
+        """See :meth:`_check_version_rename`: both versions need one hash tag."""
+        self._check_version_rename(key, delta, version)
         return super().incr_version(key, delta, version)
 
     @override
     async def aincr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
-        """See :meth:`incr_version`, same hash-tag requirement."""
-        if not _has_hash_tag(self.make_and_validate_key(key, version=version)):
-            raise NotSupportedError("aincr_version (without hash tag)", backend="cluster")
+        """See :meth:`_check_version_rename`: both versions need one hash tag."""
+        self._check_version_rename(key, delta, version)
         return await super().aincr_version(key, delta, version)
 
     @override
