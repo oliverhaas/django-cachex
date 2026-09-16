@@ -2460,6 +2460,10 @@ identically.</p>
 </thead>
 <tbody>
 <tr>
+<td><code>encoded_pre</code></td>
+<td>Prefix keys, encode the args wrapped in <code>Encoded(...)</code>, pass the rest through</td>
+</tr>
+<tr>
 <td><code>keys_only_pre</code></td>
 <td>Prefix keys, leave args unchanged</td>
 </tr>
@@ -2477,6 +2481,7 @@ identically.</p>
 </tr>
 </tbody>
 </table>
+<p><code>Encoded(value)</code> marks one ARGV entry for <code>encoded_pre</code>. An <code>Encoded</code> that reaches the adapter unwrapped (no <code>pre_hook</code>, or a hook that does not handle it) raises <code>TypeError</code>, as does <code>Encoded</code> in <code>keys</code> or <code>Encoded(Encoded(...))</code>.</p>
 <h4 id="scripthelpers">ScriptHelpers<a class="headerlink" href="#scripthelpers" title="Permanent link">&para;</a></h4>
 <p>The helpers object passed to pre/post hooks:</p>
 <table>

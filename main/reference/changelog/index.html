@@ -957,6 +957,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#fixes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1035,7 +1046,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#features" class="md-nav__link">
+  <a href="#features_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Features
@@ -1207,7 +1218,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#features_1" class="md-nav__link">
+  <a href="#features_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Features
@@ -1413,7 +1424,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#features_2" class="md-nav__link">
+  <a href="#features_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Features
@@ -1485,7 +1496,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#features_3" class="md-nav__link">
+  <a href="#features_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         Features
@@ -1839,6 +1850,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#fixes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1917,7 +1939,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#features" class="md-nav__link">
+  <a href="#features_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Features
@@ -2089,7 +2111,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#features_1" class="md-nav__link">
+  <a href="#features_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Features
@@ -2295,7 +2317,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#features_2" class="md-nav__link">
+  <a href="#features_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Features
@@ -2367,7 +2389,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#features_3" class="md-nav__link">
+  <a href="#features_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         Features
@@ -2599,6 +2621,10 @@
 
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>Encoded</code> and <code>encoded_pre</code> for <code>eval_script()</code>: wrap the ARGV entries that must go through the serializer and compressor, and leave the scalars Lua reads with <code>tonumber</code> or a string compare bare. The existing hooks are the two extremes (<code>keys_only_pre</code> encodes nothing, <code>full_encode_pre</code> encodes everything); <code>encoded_pre</code> covers the scripts in between without a hand-rolled <code>encode()</code> at the call site. An <code>Encoded</code> that reaches the adapter unwrapped raises <code>TypeError</code> naming the missing hook, as do <code>Encoded</code> in <code>keys</code> and <code>Encoded(Encoded(...))</code>.</li>
+</ul>
 <h3 id="fixes">Fixes<a class="headerlink" href="#fixes" title="Permanent link">&para;</a></h3>
 <ul>
 <li>The <code>Changelog</code> link in the package metadata, shown on PyPI, pointed at <code>reference/changelog/</code> on the docs site, a path that does not exist because the site is versioned with mike and every page lives under a version prefix. It now points at <code>latest/reference/changelog/</code>.</li>
@@ -2623,7 +2649,7 @@
 <li><code>ValkeyGlidePipelineAdapter</code> no longer has <code>mget()</code> and <code>mset()</code>. They were undocumented, had no callers and are not part of the pipeline protocol.</li>
 <li>A <code>LOCATION</code> list whose URLs disagree on TLS scheme, username, password or database raises <code>ImproperlyConfigured</code> on the valkey-glide backends instead of silently using the first URL's settings. valkey-glide applies one connection setting to the whole address list.</li>
 </ul>
-<h3 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h3>
+<h3 id="features_1">Features<a class="headerlink" href="#features_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>TrackingCache</code>: a local read cache over an existing redis-py or valkey-py alias, kept coherent by the server's <code>CLIENT TRACKING</code> broadcast mode. Nothing is cached while its listener is down; cluster and valkey-glide transports are rejected. With <code>OPTIONS["coherence"] = "ttl"</code> no listener runs, <code>local_timeout</code> alone bounds staleness, and any transport works. See <a href="../../user-guide/composite-backends/#trackingcache">Composite backends</a>.</li>
 <li>Adapters gained <code>invalidation_listener(prefixes)</code>, a <code>CLIENT TRACKING BCAST</code> subscription; the cluster and valkey-glide adapters raise <code>NotSupportedError</code>.</li>
@@ -2792,7 +2818,7 @@
 <li><code>RespCache</code>, <code>RespClusterCache</code> and <code>RespSentinelCache</code> raise <code>ImproperlyConfigured</code> when used as a <code>BACKEND</code> directly. They bind no driver and exist to be subclassed; naming one used to fail later with an obscure attribute error.</li>
 <li><code>xpending()</code> rejects filters given without <code>count</code>. Passing <code>start</code>, <code>end</code>, <code>consumer</code> or <code>idle</code> without a <code>count</code> silently fell back to the unfiltered summary form and returned a dict where a per-message list was asked for. It raises <code>ValueError</code> now, on the client, the pipeline and both async twins.</li>
 </ul>
-<h3 id="features_1">Features<a class="headerlink" href="#features_1" title="Permanent link">&para;</a></h3>
+<h3 id="features_2">Features<a class="headerlink" href="#features_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Async admin surface on <code>TieredCache</code>: <code>akeys</code>, <code>aiter_keys</code>, <code>ascan</code>, <code>attl</code>, <code>apttl</code>, <code>atype</code>, <code>apersist</code>, <code>aexpire</code> and <code>adelete_pattern</code>.</li>
 <li><code>ascan()</code> on <code>DatabaseCache</code>, which had the sync <code>scan</code> but inherited the <code>NotSupportedError</code> default for the async twin.</li>
@@ -2943,7 +2969,7 @@ release.</p>
 <li><code>CachexCompat</code> removed. The mixin class that emulated the cachex ext surface on top of an arbitrary <code>BaseCache</code> is gone, along with the admin's "wrapped" support tier. Django's <code>BaseCache</code> and the stock backends (<code>LocMemCache</code>, <code>RedisCache</code>, <code>DatabaseCache</code>, <code>FileBasedCache</code>, <code>MemcachedCache</code>, <code>DummyCache</code>) deliberately don't expose key listing, so the wrap couldn't drive the admin's browse views meaningfully. Use <code>django_cachex.cache.LocMemCache</code> / <code>DatabaseCache</code> (drop-in replacements) for full admin support; non-cachex backends now show as "limited" (configuration only).</li>
 <li>Cluster <code>LOCATION</code> with a database number now raises on the redis-py and valkey-py cluster backends. Those two are built with the driver's <code>from_url()</code>, which rejects a non-zero <code>db</code> in the URL path or query (<code>RedisClusterException</code> / <code>ValkeyClusterException</code>). The old code read only host and port off the URL, so <code>redis://host:6379/1</code> connected to db 0 without complaint. Cluster has no <code>SELECT</code>, so the number was never honored; drop it from <code>LOCATION</code>. <code>ValkeyGlideClusterCache</code> and <code>RedisRsClusterCache</code> still ignore it silently.</li>
 </ul>
-<h3 id="features_2">Features<a class="headerlink" href="#features_2" title="Permanent link">&para;</a></h3>
+<h3 id="features_3">Features<a class="headerlink" href="#features_3" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Rust I/O driver (experimental). Optional native driver built on PyO3 + tokio + redis-rs, shipped as a separate <code>django-cachex-redis-rs</code> package. Interfaces and behavior may change, and it has seen less production testing than the redis-py/valkey-py paths. Opt in via the <code>redis-rs</code> extra (<code>pip install django-cachex[redis-rs]</code>); without it, only the pure-Python backends are pulled in and the <code>RedisRsCache</code> classes raise a clean <code>ImportError</code> on first use. Set <code>BACKEND</code> to one of <code>RedisRsCache</code>, <code>RedisRsClusterCache</code>, or <code>RedisRsSentinelCache</code>. Sync and async share one tokio runtime; async dodges the threadpool round-trip.</li>
 <li><code>valkey-glide</code> adapter (experimental). Optional Rust-cored client from the Valkey project. Interfaces and behavior may change, and it has seen less production testing than the redis-py/valkey-py paths. Opt in via the <code>valkey-glide</code> extra. Standalone (<code>ValkeyGlideCache</code>) and cluster (<code>ValkeyGlideClusterCache</code>) topologies are exposed; Sentinel is not (<code>valkey-glide</code> itself does not ship a Sentinel client).</li>
@@ -3026,7 +3052,7 @@ release.</p>
 <hr />
 <h2 id="010-february-2026">0.1.0 (February 2026)<a class="headerlink" href="#010-february-2026" title="Permanent link">&para;</a></h2>
 <p>Initial stable release of django-cachex.</p>
-<h3 id="features_3">Features<a class="headerlink" href="#features_3" title="Permanent link">&para;</a></h3>
+<h3 id="features_4">Features<a class="headerlink" href="#features_4" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Valkey and Redis support in one package.</li>
 <li>Session backend support via Django's cache sessions.</li>
