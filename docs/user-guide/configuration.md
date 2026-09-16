@@ -131,6 +131,9 @@ both, and `DatabaseCache` matches case-sensitively on every database vendor.
 `incr_version()` and `decr_version()` move the key rather than copying it, the
 way Redis `RENAME` does: any key type moves, collections included, and the key
 keeps its remaining TTL.
+`DatabaseCache.incr()` and `decr()` are atomic row updates that keep the key's
+TTL; like Django, they raise `ValueError` on a missing key where Redis would
+create it.
 
 On MySQL, run the connection at `READ COMMITTED`, which is also Django's own
 recommendation for `DatabaseCache`. The compound operations (`lpush()`,
