@@ -927,17 +927,6 @@ class RespCache(BaseCachex):
             elif size > heap[0][0]:
                 heapq.heapreplace(heap, (size, key))
 
-    def _memory_usage_batch(
-        self,
-        keys: tuple[str, ...],
-        version: int | None,
-        samples: int | None,
-    ) -> list[int | None]:
-        pipe = self.pipeline(transaction=False)
-        for key in keys:
-            pipe.memory_usage(key, version=version, samples=samples)
-        return pipe.execute()
-
     async def _amemory_usage_batch(
         self,
         keys: tuple[str, ...],
@@ -969,7 +958,10 @@ class RespCache(BaseCachex):
         heap: list[tuple[int, str]] = []
         scan = self.iter_keys(pattern, version=version, itersize=itersize)
         for keys in batched(scan, self._LARGEST_KEYS_BATCH, strict=False):
-            self._largest_keys_heap(heap, keys, self._memory_usage_batch(keys, version, samples), count)
+            pipe = self.pipeline(transaction=False)
+            for key in keys:
+                pipe.memory_usage(key, version=version, samples=samples)
+            self._largest_keys_heap(heap, keys, pipe.execute(), count)
         return [(key, size) for size, key in sorted(heap, reverse=True)]
 
     async def alargest_keys(

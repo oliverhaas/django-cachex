@@ -220,11 +220,8 @@ _GLIDE_ASYNC_REGISTRY_LOCK = threading.RLock()
 # =============================================================================
 # Script registry
 # =============================================================================
-# ``Script`` stores its source in glide-core's script container and
-# ``invoke_script`` sends EVALSHA, loading the source on NOSCRIPT. The sync and
-# async packages have separate containers, so each gets its own registry.
-# Keyed by source and process-wide, so a script is stored once however many
-# adapter instances Django hands out.
+# ``invoke_script`` sends EVALSHA and loads the source on NOSCRIPT. glide_sync
+# and glide keep separate script containers, hence one registry per package.
 
 _GLIDE_SYNC_SCRIPTS: dict[str, Any] = {}
 _GLIDE_ASYNC_SCRIPTS: dict[str, Any] = {}

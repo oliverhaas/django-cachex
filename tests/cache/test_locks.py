@@ -34,8 +34,6 @@ def _skip_cluster_lock_tests(request: pytest.FixtureRequest) -> None:
 
 
 def test_lock_error_hierarchy():
-    # ``ValueError`` for parity with ``threading.Lock`` and the driver
-    # classes, so ``except ValueError`` callers keep working.
     assert issubclass(LockError, CachexError)
     assert issubclass(LockError, ValueError)
     assert issubclass(LockNotOwnedError, LockError)
@@ -124,7 +122,6 @@ class TestLockErrors:
     def test_release_after_expiry_raises_not_owned(self, cache: RespCache):
         lock = cache.lock("expired_release", lease=30)
         assert lock.acquire(blocking=False) is True
-        # Simulate the lease running out from under the holder.
         cache.delete("expired_release")
         with pytest.raises(LockNotOwnedError):
             lock.release()
