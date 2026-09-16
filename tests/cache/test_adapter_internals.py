@@ -1011,6 +1011,49 @@ class TestOptionsCredentialsBeatTheUrl:
 
         assert (kwargs["username"], kwargs["password"]) == ("alice", "optpw")
 
+    @pytest.mark.parametrize("adapter_class", _STANDALONE_DRIVERS)
+    @pytest.mark.parametrize(
+        ("url", "options", "expected"),
+        [
+            pytest.param("redis://alice:p@ss@host:7000/0", {"password": "optpw"}, ("alice", "optpw"), id="raw-at"),
+            pytest.param("redis://alice:p@ss@host:7000/0", {"username": "bob"}, ("bob", "p@ss"), id="raw-at-username"),
+            pytest.param("redis://alice:p:w@host:7000/0", {"username": "bob"}, ("bob", "p:w"), id="raw-colon"),
+            pytest.param(
+                "redis://al%40ice:p%40ss%3Ax@host:7000/0",
+                {"username": "bob"},
+                ("bob", "p@ss:x"),
+                id="encoded-password",
+            ),
+            pytest.param(
+                "redis://al%40ice:p%40ss@host:7000/0",
+                {"password": "optpw"},
+                ("al@ice", "optpw"),
+                id="encoded-username",
+            ),
+            pytest.param("redis://alice:urlpw@host:7000/0", {"username": "bob"}, ("bob", "urlpw"), id="username-only"),
+            pytest.param(
+                "redis://host:7000/0?username=alice&password=urlpw",
+                {"username": "bob"},
+                ("bob", "urlpw"),
+                id="query",
+            ),
+            pytest.param(
+                "redis://host:7000/0?username=alice&password=urlpw",
+                {"username": "bob", "password": "optpw"},
+                ("bob", "optpw"),
+                id="query-both",
+            ),
+        ],
+    )
+    def test_awkward_url_shapes(self, adapter_class: Any, url: str, options: dict[str, str], expected: tuple[str, str]):
+        """A raw or encoded ``@`` / ``:`` in the URL credentials and ``?username=`` survive the rebuild."""
+        adapter = adapter_class([url], **options)
+
+        kwargs = adapter._get_connection_pool(write=True).connection_kwargs
+
+        assert (kwargs["username"], kwargs["password"]) == expected
+        assert (kwargs["host"], kwargs["port"], kwargs["db"]) == ("host", 7000, 0)
+
     def test_url_credentials_stay_when_options_has_none(self):
         adapter = ValkeyPyAdapter([_CREDENTIALS_URL], socket_connect_timeout=1)
 

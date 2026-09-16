@@ -1093,15 +1093,13 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         config = self.resolve_stampede(stampede_prevention)
         if config and found:
-            stampede_keys = list(found)
-            if stampede_keys:
-                pipe = client.pipeline()
-                for k in stampede_keys:
-                    pipe.ttl(k)
-                ttls = pipe.execute()
-                for k, ttl in zip(stampede_keys, ttls, strict=False):
-                    if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
-                        del found[k]
+            pipe = client.pipeline()
+            for k in found:
+                pipe.ttl(k)
+            ttls = pipe.execute()
+            for k, ttl in zip(list(found), ttls, strict=False):
+                if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
+                    del found[k]
 
         return found
 
@@ -1122,15 +1120,13 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         config = self.resolve_stampede(stampede_prevention)
         if config and found:
-            stampede_keys = list(found)
-            if stampede_keys:
-                pipe = client.pipeline()
-                for k in stampede_keys:
-                    pipe.ttl(k)
-                ttls = await pipe.execute()
-                for k, ttl in zip(stampede_keys, ttls, strict=False):
-                    if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
-                        del found[k]
+            pipe = client.pipeline()
+            for k in found:
+                pipe.ttl(k)
+            ttls = await pipe.execute()
+            for k, ttl in zip(list(found), ttls, strict=False):
+                if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
+                    del found[k]
 
         return found
 
@@ -4021,15 +4017,13 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
 
         config = self.resolve_stampede(stampede_prevention)
         if config and found:
-            stampede_keys = list(found)
-            if stampede_keys:
-                pipe = client.pipeline()
-                for k in stampede_keys:
-                    pipe.ttl(k)
-                ttls = pipe.execute()
-                for k, ttl in zip(stampede_keys, ttls, strict=False):
-                    if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
-                        del found[k]
+            pipe = client.pipeline()
+            for k in found:
+                pipe.ttl(k)
+            ttls = pipe.execute()
+            for k, ttl in zip(list(found), ttls, strict=False):
+                if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
+                    del found[k]
 
         return found
 
@@ -4185,15 +4179,13 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
 
         config = self.resolve_stampede(stampede_prevention)
         if config and found:
-            stampede_keys = list(found)
-            if stampede_keys:
-                pipe = client.pipeline()
-                for k in stampede_keys:
-                    pipe.ttl(k)
-                ttls = await pipe.execute()
-                for k, ttl in zip(stampede_keys, ttls, strict=False):
-                    if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
-                        del found[k]
+            pipe = client.pipeline()
+            for k in found:
+                pipe.ttl(k)
+            ttls = await pipe.execute()
+            for k, ttl in zip(list(found), ttls, strict=False):
+                if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
+                    del found[k]
 
         return found
 

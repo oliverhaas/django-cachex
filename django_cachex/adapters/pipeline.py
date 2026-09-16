@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.script import ScriptHelpers, reject_stray_encoded
 from django_cachex.types import KeyType
+from django_cachex.utils import _validate_zadd_flags, _validate_zrange_limit
 
 # Alias for the ``set`` builtin shadowed by the ``set`` method (PEP 649
 # defers annotations at runtime, but type checkers still resolve them in
@@ -1361,8 +1362,13 @@ class Pipeline:
         other flags applied: the step decodes to the member's new score, or
         ``None`` when ``nx`` / ``xx`` / ``gt`` / ``lt`` blocked the update.
         An empty ``mapping`` resolves to ``0`` with no command sent, like
-        :meth:`RespCache.zadd`.
+        :meth:`RespCache.zadd`; ``incr=True`` with any other size than one
+        raises ``ValueError`` at queue time.
         """
+        _validate_zadd_flags(nx=nx, xx=xx, gt=gt, lt=lt)
+        if incr and len(mapping) != 1:
+            msg = "zadd(incr=True) takes exactly one member/score pair"
+            raise ValueError(msg)
         if not mapping:
             return self._fixed(0)
         nkey = self._make_key(key, version)
@@ -1465,6 +1471,7 @@ class Pipeline:
         version: int | None = None,
     ) -> Self:
         """Queue ZRANGEBYSCORE command (get members by score range)."""
+        _validate_zrange_limit(start, num)
         nkey = self._make_key(key, version)
         self._pipeline_adapter.zrangebyscore(
             nkey,
@@ -1567,6 +1574,7 @@ class Pipeline:
         version: int | None = None,
     ) -> Self:
         """Queue ZREVRANGEBYSCORE command (get by score, high to low)."""
+        _validate_zrange_limit(start, num)
         nkey = self._make_key(key, version)
         self._pipeline_adapter.zrevrangebyscore(
             nkey,
@@ -1640,7 +1648,13 @@ class Pipeline:
         limit: int | None = None,
         version: int | None = None,
     ) -> Self:
-        """Queue XADD command (add entry to stream)."""
+        """Queue XADD command (add entry to stream).
+
+        Empty ``fields`` raise ``ValueError`` at queue time, like :meth:`RespCache.xadd`.
+        """
+        if not fields:
+            msg = "xadd requires at least one field/value pair"
+            raise ValueError(msg)
         nkey = self._make_key(key, version)
         encoded_fields = {k: self._encode(v) for k, v in fields.items()}
         self._pipeline_adapter.xadd(

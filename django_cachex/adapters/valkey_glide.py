@@ -59,7 +59,7 @@ from django_cachex.stampede import (
     should_recompute,
 )
 from django_cachex.types import KeyType
-from django_cachex.utils import _validate_zadd_flags
+from django_cachex.utils import _validate_zadd_flags, _validate_zrange_limit
 
 if TYPE_CHECKING:
     import datetime
@@ -482,11 +482,9 @@ def _zadd_args(
 
 def _limit_args(start: int | None, num: int | None) -> list[bytes]:
     """``LIMIT offset count`` tail for the BYSCORE ranges; both or neither, as redis-py insists."""
-    if start is None and num is None:
+    _validate_zrange_limit(start, num)
+    if start is None:
         return []
-    if start is None or num is None:
-        msg = "start and num must both be specified"
-        raise ValueError(msg)
     return [b"LIMIT", str(start).encode(), str(num).encode()]
 
 

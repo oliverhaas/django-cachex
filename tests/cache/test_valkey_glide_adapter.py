@@ -2125,6 +2125,7 @@ def test_xread_returns_none_for_no_entries(mocker):
 
 
 def test_pipeline_hmget_without_fields_raises(mocker):
+    """Guards the adapter surface only; the ``Pipeline`` wrapper resolves ``hmget()`` without fields to ``[]``."""
     pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
     with pytest.raises(ValueError, match="at least one field"):
         pipe.hmget("h")

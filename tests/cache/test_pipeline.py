@@ -12,6 +12,7 @@ from django_cachex.adapters.pipeline import AsyncPipeline, Pipeline
 from django_cachex.cache import RespCache
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
+from tests.fixtures.cache import skip_below_server
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1095,6 +1096,7 @@ class TestPipelineTtlNormalization:
     """``ttl``/``pttl``/``expiretime`` report "no expiry" as None, like the cache does."""
 
     def test_persistent_key_reports_none(self, cache: RespCache):
+        skip_below_server(cache, redis=(7, 0), feature="EXPIRETIME")
         cache.set("pipe_ttl_persist", "value", timeout=None)
 
         pipe = cache.pipeline()
@@ -1107,6 +1109,7 @@ class TestPipelineTtlNormalization:
         assert cache.ttl("pipe_ttl_persist") is None
 
     def test_missing_key_keeps_minus_two(self, cache: RespCache):
+        skip_below_server(cache, redis=(7, 0), feature="EXPIRETIME")
         pipe = cache.pipeline()
         pipe.ttl("pipe_ttl_missing")
         pipe.pttl("pipe_ttl_missing")
@@ -1238,6 +1241,7 @@ class TestPipelineStampedeExpireFamily:
         assert stampede_cache.get("sp_pipe_pexp") == "val"
 
     def test_expireat_keeps_the_value_readable(self, stampede_cache: RespCache):
+        skip_below_server(stampede_cache, redis=(7, 0), feature="EXPIRETIME")
         stampede_cache.set("sp_pipe_expat", "val", timeout=300)
         when = int(time.time()) + 30
 
@@ -1271,6 +1275,7 @@ class TestPipelineStampedeTtl:
     """``pipe.ttl()`` reports the logical TTL ``cache.ttl()`` reports."""
 
     def test_ttl_strips_the_buffer(self, stampede_cache: RespCache):
+        skip_below_server(stampede_cache, redis=(7, 0), feature="EXPIRETIME")
         stampede_cache.set("sp_pipe_ttl", "val", timeout=300)
 
         pipe = stampede_cache.pipeline()
@@ -1319,6 +1324,25 @@ class TestPipelineTypeParity:
         assert cache.pipeline()._decode_type(b"ReJSON-RL") is KeyType.UNKNOWN
 
 
+class TestPipelineSortedSetArgumentValidation:
+    """Queue-time ``ValueError`` on every driver, matching ``RespCache``; nothing reaches the server."""
+
+    def test_zadd_rejects_conflicting_flags_at_queue_time(self, cache: RespCache):
+        pipe = cache.pipeline()
+        pipe.set("pipe_zadd_flags_marker", 1)
+        with pytest.raises(ValueError, match="ZADD allows"):
+            pipe.zadd("pipe_zadd_flags", {"a": 1.0}, nx=True, xx=True)
+        assert pipe.execute() == [True]
+        assert cache.zcard("pipe_zadd_flags") == 0
+
+    @pytest.mark.parametrize("method", ["zrangebyscore", "zrevrangebyscore"])
+    def test_one_sided_limit_is_rejected_at_queue_time(self, cache: RespCache, method: str):
+        pipe = cache.pipeline()
+        with pytest.raises(ValueError, match="start and num must both be specified"):
+            getattr(pipe, method)("pipe_zrange_limit", "-inf", "+inf", start=0)
+        assert pipe.execute() == []
+
+
 class TestPipelineZaddIncr:
     """``pipe.zadd(incr=True)`` decodes to the new score, or None when a flag blocks the update."""
 
@@ -1352,6 +1376,17 @@ class TestPipelineZaddIncr:
         pipe = cache.pipeline()
         pipe.zadd("pipe_zadd_plain", {"a": 1, "b": 2})
         assert pipe.execute() == [2]
+
+    @pytest.mark.parametrize("mapping", [{}, {"a": 1, "b": 2}], ids=["empty", "two_pairs"])
+    def test_rejects_anything_but_one_pair_at_queue_time(self, cache: RespCache, mapping: dict[str, int]):
+        """Regression: redis-py raised DataError at queue time, glide only at execute() after earlier steps ran."""
+        pipe = cache.pipeline()
+        pipe.set("pipe_zadd_incr_guard", "kept")
+        with pytest.raises(ValueError, match="exactly one member/score pair"):
+            pipe.zadd("pipe_zadd_incr_guard_zset", mapping, incr=True)
+
+        assert pipe.execute() == [True]
+        assert cache.has_key("pipe_zadd_incr_guard_zset") is False
 
 
 class TestPipelineZrangeDesc:
@@ -1578,6 +1613,18 @@ class TestPipelineEmptyArgumentCalls:
         assert pipe.execute() == [True]
         assert cache.has_key("pipe_empty_items_hash") is False
 
+    def test_xadd_rejects_empty_fields_at_queue_time(self, cache: RespCache):
+        """Regression: the driver rejected the empty entry, redis-py at queue time and glide at execute()."""
+        pipe = cache.pipeline()
+        pipe.set("pipe_empty_xadd", "kept")
+        with pytest.raises(ValueError, match="at least one field/value pair"):
+            pipe.xadd("pipe_empty_xadd_stream", {})
+        with pytest.raises(ValueError, match="at least one field/value pair"):
+            cache.xadd("pipe_empty_xadd_stream", {})
+
+        assert pipe.execute() == [True]
+        assert cache.has_key("pipe_empty_xadd_stream") is False
+
 
 class TestPipelineXreadResp3Shape:
     """``OPTIONS {"protocol": 3}`` routes XREAD through the driver's dict-shaped parser."""
@@ -1724,6 +1771,7 @@ class TestPipelineSetGet:
         assert pipe.execute() == [42, None, "new", "first"]
 
     def test_get_with_nx_and_xx(self, cache: RespCache):
+        skip_below_server(cache, redis=(7, 0), feature="SET NX GET")
         cache.set("pipe_set_get_nx", "original")
         cache.delete("pipe_set_get_xx")
 
@@ -1749,6 +1797,8 @@ class TestPipelineSetGet:
     @pytest.mark.parametrize("flag", [None, "nx", "xx"])
     @pytest.mark.parametrize("preexisting", [True, False], ids=["existing", "absent"])
     def test_immediate_expiry_matches_cache_set(self, cache: RespCache, flag: str | None, preexisting: bool):
+        if flag == "nx":
+            skip_below_server(cache, redis=(7, 0), feature="SET NX GET")
         state = "existing" if preexisting else "absent"
         direct = f"pipe_zeroget_direct_{flag}_{state}"
         piped = f"pipe_zeroget_pipe_{flag}_{state}"
