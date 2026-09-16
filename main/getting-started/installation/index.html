@@ -1189,7 +1189,7 @@
 <li>Python 3.14+. The free-threaded build (3.14t) is supported, with one caveat for the C parsers below.</li>
 <li>Django 6.0 to 6.x (<code>Django&gt;=6,&lt;7</code>)</li>
 <li>valkey-py 6.1 to 6.x (<code>valkey&gt;=6.1,&lt;7</code>) or redis-py 6.0 to 8.x (<code>redis&gt;=6,&lt;9</code>)</li>
-<li>Valkey server 7.2+ or Redis server 6.2+. <code>set(get=True)</code> and the immediate-expiry conditional writes (<code>add()</code> and <code>set(nx=/xx=/get=)</code> with <code>timeout=0</code>) send <code>SET ... GET</code> and <code>SET ... PXAT</code>, both Redis 6.2 commands; <code>set(nx=True, get=True)</code> needs Redis 7.0+. Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and <code>hsetex</code>/<code>hgetex</code> Redis 8.0+; older servers raise <code>NotSupportedError</code> for those methods only.</li>
+<li>Valkey server 7.2+ or Redis server 6.2+. <code>set(get=True)</code> and the immediate-expiry conditional writes (<code>add()</code> and <code>set(nx=/xx=/get=)</code> with <code>timeout=0</code>) send <code>SET ... GET</code> and <code>SET ... PXAT</code>, both Redis 6.2 commands; <code>set(nx=True, get=True)</code> and <code>expiretime()</code> need Redis 7.0+. Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and <code>hsetex</code>/<code>hgetex</code> Valkey 9.0+ or Redis 8.0+; older servers raise <code>NotSupportedError</code> for those methods only.</li>
 </ul>
 <h2 id="install-with-uv">Install with uv<a class="headerlink" href="#install-with-uv" title="Permanent link">&para;</a></h2>
 <p>The base package pulls in no client driver; pick the extra that matches your setup:</p>

@@ -2345,7 +2345,7 @@ Sentinel backends.</p>
 </span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="s2">"parser_class"</span><span class="p">:</span> <span class="s2">"valkey.connection.DefaultParser"</span><span class="p">,</span>  <span class="c1"># or "redis.connection.DefaultParser"</span>
 </span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="p">}</span>
 </span></code></pre></div>
-<p>Also redis-py and valkey-py only, cluster backends included. You rarely need to set this. When omitted, the driver's <code>DefaultParser</code>
+<p>Also redis-py and valkey-py only; the cluster backends reject it (see above). You rarely need to set this. When omitted, the driver's <code>DefaultParser</code>
 is used, which resolves to the C-accelerated parser when <code>libvalkey</code>
 (Valkey) or <code>hiredis</code> (Redis) is installed and to the pure-Python RESP
 parser otherwise. To get the C parser, install the <code>libvalkey</code> or

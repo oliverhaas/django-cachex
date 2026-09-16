@@ -1931,7 +1931,7 @@
 </tr>
 <tr>
 <td><code>expiretime(key)</code></td>
-<td>Absolute Unix timestamp (seconds) when the key expires</td>
+<td>Absolute Unix timestamp (seconds) when the key expires. Redis 7.0+ (any supported Valkey); an older server raises <code>NotSupportedError</code></td>
 </tr>
 <tr>
 <td><code>persist(key)</code></td>
@@ -1942,16 +1942,16 @@
 <td>Get the data type of a key</td>
 </tr>
 <tr>
-<td><code>memory_usage(key, *, samples=None)</code></td>
-<td>Bytes the key and its value take on the server (<code>MEMORY USAGE</code>); <code>None</code> if the key is missing. <code>samples</code> bounds how many elements of a container are sampled (server default 5, <code>0</code> = all)</td>
+<td><code>memory_usage(key, version=None, *, samples=None)</code></td>
+<td>Bytes the key and its value take on the server (<code>MEMORY USAGE</code>); <code>None</code> if the key is missing. <code>samples</code> bounds how many elements of a container are sampled (server default 5, <code>0</code> = all). Valkey/Redis backends only; other backends raise <code>NotSupportedError</code></td>
 </tr>
 <tr>
-<td><code>largest_keys(pattern="*", count=10, *, samples=None, itersize=None)</code></td>
-<td>The <code>count</code> largest keys matching <code>pattern</code> as <code>(key, bytes)</code> pairs, largest first. Scans with <code>iter_keys()</code> and pipelines <code>MEMORY USAGE</code> in batches of 100. <code>count=0</code> returns <code>[]</code> without scanning; a negative <code>count</code> raises <code>ValueError</code></td>
+<td><code>largest_keys(pattern="*", count=10, version=None, *, samples=None, itersize=None)</code></td>
+<td>The <code>count</code> largest keys matching <code>pattern</code> as <code>(key, bytes)</code> pairs, largest first. Scans with <code>iter_keys()</code> and pipelines <code>MEMORY USAGE</code> in batches of 100. <code>count=0</code> returns <code>[]</code> without scanning; a negative <code>count</code> raises <code>ValueError</code>. Valkey/Redis backends only; other backends raise <code>NotSupportedError</code></td>
 </tr>
 <tr>
 <td><code>clear_all_versions(itersize=None)</code></td>
-<td>Delete every key under this cache's <code>KEY_PREFIX</code> across all versions; returns the number deleted. The pattern <code>key_func("*", prefix, "*")</code> is handed to the adapter as is, outside <code>make_key</code>, so <code>cache.delete_pattern()</code> with the same pattern is not equivalent: it would prefix the pattern a second time. <code>clear()</code> removes the current version only</td>
+<td>Delete every key under this cache's <code>KEY_PREFIX</code> across all versions; returns the number deleted. The pattern <code>key_func("*", prefix, "*")</code>, built from the glob-escaped prefix, is handed to the adapter outside <code>make_key</code>, so <code>cache.delete_pattern()</code> with the same pattern is not equivalent: it would prefix the pattern a second time. <code>clear()</code> removes the current version only. Valkey/Redis backends only; other backends raise <code>NotSupportedError</code></td>
 </tr>
 <tr>
 <td><code>lock(key, ...)</code></td>
@@ -2686,7 +2686,7 @@ lives on the adapter: <code>await cache.adapter.get_async_client()</code>.</p>
 </tr>
 <tr>
 <td><code>lease</code></td>
-<td>TTL of the held lock; the lock is auto-released after this many seconds (no auto-release if <code>None</code>)</td>
+<td>TTL of the held lock; the lock is auto-released after this many seconds (no auto-release if <code>None</code>); must be at least 1 ms, a smaller value raises <code>ValueError</code></td>
 </tr>
 <tr>
 <td><code>sleep</code></td>
@@ -2741,15 +2741,18 @@ valkey-py lock errors do, so <code>except ValueError</code> keeps working.
 cachex classes follow the drivers, not the stdlib.)</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex.lock</span><span class="w"> </span><span class="kn">import</span> <span class="n">LockError</span><span class="p">,</span> <span class="n">LockNotOwnedError</span>
 </span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">"mylock"</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="k">try</span><span class="p">:</span>
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="n">lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span>
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="n">do_work</span><span class="p">()</span>
-</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>    <span class="n">lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
-</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="k">except</span> <span class="n">LockNotOwnedError</span><span class="p">:</span>
-</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>    <span class="o">...</span>  <span class="c1"># the lease ran out during do_work()</span>
-</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="k">except</span> <span class="n">LockError</span><span class="p">:</span>
-</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>    <span class="o">...</span>  <span class="c1"># could not acquire, or released twice</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="k">def</span><span class="w"> </span><span class="nf">guarded_work</span><span class="p">():</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">"mylock"</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="k">try</span><span class="p">:</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="n">lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">():</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>            <span class="k">return</span>  <span class="c1"># another holder kept it for 5 seconds</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>        <span class="n">do_work</span><span class="p">()</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>        <span class="n">lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>    <span class="k">except</span> <span class="n">LockNotOwnedError</span><span class="p">:</span>
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>        <span class="o">...</span>  <span class="c1"># the lease ran out during do_work()</span>
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>    <span class="k">except</span> <span class="n">LockError</span><span class="p">:</span>
+</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>        <span class="o">...</span>  <span class="c1"># released twice or by another owner</span>
 </span></code></pre></div>
 <p>Compatible with <code>threading.Lock</code>:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Context manager</span>
@@ -2826,7 +2829,7 @@ cachex classes follow the drivers, not the stdlib.)</p>
 </tbody>
 </table>
 <p><code>acquire()</code> accepts <code>blocking</code> and <code>timeout</code> to override the defaults set on the semaphore object. Omit <code>timeout</code> and the value passed to <code>cache.semaphore(...)</code> applies; pass <code>timeout=None</code> explicitly and the call blocks indefinitely, whatever the instance default is. <code>aacquire()</code> reads it the same way, on both the local and the RESP backends.</p>
-<p><code>release()</code> returns the claim to the pool. <code>extend(additional_seconds)</code> bumps the TTL on RESP backends for tasks that may legitimately exceed their original lease; it raises <code>ValueError</code> unless <code>additional_seconds</code> is positive, and returns <code>False</code> without raising when the claim is no longer ours because it was released or reaped. <code>aextend(additional_seconds)</code> behaves the same. On <code>LocMemCache</code> both exist for API parity: there is no lease TTL to bump, so they return <code>True</code> while the claim is held and <code>False</code> otherwise.</p>
+<p><code>release()</code> returns the claim to the pool. <code>extend(additional_seconds)</code> bumps the TTL on RESP backends for tasks that may legitimately exceed their original lease; it raises <code>ValueError</code> unless <code>additional_seconds</code> is a positive finite number, and returns <code>False</code> without raising when the claim is no longer ours because it was released or reaped. <code>aextend(additional_seconds)</code> behaves the same. On <code>LocMemCache</code> both exist for API parity: there is no lease TTL to bump, so they return <code>True</code> while the claim is held and <code>False</code> otherwise.</p>
 <p>On RESP backends the semaphore's bookkeeping keys (<code>{name}:state</code>, <code>{name}:claims</code>, <code>{name}:queue</code>) expire after twice the longest lease seen. Acquire and release refresh all three; extend refreshes <code>{name}:state</code> and <code>{name}:claims</code>, and waiters keep <code>{name}:queue</code> alive by polling. A holder that dies without releasing therefore leaves nothing behind once its lease has run out.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">sem</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">semaphore</span><span class="p">(</span><span class="s2">"mysem"</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
 </span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="k">if</span> <span class="n">sem</span><span class="o">.</span><span class="n">acquire</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">):</span>
@@ -2881,7 +2884,7 @@ returned <code>bool</code>, leaving the claim held until its lease expires.</p>
 </span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>    <span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">pipe</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
 </span></code></pre></div>
 <p><code>apipeline()</code> is <code>async def</code> so adapters whose async-client construction is itself awaitable (e.g. valkey-glide) can resolve the client before returning the wrapper. Queueing methods stay synchronous; only <code>apipeline()</code> and <code>execute()</code> need to be awaited.</p>
-<p>Single-key commands are available on the pipeline: <code>get</code>, <code>set</code>, <code>delete</code>, <code>exists</code>, <code>incr</code>, <code>decr</code>, <code>type</code>, <code>rename</code>, <code>renamenx</code>, the TTL commands (<code>ttl</code>, <code>pttl</code>, <code>expire</code>, <code>pexpire</code>, <code>expireat</code>, <code>pexpireat</code>, <code>expiretime</code>, <code>persist</code>), <code>memory_usage</code>, <code>eval_script</code> and every hash, list, set, sorted-set and stream command. The multi-key helpers (<code>set_many</code>, <code>get_many</code>, <code>delete_many</code>), the read-modify-write helpers (<code>get_or_set</code>, <code>add</code>, <code>touch</code>, <code>has_key</code>), and the scanning helpers (<code>keys</code>, <code>scan</code>, <code>delete_pattern</code>, <code>clear</code>) are not: queue their underlying commands instead. Results are returned as a list in the same order as the commands.</p>
+<p>Single-key commands are available on the pipeline: <code>get</code>, <code>set</code>, <code>delete</code>, <code>exists</code>, <code>incr</code>, <code>decr</code>, <code>type</code>, <code>rename</code>, <code>renamenx</code>, the TTL commands (<code>ttl</code>, <code>pttl</code>, <code>expire</code>, <code>pexpire</code>, <code>expireat</code>, <code>pexpireat</code>, <code>expiretime</code>, <code>persist</code>), <code>memory_usage</code>, <code>eval_script</code> and every non-blocking hash, list, set, sorted-set and stream command (<code>sscan</code> and the blocking pops <code>blpop</code>/<code>brpop</code>/<code>blmove</code> are not queueable). The multi-key helpers (<code>set_many</code>, <code>get_many</code>, <code>delete_many</code>), the read-modify-write helpers (<code>get_or_set</code>, <code>add</code>, <code>touch</code>, <code>has_key</code>), and the scanning helpers (<code>keys</code>, <code>scan</code>, <code>delete_pattern</code>, <code>clear</code>) are not: queue their underlying commands instead. Results are returned as a list in the same order as the commands.</p>
 <p>The queueing methods take the same signatures and parameter names as the cache
 methods they queue, so a call reads the same either way: <code>smove(src, dst,
 member)</code>, <code>sunionstore(dest, keys)</code>, <code>zscore(key, member)</code>, <code>zincrby(key,

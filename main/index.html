@@ -1237,7 +1237,7 @@
 <li>Valkey 7.2+ or Redis 6.2+ on the server. <code>set(get=True)</code> and the
   immediate-expiry conditional writes (<code>add()</code> and <code>set(nx=/xx=/get=)</code> with
   <code>timeout=0</code>) send <code>SET ... GET</code> and <code>SET ... PXAT</code>, both Redis 6.2 commands;
-  <code>set(nx=True, get=True)</code> needs Redis 7.0+</li>
+  <code>set(nx=True, get=True)</code> and <code>expiretime()</code> need Redis 7.0+</li>
 <li>Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and <code>hsetex</code>/<code>hgetex</code>
   Valkey 9.0+ or Redis 8.0+; older servers raise <code>NotSupportedError</code> for those
   methods</li>
