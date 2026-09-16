@@ -62,13 +62,18 @@ Lists all configured caches showing name, backend class, location, and support l
 
 Every `LOCATION` the admin renders has its URL password replaced with `***`,
 here, in the cache detail page's Configuration section, and in connection URLs
-quoted inside backend error messages. A `***` on the page is masking, not a
-misconfiguration: the setting itself is untouched. `unix://` socket paths and
-non-URL locations such as `host:port` are shown as they are.
+quoted inside backend error messages, including every admin message that quotes
+a driver exception. A `***` on the page is masking, not a misconfiguration: the
+setting itself is untouched. `unix://` socket paths and non-URL locations such
+as `host:port` are shown as they are.
+
+A backend whose server cannot be reached is reported with a message
+("Cache '<alias>' is unreachable: ...") and a redirect to this list from the key
+detail and key add pages, rather than an error page.
 
 ### Key Browser
 
-Click a cache name to browse its keys with wildcard search (`*`), data type display, TTL, and pagination.
+Click a cache name to browse its keys with wildcard search (`*`), data type display, TTL, and pagination. Each page is one `SCAN` batch (`count`, default 100, capped at 1000), with TTL, type and size fetched in a pipeline per batch rather than per key.
 
 ![The key browser, with the type filter sidebar and a wildcard search](../assets/screenshot-key-list.png)
 
@@ -84,6 +89,10 @@ A cache backend with no `type()` at all (`django.core.cache.backends.locmem.LocM
 
 Deleting a key that is already gone reports "Key not found, nothing was deleted." rather than success, and the key browser's bulk delete counts those misses separately.
 
+A type-specific action (push onto a list, add a hash field, ...) posted against a key whose type has changed since the page loaded is refused with a message and nothing is written; the page reloads with the current value. The TTL form is shown, and Set TTL accepted, only on backends with `expire()` and `persist()`; the stock Django backends have neither, so there the page offers delete only.
+
+Set members on the Valkey/Redis backends are listed in server (`SSCAN`) order, which is not stable across pages of a set that is being written to; `LocMemCache` and `DatabaseCache` list them sorted. Hash pages read only the fields on the current page.
+
 ![The key detail page, editing a value and its TTL](../assets/screenshot-key-detail.png)
 
 ### Cache Info
@@ -94,7 +103,7 @@ Sections a backend cannot answer are omitted rather than rendered empty or with 
 
 ### Add Key
 
-Name the new key and pick its data type. Nothing is written yet: **Continue** opens the key detail page, where the first value you add creates the key.
+Name the new key and pick its data type (string, list, set, hash, zset or stream; anything else is rejected). Nothing is written yet: **Continue** opens the key detail page, where the first value you add creates the key.
 
 ## Backend Abilities
 

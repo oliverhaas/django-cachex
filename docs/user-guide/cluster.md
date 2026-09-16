@@ -6,9 +6,16 @@ For basic cluster setup, see [Configuration](configuration.md#cluster-configurat
 
 Valkey/Redis Cluster distributes keys across 16,384 hash slots. django-cachex handles Django cache methods and direct commands differently:
 
-**Django cache methods** (`get_many`, `set_many`, `delete_many`, `keys`, `clear`) are cluster-aware and handle cross-slot operations automatically.
+**Django cache methods** (`get_many`, `set_many`, `delete_many`, `keys`, `clear`) are cluster-aware and handle cross-slot operations automatically. `delete_many()`, `delete_pattern()` and `set_many(timeout=0)` issue one `UNLINK` per batch and let the driver split it by slot.
 
 **Direct commands** (sets, lists, hashes, sorted sets) pass through to the server. Multi-key commands (`sdiff`, `sinter`, `sunion`, `lmove`) require all keys on the same slot.
+
+**Not available on cluster:**
+
+- `pipeline(transaction=True)` and `apipeline(transaction=True)` raise `NotSupportedError`; cluster pipelines default to `transaction=False`, since `MULTI`/`EXEC` cannot span slots.
+- `lock()` and `alock()` raise `NotSupportedError`; use `semaphore()`, whose keys share a `{name}` hash tag.
+- `incr_version()` and `decr_version()` rename `prefix:V:key` to `prefix:V+1:key`, which only stays in one slot when both made keys carry the same `{...}` hash tag. Without one (or with a `KEY_FUNCTION` that puts the version inside the tag) they raise `NotSupportedError` up front instead of a `CROSSSLOT` error from the server. A `KEY_PREFIX` of the form `"{app}"` colocates every key it produces and satisfies the rule.
+- `xautoclaim(justid=True)` and `axautoclaim(justid=True)` raise `NotSupportedError` on the redis-py and valkey-py cluster backends: the driver's `JUSTID` reply drops the cursor. Call `xautoclaim()` without `justid`. The valkey-glide cluster backend is unaffected.
 
 ## Hash Tags
 
@@ -27,7 +34,7 @@ Use hash tags when you need:
 
 - Multi-key set operations: `sdiff`, `sinter`, `sunion`
 - List moves: `lmove`
-- Transactions across multiple keys
+- `incr_version` / `decr_version` (see above)
 
 ```python
 # Group related keys: one hash tag per slot

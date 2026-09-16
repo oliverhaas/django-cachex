@@ -9,7 +9,9 @@ For basic sentinel setup, see [Configuration](configuration.md#sentinel-configur
 | `sentinels` | List of (host, port) tuples for Sentinel nodes (required) |
 | `sentinel_kwargs` | Dict of kwargs passed to Sentinel connection (e.g., password) |
 
-The `LOCATION` URL format is `redis://service_name/db` (or `valkey://service_name/db` for ValkeySentinelCache) where `service_name` is the master name configured in Sentinel.
+The `LOCATION` URL format is `redis://service_name/db` (or `valkey://service_name/db` for ValkeySentinelCache) where `service_name` is the master name configured in Sentinel. It is a single URL: a list (or a comma-separated string) with more than one entry raises `ImproperlyConfigured` at `caches[alias]`, since Sentinel discovers the primary and replicas itself. The Sentinel nodes go in `OPTIONS["sentinels"]`.
+
+`OPTIONS["pool_class"]` must be the driver's `SentinelConnectionPool` or a subclass, and `OPTIONS["async_pool_class"]` its async counterpart (used by the `a*` methods); any other class raises `ImproperlyConfigured` at `caches[alias]`. See [Connection Pool](configuration.md#connection-pool).
 
 ## TLS
 

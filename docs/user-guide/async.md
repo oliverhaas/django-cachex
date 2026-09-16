@@ -164,7 +164,7 @@ connection that owns it.
 ASGI servers (uvicorn, daphne, hypercorn) maintain long-lived event loops where connections are reused across requests:
 
 ```python
-# In an ASGI application - efficient!
+# In an ASGI application: the loop, and so the pool, outlives the request
 async def my_view(request):
     # Connections are reused across requests
     value = await cache.aget("key")
@@ -185,11 +185,12 @@ def sync_function():
         asyncio.run(cache.aget(f"key:{i}"))
 
 
-# BAD: async_to_sync() called from a plain sync thread runs asyncio.run()
-# per call, with the same one-connection-per-call cost.
+# BAD: sync_to_async() runs the body in a worker thread with no loop of its
+# own, so the async_to_sync() inside starts a fresh loop (and pool) per call,
+# with the same one-connection-per-call cost. Await cache.aget() directly.
 @sync_to_async
 def wrapped_function():
-    pass
+    return async_to_sync(cache.aget)("key")
 ```
 
 ### Recommendations
@@ -235,10 +236,12 @@ On a cluster backend it closes that loop's cluster client; on a Sentinel
 backend it also closes the loop's Sentinel manager and the clients it
 discovered with.
 
-Only the calling alias is released. Other aliases sharing the same loop and the
-same driver keep their connections, since disconnecting a pool drops the
-connections another alias's in-flight tasks have checked out of it. Call
-`aclose()` on each cache you used.
+Only pools under the calling alias's own registry keys are released: an alias
+with a different URL or options keeps its connections. An alias configured
+identically shares the very same pool object, so it is disconnected too
+(a driver pool's `aclose()` drops in-use connections along with idle ones) and
+reconnects lazily on its next command. Pools leave the registry one at a time
+as they close, so a failure mid-way keeps the rest reachable.
 
 `close()` leaves the sync pools connected: Django fires it on every
 `request_finished` signal, and tearing pools down there would force a reconnect

@@ -143,9 +143,11 @@ if lock.acquire():
         lock.release()
 ```
 
-The redis-py and valkey-py backends hand back their own driver's lock
-object, so `acquire()` there takes the driver's `blocking_timeout` name.
-Setting `timeout` on `cache.lock()` works across every backend.
+The redis-py and valkey-py backends hand back a thin wrapper around the
+driver's lock object, so `acquire()` there takes the driver's
+`blocking_timeout` name; failures raise `django_cachex.lock.LockError` with
+the driver's error as `__cause__`. Setting `timeout` on `cache.lock()` works
+across every backend.
 
 ## Gate Memory-Heavy Work With a Weighted Semaphore
 

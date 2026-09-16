@@ -41,7 +41,8 @@ django-cachex adds these extended methods:
 | `persist(key)` | Remove expiration |
 | `type(key)` | Get the data type of a key |
 | `memory_usage(key, *, samples=None)` | Bytes the key and its value take on the server (`MEMORY USAGE`); `None` if the key is missing. `samples` bounds how many elements of a container are sampled (server default 5, `0` = all) |
-| `largest_keys(pattern, count=10, *, samples=None, itersize=None)` | The `count` largest keys matching `pattern` as `(key, bytes)` pairs, largest first. Scans with `iter_keys()` and pipelines `MEMORY USAGE` in batches of 100 |
+| `largest_keys(pattern="*", count=10, *, samples=None, itersize=None)` | The `count` largest keys matching `pattern` as `(key, bytes)` pairs, largest first. Scans with `iter_keys()` and pipelines `MEMORY USAGE` in batches of 100. `count=0` returns `[]` without scanning; a negative `count` raises `ValueError` |
+| `clear_all_versions(itersize=None)` | Delete every key under this cache's `KEY_PREFIX` across all versions (`delete_pattern` over `key_func("*", prefix, "*")`); returns the number deleted. `clear()` removes the current version only |
 | `lock(key, ...)` | Get a distributed lock |
 | `keys(pattern)` | Get keys matching pattern |
 | `iter_keys(pattern)` | Iterate keys matching pattern |
@@ -64,9 +65,11 @@ match everything; `delete_pattern("")` deletes at most one key.
 ### Data-structure calls with no arguments
 
 `sadd`, `srem`, `hdel`, `hset`, `lpush`, `rpush`, `zrem`, `xdel` and `xack`
-called with no members, fields, values or entry ids return `0`, and
-`smismember` and `zmscore` return an empty list. No command reaches the server,
-so no key is created. Every backend answers the same way, async twins included.
+called with no members, fields, values or entry ids return `0`, as does `zadd`
+with an empty mapping, and `smismember` and `zmscore` return an empty list. No
+command reaches the server, so no key is created. Every backend answers the
+same way, async twins included. `xadd` is the exception: an entry needs at
+least one field, so empty `fields` raise `ValueError`.
 
 A pipeline guards the same way: the step contributes `0` (or an empty list for
 `smismember` and `zmscore`) to the `execute()` result without a command being
@@ -135,6 +138,8 @@ Set operations for unordered collections of unique elements:
 
 `spop` rejects a negative `count` with Redis's `value is out of range, must be positive`.
 
+Members must be hashable, and must still be hashable after a round trip through the configured serializer (the JSON and MessagePack serializers hand a tuple back as a list); `sadd` rejects a member that is not, rather than letting a later read fail. The set readers (`smembers`, `sdiff`, `sinter`, `sunion`, `spop`, `sscan`) return a Python `set`, so Python equality decides membership on the way back: `1`, `True` and `1.0` are three members on the server (`scard` counts three) but one entry in the returned `set`, exactly as in `{1, True, 1.0}`.
+
 ### Sorted Set Methods
 
 Sorted set operations for scored, ordered collections:
@@ -192,7 +197,7 @@ Append-only log structure with consumer groups:
 
 | Method | Description |
 |--------|-------------|
-| `xadd(key, fields, entry_id="*", maxlen=None, ...)` | Append an entry, returning its ID |
+| `xadd(key, fields, entry_id="*", maxlen=None, ..., nomkstream=False)` | Append an entry, returning its ID; `None` when `nomkstream=True` and the stream does not exist. Empty `fields` raise `ValueError` |
 | `xlen(key)` | Number of entries in the stream |
 | `xrange(key, start="-", end="+", count=None)` | Range of entries (forward) |
 | `xrevrange(key, end="+", start="-", count=None)` | Range of entries (reverse) |
@@ -228,7 +233,9 @@ first `NOSCRIPT` reply it loads the script with `SCRIPT LOAD` and retries, so
 after that only the 40-byte digest crosses the wire. A `SCRIPT FLUSH` or a
 server restart costs one extra round trip. Scripts queued in a pipeline still
 go out as plain `EVAL`: a pipeline has no safe point to retry a `NOSCRIPT`
-reply, and cluster pipelines reject `EVALSHA`.
+reply, and cluster pipelines reject `EVALSHA`. `django_cachex.script_sha(script)`
+returns that digest (cached per source string) for code that wants to check
+`SCRIPT EXISTS` or call `EVALSHA` through `get_client()` itself.
 
 #### eval_script / aeval_script
 
@@ -317,8 +324,8 @@ await cache.ahset("hash", "field", "value")
 
 For raw access that skips prefixing/serialization, use `cache.adapter` (e.g. `await cache.adapter.aget(prefixed_key)`).
 
-- `attl`, `apttl`, `aexpire`, `apexpire`, `aexpireat`, `apexpireat`, `apersist`
-- `akeys`, `aiter_keys`, `ascan`, `adelete_pattern`, `amemory_usage`, `alargest_keys`
+- `attl`, `apttl`, `aexpire`, `apexpire`, `aexpireat`, `apexpireat`, `aexpiretime`, `apersist`, `atype`
+- `akeys`, `aiter_keys`, `ascan`, `adelete_pattern`, `aclear_all_versions`, `aflush_db`, `amemory_usage`, `alargest_keys`, `arename`, `arenamenx`
 - `ahset`, `ahdel`, `ahexists`, `ahget`, `ahgetall`, `ahincrby`, `ahincrbyfloat`, `ahkeys`, `ahlen`, `ahmget`, `ahsetnx`, `ahvals`
 - `ahexpire`, `ahpexpire`, `ahexpireat`, `ahpexpireat`, `ahttl`, `ahpttl`, `ahexpiretime`, `ahpersist`, `ahsetex`, `ahgetex`
 - `asadd`, `asrem`, `asmembers`, `asismember`, `asmismember`, `ascard`, `aspop`, `asrandmember`, `asmove`, `asdiff`, `asdiffstore`, `asinter`, `asinterstore`, `asunion`, `asunionstore`
@@ -329,12 +336,13 @@ For raw access that skips prefixing/serialization, use `cache.adapter` (e.g. `aw
 ## Raw Client Access
 
 ```python
-client = cache.get_client(write=True)
+client = cache.get_client(key=None, *, write=False)
 ```
 
 | Parameter | Description |
 |-----------|-------------|
-| `write` | Get write connection for primary (default: `False`) |
+| `key` | Accepted for signature compatibility with django-redis; every adapter ignores it. Connection choice depends on `write` only |
+| `write` | Get write connection for primary (default: `False`). With a multi-URL `LOCATION` or Sentinel, `False` picks a replica pool when one exists; cluster ignores it |
 
 Returns the underlying client object. The concrete type depends on which
 adapter is configured:
@@ -381,7 +389,10 @@ TTL.
 returns, and the spellings differ. The redis-py and valkey-py backends hand
 back a thin wrapper around the driver's own lock, whose `acquire()` signature is
 `acquire(sleep=None, blocking=None, blocking_timeout=None, token=None)`
-(the async lock drops `sleep`). The valkey-glide backend returns the
+(the async lock drops `sleep`). The wrapper forwards attribute reads and
+assignments (`lock.blocking_timeout = 1` reaches the driver lock) and
+`copy.copy()` works; pickling fails inside the driver lock, as it does
+without the wrapper. The valkey-glide backend returns the
 django-cachex lock, whose `acquire()` is keyword-only:
 `acquire(*, blocking=None, timeout=None)`. Passing `timeout=` to a
 redis-py or valkey-py lock raises `TypeError`.
@@ -405,8 +416,10 @@ Lock failures raise `django_cachex.lock.LockError` on every backend, and
 `LockNotOwnedError` (a subclass) when the lock was lost before `release()` or
 `extend()`. redis-py and valkey-py raise their driver's own `LockError`
 internally; the backend translates it, keeping the driver error as
-`__cause__`. Both classes subclass `ValueError` like the driver classes and
-`threading.Lock`, so `except ValueError` keeps working.
+`__cause__`. Both classes subclass `ValueError`, as the redis-py and
+valkey-py lock errors do, so `except ValueError` keeps working.
+(`threading.Lock` itself raises `RuntimeError` on a bad release; the
+cachex classes follow the drivers, not the stdlib.)
 
 ```python
 from django_cachex.lock import LockError, LockNotOwnedError
@@ -487,7 +500,7 @@ with cache.semaphore("memory-heavy", weight=100, capacity=500, lease=300):
 
 `acquire()` accepts `blocking` and `timeout` to override the defaults set on the semaphore object. Omit `timeout` and the value passed to `cache.semaphore(...)` applies; pass `timeout=None` explicitly and the call blocks indefinitely, whatever the instance default is. `aacquire()` reads it the same way, on both the local and the RESP backends.
 
-`release()` returns the claim to the pool. `extend(seconds)` bumps the TTL on RESP backends for tasks that may legitimately exceed their original lease; it raises `ValueError` unless `seconds` is positive, and returns `False` without raising when the claim is no longer ours because it was released or reaped. `aextend()` behaves the same.
+`release()` returns the claim to the pool. `extend(additional_seconds)` bumps the TTL on RESP backends for tasks that may legitimately exceed their original lease; it raises `ValueError` unless `additional_seconds` is positive, and returns `False` without raising when the claim is no longer ours because it was released or reaped. `aextend(additional_seconds)` behaves the same.
 
 On RESP backends the semaphore's bookkeeping keys (`{name}:state`, `{name}:claims`, `{name}:queue`) expire after twice the longest lease seen. Acquire and release refresh all three; extend refreshes `{name}:state` and `{name}:claims`, and waiters keep `{name}:queue` alive by polling. A holder that dies without releasing therefore leaves nothing behind once its lease has run out.
 
@@ -536,6 +549,15 @@ Cluster mode is supported on RESP backends: all keys for one semaphore name carr
 
 Batch multiple operations for efficiency. Queueing methods (`set`, `hset`, `lpush`, ...) stay synchronous in both wrappers; only `execute()` performs I/O.
 
+```python
+pipe = cache.pipeline(*, transaction=True, version=None)
+pipe = await cache.apipeline(*, transaction=True, version=None)
+```
+
+`transaction=True` (the default on standalone and Sentinel backends) wraps the batch in `MULTI`/`EXEC`; `transaction=False` sends a plain pipeline. The cluster backends default to `transaction=False` and raise `NotSupportedError` for `transaction=True`, since `MULTI`/`EXEC` cannot span slots. `version` overrides the cache's `VERSION` for every key queued on that pipeline.
+
+`pipeline()` returns `django_cachex.Pipeline` and `apipeline()` returns `django_cachex.AsyncPipeline`, a subclass with the same queueing methods, an awaitable `execute()` and `async with` support. Using an `AsyncPipeline` in a plain `with` raises `TypeError` at `__enter__`. Leaving either context manager discards any commands still queued.
+
 ### Sync
 
 ```python
@@ -559,10 +581,12 @@ async with await cache.apipeline() as pipe:
 
 Single-key commands are available on the pipeline. The multi-key helpers (`set_many`, `get_many`, `delete_many`), the read-modify-write helpers (`get_or_set`, `add`, `touch`, `has_key`), and the scanning helpers (`keys`, `scan`, `delete_pattern`, `clear`) are not: queue their underlying commands instead. Results are returned as a list in the same order as the commands.
 
-The queueing methods take the same signatures as the cache methods they queue,
-so a call reads the same either way. That includes the score-range methods,
-which name their bounds `min_score` and `max_score` and take `start` and `num`
-by keyword:
+The queueing methods take the same signatures and parameter names as the cache
+methods they queue, so a call reads the same either way: `smove(src, dst,
+member)`, `sunionstore(dest, keys)`, `zscore(key, member)`, `zincrby(key,
+amount, member)`, `sadd(key, *members)`, `zrem(key, *members)`, `lmove(src,
+dst, wherefrom, whereto)`, and the score-range methods with `min_score` /
+`max_score` and `start` / `num` by keyword:
 
 ```python
 pipe.zcount("z", min_score, max_score)
@@ -571,9 +595,15 @@ pipe.zrevrangebyscore("z", max_score, min_score, withscores=False, start=None, n
 pipe.zremrangebyscore("z", min_score, max_score)
 ```
 
-`memory_usage(key, version=None, *, samples=None)` is also available on the
-pipeline and contributes the byte count (or `None` for a missing key) to the
-results.
+The flags follow the cache methods too, and decide what the step contributes
+to the results:
+
+- `set(key, value, timeout=DEFAULT, version=None, *, nx=False, xx=False, get=False)` contributes `True`, or `False` on an `nx`/`xx` miss; with `get=True` it contributes the previous value (`None` when absent) instead, including with `nx`/`xx` and with an immediate timeout. `SET ... GET` needs Redis 6.2+, `nx` together with `get` Redis 7.0+.
+- `get(key, default=None, version=None)` contributes `default` for a missing key. `version` is the third positional argument.
+- `zadd(key, mapping, *, ..., incr=False)`: `incr=True` (pipeline only; `cache.zadd` has no such flag) turns the single pair in `mapping` into `ZINCRBY` with the other flags applied, and contributes the member's new score, or `None` when `nx`/`xx`/`gt`/`lt` blocked it.
+- `zrange(key, start, end, *, withscores=False, desc=False)`: `desc=True` (pipeline only) is `ZRANGE ... REV`, the same shape `zrevrange` gives.
+- `xautoclaim(..., justid=True)` raises `NotSupportedError` when queued: the driver's `JUSTID` reply drops the cursor inside a pipeline. Use `justid=False`, or call `cache.xautoclaim()` directly.
+- `memory_usage(key, version=None, *, samples=None)` contributes the byte count, or `None` for a missing key; `largest_keys()` is built on it.
 
 A hash field command queued with no fields (`pipe.httl("h")`, `pipe.hexpire("h", 60)`, `pipe.hgetex("h")` and the rest of the nine) contributes `[]` to the results and sends nothing to the server, the same result `cache.httl("h")` gives.
 
@@ -594,7 +624,7 @@ A hash field command queued with no fields (`pipe.httl("h")`, `pipe.hexpire("h",
 |--------|----------|-------------|
 | `serializer` | all Valkey/Redis | Serializer class or list for fallback |
 | `compressor` | all Valkey/Redis | Compressor class or list for fallback |
-| `stampede_prevention` | all Valkey/Redis | `True` / `False` / dict (`buffer`, `beta`, `delta`); see [`StampedeConfig`](#stampedeconfig) |
+| `stampede_prevention` | all Valkey/Redis | `True` / `False` / `None` / dict (`buffer`, `beta`, `delta`) / a `StampedeConfig`; any other value raises `ImproperlyConfigured`. See [`StampedeConfig`](#stampedeconfig) |
 | `username` | all Valkey/Redis | ACL user name; takes precedence over the URL |
 | `password` | all Valkey/Redis | Server password; takes precedence over the URL |
 | `socket_connect_timeout` | redis-py, valkey-py | Connection timeout |

@@ -190,10 +190,10 @@ cache.hexists("user:1", "name")  # True
 cache.hdel("user:1", "age")
 
 # Get count of fields
-cache.hlen("user:1")  # 2
+cache.hlen("user:1")  # 3
 
 # Get all values
-cache.hvals("user:1")  # ["Alice", "alice@example.com"]
+cache.hvals("user:1")  # ["Alice", "alice@example.com", 0.5]
 ```
 
 #### Field Expiration

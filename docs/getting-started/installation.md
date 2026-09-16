@@ -2,10 +2,10 @@
 
 ## Requirements
 
-- Python 3.14+ (free-threaded supported)
-- Django 6.0+
-- valkey-py 6.1+ or redis-py 6.0+
-- Valkey server 7.2+ or Redis server 6.0+ (hash field expiration needs Valkey 9.0+ or Redis 7.4+, and `hsetex`/`hgetex` Redis 8.0+; older servers raise `NotSupportedError` for those methods only)
+- Python 3.14+. The free-threaded build (3.14t) is supported, with one caveat for the C parsers below.
+- Django 6.0 to 6.x (`Django>=6,<7`)
+- valkey-py 6.1 to 6.x (`valkey>=6.1,<7`) or redis-py 6.0 to 8.x (`redis>=6,<9`)
+- Valkey server 7.2+ or Redis server 6.2+. `set(get=True)` and the immediate-expiry conditional writes (`add()` and `set(nx=/xx=/get=)` with `timeout=0`) send `SET ... GET` and `SET ... PXAT`, both Redis 6.2 commands; `set(nx=True, get=True)` needs Redis 7.0+. Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and `hsetex`/`hgetex` Redis 8.0+; older servers raise `NotSupportedError` for those methods only.
 
 ## Install with uv
 
@@ -33,6 +33,11 @@ uv add django-cachex[hiredis]
 
 These provide C-based parsers that improve protocol parsing throughput on the hot read path.
 
+Neither `hiredis` nor `libvalkey` declares free-threading support, so on the
+free-threaded build (3.14t) importing either re-enables the GIL for the
+process, with a `RuntimeWarning` at import. Use the pure-Python parser
+(the plain `valkey-py` / `redis-py` extras) to keep the GIL off.
+
 ## Valkey-Glide adapter (optional)
 
 !!! warning "Experimental"
@@ -49,7 +54,8 @@ pulled in together via the `valkey-glide` extra:
 uv add django-cachex[valkey-glide]
 ```
 
-cp314 GIL only; no cp314t (free-threaded) wheels are published yet.
+The extra pins `valkey-glide-sync` and `valkey-glide` 2.5 to 2.x. cp314 GIL
+only; no cp314t (free-threaded) wheels are published yet.
 Standalone (`ValkeyGlideCache`) and cluster (`ValkeyGlideClusterCache`)
 backends are wired up; Sentinel is not exposed (`valkey-glide` itself does
 not ship a Sentinel client). See the

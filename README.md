@@ -71,11 +71,15 @@ Full documentation at [oliverhaas.github.io/django-cachex](https://oliverhaas.gi
 
 ## Requirements
 
-- Python 3.14+ (free-threaded supported)
-- Django 6.0+
-- valkey-py 6.1+ or redis-py 6.0+
-- Valkey 7.2+ or Redis 6.0+ on the server (the admin's compare-and-swap
-  edits use `SET ... KEEPTTL`, which lands in Redis 6.0)
+- Python 3.14+. The free-threaded build (3.14t) is supported; note that
+  `hiredis` and `libvalkey` are C extensions without free-threading support,
+  so importing either on 3.14t re-enables the GIL with a `RuntimeWarning`.
+- Django 6.0 to 6.x (`Django>=6,<7`)
+- valkey-py 6.1 to 6.x (`valkey>=6.1,<7`) or redis-py 6.0 to 8.x (`redis>=6,<9`)
+- Valkey 7.2+ or Redis 6.2+ on the server. `set(get=True)` and the
+  immediate-expiry conditional writes (`add()` and `set(nx=/xx=/get=)` with
+  `timeout=0`) send `SET ... GET` and `SET ... PXAT`, both Redis 6.2 commands;
+  `set(nx=True, get=True)` needs Redis 7.0+
 - Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and `hsetex`/`hgetex`
   Redis 8.0+; older servers raise `NotSupportedError` for those methods
 
@@ -83,11 +87,11 @@ The `valkey-glide` adapter is optional and experimental: interfaces and
 behavior may still change, and it has seen less production testing than
 the redis-py/valkey-py paths. Install with the `valkey-glide` extra
 (`pip install django-cachex[valkey-glide]`) to enable
-`ValkeyGlideCache`; it pulls in `valkey-glide-sync` and `valkey-glide`,
-the official Rust-cored Valkey client. cp314 GIL only; no free-threaded
-wheels yet. Cluster is supported via `ValkeyGlideClusterCache`; Sentinel
-is not currently exposed (`valkey-glide` itself does not ship a Sentinel
-client).
+`ValkeyGlideCache`; it pulls in `valkey-glide-sync` and `valkey-glide`
+(2.5 to 2.x), the official Rust-cored Valkey client. cp314 GIL only; no
+free-threaded wheels yet. Cluster is supported via
+`ValkeyGlideClusterCache`; Sentinel is not currently exposed
+(`valkey-glide` itself does not ship a Sentinel client).
 
 ## Acknowledgments
 

@@ -63,6 +63,13 @@ CACHES = {
 
 See the upstream [valkey-glide](https://github.com/valkey-io/valkey-glide) docs for client-specific tuning. Sentinel is not exposed (`valkey-glide` itself does not ship a Sentinel client).
 
+Differences from the redis-py/valkey-py backends:
+
+- `LOCATION` must be a `redis://`, `rediss://`, `valkey://` or `valkeys://` URL. Unix-socket URLs (`unix://`, `redis+socket://`, `valkey+socket://`; glide has no unix-socket transport), a schemeless `host:port` and a non-numeric port raise `ImproperlyConfigured` at `caches[alias]`.
+- `OPTIONS["db"]`, `["username"]` and `["password"]` apply to every URL of a multi-URL `LOCATION`, so a list whose URLs differ only in a value the option overrides is accepted.
+- `xtrim()` and `axtrim()` (direct and on a pipeline) raise `ValueError("xtrim requires maxlen or minid")` before anything is sent.
+- A pipeline queues only the documented commands; an unknown attribute raises `AttributeError` instead of being turned into a command. Raw commands go through `pipe.execute_command(*args)`.
+
 ### Local backends
 
 | Backend | Description |
@@ -70,14 +77,49 @@ See the upstream [valkey-glide](https://github.com/valkey-io/valkey-glide) docs 
 | `LocMemCache` | Drop-in replacement for Django's `LocMemCache` with data-structure ops, `ttl()`/`expire()`/`persist()`, and admin support |
 | `DatabaseCache` | Drop-in replacement for Django's `DatabaseCache` with the same extensions |
 
+```python
+CACHES = {
+    "default": {
+        "BACKEND": "django_cachex.cache.LocMemCache",
+        "LOCATION": "unique-name",  # one store per LOCATION within the process
+        "OPTIONS": {
+            "MAX_ENTRIES": 300,  # cull when the store reaches this many keys
+            "CULL_FREQUENCY": 3,  # evict 1/N of the entries per cull; 0 empties the store
+        },
+    },
+    "db": {
+        "BACKEND": "django_cachex.cache.DatabaseCache",
+        "LOCATION": "django_cache_table",  # the cache table name
+        "OPTIONS": {
+            "MAX_ENTRIES": 300,
+            "CULL_FREQUENCY": 3,
+        },
+    },
+}
+```
+
+`MAX_ENTRIES` (default 300) and `CULL_FREQUENCY` (default 3) are Django's own
+`OPTIONS` for these backends and keep their meaning: when a new key arrives and
+the store already holds `MAX_ENTRIES` keys, one entry in `CULL_FREQUENCY` is
+evicted, and `CULL_FREQUENCY: 0` clears the store instead. The count covers the whole store,
+collections included: a `LocMemCache` hash or list counts as one entry, and a
+`DatabaseCache` compound op (`rpush()`, `sadd()`, `hset()`, ...) that inserts a
+new row runs the same cull check as `set()`.
+
+`DatabaseCache` stores everything in the table named by `LOCATION`, the same
+table Django's stock backend uses, so create it with `manage.py createcachetable`
+before first use; the data structures live in the existing `value` column and
+need no schema change.
+
 The TTL surface is `ttl()`, `expire()` and `persist()`, and `ttl()` reports
 whole seconds. `pttl()`, `pexpire()`, `expireat()`,
 `pexpireat()`, `expiretime()` and the hash-field expiration family
 (`hexpire()`, `httl()`, `hsetex()`, `hgetex()` and their relatives) raise
 `NotSupportedError`, and so do `lock()`, `pipeline()`, `eval_script()`,
 `get_client()`, `rename()`, `renamenx()`, `slowlog_get()`, `slowlog_len()`,
-the blocking list pops, and the cross-key store commands (`lmove()`,
-`smove()`, `sinterstore()` and friends). Streams are not implemented at all.
+`memory_usage()`, `largest_keys()` (and their `a*` twins), the blocking list
+pops, and the cross-key store commands (`lmove()`, `smove()`, `sinterstore()`
+and friends). Streams are not implemented at all.
 
 What does work on both: the hash, list, set and sorted-set commands, `type()`,
 `touch()`, `info()`, key listing (`keys()`, `iter_keys()`, `scan()`,
@@ -98,6 +140,11 @@ a row that does not exist yet, so two clients creating the same key at the same
 time deadlock and one gets an `OperationalError` (MySQL error 1213) instead of
 falling through to the insert retry.
 
+Inside a caller's `transaction.atomic()` block (`ATOMIC_REQUESTS` included) the
+row lock a compound operation or `incr()` takes is held until that outer
+transaction ends, since a savepoint release does not unlock rows. Keep them out
+of long-running transactions.
+
 ### Composite backends
 
 | Backend | Description |
@@ -113,7 +160,7 @@ falling through to the insert retry.
 `django_cachex.cache` also exports `RespCache`, `RespClusterCache` and
 `RespSentinelCache`. They hold the shared implementation that the Valkey/Redis
 backends above inherit. They bind no driver, so naming one as `BACKEND` raises
-`ImproperlyConfigured` on the first operation; they exist for subclassing and
+`ImproperlyConfigured` at `caches[alias]`; they exist for subclassing and
 typing. Read a mention of
 them elsewhere as shorthand for "every Valkey/Redis backend".
 
@@ -146,6 +193,12 @@ Server URL(s):
 # Or comma/semicolon separated
 "LOCATION": "valkey://127.0.0.1:6379/1,valkey://127.0.0.1:6380/1"
 ```
+
+`LOCATION` must not be blank or missing on a Valkey/Redis backend; it raises
+`ImproperlyConfigured` at `caches[alias]`. The adapter is built there too,
+without opening a connection, so a driver that is not installed, a `pool_class`
+or `async_pool_class` of the wrong type, or a Sentinel `LOCATION` with more
+than one entry surfaces at instantiation rather than on the first command.
 
 The multi-URL form works on the valkey-glide backends too. There the extra URLs
 become replica node addresses and the client is built with
@@ -259,7 +312,10 @@ to the driver's own sync or async `ConnectionPool`. See
 On a Sentinel backend, `pool_class` picks the Sentinel-managed pool and so must
 be `SentinelConnectionPool` or a subclass of it; anything else raises
 `ImproperlyConfigured` at startup, because a plain connection pool takes none of
-the primary/replica discovery arguments.
+the primary/replica discovery arguments. `async_pool_class` is checked the same
+way against the driver's async `SentinelConnectionPool` and is used for the
+`a*` methods. On a cluster backend both keys are ignored; the cluster client
+owns its per-node pools.
 
 Extra keys you add are forwarded to the underlying pool's `from_url(...)`, so you
 can pin driver-specific options (`socket_keepalive`, `health_check_interval`, etc.)
@@ -300,6 +356,13 @@ Probabilistic early recompute (XFetch) to avoid thundering-herd recompute when a
     },
 }
 ```
+
+The option takes `True` (defaults), `False` or `None` (off), a dict with any of
+`buffer`, `beta`, `delta` (an empty dict is off; unknown keys are dropped with a
+warning), or a ready `django_cachex.StampedeConfig`, which is used as is.
+Anything else, such as the string `"False"` an environment variable yields,
+raises `ImproperlyConfigured` at `caches[alias]` rather than switching
+prevention on.
 
 `buffer` is a non-negative `int` (seconds); `beta` and `delta` are finite
 non-negative numbers. Zero for `beta` or `delta` is valid and means "no
@@ -435,6 +498,10 @@ effect on valkey-glide, where the only TLS input cachex passes on is the
 
 ## Sentinel Configuration
 
+`LOCATION` is a single URL naming the Sentinel service; a list with more than
+one entry raises `ImproperlyConfigured`. The Sentinel nodes go in
+`OPTIONS["sentinels"]`.
+
 ```python
 CACHES = {
     "default": {
@@ -502,9 +569,11 @@ cache.set("key", "value", timeout=None)  # Never expires
 def my_key_func(key, key_prefix, version):
     return f"{key_prefix}:v{version}:{key}"
 
+
 CACHES = {
     "default": {
-        ...
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
         "KEY_FUNCTION": "myapp.cache.my_key_func",
     }
 }
@@ -516,9 +585,12 @@ CACHES = {
 def my_reverse_key_func(key):
     return key.split(":", 2)[2]
 
+
 CACHES = {
     "default": {
-        ...
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
+        "KEY_FUNCTION": "myapp.cache.my_key_func",
         "REVERSE_KEY_FUNCTION": "myapp.cache.my_reverse_key_func",
     }
 }

@@ -45,11 +45,16 @@ Every pod applies stream entries in stream order, its own included, and each ent
 
 Broadcasts stay best-effort: one is dropped when the publish backlog is full, when the publisher has been shut down, or when the `XADD` errors. The write still applies locally and stays readable on the pod that made it; the other pods keep the value they last saw until the next write to that key or its expiry. The stream is a replication feed, not a durable log.
 
+### Async and extension methods
+
+The standard `a*` methods are available, plus `aget_or_set`, `attl`, `apttl`, `apersist`, `aexpire`, `akeys`, `ascan`, `aiter_keys` and `adelete_pattern`. The local store is in memory, so each calls its sync twin directly. `memory_usage()` and `largest_keys()` raise `NotSupportedError`.
+
 ### Operational notes
 
 - All pods sharing a `stream_key` must use the same transport `BACKEND` and `OPTIONS` so their serializer/compressor agree on the wire format.
+- `set_many()` publishes one `set_many` stream entry (fields `keys`, `vals`, `exps`) rather than one `set` entry per key. Pods on a release older than 0.10 ignore that entry, so upgrade every pod sharing a `stream_key` together; until then a `set_many()` on a new pod is not replicated to the old ones.
 - The consumer thread, the publisher thread and the pod identity are shared per `LOCATION` within a process, not per backend instance. Django hands out one cache instance per thread and per async context, so per-instance state would mean one consumer per ASGI request. Two `StreamCache` aliases sharing a `stream_key` but not a `LOCATION` act as two independent pods, which is how the test suite simulates a cluster in one process.
-- The consumer thread is restarted automatically if it dies; check `info()["sync"]` for consumer health, last-read age, and stream position.
+- The consumer thread is restarted automatically if it dies; check `info()["sync"]` for consumer health, last-read age, and stream position. A transport alias that cannot be built (missing driver, bad `OPTIONS`) is reported as a consumer error: one traceback, then compact warnings with a one-second backoff, rather than a dead thread restarted by every cache operation. Publish failures log the same way, a traceback once per outage and one-line warnings after it.
 - On a valkey-glide transport the consumer polls instead of blocking: glide carries every command of a client over one connection, so a parked `XREAD BLOCK` would hold up each publish behind it. `block_timeout` is ignored there and the poll runs every 25 ms.
 - Set `replay` above 0 (up to `maxlen`) so a restarting pod replays the last N mutations and doesn't start with an empty cache.
 - Publishes are queued to a background thread; when more than `max_pending_publishes` are outstanding, new publishes are dropped with a warning instead of blocking the caller. A dropped publish costs the other pods that one update, not the local write: this pod keeps the value it wrote.
@@ -83,13 +88,15 @@ CACHES = {
 }
 ```
 
+`local_timeout`, `poll_timeout`, `health_check_interval` and `reconnect_delay` must be positive finite numbers (numeric strings are accepted; `local_timeout: None` keeps meaning no cap). Anything else raises `ImproperlyConfigured` at `caches[alias]`.
+
 ### Coherence
 
 - A write is visible locally one network round trip after the server applies it. A read in flight when the invalidation arrives is served but not kept.
 - A local copy never outlives its key: it expires with the key's remaining TTL, minus the stampede buffer if the transport uses stampede prevention, and `local_timeout` caps that further.
 - `FLUSHDB`, `FLUSHALL`, `clear()` and a lost listener connection flush the local store. The listener reconnects after `reconnect_delay`; until then every read goes to the transport.
 - The listener pings its tracking connection every `health_check_interval` seconds of wall clock, busy or idle. A connection the server drops silently is therefore noticed within `health_check_interval + reconnect_delay` plus the reconnect itself, and the local store is flushed at that point, so that sum bounds how long a stale local copy can be served.
-- The transport's stampede prevention applies to local hits too, so early recomputes stay spread across processes. A local hit whose XFetch roll fires returns the default; it is not refetched from the transport and rolled a second time.
+- The transport's stampede prevention applies to local hits too, so early recomputes stay spread across processes. The XFetch roll uses the key's remaining server TTL, not the local copy's age, so a `local_timeout` cap does not make local hits return the default early, and a local copy of a key without a TTL never rolls. A local hit whose roll fires returns the default; it is not refetched from the transport and rolled a second time. `has_key()` never rolls, and `get_or_set()` reads the value it just wrote back without a roll, so short-timeout keys still warm the local store.
 
 ### Without a listener
 
@@ -101,9 +108,9 @@ CACHES = {
 
 ### What's supported
 
-The standard Django cache interface, the `nx`/`xx`/`get` flags on `set`, and the key metadata helpers delegated to the transport (`keys`, `iter_keys`, `scan`, `ttl`, `pttl`, `type`, `info`, `slowlog_get`, `slowlog_len`, `persist`, `expire`, `delete_pattern`), all with async counterparts. Data-structure ops (`lpush`, `hset`, `zadd`, ...) raise `NotSupportedError`; use the transport alias for them. `info()` adds a `tracking` section with the listener state, the store size and the hit, miss, invalidation and flush counters.
+The standard Django cache interface, the `nx`/`xx`/`get` flags on `set`, and the key metadata helpers delegated to the transport (`keys`, `iter_keys`, `scan`, `ttl`, `pttl`, `type`, `memory_usage`, `largest_keys`, `info`, `slowlog_get`, `slowlog_len`, `persist`, `expire`, `delete_pattern`), all with async counterparts (`akeys`, `aiter_keys`, `ascan`, `attl`, `apttl`, `atype`, `amemory_usage`, `alargest_keys`, `apersist`, `aexpire`, `adelete_pattern`). A `NotSupportedError` the transport raises for a delegated call propagates unchanged, so it still names the server's reason. Data-structure ops (`lpush`, `hset`, `zadd`, ...) raise `NotSupportedError`; use the transport alias for them. `info()` adds a `tracking` section with the listener state, the store size and the hit, miss, invalidation and flush counters.
 
-`delete_pattern` takes a Redis glob on both sides: the same pattern picks the local entries to evict and the keys the transport deletes, so `[^0]` negates the way it does on the server.
+`delete_pattern` takes a Redis glob on both sides: the same pattern picks the local entries to evict and the keys the transport deletes, so `[^0]` negates the way it does on the server. Local copies are matched by their made key against the transport's `make_pattern()` glob, so eviction also works under a custom `KEY_FUNCTION` without a `REVERSE_KEY_FUNCTION`.
 
 `KEY_PREFIX` is not accepted on a `TrackingCache` alias, in either slot: keys are made by the transport, so set it there. `TIMEOUT` and `VERSION` on the alias are ignored for the same reason. Key versions come from the transport, and `incr_version` / `decr_version` (with their async twins) honor that: they delegate the rename to the transport and forget the local copies of both versions. `VERSION` on the transport alias works.
 
@@ -114,8 +121,8 @@ In the admin a `TrackingCache` alias is badged limited and offers no key browsin
 - With tracking coherence the transport must be a redis-py or valkey-py backend, standalone or Sentinel. Cluster (tracking is per node) and valkey-glide (cannot receive invalidations) transports raise `ImproperlyConfigured` on first use. Behind Sentinel, the health check reconnects the listener after a failover.
 - Each process holds one extra connection, opened outside the pool's accounting. It speaks RESP3, so the server pushes invalidations on the tracking connection itself. The first operation opens it; a transport that is down at that moment is retried in the background.
 - The listener always parses with its driver's pure-Python RESP3 parser, whatever `parser_class` the transport is configured with. `hiredis` and `libvalkey` stay on the data path; only the listener's own handful of messages is parsed in Python.
-- The local store, listener thread and counters are shared per `LOCATION` (defaulting to the transport alias) within a process, like `StreamCache`. Two aliases with different `LOCATION`s over one transport act as two independent pods.
-- `close()` is a no-op so the listener outlives requests; `shutdown()` stops it. A dead listener thread is restarted on the next operation.
+- The local store, listener thread and counters are shared per `LOCATION` (defaulting to the transport alias) within a process, like `StreamCache`. Two aliases with different `LOCATION`s over one transport act as two independent pods. Aliases sharing one `LOCATION` must agree on `transport`, `coherence`, `prefixes`, `local_timeout`, `MAX_ENTRIES`, `poll_timeout`, `health_check_interval` and `reconnect_delay`; a mismatch raises `ImproperlyConfigured` naming the differing options.
+- `close()` is a no-op so the listener outlives requests; `shutdown()` stops it. A dead listener thread is restarted on the next operation. When the tracking socket drops, the listener fails fast rather than letting the driver reconnect without `CLIENT TRACKING`; `TrackingCache` rebuilds it. An outage logs one traceback, then a one-line warning per attempt.
 - A local miss costs one pipelined `GET` plus `PTTL`; `get_many` fetches all missing keys in one pipeline.
 
 ## Choosing between them
