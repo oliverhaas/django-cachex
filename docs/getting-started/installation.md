@@ -5,7 +5,7 @@
 - Python 3.14+. The free-threaded build (3.14t) is supported, with one caveat for the C parsers below.
 - Django 6.0 to 6.x (`Django>=6,<7`)
 - valkey-py 6.1 to 6.x (`valkey>=6.1,<7`) or redis-py 6.0 to 8.x (`redis>=6,<9`)
-- Valkey server 7.2+ or Redis server 6.2+. `set(get=True)` and the immediate-expiry conditional writes (`add()` and `set(nx=/xx=/get=)` with `timeout=0`) send `SET ... GET` and `SET ... PXAT`, both Redis 6.2 commands; `set(nx=True, get=True)` needs Redis 7.0+. Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and `hsetex`/`hgetex` Redis 8.0+; older servers raise `NotSupportedError` for those methods only.
+- Valkey server 7.2+ or Redis server 6.2+. `set(get=True)` and the immediate-expiry conditional writes (`add()` and `set(nx=/xx=/get=)` with `timeout=0`) send `SET ... GET` and `SET ... PXAT`, both Redis 6.2 commands; `set(nx=True, get=True)` and `expiretime()` need Redis 7.0+. Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and `hsetex`/`hgetex` Valkey 9.0+ or Redis 8.0+; older servers raise `NotSupportedError` for those methods only.
 
 ## Install with uv
 

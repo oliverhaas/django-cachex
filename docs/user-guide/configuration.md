@@ -338,7 +338,7 @@ Sentinel backends.
 }
 ```
 
-Also redis-py and valkey-py only, cluster backends included. You rarely need to set this. When omitted, the driver's `DefaultParser`
+Also redis-py and valkey-py only; the cluster backends reject it (see above). You rarely need to set this. When omitted, the driver's `DefaultParser`
 is used, which resolves to the C-accelerated parser when `libvalkey`
 (Valkey) or `hiredis` (Redis) is installed and to the pure-Python RESP
 parser otherwise. To get the C parser, install the `libvalkey` or

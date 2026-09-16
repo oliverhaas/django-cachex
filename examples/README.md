@@ -7,7 +7,7 @@ Example Django projects demonstrating django-cachex cache admin.
 | Example | Description |
 |---------|-------------|
 | [simple](simple/) | Minimal setup with a single Valkey instance plus locmem |
-| [full](full/) | Standalone, cluster, sentinel, stream-synced, tracking-invalidated, the cachex local drop-ins, and two stock Django backends |
+| [full](full/) | Standalone, cluster, sentinel, tracking-invalidated, the cachex local drop-ins, and two stock Django backends |
 
 ## Quick Start
 
@@ -26,7 +26,7 @@ Login: `admin` / `password`
 
 ## Full Example Details
 
-The `full` example wires up twelve cache aliases:
+The `full` example wires up ten cache aliases:
 
 **Standalone:**
 - Valkey (port 6381)

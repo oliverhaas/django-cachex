@@ -37,12 +37,12 @@ django-cachex adds these extended methods:
 | `pexpire(key, timeout)` | Set expiration in milliseconds |
 | `expireat(key, when)` | Set expiration at datetime |
 | `pexpireat(key, when)` | Set expiration at datetime (ms precision) |
-| `expiretime(key)` | Absolute Unix timestamp (seconds) when the key expires |
+| `expiretime(key)` | Absolute Unix timestamp (seconds) when the key expires. Redis 7.0+ (any supported Valkey); an older server raises `NotSupportedError` |
 | `persist(key)` | Remove expiration |
 | `type(key)` | Get the data type of a key |
-| `memory_usage(key, *, samples=None)` | Bytes the key and its value take on the server (`MEMORY USAGE`); `None` if the key is missing. `samples` bounds how many elements of a container are sampled (server default 5, `0` = all) |
-| `largest_keys(pattern="*", count=10, *, samples=None, itersize=None)` | The `count` largest keys matching `pattern` as `(key, bytes)` pairs, largest first. Scans with `iter_keys()` and pipelines `MEMORY USAGE` in batches of 100. `count=0` returns `[]` without scanning; a negative `count` raises `ValueError` |
-| `clear_all_versions(itersize=None)` | Delete every key under this cache's `KEY_PREFIX` across all versions; returns the number deleted. The pattern `key_func("*", prefix, "*")` is handed to the adapter as is, outside `make_key`, so `cache.delete_pattern()` with the same pattern is not equivalent: it would prefix the pattern a second time. `clear()` removes the current version only |
+| `memory_usage(key, version=None, *, samples=None)` | Bytes the key and its value take on the server (`MEMORY USAGE`); `None` if the key is missing. `samples` bounds how many elements of a container are sampled (server default 5, `0` = all). Valkey/Redis backends only; other backends raise `NotSupportedError` |
+| `largest_keys(pattern="*", count=10, version=None, *, samples=None, itersize=None)` | The `count` largest keys matching `pattern` as `(key, bytes)` pairs, largest first. Scans with `iter_keys()` and pipelines `MEMORY USAGE` in batches of 100. `count=0` returns `[]` without scanning; a negative `count` raises `ValueError`. Valkey/Redis backends only; other backends raise `NotSupportedError` |
+| `clear_all_versions(itersize=None)` | Delete every key under this cache's `KEY_PREFIX` across all versions; returns the number deleted. The pattern `key_func("*", prefix, "*")`, built from the glob-escaped prefix, is handed to the adapter outside `make_key`, so `cache.delete_pattern()` with the same pattern is not equivalent: it would prefix the pattern a second time. `clear()` removes the current version only. Valkey/Redis backends only; other backends raise `NotSupportedError` |
 | `lock(key, ...)` | Get a distributed lock. Valkey/Redis backends only: `LocMemCache`, `DatabaseCache` and `TrackingCache` raise `NotSupportedError` |
 | `keys(pattern)` | Get keys matching pattern |
 | `iter_keys(pattern)` | Iterate keys matching pattern |
@@ -374,7 +374,7 @@ lock = cache.lock(key, version=None, lease=None, sleep=0.1, *, blocking=True, ti
 |-----------|-------------|
 | `key` | Lock name |
 | `version` | Cache version namespace for the lock key |
-| `lease` | TTL of the held lock; the lock is auto-released after this many seconds (no auto-release if `None`) |
+| `lease` | TTL of the held lock; the lock is auto-released after this many seconds (no auto-release if `None`); must be at least 1 ms, a smaller value raises `ValueError` |
 | `sleep` | Time between acquire attempts |
 | `blocking` | Wait for lock if held |
 | `timeout` | Max time `acquire()` will wait before giving up (no upper bound if `None`) |
@@ -425,15 +425,18 @@ cachex classes follow the drivers, not the stdlib.)
 ```python
 from django_cachex.lock import LockError, LockNotOwnedError
 
-lock = cache.lock("mylock", lease=30)
-try:
-    lock.acquire()
-    do_work()
-    lock.release()
-except LockNotOwnedError:
-    ...  # the lease ran out during do_work()
-except LockError:
-    ...  # could not acquire, or released twice
+
+def guarded_work():
+    lock = cache.lock("mylock", lease=30, timeout=5)
+    try:
+        if not lock.acquire():
+            return  # another holder kept it for 5 seconds
+        do_work()
+        lock.release()
+    except LockNotOwnedError:
+        ...  # the lease ran out during do_work()
+    except LockError:
+        ...  # released twice or by another owner
 ```
 
 Compatible with `threading.Lock`:
@@ -501,7 +504,7 @@ with cache.semaphore("memory-heavy", weight=100, capacity=500, lease=300):
 
 `acquire()` accepts `blocking` and `timeout` to override the defaults set on the semaphore object. Omit `timeout` and the value passed to `cache.semaphore(...)` applies; pass `timeout=None` explicitly and the call blocks indefinitely, whatever the instance default is. `aacquire()` reads it the same way, on both the local and the RESP backends.
 
-`release()` returns the claim to the pool. `extend(additional_seconds)` bumps the TTL on RESP backends for tasks that may legitimately exceed their original lease; it raises `ValueError` unless `additional_seconds` is positive, and returns `False` without raising when the claim is no longer ours because it was released or reaped. `aextend(additional_seconds)` behaves the same. On `LocMemCache` both exist for API parity: there is no lease TTL to bump, so they return `True` while the claim is held and `False` otherwise.
+`release()` returns the claim to the pool. `extend(additional_seconds)` bumps the TTL on RESP backends for tasks that may legitimately exceed their original lease; it raises `ValueError` unless `additional_seconds` is a positive finite number, and returns `False` without raising when the claim is no longer ours because it was released or reaped. `aextend(additional_seconds)` behaves the same. On `LocMemCache` both exist for API parity: there is no lease TTL to bump, so they return `True` while the claim is held and `False` otherwise.
 
 On RESP backends the semaphore's bookkeeping keys (`{name}:state`, `{name}:claims`, `{name}:queue`) expire after twice the longest lease seen. Acquire and release refresh all three; extend refreshes `{name}:state` and `{name}:claims`, and waiters keep `{name}:queue` alive by polling. A holder that dies without releasing therefore leaves nothing behind once its lease has run out.
 
@@ -580,7 +583,7 @@ async with await cache.apipeline() as pipe:
 
 `apipeline()` is `async def` so adapters whose async-client construction is itself awaitable (e.g. valkey-glide) can resolve the client before returning the wrapper. Queueing methods stay synchronous; only `apipeline()` and `execute()` need to be awaited.
 
-Single-key commands are available on the pipeline: `get`, `set`, `delete`, `exists`, `incr`, `decr`, `type`, `rename`, `renamenx`, the TTL commands (`ttl`, `pttl`, `expire`, `pexpire`, `expireat`, `pexpireat`, `expiretime`, `persist`), `memory_usage`, `eval_script` and every hash, list, set, sorted-set and stream command. The multi-key helpers (`set_many`, `get_many`, `delete_many`), the read-modify-write helpers (`get_or_set`, `add`, `touch`, `has_key`), and the scanning helpers (`keys`, `scan`, `delete_pattern`, `clear`) are not: queue their underlying commands instead. Results are returned as a list in the same order as the commands.
+Single-key commands are available on the pipeline: `get`, `set`, `delete`, `exists`, `incr`, `decr`, `type`, `rename`, `renamenx`, the TTL commands (`ttl`, `pttl`, `expire`, `pexpire`, `expireat`, `pexpireat`, `expiretime`, `persist`), `memory_usage`, `eval_script` and every non-blocking hash, list, set, sorted-set and stream command (`sscan` and the blocking pops `blpop`/`brpop`/`blmove` are not queueable). The multi-key helpers (`set_many`, `get_many`, `delete_many`), the read-modify-write helpers (`get_or_set`, `add`, `touch`, `has_key`), and the scanning helpers (`keys`, `scan`, `delete_pattern`, `clear`) are not: queue their underlying commands instead. Results are returned as a list in the same order as the commands.
 
 The queueing methods take the same signatures and parameter names as the cache
 methods they queue, so a call reads the same either way: `smove(src, dst,

@@ -210,7 +210,7 @@ cache.hvals("user:1")  # ["Alice", "alice@example.com", 0.5]
 
 #### Field Expiration
 
-Fields can carry their own TTL. This needs Redis 7.4+ or Valkey 9.0+, and `hsetex`/`hgetex` Redis 8.0+; an older server raises `NotSupportedError`.
+Fields can carry their own TTL. This needs Redis 7.4+ or Valkey 9.0+, and `hsetex`/`hgetex` Redis 8.0+ or Valkey 9.0+; an older server raises `NotSupportedError`.
 
 ```python
 from datetime import datetime, timedelta

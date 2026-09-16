@@ -81,7 +81,7 @@ Full documentation at [oliverhaas.github.io/django-cachex](https://oliverhaas.gi
 - Valkey 7.2+ or Redis 6.2+ on the server. `set(get=True)` and the
   immediate-expiry conditional writes (`add()` and `set(nx=/xx=/get=)` with
   `timeout=0`) send `SET ... GET` and `SET ... PXAT`, both Redis 6.2 commands;
-  `set(nx=True, get=True)` needs Redis 7.0+
+  `set(nx=True, get=True)` and `expiretime()` need Redis 7.0+
 - Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and `hsetex`/`hgetex`
   Valkey 9.0+ or Redis 8.0+; older servers raise `NotSupportedError` for those
   methods
