@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, cast
 import pytest
 from django.test import override_settings
 
+from tests.fixtures.containers import REDIS_IMAGE, VALKEY_IMAGE
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -49,9 +51,9 @@ BACKENDS = {
 # image; everything else lives on the Valkey image. Each adapter has exactly
 # one home image so we don't multiply the matrix by image.
 ADAPTER_IMAGES = {
-    "redis-py": ("redis:8", "redis"),
-    "valkey-py": ("valkey/valkey:9", "valkey"),
-    "valkey-glide": ("valkey/valkey:9", "valkey"),
+    "redis-py": (REDIS_IMAGE, "redis"),
+    "valkey-py": (VALKEY_IMAGE, "valkey"),
+    "valkey-glide": (VALKEY_IMAGE, "valkey"),
 }
 
 # Non-default TIMEOUT for the ``default`` alias, so the default-timeout paths
@@ -313,6 +315,42 @@ def _adapter_library_available(resp_adapter: str) -> bool:
         except ImportError:
             return False
     return True
+
+
+def server_version(cache: RespCache) -> tuple[str, tuple[int, ...]]:
+    """Return ``("redis" | "valkey", (major, minor))`` of the server behind ``cache``.
+
+    On cluster ``INFO`` is keyed by node; the first node stands for all.
+    """
+    info = cache.info("server")
+    if "redis_version" not in info:
+        info = next(iter(info.values()))
+    if valkey := info.get("valkey_version"):
+        return "valkey", _version_tuple(valkey)
+    return "redis", _version_tuple(info.get("redis_version", "0"))
+
+
+def _version_tuple(raw: object) -> tuple[int, ...]:
+    return tuple(int(part) for part in str(raw).split(".")[:2] if part.isdigit())
+
+
+def skip_below_server(
+    cache: RespCache,
+    *,
+    redis: tuple[int, int],
+    valkey: tuple[int, int] | None = None,
+    feature: str,
+) -> None:
+    """Skip when the connected server predates the release that added ``feature``.
+
+    The minimum-server CI job runs Redis 6.2 and Valkey 7.2, where commands
+    above the documented floor are expected to be missing. Valkey forked from
+    Redis 7.2, so ``valkey=None`` means every Valkey release has ``feature``.
+    """
+    server, version = server_version(cache)
+    floor = redis if server == "redis" else valkey
+    if floor is not None and version < floor:
+        pytest.skip(f"{feature} needs {server} {floor[0]}.{floor[1]}+, server is {'.'.join(map(str, version))}")
 
 
 def _skip_unsupported_combo(resp_adapter: str, topology: str) -> None:

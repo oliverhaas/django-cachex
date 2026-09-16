@@ -19,7 +19,7 @@ from benchmarks.runner import (
 def _start(image: str) -> tuple[str, DockerContainer]:
     container = DockerContainer(image)
     container.with_exposed_ports(6379)
-    container.with_command("redis-server --enable-debug-command yes --protected-mode no")
+    container.with_command("redis-server --protected-mode no")
     container.start()
     wait_for_logs(container, "Ready to accept connections")
     host = container.get_container_host_ip()

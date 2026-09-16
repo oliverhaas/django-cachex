@@ -11,6 +11,7 @@ from django.core.exceptions import ImproperlyConfigured
 
 from django_cachex.stampede import StampedeConfig, make_stampede_config, should_recompute, should_recompute_remaining
 from tests.cache.support import make_cache
+from tests.fixtures.cache import skip_below_server
 
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
@@ -278,6 +279,7 @@ class TestStampedeExtendedTTL:
         assert 290_000 < pttl <= 300_000
 
     def test_reported_expiretime_strips_buffer(self, stampede_cache: RespCache):
+        skip_below_server(stampede_cache, redis=(7, 0), feature="EXPIRETIME")
         stampede_cache.set("sp_et_logical", "val", timeout=300)
         logical = stampede_cache.expiretime("sp_et_logical")
         raw = stampede_cache.expiretime("sp_et_logical", stampede_prevention=False)
@@ -413,6 +415,7 @@ class TestStampedeExpireFamily:
         assert stampede_cache.pttl("sp_pexp") == pytest.approx(30_000, abs=2000)
 
     def test_expireat_keeps_value_readable(self, stampede_cache: RespCache):
+        skip_below_server(stampede_cache, redis=(7, 0), feature="EXPIRETIME")
         stampede_cache.set("sp_expat", "val", timeout=300)
         when = int(time.time()) + 30
         assert stampede_cache.expireat("sp_expat", when) is True
@@ -465,6 +468,7 @@ class TestStampedeExpireFamily:
 
     @pytest.mark.asyncio
     async def test_aexpireat_keeps_value_readable(self, stampede_cache: RespCache):
+        skip_below_server(stampede_cache, redis=(7, 0), feature="EXPIRETIME")
         await stampede_cache.aset("asp_expat", "val", timeout=300)
         when = int(time.time()) + 30
         assert await stampede_cache.aexpireat("asp_expat", when) is True
@@ -482,6 +486,7 @@ class TestNoStampedeTTLSurfaceUnchanged:
         assert cache.pttl("nosp_exp") == pytest.approx(120_000, abs=2000)
 
     def test_expireat_and_expiretime_are_untouched(self, cache: RespCache):
+        skip_below_server(cache, redis=(7, 0), feature="EXPIRETIME")
         cache.set("nosp_expat", "val", timeout=300)
         when = int(time.time()) + 120
         assert cache.expireat("nosp_expat", when) is True

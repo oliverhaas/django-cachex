@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v10
 
       - name: Set up Python
         run: uv python install 3.14
@@ -73,7 +73,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v10
 
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
@@ -132,7 +132,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v10
 
       - name: Set up Python
         run: uv python install 3.14
@@ -165,7 +165,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v10
 
       # glide ships no free-threaded wheel, so this runs on GIL cp314 only.
       - name: Set up Python
@@ -194,7 +194,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v10
 
       # The package advertises free-threading support in its classifiers and
       # README, so the suite has to actually run with the GIL disabled.
@@ -220,6 +220,31 @@ jobs:
           PYTHON_GIL: "0"
           PYTHONDONTWRITEBYTECODE: "1"
 
+  test-minimum-servers:
+    name: Test against the minimum supported servers (Redis 6.2, Valkey 7.2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      # The other jobs run the newest stable images; this one pins the oldest
+      # releases the docs promise so a command above that floor fails a test
+      # instead of only its NotSupportedError path. Cluster keeps its own image.
+      - name: Run backend tests
+        run: uv run --no-sync pytest tests/cache/ -n auto
+        env:
+          CACHEX_TEST_REDIS_IMAGE: "redis:6.2"
+          CACHEX_TEST_VALKEY_IMAGE: "valkey/valkey:7.2"
+          PYTHONDONTWRITEBYTECODE: "1"
+
   build-pure-wheel:
     name: Build pure-Python wheel (django-cachex)
     runs-on: ubuntu-latest
@@ -227,7 +252,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v10
 
       - name: Set up Python
         run: uv python install 3.14
@@ -253,7 +278,7 @@ jobs:
           path: wheelhouse
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v10
 
       - name: Set up Python
         run: uv python install 3.14
@@ -263,6 +288,14 @@ jobs:
 
       - name: Install the wheel
         run: uv pip install --no-deps wheelhouse/django_cachex-*-py3-none-any.whl
+
+      # pytest puts the repo root on sys.path (pythonpath in pyproject.toml),
+      # where the checkout's package would shadow the installed wheel.
+      - name: Remove the source tree so the tests import the wheel
+        run: rm -rf django_cachex
+
+      - name: Check django_cachex resolves to the installed wheel
+        run: uv run --no-sync python -c "import django_cachex; print(django_cachex.__file__); assert 'site-packages' in django_cachex.__file__"
 
       - name: Run cache tests against the built wheel
         run: uv run --no-sync pytest tests/cache/ -n auto
@@ -280,7 +313,7 @@ jobs:
           path: wheelhouse
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v10
 
       - name: Set up Python
         run: uv python install 3.14

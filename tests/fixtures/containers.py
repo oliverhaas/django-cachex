@@ -12,15 +12,20 @@ import redis
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
+# Standalone (and Sentinel, which runs from the same image) server images.
+# CI's minimum-server job overrides them with the oldest documented releases.
+REDIS_IMAGE = environ.get("CACHEX_TEST_REDIS_IMAGE", "redis:8")
+VALKEY_IMAGE = environ.get("CACHEX_TEST_VALKEY_IMAGE", "valkey/valkey:9")
+
 # Available Redis-compatible images with their corresponding client library
 # Format: (image, client_library) where client_library is "redis" or "valkey".
 # Used by the opt-in ``resp_images`` fixture for cross-image tests.
 RESP_IMAGES = [
-    ("redis:8", "redis"),
+    (REDIS_IMAGE, "redis"),
     ("redis/redis-stack-server:latest", "redis"),
-    ("valkey/valkey:9", "valkey"),
+    (VALKEY_IMAGE, "valkey"),
 ]
-DEFAULT_REDIS_IMAGE = "redis:8"
+DEFAULT_REDIS_IMAGE = REDIS_IMAGE
 DEFAULT_CLIENT_LIBRARY = "redis"
 
 # Redis Cluster image (runs 6 nodes in single container: 3 masters + 3 replicas)
@@ -65,7 +70,7 @@ def _start_redis_container(image: str) -> ContainerInfo:
     """Start a Redis container with the given image."""
     container = DockerContainer(image)
     container.with_exposed_ports(6379)
-    container.with_command("redis-server --enable-debug-command yes --protected-mode no")
+    container.with_command("redis-server --protected-mode no")
     container.waiting_for(LogMessageWaitStrategy("Ready to accept connections"))
     container.start()
     return ContainerInfo(

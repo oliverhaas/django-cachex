@@ -66,7 +66,7 @@ dev = [
   "pytest-mock==3.15.1",
   "pytest-xdist==3.8.0",
   "pytest==9.1.1",
-  "ruff==0.16.7",
+  "ruff==0.16.8",
   "testcontainers==4.15.0",
   "ty==0.0.81",
   "types-docker==7.2.0.20260827",
@@ -265,6 +265,9 @@ unresolved-import = "ignore"
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "tests.settings.base"
+# The wheel job installs the package without the project, so nothing else
+# puts the repo root (and with it `tests.settings`) on sys.path.
+pythonpath = ["."]
 addopts = "--cov=django_cachex --cov-report=term-missing --cov-report=xml --no-cov-on-fail"
 testpaths = ["tests"]
 xfail_strict = true
