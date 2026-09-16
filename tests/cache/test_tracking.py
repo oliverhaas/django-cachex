@@ -1,5 +1,6 @@
 """Tests for the CLIENT TRACKING backed local cache (TrackingCache)."""
 
+import logging
 import math
 import threading
 import time
@@ -66,6 +67,14 @@ def _skip_unless_trackable(resp_adapter: str) -> None:
     if resp_adapter == "valkey-glide":
         pytest.skip("valkey-glide cannot host an invalidation listener")
     if not _adapter_library_available(resp_adapter):
+        pytest.skip(f"{resp_adapter} library not installed")
+
+
+def _skip_unless_usable(resp_adapter: str, coherence: str) -> None:
+    """Tracking coherence needs a listener-capable adapter; TTL coherence only needs the library."""
+    if coherence == "tracking":
+        _skip_unless_trackable(resp_adapter)
+    elif not _adapter_library_available(resp_adapter):
         pytest.skip(f"{resp_adapter} library not installed")
 
 
@@ -327,9 +336,15 @@ def _run_during_fetch(cache, mocker, hook: Callable[[], Any]) -> None:
     mocker.patch.object(adapter, "pipeline", side_effect=racing_pipeline)
 
 
-def _stampede_transport_config(redis_container: RedisContainerInfo, resp_adapter: str, *, delta: float = 0) -> dict:
+def _stampede_transport_config(
+    redis_container: RedisContainerInfo,
+    resp_adapter: str,
+    *,
+    delta: float = 0,
+    options: dict | None = None,
+) -> dict:
     """Tracking config whose transport keeps a 60s stampede buffer; ``delta=0`` never rolls early."""
-    config = _build_tracking_config(redis_container, resp_adapter)
+    config = _build_tracking_config(redis_container, resp_adapter, options=options)
     config["transport"]["OPTIONS"]["stampede_prevention"] = {"buffer": 60, "delta": delta}
     return config
 
@@ -372,10 +387,7 @@ def coherence() -> str:
 
 @pytest.fixture
 def tracking_config(redis_container: RedisContainerInfo, resp_adapter: str, coherence: str) -> dict:
-    if coherence == "tracking":
-        _skip_unless_trackable(resp_adapter)
-    elif not _adapter_library_available(resp_adapter):
-        pytest.skip(f"{resp_adapter} library not installed")
+    _skip_unless_usable(resp_adapter, coherence)
     return _build_tracking_config(redis_container, resp_adapter, options=_coherence_options(coherence))
 
 
@@ -447,6 +459,34 @@ class TestTrackingConfig:
                 TrackingCache("tracking:mixed", {"OPTIONS": {"transport": "t", "coherence": "ttl", "local_timeout": 1}})
         finally:
             _cleanup_registry("tracking:mixed")
+
+    @pytest.mark.parametrize(
+        ("options", "differing"),
+        [
+            ({"transport": "other"}, r"transport: 't' vs 'other'"),
+            ({"local_timeout": 10}, r"local_timeout: 5\.0 vs 10\.0"),
+            ({"prefixes": ["a:"]}, r"prefixes: None vs \('a:',\)"),
+            ({"MAX_ENTRIES": 7}, r"MAX_ENTRIES: 300 vs 7"),
+            ({"poll_timeout": 0.5}, r"poll_timeout: 1\.0 vs 0\.5"),
+            ({"health_check_interval": 1}, r"health_check_interval: 15\.0 vs 1\.0"),
+            ({"reconnect_delay": 2}, r"reconnect_delay: 1\.0 vs 2\.0"),
+        ],
+    )
+    def test_one_storage_key_cannot_mix_shared_options(self, options: dict, differing: str):
+        base = {"transport": "t", "local_timeout": 5}
+        try:
+            TrackingCache("tracking:mixed-options", {"OPTIONS": base})
+            with pytest.raises(ImproperlyConfigured, match=differing):
+                TrackingCache("tracking:mixed-options", {"OPTIONS": {**base, **options}})
+            TrackingCache("tracking:mixed-options", {"OPTIONS": dict(base)})
+        finally:
+            _cleanup_registry("tracking:mixed-options")
+
+    @pytest.mark.parametrize("name", ["local_timeout", "poll_timeout", "health_check_interval", "reconnect_delay"])
+    @pytest.mark.parametrize("value", [0, -1, "0", "nan", "inf", "soon", True, [1]])
+    def test_non_positive_timing_options_are_rejected(self, name: str, value: Any):
+        with pytest.raises(ImproperlyConfigured, match=name):
+            TrackingCache("", {"OPTIONS": {"transport": "t", name: value}})
 
     def test_non_resp_transport_is_rejected_on_first_use(self):
         config = {
@@ -718,6 +758,35 @@ class TestTrackingWrites:
         assert set(tracking_cache._state.store) == {tracking_cache.make_key("user0x")}
         assert tracking_cache.get("user1x") is None
 
+    def test_delete_pattern_evicts_under_a_custom_key_function(
+        self,
+        redis_container: RedisContainerInfo,
+        resp_adapter: str,
+        coherence: str,
+    ):
+        _skip_unless_usable(resp_adapter, coherence)
+        config = _build_tracking_config(redis_container, resp_adapter, options=_coherence_options(coherence))
+        config["transport"]["KEY_FUNCTION"] = _custom_key_func
+        with _connected(config) as cache:
+            _settled(cache, lambda: cache.set_many({"user:1": 1, "user:2": 2, "other": 3}), count=3)
+            assert cache.get_many(["user:1", "user:2", "other"]) == {"user:1": 1, "user:2": 2, "other": 3}
+            assert cache.delete_pattern("user:*") == 2
+            assert set(cache._state.store) == {cache.make_key("other")}
+            assert cache.get("user:1") is None
+
+    def test_delete_many_makes_keys_outside_the_state_lock(self, tracking_cache, mocker):
+        state = tracking_cache._state
+        real_make_key = tracking_cache.make_key
+        locked: list[bool] = []
+
+        def observing_make_key(key: str, version: int | None = None) -> str:
+            locked.append(state.lock.locked())
+            return real_make_key(key, version=version)
+
+        mocker.patch.object(tracking_cache, "make_key", side_effect=observing_make_key)
+        tracking_cache.delete_many(["a", "b"])
+        assert locked == [False, False]
+
     def test_delete_pattern_drops_a_fetch_in_flight_with_the_listener_muted(self, tracking_cache, mocker):
         tracking_cache.set("user:1", "old")
         mocker.patch.object(_TrackingState, "apply", return_value=None)
@@ -813,15 +882,17 @@ class TestTrackingTTL:
     def test_local_expiry_never_exceeds_the_key_ttl(self, tracking_cache):
         _settled(tracking_cache, lambda: tracking_cache.set("ttl", 1, timeout=2))
         assert tracking_cache.get("ttl") == 1
-        _raw, expires_at = tracking_cache._state.store[tracking_cache.make_key("ttl")]
+        _raw, expires_at, logical_expires_at = tracking_cache._state.store[tracking_cache.make_key("ttl")]
         assert expires_at is not None
         assert expires_at <= time.monotonic() + 2.0
+        assert logical_expires_at == expires_at
 
     def test_key_without_expiry_has_no_local_expiry(self, tracking_cache):
         _settled(tracking_cache, lambda: tracking_cache.set("forever", 1, timeout=None))
         assert tracking_cache.get("forever") == 1
-        _raw, expires_at = tracking_cache._state.store[tracking_cache.make_key("forever")]
+        _raw, expires_at, logical_expires_at = tracking_cache._state.store[tracking_cache.make_key("forever")]
         assert expires_at is None
+        assert logical_expires_at is None
 
     @BOTH_MODES
     def test_expired_local_entry_is_refetched(self, tracking_cache):
@@ -855,7 +926,7 @@ class TestTrackingTTL:
         with _connected(_stampede_transport_config(redis_container, resp_adapter)) as cache:
             _settled(cache, lambda: cache.set("buffered", 1, timeout=30))
             assert cache.get("buffered") == 1
-            _raw, expires_at = cache._state.store[cache.make_key("buffered")]
+            _raw, expires_at, _logical = cache._state.store[cache.make_key("buffered")]
             assert expires_at <= time.monotonic() + 30.0
             caches["transport"].expire("buffered", 50, stampede_prevention=False)
             assert _wait_for(lambda: cache._state.store == {})
@@ -904,6 +975,57 @@ class TestTrackingTTL:
             assert cache.get_many(["g1", "g2"]) == {}
             assert transport_roll.call_count == 0
 
+    @BOTH_MODES
+    def test_a_capped_local_copy_rolls_on_the_server_ttl(
+        self,
+        redis_container: RedisContainerInfo,
+        resp_adapter: str,
+        coherence: str,
+        mocker,
+    ):
+        _skip_unless_usable(resp_adapter, coherence)
+        options = {**_coherence_options(coherence), "local_timeout": 1}
+        with _connected(_stampede_transport_config(redis_container, resp_adapter, delta=1.0, options=options)) as cache:
+            _settled(cache, lambda: cache.set("forever", 1, timeout=None))
+            _settled(cache, lambda: cache.set("long", 2, timeout=300))
+            assert cache.get("forever") == 1
+            assert cache.get("long") == 2
+            # A roll of 2s recomputes anything with less than 2s left: the
+            # capped local second would, the 300s server TTL does not.
+            mocker.patch("random.expovariate", return_value=2.0)
+            assert cache.get("forever") == 1
+            assert cache.get("long") == 2
+            assert _tracking_section(cache)["hits"] == 2
+
+    def test_has_key_does_not_roll_the_stampede_dice(
+        self,
+        redis_container: RedisContainerInfo,
+        resp_adapter: str,
+        mocker,
+    ):
+        _skip_unless_trackable(resp_adapter)
+        with _connected(_stampede_transport_config(redis_container, resp_adapter, delta=1.0)) as cache:
+            _settled(cache, lambda: cache.set("probe", 1, timeout=30))
+            assert cache.get("probe") == 1
+            mocker.patch("random.expovariate", return_value=math.inf)
+            assert cache.has_key("probe")
+            assert _tracking_section(cache)["entries"] == 1
+
+    @pytest.mark.asyncio
+    async def test_ahas_key_does_not_roll_the_stampede_dice(
+        self,
+        redis_container: RedisContainerInfo,
+        resp_adapter: str,
+        mocker,
+    ):
+        _skip_unless_trackable(resp_adapter)
+        with _connected(_stampede_transport_config(redis_container, resp_adapter, delta=1.0)) as cache:
+            await _asettled(cache, lambda: cache.aset("probe", 1, timeout=30))
+            assert await cache.aget("probe") == 1
+            mocker.patch("random.expovariate", return_value=math.inf)
+            assert await cache.ahas_key("probe")
+            assert _tracking_section(cache)["entries"] == 1
+
     def test_get_or_set_refreshes_a_logically_expired_key(self, redis_container: RedisContainerInfo, resp_adapter: str):
         _skip_unless_trackable(resp_adapter)
         with _connected(_stampede_transport_config(redis_container, resp_adapter)) as cache:
@@ -911,6 +1033,21 @@ class TestTrackingTTL:
             _settled(cache, lambda: caches["transport"].expire("gos", 50, stampede_prevention=False))
             assert cache.get_or_set("gos", "fresh", timeout=30) == "fresh"
             assert caches["transport"].get("gos", stampede_prevention=False) == "fresh"
+
+    @TTL_MODE
+    def test_get_or_set_reads_its_own_write_back_without_rolling(
+        self,
+        redis_container: RedisContainerInfo,
+        resp_adapter: str,
+        coherence: str,
+        mocker,
+    ):
+        _skip_unless_usable(resp_adapter, coherence)
+        options = _coherence_options(coherence)
+        with _connected(_stampede_transport_config(redis_container, resp_adapter, delta=1.0, options=options)) as cache:
+            mocker.patch("random.expovariate", return_value=math.inf)
+            assert cache.get_or_set("warm", "fresh", timeout=1) == "fresh"
+            assert set(cache._state.store) == {cache.make_key("warm")}
 
     @BOTH_MODES
     def test_unexpected_pttl_is_served_but_not_kept(self, tracking_cache):
@@ -1043,22 +1180,28 @@ class TestTrackingListenerLifecycle:
 
     def test_threads_share_one_state(self, tracking_config: dict):
         location = tracking_config["default"]["LOCATION"]
-        states: list[object] = []
+        outcomes: list[object] = []
         barrier = threading.Barrier(4)
         with _tracking(tracking_config):
 
             def worker() -> None:
-                barrier.wait(10.0)
-                cache = caches["default"]
-                cache.get("shared")
-                states.append(cache._state)
+                try:
+                    barrier.wait(10.0)
+                    cache = caches["default"]
+                    cache.get("shared")
+                    outcomes.append(cache._state)
+                except BaseException as exc:  # noqa: BLE001
+                    outcomes.append(exc)
 
             threads = [threading.Thread(target=worker) for _ in range(4)]
             for thread in threads:
                 thread.start()
             for thread in threads:
                 thread.join(10.0)
-            assert len({id(state) for state in states}) == 1
+            assert [thread for thread in threads if thread.is_alive()] == []
+            assert [outcome for outcome in outcomes if isinstance(outcome, BaseException)] == []
+            assert len(outcomes) == 4
+            assert len({id(outcome) for outcome in outcomes}) == 1
             listeners = [t for t in threading.enumerate() if t.name == f"tracking-cache-{location}"]
             assert len(listeners) == 1
 
@@ -1117,17 +1260,47 @@ class TestTrackingListenerLoop:
             gaps = [later - earlier for earlier, later in pairwise(attempts)]
             assert min(gaps) >= 0.25
 
+    def test_reconnect_failures_log_one_traceback_per_outage(self, mocker, caplog):
+        class DyingListener(_StubListener):
+            def poll(self, timeout: float) -> None:
+                msg = "connection lost"
+                raise ConnectionError(msg)
+
+        attempts = 0
+
+        def open_listener() -> DyingListener:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 4:
+                return DyingListener()
+            msg = "transport still down"
+            raise ConnectionError(msg)
+
+        def failures() -> list[logging.LogRecord]:
+            return [r for r in caplog.records if "failed to reconnect" in r.getMessage()]
+
+        with _offline_cache(reconnect_delay=0.01, poll_timeout=0.01) as cache:
+            mocker.patch.object(cache, "_open_listener", side_effect=open_listener)
+            with (
+                caplog.at_level(logging.WARNING, logger="django_cachex.cache.tracking"),
+                _pumping(cache._listener_loop, DyingListener()),
+            ):
+                assert _wait_for(lambda: len(failures()) >= 6)
+        # Attempts 1-3 fail, 4 connects and is lost at once, 5 onwards fail again.
+        assert [bool(r.exc_info) for r in failures()[:6]] == [True, False, False, True, False, False]
+        assert all("transport still down" in r.getMessage() for r in failures())
+
     def test_an_abandoned_listener_does_not_disconnect_its_replacement(self):
-        state = _TrackingState(max_entries=10, poll_timeout=0.1, coherence="tracking")
+        state = _TrackingState({"MAX_ENTRIES": 10, "poll_timeout": 0.1, "coherence": "tracking"})
         abandoned, replacement = _StubListener(), _StubListener()
         state.on_connect(abandoned, reconnect=False)
         state.on_connect(replacement, reconnect=True)
-        state.store["k"] = (b"v", None)
+        state.store["k"] = (b"v", None, None)
 
         state.on_disconnect(abandoned)
         assert state.connected is True
         assert state.listener is replacement
-        assert state.store == {"k": (b"v", None)}
+        assert state.store == {"k": (b"v", None, None)}
 
         state.on_disconnect(replacement)
         assert state.connected is False
@@ -1219,6 +1392,22 @@ class TestTrackingAsync:
             assert await cache.aget_or_set("gos", "fresh", timeout=30) == "fresh"
             assert caches["transport"].get("gos", stampede_prevention=False) == "fresh"
 
+    @TTL_MODE
+    @pytest.mark.asyncio
+    async def test_aget_or_set_reads_its_own_write_back_without_rolling(
+        self,
+        redis_container: RedisContainerInfo,
+        resp_adapter: str,
+        coherence: str,
+        mocker,
+    ):
+        _skip_unless_usable(resp_adapter, coherence)
+        options = _coherence_options(coherence)
+        with _connected(_stampede_transport_config(redis_container, resp_adapter, delta=1.0, options=options)) as cache:
+            mocker.patch("random.expovariate", return_value=math.inf)
+            assert await cache.aget_or_set("warm", "fresh", timeout=1) == "fresh"
+            assert set(cache._state.store) == {cache.make_key("warm")}
+
 
 @BOTH_MODES
 class TestTrackingSurface:
@@ -1246,6 +1435,13 @@ class TestTrackingSurface:
         get_spy.assert_called_once_with(1)
         assert tracking_cache.slowlog_len() == len_spy.spy_return
         len_spy.assert_called_once_with()
+
+    def test_transport_not_supported_errors_keep_their_detail(self, tracking_cache, mocker):
+        error = NotSupportedError("memory", detail="the server does not know this command")
+        mocker.patch.object(tracking_cache._transport, "memory_usage", side_effect=error)
+        with pytest.raises(NotSupportedError) as excinfo:
+            tracking_cache.memory_usage("k")
+        assert excinfo.value is error
 
     def test_transport_close_is_not_forwarded_by_close(self, tracking_cache, mocker):
         spy = mocker.spy(tracking_cache._transport, "close")

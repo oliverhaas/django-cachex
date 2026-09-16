@@ -170,6 +170,22 @@ class BaseCachex(BaseCache):
         """Async: get the TTL of a key in milliseconds."""
         raise NotSupportedError("apttl", self.__class__.__name__)
 
+    async def amemory_usage(self, key: str, version: int | None = None, *, samples: int | None = None) -> int | None:
+        """Async: bytes the key and its value take on the server, or None if the key is missing."""
+        raise NotSupportedError("amemory_usage", self.__class__.__name__)
+
+    async def alargest_keys(
+        self,
+        pattern: str = "*",
+        count: int = 10,
+        version: int | None = None,
+        *,
+        samples: int | None = None,
+        itersize: int | None = None,
+    ) -> list[tuple[str, int]]:
+        """Async: the ``count`` largest keys matching ``pattern`` as ``(key, bytes)``, largest first."""
+        raise NotSupportedError("alargest_keys", self.__class__.__name__)
+
     async def atype(self, key: str, version: int | None = None) -> KeyType | None:
         """Async: get the data type of a key. See :meth:`type`."""
         return KeyType.STRING if await self.ahas_key(key, version=version) else None

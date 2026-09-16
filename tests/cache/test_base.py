@@ -51,6 +51,8 @@ UNSUPPORTED_OPERATIONS = [
     ("zpopmin", ("key",)),
     ("zpopmax", ("key",)),
     ("xlen", ("key",)),
+    ("memory_usage", ("key",)),
+    ("largest_keys", ()),
     ("info", ()),
     ("slowlog_get", ()),
     ("slowlog_len", ()),
@@ -73,6 +75,16 @@ class TestBaseCachexUnsupported:
         method = getattr(self.cache, operation)
         with pytest.raises(NotSupportedError):
             method(*args)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("operation", "args"),
+        [("amemory_usage", ("key",)), ("alargest_keys", ())],
+        ids=["amemory_usage", "alargest_keys"],
+    )
+    async def test_unsupported_async_operation_raises(self, operation, args):
+        with pytest.raises(NotSupportedError, match=operation):
+            await getattr(self.cache, operation)(*args)
 
 
 class TestBaseCachexSetFlags:

@@ -11,6 +11,8 @@ import random
 from dataclasses import dataclass
 from typing import Any
 
+from django.core.exceptions import ImproperlyConfigured
+
 logger = logging.getLogger(__name__)
 
 
@@ -114,18 +116,28 @@ def get_timeout_with_buffer(
 _STAMPEDE_FIELDS = ("buffer", "beta", "delta")
 
 
-def make_stampede_config(option: bool | dict[str, Any] | None) -> StampedeConfig | None:
+def make_stampede_config(option: bool | dict[str, Any] | StampedeConfig | None) -> StampedeConfig | None:
     """Build a ``StampedeConfig`` from an adapter ``stampede_prevention`` option.
 
+    Accepts ``None``/``False`` (off), ``True`` (defaults), a dict of fields
+    or a ready ``StampedeConfig``. Anything else, such as the string
+    ``"False"`` an environment variable yields, raises
+    ``ImproperlyConfigured`` rather than silently switching prevention on.
     Unknown dict keys are dropped (with a warning) instead of raising
     ``TypeError``, so a typo in ``OPTIONS`` doesn't take the process down at
     startup. ``resolve_stampede`` is stricter about its per-call override,
     which is code rather than configuration: a value that is not
     ``bool | StampedeConfig | None`` raises ``TypeError``.
     """
-    if not option:
+    if option is None or option is False:
         return None
+    if option is True:
+        return StampedeConfig()
+    if isinstance(option, StampedeConfig):
+        return option
     if isinstance(option, dict):
+        if not option:
+            return None
         known = {k: v for k, v in option.items() if k in _STAMPEDE_FIELDS}
         unknown = sorted(set(option) - set(_STAMPEDE_FIELDS))
         if unknown:
@@ -135,4 +147,8 @@ def make_stampede_config(option: bool | dict[str, Any] | None) -> StampedeConfig
                 _STAMPEDE_FIELDS,
             )
         return StampedeConfig(**known)
-    return StampedeConfig()
+    msg = (
+        "OPTIONS['stampede_prevention'] must be a bool, a dict with buffer/beta/delta, "
+        f"a StampedeConfig or None. Got: {option!r}"
+    )
+    raise ImproperlyConfigured(msg)

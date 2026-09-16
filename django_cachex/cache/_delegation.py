@@ -2,8 +2,6 @@
 
 from typing import TYPE_CHECKING, Any
 
-from django_cachex.exceptions import NotSupportedError
-
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
 
@@ -13,61 +11,20 @@ if TYPE_CHECKING:
 class DelegatingCacheMixin:
     """Forward the admin/metadata surface to ``_delegation_target``.
 
-    A ``NotSupportedError`` raised by the target is re-raised carrying this
-    backend's class name, so the error names the backend the caller reached
-    for rather than the one behind it.
+    The target's errors propagate unchanged: a ``NotSupportedError`` it
+    raises already names the operation and, when the server refused the
+    command, why.
     """
 
     @property
     def _delegation_target(self) -> BaseCache:
         raise NotImplementedError
 
-    def _delegated_method(self, method: str) -> Any:
-        """Look up ``method`` on the target, raising NotSupportedError if it has none."""
-        fn = getattr(self._delegation_target, method, None)
-        if fn is None:
-            raise NotSupportedError(method, type(self).__name__)
-        return fn
-
     def _delegate(self, method: str, *args: Any, **kwargs: Any) -> Any:
-        """Call ``method`` on the target, translating only its ``NotSupportedError``.
-
-        An ``AttributeError`` raised inside the target's implementation is a
-        bug there and propagates unchanged.
-        """
-        fn = self._delegated_method(method)
-        try:
-            return fn(*args, **kwargs)
-        except NotSupportedError as exc:
-            raise NotSupportedError(method, type(self).__name__) from exc
+        return getattr(self._delegation_target, method)(*args, **kwargs)
 
     async def _adelegate(self, method: str, *args: Any, **kwargs: Any) -> Any:
-        """Async twin of :meth:`_delegate`."""
-        fn = self._delegated_method(method)
-        try:
-            return await fn(*args, **kwargs)
-        except NotSupportedError as exc:
-            raise NotSupportedError(method, type(self).__name__) from exc
-
-    def _wrap_iter(self, method: str, it: Iterator[str]) -> Iterator[str]:
-        """Re-raise a lazily surfaced NotSupportedError as this backend's.
-
-        A generator function returns without running its body, so the
-        target's ``NotSupportedError`` escapes :meth:`_delegate` at
-        iteration time.
-        """
-        try:
-            yield from it
-        except NotSupportedError as exc:
-            raise NotSupportedError(method, type(self).__name__) from exc
-
-    async def _awrap_iter(self, method: str, it: AsyncIterator[str]) -> AsyncIterator[str]:
-        """Async twin of :meth:`_wrap_iter`."""
-        try:
-            async for key in it:
-                yield key
-        except NotSupportedError as exc:
-            raise NotSupportedError(method, type(self).__name__) from exc
+        return await getattr(self._delegation_target, method)(*args, **kwargs)
 
     # -- Key helpers --
 
@@ -91,7 +48,7 @@ class DelegatingCacheMixin:
         version: int | None = None,
         itersize: int | None = None,
     ) -> Iterator[str]:
-        return self._wrap_iter("iter_keys", self._delegate("iter_keys", pattern, version=version, itersize=itersize))
+        return self._delegate("iter_keys", pattern, version=version, itersize=itersize)
 
     def scan(
         self,
@@ -156,12 +113,7 @@ class DelegatingCacheMixin:
     ) -> AsyncIterator[str]:
         # Not ``async def``: the target's ``aiter_keys`` is itself a plain
         # method returning an async iterator, matching ``BaseCachex``.
-        fn = self._delegated_method("aiter_keys")
-        try:
-            it = fn(pattern, version=version, itersize=itersize)
-        except NotSupportedError as exc:
-            raise NotSupportedError("aiter_keys", type(self).__name__) from exc
-        return self._awrap_iter("aiter_keys", it)
+        return self._delegate("aiter_keys", pattern, version=version, itersize=itersize)
 
     async def ascan(
         self,

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
+from django.core.exceptions import ImproperlyConfigured
 
 from django_cachex.stampede import StampedeConfig, make_stampede_config, should_recompute, should_recompute_remaining
 from tests.cache.support import make_cache
@@ -131,7 +132,7 @@ class TestStampedeConfigValidation:
 
 
 class TestMakeStampedeConfig:
-    """``OPTIONS["stampede_prevention"]`` takes a bool, a dict, or None."""
+    """``OPTIONS["stampede_prevention"]`` takes a bool, a dict, a StampedeConfig, or None."""
 
     def test_none_and_false_disable_prevention(self):
         assert make_stampede_config(None) is None
@@ -157,6 +158,15 @@ class TestMakeStampedeConfig:
         assert config == StampedeConfig(buffer=30)
         assert "bufer" in caplog.text
 
+    def test_a_ready_config_is_used_as_is(self):
+        config = StampedeConfig(buffer=5)
+        assert make_stampede_config(config) is config
+
+    @pytest.mark.parametrize("option", ["False", "true", "", 1, 0, 60.0, [60], ("buffer", 60)])
+    def test_other_types_are_rejected(self, option):
+        with pytest.raises(ImproperlyConfigured, match="stampede_prevention"):
+            make_stampede_config(option)
+
 
 class TestStampedeOptionsWiring:
     """The ``stampede_prevention`` option reaches the adapter."""
@@ -170,6 +180,10 @@ class TestStampedeOptionsWiring:
 
     def test_absent_option_leaves_prevention_off(self):
         assert make_cache().adapter.resolve_stampede(None) is None
+
+    def test_string_option_is_rejected_when_the_adapter_is_built(self):
+        with pytest.raises(ImproperlyConfigured, match="stampede_prevention"):
+            make_cache(stampede_prevention="False").adapter  # noqa: B018
 
 
 # =============================================================================

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import math
 import os
 import time
 from collections import OrderedDict
@@ -53,6 +54,7 @@ class _TrackingState:
         "lock",
         "max_entries",
         "misses",
+        "options",
         "pending",
         "pid",
         "poll_timeout",
@@ -62,23 +64,27 @@ class _TrackingState:
         "store",
     )
 
-    def __init__(self, *, max_entries: int, poll_timeout: float, coherence: str) -> None:
+    def __init__(self, options: dict[str, Any]) -> None:
+        """``options`` holds every setting the shared state depends on; aliases sharing it must agree on them."""
         self.pid = os.getpid()
-        self.max_entries = max_entries
-        self.poll_timeout = poll_timeout
-        self.coherence = coherence
+        self.options = options
+        self.max_entries: int = options["MAX_ENTRIES"]
+        self.poll_timeout: float = options["poll_timeout"]
+        self.coherence: str = options["coherence"]
         # Guards store, pending, connected, listener and the counters.
         self.lock = Lock()
         # Guards listener_thread, stop_event and initialized; never held
         # together with ``lock`` while the transport is being called.
         self.start_lock = Lock()
-        # Made key -> (encoded value, monotonic expiry or None); LRU by access.
-        self.store: OrderedDict[str, tuple[Any, float | None]] = OrderedDict()
+        # Made key -> (encoded value, local monotonic expiry or None, logical
+        # server expiry or None); LRU by access. The local expiry is the
+        # server one capped by ``local_timeout``; XFetch rolls on the server one.
+        self.store: OrderedDict[str, tuple[Any, float | None, float | None]] = OrderedDict()
         # Made key -> token of the fetch in flight for it. An invalidation
         # drops the token so a reply that raced the write is never stored.
         self.pending: dict[str, object] = {}
         # TTL coherence needs no listener, so the store is live from the start.
-        self.connected = coherence == "ttl"
+        self.connected = self.coherence == "ttl"
         self.listener: InvalidationListenerProtocol | None = None
         self.listener_thread: Thread | None = None
         self.stop_event = Event()
@@ -98,15 +104,18 @@ class _TrackingState:
             entry = self.store.get(made_key)
             if entry is None:
                 return _MISS
-            raw, expires_at = entry
-            if expires_at is not None:
-                remaining = expires_at - now
-                if remaining <= 0:
-                    del self.store[made_key]
-                    return _MISS
-                if stampede is not None and isinstance(raw, bytes) and should_recompute_remaining(remaining, stampede):
-                    del self.store[made_key]
-                    return _RECOMPUTE
+            raw, expires_at, logical_expires_at = entry
+            if expires_at is not None and expires_at <= now:
+                del self.store[made_key]
+                return _MISS
+            if (
+                stampede is not None
+                and logical_expires_at is not None
+                and isinstance(raw, bytes)
+                and should_recompute_remaining(logical_expires_at - now, stampede)
+            ):
+                del self.store[made_key]
+                return _RECOMPUTE
             self.store.move_to_end(made_key)
             self.hits += 1
             return raw
@@ -124,7 +133,14 @@ class _TrackingState:
                 tokens[made_key] = token
             return tokens
 
-    def absorb(self, made_key: str, raw: Any, expires_at: float | None, token: object) -> None:
+    def absorb(
+        self,
+        made_key: str,
+        raw: Any,
+        expires_at: float | None,
+        logical_expires_at: float | None,
+        token: object,
+    ) -> None:
         """Store a fetched value unless its fetch was invalidated meanwhile."""
         with self.lock:
             if self.pending.get(made_key) is not token:
@@ -132,7 +148,7 @@ class _TrackingState:
             del self.pending[made_key]
             if not self.connected:
                 return
-            self.store[made_key] = (raw, expires_at)
+            self.store[made_key] = (raw, expires_at, logical_expires_at)
             self.store.move_to_end(made_key)
             while len(self.store) > self.max_entries:
                 self.store.popitem(last=False)
@@ -253,10 +269,15 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         self._storage_key: str = server or transport
         self._explicit_prefixes: tuple[str, ...] | None = self._validate_prefixes(options.get("prefixes"))
         local_timeout = options.get("local_timeout")
-        self._local_timeout: float | None = None if local_timeout is None else float(local_timeout)
-        self._poll_timeout: float = float(options.get("poll_timeout", 1.0))
-        self._health_check_interval: float = float(options.get("health_check_interval", 15.0))
-        self._reconnect_delay: float = float(options.get("reconnect_delay", 1.0))
+        self._local_timeout: float | None = (
+            None if local_timeout is None else self._positive_float("local_timeout", local_timeout)
+        )
+        self._poll_timeout: float = self._positive_float("poll_timeout", options.get("poll_timeout", 1.0))
+        self._health_check_interval: float = self._positive_float(
+            "health_check_interval",
+            options.get("health_check_interval", 15.0),
+        )
+        self._reconnect_delay: float = self._positive_float("reconnect_delay", options.get("reconnect_delay", 1.0))
         coherence = options.get("coherence", "tracking")
         if coherence not in ("tracking", "ttl"):
             msg = f"TrackingCache OPTIONS['coherence'] must be 'tracking' or 'ttl'. Got: {coherence!r}"
@@ -266,26 +287,49 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
             raise ImproperlyConfigured(msg)
         self._coherence: str = coherence
 
+        # Everything the shared store, listener and its loop depend on.
+        shared_options: dict[str, Any] = {
+            "transport": transport,
+            "coherence": coherence,
+            "prefixes": self._explicit_prefixes,
+            "local_timeout": self._local_timeout,
+            "MAX_ENTRIES": self._max_entries,
+            "poll_timeout": self._poll_timeout,
+            "health_check_interval": self._health_check_interval,
+            "reconnect_delay": self._reconnect_delay,
+        }
         # A forked child inherits the registry but none of the parent's threads.
         pid = os.getpid()
         with _REGISTRY_LOCK:
             state = _TRACKING_REGISTRY.get(self._storage_key)
             if state is None or state.pid != pid:
-                state = _TrackingState(
-                    max_entries=self._max_entries,
-                    poll_timeout=self._poll_timeout,
-                    coherence=coherence,
-                )
+                state = _TrackingState(shared_options)
                 _TRACKING_REGISTRY[self._storage_key] = state
-            elif state.coherence != coherence:
+            elif state.options != shared_options:
+                differing = ", ".join(
+                    f"{name}: {state.options[name]!r} vs {value!r}"
+                    for name, value in shared_options.items()
+                    if state.options[name] != value
+                )
                 msg = (
-                    f"TrackingCache aliases sharing LOCATION {self._storage_key!r} disagree on coherence: "
-                    f"{state.coherence!r} vs {coherence!r}."
+                    f"TrackingCache aliases sharing LOCATION {self._storage_key!r} share one local store and "
+                    f"listener, so their transport and OPTIONS must agree. They disagree on {differing}."
                 )
                 raise ImproperlyConfigured(msg)
         self._state = state
 
         self._cachex_location = f"tracking:{self._storage_key} [transport: {self._transport_alias}]"
+
+    @staticmethod
+    def _positive_float(name: str, value: Any) -> float:
+        try:
+            result = float(value)
+        except TypeError, ValueError:
+            result = math.nan
+        if isinstance(value, bool) or not result > 0 or math.isinf(result):
+            msg = f"TrackingCache OPTIONS[{name!r}] must be a positive number of seconds. Got: {value!r}"
+            raise ImproperlyConfigured(msg)
+        return result
 
     @staticmethod
     def _validate_prefixes(prefixes: Any) -> tuple[str, ...] | None:
@@ -434,19 +478,25 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
 
     def _listener_loop(self, stop_event: Event, listener: InvalidationListenerProtocol | None) -> None:
         state = self._state
+        # One traceback per outage: the first connect failure was logged with
+        # one by ``_start_listener``, later attempts get a one-line warning.
+        outage_logged = listener is None
         while not stop_event.is_set():
             if listener is None:
                 if stop_event.wait(self._reconnect_delay):
                     break
                 try:
                     listener = self._open_listener()
-                except Exception:
+                except Exception as exc:
                     logger.warning(
-                        "TrackingCache: invalidation listener for %s failed to reconnect",
+                        "TrackingCache: invalidation listener for %s failed to reconnect (%r)",
                         self._storage_key,
-                        exc_info=True,
+                        exc,
+                        exc_info=not outage_logged,
                     )
+                    outage_logged = True
                     continue
+                outage_logged = False
                 state.on_connect(listener, reconnect=True)
                 logger.info("TrackingCache: invalidation listener for %s connected", self._storage_key)
             try:
@@ -481,8 +531,11 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
 
     # -- Fetching --
 
-    def _fetch(self, made_keys: list[str]) -> dict[str, Any]:
-        """GET + PTTL each key on the transport; store what may be kept."""
+    def _fetch(self, made_keys: list[str], *, roll: bool = True) -> dict[str, Any]:
+        """GET + PTTL each key on the transport; store what may be kept.
+
+        ``roll=False`` skips the XFetch roll, for a read-back of a value just written.
+        """
         state = self._state
         tokens = state.begin_fetch(made_keys)
         try:
@@ -495,9 +548,9 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
             for made_key, token in tokens.items():
                 state.forget(made_key, token)
             raise
-        return self._absorb(made_keys, results, tokens)
+        return self._absorb(made_keys, results, tokens, roll=roll)
 
-    async def _afetch(self, made_keys: list[str]) -> dict[str, Any]:
+    async def _afetch(self, made_keys: list[str], *, roll: bool = True) -> dict[str, Any]:
         state = self._state
         tokens = state.begin_fetch(made_keys)
         try:
@@ -510,9 +563,16 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
             for made_key, token in tokens.items():
                 state.forget(made_key, token)
             raise
-        return self._absorb(made_keys, results, tokens)
+        return self._absorb(made_keys, results, tokens, roll=roll)
 
-    def _absorb(self, made_keys: list[str], results: list[Any], tokens: dict[str, object]) -> dict[str, Any]:
+    def _absorb(
+        self,
+        made_keys: list[str],
+        results: list[Any],
+        tokens: dict[str, object],
+        *,
+        roll: bool = True,
+    ) -> dict[str, Any]:
         """Apply the transport's stampede rule, bound the local lifetime, store."""
         state = self._state
         now = time.monotonic()
@@ -527,21 +587,22 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
                 continue
             # -1 (no expiry) is kept as is; -2 or an unexpected reply is served but not kept.
             keep = pttl == -1
-            expires_at: float | None = None
+            logical_expires_at: float | None = None
             if isinstance(pttl, int) and pttl >= 0:
                 ttl_s = (pttl + 500) // 1000
-                if config and isinstance(raw, bytes) and ttl_s > 0 and should_recompute(ttl_s, config):
+                if roll and config and isinstance(raw, bytes) and ttl_s > 0 and should_recompute(ttl_s, config):
                     state.forget(made_key, token)
                     continue
                 remaining = (pttl - buffer_ms) / 1000
                 keep = remaining > 0
-                expires_at = now + remaining
+                logical_expires_at = now + remaining
+            expires_at = logical_expires_at
             if self._local_timeout is not None:
                 cap = now + self._local_timeout
                 expires_at = cap if expires_at is None else min(expires_at, cap)
             found[made_key] = raw
             if keep and token is not None:
-                state.absorb(made_key, raw, expires_at, token)
+                state.absorb(made_key, raw, expires_at, logical_expires_at, token)
             else:
                 state.forget(made_key, token)
         return found
@@ -550,42 +611,45 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         self._state.discard((self.make_key(key, version=version),))
 
     def _evict_many(self, keys: Iterable[str], version: int | None) -> None:
-        self._state.discard(self.make_key(key, version=version) for key in keys)
+        # The key function runs before the state lock is taken.
+        self._state.discard([self.make_key(key, version=version) for key in keys])
 
     def _evict_pattern(self, pattern: str, version: int | None) -> None:
-        transport = self._transport
+        """Evict the made keys the transport's server-side glob matches: the same keys the server deleted."""
+        matcher = _glob_to_regex(self._transport.make_pattern(pattern, version=version))
         with self._state.lock:
             candidates = set(self._state.store) | set(self._state.pending)
-        matcher = _glob_to_regex(pattern)
-        matching = []
-        for made_key in candidates:
-            original = transport.reverse_key(made_key)
-            if matcher.match(original) and transport.make_key(original, version=version) == made_key:
-                matching.append(made_key)
-        self._state.discard(matching)
+        self._state.discard([made_key for made_key in candidates if matcher.match(made_key)])
 
     # -- Reads --
 
     def get(self, key: str, default: Any = None, version: int | None = None) -> Any:
+        return self._get(key, default, version, roll=True)
+
+    async def aget(self, key: str, default: Any = None, version: int | None = None) -> Any:
+        return await self._aget(key, default, version, roll=True)
+
+    def _get(self, key: str, default: Any, version: int | None, *, roll: bool) -> Any:
+        """``get`` with the XFetch roll optional, so a value just written is not recomputed on its read-back."""
         self._ensure_listener()
         made_key = self._local_key(key, version)
-        raw = self._state.local_get(made_key, time.monotonic(), self._stampede)
+        raw = self._state.local_get(made_key, time.monotonic(), self._stampede if roll else None)
         if raw is _RECOMPUTE:
             return default
         if raw is _MISS:
-            raw = self._fetch([made_key]).get(made_key, _MISS)
+            raw = self._fetch([made_key], roll=roll).get(made_key, _MISS)
         if raw is _MISS:
             return default
         return self._transport.decode(raw)
 
-    async def aget(self, key: str, default: Any = None, version: int | None = None) -> Any:
+    async def _aget(self, key: str, default: Any, version: int | None, *, roll: bool) -> Any:
         await self._aensure_listener()
         made_key = self._local_key(key, version)
-        raw = self._state.local_get(made_key, time.monotonic(), self._stampede)
+        raw = self._state.local_get(made_key, time.monotonic(), self._stampede if roll else None)
         if raw is _RECOMPUTE:
             return default
         if raw is _MISS:
-            raw = (await self._afetch([made_key])).get(made_key, _MISS)
+            raw = (await self._afetch([made_key], roll=roll)).get(made_key, _MISS)
         if raw is _MISS:
             return default
         return self._transport.decode(raw)
@@ -609,7 +673,9 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
             self.set(key, default, timeout=timeout, version=version)
         else:
             self.add(key, default, timeout=timeout, version=version)
-        return self.get(key, default, version=version)
+        # Read back without the roll: the value was just written and, as on
+        # the transport, must not be recomputed again right away.
+        return self._get(key, default, version, roll=False)
 
     async def aget_or_set(
         self,
@@ -628,7 +694,7 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
             await self.aset(key, default, timeout=timeout, version=version)
         else:
             await self.aadd(key, default, timeout=timeout, version=version)
-        return await self.aget(key, default, version=version)
+        return await self._aget(key, default, version, roll=False)
 
     def _split_local(
         self,
@@ -679,15 +745,15 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
     def has_key(self, key: str, version: int | None = None) -> bool:
         self._ensure_listener()
         made_key = self._local_key(key, version)
-        # A recompute signal is still proof the key is there.
-        if self._state.local_get(made_key, time.monotonic(), self._stampede) is not _MISS:
+        # A probe, not a read: no XFetch roll, which would evict a healthy entry.
+        if self._state.local_get(made_key, time.monotonic(), None) is not _MISS:
             return True
         return self._transport.has_key(key, version=version)
 
     async def ahas_key(self, key: str, version: int | None = None) -> bool:
         await self._aensure_listener()
         made_key = self._local_key(key, version)
-        if self._state.local_get(made_key, time.monotonic(), self._stampede) is not _MISS:
+        if self._state.local_get(made_key, time.monotonic(), None) is not _MISS:
             return True
         return await self._transport.ahas_key(key, version=version)
 
