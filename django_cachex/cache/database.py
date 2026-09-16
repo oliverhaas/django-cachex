@@ -59,11 +59,13 @@ from django_cachex.cache.base import BaseCachex, CachexSupportLevel
 from django_cachex.exceptions import NotSupportedError, WrongTypeError
 from django_cachex.types import KeyType
 from django_cachex.utils import (
+    _apply_zrange_limit,
     _as_score,
     _glob_to_like,
     _glob_to_regex,
     _lpos_positions,
     _score_bound,
+    _validate_hset_items,
     _validate_linsert_where,
     _validate_lpos_args,
     _validate_pop_count,
@@ -1170,9 +1172,8 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         mapping: Mapping[str, Any] | None = None,
         items: list[Any] | None = None,
     ) -> int:
-        if items and len(items) % 2 != 0:
-            msg = "items must contain an even number of elements (field/value pairs)"
-            raise ValueError(msg)
+        if items:
+            _validate_hset_items(items)
 
         def transform(current: Any) -> tuple[Any, int]:
             existing = self._coerce_hash(key, current) or _Hash()
@@ -1417,6 +1418,34 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         num: int | None = None,
         version: int | None = None,
     ) -> list[Any] | list[tuple[Any, float]]:
+        filtered = self._zrange_by_score(key, min_score, max_score, start, num, version, reverse=False)
+        return filtered if withscores else [m for m, _ in filtered]
+
+    def zrevrangebyscore(
+        self,
+        key: str,
+        max_score: float | str,
+        min_score: float | str,
+        *,
+        withscores: bool = False,
+        start: int | None = None,
+        num: int | None = None,
+        version: int | None = None,
+    ) -> list[Any] | list[tuple[Any, float]]:
+        filtered = self._zrange_by_score(key, min_score, max_score, start, num, version, reverse=True)
+        return filtered if withscores else [m for m, _ in filtered]
+
+    def _zrange_by_score(
+        self,
+        key: str,
+        min_score: float | str,
+        max_score: float | str,
+        start: int | None,
+        num: int | None,
+        version: int | None,
+        *,
+        reverse: bool,
+    ) -> list[tuple[Any, float]]:
         backend = self.__class__.__name__
         lo = _score_bound(min_score, backend)
         hi = _score_bound(max_score, backend)
@@ -1424,10 +1453,9 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         if not existing:
             return []
         filtered = [(m, s) for m, s in self._sorted_members(existing) if lo <= s <= hi]
-        if start is not None and num is not None:
-            # A negative count is Redis's "to the end of the range".
-            filtered = filtered[start:] if num < 0 else filtered[start : start + num]
-        return filtered if withscores else [m for m, _ in filtered]
+        if reverse:
+            filtered.reverse()
+        return _apply_zrange_limit(filtered, start, num)
 
     def zrem(self, key: str, *members: Any, version: int | None = None) -> int:
         def transform(current: Any) -> tuple[Any, int]:
@@ -1478,6 +1506,8 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             sorted_members = self._sorted_members(existing)
             n = 1 if count is None else count
             popped = sorted_members[:n]
+            if not popped:
+                return _MISSING, []
             for m, _ in popped:
                 del existing[m]
             return (existing or _DELETE), popped
@@ -1497,6 +1527,8 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             sorted_members = list(reversed(self._sorted_members(existing)))
             n = 1 if count is None else count
             popped = sorted_members[:n]
+            if not popped:
+                return _MISSING, []
             for m, _ in popped:
                 del existing[m]
             return (existing or _DELETE), popped
@@ -1743,6 +1775,9 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
     async def azrangebyscore(self, *args: Any, **kwargs: Any) -> Any:
         return await sync_to_async(self.zrangebyscore, thread_sensitive=True)(*args, **kwargs)
+
+    async def azrevrangebyscore(self, *args: Any, **kwargs: Any) -> Any:
+        return await sync_to_async(self.zrevrangebyscore, thread_sensitive=True)(*args, **kwargs)
 
     async def azrem(self, *args: Any, **kwargs: Any) -> Any:
         return await sync_to_async(self.zrem, thread_sensitive=True)(*args, **kwargs)

@@ -1078,19 +1078,21 @@ class TestHashOps:
         assert locmem_cache.hgetall("k") == {"a": 1, "b": 2}
 
     def test_hset_items_odd_length_raises(self, locmem_cache: LocMemCache):
-        with pytest.raises(ValueError, match="even number"):
+        # Same message as the RESP backends, so a project test written
+        # against either backend passes on both.
+        with pytest.raises(ValueError, match="items must hold field/value pairs"):
             locmem_cache.hset("k", items=["a", 1, "b"])
 
     def test_hset_odd_items_leaves_the_hash_alone(self, locmem_cache: LocMemCache):
         # Regression: field/mapping writes landed on the live hash before the
         # ``items`` check raised, so the rejected call half-applied.
         locmem_cache.hset("k", "a", 1)
-        with pytest.raises(ValueError, match="even number"):
+        with pytest.raises(ValueError, match="field/value pairs"):
             locmem_cache.hset("k", "b", 2, mapping={"c": 3}, items=["d"])
         assert locmem_cache.hgetall("k") == {"a": 1}
 
     def test_hset_odd_items_creates_nothing(self, locmem_cache: LocMemCache):
-        with pytest.raises(ValueError, match="even number"):
+        with pytest.raises(ValueError, match="field/value pairs"):
             locmem_cache.hset("k", "a", 1, items=["d"])
         assert locmem_cache.has_key("k") is False
 
@@ -1417,6 +1419,41 @@ class TestSortedSetOps:
         locmem_cache.zadd("k", {"a": 1.0, "b": 2.0, "c": 3.0, "d": 4.0})
         assert locmem_cache.zrangebyscore("k", "-inf", "+inf", start=0, num=-1) == ["a", "b", "c", "d"]
 
+    @pytest.mark.parametrize("method", ["zrangebyscore", "zrevrangebyscore"])
+    @pytest.mark.parametrize("limit", [{"start": 1}, {"num": 2}], ids=["start-only", "num-only"])
+    def test_one_sided_limit_is_rejected(self, locmem_cache: LocMemCache, method: str, limit: dict):
+        # Regression: a lone ``start`` or ``num`` silently returned the whole
+        # range; redis-py raises for the same call.
+        locmem_cache.zadd("k", {"a": 1.0, "b": 2.0, "c": 3.0})
+        with pytest.raises(ValueError, match="start and num must both be specified"):
+            getattr(locmem_cache, method)("k", "-inf", "+inf", **limit)
+
+    def test_zrevrangebyscore(self, locmem_cache: LocMemCache):
+        # Same fixture and expectation as the RESP test in test_sorted_sets.py.
+        locmem_cache.zadd("k", {"a": 1.0, "b": 2.0, "c": 3.0, "d": 4.0, "e": 5.0})
+        assert locmem_cache.zrevrangebyscore("k", 4.0, 2.0) == ["d", "c", "b"]
+
+    def test_zrevrangebyscore_withscores(self, locmem_cache: LocMemCache):
+        locmem_cache.zadd("k", {"a": 1.0, "b": 2.0, "c": 3.0})
+        assert locmem_cache.zrevrangebyscore("k", "+inf", "-inf", withscores=True) == [
+            ("c", 3.0),
+            ("b", 2.0),
+            ("a", 1.0),
+        ]
+
+    def test_zrevrangebyscore_limit_applies_after_reversal(self, locmem_cache: LocMemCache):
+        locmem_cache.zadd("k", {"a": 1.0, "b": 2.0, "c": 3.0, "d": 4.0})
+        assert locmem_cache.zrevrangebyscore("k", "+inf", "-inf", start=1, num=2) == ["c", "b"]
+        assert locmem_cache.zrevrangebyscore("k", "+inf", "-inf", start=1, num=-1) == ["c", "b", "a"]
+
+    def test_zrevrangebyscore_missing_key(self, locmem_cache: LocMemCache):
+        assert locmem_cache.zrevrangebyscore("missing", 100.0, 0.0) == []
+
+    @pytest.mark.asyncio
+    async def test_azrevrangebyscore(self, locmem_cache: LocMemCache):
+        locmem_cache.zadd("k", {"a": 1.0, "b": 2.0, "c": 3.0})
+        assert await locmem_cache.azrevrangebyscore("k", 3.0, 2.0) == ["c", "b"]
+
     @pytest.mark.parametrize(
         ("method", "args"),
         [
@@ -1544,6 +1581,13 @@ class TestSortedSetOps:
     def test_zremrangebyscore_no_match(self, locmem_cache: LocMemCache):
         locmem_cache.zadd("k", {"a": 1.0})
         assert locmem_cache.zremrangebyscore("k", 5.0, 10.0) == 0
+
+    def test_zremrangebyscore_keeps_the_sidecar_consistent(self, locmem_cache: LocMemCache):
+        # The removal walks the sorted sidecar; the survivors must still rank.
+        locmem_cache.zadd("k", {"a": 1.0, "b": 2.0, "b2": 2.0, "c": 3.0, "d": 4.0})
+        assert locmem_cache.zremrangebyscore("k", 2.0, 3.0) == 3
+        assert locmem_cache.zrange("k", 0, -1, withscores=True) == [("a", 1.0), ("d", 4.0)]
+        assert locmem_cache.zrank("k", "d") == 1
 
     def test_zremrangebyscore_missing_key(self, locmem_cache: LocMemCache):
         assert locmem_cache.zremrangebyscore("missing", 0.0, 10.0) == 0

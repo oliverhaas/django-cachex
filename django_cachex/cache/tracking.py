@@ -1,6 +1,7 @@
 """Local read cache kept coherent by ``CLIENT TRACKING BCAST`` invalidations from a Redis/Valkey transport."""
 
 import asyncio
+import inspect
 import logging
 import math
 import os
@@ -110,7 +111,6 @@ class _TrackingState:
             if (
                 stampede is not None
                 and logical_expires_at is not None
-                and isinstance(raw, bytes)
                 and should_recompute_remaining(logical_expires_at - now, stampede)
             ):
                 del self.store[made_key]
@@ -269,7 +269,7 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         if not transport or not isinstance(transport, str):
             msg = f"TrackingCache requires OPTIONS['transport'] naming a Redis/Valkey cache alias. Got: {transport!r}"
             raise ImproperlyConfigured(msg)
-        for setting in ("KEY_PREFIX", "KEY_FUNCTION", "VERSION", "TIMEOUT"):
+        for setting in ("KEY_PREFIX", "KEY_FUNCTION", "VERSION", "TIMEOUT", "timeout"):
             if setting in params or setting in options:
                 msg = (
                     f"TrackingCache does not apply {setting}; keys and the default timeout come from the transport. "
@@ -601,7 +601,7 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
             logical_expires_at: float | None = None
             if isinstance(pttl, int) and pttl >= 0:
                 ttl_s = (pttl + 500) // 1000
-                if roll and config and isinstance(raw, bytes) and ttl_s > 0 and should_recompute(ttl_s, config):
+                if roll and config and ttl_s > 0 and should_recompute(ttl_s, config):
                     state.forget(made_key, token)
                     continue
                 remaining = (pttl - buffer_ms) / 1000
@@ -701,6 +701,8 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
             return value
         if callable(default):
             default = default()
+        if inspect.isawaitable(default):
+            default = await default
         if self._stampede is not None:
             await self.aset(key, default, timeout=timeout, version=version)
         else:

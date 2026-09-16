@@ -431,7 +431,7 @@ class TestTrackingConfig:
 
     @pytest.mark.parametrize(
         ("setting", "value"),
-        [("KEY_FUNCTION", _custom_key_func), ("VERSION", 2), ("TIMEOUT", None)],
+        [("KEY_FUNCTION", _custom_key_func), ("VERSION", 2), ("TIMEOUT", None), ("timeout", 60)],
     )
     def test_key_layout_and_timeout_settings_on_the_tracking_alias_are_rejected(self, setting: str, value: Any):
         # Regression: they were silently ignored, since make_key and the
@@ -708,6 +708,17 @@ class TestTrackingReads:
     def test_get_or_set_populates(self, tracking_cache):
         assert tracking_cache.get_or_set("gos", "computed") == "computed"
         assert tracking_cache.get("gos") == "computed"
+
+    def test_get_or_set_calls_a_callable_default_once(self, tracking_cache):
+        calls: list[int] = []
+
+        def compute() -> dict:
+            calls.append(1)
+            return {"v": 1}
+
+        assert tracking_cache.get_or_set("gos-call", compute) == {"v": 1}
+        assert tracking_cache.get_or_set("gos-call", compute) == {"v": 1}
+        assert len(calls) == 1
 
     def test_version_is_part_of_the_local_key(self, tracking_cache):
         tracking_cache.set("ver", "v1", version=1)
@@ -1421,6 +1432,17 @@ class TestTrackingAsync:
         await tracking_cache.aclear()
         assert _tracking_section(tracking_cache)["entries"] == 0
         assert await tracking_cache.aget("c2") is None
+
+    @BOTH_MODES
+    @pytest.mark.asyncio
+    async def test_aget_or_set_awaits_an_async_default(self, tracking_cache):
+        # Regression: the coroutine object itself went to the serializer;
+        # RespCache.aget_or_set awaits it.
+        async def compute() -> dict:
+            return {"v": 1}
+
+        assert await tracking_cache.aget_or_set("gos-async", compute) == {"v": 1}
+        assert await tracking_cache.aget("gos-async") == {"v": 1}
 
     @pytest.mark.asyncio
     async def test_aget_or_set_refreshes_a_logically_expired_key(

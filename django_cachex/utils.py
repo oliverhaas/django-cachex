@@ -185,6 +185,29 @@ def _validate_pop_count(count: int | None) -> None:
         raise ValueError(msg)
 
 
+def _validate_hset_items(items: Sequence[Any]) -> None:
+    """Reject an odd-length ``items`` list before it is paired up as field/value."""
+    if len(items) % 2:
+        msg = "items must hold field/value pairs"
+        raise ValueError(msg)
+
+
+def _validate_zrange_limit(start: int | None, num: int | None) -> None:
+    """Reject a one-sided LIMIT; Redis needs both offset and count."""
+    if (start is None) != (num is None):
+        msg = "start and num must both be specified"
+        raise ValueError(msg)
+
+
+def _apply_zrange_limit(items: list[Any], start: int | None, num: int | None) -> list[Any]:
+    """Apply a ``ZRANGEBYSCORE``-style LIMIT to an already ordered range."""
+    _validate_zrange_limit(start, num)
+    if start is None or num is None:
+        return items
+    # A negative count is Redis's "to the end of the range".
+    return items[start:] if num < 0 else items[start : start + num]
+
+
 def _validate_lpos_args(rank: int | None, count: int | None, maxlen: int | None) -> None:
     """Reject the ``LPOS`` arguments Redis rejects before the scan runs.
 

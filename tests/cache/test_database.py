@@ -448,6 +448,15 @@ class TestPopCountZero:
         assert db_cache.lpop("l", count=0) == []
         assert db_cache.lrange("l", 0, -1) == ["a", "b", "c"]
 
+    @pytest.mark.parametrize("method", ["zpopmin", "zpopmax"])
+    def test_zpop_count_zero_issues_no_update(self, db_cache: DatabaseCache, method: str):
+        # Regression: the no-op pop wrote the unchanged row back.
+        db_cache.zadd("z", {"a": 1.0, "b": 2.0})
+        with CaptureQueriesContext(connections["default"]) as ctx:
+            assert getattr(db_cache, method)("z", count=0) == []
+        assert not [q["sql"] for q in ctx.captured_queries if q["sql"].startswith("UPDATE")]
+        assert db_cache.zrange("z", 0, -1) == ["a", "b"]
+
 
 class TestRedisArgumentValidation:
     """Counts and ranks Redis rejects are rejected here, not silently reinterpreted."""
@@ -673,6 +682,33 @@ class TestZSetScoreRanges:
 
     def test_positive_num_windows(self, zset_cache: DatabaseCache):
         assert zset_cache.zrangebyscore("z", "-inf", "+inf", start=1, num=2) == ["b", "c"]
+
+    @pytest.mark.parametrize("method", ["zrangebyscore", "zrevrangebyscore"])
+    @pytest.mark.parametrize("limit", [{"start": 1}, {"num": 2}], ids=["start-only", "num-only"])
+    def test_one_sided_limit_is_rejected(self, zset_cache: DatabaseCache, method: str, limit: dict):
+        # Regression: a lone ``start`` or ``num`` silently returned the whole
+        # range; redis-py raises for the same call.
+        with pytest.raises(ValueError, match="start and num must both be specified"):
+            getattr(zset_cache, method)("z", "-inf", "+inf", **limit)
+
+    def test_zrevrangebyscore(self, zset_cache: DatabaseCache):
+        assert zset_cache.zrevrangebyscore("z", 3.0, 2.0) == ["c", "b"]
+        assert zset_cache.zrevrangebyscore("z", "+inf", "-inf", withscores=True) == [
+            ("d", 4.0),
+            ("c", 3.0),
+            ("b", 2.0),
+            ("a", 1.0),
+        ]
+
+    def test_zrevrangebyscore_limit_applies_after_reversal(self, zset_cache: DatabaseCache):
+        assert zset_cache.zrevrangebyscore("z", "+inf", "-inf", start=1, num=2) == ["c", "b"]
+        assert zset_cache.zrevrangebyscore("z", "+inf", "-inf", start=1, num=-1) == ["c", "b", "a"]
+
+    def test_zrevrangebyscore_missing_key(self, db_cache: DatabaseCache):
+        assert db_cache.zrevrangebyscore("missing", 100.0, 0.0) == []
+
+    def test_azrevrangebyscore(self, zset_cache: DatabaseCache):
+        assert async_to_sync(zset_cache.azrevrangebyscore)("z", 3.0, 2.0) == ["c", "b"]
 
     def test_infinite_bounds_parse(self, zset_cache: DatabaseCache):
         assert zset_cache.zcount("z", "-inf", "+inf") == 4
@@ -995,7 +1031,8 @@ class TestListArgumentValidation:
 
     def test_hset_odd_items_leaves_the_hash_alone(self, db_cache: DatabaseCache):
         db_cache.hset("h", "a", 1)
-        with pytest.raises(ValueError, match="even number"):
+        # Same message as the RESP backends.
+        with pytest.raises(ValueError, match="items must hold field/value pairs"):
             db_cache.hset("h", "b", 2, items=["c"])
         assert db_cache.hgetall("h") == {"a": 1}
 

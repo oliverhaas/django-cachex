@@ -43,12 +43,14 @@ from django_cachex.exceptions import WrongTypeError
 from django_cachex.semaphore import Semaphore, _SemaphoreRegistry
 from django_cachex.types import KeyType
 from django_cachex.utils import (
+    _apply_zrange_limit,
     _as_score,
     _deep_getsizeof,
     _format_bytes,
     _glob_to_regex,
     _lpos_positions,
     _score_bound,
+    _validate_hset_items,
     _validate_linsert_where,
     _validate_lpos_args,
     _validate_pop_count,
@@ -1107,9 +1109,8 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Set hash field(s)."""
         # Validate before touching the live hash: ``current`` is the stored
         # object, so a write followed by a raise would stick.
-        if items and len(items) % 2 != 0:
-            msg = "items must contain an even number of elements (field/value pairs)"
-            raise ValueError(msg)
+        if items:
+            _validate_hset_items(items)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_hash(internal_key, key)
@@ -1406,6 +1407,39 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         version: int | None = None,
     ) -> list[Any] | list[tuple[Any, float]]:
         """Return members with scores between min and max."""
+        filtered = self._zrange_by_score(key, min_score, max_score, start, num, version, reverse=False)
+        if withscores:
+            return filtered
+        return [m for m, _ in filtered]
+
+    def zrevrangebyscore(
+        self,
+        key: str,
+        max_score: float | str,
+        min_score: float | str,
+        *,
+        withscores: bool = False,
+        start: int | None = None,
+        num: int | None = None,
+        version: int | None = None,
+    ) -> list[Any] | list[tuple[Any, float]]:
+        """Return members with scores between max and min, highest first."""
+        filtered = self._zrange_by_score(key, min_score, max_score, start, num, version, reverse=True)
+        if withscores:
+            return filtered
+        return [m for m, _ in filtered]
+
+    def _zrange_by_score(
+        self,
+        key: str,
+        min_score: float | str,
+        max_score: float | str,
+        start: int | None,
+        num: int | None,
+        version: int | None,
+        *,
+        reverse: bool,
+    ) -> list[tuple[Any, float]]:
         backend = self.__class__.__name__
         lo = _score_bound(min_score, backend)
         hi = _score_bound(max_score, backend)
@@ -1415,12 +1449,9 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             if not current:
                 return []
             filtered = current.range_by_score(lo, hi)
-        if start is not None and num is not None:
-            # A negative count is Redis's "to the end of the range".
-            filtered = filtered[start:] if num < 0 else filtered[start : start + num]
-        if withscores:
-            return filtered
-        return [m for m, _ in filtered]
+        if reverse:
+            filtered.reverse()
+        return _apply_zrange_limit(filtered, start, num)
 
     def zrem(self, key: str, *members: Any, version: int | None = None) -> int:
         """Remove members from a sorted set."""
@@ -1533,7 +1564,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             current = self._typed_get_zset(internal_key, key)
             if not current:
                 return 0
-            to_remove = [m for m, s in current.items() if lo <= s <= hi]
+            to_remove = [m for m, _ in current.range_by_score(lo, hi)]
             for m in to_remove:
                 del current[m]
             if to_remove:
@@ -1806,6 +1837,9 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     async def azrangebyscore(self, *args: Any, **kwargs: Any) -> Any:
         return self.zrangebyscore(*args, **kwargs)
+
+    async def azrevrangebyscore(self, *args: Any, **kwargs: Any) -> Any:
+        return self.zrevrangebyscore(*args, **kwargs)
 
     async def azrem(self, *args: Any, **kwargs: Any) -> Any:
         return self.zrem(*args, **kwargs)
