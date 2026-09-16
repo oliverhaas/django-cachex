@@ -1,4 +1,4 @@
-"""Delegation helpers shared by composite backends that front another cache."""
+"""Delegation helpers for a composite backend that fronts another cache."""
 
 from typing import TYPE_CHECKING, Any
 

@@ -102,7 +102,6 @@ def populate_redis_data_types(cache: Any, cache_alias: str) -> int:
 
 
 _SKIP_ALIASES: dict[str, str] = {
-    "stream_transport": "internal transport for StreamCache",
     "celery": "populated by Celery via ./run.sh send-tasks",
 }
 
@@ -185,8 +184,6 @@ def ensure_sample_data() -> None:
         "celery",
         "cluster",
         "sentinel",
-        "sync",
-        "stream_transport",
         "locmem",
         "database",
         "file",

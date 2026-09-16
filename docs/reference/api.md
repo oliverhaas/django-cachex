@@ -291,9 +291,7 @@ cache.set(key, value, timeout=300, nx=False, xx=False, get=False)
 
 Backend coverage: the Valkey/Redis backends, `LocMemCache` and `TrackingCache`
 take all three flags. `DatabaseCache` takes `nx` and raises
-`NotSupportedError` for `xx` and `get`. `StreamCache` raises
-`NotSupportedError` for all three, since eventual replication cannot make a
-conditional write atomic.
+`NotSupportedError` for `xx` and `get`.
 
 ## Async Methods
 
@@ -643,10 +641,10 @@ The redis-py and valkey-py adapters forward any key not listed above to the
 driver's `from_url()`, so `retry_on_timeout`, `ssl_ca_certs`, `socket_keepalive`
 and the rest of the driver's own options work there. The valkey-glide adapter
 does not: it reads only the keys marked "all Valkey/Redis" or "valkey-glide" and
-ignores everything else. `LocMemCache`, `DatabaseCache`, `StreamCache`
-and `TrackingCache` take their own `OPTIONS`; see
+ignores everything else. `LocMemCache`, `DatabaseCache` and
+`TrackingCache` take their own `OPTIONS`; see
 [Configuration](../user-guide/configuration.md) and
-[Composite backends](../user-guide/composite-backends.md).
+[TrackingCache](../user-guide/composite-backends.md).
 
 ### StampedeConfig
 
@@ -665,8 +663,8 @@ decide whether the refreshed TTL gets the buffer added back.
 | `beta`   | `1.0` | Multiplier on the recompute probability; higher = recompute earlier. |
 | `delta`  | `1.0` | Recompute-cost estimate (seconds); larger = recompute earlier. |
 
-Only the Valkey/Redis backends implement it. `LocMemCache`, `DatabaseCache`
-and `StreamCache` ignore both the option and the per-call keyword;
+Only the Valkey/Redis backends implement it. `LocMemCache` and `DatabaseCache`
+ignore both the option and the per-call keyword;
 `TrackingCache` follows its transport's setting.
 
 ## Exceptions

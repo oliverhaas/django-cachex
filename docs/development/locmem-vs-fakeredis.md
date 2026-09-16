@@ -76,8 +76,6 @@ page for the script.)
 - **Dev REPL feedback.** A cache op that takes ~1 ms instead of ~2 µs
   changes the feel of "let me poke this in the shell" from
   instantaneous to noticeable.
-- **`StreamCache` hits.** `StreamCache` serves reads from the `LocMemCache`
-  store it inherits. Inflating that hit cost defeats the point.
 
 ### Where fakeredis would actually be useful
 

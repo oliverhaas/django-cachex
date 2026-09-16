@@ -58,8 +58,8 @@ class Cache(models.Model):
         """Get the cache location, with connection passwords masked.
 
         Checks for a ``_cachex_location`` attribute on the cache instance
-        first (used by backends like StreamCache that have no ``LOCATION``
-        setting), then falls back to the ``LOCATION`` config key.
+        first (``TrackingCache`` sets it; its ``LOCATION`` is only a registry
+        key), then falls back to the ``LOCATION`` config key.
         """
         cache = self._get_cache()
         if cache is not None and hasattr(cache, "_cachex_location"):

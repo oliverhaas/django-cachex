@@ -15,7 +15,7 @@ _SAMPLE_CALLS: dict[type[Exception], list[tuple[tuple[Any, ...], dict[str, Any]]
         (("hset",), {}),
         (("hset", "LocMemCache"), {}),
         (("hexpire",), {"detail": "the server does not know this command (requires Redis 7.4+)"}),
-        (("set with nx/xx/get", "StreamCache"), {"detail": "no atomic check-and-set"}),
+        (("set with nx/xx/get", "DatabaseCache"), {"detail": "no atomic check-and-set"}),
     ],
     exceptions.KeyNotFoundError: [(("missing-key",), {})],
 }

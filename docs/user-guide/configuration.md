@@ -148,11 +148,10 @@ row lock a compound operation or `incr()` takes is held until that outer
 transaction ends, since a savepoint release does not unlock rows. Keep them out
 of long-running transactions.
 
-### Composite backends
+### Composite backend
 
 | Backend | Description |
 |---------|-------------|
-| `StreamCache` | In-memory store synchronized across pods via a Redis Stream consumer |
 | `TrackingCache` | Read-through local cache over a Redis/Valkey alias, invalidated by the server's `CLIENT TRACKING` |
 
 !!! note "Valkey and Redis Compatibility"
@@ -377,9 +376,8 @@ Per-call overrides accept the same shapes via the `stampede_prevention=` keyword
 
 !!! warning "Valkey/Redis backends only"
     Stampede prevention is implemented in the RESP cache layer and the
-    valkey-py and valkey-glide adapters. `LocMemCache`, `DatabaseCache`
-    and `StreamCache` ignore both `OPTIONS["stampede_prevention"]` and the
-    per-call keyword. `TrackingCache` follows its transport's setting.
+    valkey-py and valkey-glide adapters. `LocMemCache` and `DatabaseCache`
+    ignore both `OPTIONS["stampede_prevention"]` and the per-call keyword. `TrackingCache` follows its transport's setting.
 
 ### Valkey-Glide OPTIONS
 
@@ -604,8 +602,7 @@ The inverse of `KEY_FUNCTION`: it takes the full internal key and returns the us
 Only `reverse_key()` consults it, so it changes what `keys()`, `iter_keys()`, `scan()` and the blocking list pops (`blpop`, `brpop`) hand back, plus their async counterparts. Stored keys are untouched.
 
 !!! warning "RESP backends only"
-    `LocMemCache`, `DatabaseCache` and `StreamCache` strip the prefix
-    themselves and ignore `REVERSE_KEY_FUNCTION`. `TrackingCache` forwards
+    `LocMemCache` and `DatabaseCache` strip the prefix themselves and ignore `REVERSE_KEY_FUNCTION`. `TrackingCache` forwards
     `reverse_key()` to its transport, so it belongs on that alias rather
     than the composite one.
 

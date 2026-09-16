@@ -1272,48 +1272,6 @@ class TestKeyOperations:
         assert local.get("edit:locmem:persistent") == "new value"
         assert local.ttl("edit:locmem:persistent") is None
 
-    def test_edit_key_value_on_stream_preserves_persistent_key(
-        self,
-        admin_client: Client,
-        test_cache: RespCache,
-        stream_alias: str,
-    ):
-        """Regression: a persistent key was stamped with the default timeout
-        when the backend reported no-expiry instead of a remaining TTL.
-        """
-        stream = caches[stream_alias]
-        stream.set("edit:stream:persistent", "old value", timeout=None)
-
-        url = _key_detail_url(stream_alias, "edit:stream:persistent")
-        response = admin_client.post(
-            url,
-            {"action": "update", "value": "new value"},
-        )
-        assert response.status_code == 302
-        assert stream.get("edit:stream:persistent") == "new value"
-        assert stream.ttl("edit:stream:persistent") is None
-
-    def test_edit_key_value_on_stream_preserves_existing_ttl(
-        self,
-        admin_client: Client,
-        test_cache: RespCache,
-        stream_alias: str,
-    ):
-        """Regression: StreamCache has pttl() but no pexpire(), so restoring the
-        TTL after the write was suppressed and the default timeout stuck.
-        """
-        stream = caches[stream_alias]
-        stream.set("edit:stream:ttl", "old value", timeout=3600)
-
-        url = _key_detail_url(stream_alias, "edit:stream:ttl")
-        response = admin_client.post(
-            url,
-            {"action": "update", "value": "new value"},
-        )
-        assert response.status_code == 302
-        assert stream.get("edit:stream:ttl") == "new value"
-        assert stream.ttl("edit:stream:ttl") > 3000
-
     def test_edit_key_value_preserves_persistent_key(
         self,
         admin_client: Client,

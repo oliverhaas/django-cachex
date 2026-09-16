@@ -49,8 +49,8 @@ class _RespCache(_FakeCache):
         self.pexpire_ms = timeout
 
 
-class _StreamCache(_FakeCache):
-    """StreamCache offers ``pttl`` but no ``pexpire``."""
+class _PttlOnlyCache(_FakeCache):
+    """A backend with ``pttl`` but no ``pexpire``."""
 
     def pttl(self, key: str) -> int | None:
         del key
@@ -73,11 +73,6 @@ class TestSetPreservingTtl:
 
     def test_resp_persistent_key_stays_persistent(self):
         cache = _RespCache(None)
-        _set_preserving_ttl(cache, "k", "v")
-        assert cache.set_timeout is None
-
-    def test_stream_persistent_key_stays_persistent(self):
-        cache = _StreamCache(None)
         _set_preserving_ttl(cache, "k", "v")
         assert cache.set_timeout is None
 
@@ -104,7 +99,7 @@ class TestSetPreservingTtl:
         assert cache.pexpire_ms is None
 
     def test_ttl_survives_a_backend_without_pexpire(self):
-        cache = _StreamCache(3600_500)
+        cache = _PttlOnlyCache(3600_500)
         _set_preserving_ttl(cache, "k", "v")
         assert cache.set_timeout == 3601
 

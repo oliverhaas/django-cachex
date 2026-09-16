@@ -5,7 +5,7 @@ Setup covering the backends this example ships:
 - Standalone: Valkey, Redis
 - Cluster: Redis Cluster (6 nodes)
 - Sentinel: Redis Sentinel (1 master + 2 replicas + 3 sentinels)
-- Composite: StreamCache (stream-synchronized) and TrackingCache (CLIENT TRACKING)
+- Composite: TrackingCache (CLIENT TRACKING)
 - Local drop-ins (cachex): LocMem, Database
 - Stock Django: File, Dummy
 
@@ -142,25 +142,8 @@ CACHES = {
         },
     },
     # -------------------------------------------------------------------------
-    # COMPOSITE BACKENDS (local cache kept coherent through a transport)
-    # Zero-latency local reads, writes broadcast via Redis Stream.
-    # Uses a dedicated transport for stream I/O and atomic operations.
+    # COMPOSITE BACKEND (local cache kept coherent through a transport)
     # -------------------------------------------------------------------------
-    "sync": {
-        "BACKEND": "django_cachex.cache.StreamCache",
-        "OPTIONS": {
-            "transport": "stream_transport",
-            "stream_key": "cache:sync",
-            "maxlen": 10000,
-            "block_timeout": 1000,
-        },
-    },
-    # Dedicated transport for StreamCache (same Redis server, separate db)
-    "stream_transport": {
-        "BACKEND": "django_cachex.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6380/2",
-        "KEY_PREFIX": "sync",
-    },
     "tracking": {
         "BACKEND": "django_cachex.cache.TrackingCache",
         "OPTIONS": {

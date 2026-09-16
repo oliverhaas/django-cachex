@@ -14,7 +14,6 @@ if TYPE_CHECKING:
         RedisSentinelCache,
     )
     from django_cachex.cache.resp import RespCache, RespClusterCache, RespSentinelCache
-    from django_cachex.cache.stream import StreamCache
     from django_cachex.cache.tracking import TrackingCache
     from django_cachex.cache.valkey_glide import ValkeyGlideCache, ValkeyGlideClusterCache
     from django_cachex.cache.valkey_py import (
@@ -33,7 +32,6 @@ _LAZY_EXPORTS = {
     "RespCache": "django_cachex.cache.resp",
     "RespClusterCache": "django_cachex.cache.resp",
     "RespSentinelCache": "django_cachex.cache.resp",
-    "StreamCache": "django_cachex.cache.stream",
     "TrackingCache": "django_cachex.cache.tracking",
     "ValkeyCache": "django_cachex.cache.valkey_py",
     "ValkeyClusterCache": "django_cachex.cache.valkey_py",
@@ -67,7 +65,6 @@ __all__ = [
     "RespCache",
     "RespClusterCache",
     "RespSentinelCache",
-    "StreamCache",
     "TrackingCache",
     "ValkeyCache",
     "ValkeyClusterCache",

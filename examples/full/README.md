@@ -11,8 +11,6 @@ Example demonstrating django-cachex cache admin with multiple cache backends.
 | `celery` | `RedisCache` | Celery broker and results (Redis db 1), raw keys via pass-through key functions |
 | `cluster` | `RedisClusterCache` | Redis Cluster, 6 nodes (ports 7001-7006) |
 | `sentinel` | `RedisSentinelCache` | Redis Sentinel, 3 sentinels (ports 26379-26381) |
-| `sync` | `StreamCache` | Local cache synchronized over a Redis Stream |
-| `stream_transport` | `RedisCache` | Stream transport for the `sync` cache (Redis db 2) |
 | `tracking` | `TrackingCache` | Local cache invalidated by `CLIENT TRACKING BCAST`, over the `redis` alias |
 | `locmem` | `LocMemCache` | Local memory cache (cachex drop-in) |
 | `database` | `DatabaseCache` | Database-backed cache (cachex drop-in) |
@@ -100,7 +98,7 @@ Select the `celery` cache in the admin to see:
 ## Docker Services
 
 - **valkey** (port 6381): Valkey 8 server
-- **redis** (port 6380): Redis 7 server (db 0 = cache, db 1 = Celery, db 2 = StreamCache transport)
+- **redis** (port 6380): Redis 7 server (db 0 = cache, db 1 = Celery)
 - **redis-cluster-1 to redis-cluster-6** (ports 7001-7006): Redis 7 cluster nodes, 3 masters and 3 replicas, formed by the one-shot `redis-cluster-init` service
 - **redis-master** (port 6390), **redis-replica-1** (6391), **redis-replica-2** (6392): Redis 7 replication group
 - **sentinel-1 to sentinel-3** (ports 26379-26381): Redis Sentinel quorum monitoring `mymaster`

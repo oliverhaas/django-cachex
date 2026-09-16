@@ -1,5 +1,7 @@
 """Base Django settings for tests."""
 
+from typing import Any
+
 SECRET_KEY = "django_tests_secret_key"
 
 # Include django.contrib.auth and django.contrib.contenttypes for mypy/django-stubs
@@ -51,7 +53,9 @@ USE_TZ = False
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
 # Base CACHES configuration. Test fixtures override this for parametrized tests.
-CACHES = {
+# The annotation keeps django-stubs from inferring ``dict[str, object]`` for
+# ``settings.CACHES`` once the literal mixes value types.
+CACHES: dict[str, dict[str, Any]] = {
     "default": {
         "BACKEND": "django_cachex.cache.RedisCache",
         "LOCATION": "redis://127.0.0.1:6379?db=1",

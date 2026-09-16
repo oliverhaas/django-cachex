@@ -30,16 +30,13 @@ The `full` example wires up twelve cache aliases:
 
 **Standalone:**
 - Valkey (port 6381)
-- Redis (port 6380; db 0 = cache, db 1 = Celery, db 2 = StreamCache transport)
+- Redis (port 6380; db 0 = cache, db 1 = Celery)
 
 **Cluster:**
 - Redis Cluster with 6 nodes (ports 7001-7006)
 
 **Sentinel:**
 - Redis Sentinel with 3 sentinels (ports 26379-26381) in front of a master (6390) and two replicas (6391, 6392)
-
-**Stream-synced:**
-- `StreamCache`, a local cache kept in sync over a Redis Stream
 
 **Tracking-invalidated:**
 - `TrackingCache`, a local cache the server invalidates over `CLIENT TRACKING BCAST`
