@@ -139,7 +139,7 @@ def maybe_wrap_wrongtype(exc: BaseException) -> BaseException:
 
 
 # Commands the RESP adapters send that the advertised minimum servers
-# (Redis 6.0, Valkey 7.2) do not have, with the release that adds them.
+# (Redis 6.2, Valkey 7.2) do not have, with the release that adds them.
 _COMMAND_REQUIREMENTS: dict[str, str] = {
     **dict.fromkeys(
         ("hexpire", "hpexpire", "hexpireat", "hpexpireat", "httl", "hpttl", "hexpiretime", "hpersist"),

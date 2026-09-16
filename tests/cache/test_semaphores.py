@@ -71,6 +71,31 @@ class TestLocalCountingSemaphore:
         other.release()
 
 
+class TestLocalExtend:
+    """The local backend has no lease to bump, so extend() only reports whether the claim is held."""
+
+    def test_extend_while_held_returns_true(self):
+        sem = Semaphore("local_extend", capacity=1, lease=5)
+        with sem:
+            assert sem.extend(10) is True
+        assert sem.extend(10) is False
+
+    def test_extend_without_a_claim_returns_false(self):
+        assert Semaphore("local_extend_unheld", capacity=1).extend(10) is False
+
+    def test_extend_rejects_a_non_positive_bump(self):
+        sem = Semaphore("local_extend_bad", capacity=1)
+        with sem, pytest.raises(ValueError, match="must be a positive number of seconds"):
+            sem.extend(0)
+
+    @pytest.mark.asyncio
+    async def test_aextend_mirrors_extend(self):
+        sem = Semaphore("local_aextend", capacity=1)
+        async with sem:
+            assert await sem.aextend(10) is True
+        assert await sem.aextend(10) is False
+
+
 class TestLocalWeightedSemaphore:
     def test_weight_consumes_capacity(self):
         sem_a = Semaphore("weighted", capacity=10, weight=7)
@@ -870,6 +895,97 @@ class TestRespAcquireInterrupted:
         assert fresh.acquire(blocking=False) is True
         fresh.release()
 
+    def test_interrupt_after_admission_releases_the_claim(self, cache):
+        # Regression: KeyboardInterrupt between the server admitting the token
+        # and acquire() returning left the claim held until the lease ran out.
+
+        class InterruptAfterAdmit:
+            def __init__(self, inner) -> None:
+                self._inner = inner
+
+            def eval(self, script, numkeys, *args):
+                result = self._inner.eval(script, numkeys, *args)
+                if script == ACQUIRE_LUA and _decode_status(result) == "acquired":
+                    raise KeyboardInterrupt
+                return result
+
+        sem = cache.semaphore("resp_interrupt_admit", capacity=1, lease=60)
+        sem._adapter = InterruptAfterAdmit(cache.adapter)
+        with pytest.raises(KeyboardInterrupt):
+            sem.acquire(blocking=False)
+
+        assert sem._token is None
+        prefix = "{" + cache.make_and_validate_key("resp_interrupt_admit") + "}"
+        assert cache.adapter.hlen(f"{prefix}:claims") == 0
+        fresh = cache.semaphore("resp_interrupt_admit", capacity=1, lease=10)
+        assert fresh.acquire(blocking=False) is True
+        fresh.release()
+
+    @pytest.mark.asyncio
+    async def test_cancellation_after_admission_releases_the_claim(self, cache):
+        class CancelAfterAdmit:
+            def __init__(self, inner) -> None:
+                self._inner = inner
+
+            async def aeval(self, script, numkeys, *args):
+                result = await self._inner.aeval(script, numkeys, *args)
+                if script == ACQUIRE_LUA and _decode_status(result) == "acquired":
+                    raise asyncio.CancelledError
+                return result
+
+        sem = await cache.asemaphore("aresp_cancel_admit", capacity=1, lease=60)
+        sem._adapter = CancelAfterAdmit(cache.adapter)
+        with pytest.raises(asyncio.CancelledError):
+            await sem.aacquire(blocking=False)
+
+        assert sem._token is None
+        prefix = "{" + cache.make_and_validate_key("aresp_cancel_admit") + "}"
+        assert cache.adapter.hlen(f"{prefix}:claims") == 0
+        fresh = await cache.asemaphore("aresp_cancel_admit", capacity=1, lease=10)
+        assert await fresh.aacquire(blocking=False) is True
+        await fresh.arelease()
+
+
+class TestRespFifoFairness:
+    def test_first_waiter_is_admitted_first(self, cache):
+        holder = cache.semaphore("resp_fifo", capacity=1, lease=10)
+        assert holder.acquire(blocking=False) is True
+        prefix = "{" + cache.make_and_validate_key("resp_fifo") + "}"
+
+        order: list[str] = []
+        first_done = threading.Event()
+
+        def wait_then_record(label: str, hold: threading.Event | None) -> None:
+            sem = cache.semaphore("resp_fifo", capacity=1, lease=10, timeout=10)
+            sem.acquire(blocking=True)
+            order.append(label)
+            if hold is not None:
+                hold.wait(10)
+            sem.release()
+
+        t_first = threading.Thread(target=wait_then_record, args=("first", first_done))
+        t_second = threading.Thread(target=wait_then_record, args=("second", None))
+        t_first.start()
+        _wait_for_queue(cache, prefix, 1)
+        t_second.start()
+        _wait_for_queue(cache, prefix, 2)
+        try:
+            holder.release()
+            t_second.join(timeout=1)  # stays parked behind "first"
+            assert order == ["first"]
+        finally:
+            first_done.set()
+            t_first.join(timeout=10)
+            t_second.join(timeout=10)
+        assert order == ["first", "second"]
+
+
+def _wait_for_queue(cache, prefix: str, size: int) -> None:
+    deadline = time.monotonic() + 5
+    while cache.adapter.zcard(f"{prefix}:queue") < size:
+        assert time.monotonic() < deadline, "waiters did not enqueue in time"
+        time.sleep(0.01)
+
 
 class TestRespConcurrentMisuse:
     """Sharing one RespSemaphore across threads is misuse, but it must not
@@ -1236,10 +1352,31 @@ class TestRespExtend:
         finally:
             holder.release()
 
-    def test_extend_without_a_claim_raises(self, cache):
+    def test_extend_without_a_claim_returns_false(self, cache):
         sem = cache.semaphore("resp_extend_unowned", capacity=1, lease=10)
-        with pytest.raises(SemaphoreError):
-            sem.extend(5)
+        assert sem.extend(5) is False
+
+    def test_extend_after_release_returns_false(self, cache):
+        # Regression: this raised SemaphoreError while the docs promised False.
+        sem = cache.semaphore("resp_extend_released", capacity=1, lease=10)
+        assert sem.acquire(blocking=False) is True
+        sem.release()
+        assert sem.extend(5) is False
+
+    def test_extend_of_a_reaped_claim_does_not_recreate_it(self, cache):
+        holder = cache.semaphore("resp_extend_reaped", capacity=1, lease=60)
+        assert holder.acquire(blocking=False) is True
+        token = holder._token
+        _expire_claim(cache, "resp_extend_reaped", holder)
+        reaper = cache.semaphore("resp_extend_reaped", capacity=1, lease=10)
+        assert reaper.acquire(blocking=False) is True
+        try:
+            assert holder.extend(30) is False
+            prefix = "{" + cache.make_and_validate_key("resp_extend_reaped") + "}"
+            assert cache.adapter.hexists(f"{prefix}:claims", token) is False
+            assert cache.adapter.pttl(f"{prefix}:state:claim:{token}") == -2
+        finally:
+            reaper.release()
 
     @pytest.mark.parametrize("additional_seconds", [0, -30])
     def test_extend_rejects_a_non_positive_bump(self, cache, additional_seconds):
@@ -1333,6 +1470,13 @@ class TestRespAsyncSemaphore:
             assert after > 55_000
         finally:
             await holder.arelease()
+
+    @pytest.mark.asyncio
+    async def test_resp_aextend_after_release_returns_false(self, cache):
+        sem = await cache.asemaphore("aresp_ext_released", capacity=1, lease=10)
+        assert await sem.aacquire(blocking=False) is True
+        await sem.arelease()
+        assert await sem.aextend(5) is False
 
     @pytest.mark.asyncio
     async def test_resp_aextend(self, cache):

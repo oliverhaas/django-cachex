@@ -367,3 +367,20 @@ class TestSetEmptyArgumentCalls:
     async def test_asmismember(self, cache: RespCache):
         await cache.asadd("aempty_set", "a")
         assert await cache.asmismember("aempty_set") == []
+
+
+class TestSetArgumentValidation:
+    """The RESP backends raise the same ``ValueError`` LocMem and Database do, not a driver ``ResponseError``."""
+
+    def test_spop_rejects_a_negative_count(self, cache: RespCache):
+        cache.sadd("spop_neg", "a")
+        with pytest.raises(ValueError, match="value is out of range, must be positive"):
+            cache.spop("spop_neg", -1)
+        assert cache.smembers("spop_neg") == {"a"}
+
+    @pytest.mark.asyncio
+    async def test_aspop_rejects_a_negative_count(self, cache: RespCache):
+        cache.sadd("aspop_neg", "a")
+        with pytest.raises(ValueError, match="value is out of range, must be positive"):
+            await cache.aspop("aspop_neg", -1)
+        assert cache.smembers("aspop_neg") == {"a"}

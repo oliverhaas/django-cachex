@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 from django_cachex.cache.base import BaseCachex, CachexSupportLevel
 from django_cachex.exceptions import CompressorError, NotSupportedError, SerializerError
 from django_cachex.script import ScriptHelpers, reject_stray_encoded
+from django_cachex.utils import _validate_linsert_where, _validate_lpos_args, _validate_pop_count
 
 # Alias for the `set` builtin shadowed by the `set` method (PEP 649 defers
 # annotations at runtime, but type checkers still resolve them in class scope).
@@ -109,9 +110,10 @@ class RespCache(BaseCachex):
 
     def __init__(self, server: str, params: dict[str, Any]) -> None:
         super().__init__(params)
-        # Django's own RedisCache accepts both separators.
+        # Django's own RedisCache accepts both separators. Blank entries are
+        # dropped so a trailing separator does not become an empty URL.
         if isinstance(server, str):
-            self._servers = re.split("[;,]", server)
+            self._servers = [s.strip() for s in re.split("[;,]", server) if s.strip()]
         else:
             self._servers = server
         if not any(s.strip() for s in self._servers):
@@ -124,6 +126,13 @@ class RespCache(BaseCachex):
         # ``super().__init__`` already read these off ``params``, so dropping
         # them here just keeps them out of the pool kwargs.
         self._options = {k: v for k, v in params.get("OPTIONS", {}).items() if k not in _DJANGO_GENERIC_OPTIONS}
+        if self._options.get("decode_responses"):
+            msg = (
+                f"{type(self).__name__} does not support OPTIONS['decode_responses']=True: "
+                f"the cache layer deserializes the raw bytes the server returns, so a "
+                f"str-decoding client breaks every read. Remove the option."
+            )
+            raise ImproperlyConfigured(msg)
 
         # Top-level like Django's ``KEY_FUNCTION``; dotted path or callable.
         reverse_key_func = params.get("REVERSE_KEY_FUNCTION")
@@ -833,15 +842,13 @@ class RespCache(BaseCachex):
 
     @override
     def close(self, **kwargs: Any) -> None:
-        """Delegate to the adapter. Skip if no adapter has been built yet."""
-        if "adapter" in self.__dict__:
-            self.adapter.close(**kwargs)
+        """Delegate to the adapter."""
+        self.adapter.close(**kwargs)
 
     @override
     async def aclose(self, **kwargs: Any) -> None:
-        """Delegate to the adapter. Skip if no adapter has been built yet."""
-        if "adapter" in self.__dict__:
-            await self.adapter.aclose(**kwargs)
+        """Delegate to the adapter."""
+        await self.adapter.aclose(**kwargs)
 
     # =========================================================================
     # Extended Methods (beyond Django's BaseCache)
@@ -2125,6 +2132,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int | list[int] | None:
         """Find position(s) of element in list."""
+        _validate_lpos_args(rank, count, maxlen)
         key = self.make_and_validate_key(key, version=version)
         return self.adapter.lpos(key, self.encode(value), rank=rank, count=count, maxlen=maxlen)
 
@@ -2188,6 +2196,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Insert value before or after pivot in list."""
+        _validate_linsert_where(where)
         key = self.make_and_validate_key(key, version=version)
         return self.adapter.linsert(key, where, self.encode(pivot), self.encode(value))
 
@@ -2329,6 +2338,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int | list[int] | None:
         """Find position(s) of element in list asynchronously."""
+        _validate_lpos_args(rank, count, maxlen)
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.alpos(key, self.encode(value), rank=rank, count=count, maxlen=maxlen)
 
@@ -2392,6 +2402,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Insert value before or after pivot in list asynchronously."""
+        _validate_linsert_where(where)
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.alinsert(key, where, self.encode(pivot), self.encode(value))
 
@@ -2576,6 +2587,7 @@ class RespCache(BaseCachex):
         members when ``count`` is given (always a set, even empty), or
         ``None`` when the set is empty and ``count`` is ``None``.
         """
+        _validate_pop_count(count)
         key = self.make_and_validate_key(key, version=version)
         result = self.adapter.spop(key, count)
         if result is None:
@@ -2797,6 +2809,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> Any | _set[Any] | None:
         """Remove and return random member(s) from set asynchronously."""
+        _validate_pop_count(count)
         key = self.make_and_validate_key(key, version=version)
         result = await self.adapter.aspop(key, count)
         if result is None:
@@ -4150,11 +4163,11 @@ class RespClusterCache(RespCache):
     ) -> Any:
         """Reject ``lock`` on cluster mode.
 
-        The underlying ``Lock`` implementation runs its release script via
-        ``EVALSHA``, which cluster routes to replicas (read-only). ``release()``
-        then returns an error and the key stays set until its lease expiry.
-        Use :meth:`semaphore` for cluster-safe mutual exclusion: it colocates
-        its keys via ``{name}`` hash tags.
+        The driver ``Lock`` implementations are not cluster-aware and a lock
+        key carries no hash tag, so nothing guarantees that the lock key and
+        the Lua release/extend scripts acting on it are routed together. Use
+        :meth:`semaphore` for cluster-safe mutual exclusion: it colocates its
+        keys under a ``{name}`` hash tag.
         """
         raise NotSupportedError("lock", backend="cluster")
 

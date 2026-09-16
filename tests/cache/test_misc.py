@@ -1,5 +1,6 @@
 """Tests for miscellaneous cache operations: scan, decr_version, clear_all_versions, flush_db."""
 
+import asyncio
 from typing import TYPE_CHECKING
 
 import pytest
@@ -145,9 +146,9 @@ class TestAsyncScan:
 class TestAsyncLock:
     @pytest.fixture(autouse=True)
     def _skip_cluster(self, client_class: str, sentinel_mode: str | bool):
-        """Async locks use EVALSHA which doesn't work on cluster replicas."""
+        """``RespClusterCache.alock`` raises NotSupportedError; see test_locks.py."""
         if client_class == "cluster" and not sentinel_mode:
-            pytest.skip("Async lock not supported on cluster (EVALSHA routing)")
+            pytest.skip("alock is rejected on cluster")
 
     @pytest.mark.asyncio
     async def test_alock_acquire_and_release(self, cache: RespCache):
@@ -227,6 +228,30 @@ class TestAsyncGetOrSet:
         result = await cache.aget_or_set("agos_key3", lambda: "computed")
         assert result == "computed"
         assert cache.get("agos_key3") == "computed"
+
+    @pytest.mark.asyncio
+    async def test_aget_or_set_awaits_an_async_default(self, cache: RespCache):
+        async def compute() -> str:
+            await asyncio.sleep(0)
+            return "awaited"
+
+        class AsyncCallable:
+            async def __call__(self) -> str:
+                return "awaited via __call__"
+
+        assert await cache.aget_or_set("agos_async", compute) == "awaited"
+        assert cache.get("agos_async") == "awaited"
+        assert await cache.aget_or_set("agos_async_call", AsyncCallable()) == "awaited via __call__"
+        assert cache.get("agos_async_call") == "awaited via __call__"
+
+    @pytest.mark.asyncio
+    async def test_aget_or_set_does_not_call_the_default_on_a_hit(self, cache: RespCache):
+        cache.set("agos_hit", "existing")
+
+        async def compute() -> str:
+            raise AssertionError("default computed on a hit")
+
+        assert await cache.aget_or_set("agos_hit", compute) == "existing"
 
 
 class TestAsyncFlushDb:

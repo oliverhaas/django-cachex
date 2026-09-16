@@ -18,8 +18,8 @@ if TYPE_CHECKING:
 def _skip_cluster_lock_tests(request: pytest.FixtureRequest) -> None:
     """Skip cluster from existing lock tests.
 
-    Cluster mode rejects ``lock``/``alock`` outright (release runs
-    ``EVALSHA`` which cluster routes to replicas). Each test class in this
+    Cluster mode rejects ``lock``/``alock`` outright (the driver locks are
+    not cluster-aware; see ``RespClusterCache.lock``). Each test class in this
     module opts out by setting ``cluster_supported = False`` (the default).
     The cluster-rejection contract itself is verified in
     :class:`TestClusterLockRejection`, which sets ``cluster_supported = True``.

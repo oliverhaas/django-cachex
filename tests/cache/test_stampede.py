@@ -297,6 +297,37 @@ class TestStampedeExtendedTTL:
         assert ttl is None  # No expiry
 
 
+class TestStampedeSetFlags:
+    """``set(nx=/xx=/get=)`` goes through ``set_with_flags`` and must buffer the TTL like plain ``set()``."""
+
+    @pytest.mark.parametrize("flags", [{"nx": True}, {"xx": True}, {"get": True}], ids=["nx", "xx", "get"])
+    def test_stored_ttl_includes_buffer(self, stampede_cache: RespCache, flags: dict[str, bool]):
+        if not flags.get("nx"):
+            stampede_cache.set("sp_flags", "old", timeout=300)
+        stampede_cache.set("sp_flags", "val", timeout=300, **flags)
+
+        raw = stampede_cache.ttl("sp_flags", stampede_prevention=False)
+        assert raw is not None
+        assert 300 < raw <= 360
+        assert stampede_cache.get("sp_flags") == "val"
+
+    def test_get_flag_returns_the_old_value(self, stampede_cache: RespCache):
+        stampede_cache.set("sp_flags_get", "old", timeout=300)
+        assert stampede_cache.set("sp_flags_get", "new", timeout=300, get=True) == "old"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("flags", [{"nx": True}, {"xx": True}, {"get": True}], ids=["nx", "xx", "get"])
+    async def test_astored_ttl_includes_buffer(self, stampede_cache: RespCache, flags: dict[str, bool]):
+        if not flags.get("nx"):
+            await stampede_cache.aset("asp_flags", "old", timeout=300)
+        await stampede_cache.aset("asp_flags", "val", timeout=300, **flags)
+
+        raw = await stampede_cache.attl("asp_flags", stampede_prevention=False)
+        assert raw is not None
+        assert 300 < raw <= 360
+        assert await stampede_cache.aget("asp_flags") == "val"
+
+
 class TestStampedeTouch:
     """touch() must apply the same TTL buffer as set().
 

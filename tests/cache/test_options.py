@@ -3,7 +3,9 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 from django.core.cache import caches
+from django.core.exceptions import ImproperlyConfigured
 
+from django_cachex.cache import RedisCache
 from tests.cache.support import make_cache
 
 if TYPE_CHECKING:
@@ -128,3 +130,34 @@ class TestDjangoGenericOptions:
         pool_options = cache.adapter._pool_options
         assert "MAX_ENTRIES" not in pool_options
         assert "CULL_FREQUENCY" not in pool_options
+
+
+class TestRejectedOptions:
+    def test_decode_responses_is_rejected_at_construction(self):
+        """Regression: the option reached the pool and every non-int read then failed to deserialize."""
+        with pytest.raises(ImproperlyConfigured, match="decode_responses"):
+            make_cache(decode_responses=True)
+
+    def test_decode_responses_false_is_accepted(self):
+        assert make_cache(decode_responses=False).adapter is not None
+
+
+class TestLocationParsing:
+    @pytest.mark.parametrize(
+        "location",
+        [
+            "redis://a:6379/0;redis://b:6379/0;",
+            "redis://a:6379/0, redis://b:6379/0,",
+            " redis://a:6379/0 ;\nredis://b:6379/0 ",
+        ],
+        ids=["trailing-semicolon", "trailing-comma", "whitespace"],
+    )
+    def test_blank_entries_are_dropped(self, location: str):
+        """Regression: a trailing separator became an empty URL that the driver choked on later."""
+        cache = RedisCache(server=location, params={})
+        assert cache._servers == ["redis://a:6379/0", "redis://b:6379/0"]
+
+    @pytest.mark.parametrize("location", [";", ", ,", " ; "])
+    def test_only_separators_is_still_rejected(self, location: str):
+        with pytest.raises(ImproperlyConfigured, match="requires a LOCATION"):
+            RedisCache(server=location, params={})

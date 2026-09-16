@@ -669,3 +669,42 @@ class TestListEmptyArgumentCalls:
         ttl = cache.ttl("empty_push_existing")
         assert ttl is not None
         assert 90 <= ttl <= 100
+
+
+class TestListArgumentValidation:
+    """The RESP backends raise the same ``ValueError`` LocMem and Database do, not a driver ``ResponseError``."""
+
+    def test_lpos_rejects_rank_zero(self, cache: RespCache):
+        cache.rpush("lpos_bad", "a")
+        with pytest.raises(ValueError, match="RANK can't be zero"):
+            cache.lpos("lpos_bad", "a", rank=0)
+
+    def test_lpos_rejects_a_negative_count_or_maxlen(self, cache: RespCache):
+        cache.rpush("lpos_bad", "a")
+        with pytest.raises(ValueError, match="COUNT can't be negative"):
+            cache.lpos("lpos_bad", "a", count=-1)
+        with pytest.raises(ValueError, match="MAXLEN can't be negative"):
+            cache.lpos("lpos_bad", "a", maxlen=-1)
+
+    def test_linsert_rejects_an_unknown_position(self, cache: RespCache):
+        cache.rpush("linsert_bad", "a")
+        with pytest.raises(ValueError, match="syntax error"):
+            cache.linsert("linsert_bad", "SIDEWAYS", "a", "b")
+        assert cache.lrange("linsert_bad", 0, -1) == ["a"]
+
+    @pytest.mark.asyncio
+    async def test_alpos_rejects_bad_arguments(self, cache: RespCache):
+        cache.rpush("alpos_bad", "a")
+        with pytest.raises(ValueError, match="RANK can't be zero"):
+            await cache.alpos("alpos_bad", "a", rank=0)
+        with pytest.raises(ValueError, match="COUNT can't be negative"):
+            await cache.alpos("alpos_bad", "a", count=-1)
+        with pytest.raises(ValueError, match="MAXLEN can't be negative"):
+            await cache.alpos("alpos_bad", "a", maxlen=-1)
+
+    @pytest.mark.asyncio
+    async def test_alinsert_rejects_an_unknown_position(self, cache: RespCache):
+        cache.rpush("alinsert_bad", "a")
+        with pytest.raises(ValueError, match="syntax error"):
+            await cache.alinsert("alinsert_bad", "SIDEWAYS", "a", "b")
+        assert cache.lrange("alinsert_bad", 0, -1) == ["a"]

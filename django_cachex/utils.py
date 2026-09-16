@@ -205,6 +205,13 @@ def _validate_lpos_args(rank: int | None, count: int | None, maxlen: int | None)
         raise ValueError(msg)
 
 
+def _validate_linsert_where(where: str) -> None:
+    """Reject a ``LINSERT`` position other than BEFORE/AFTER with Redis's own reply."""
+    if where.upper() not in {"BEFORE", "AFTER"}:
+        msg = "syntax error"
+        raise ValueError(msg)
+
+
 def _lpos_positions(items: Sequence[Any], value: Any, rank: int | None, maxlen: int | None) -> list[int]:
     """Indexes of ``value`` in ``items``, in the order Redis ``LPOS`` scans them.
 

@@ -447,6 +447,18 @@ class Semaphore:
         # Local backend has no async I/O during release; delegate to sync.
         self.release()
 
+    def extend(self, additional_seconds: float) -> bool:
+        """Mirror of :meth:`RespSemaphore.extend` for code that runs on either backend.
+
+        The local backend ignores ``lease``, so there is no TTL to bump:
+        returns True while this instance holds a claim, False otherwise.
+        """
+        _validate_extend(additional_seconds)
+        return self._held
+
+    async def aextend(self, additional_seconds: float) -> bool:
+        return self.extend(additional_seconds)
+
     # ------------------------------------------------------------------ misc
 
     def _remove_waiter_and_notify(self, waiter: _Waiter) -> None:
@@ -632,7 +644,11 @@ class RespSemaphore:
             except BaseException:
                 # KeyboardInterrupt must not leave our queue entry behind: a
                 # dead head blocks acquirers until the liveness TTL expires.
+                # The interrupt can also land after the server admitted us
+                # but before the reply was read, so release the claim too.
                 _dequeue_token()
+                with contextlib.suppress(Exception):
+                    self._release_token(token)
                 self._clear_token(token)
                 raise
             if status == "acquired":
@@ -660,11 +676,10 @@ class RespSemaphore:
                     raise
             backoff_ms = min(_MAX_BACKOFF_MS, int(backoff_ms * 1.5))
 
-    def release(self) -> None:
+    def _release_token(self, token: str) -> object:
         from django_cachex.cache._semaphore_lua import RELEASE_LUA
 
-        token = self._held_token("release")
-        result = self._adapter.eval(
+        return self._adapter.eval(
             RELEASE_LUA,
             3,
             self._state_key,
@@ -673,6 +688,10 @@ class RespSemaphore:
             token,
             str(self._lease_ms()),
         )
+
+    def release(self) -> None:
+        token = self._held_token("release")
+        result = self._release_token(token)
         self._clear_token(token)
         self._warn_if_not_owned(result)
 
@@ -686,7 +705,9 @@ class RespSemaphore:
         from django_cachex.cache._semaphore_lua import EXTEND_LUA
 
         _validate_extend(additional_seconds)
-        token = self._held_token("extend")
+        token = self._token
+        if token is None:
+            return False
         additional_ms = max(1, int(additional_seconds * 1000))
         result = self._adapter.eval(
             EXTEND_LUA,
@@ -741,7 +762,11 @@ class RespSemaphore:
                 )
                 status = _decode_status(result)
             except BaseException:
+                # Cancellation can land after the server admitted us but
+                # before the reply was read; releasing an unadmitted token is a no-op.
                 await _dequeue_token()
+                with contextlib.suppress(Exception):
+                    await self._arelease_token(token)
                 self._clear_token(token)
                 raise
             if status == "acquired":
@@ -769,11 +794,10 @@ class RespSemaphore:
                     raise
             backoff_ms = min(_MAX_BACKOFF_MS, int(backoff_ms * 1.5))
 
-    async def arelease(self) -> None:
+    async def _arelease_token(self, token: str) -> object:
         from django_cachex.cache._semaphore_lua import RELEASE_LUA
 
-        token = self._held_token("release")
-        result = await self._adapter.aeval(
+        return await self._adapter.aeval(
             RELEASE_LUA,
             3,
             self._state_key,
@@ -782,6 +806,10 @@ class RespSemaphore:
             token,
             str(self._lease_ms()),
         )
+
+    async def arelease(self) -> None:
+        token = self._held_token("release")
+        result = await self._arelease_token(token)
         self._clear_token(token)
         self._warn_if_not_owned(result)
 
@@ -790,7 +818,9 @@ class RespSemaphore:
         from django_cachex.cache._semaphore_lua import EXTEND_LUA
 
         _validate_extend(additional_seconds)
-        token = self._held_token("extend")
+        token = self._token
+        if token is None:
+            return False
         additional_ms = max(1, int(additional_seconds * 1000))
         result = await self._adapter.aeval(
             EXTEND_LUA,
