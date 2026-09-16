@@ -2,7 +2,7 @@
 
 ## Serializer
 
-By default, `PickleSerializer` is used with `pickle.DEFAULT_PROTOCOL`. To use a different serializer or configure pickle options, use the `serializer` option:
+By default, `PickleSerializer` is used with `pickle.DEFAULT_PROTOCOL`. To use a different serializer, name it in the `serializer` option:
 
 ```python
 CACHES = {
@@ -15,6 +15,18 @@ CACHES = {
     }
 }
 ```
+
+A dotted path is instantiated with no arguments. To set a constructor option such as the pickle protocol, pass an instance instead:
+
+```python
+from django_cachex.serializers.pickle import PickleSerializer
+
+"OPTIONS": {
+    "serializer": PickleSerializer(protocol=5),
+}
+```
+
+See [Serializers](serializers.md#constructor-options) for the options each serializer takes.
 
 ## TTL Operations
 
@@ -472,7 +484,13 @@ def my_post(helpers: ScriptHelpers, result):
     }
 
 
-result = cache.eval_script("...", pre_hook=my_pre, post_hook=my_post)
+result = cache.eval_script(
+    "...",
+    keys=["primary"],
+    args=["secondary", value_a, value_b],
+    pre_hook=my_pre,
+    post_hook=my_post,
+)
 ```
 
 ### Pipeline Support

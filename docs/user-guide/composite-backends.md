@@ -51,7 +51,7 @@ The standard Django cache interface, the `nx`/`xx`/`get` flags on `set`, and the
 
 `delete_pattern` takes a Redis glob on both sides: the same pattern picks the local entries to evict and the keys the transport deletes, so `[^0]` negates the way it does on the server. Local copies are matched by their made key against the transport's `make_pattern()` glob, so eviction also works under a custom `KEY_FUNCTION` without a `REVERSE_KEY_FUNCTION`.
 
-`KEY_PREFIX` is not accepted on a `TrackingCache` alias, in either slot: keys are made by the transport, so set it there. `TIMEOUT` and `VERSION` on the alias are ignored for the same reason. Key versions come from the transport, and `incr_version` / `decr_version` (with their async twins) honor that: they delegate the rename to the transport and forget the local copies of both versions. `VERSION` on the transport alias works.
+`KEY_PREFIX`, `KEY_FUNCTION`, `VERSION` and `TIMEOUT` are not accepted on a `TrackingCache` alias, in either slot: keys are made and the default timeout is resolved by the transport, so set them there. Key versions come from the transport, and `incr_version` / `decr_version` (with their async twins) honor that: they delegate the rename to the transport and forget the local copies of both versions. `VERSION` on the transport alias works.
 
 In the admin a `TrackingCache` alias is badged limited and offers no key browsing, because its keys live on the transport; browse and edit through the transport alias.
 

@@ -22,7 +22,7 @@ CACHES = {
 |------------|-------------|-------|
 | `django_cachex.serializers.pickle.PickleSerializer` | Python pickle (default); supports nearly all Python types | (stdlib) |
 | `django_cachex.serializers.json.JsonSerializer` | JSON via Django's `DjangoJSONEncoder` (broadest Django type coverage of the JSON family) | (stdlib) |
-| `django_cachex.serializers.msgpack.MsgpackSerializer` | Pure-Python MessagePack; compact binary format | `msgpack` |
+| `django_cachex.serializers.msgpack.MsgpackSerializer` | MessagePack via the `msgpack` package (C extension when its wheel ships one); compact binary format | `msgpack` |
 | `django_cachex.serializers.orjson.OrjsonSerializer` | Rust-backed JSON; fewer types than `DjangoJSONEncoder` | `orjson` |
 | `django_cachex.serializers.ormsgpack.OrmsgpackSerializer` | Rust-backed MessagePack | `ormsgpack` |
 
@@ -34,11 +34,39 @@ uv add django-cachex[orjson]
 uv add django-cachex[ormsgpack]
 ```
 
+## Constructor options
+
+`serializer` takes a dotted path, a class or an instance. A dotted path or
+class is instantiated with no arguments, so pass an instance to set a
+constructor option. Two serializers have one, both keyword-only:
+
+| Serializer | Option | Default |
+|------------|--------|---------|
+| `PickleSerializer` | `protocol` | `pickle.DEFAULT_PROTOCOL` |
+| `JsonSerializer` | `encoder_class` | `DjangoJSONEncoder` |
+
+```python
+from django_cachex.serializers.pickle import PickleSerializer
+
+CACHES = {
+    "default": {
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": "valkey://127.0.0.1:6379/1",
+        "OPTIONS": {
+            "serializer": PickleSerializer(protocol=5),
+        },
+    }
+}
+```
+
+An instance works in the fallback list too, mixed with dotted paths.
+
 ## Type compatibility
 
-Round-trip behaviour for common Python types. Legend: **✓** preserved (same
-type back), **~** encoded but returns as a different type (caller must convert
-on read), **✗** raises `SerializerError` on `dumps`.
+Round-trip behaviour for common Python types. A check mark means the value
+comes back as the same type; a tilde (`~`) followed by a type means the value
+is encoded but comes back as that type, so the caller converts on read; a cross
+means `dumps` raises `SerializerError`.
 
 | Type | pickle | json (Django) | msgpack | orjson | ormsgpack |
 |------|:------:|:-------------:|:-------:|:------:|:---------:|

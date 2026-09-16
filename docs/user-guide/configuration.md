@@ -221,7 +221,7 @@ Which keys are honored depends on the backend:
 | Keys | Honored by |
 |------|------------|
 | `serializer`, `compressor`, `stampede_prevention`, `username`, `password` | Every Valkey/Redis backend, valkey-glide included |
-| `pool_class`, `async_pool_class`, `parser_class`, `sentinels`, `sentinel_kwargs`, plus everything forwarded to the driver's `from_url()` (`socket_timeout`, `socket_connect_timeout`, `retry_on_timeout`, `ssl_*`, `db`, ...) | redis-py and valkey-py backends |
+| `pool_class`, `async_pool_class`, `parser_class`, `sentinels`, `sentinel_kwargs`, plus everything forwarded to the driver's `from_url()` (`socket_timeout`, `socket_connect_timeout`, `retry_on_timeout`, `ssl_*`, `db`, ...) | redis-py and valkey-py backends; the cluster backends reject `pool_class`, `async_pool_class` and `parser_class`, see [Connection Pool](#connection-pool) |
 | `db`, `use_tls` / `ssl`, `request_timeout`, `client_name` | valkey-glide backends, see [Valkey-Glide OPTIONS](#valkey-glide-options) |
 
 `db` appears in both driver rows because each reads it its own way: redis-py and
@@ -316,15 +316,18 @@ be `SentinelConnectionPool` or a subclass of it; anything else raises
 `ImproperlyConfigured` at startup, because a plain connection pool takes none of
 the primary/replica discovery arguments. `async_pool_class` is checked the same
 way against the driver's async `SentinelConnectionPool` and is used for the
-`a*` methods. On a cluster backend both keys are ignored; the cluster client
-owns its per-node pools.
+`a*` methods. On the cluster backends `pool_class`, `async_pool_class` and
+`parser_class` are rejected with `ImproperlyConfigured`: the cluster client owns
+its per-node pools and picks its own parser (the C parser once `hiredis` or
+`libvalkey` is installed), so there is nothing for the options to configure.
 
 Extra keys you add are forwarded to the underlying pool's `from_url(...)`, so you
 can pin driver-specific options (`socket_keepalive`, `health_check_interval`, etc.)
 the same way. Seven keys are handled by cachex instead of being forwarded:
 `pool_class`, `async_pool_class`, `serializer`, `compressor`,
 `stampede_prevention`, `sentinels` and `sentinel_kwargs`. `parser_class` is
-resolved to a class first and then passed to the pool.
+resolved to a class first and then passed to the pool on the standalone and
+Sentinel backends.
 
 ### Parser
 
@@ -335,7 +338,7 @@ resolved to a class first and then passed to the pool.
 }
 ```
 
-Also redis-py and valkey-py only. You rarely need to set this. When omitted, the driver's `DefaultParser`
+Also redis-py and valkey-py only, cluster backends included. You rarely need to set this. When omitted, the driver's `DefaultParser`
 is used, which resolves to the C-accelerated parser when `libvalkey`
 (Valkey) or `hiredis` (Redis) is installed and to the pure-Python RESP
 parser otherwise. To get the C parser, install the `libvalkey` or
@@ -372,12 +375,15 @@ probabilistic early recompute, the key expires logically at its timeout". An
 out-of-range value raises `TypeError` or `ValueError` when the cache is
 configured, not later on a write.
 
-Per-call overrides accept the same shapes via the `stampede_prevention=` keyword on `get`/`set`/`add`/`touch`/`get_or_set`/`get_many`/`set_many`, on the TTL readers and setters (`ttl`, `pttl`, `expire`, `expireat`, `pexpire`, `pexpireat`, `expiretime`), and on their `a`-prefixed async counterparts. On `touch` the keyword decides whether the refreshed TTL gets the buffer added back, so it should match what the original write used.
+Per-call overrides take `True`, `False`, `None` or a `django_cachex.StampedeConfig` via the `stampede_prevention=` keyword (the dict form is `OPTIONS`-only; a dict here raises `TypeError`) on `get`/`set`/`add`/`touch`/`get_or_set`/`get_many`/`set_many`, on the TTL readers and setters (`ttl`, `pttl`, `expire`, `expireat`, `pexpire`, `pexpireat`, `expiretime`), and on their `a`-prefixed async counterparts. On `touch` the keyword decides whether the refreshed TTL gets the buffer added back, so it should match what the original write used.
 
 !!! warning "Valkey/Redis backends only"
     Stampede prevention is implemented in the RESP cache layer and the
-    valkey-py and valkey-glide adapters. `LocMemCache` and `DatabaseCache`
-    ignore both `OPTIONS["stampede_prevention"]` and the per-call keyword. `TrackingCache` follows its transport's setting.
+    valkey-py and valkey-glide adapters, and only their methods accept the
+    `stampede_prevention=` keyword. `LocMemCache` and `DatabaseCache` ignore
+    `OPTIONS["stampede_prevention"]`, and their methods have no such parameter,
+    so passing it raises `TypeError`. `TrackingCache` follows its transport's
+    `OPTIONS` setting and has no per-call keyword either.
 
 ### Valkey-Glide OPTIONS
 
@@ -399,7 +405,7 @@ connection pool, so it reads its own short set of keys:
 |--------|-------------|
 | `db` | Database index. Beats a `?db=` query, which beats the URL path. Ignored by `ValkeyGlideClusterCache`, since cluster only serves db 0. |
 | `use_tls` / `ssl` | Force TLS on or off. Without either key, TLS follows the `rediss://` or `valkeys://` scheme. `use_tls` is read first. |
-| `username` / `password` | ACL credentials. Either one present builds a `ServerCredentials`; `OPTIONS` wins over the URL. |
+| `username` / `password` | ACL credentials. A `password` builds a `ServerCredentials` and `username` is attached to it; a `username` on its own is ignored (glide rejects a username without a password), so a nopass ACL user connects as `default`. `OPTIONS` wins over the URL. |
 | `request_timeout` | Per-request timeout. Coerced to `int` and passed through as glide's own `request_timeout`, which glide reads as milliseconds. |
 | `client_name` | Name reported to the server, visible in `CLIENT LIST`. |
 
@@ -463,7 +469,7 @@ user name contains characters that would need URL-escaping:
 }
 ```
 
-`OPTIONS` wins over the URL for both `username` and `password`.
+`OPTIONS` wins over the URL for both `username` and `password`. An `OPTIONS` value of `None` or `""` does not override, so `"password": os.environ.get("CACHE_PASSWORD")` with the variable unset falls back to the URL's password.
 
 ## SSL/TLS
 

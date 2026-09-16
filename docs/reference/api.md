@@ -42,11 +42,11 @@ django-cachex adds these extended methods:
 | `type(key)` | Get the data type of a key |
 | `memory_usage(key, *, samples=None)` | Bytes the key and its value take on the server (`MEMORY USAGE`); `None` if the key is missing. `samples` bounds how many elements of a container are sampled (server default 5, `0` = all) |
 | `largest_keys(pattern="*", count=10, *, samples=None, itersize=None)` | The `count` largest keys matching `pattern` as `(key, bytes)` pairs, largest first. Scans with `iter_keys()` and pipelines `MEMORY USAGE` in batches of 100. `count=0` returns `[]` without scanning; a negative `count` raises `ValueError` |
-| `clear_all_versions(itersize=None)` | Delete every key under this cache's `KEY_PREFIX` across all versions (`delete_pattern` over `key_func("*", prefix, "*")`); returns the number deleted. `clear()` removes the current version only |
-| `lock(key, ...)` | Get a distributed lock |
+| `clear_all_versions(itersize=None)` | Delete every key under this cache's `KEY_PREFIX` across all versions; returns the number deleted. The pattern `key_func("*", prefix, "*")` is handed to the adapter as is, outside `make_key`, so `cache.delete_pattern()` with the same pattern is not equivalent: it would prefix the pattern a second time. `clear()` removes the current version only |
+| `lock(key, ...)` | Get a distributed lock. Valkey/Redis backends only: `LocMemCache`, `DatabaseCache` and `TrackingCache` raise `NotSupportedError` |
 | `keys(pattern)` | Get keys matching pattern |
 | `iter_keys(pattern)` | Iterate keys matching pattern |
-| `scan(cursor, pattern, count, key_type=None)` | Single SCAN iteration; `key_type` keeps only keys of that RESP type |
+| `scan(cursor=0, pattern="*", count=None, version=None, key_type=None)` | Single SCAN iteration; `key_type` keeps only keys of that RESP type. `version` is the fourth positional, so pass `key_type` by keyword |
 | `delete_pattern(pattern)` | Delete keys matching pattern |
 | `rename(src, dst)` | Rename a key; raises `KeyNotFoundError` when `src` does not exist |
 | `renamenx(src, dst)` | Rename key only if dest doesn't exist; `False` when `dst` exists or `src` does not |
@@ -106,7 +106,7 @@ Hash operations for field-value data structures:
 | `hsetex(key, field=None, value=None, timeout=DEFAULT_TIMEOUT, mapping=None, items=None, fnx=False, fxx=False, keepttl=False)` | Set hash field(s) and their TTL in one command; `False` when `fnx`/`fxx` blocks the write |
 | `hgetex(key, *fields, timeout=None, persist=False)` | Get hash field(s) and set (`timeout`) or remove (`persist`) their TTL in the same command |
 
-Field expiration needs Redis 7.4+ or Valkey 9.0+, and `hsetex`/`hgetex` Redis 8.0+; an older server raises `NotSupportedError`.
+Field expiration needs Redis 7.4+ or Valkey 9.0+, and `hsetex`/`hgetex` Redis 8.0+ or Valkey 9.0+; an older server raises `NotSupportedError`.
 
 `hset(key, items=[...])` raises `ValueError("items must hold field/value pairs")` for an odd-length list, matching `hsetex`. On a pipeline the error is raised when the call is queued, so nothing in the batch is sent.
 
@@ -173,8 +173,8 @@ List operations for ordered, indexable collections:
 | `llen(key)` | Get list length |
 | `lpush(key, *values)` | Prepend value(s) to list |
 | `rpush(key, *values)` | Append value(s) to list |
-| `lpop(key)` | Remove and return first element |
-| `rpop(key)` | Remove and return last element |
+| `lpop(key, count=None)` | Remove and return the first element, or a list of the first `count` elements |
+| `rpop(key, count=None)` | Remove and return the last element, or a list of the last `count` elements |
 | `lindex(key, index)` | Get element by index |
 | `lrange(key, start, end)` | Get elements in range |
 | `lset(key, index, value)` | Set element at index |
@@ -289,9 +289,10 @@ cache.set(key, value, timeout=300, nx=False, xx=False, get=False)
 | `xx` | Only set if key exists |
 | `get` | Return the previous value (atomic get-and-set) |
 
-Backend coverage: the Valkey/Redis backends, `LocMemCache` and `TrackingCache`
-take all three flags. `DatabaseCache` takes `nx` and raises
-`NotSupportedError` for `xx` and `get`.
+Backend coverage: the Valkey/Redis backends and `LocMemCache` take all three
+flags. `DatabaseCache` takes `nx` and raises `NotSupportedError` for `xx` and
+`get`. `TrackingCache` forwards the flags to its transport and supports
+whatever that transport supports.
 
 ## Async Methods
 
@@ -309,6 +310,7 @@ value = await cache.aget("key")
 - `ahas_key`, `aincr`, `adecr`, `aget_or_set`, `aclear`, `aclose`
 - `aincr_version`, `adecr_version`
 - `aeval_script`
+- `alock`, `asemaphore`, `apipeline` (all three `async def`; see below)
 
 Extended methods (data structures, TTL, patterns) have async versions directly on the cache. Both forms apply key prefixing and the serializer/compressor pipeline:
 
@@ -330,6 +332,7 @@ For raw access that skips prefixing/serialization, use `cache.adapter` (e.g. `aw
 - `azadd`, `azcard`, `azcount`, `azincrby`, `azrange`, `azrevrange`, `azrangebyscore`, `azrevrangebyscore`, `azrank`, `azrevrank`, `azrem`, `azremrangebyrank`, `azremrangebyscore`, `azscore`, `azmscore`, `azpopmin`, `azpopmax`
 - `allen`, `alpush`, `arpush`, `alpop`, `arpop`, `alindex`, `alrange`, `alset`, `altrim`, `alrem`, `alpos`, `almove`, `alinsert`, `ablpop`, `abrpop`, `ablmove`
 - `asscan`, `asscan_iter`
+- `axadd`, `axlen`, `axrange`, `axrevrange`, `axread`, `axtrim`, `axdel`, `axinfo_stream`, `axinfo_groups`, `axinfo_consumers`, `axgroup_create`, `axgroup_destroy`, `axgroup_setid`, `axgroup_delconsumer`, `axreadgroup`, `axack`, `axpending`, `axclaim`, `axautoclaim`
 
 ## Raw Client Access
 
@@ -349,7 +352,7 @@ adapter is configured:
 |---------|------------------------|
 | `ValkeyCache` (`valkey-py`) | `valkey.Valkey` |
 | `RedisCache` (`redis-py`) | `redis.Redis` |
-| `ValkeyGlideCache` (`valkey-glide`) | `glide_sync.GlideClient` |
+| `ValkeyGlideCache` (`valkey-glide`) | a proxy wrapping `glide_sync.GlideClient`; it forwards every attribute and translates server errors, but `isinstance(client, GlideClient)` is `False` |
 
 The three objects expose comparable command surfaces but are not
 interchangeable types; code that pins to one adapter for type-narrowing
@@ -402,7 +405,7 @@ if lock.acquire(blocking_timeout=5):  # redis-py / valkey-py: wait up to 5s
 ```
 
 Set the wait on `cache.lock()` instead of on `acquire()` when the code has to
-run against every backend:
+run against every Valkey/Redis backend:
 
 ```python
 lock = cache.lock("mylock", lease=30, timeout=5)
@@ -410,7 +413,7 @@ if lock.acquire():
     ...
 ```
 
-Lock failures raise `django_cachex.lock.LockError` on every backend, and
+Lock failures raise `django_cachex.lock.LockError` on every Valkey/Redis backend, and
 `LockNotOwnedError` (a subclass) when the lock was lost before `release()` or
 `extend()`. redis-py and valkey-py raise their driver's own `LockError`
 internally; the backend translates it, keeping the driver error as
@@ -467,7 +470,7 @@ if await lock.acquire():
         await lock.release()
 ```
 
-Cluster mode rejects `lock()` and `alock()` on every adapter: the release script runs via `EVALSHA`, which cluster routes to replicas, so `release()` would fail and the key would stay set until its lease expired. Both raise `NotSupportedError`. Use `semaphore()` instead, which colocates its keys under a `{name}` hash tag.
+Cluster mode rejects `lock()` and `alock()` on every adapter: the driver `Lock` implementations are not cluster-aware and a lock key carries no hash tag, so nothing guarantees that the lock key and the Lua release/extend scripts acting on it are routed together. Both raise `NotSupportedError`. Use `semaphore()` instead, which colocates its keys under a `{name}` hash tag.
 
 ## Semaphore Interface
 
@@ -498,7 +501,7 @@ with cache.semaphore("memory-heavy", weight=100, capacity=500, lease=300):
 
 `acquire()` accepts `blocking` and `timeout` to override the defaults set on the semaphore object. Omit `timeout` and the value passed to `cache.semaphore(...)` applies; pass `timeout=None` explicitly and the call blocks indefinitely, whatever the instance default is. `aacquire()` reads it the same way, on both the local and the RESP backends.
 
-`release()` returns the claim to the pool. `extend(additional_seconds)` bumps the TTL on RESP backends for tasks that may legitimately exceed their original lease; it raises `ValueError` unless `additional_seconds` is positive, and returns `False` without raising when the claim is no longer ours because it was released or reaped. `aextend(additional_seconds)` behaves the same.
+`release()` returns the claim to the pool. `extend(additional_seconds)` bumps the TTL on RESP backends for tasks that may legitimately exceed their original lease; it raises `ValueError` unless `additional_seconds` is positive, and returns `False` without raising when the claim is no longer ours because it was released or reaped. `aextend(additional_seconds)` behaves the same. On `LocMemCache` both exist for API parity: there is no lease TTL to bump, so they return `True` while the claim is held and `False` otherwise.
 
 On RESP backends the semaphore's bookkeeping keys (`{name}:state`, `{name}:claims`, `{name}:queue`) expire after twice the longest lease seen. Acquire and release refresh all three; extend refreshes `{name}:state` and `{name}:claims`, and waiters keep `{name}:queue` alive by polling. A holder that dies without releasing therefore leaves nothing behind once its lease has run out.
 
@@ -538,8 +541,8 @@ Sync and async callers on the same cache instance share state for a given name.
 
 Backends:
 
-- **`LocMemCache`** uses an in-process FIFO deque. FIFO fairness is strict within the process; `lease` is accepted but ignored.
-- **RESP backends** (`RedisCache`, `ValkeyCache`, `ValkeyGlideCache`, ...) use Lua scripts. FIFO fairness is best-effort across processes (head-of-queue check plus jittered polling).
+- `LocMemCache` keeps its waiters in an in-process `OrderedDict`. FIFO fairness is strict within the process; `lease` is accepted but ignored.
+- The RESP backends (`RedisCache`, `ValkeyCache`, `ValkeyGlideCache`, ...) use Lua scripts. FIFO fairness is best-effort across processes (head-of-queue check plus jittered polling).
 
 Cluster mode is supported on RESP backends: all keys for one semaphore name carry a `{name}` hash tag so they colocate on the same slot.
 
@@ -577,7 +580,7 @@ async with await cache.apipeline() as pipe:
 
 `apipeline()` is `async def` so adapters whose async-client construction is itself awaitable (e.g. valkey-glide) can resolve the client before returning the wrapper. Queueing methods stay synchronous; only `apipeline()` and `execute()` need to be awaited.
 
-Single-key commands are available on the pipeline. The multi-key helpers (`set_many`, `get_many`, `delete_many`), the read-modify-write helpers (`get_or_set`, `add`, `touch`, `has_key`), and the scanning helpers (`keys`, `scan`, `delete_pattern`, `clear`) are not: queue their underlying commands instead. Results are returned as a list in the same order as the commands.
+Single-key commands are available on the pipeline: `get`, `set`, `delete`, `exists`, `incr`, `decr`, `type`, `rename`, `renamenx`, the TTL commands (`ttl`, `pttl`, `expire`, `pexpire`, `expireat`, `pexpireat`, `expiretime`, `persist`), `memory_usage`, `eval_script` and every hash, list, set, sorted-set and stream command. The multi-key helpers (`set_many`, `get_many`, `delete_many`), the read-modify-write helpers (`get_or_set`, `add`, `touch`, `has_key`), and the scanning helpers (`keys`, `scan`, `delete_pattern`, `clear`) are not: queue their underlying commands instead. Results are returned as a list in the same order as the commands.
 
 The queueing methods take the same signatures and parameter names as the cache
 methods they queue, so a call reads the same either way: `smove(src, dst,
@@ -627,9 +630,9 @@ A hash field command queued with no fields (`pipe.httl("h")`, `pipe.hexpire("h",
 | `password` | all Valkey/Redis | Server password; takes precedence over the URL |
 | `socket_connect_timeout` | redis-py, valkey-py | Connection timeout |
 | `socket_timeout` | redis-py, valkey-py | Read/write timeout |
-| `pool_class` | redis-py, valkey-py | Custom connection pool class (sync) |
-| `async_pool_class` | redis-py, valkey-py | Custom connection pool class (async) |
-| `parser_class` | redis-py, valkey-py | Custom RESP parser class |
+| `pool_class` | redis-py, valkey-py | Custom connection pool class (sync). Rejected with `ImproperlyConfigured` on the cluster backends, which have no pool to configure |
+| `async_pool_class` | redis-py, valkey-py | Custom connection pool class (async). Rejected on the cluster backends the same way |
+| `parser_class` | redis-py, valkey-py | Custom RESP parser class. Rejected with `ImproperlyConfigured` on the cluster backends, whose client picks its own parser |
 | `sentinels` | redis-py, valkey-py | Sentinel server list (for Sentinel backends) |
 | `sentinel_kwargs` | redis-py, valkey-py | Sentinel configuration |
 | `db` | valkey-glide | Database index (standalone only); on redis-py/valkey-py it goes through the URL or `from_url()` |
@@ -654,7 +657,9 @@ Pass it to `OPTIONS["stampede_prevention"]` to apply globally, or to the
 `stampede_prevention=` kwarg on `get`/`set`/`get_many`/`set_many`/`add`/
 `touch`/`get_or_set`, on the TTL readers and setters (`ttl`, `pttl`,
 `expire`, `expireat`, `pexpire`, `pexpireat`, `expiretime`), and on their
-`a`-prefixed async counterparts, for per-call overrides. `touch` uses it to
+`a`-prefixed async counterparts, for per-call overrides. The keyword takes
+`True`, `False`, `None` or a `StampedeConfig`; the dict form is accepted in
+`OPTIONS` only, and anything else raises `TypeError`. `touch` uses it to
 decide whether the refreshed TTL gets the buffer added back.
 
 | Field | Default | Description |
@@ -663,9 +668,11 @@ decide whether the refreshed TTL gets the buffer added back.
 | `beta`   | `1.0` | Multiplier on the recompute probability; higher = recompute earlier. |
 | `delta`  | `1.0` | Recompute-cost estimate (seconds); larger = recompute earlier. |
 
-Only the Valkey/Redis backends implement it. `LocMemCache` and `DatabaseCache`
-ignore both the option and the per-call keyword;
-`TrackingCache` follows its transport's setting.
+Only the Valkey/Redis backends implement it, and only their methods accept the
+`stampede_prevention=` keyword. `LocMemCache` and `DatabaseCache` ignore the
+`OPTIONS` key, and their `get`/`set`/... have no such parameter, so passing it
+raises `TypeError`. `TrackingCache` follows its transport's `OPTIONS` setting
+and has no per-call keyword either.
 
 ## Exceptions
 

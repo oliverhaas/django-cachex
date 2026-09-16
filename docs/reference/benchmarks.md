@@ -38,7 +38,7 @@ request, no asyncio.
 | redis-py+hiredis    | 2,235 |  2,365 |  2,176 | 1,448 | 1,289 |  2,374 | 1,147 |  51 |
 | valkey-py           | 2,639 |  2,823 |  2,603 | 1,513 | 1,347 |  2,873 | 1,374 | 109 |
 | valkey-py+libvalkey | 2,707 |  2,865 |  2,613 | 1,617 | 1,421 |  2,887 | 1,394 |  48 |
-| **valkey-glide**    | **7,110** | **8,821** | **6,887** | **1,928** | **1,844** | **9,076** | **3,980** | **29** |
+| valkey-glide        | 7,110 |  8,821 |  6,887 | 1,928 | 1,844 |  9,076 | 3,980 |  29 |
 | django (builtin)    | 2,218 |  2,360 |  2,205 | 1,416 | 1,290 |  1,855 | 1,143 |  51 |
 
 `valkey-glide` is ~2.5× the fastest pure-Python adapter on single-key
@@ -63,8 +63,10 @@ The single-key phases are adapter-bound: `get`, `get-miss`, `incr` and
 because the Python transport costs more than any encoder does. The
 serializer shows up on the batch phases, where payload size is multiplied
 by ten: `orjson` and `ormsgpack` (both Rust-cored) run `mset` ~4% ahead of
-`pickle` and ~45% ahead of `json`, whose pure-Python encoder is the
-bottleneck there.
+`pickle` and ~45% ahead of `json`. `json.dumps` uses CPython's C encoder,
+so the gap comes from `DjangoJSONEncoder.default()` running in Python for
+every non-primitive value and from the `str` encode/decode round trip on
+each payload.
 
 ## Compressors (macro)
 
@@ -116,7 +118,7 @@ overhead Django itself adds.
 | redis-py+hiredis    | 1,007 | 1,132 | 1,083 |   832 |   778 | 1,116 | 1,122 |
 | valkey-py           | 1,035 | 1,230 | 1,183 |   844 |   789 | 1,206 | 1,200 |
 | valkey-py+libvalkey | 1,003 | 1,243 | 1,180 |   879 |   825 | 1,215 | 1,238 |
-| **valkey-glide**    | **1,150** | **1,749** | **1,668** |   **983** |   **940** | **1,740** | **1,745** |
+| valkey-glide        | 1,150 | 1,749 | 1,668 |   983 |   940 | 1,740 | 1,745 |
 | django (builtin)    |   799 | 1,104 | 1,062 |   812 |   765 |   955 | 1,106 |
 
 Django's per-request work caps the pure-Python adapters at ~1k req/s;
@@ -136,13 +138,15 @@ backends without native async).
 | redis-py+hiredis    | 1,776 | 1,850 | 1,686 | 1,163 |   840 | 1,842 |   894 |
 | valkey-py           | 2,012 | 2,107 | 1,976 | 1,288 |   836 | 2,138 | 1,020 |
 | valkey-py+libvalkey | 2,031 | 2,138 | 1,976 | 1,294 |   836 | 2,135 | 1,026 |
-| **valkey-glide**    | **3,251** | **3,634** | **3,291** | **1,640** | **1,634** | **3,680** | **1,735** |
+| valkey-glide        | 3,251 | 3,634 | 3,291 | 1,640 | 1,634 | 3,680 | 1,735 |
 | django (builtin)    | 1,903 | 2,016 | 1,879 |   193 |   189 |   971 |   970 |
 
 `valkey-glide` runs ~1.6-1.9× the C-parser Python adapters on every
-phase because its async path skips the `sync_to_async` round-trip the
-Python adapters make on top of their sync transports. Django's built-in
-`RedisCache` `mget`/`mset` collapse to ~190 ops/s under `sync_to_async`.
+phase; the redis-py and valkey-py backends use the drivers' native async
+clients (`redis.asyncio`, `valkey.asyncio`), so the gap is the Python
+protocol work those clients do per call. Django's built-in `RedisCache`
+has no native async path, and its `mget`/`mset` collapse to ~190 ops/s
+under `sync_to_async`.
 
 ## Async concurrent (50 in flight)
 
@@ -155,7 +159,7 @@ under load actually generates.
 | redis-py+hiredis    |  2,074 |  2,198 |  1,998 | 1,318 |   897 |  2,110 |   961 | 106 |
 | valkey-py           |  2,434 |  2,530 |  2,290 | 1,186 |   898 |  2,515 | 1,114 |  58 |
 | valkey-py+libvalkey |  2,421 |  2,540 |  2,292 | 1,199 |   918 |  2,522 | 1,108 | 108 |
-| **valkey-glide**    | **9,903** | **12,208** | **9,770** | **1,949** | **2,541** | **11,950** | **2,588** | 109 |
+| valkey-glide        |  9,903 | 12,208 |  9,770 | 1,949 | 2,541 | 11,950 | 2,588 | 109 |
 | django (builtin)    |  2,007 |  2,170 |  2,058 |   208 |   206 |  1,058 |   991 | 107 |
 
 This is where the Rust-cored transport pays off: `valkey-glide` peaks

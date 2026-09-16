@@ -94,20 +94,29 @@ cache.delete_pattern("api:*:response")
 
 ### Versioned cache keys
 
-Invalidate entire cache groups by incrementing version:
+Invalidate entire cache groups by incrementing a version counter. The counter
+is created with `add()` before it is incremented, and stored with
+`timeout=None` so it cannot expire while the data keys it namespaces are
+still alive:
 
 ```python
 from django.core.cache import cache
 
 
+def version_key(user_id: int) -> str:
+    return f"user:{user_id}:version"
+
+
 def get_user_cache_version(user_id: int) -> int:
     """Get current cache version for a user."""
-    return cache.get(f"user:{user_id}:version", 1)
+    return cache.get(version_key(user_id), 1)
 
 
 def invalidate_user_cache(user_id: int) -> None:
     """Invalidate all cached data for a user."""
-    cache.incr(f"user:{user_id}:version")
+    key = version_key(user_id)
+    cache.add(key, 1, timeout=None)
+    cache.incr(key)
 
 
 def get_user_data(user_id: int) -> dict:
@@ -121,6 +130,14 @@ def get_user_data(user_id: int) -> dict:
         cache.set(key, data, timeout=3600)
     return data
 ```
+
+The `add()` is what makes the recipe portable. On the Valkey/Redis backends
+`incr()` on a missing key creates it at `delta`, so without the `add()` the
+first invalidation would leave the counter at `1`, the same value a missing
+key reads as, and the stale `v1` data would keep being served. On
+`LocMemCache` and `DatabaseCache` `incr()` on a missing key raises
+`ValueError`. With the counter created at `1` first, the increment moves it
+to `2` on every backend.
 
 ## Distributed Locking
 
@@ -151,7 +168,7 @@ across every backend.
 
 ## Gate Memory-Heavy Work With a Weighted Semaphore
 
-When a worker pod has a limited memory budget but multiple task types compete for it, a weighted semaphore lets each caller declare how much it intends to consume. Big tasks block when the budget can't accommodate them; small tasks slip through whenever there's room.
+When a worker pod has a limited memory budget but multiple task types compete for it, a weighted semaphore lets each caller declare how much it intends to consume. A task blocks while the budget cannot accommodate its weight. Admission is FIFO: a large task that is waiting holds back the smaller tasks queued behind it, even when their weight would fit, so the queue cannot starve the large task.
 
 ```python
 from django.core.cache import cache

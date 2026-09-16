@@ -14,14 +14,14 @@ INSTALLED_APPS = [
 ]
 ```
 
-The cache admin will appear in the Django admin sidebar under "Caches".
+The admin sidebar gets a "django-cachex" app heading with two entries, "Caches" and "Keys".
 
 ## Permissions
 
 The admin uses Django's built-in permission system. Superusers have full access. Staff users need explicit permissions:
 
 - `django_cachex.view_cache` / `view_key`: view caches and keys
-- `django_cachex.change_cache`: cache-wide actions, meaning flush, clear the current version, the key browser's Clear tool, and the cache detail page's danger zone (clear all versions, flush the database)
+- `django_cachex.change_cache`: cache-wide actions, meaning the cache list's Flush action and the key browser's Clear tool (both call `cache.clear()`, which removes the current version's keys), and the cache detail page's danger zone (clear all versions, flush the database)
 - `django_cachex.add_key`: create keys, including the key browser's Add key tool
 - `django_cachex.change_key`: every mutation on the key detail page, including editing values and setting or removing a TTL. Without it the page renders read-only.
 - `django_cachex.delete_key`: delete keys
@@ -32,7 +32,7 @@ Different cache backends have different levels of support:
 
 | Badge | Level | Description |
 |-------|-------|-------------|
-| **cachex** | Full Support | django-cachex backends (`ValkeyCache`, `RedisCache`, `LocMemCache`, `DatabaseCache`, etc.). All features: key listing, pattern search, TTL inspection, and data type operations. |
+| **cachex** | Full Support | django-cachex backends (`ValkeyCache`, `RedisCache`, `LocMemCache`, `DatabaseCache`, etc.). All features: key listing, pattern search, TTL inspection, and data type operations. The cluster backends carry this badge but do not list keys, see below. |
 | **limited** | Limited Support | Stock Django backends (`django.core.cache.backends.*`), custom backends, and `TrackingCache`. The cache is listed and configurable, but key browsing isn't available. |
 
 ### Using Django's stock LocMemCache or DatabaseCache?
@@ -42,6 +42,15 @@ Switch to `django_cachex.cache.LocMemCache` / `django_cachex.cache.DatabaseCache
 ### Using Django's stock Redis backend?
 
 Switch to `ValkeyCache` / `RedisCache` for full functionality. See the [migration guide](../migration.md) for migration instructions.
+
+### Browsing a cluster alias
+
+`RedisClusterCache`, `ValkeyClusterCache` and `ValkeyGlideClusterCache` are
+badged **cachex**, but the key browser shows an empty list with the message
+"Key browsing is not supported on cluster cache": cluster `SCAN` returns one
+cursor per node, which the paginator cannot hand back as a single cursor. The
+key detail page (by key name), Add key, Flush and the danger zone are not
+affected.
 
 ### Browsing a `TrackingCache` alias
 
@@ -58,7 +67,7 @@ Lists all configured caches showing name, backend class, location, and support l
 
 ![The cache list, showing each configured alias with its backend and support level](../assets/screenshot-cache-list.png)
 
-**Actions:** Flush selected caches (delete all entries).
+Actions: Flush selected caches. Flush calls `cache.clear()`, which on the Valkey/Redis backends is a pattern delete over the alias's `KEY_PREFIX` and `VERSION`, not `FLUSHDB`; the danger zone on the cache detail page has the `FLUSHDB` equivalent.
 
 Every `LOCATION` the admin renders has its URL password replaced with `***`,
 here, in the cache detail page's Configuration section, and in connection URLs
@@ -73,11 +82,11 @@ detail and key add pages, rather than an error page.
 
 ### Key Browser
 
-Click a cache name to browse its keys with wildcard search (`*`), data type display, TTL, and pagination. Each page is one `SCAN` batch (`count`, default 100, capped at 1000), with TTL, type and size fetched in a pipeline per batch rather than per key.
+Click a cache name to browse its keys with wildcard search (`*`), data type display, TTL, and pagination. Each page issues up to five `SCAN` calls (`count`, default 100, capped at 1000, is the hint passed to each) and stops once it holds at least half of `count` keys or the cursor reaches 0; TTL, type and size are fetched in a pipeline per page rather than per key.
 
 ![The key browser, with the type filter sidebar and a wildcard search](../assets/screenshot-key-list.png)
 
-**Actions:** Delete selected keys, add new key.
+Actions: Delete selected keys, add new key.
 
 ### Key Detail
 
@@ -85,7 +94,7 @@ View and edit a specific key's value (formatted JSON for objects/arrays), data t
 
 A key whose server-side type the admin cannot render is shown read-only: the type is named, the value is not displayed, and no type-specific operations are offered. Delete and the TTL form still work.
 
-A cache backend with no `type()` at all (`django.core.cache.backends.locmem.LocMemCache` and the other stock Django backends) gets the same treatment: the page renders, and any type-specific write is refused with "This cache backend does not report key types, so only deleting the key and setting its TTL are available." Delete and Set TTL stay available.
+A cache backend with no `type()` at all (`django.core.cache.backends.locmem.LocMemCache` and the other stock Django backends) gets the same treatment: the page renders, and any type-specific write is refused with "This cache backend does not report key types, so only deleting it is available." Delete stays available. The TTL form needs `expire()` and `persist()`, which the stock backends lack, so it is not shown there; on a typeless backend that does have both, the message reads "so only deleting the key and setting its TTL are available" instead.
 
 Deleting a key that is already gone reports "Key not found, nothing was deleted." rather than success, and the key browser's bulk delete counts those misses separately.
 
@@ -118,7 +127,7 @@ The admin adapts based on backend capabilities:
 | Get TTL | Yes | Yes | No |
 | Get type | Yes | Yes (no stream type) | No |
 | Cache info | Yes | Yes | No |
-| Flush cache | Yes | Yes | No |
+| Flush cache (`clear()`) | Yes | Yes | Yes |
 | Danger zone (clear all versions, FLUSHDB) | Yes | No | No |
 | Conflict detection on edit | Yes | No | No |
 

@@ -1,6 +1,6 @@
 # Async Support
 
-django-cachex implements Django's async cache methods (`aget`, `aset`, `adelete`, etc.) using native async clients from `redis.asyncio` and `valkey.asyncio`, so async callers don't pay the asgiref threadpool round-trip.
+django-cachex implements Django's async cache methods (`aget`, `aset`, `adelete`, etc.) using native async clients: `redis.asyncio` and `valkey.asyncio` on the redis-py and valkey-py backends, and glide's own async `glide.GlideClient` on the valkey-glide backends. Async callers don't pay the asgiref threadpool round-trip.
 
 ## Overview
 
@@ -126,8 +126,8 @@ Queueing methods (`set`, `hset`, `lpush`, ...) stay synchronous; only `apipeline
 
 Separate connection pools are maintained for sync and async operations:
 
-- **Sync pools**: Standard pools (`redis.ConnectionPool` / `valkey.ConnectionPool`), one per server
-- **Async pools**: Async pools (`redis.asyncio.ConnectionPool` / `valkey.asyncio.ConnectionPool`), cached per event loop
+- Sync pools: standard pools (`redis.ConnectionPool` / `valkey.ConnectionPool`), one per server
+- Async pools: `redis.asyncio.ConnectionPool` / `valkey.asyncio.ConnectionPool`, cached per event loop
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -185,9 +185,9 @@ def sync_function():
         asyncio.run(cache.aget(f"key:{i}"))
 
 
-# BAD: sync_to_async() runs the body in a worker thread with no loop of its
-# own, so the async_to_sync() inside starts a fresh loop (and pool) per call,
-# with the same one-connection-per-call cost. Await cache.aget() directly.
+# BAD: async_to_sync() inside a sync_to_async() body finds the outer loop
+# and schedules on it, so the pool is reused, but every call hops threads
+# twice (loop -> worker thread -> loop and back). Await cache.aget() directly.
 @sync_to_async
 def wrapped_function():
     return async_to_sync(cache.aget)("key")
@@ -282,10 +282,10 @@ The async ext surface (`alpush`, `ahset`, `azadd`, `attl`, `aexpire` and the
 rest) is also available on `LocMemCache` and `DatabaseCache`. The two backends
 take different routes because the underlying work is different:
 
-- **`LocMemCache`** is in-memory: each `a*` method calls its sync
+- `LocMemCache` is in-memory: each `a*` method calls its sync
   counterpart directly with no thread offload. There's no I/O to await,
   so awaiting from an event loop is harmless.
-- **`DatabaseCache`** does real DB queries, so each `a*` method offloads
+- `DatabaseCache` does real DB queries, so each `a*` method offloads
   the sync call via `asgiref.sync.sync_to_async` (Django's own pattern
   for `BaseCache.aget`). Native async DB cursors will replace this path
   once Django exposes them, without changing the public surface.

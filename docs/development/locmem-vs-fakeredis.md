@@ -48,38 +48,37 @@ with a `FakeRedis` client instead. We benchmarked it; the answer is no.
 | `lrange` 0..-1 (10k) | 52 | 21 500 | n/a | n/a |
 | `hset` (10k-field hash) | 1.7 | 1 600 | n/a | n/a |
 
-(Reproduce: `python -m django_cachex.benchmarks.locmem_vs_fakeredis`
-isn't checked in; it's a one-off, see the commit that introduced this
-page for the script.)
+(The script behind these numbers was a one-off and is not checked in;
+the `benchmarks/` harness covers the RESP adapters only.)
 
 ### What this tells us
 
-1. **fakeredis has a ~600 µs floor regardless of op or N.** That's the
+1. fakeredis has a ~600 µs floor regardless of op or N. That's the
    cost of the redis-py client serializing the command to RESP wire
    format, fakeredis interpreting it, formatting the response, and
    redis-py deserializing back. Even though everything is in-process,
    the protocol layer dominates.
-2. **fakeredis is slower than real Redis on localhost.** At ~620 µs per
+2. fakeredis is slower than real Redis on localhost. At ~620 µs per
    op it runs ~6x behind a container on the same pod (~100 µs), landing
    between local Redis and a cross-AZ ElastiCache round-trip.
-3. **Our `LocMemCache` is ~250-400× faster per single op** than
+3. Our `LocMemCache` is ~250-400× faster per single op than
    fakeredis, and the gap widens with N for collection-spanning ops
    (`hgetall`, `lrange 0..-1`) where fakeredis's internal data
    structures aren't tuned for big working sets.
 
 ### Where that matters
 
-- **Test suites.** A 12k-test suite that touches the cache ten times
+- Test suites. A 12k-test suite that touches the cache ten times
   per test would pay an extra ~70 s of wall-clock per run on the
   fakeredis path. Multiplied across CI, contributor laptops, and the
   inner-loop `pytest -k foo` cycle, that compounds.
-- **Dev REPL feedback.** A cache op that takes ~1 ms instead of ~2 µs
+- Dev REPL feedback. A cache op that takes ~1 ms instead of ~2 µs
   changes the feel of "let me poke this in the shell" from
   instantaneous to noticeable.
 
 ### Where fakeredis would actually be useful
 
-For testing the **adapter layer** (redis-py / valkey-py command paths,
+For testing the adapter layer (redis-py / valkey-py command paths,
 the `WRONGTYPE` translation, pipelines, scripts) without standing up a
 testcontainer Redis. We currently rely on a real Valkey/Redis container
 for adapter integration tests, which is correct but requires Docker.

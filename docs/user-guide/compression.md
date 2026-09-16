@@ -44,6 +44,13 @@ class LargeOnlyZstdCompressor(ZstdCompressor):
     min_length = 1024
 ```
 
+## Compression level
+
+Every compressor also takes a keyword-only `level`, passed the same way
+(`ZstdCompressor(level=10)`) or set as a class attribute on a subclass. The
+defaults are the library defaults: zlib `6`, gzip `9`, lzma preset `4`, lz4
+`0` (fast mode), zstd `3`.
+
 ## Available Compressors
 
 | Compressor | Extra |
