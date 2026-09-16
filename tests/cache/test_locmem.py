@@ -7,6 +7,7 @@ parametrized RESP tests do, without a container.
 
 import copy
 import pickle
+import time
 from typing import TYPE_CHECKING
 
 import pytest
@@ -436,6 +437,18 @@ class TestKeysAndAdmin:
     def test_ttl_expiring_key(self, locmem_cache: LocMemCache):
         locmem_cache.set("temp", "value", timeout=3600)
         assert 3590 <= locmem_cache.ttl("temp") <= 3600
+
+    def test_ttl_of_a_fresh_key_reads_the_full_timeout(self, locmem_cache: LocMemCache):
+        # Regression: ``int()`` truncated 299.999 to 299 where Redis rounds
+        # to the nearest second and reports 300.
+        locmem_cache.set("temp", "value", timeout=300)
+        assert locmem_cache.ttl("temp") == 300
+
+    @pytest.mark.parametrize(("remaining", "expected"), [(0.6, 1), (0.4, 0), (1.6, 2), (1.4, 1)])
+    def test_ttl_rounds_to_the_nearest_second(self, locmem_cache: LocMemCache, remaining, expected):
+        locmem_cache.set("temp", "value", timeout=None)
+        locmem_cache._expire_info[locmem_cache.make_key("temp")] = time.time() + remaining
+        assert locmem_cache.ttl("temp") == expected
 
     def test_expire(self, locmem_cache: LocMemCache):
         locmem_cache.set("key1", "value1", timeout=None)
@@ -1051,6 +1064,19 @@ class TestHashOps:
         with pytest.raises(ValueError, match="even number"):
             locmem_cache.hset("k", items=["a", 1, "b"])
 
+    def test_hset_odd_items_leaves_the_hash_alone(self, locmem_cache: LocMemCache):
+        # Regression: field/mapping writes landed on the live hash before the
+        # ``items`` check raised, so the rejected call half-applied.
+        locmem_cache.hset("k", "a", 1)
+        with pytest.raises(ValueError, match="even number"):
+            locmem_cache.hset("k", "b", 2, mapping={"c": 3}, items=["d"])
+        assert locmem_cache.hgetall("k") == {"a": 1}
+
+    def test_hset_odd_items_creates_nothing(self, locmem_cache: LocMemCache):
+        with pytest.raises(ValueError, match="even number"):
+            locmem_cache.hset("k", "a", 1, items=["d"])
+        assert locmem_cache.has_key("k") is False
+
     def test_hset_no_fields_creates_nothing(self, locmem_cache: LocMemCache):
         # Regression: an empty write registered a phantom empty hash.
         assert locmem_cache.hset("k", mapping={}) == 0
@@ -1256,6 +1282,17 @@ class TestSortedSetOps:
         # Regression: an all-filtered write registered a phantom empty zset.
         assert locmem_cache.zadd("k", {"a": 1.0}, xx=True) == 0
         assert locmem_cache.has_key("k") is False
+
+    @pytest.mark.parametrize(
+        "flags",
+        [{"nx": True, "xx": True}, {"gt": True, "lt": True}, {"nx": True, "gt": True}, {"nx": True, "lt": True}],
+        ids=["nx+xx", "gt+lt", "nx+gt", "nx+lt"],
+    )
+    def test_zadd_rejects_the_flag_combinations_redis_py_rejects(self, locmem_cache: LocMemCache, flags):
+        locmem_cache.zadd("k", {"a": 1.0})
+        with pytest.raises(ValueError, match="ZADD"):
+            locmem_cache.zadd("k", {"a": 2.0, "b": 3.0}, **flags)
+        assert locmem_cache.zrange("k", 0, -1, withscores=True) == [("a", 1.0)]
 
     def test_zadd_mixed_member_types_with_equal_str(self, locmem_cache: LocMemCache):
         # Regression: score ties fell back to comparing raw members and
@@ -1560,6 +1597,23 @@ class TestVersion:
     def test_incr_version_missing_key_raises(self, locmem_cache: LocMemCache):
         with pytest.raises(ValueError, match="not found"):
             locmem_cache.incr_version("nope")
+
+    def test_incr_version_zero_delta_keeps_a_string(self, locmem_cache: LocMemCache):
+        # Regression: the destination delete hit the source, then the move
+        # raised KeyError on the now-missing entry.
+        locmem_cache.set("k", 5, timeout=1000)
+        assert locmem_cache.incr_version("k", 0) == 1
+        assert locmem_cache.get("k") == 5
+        assert locmem_cache.ttl("k") >= 999
+
+    def test_incr_version_zero_delta_keeps_a_collection(self, locmem_cache: LocMemCache):
+        locmem_cache.rpush("k", "a", "b")
+        assert locmem_cache.incr_version("k", 0) == 1
+        assert locmem_cache.lrange("k", 0, -1) == ["a", "b"]
+
+    def test_incr_version_zero_delta_on_a_missing_key_raises(self, locmem_cache: LocMemCache):
+        with pytest.raises(ValueError, match="not found"):
+            locmem_cache.incr_version("nope", 0)
 
     def test_decr_version_moves_collection(self, locmem_cache: LocMemCache):
         locmem_cache.sadd("k", "m", version=2)

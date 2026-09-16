@@ -66,6 +66,7 @@ from django_cachex.utils import (
     _score_bound,
     _validate_lpos_args,
     _validate_pop_count,
+    _validate_zadd_flags,
 )
 
 if TYPE_CHECKING:
@@ -285,6 +286,14 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         Losing the insert race against a concurrent writer re-runs the whole
         read-modify-write against the row they committed, so their value is
         merged rather than clobbered.
+
+        Called inside a caller's ``transaction.atomic()`` block (for example
+        under ``ATOMIC_REQUESTS``), the ``atomic`` below is only a savepoint,
+        and SQL row locks are released by the outermost commit or rollback,
+        not by releasing a savepoint. The ``FOR UPDATE`` lock on the key's
+        row is therefore held until the caller's transaction ends, and a
+        second compound op on the same key from another connection blocks
+        for that long. Keep compound ops out of long-running transactions.
         """
         # Resolve once: a load-balancing router asked twice could give the
         # cursor and the atomic block different connections, unlocking the row.
@@ -408,8 +417,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         A key holding a RESP collection (list/set/hash/zset, written via the
         respective ops) cannot be retrieved through the string ``GET`` API.
         Redis raises ``WRONGTYPE`` and so do we, rather than handing back the
-        private tagged container. ``incr`` reads through here, so it reports
-        the same error instead of a bare ``TypeError`` from ``value + delta``.
+        private tagged container.
         """
         found = super().get_many([key], version)
         if key not in found:
@@ -430,6 +438,30 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         found = super().get_many(keys, version)
         return {k: v for k, v in found.items() if not isinstance(v, _TAGGED_COLLECTIONS)}
 
+    def incr(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        """Increment a value, mirroring Redis ``INCRBY`` on an existing key.
+
+        ``BaseCache.incr`` is an unlocked ``get`` then ``set``, so two
+        concurrent increments can lose one and the ``set`` resets the TTL to
+        the default. Running the read-modify-write through
+        :meth:`_atomic_compound` serializes it on the row lock and keeps
+        ``expires``. A missing key still raises ``ValueError`` per the Django
+        contract; ``aincr``/``decr``/``adecr`` dispatch here.
+        """
+        internal_key = self.make_and_validate_key(key, version=version)
+
+        def transform(current: Any) -> tuple[Any, int]:
+            if current is _MISSING:
+                msg = f"Key '{key}' not found"
+                raise ValueError(msg)
+            if isinstance(current, _TAGGED_COLLECTIONS):
+                msg = f"WRONGTYPE Key {key!r} does not hold a string value."
+                raise WrongTypeError(msg)
+            new_value = current + delta
+            return new_value, new_value
+
+        return cast("int", self._atomic_compound(internal_key, transform))
+
     def incr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
         """Move a key to a new version, mirroring Redis ``RENAME``.
 
@@ -437,7 +469,8 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         so it would raise :class:`~django_cachex.exceptions.WrongTypeError` on
         a collection key and reset the TTL on a string one. Renaming the row
         moves any type and keeps ``expires``, matching ``LocMemCache`` and
-        ``RespCache``. ``aincr_version`` dispatches here.
+        ``RespCache``. ``delta=0`` only checks that the key is live, like
+        ``RENAME key key``. ``aincr_version`` dispatches here.
         """
         if version is None:
             version = self.version
@@ -448,10 +481,11 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         quote = conn.ops.quote_name
         table = quote(self._get_table_name())
         with transaction.atomic(using=db), conn.cursor() as cursor:
-            cursor.execute(
-                f"DELETE FROM {table} WHERE {quote('cache_key')} = %s",  # noqa: S608
-                [new_key],
-            )
+            if new_key != old_key:
+                cursor.execute(
+                    f"DELETE FROM {table} WHERE {quote('cache_key')} = %s",  # noqa: S608
+                    [new_key],
+                )
             cursor.execute(
                 f"UPDATE {table} SET {quote('cache_key')} = %s "  # noqa: S608
                 f"WHERE {quote('cache_key')} = %s AND {quote('expires')} > %s",
@@ -730,7 +764,9 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         active_count = 0
         expiring_count = 0
         try:
-            with conn.cursor() as cursor:
+            # On PostgreSQL a failed query poisons the surrounding transaction;
+            # the savepoint keeps the caller's transaction usable.
+            with transaction.atomic(using=conn.alias), conn.cursor() as cursor:
                 cursor.execute(f"SELECT COUNT(*) FROM {table}")  # noqa: S608
                 total_count = cursor.fetchone()[0]
                 cursor.execute(
@@ -1134,6 +1170,10 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         mapping: Mapping[str, Any] | None = None,
         items: list[Any] | None = None,
     ) -> int:
+        if items and len(items) % 2 != 0:
+            msg = "items must contain an even number of elements (field/value pairs)"
+            raise ValueError(msg)
+
         def transform(current: Any) -> tuple[Any, int]:
             existing = self._coerce_hash(key, current) or _Hash()
             added = 0
@@ -1147,9 +1187,6 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
                         added += 1
                     existing[f] = v
             if items:
-                if len(items) % 2 != 0:
-                    msg = "items must contain an even number of elements (field/value pairs)"
-                    raise ValueError(msg)
                 for i in range(0, len(items), 2):
                     f, v = items[i], items[i + 1]
                     if f not in existing:
@@ -1274,6 +1311,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         lt: bool = False,
         version: int | None = None,
     ) -> int:
+        _validate_zadd_flags(nx=nx, xx=xx, gt=gt, lt=lt)
         scored = {member: _as_score(score) for member, score in mapping.items()}
 
         def transform(current: Any) -> tuple[Any, int]:

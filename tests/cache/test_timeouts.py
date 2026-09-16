@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from tests.fixtures.cache import TEST_DEFAULT_TIMEOUT
+
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
 
@@ -39,7 +41,8 @@ class TestSetWithTimeout:
         if original_ttl is None:
             assert new_ttl is None
         else:
-            assert new_ttl is not None and new_ttl > 5
+            assert new_ttl is not None
+            assert_ttl_seconds(new_ttl, original_ttl)
 
     def test_key_expires_after_timeout(self, cache: RespCache):
         cache.set("expires_soon", "temp_data", timeout=3)
@@ -275,8 +278,7 @@ class TestTouchOperation:
         cache.set("touch_default", "data", timeout=1)
         assert cache.touch("touch_default") is True
         assert cache.get("touch_default") == "data"
-        ttl = cache.ttl("touch_default")
-        assert ttl is None or ttl > 1
+        assert_ttl_seconds(cache.ttl("touch_default"), TEST_DEFAULT_TIMEOUT)
 
 
 class TestAsyncSetWithTimeout:
@@ -300,7 +302,8 @@ class TestAsyncSetWithTimeout:
         if original_ttl is None:
             assert new_ttl is None
         else:
-            assert new_ttl is not None and new_ttl > 5
+            assert new_ttl is not None
+            assert_ttl_seconds(new_ttl, original_ttl)
 
     @pytest.mark.asyncio
     async def test_akey_expires_after_timeout(self, cache: RespCache):
@@ -559,5 +562,4 @@ class TestAsyncTouchOperation:
         await cache.aset("atouch_default", "data", timeout=1)
         assert await cache.atouch("atouch_default") is True
         assert await cache.aget("atouch_default") == "data"
-        ttl = await cache.attl("atouch_default")
-        assert ttl is None or ttl > 1
+        assert_ttl_seconds(await cache.attl("atouch_default"), TEST_DEFAULT_TIMEOUT)

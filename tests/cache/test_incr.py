@@ -41,6 +41,23 @@ class TestIncrementWithoutTimeout:
         assert cache.get("persistent2") == 75
 
 
+class TestIncrementKeepsTTL:
+    """``INCRBY`` updates the value in place, so the key's TTL is untouched.
+
+    Redis rounds TTL to the nearest second, so a slow round trip may read 299.
+    """
+
+    def test_increment_keeps_the_ttl(self, cache: RespCache):
+        cache.set("ttl_counter", 5, timeout=300)
+        cache.incr("ttl_counter")
+        assert cache.ttl("ttl_counter") in (299, 300)
+
+    def test_decrement_keeps_the_ttl(self, cache: RespCache):
+        cache.set("ttl_countdown", 5, timeout=300)
+        cache.decr("ttl_countdown")
+        assert cache.ttl("ttl_countdown") in (299, 300)
+
+
 class TestIncrementMissingKey:
     def test_increment_missing_key_creates_it(self, cache: RespCache):
         cache.delete("nonexistent_counter")

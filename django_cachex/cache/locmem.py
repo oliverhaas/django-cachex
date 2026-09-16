@@ -51,6 +51,7 @@ from django_cachex.utils import (
     _score_bound,
     _validate_lpos_args,
     _validate_pop_count,
+    _validate_zadd_flags,
 )
 
 logger = logging.getLogger(__name__)
@@ -416,27 +417,26 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         ``BaseCache.incr_version`` is a ``get``/``set``/``delete`` round trip,
         so it would raise ``WrongTypeError`` on a collection key. Moving the
         entry works for any type and preserves the TTL, matching the
-        ``RENAME``-based RespCache override.
+        ``RENAME``-based RespCache override. ``delta=0`` only checks that the
+        key is live, like ``RENAME key key``.
         """
         if version is None:
             version = self.version
         old_key = self.make_and_validate_key(key, version=version)
         new_key = self.make_and_validate_key(key, version=version + delta)
         with self._lock:
-            if self._has_expired(old_key):
+            if self._has_expired(old_key) or not self._key_present(old_key):
                 self._delete(old_key)
                 msg = f"Key '{key}' not found"
                 raise ValueError(msg)
+            if new_key == old_key:
+                return version
+            self._delete(new_key)
             if old_key in self._collections:
-                self._delete(new_key)
                 self._collections[new_key] = self._collections.pop(old_key)
-            elif old_key in self._cache:
-                self._delete(new_key)
+            else:
                 self._cache[new_key] = self._cache.pop(old_key)
                 self._cache.move_to_end(new_key, last=False)
-            else:
-                msg = f"Key '{key}' not found"
-                raise ValueError(msg)
             self._expire_info[new_key] = self._expire_info.pop(old_key, None)
         return version + delta
 
@@ -508,8 +508,10 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """Get the TTL of a key in seconds.
 
         Returns ``-2`` if the key is missing, ``None`` if it has no expiry,
-        otherwise the integer seconds remaining (clamped at 0). The RESP
-        backends map the server's ``-1`` to ``None`` the same way.
+        otherwise the seconds remaining rounded to the nearest whole second
+        the way Redis ``TTL`` reports it, so a key just written with
+        ``timeout=300`` reads 300, not 299. The RESP backends map the
+        server's ``-1`` to ``None`` the same way.
         """
         internal_key = self._internal_key(key, version=version)
         with self._lock:
@@ -521,7 +523,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             exp_time = self._expire_info.get(internal_key)
             if exp_time is None:
                 return None
-            return max(0, int(exp_time - time.time()))
+            return int(exp_time - time.time() + 0.5)
 
     def expire(self, key: str, timeout: int | timedelta, version: int | None = None) -> bool:
         """Set the TTL of a key. Returns ``True`` if the key existed."""
@@ -1104,6 +1106,11 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         items: list[Any] | None = None,
     ) -> int:
         """Set hash field(s)."""
+        # Validate before touching the live hash: ``current`` is the stored
+        # object, so a write followed by a raise would stick.
+        if items and len(items) % 2 != 0:
+            msg = "items must contain an even number of elements (field/value pairs)"
+            raise ValueError(msg)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_hash(internal_key, key)
@@ -1120,9 +1127,6 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                         added += 1
                     current[f] = v
             if items:
-                if len(items) % 2 != 0:
-                    msg = "items must contain an even number of elements (field/value pairs)"
-                    raise ValueError(msg)
                 for i in range(0, len(items), 2):
                     f, v = items[i], items[i + 1]
                     if f not in current:
@@ -1276,6 +1280,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         version: int | None = None,
     ) -> int:
         """Add members to a sorted set."""
+        _validate_zadd_flags(nx=nx, xx=xx, gt=gt, lt=lt)
         # Parse every score before touching the zset: Redis rejects the whole
         # command on a bad score rather than applying it halfway.
         scored = {member: _as_score(score) for member, score in mapping.items()}

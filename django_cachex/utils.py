@@ -148,6 +148,19 @@ def _as_score(value: Any) -> float:
         raise ValueError(msg) from None
 
 
+def _validate_zadd_flags(*, nx: bool, xx: bool, gt: bool, lt: bool) -> None:
+    """Reject ``ZADD`` flag combinations the way redis-py does client-side."""
+    if nx and xx:
+        msg = "ZADD allows either 'nx' or 'xx', not both"
+        raise ValueError(msg)
+    if gt and lt:
+        msg = "ZADD allows either 'gt' or 'lt', not both"
+        raise ValueError(msg)
+    if nx and (gt or lt):
+        msg = "ZADD allows only one of 'nx', 'gt' or 'lt'"
+        raise ValueError(msg)
+
+
 def _score_bound(value: float | str, backend: str) -> float:
     """Parse a ``ZRANGEBYSCORE``-style score bound.
 

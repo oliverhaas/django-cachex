@@ -14,6 +14,7 @@ from django.core.cache import caches
 from django.core.management import call_command
 from django.db import connections
 from django.test import override_settings
+from django.test.utils import CaptureQueriesContext
 
 from django_cachex.cache.database import _MISSING, _List
 from django_cachex.exceptions import NotSupportedError, WrongTypeError
@@ -156,6 +157,72 @@ class TestStringReads:
         with pytest.raises(WrongTypeError, match="'sk'") as exc_info:
             db_cache.lpush("sk", 1)
         assert ":1:sk" not in str(exc_info.value)
+
+
+class TestIncr:
+    """``incr`` is an in-place row update, not Django's ``get`` then ``set``.
+
+    Regression: the inherited ``BaseCache.incr`` reset ``expires`` to the
+    default timeout on every call and did the read-modify-write without the
+    row lock the module docstring promises for compound ops.
+    """
+
+    @staticmethod
+    def _expires(db_cache: DatabaseCache, key: str):
+        conn = connections["default"]
+        quote = conn.ops.quote_name
+        table = quote(db_cache._get_table_name())
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"SELECT {quote('expires')} FROM {table} WHERE {quote('cache_key')} = %s",  # noqa: S608
+                [db_cache._internal_key(key)],
+            )
+            return cursor.fetchone()[0]
+
+    def test_incr_returns_the_new_value(self, db_cache: DatabaseCache):
+        db_cache.set("c", 5)
+        assert db_cache.incr("c") == 6
+        assert db_cache.incr("c", 4) == 10
+        assert db_cache.get("c") == 10
+
+    def test_incr_keeps_the_expires_column(self, db_cache: DatabaseCache):
+        db_cache.set("c", 5, timeout=3600)
+        before = self._expires(db_cache, "c")
+        db_cache.incr("c")
+        assert self._expires(db_cache, "c") == before
+
+    def test_incr_keeps_a_persistent_key_persistent(self, db_cache: DatabaseCache):
+        db_cache.set("c", 5, timeout=None)
+        db_cache.incr("c")
+        assert db_cache.ttl("c") is None
+
+    def test_decr_keeps_the_expires_column(self, db_cache: DatabaseCache):
+        db_cache.set("c", 5, timeout=3600)
+        before = self._expires(db_cache, "c")
+        assert db_cache.decr("c", 2) == 3
+        assert self._expires(db_cache, "c") == before
+
+    def test_incr_missing_key_raises(self, db_cache: DatabaseCache):
+        with pytest.raises(ValueError, match="not found"):
+            db_cache.incr("absent")
+        assert db_cache.has_key("absent") is False
+
+    def test_incr_runs_through_the_locked_read_modify_write(self, db_cache: DatabaseCache, mocker):
+        # SQLite has no ``FOR UPDATE`` and a single connection, so a real
+        # two-writer race cannot be staged here; assert the path instead.
+        db_cache.set("c", 5)
+        # ``wraps`` rather than ``mocker.spy``: spy autospecs, which resolves
+        # the TYPE_CHECKING-only ``Callable`` annotation and fails.
+        spy = mocker.patch.object(db_cache, "_atomic_compound", wraps=db_cache._atomic_compound)
+        assert db_cache.incr("c") == 6
+        spy.assert_called_once()
+
+    def test_aincr_dispatches_to_incr(self, db_cache: DatabaseCache):
+        # ``async_to_sync`` for the same reason as ``test_ascan_mirrors_scan``.
+        db_cache.set("c", 5, timeout=3600)
+        before = self._expires(db_cache, "c")
+        assert async_to_sync(db_cache.aincr)("c") == 6
+        assert self._expires(db_cache, "c") == before
 
 
 class TestTTLReporting:
@@ -809,6 +876,20 @@ class TestVersionMove:
         assert db_cache.decr_version("l", version=2) == 1
         assert db_cache.lrange("l", 0, -1, version=1) == [1]
 
+    def test_zero_delta_is_a_no_op(self, db_cache: DatabaseCache):
+        # Regression: the destination delete hit the source row, so the key
+        # vanished and the move reported "not found".
+        db_cache.set("k", "v", timeout=300)
+        assert db_cache.incr_version("k", 0) == 1
+        assert db_cache.get("k") == "v"
+        ttl = db_cache.ttl("k")
+        assert ttl is not None
+        assert 290 < ttl <= 300
+
+    def test_zero_delta_on_a_missing_key_raises(self, db_cache: DatabaseCache):
+        with pytest.raises(ValueError, match="not found"):
+            db_cache.incr_version("absent", 0)
+
 
 class TestDatabaseTimeZone:
     """``timeout=None`` writes a naive ``datetime.max``, as Django's ``_base_set`` does.
@@ -884,3 +965,41 @@ class TestListArgumentValidation:
         with pytest.raises(ValueError, match="syntax error"):
             db_cache.linsert("l", "SIDEWAYS", "c", "b")
         assert db_cache.lrange("l", 0, -1) == ["a", "c"]
+
+    def test_hset_odd_items_leaves_the_hash_alone(self, db_cache: DatabaseCache):
+        db_cache.hset("h", "a", 1)
+        with pytest.raises(ValueError, match="even number"):
+            db_cache.hset("h", "b", 2, items=["c"])
+        assert db_cache.hgetall("h") == {"a": 1}
+
+    @pytest.mark.parametrize(
+        "flags",
+        [{"nx": True, "xx": True}, {"gt": True, "lt": True}, {"nx": True, "gt": True}, {"nx": True, "lt": True}],
+        ids=["nx+xx", "gt+lt", "nx+gt", "nx+lt"],
+    )
+    def test_zadd_rejects_the_flag_combinations_redis_py_rejects(self, db_cache: DatabaseCache, flags):
+        db_cache.zadd("z", {"m": 1.0})
+        with pytest.raises(ValueError, match="ZADD"):
+            db_cache.zadd("z", {"m": 2.0, "n": 3.0}, **flags)
+        assert db_cache.zrange("z", 0, -1, withscores=True) == [("m", 1.0)]
+
+
+class TestInfoOnAMissingTable:
+    """``info()`` reports zeros when the count queries fail, without poisoning the transaction.
+
+    On PostgreSQL a failed statement aborts the surrounding transaction; the
+    savepoint ``info()`` opens is what gets rolled back instead, so the
+    caller's transaction stays usable. SQLite does not abort, so the test
+    asserts the savepoint round trip itself.
+    """
+
+    def test_failed_counts_roll_back_a_savepoint(self, db_cache: DatabaseCache):
+        conn = connections["default"]
+        with conn.cursor() as cursor:
+            cursor.execute(f"DROP TABLE {conn.ops.quote_name(db_cache._get_table_name())}")
+        with CaptureQueriesContext(conn) as ctx:
+            info = db_cache.info()
+        assert info["keyspace"]["db0"] == {"keys": 0, "expires": 0}
+        statements = [q["sql"] for q in ctx.captured_queries]
+        assert any(sql.startswith("SAVEPOINT") for sql in statements)
+        assert any(sql.startswith("ROLLBACK TO SAVEPOINT") for sql in statements)
