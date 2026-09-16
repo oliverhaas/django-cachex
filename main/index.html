@@ -793,7 +793,7 @@
   <span class="md-ellipsis">
     
   
-    Composite Backends
+    TrackingCache
   
 
     
@@ -1220,41 +1220,57 @@
 <li>Lua scripting with automatic key prefixing and value encoding/decoding.</li>
 <li>Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with fallback chains for safe migrations.</li>
 <li>Cache stampede prevention (TTL-based XFetch).</li>
-<li>Two composite backends: <code>StreamCache</code> (cross-pod stream-synchronized in-memory cache) and <code>TrackingCache</code> (local read cache over a Redis/Valkey alias, invalidated by the server's <code>CLIENT TRACKING</code> or bounded by a local TTL).</li>
+<li><code>TrackingCache</code>, a local read cache over a Redis/Valkey alias, invalidated by the server's <code>CLIENT TRACKING</code> or bounded by a local TTL.</li>
 <li>Django <code>LocMemCache</code> and <code>DatabaseCache</code> extensions with the hash, list, set and sorted set ops, <code>ttl()</code>/<code>expire()</code>/<code>persist()</code>, key patterns, and admin support (no streams, locks, pipelines or Lua).</li>
 <li>Optional <code>valkey-glide</code> adapter: Valkey's official Rust-cored client, exposed as <code>ValkeyGlideCache</code>. Experimental.</li>
 <li>Django admin UI for browsing keys, inspecting values, editing, and flushing.</li>
 </ul>
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Python 3.14+ (free-threaded supported)</li>
-<li>Django 6.0+</li>
-<li>valkey-py 6.1+ (redis-py 6.0+ also supported)</li>
-<li>Valkey 7.2+ or Redis 6.0+ on the server (the admin's compare-and-swap
-  edits use <code>SET ... KEEPTTL</code>, which lands in Redis 6.0)</li>
+<li>Python 3.14+. The free-threaded build (3.14t) is supported, with one
+  caveat: <code>hiredis</code> and <code>libvalkey</code> are C extensions without free-threading
+  support, so importing either on 3.14t re-enables the GIL with a
+  <code>RuntimeWarning</code>. Run with <code>PYTHON_GIL=0</code> (or <code>-Xgil=0</code>) to keep it
+  disabled; that is how the CI 3.14t job runs the suite.</li>
+<li>Django 6.0 to 6.x (<code>Django&gt;=6,&lt;7</code>)</li>
+<li>valkey-py 6.1 to 6.x (<code>valkey&gt;=6.1,&lt;7</code>) or redis-py 6.0 to 8.x (<code>redis&gt;=6,&lt;9</code>)</li>
+<li>Valkey 7.2+ or Redis 6.2+ on the server. <code>set(get=True)</code> and the
+  immediate-expiry conditional writes (<code>add()</code> and <code>set(nx=/xx=/get=)</code> with
+  <code>timeout=0</code>) send <code>SET ... GET</code> and <code>SET ... PXAT</code>, both Redis 6.2 commands;
+  <code>set(nx=True, get=True)</code> needs Redis 7.0+</li>
 <li>Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and <code>hsetex</code>/<code>hgetex</code>
-  Redis 8.0+; older servers raise <code>NotSupportedError</code> for those methods</li>
+  Valkey 9.0+ or Redis 8.0+; older servers raise <code>NotSupportedError</code> for those
+  methods</li>
 </ul>
+<p>The <code>valkey-glide</code> adapter is optional and experimental: interfaces and
+behavior may still change, and it has seen less production testing than
+the redis-py/valkey-py paths. Install with the <code>valkey-glide</code> extra
+(<code>pip install django-cachex[valkey-glide]</code>) to enable
+<code>ValkeyGlideCache</code>; it pulls in <code>valkey-glide-sync</code> and <code>valkey-glide</code>
+(2.5 to 2.x), the official Rust-cored Valkey client. cp314 GIL only; no
+free-threaded wheels yet. Cluster is supported via
+<code>ValkeyGlideClusterCache</code>; Sentinel is not currently exposed
+(<code>valkey-glide</code> itself does not ship a Sentinel client).</p>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <p>Install with pip:</p>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="go">pip install django-cachex[valkey-py]</span>
 </span></code></pre></div>
 <p>Configure as cache backend:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.ValkeyCache&quot;</span><span class="p">,</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>        <span class="s2">&quot;LOCATION&quot;</span><span class="p">:</span> <span class="s2">&quot;valkey://127.0.0.1:6379/1&quot;</span><span class="p">,</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="s2">"default"</span><span class="p">:</span> <span class="p">{</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>        <span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.ValkeyCache"</span><span class="p">,</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>        <span class="s2">"LOCATION"</span><span class="p">:</span> <span class="s2">"valkey://127.0.0.1:6379/1"</span><span class="p">,</span>
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="p">}</span>
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="p">}</span>
 </span></code></pre></div>
 <p>Enable the admin interface (optional):</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">INSTALLED_APPS</span> <span class="o">=</span> <span class="p">[</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="c1"># ...</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="s2">&quot;django_cachex.admin&quot;</span><span class="p">,</span>  <span class="c1"># cache admin interface</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="s2">"django_cachex.admin"</span><span class="p">,</span>  <span class="c1"># cache admin interface</span>
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="p">]</span>
 </span></code></pre></div>
 <h2 id="acknowledgments">Acknowledgments<a class="headerlink" href="#acknowledgments" title="Permanent link">&para;</a></h2>
-<p>This project was inspired by <a href="https://github.com/jazzband/django-redis">django-redis</a> and Django's official <a href="https://docs.djangoproject.com/en/stable/topics/cache/#redis">Redis cache backend</a>. Some utility code for serializers and compressors is derived from django-redis, licensed under BSD-3-Clause. The admin functionality was inspired by <a href="https://github.com/ionelmc/django-redisboard">django-redisboard</a>.</p>
+<p>This project started from <a href="https://github.com/jazzband/django-redis">django-redis</a> and Django's official <a href="https://docs.djangoproject.com/en/stable/topics/cache/#redis">Redis cache backend</a>. Some serializer and compressor utility code is derived from django-redis, licensed under BSD-3-Clause. The admin UI was inspired by <a href="https://github.com/ionelmc/django-redisboard">django-redisboard</a>.</p>
 <p>The ASGI benchmark follows the shape of <a href="https://gitlab.com/glitchtip/django-vcache">django-vcache</a>'s <code>bench_compare.py</code> (MIT, by David Burke / GlitchTip), so the numbers are directly comparable.</p>
 <p>See also <a href="https://github.com/django-commons/django-valkey">django-valkey</a> and <a href="https://github.com/yassi/dj-cache-panel">dj-cache-panel</a> for related projects with similar goals.</p>
 <h2 id="license">License<a class="headerlink" href="#license" title="Permanent link">&para;</a></h2>

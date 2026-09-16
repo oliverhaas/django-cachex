@@ -693,7 +693,7 @@
   <span class="md-ellipsis">
     
   
-    Composite Backends
+    TrackingCache
   
 
     
@@ -837,6 +837,34 @@
       
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#behaviour-differences" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behaviour differences
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Behaviour differences">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#locks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Locks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1153,6 +1181,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#behaviour-differences" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behaviour differences
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Behaviour differences">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#locks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Locks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#new-features" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1185,25 +1241,29 @@
 
 <h1 id="migration-guide">Migration Guide<a class="headerlink" href="#migration-guide" title="Permanent link">&para;</a></h1>
 <h2 id="from-djangos-built-in-cache-backend">From Django's Built-in Cache Backend<a class="headerlink" href="#from-djangos-built-in-cache-backend" title="Permanent link">&para;</a></h2>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Before (Django&#39;s Redis backend)</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django.core.cache.backends.redis.RedisCache&quot;</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Before (Django's Redis backend)</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django.core.cache.backends.redis.RedisCache"</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># After (Valkey)</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.ValkeyCache&quot;</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.ValkeyCache"</span>
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Or (Redis)</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.RedisCache&quot;</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.RedisCache"</span>
 </span></code></pre></div>
-<p>All existing Django cache options work unchanged.</p>
+<p>All existing Django cache options work unchanged. Two behaviours differ:</p>
+<ul>
+<li><code>incr()</code> and <code>decr()</code> on a missing key create it at <code>delta</code> on the Valkey/Redis backends (Redis <code>INCRBY</code> semantics) where Django's <code>RedisCache</code> raises <code>ValueError</code>. Code that relied on the <code>ValueError</code> to detect an expired counter should check <code>has_key()</code> first. <code>LocMemCache</code> and <code>DatabaseCache</code> keep Django's behaviour.</li>
+<li><code>clear()</code> deletes this alias's keys only (a pattern delete over <code>KEY_PREFIX</code> and <code>VERSION</code>), not the whole database. <code>flush_db()</code> is the <code>FLUSHDB</code> equivalent.</li>
+</ul>
 <h2 id="from-django-valkey">From django-valkey<a class="headerlink" href="#from-django-valkey" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Before</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_valkey.cache.ValkeyCache&quot;</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;CLIENT_CLASS&quot;</span><span class="p">:</span> <span class="s2">&quot;django_valkey.client.DefaultClient&quot;</span><span class="p">}</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_valkey.cache.ValkeyCache"</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="s2">"OPTIONS"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"CLIENT_CLASS"</span><span class="p">:</span> <span class="s2">"django_valkey.client.DefaultClient"</span><span class="p">}</span>
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="c1"># After</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.ValkeyCache&quot;</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.ValkeyCache"</span>
 </span></code></pre></div>
-<p><strong>Key changes:</strong></p>
+<p>Key changes:</p>
 <table>
 <thead>
 <tr>
@@ -1229,22 +1289,52 @@
 <td><code>pool_class</code></td>
 </tr>
 <tr>
+<td><code>CONNECTION_POOL_KWARGS</code></td>
+<td>Flat keys in <code>OPTIONS</code>; they are forwarded to the pool's <code>from_url()</code></td>
+</tr>
+<tr>
+<td><code>PARSER_CLASS</code></td>
+<td><code>parser_class</code></td>
+</tr>
+<tr>
+<td><code>SENTINELS</code> / <code>SENTINEL_KWARGS</code></td>
+<td><code>sentinels</code> / <code>sentinel_kwargs</code></td>
+</tr>
+<tr>
 <td><code>get_valkey_connection()</code></td>
 <td><code>cache.get_client()</code></td>
 </tr>
+<tr>
+<td><code>cache.lock(key, timeout=30)</code></td>
+<td><code>cache.lock(key, lease=30)</code>, see <a href="#locks">Locks</a></td>
+</tr>
+<tr>
+<td><code>django_valkey.serializers.json.JSONSerializer</code></td>
+<td><code>django_cachex.serializers.json.JsonSerializer</code></td>
+</tr>
+<tr>
+<td><code>django_valkey.serializers.msgpack.MSGPackSerializer</code></td>
+<td><code>django_cachex.serializers.msgpack.MsgpackSerializer</code></td>
+</tr>
+<tr>
+<td><code>django_valkey.compressors.zstd.ZStdCompressor</code></td>
+<td><code>django_cachex.compressors.zstd.ZstdCompressor</code></td>
+</tr>
 </tbody>
 </table>
-<p>Import paths: <code>django_valkey.*</code> → <code>django_cachex.*</code></p>
+<p>Import paths: <code>django_valkey.*</code> → <code>django_cachex.*</code>, with the class-name
+changes above. Any uppercase key left in <code>OPTIONS</code> is forwarded to the
+driver's <code>from_url()</code> as is and fails at connect time with a <code>TypeError</code>.</p>
 <p>For Sentinel: Use <code>django_cachex.cache.RedisSentinelCache</code> (or <code>ValkeySentinelCache</code>) instead of <code>CLIENT_CLASS</code>.</p>
 <h2 id="from-django-redis">From django-redis<a class="headerlink" href="#from-django-redis" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Before</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_redis.cache.RedisCache&quot;</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="s2">&quot;OPTIONS&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;CLIENT_CLASS&quot;</span><span class="p">:</span> <span class="s2">&quot;django_redis.client.DefaultClient&quot;</span><span class="p">}</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_redis.cache.RedisCache"</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="s2">"OPTIONS"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"CLIENT_CLASS"</span><span class="p">:</span> <span class="s2">"django_redis.client.DefaultClient"</span><span class="p">}</span>
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
 </span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># After</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django_cachex.cache.RedisCache&quot;</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.RedisCache"</span>
 </span></code></pre></div>
-<p><strong>Key changes:</strong></p>
+<p>Key changes:</p>
 <table>
 <thead>
 <tr>
@@ -1270,23 +1360,82 @@
 <td><code>pool_class</code></td>
 </tr>
 <tr>
+<td><code>CONNECTION_POOL_KWARGS</code></td>
+<td>Flat keys in <code>OPTIONS</code>; they are forwarded to the pool's <code>from_url()</code></td>
+</tr>
+<tr>
+<td><code>PARSER_CLASS</code></td>
+<td><code>parser_class</code></td>
+</tr>
+<tr>
+<td><code>SENTINELS</code> / <code>SENTINEL_KWARGS</code></td>
+<td><code>sentinels</code> / <code>sentinel_kwargs</code></td>
+</tr>
+<tr>
 <td><code>get_redis_connection()</code></td>
 <td><code>cache.get_client()</code></td>
 </tr>
+<tr>
+<td><code>cache.lock(key, timeout=30)</code></td>
+<td><code>cache.lock(key, lease=30)</code>, see <a href="#locks">Locks</a></td>
+</tr>
+<tr>
+<td><code>django_redis.serializers.json.JSONSerializer</code></td>
+<td><code>django_cachex.serializers.json.JsonSerializer</code></td>
+</tr>
+<tr>
+<td><code>django_redis.serializers.msgpack.MSGPackSerializer</code></td>
+<td><code>django_cachex.serializers.msgpack.MsgpackSerializer</code></td>
+</tr>
+<tr>
+<td><code>django_redis.compressors.zstd.ZStdCompressor</code></td>
+<td><code>django_cachex.compressors.zstd.ZstdCompressor</code></td>
+</tr>
 </tbody>
 </table>
-<p>Import paths: <code>django_redis.*</code> → <code>django_cachex.*</code></p>
+<p>Import paths: <code>django_redis.*</code> → <code>django_cachex.*</code>, with the class-name
+changes above. A path-swapped <code>"django_cachex.serializers.json.JSONSerializer"</code>
+raises <code>ImportError</code> at <code>caches[alias]</code>. Any uppercase key left in <code>OPTIONS</code> is
+forwarded to the driver's <code>from_url()</code> as is and fails at connect time with a
+<code>TypeError</code>.</p>
 <p>For Sentinel: Use <code>django_cachex.cache.RedisSentinelCache</code> instead of <code>CLIENT_CLASS</code>.</p>
-<h2 id="new-features">New Features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h2>
-<p>After migrating, you gain:</p>
+<h2 id="behaviour-differences">Behaviour differences<a class="headerlink" href="#behaviour-differences" title="Permanent link">&para;</a></h2>
+<p>django-cachex differs from both libraries in these ways:</p>
 <ul>
-<li>Valkey and Redis in one package.</li>
+<li><code>incr()</code> on a missing key creates it at <code>delta</code> (Redis <code>INCRBY</code> semantics) rather than raising.</li>
+<li><code>clear()</code> is a pattern delete over this alias's <code>KEY_PREFIX</code> and <code>VERSION</code>, not <code>FLUSHDB</code>. Call <code>flush_db()</code> for <code>FLUSHDB</code>.</li>
+<li><code>ttl()</code> of a missing key returns <code>-2</code>, of a key without expiry <code>None</code>.</li>
+</ul>
+<h3 id="locks">Locks<a class="headerlink" href="#locks" title="Permanent link">&para;</a></h3>
+<p><code>cache.lock()</code> keeps the name but not the meaning of <code>timeout</code>. In
+django-redis and django-valkey <code>timeout=30</code> is the TTL of the held lock,
+forwarded to the driver's <code>client.lock(timeout=...)</code>. In django-cachex the
+lock TTL is <code>lease</code>, and <code>timeout</code> is the keyword-only maximum time
+<code>acquire()</code> waits before giving up. A mechanically migrated
+<code>cache.lock(key, timeout=30)</code> therefore waits up to 30 seconds to acquire and
+then holds the lock with no TTL, so a crashed holder blocks every peer until
+the key is deleted by hand. Rename the argument:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># django-redis / django-valkey</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">"job"</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">30</span><span class="p">):</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="o">...</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1"># django-cachex</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">"job"</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">):</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="o">...</span>
+</span></code></pre></div>
+<h2 id="new-features">New Features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h2>
+<p>Coming from Django's built-in backend, everything django-cachex adds is new:
+data structures, TTL and pattern helpers, locks, semaphores, pipelines and
+scripting. Coming from django-redis or django-valkey, which already have TTL
+and pattern helpers and <code>cache.lock()</code>, you gain:</p>
+<ul>
+<li>Valkey and Redis in one package, redis-py, valkey-py and valkey-glide behind one API.</li>
 <li>Multi-serializer/compressor fallback for safe migrations.</li>
-<li>Extended data structures (hashes, lists, sets, sorted sets) directly on the cache object.</li>
-<li>TTL operations: <code>ttl()</code>, <code>pttl()</code>, <code>expire()</code>, <code>persist()</code>.</li>
-<li>Pattern operations: <code>keys()</code>, <code>iter_keys()</code>, <code>delete_pattern()</code>.</li>
-<li>Distributed locking via <code>cache.lock()</code>.</li>
-<li>Pipelines via <code>cache.pipeline()</code>.</li>
+<li>Pipelines via <code>cache.pipeline()</code> and <code>cache.apipeline()</code>, with key prefixing and serialization applied.</li>
+<li>Weighted semaphores via <code>cache.semaphore()</code>.</li>
+<li>Hash-field TTL (<code>hexpire()</code>, <code>hsetex()</code>, <code>hgetex()</code> and relatives).</li>
+<li>Lua scripting with key-prefixing and encoding hooks (<code>eval_script()</code>).</li>
+<li>Stampede prevention (<code>OPTIONS["stampede_prevention"]</code>).</li>
 </ul>
 
 

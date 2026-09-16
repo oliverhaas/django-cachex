@@ -691,7 +691,7 @@
   <span class="md-ellipsis">
     
   
-    Composite Backends
+    TrackingCache
   
 
     
@@ -1354,38 +1354,35 @@ with a <code>FakeRedis</code> client instead. We benchmarked it; the answer is n
 </tr>
 </tbody>
 </table>
-<p>(Reproduce: <code>python -m django_cachex.benchmarks.locmem_vs_fakeredis</code>
-isn't checked in; it's a one-off, see the commit that introduced this
-page for the script.)</p>
+<p>(The script behind these numbers was a one-off and is not checked in;
+the <code>benchmarks/</code> harness covers the RESP adapters only.)</p>
 <h3 id="what-this-tells-us">What this tells us<a class="headerlink" href="#what-this-tells-us" title="Permanent link">&para;</a></h3>
 <ol>
-<li><strong>fakeredis has a ~600 µs floor regardless of op or N.</strong> That's the
+<li>fakeredis has a ~600 µs floor regardless of op or N. That's the
    cost of the redis-py client serializing the command to RESP wire
    format, fakeredis interpreting it, formatting the response, and
    redis-py deserializing back. Even though everything is in-process,
    the protocol layer dominates.</li>
-<li><strong>fakeredis is slower than real Redis on localhost.</strong> At ~620 µs per
+<li>fakeredis is slower than real Redis on localhost. At ~620 µs per
    op it runs ~6x behind a container on the same pod (~100 µs), landing
    between local Redis and a cross-AZ ElastiCache round-trip.</li>
-<li><strong>Our <code>LocMemCache</code> is ~250-400× faster per single op</strong> than
+<li>Our <code>LocMemCache</code> is ~250-400× faster per single op than
    fakeredis, and the gap widens with N for collection-spanning ops
    (<code>hgetall</code>, <code>lrange 0..-1</code>) where fakeredis's internal data
    structures aren't tuned for big working sets.</li>
 </ol>
 <h3 id="where-that-matters">Where that matters<a class="headerlink" href="#where-that-matters" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Test suites.</strong> A 12k-test suite that touches the cache ten times
+<li>Test suites. A 12k-test suite that touches the cache ten times
   per test would pay an extra ~70 s of wall-clock per run on the
   fakeredis path. Multiplied across CI, contributor laptops, and the
   inner-loop <code>pytest -k foo</code> cycle, that compounds.</li>
-<li><strong>Dev REPL feedback.</strong> A cache op that takes ~1 ms instead of ~2 µs
+<li>Dev REPL feedback. A cache op that takes ~1 ms instead of ~2 µs
   changes the feel of "let me poke this in the shell" from
   instantaneous to noticeable.</li>
-<li><strong><code>StreamCache</code> hits.</strong> <code>StreamCache</code> serves reads from the <code>LocMemCache</code>
-  store it inherits. Inflating that hit cost defeats the point.</li>
 </ul>
 <h3 id="where-fakeredis-would-actually-be-useful">Where fakeredis would actually be useful<a class="headerlink" href="#where-fakeredis-would-actually-be-useful" title="Permanent link">&para;</a></h3>
-<p>For testing the <strong>adapter layer</strong> (redis-py / valkey-py command paths,
+<p>For testing the adapter layer (redis-py / valkey-py command paths,
 the <code>WRONGTYPE</code> translation, pipelines, scripts) without standing up a
 testcontainer Redis. We currently rely on a real Valkey/Redis container
 for adapter integration tests, which is correct but requires Docker.</p>

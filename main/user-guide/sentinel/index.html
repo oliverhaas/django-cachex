@@ -773,7 +773,7 @@
   <span class="md-ellipsis">
     
   
-    Composite Backends
+    TrackingCache
   
 
     
@@ -1182,7 +1182,8 @@
 </tr>
 </tbody>
 </table>
-<p>The <code>LOCATION</code> URL format is <code>redis://service_name/db</code> (or <code>valkey://service_name/db</code> for ValkeySentinelCache) where <code>service_name</code> is the master name configured in Sentinel.</p>
+<p>The <code>LOCATION</code> URL format is <code>redis://service_name/db</code> (or <code>valkey://service_name/db</code> for ValkeySentinelCache) where <code>service_name</code> is the master name configured in Sentinel. It is a single URL: a list (or a comma-separated string) with more than one entry raises <code>ImproperlyConfigured</code> at <code>caches[alias]</code>, since Sentinel discovers the primary and replicas itself. The Sentinel nodes go in <code>OPTIONS["sentinels"]</code>.</p>
+<p><code>OPTIONS["pool_class"]</code> must be the driver's <code>SentinelConnectionPool</code> or a subclass, and <code>OPTIONS["async_pool_class"]</code> its async counterpart (used by the <code>a*</code> methods); any other class raises <code>ImproperlyConfigured</code> at <code>caches[alias]</code>. See <a href="../configuration/#connection-pool">Connection Pool</a>.</p>
 <h2 id="tls">TLS<a class="headerlink" href="#tls" title="Permanent link">&para;</a></h2>
 <p>A TLS scheme in <code>LOCATION</code> (<code>rediss://service_name/db</code> for <code>RedisSentinelCache</code>,
 <code>valkeys://service_name/db</code> for <code>ValkeySentinelCache</code>) gives TLS data

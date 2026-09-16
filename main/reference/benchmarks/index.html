@@ -693,7 +693,7 @@
   <span class="md-ellipsis">
     
   
-    Composite Backends
+    TrackingCache
   
 
     
@@ -1425,15 +1425,15 @@ request, no asyncio.</p>
 <td style="text-align: right;">48</td>
 </tr>
 <tr>
-<td><strong>valkey-glide</strong></td>
-<td style="text-align: right;"><strong>7,110</strong></td>
-<td style="text-align: right;"><strong>8,821</strong></td>
-<td style="text-align: right;"><strong>6,887</strong></td>
-<td style="text-align: right;"><strong>1,928</strong></td>
-<td style="text-align: right;"><strong>1,844</strong></td>
-<td style="text-align: right;"><strong>9,076</strong></td>
-<td style="text-align: right;"><strong>3,980</strong></td>
-<td style="text-align: right;"><strong>29</strong></td>
+<td>valkey-glide</td>
+<td style="text-align: right;">7,110</td>
+<td style="text-align: right;">8,821</td>
+<td style="text-align: right;">6,887</td>
+<td style="text-align: right;">1,928</td>
+<td style="text-align: right;">1,844</td>
+<td style="text-align: right;">9,076</td>
+<td style="text-align: right;">3,980</td>
+<td style="text-align: right;">29</td>
 </tr>
 <tr>
 <td>django (builtin)</td>
@@ -1525,8 +1525,10 @@ but only move throughput by a few percent.</p>
 because the Python transport costs more than any encoder does. The
 serializer shows up on the batch phases, where payload size is multiplied
 by ten: <code>orjson</code> and <code>ormsgpack</code> (both Rust-cored) run <code>mset</code> ~4% ahead of
-<code>pickle</code> and ~45% ahead of <code>json</code>, whose pure-Python encoder is the
-bottleneck there.</p>
+<code>pickle</code> and ~45% ahead of <code>json</code>. <code>json.dumps</code> uses CPython's C encoder,
+so the gap comes from <code>DjangoJSONEncoder.default()</code> running in Python for
+every non-primitive value and from the <code>str</code> encode/decode round trip on
+each payload.</p>
 <h2 id="compressors-macro">Compressors (macro)<a class="headerlink" href="#compressors-macro" title="Permanent link">&para;</a></h2>
 <p><code>valkey-py+libvalkey</code> + <code>pickle</code> on a 14 KiB queryset-shaped payload,
 end-to-end cache ops.</p>
@@ -1726,14 +1728,14 @@ overhead Django itself adds.</p>
 <td style="text-align: right;">1,238</td>
 </tr>
 <tr>
-<td><strong>valkey-glide</strong></td>
-<td style="text-align: right;"><strong>1,150</strong></td>
-<td style="text-align: right;"><strong>1,749</strong></td>
-<td style="text-align: right;"><strong>1,668</strong></td>
-<td style="text-align: right;"><strong>983</strong></td>
-<td style="text-align: right;"><strong>940</strong></td>
-<td style="text-align: right;"><strong>1,740</strong></td>
-<td style="text-align: right;"><strong>1,745</strong></td>
+<td>valkey-glide</td>
+<td style="text-align: right;">1,150</td>
+<td style="text-align: right;">1,749</td>
+<td style="text-align: right;">1,668</td>
+<td style="text-align: right;">983</td>
+<td style="text-align: right;">940</td>
+<td style="text-align: right;">1,740</td>
+<td style="text-align: right;">1,745</td>
 </tr>
 <tr>
 <td>django (builtin)</td>
@@ -1810,14 +1812,14 @@ backends without native async).</p>
 <td style="text-align: right;">1,026</td>
 </tr>
 <tr>
-<td><strong>valkey-glide</strong></td>
-<td style="text-align: right;"><strong>3,251</strong></td>
-<td style="text-align: right;"><strong>3,634</strong></td>
-<td style="text-align: right;"><strong>3,291</strong></td>
-<td style="text-align: right;"><strong>1,640</strong></td>
-<td style="text-align: right;"><strong>1,634</strong></td>
-<td style="text-align: right;"><strong>3,680</strong></td>
-<td style="text-align: right;"><strong>1,735</strong></td>
+<td>valkey-glide</td>
+<td style="text-align: right;">3,251</td>
+<td style="text-align: right;">3,634</td>
+<td style="text-align: right;">3,291</td>
+<td style="text-align: right;">1,640</td>
+<td style="text-align: right;">1,634</td>
+<td style="text-align: right;">3,680</td>
+<td style="text-align: right;">1,735</td>
 </tr>
 <tr>
 <td>django (builtin)</td>
@@ -1832,9 +1834,11 @@ backends without native async).</p>
 </tbody>
 </table>
 <p><code>valkey-glide</code> runs ~1.6-1.9× the C-parser Python adapters on every
-phase because its async path skips the <code>sync_to_async</code> round-trip the
-Python adapters make on top of their sync transports. Django's built-in
-<code>RedisCache</code> <code>mget</code>/<code>mset</code> collapse to ~190 ops/s under <code>sync_to_async</code>.</p>
+phase; the redis-py and valkey-py backends use the drivers' native async
+clients (<code>redis.asyncio</code>, <code>valkey.asyncio</code>), so the gap is the Python
+protocol work those clients do per call. Django's built-in <code>RedisCache</code>
+has no native async path, and its <code>mget</code>/<code>mset</code> collapse to ~190 ops/s
+under <code>sync_to_async</code>.</p>
 <h2 id="async-concurrent-50-in-flight">Async concurrent (50 in flight)<a class="headerlink" href="#async-concurrent-50-in-flight" title="Permanent link">&para;</a></h2>
 <p><code>asyncio.gather</code> of 50 ops at a time, closer to what an ASGI app
 under load actually generates.</p>
@@ -1898,14 +1902,14 @@ under load actually generates.</p>
 <td style="text-align: right;">108</td>
 </tr>
 <tr>
-<td><strong>valkey-glide</strong></td>
-<td style="text-align: right;"><strong>9,903</strong></td>
-<td style="text-align: right;"><strong>12,208</strong></td>
-<td style="text-align: right;"><strong>9,770</strong></td>
-<td style="text-align: right;"><strong>1,949</strong></td>
-<td style="text-align: right;"><strong>2,541</strong></td>
-<td style="text-align: right;"><strong>11,950</strong></td>
-<td style="text-align: right;"><strong>2,588</strong></td>
+<td>valkey-glide</td>
+<td style="text-align: right;">9,903</td>
+<td style="text-align: right;">12,208</td>
+<td style="text-align: right;">9,770</td>
+<td style="text-align: right;">1,949</td>
+<td style="text-align: right;">2,541</td>
+<td style="text-align: right;">11,950</td>
+<td style="text-align: right;">2,588</td>
 <td style="text-align: right;">109</td>
 </tr>
 <tr>

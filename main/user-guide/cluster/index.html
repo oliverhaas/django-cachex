@@ -762,7 +762,7 @@
   <span class="md-ellipsis">
     
   
-    Composite Backends
+    TrackingCache
   
 
     
@@ -1143,26 +1143,35 @@
 <p>For basic cluster setup, see <a href="../configuration/#cluster-configuration">Configuration</a>.</p>
 <h2 id="slot-handling">Slot Handling<a class="headerlink" href="#slot-handling" title="Permanent link">&para;</a></h2>
 <p>Valkey/Redis Cluster distributes keys across 16,384 hash slots. django-cachex handles Django cache methods and direct commands differently:</p>
-<p><strong>Django cache methods</strong> (<code>get_many</code>, <code>set_many</code>, <code>delete_many</code>, <code>keys</code>, <code>clear</code>) are cluster-aware and handle cross-slot operations automatically.</p>
-<p><strong>Direct commands</strong> (sets, lists, hashes, sorted sets) pass through to the server. Multi-key commands (<code>sdiff</code>, <code>sinter</code>, <code>sunion</code>, <code>lmove</code>) require all keys on the same slot.</p>
+<p>The Django cache methods (<code>get_many</code>, <code>set_many</code>, <code>delete_many</code>, <code>keys</code>, <code>clear</code>) are cluster-aware and handle cross-slot operations automatically. <code>delete_many()</code>, <code>delete_pattern()</code> and <code>set_many(timeout=0)</code> issue one <code>UNLINK</code> per batch and let the driver split it by slot.</p>
+<p>Direct commands (sets, lists, hashes, sorted sets) pass through to the server. Multi-key commands (<code>sdiff</code>, <code>sinter</code>, <code>sunion</code>, <code>lmove</code>) require all keys on the same slot.</p>
+<p>Not available on cluster:</p>
+<ul>
+<li><code>pipeline(transaction=True)</code> and <code>apipeline(transaction=True)</code> raise <code>NotSupportedError</code>; cluster pipelines default to <code>transaction=False</code>, since <code>MULTI</code>/<code>EXEC</code> cannot span slots.</li>
+<li><code>lock()</code> and <code>alock()</code> raise <code>NotSupportedError</code>; use <code>semaphore()</code>, whose keys share a <code>{name}</code> hash tag.</li>
+<li><code>incr_version()</code> and <code>decr_version()</code> rename <code>prefix:V:key</code> to <code>prefix:V+1:key</code>, which only stays in one slot when both made keys carry the same <code>{...}</code> hash tag. Without one (or with a <code>KEY_FUNCTION</code> that puts the version inside the tag) they raise <code>NotSupportedError</code> up front instead of a <code>CROSSSLOT</code> error from the server. A <code>KEY_PREFIX</code> of the form <code>"{app}"</code> colocates every key it produces and satisfies the rule.</li>
+<li><code>xautoclaim(justid=True)</code> and <code>axautoclaim(justid=True)</code> raise <code>NotSupportedError</code> on the redis-py and valkey-py cluster backends: the driver's <code>JUSTID</code> reply drops the cursor. Call <code>xautoclaim()</code> without <code>justid</code>. The valkey-glide cluster backend is unaffected.</li>
+<li>Key browsing in the <a href="../admin/#browsing-a-cluster-alias">admin</a>: cluster <code>SCAN</code> returns one cursor per node, so the key list stays empty with a message. The key detail page still opens a key by name.</li>
+<li><code>pool_class</code>, <code>async_pool_class</code> and <code>parser_class</code> in <code>OPTIONS</code> raise <code>ImproperlyConfigured</code>; the cluster client owns its per-node pools and picks its own parser.</li>
+</ul>
 <h2 id="hash-tags">Hash Tags<a class="headerlink" href="#hash-tags" title="Permanent link">&para;</a></h2>
 <p>Force keys to the same slot using hash tags (the substring between <code>{</code> and <code>}</code>):</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Same slot (hash tag is &quot;user:123&quot;)</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">cache</span><span class="o">.</span><span class="n">sadd</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{user:123}</span><span class="s2">:followers&quot;</span><span class="p">,</span> <span class="s2">&quot;alice&quot;</span><span class="p">,</span> <span class="s2">&quot;bob&quot;</span><span class="p">)</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">cache</span><span class="o">.</span><span class="n">sadd</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{user:123}</span><span class="s2">:following&quot;</span><span class="p">,</span> <span class="s2">&quot;charlie&quot;</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Same slot (hash tag is "user:123")</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">cache</span><span class="o">.</span><span class="n">sadd</span><span class="p">(</span><span class="s2">"</span><span class="si">{user:123}</span><span class="s2">:followers"</span><span class="p">,</span> <span class="s2">"alice"</span><span class="p">,</span> <span class="s2">"bob"</span><span class="p">)</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">cache</span><span class="o">.</span><span class="n">sadd</span><span class="p">(</span><span class="s2">"</span><span class="si">{user:123}</span><span class="s2">:following"</span><span class="p">,</span> <span class="s2">"charlie"</span><span class="p">)</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># Multi-key operations now work</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">cache</span><span class="o">.</span><span class="n">sdiff</span><span class="p">([</span><span class="s2">&quot;</span><span class="si">{user:123}</span><span class="s2">:followers&quot;</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{user:123}</span><span class="s2">:following&quot;</span><span class="p">])</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">cache</span><span class="o">.</span><span class="n">sdiff</span><span class="p">([</span><span class="s2">"</span><span class="si">{user:123}</span><span class="s2">:followers"</span><span class="p">,</span> <span class="s2">"</span><span class="si">{user:123}</span><span class="s2">:following"</span><span class="p">])</span>
 </span></code></pre></div>
 <p>Use hash tags when you need:</p>
 <ul>
 <li>Multi-key set operations: <code>sdiff</code>, <code>sinter</code>, <code>sunion</code></li>
 <li>List moves: <code>lmove</code></li>
-<li>Transactions across multiple keys</li>
+<li><code>incr_version</code> / <code>decr_version</code> (see above)</li>
 </ul>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Group related keys: one hash tag per slot</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">user_keys</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;</span><span class="si">{user:123}</span><span class="s2">:profile&quot;</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{user:123}</span><span class="s2">:settings&quot;</span><span class="p">]</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">order_keys</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;</span><span class="si">{order:456}</span><span class="s2">:items&quot;</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{order:456}</span><span class="s2">:status&quot;</span><span class="p">]</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">user_keys</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"</span><span class="si">{user:123}</span><span class="s2">:profile"</span><span class="p">,</span> <span class="s2">"</span><span class="si">{user:123}</span><span class="s2">:settings"</span><span class="p">]</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">order_keys</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"</span><span class="si">{order:456}</span><span class="s2">:items"</span><span class="p">,</span> <span class="s2">"</span><span class="si">{order:456}</span><span class="s2">:status"</span><span class="p">]</span>
 </span></code></pre></div>
 <div class="admonition warning">
 <p class="admonition-title">Avoid Hot Spots</p>

@@ -784,7 +784,7 @@
   <span class="md-ellipsis">
     
   
-    Composite Backends
+    TrackingCache
   
 
     
@@ -1186,10 +1186,10 @@
 <h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Python 3.14+ (free-threaded supported)</li>
-<li>Django 6.0+</li>
-<li>valkey-py 6.1+ or redis-py 6.0+</li>
-<li>Valkey server 7.2+ or Redis server 6.0+ (hash field expiration needs Valkey 9.0+ or Redis 7.4+, and <code>hsetex</code>/<code>hgetex</code> Redis 8.0+; older servers raise <code>NotSupportedError</code> for those methods only)</li>
+<li>Python 3.14+. The free-threaded build (3.14t) is supported, with one caveat for the C parsers below.</li>
+<li>Django 6.0 to 6.x (<code>Django&gt;=6,&lt;7</code>)</li>
+<li>valkey-py 6.1 to 6.x (<code>valkey&gt;=6.1,&lt;7</code>) or redis-py 6.0 to 8.x (<code>redis&gt;=6,&lt;9</code>)</li>
+<li>Valkey server 7.2+ or Redis server 6.2+. <code>set(get=True)</code> and the immediate-expiry conditional writes (<code>add()</code> and <code>set(nx=/xx=/get=)</code> with <code>timeout=0</code>) send <code>SET ... GET</code> and <code>SET ... PXAT</code>, both Redis 6.2 commands; <code>set(nx=True, get=True)</code> needs Redis 7.0+. Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and <code>hsetex</code>/<code>hgetex</code> Redis 8.0+; older servers raise <code>NotSupportedError</code> for those methods only.</li>
 </ul>
 <h2 id="install-with-uv">Install with uv<a class="headerlink" href="#install-with-uv" title="Permanent link">&para;</a></h2>
 <p>The base package pulls in no client driver; pick the extra that matches your setup:</p>
@@ -1208,6 +1208,10 @@
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="go">uv add django-cachex[hiredis]</span>
 </span></code></pre></div>
 <p>These provide C-based parsers that improve protocol parsing throughput on the hot read path.</p>
+<p>Neither <code>hiredis</code> nor <code>libvalkey</code> declares free-threading support, so on the
+free-threaded build (3.14t) importing either re-enables the GIL for the
+process, with a <code>RuntimeWarning</code> at import. Use the pure-Python parser
+(the plain <code>valkey-py</code> / <code>redis-py</code> extras) to keep the GIL off.</p>
 <h2 id="valkey-glide-adapter-optional">Valkey-Glide adapter (optional)<a class="headerlink" href="#valkey-glide-adapter-optional" title="Permanent link">&para;</a></h2>
 <div class="admonition warning">
 <p class="admonition-title">Experimental</p>
@@ -1221,7 +1225,8 @@ distributions, <code>valkey-glide-sync</code> and <code>valkey-glide</code>,
 pulled in together via the <code>valkey-glide</code> extra:</p>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="go">uv add django-cachex[valkey-glide]</span>
 </span></code></pre></div>
-<p>cp314 GIL only; no cp314t (free-threaded) wheels are published yet.
+<p>The extra pins <code>valkey-glide-sync</code> and <code>valkey-glide</code> 2.5 to 2.x. cp314 GIL
+only; no cp314t (free-threaded) wheels are published yet.
 Standalone (<code>ValkeyGlideCache</code>) and cluster (<code>ValkeyGlideClusterCache</code>)
 backends are wired up; Sentinel is not exposed (<code>valkey-glide</code> itself does
 not ship a Sentinel client). See the

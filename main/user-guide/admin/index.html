@@ -606,6 +606,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#browsing-a-cluster-alias" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Browsing a cluster alias
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#browsing-a-trackingcache-alias" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -906,7 +917,7 @@
   <span class="md-ellipsis">
     
   
-    Composite Backends
+    TrackingCache
   
 
     
@@ -1298,6 +1309,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#browsing-a-cluster-alias" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Browsing a cluster alias
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#browsing-a-trackingcache-alias" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1433,16 +1455,16 @@
 <p>Add <code>django_cachex.admin</code> to your <code>INSTALLED_APPS</code>:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">INSTALLED_APPS</span> <span class="o">=</span> <span class="p">[</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="c1"># ... other apps</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="s2">&quot;django.contrib.admin&quot;</span><span class="p">,</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="s2">&quot;django_cachex.admin&quot;</span><span class="p">,</span>  <span class="c1"># Cache admin interface</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="s2">"django.contrib.admin"</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="s2">"django_cachex.admin"</span><span class="p">,</span>  <span class="c1"># Cache admin interface</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="p">]</span>
 </span></code></pre></div>
-<p>The cache admin will appear in the Django admin sidebar under "Caches".</p>
+<p>The admin sidebar gets a "django-cachex" app heading with two entries, "Caches" and "Keys".</p>
 <h2 id="permissions">Permissions<a class="headerlink" href="#permissions" title="Permanent link">&para;</a></h2>
 <p>The admin uses Django's built-in permission system. Superusers have full access. Staff users need explicit permissions:</p>
 <ul>
 <li><code>django_cachex.view_cache</code> / <code>view_key</code>: view caches and keys</li>
-<li><code>django_cachex.change_cache</code>: cache-wide actions, meaning flush, clear the current version, the key browser's Clear tool, and the cache detail page's danger zone (clear all versions, flush the database)</li>
+<li><code>django_cachex.change_cache</code>: cache-wide actions, meaning the cache list's Flush action and the key browser's Clear tool (both call <code>cache.clear()</code>, which removes the current version's keys), and the cache detail page's danger zone (clear all versions, flush the database)</li>
 <li><code>django_cachex.add_key</code>: create keys, including the key browser's Add key tool</li>
 <li><code>django_cachex.change_key</code>: every mutation on the key detail page, including editing values and setting or removing a TTL. Without it the page renders read-only.</li>
 <li><code>django_cachex.delete_key</code>: delete keys</li>
@@ -1461,7 +1483,7 @@
 <tr>
 <td><strong>cachex</strong></td>
 <td>Full Support</td>
-<td>django-cachex backends (<code>ValkeyCache</code>, <code>RedisCache</code>, <code>LocMemCache</code>, <code>DatabaseCache</code>, etc.). All features: key listing, pattern search, TTL inspection, and data type operations.</td>
+<td>django-cachex backends (<code>ValkeyCache</code>, <code>RedisCache</code>, <code>LocMemCache</code>, <code>DatabaseCache</code>, etc.). All features: key listing, pattern search, TTL inspection, and data type operations. The cluster backends carry this badge but do not list keys, see below.</td>
 </tr>
 <tr>
 <td><strong>limited</strong></td>
@@ -1474,6 +1496,13 @@
 <p>Switch to <code>django_cachex.cache.LocMemCache</code> / <code>django_cachex.cache.DatabaseCache</code> for full admin support. Both are drop-in replacements for the stock Django classes.</p>
 <h3 id="using-djangos-stock-redis-backend">Using Django's stock Redis backend?<a class="headerlink" href="#using-djangos-stock-redis-backend" title="Permanent link">&para;</a></h3>
 <p>Switch to <code>ValkeyCache</code> / <code>RedisCache</code> for full functionality. See the <a href="../../migration/">migration guide</a> for migration instructions.</p>
+<h3 id="browsing-a-cluster-alias">Browsing a cluster alias<a class="headerlink" href="#browsing-a-cluster-alias" title="Permanent link">&para;</a></h3>
+<p><code>RedisClusterCache</code>, <code>ValkeyClusterCache</code> and <code>ValkeyGlideClusterCache</code> are
+badged <strong>cachex</strong>, but the key browser shows an empty list with the message
+"Key browsing is not supported on cluster cache": cluster <code>SCAN</code> returns one
+cursor per node, which the paginator cannot hand back as a single cursor. The
+key detail page (by key name), Add key, Flush and the danger zone are not
+affected.</p>
 <h3 id="browsing-a-trackingcache-alias">Browsing a <code>TrackingCache</code> alias<a class="headerlink" href="#browsing-a-trackingcache-alias" title="Permanent link">&para;</a></h3>
 <p>A <code>TrackingCache</code> alias is badged <strong>limited</strong>, so the admin lists it and its
 configuration but offers no key browsing. Its keys live on the transport, and
@@ -1483,27 +1512,33 @@ which is badged <strong>cachex</strong>.</p>
 <h3 id="caches-index">Caches (Index)<a class="headerlink" href="#caches-index" title="Permanent link">&para;</a></h3>
 <p>Lists all configured caches showing name, backend class, location, and support level.</p>
 <p><img alt="The cache list, showing each configured alias with its backend and support level" src="../../assets/screenshot-cache-list.png" /></p>
-<p><strong>Actions:</strong> Flush selected caches (delete all entries).</p>
+<p>Actions: Flush selected caches. Flush calls <code>cache.clear()</code>, which on the Valkey/Redis backends is a pattern delete over the alias's <code>KEY_PREFIX</code> and <code>VERSION</code>, not <code>FLUSHDB</code>; the danger zone on the cache detail page has the <code>FLUSHDB</code> equivalent.</p>
 <p>Every <code>LOCATION</code> the admin renders has its URL password replaced with <code>***</code>,
 here, in the cache detail page's Configuration section, and in connection URLs
-quoted inside backend error messages. A <code>***</code> on the page is masking, not a
-misconfiguration: the setting itself is untouched. <code>unix://</code> socket paths and
-non-URL locations such as <code>host:port</code> are shown as they are.</p>
+quoted inside backend error messages, including every admin message that quotes
+a driver exception. A <code>***</code> on the page is masking, not a misconfiguration: the
+setting itself is untouched. <code>unix://</code> socket paths and non-URL locations such
+as <code>host:port</code> are shown as they are.</p>
+<p>A backend whose server cannot be reached is reported with a message
+("Cache '<alias>' is unreachable: ...") and a redirect to this list from the key
+detail and key add pages, rather than an error page.</p>
 <h3 id="key-browser">Key Browser<a class="headerlink" href="#key-browser" title="Permanent link">&para;</a></h3>
-<p>Click a cache name to browse its keys with wildcard search (<code>*</code>), data type display, TTL, and pagination.</p>
+<p>Click a cache name to browse its keys with wildcard search (<code>*</code>), data type display, TTL, and pagination. Each page issues up to five <code>SCAN</code> calls (<code>count</code>, default 100, capped at 1000, is the hint passed to each) and stops once it holds at least half of <code>count</code> keys or the cursor reaches 0; TTL, type and size are fetched in a pipeline per page rather than per key.</p>
 <p><img alt="The key browser, with the type filter sidebar and a wildcard search" src="../../assets/screenshot-key-list.png" /></p>
-<p><strong>Actions:</strong> Delete selected keys, add new key.</p>
+<p>Actions: Delete selected keys, add new key.</p>
 <h3 id="key-detail">Key Detail<a class="headerlink" href="#key-detail" title="Permanent link">&para;</a></h3>
 <p>View and edit a specific key's value (formatted JSON for objects/arrays), data type, and TTL. Supports editing the value, setting the TTL, running the operations for the key's data type, and deleting the key.</p>
 <p>A key whose server-side type the admin cannot render is shown read-only: the type is named, the value is not displayed, and no type-specific operations are offered. Delete and the TTL form still work.</p>
-<p>A cache backend with no <code>type()</code> at all (<code>django.core.cache.backends.locmem.LocMemCache</code> and the other stock Django backends) gets the same treatment: the page renders, and any type-specific write is refused with "This cache backend does not report key types, so only deleting the key and setting its TTL are available." Delete and Set TTL stay available.</p>
+<p>A cache backend with no <code>type()</code> at all (<code>django.core.cache.backends.locmem.LocMemCache</code> and the other stock Django backends) gets the same treatment: the page renders, and any type-specific write is refused with "This cache backend does not report key types, so only deleting it is available." Delete stays available. The TTL form needs <code>expire()</code> and <code>persist()</code>, which the stock backends lack, so it is not shown there; on a typeless backend that does have both, the message reads "so only deleting the key and setting its TTL are available" instead.</p>
 <p>Deleting a key that is already gone reports "Key not found, nothing was deleted." rather than success, and the key browser's bulk delete counts those misses separately.</p>
+<p>A type-specific action (push onto a list, add a hash field, ...) posted against a key whose type has changed since the page loaded is refused with a message and nothing is written; the page reloads with the current value. The TTL form is shown, and Set TTL accepted, only on backends with <code>expire()</code> and <code>persist()</code>; the stock Django backends have neither, so there the page offers delete only.</p>
+<p>Set members on the Valkey/Redis backends are listed in server (<code>SSCAN</code>) order, which is not stable across pages of a set that is being written to; <code>LocMemCache</code> and <code>DatabaseCache</code> list them sorted. Hash pages read only the fields on the current page.</p>
 <p><img alt="The key detail page, editing a value and its TTL" src="../../assets/screenshot-key-detail.png" /></p>
 <h3 id="cache-info">Cache Info<a class="headerlink" href="#cache-info" title="Permanent link">&para;</a></h3>
 <p>View server information: configuration, server version/uptime, memory usage, connected clients, command statistics, and keyspace data.</p>
 <p>Sections a backend cannot answer are omitted rather than rendered empty or with an error box. The Slow Log, which only the Valkey/Redis backends implement, is hidden everywhere else, and a backend with no <code>info()</code> still gets its Configuration section from <code>settings.CACHES</code> while the server, memory and statistics sections are skipped.</p>
 <h3 id="add-key">Add Key<a class="headerlink" href="#add-key" title="Permanent link">&para;</a></h3>
-<p>Name the new key and pick its data type. Nothing is written yet: <strong>Continue</strong> opens the key detail page, where the first value you add creates the key.</p>
+<p>Name the new key and pick its data type (string, list, set, hash, zset or stream; anything else is rejected). Nothing is written yet: <strong>Continue</strong> opens the key detail page, where the first value you add creates the key.</p>
 <h2 id="backend-abilities">Backend Abilities<a class="headerlink" href="#backend-abilities" title="Permanent link">&para;</a></h2>
 <p>The admin adapts based on backend capabilities:</p>
 <table>
@@ -1559,10 +1594,10 @@ non-URL locations such as <code>host:port</code> are shown as they are.</p>
 <td>No</td>
 </tr>
 <tr>
-<td>Flush cache</td>
+<td>Flush cache (<code>clear()</code>)</td>
 <td>Yes</td>
 <td>Yes</td>
-<td>No</td>
+<td>Yes</td>
 </tr>
 <tr>
 <td>Danger zone (clear all versions, FLUSHDB)</td>
