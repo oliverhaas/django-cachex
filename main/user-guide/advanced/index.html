@@ -2206,6 +2206,11 @@ most one key; pass <code>"*"</code> to clear everything. See
 </span><span id="__span-20-10"><a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a>    <span class="n">args</span><span class="o">=</span><span class="p">[],</span>
 </span><span id="__span-20-11"><a id="__codelineno-20-11" name="__codelineno-20-11" href="#__codelineno-20-11"></a><span class="p">)</span>
 </span></code></pre></div>
+<p><code>eval_script()</code> runs the script by its SHA-1 (<code>EVALSHA</code>), loading it with
+<code>SCRIPT LOAD</code> on the first <code>NOSCRIPT</code> reply. The full source is sent once per
+script per server; every later call sends the 40-byte digest. Scripts queued
+in a pipeline are sent as plain <code>EVAL</code>, since a pipeline cannot retry a
+<code>NOSCRIPT</code> reply.</p>
 <h3 id="prepost-processing-hooks">Pre/Post Processing Hooks<a class="headerlink" href="#prepost-processing-hooks" title="Permanent link">&para;</a></h3>
 <p>Scripts support <code>pre_hook</code> (transform keys/args before execution) and <code>post_hook</code> (transform results after execution).</p>
 <h4 id="built-in-helpers">Built-in Helpers<a class="headerlink" href="#built-in-helpers" title="Permanent link">&para;</a></h4>
