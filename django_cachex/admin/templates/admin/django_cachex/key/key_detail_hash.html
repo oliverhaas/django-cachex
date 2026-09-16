@@ -73,6 +73,8 @@
     </form>
     {% endfor %}
     {% endif %}
+    {% elif type_data.length %}
+    <p class="quiet" style="padding: 10px;">{% trans "No fields on this page." %}</p>
     {% else %}
     <p class="quiet" style="padding: 10px;">{% trans "Hash is empty." %}</p>
     {% endif %}

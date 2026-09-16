@@ -2,10 +2,9 @@ from typing import Any
 from urllib.parse import quote, unquote
 
 from django.conf import settings
-from django.core.cache import InvalidCacheBackendError
 from django.db import models
 
-from django_cachex.admin.helpers import mask_credentials, mask_location
+from django_cachex.admin.helpers import CacheUnavailableError, get_cache, mask_credentials, mask_location
 
 
 class Cache(models.Model):
@@ -67,11 +66,11 @@ class Cache(models.Model):
         return mask_location(self.config.get("LOCATION", ""))
 
     def _get_cache(self) -> Any | None:
-        from django.core.cache import caches
-
+        # A backend whose constructor raises (rejected OPTIONS, bad Sentinel
+        # URL) must degrade to the settings fallback, not 500 the changelist.
         try:
-            return caches[self.name]
-        except InvalidCacheBackendError, KeyError:
+            return get_cache(self.name)
+        except CacheUnavailableError:
             return None
 
     @property

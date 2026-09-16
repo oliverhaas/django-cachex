@@ -3444,20 +3444,43 @@ class TestEmptyStreamPage:
         assert "Could not load value" not in content
 
 
-class TestUnimportableBackend:
-    """Every page must degrade to a message when the BACKEND cannot be built."""
+class TestUnbuildableBackend:
+    """Every page must degrade to a message when the BACKEND cannot be built.
 
-    @pytest.fixture
-    def broken(self, test_cache: RespCache) -> str:
-        config = {**settings.CACHES, "broken": {"BACKEND": "django_cachex.cache.NoSuchBackend"}}
-        with override_settings(CACHES=config):
+    Regression: a constructor that raises (here a rejected OPTIONS value) used
+    to escape ``Cache._get_cache`` and 500 the whole cache changelist, which is
+    also where every other page redirects to on a broken alias.
+    """
+
+    @pytest.fixture(params=["unimportable", "rejected_options"])
+    def broken(self, request: pytest.FixtureRequest, test_cache: RespCache) -> str:
+        if request.param == "unimportable":
+            backend = {"BACKEND": "django_cachex.cache.NoSuchBackend", "LOCATION": _SECRET_LOCATION}
+        else:
+            backend = {
+                "BACKEND": "django_cachex.cache.ValkeyCache",
+                "LOCATION": _SECRET_LOCATION,
+                "OPTIONS": {"decode_responses": True},
+            }
+        with override_settings(CACHES={**settings.CACHES, "broken": backend}):
             yield "broken"
 
     def test_cache_list_still_renders(self, admin_client: Client, broken: str):
         response = admin_client.get(_cache_list_url())
 
         assert response.status_code == 200
-        assert broken in _table_containing(response.content, broken).get_text()
+        row = _table_containing(response.content, broken).get_text()
+        assert broken in row
+        assert "could not be loaded" in row
+        assert "redis://cachexuser:***@cache.example.test:6379/1" in row
+        assert "s3cr3t-pw" not in response.content.decode()
+
+    def test_model_falls_back_to_the_settings_location(self, broken: str):
+        cache = Cache.get_by_name(broken)
+
+        assert cache is not None
+        assert cache.location == "redis://cachexuser:***@cache.example.test:6379/1"
+        assert cache.support_level == "limited"
 
     def test_cache_detail_redirects_with_a_message(self, admin_client: Client, broken: str):
         response = admin_client.get(_cache_detail_url(broken), follow=True)
@@ -4090,6 +4113,24 @@ class TestContainerPagesFetchOnlyThePage:
         assert script_args == [[f"f{i:04d}" for i in range(PAGE_SIZE, PAGE_SIZE + 5)]]
         content = response.content.decode()
         assert set(re.findall(r"&quot;v(\d+)&quot;", content)) == {str(i) for i in range(PAGE_SIZE, PAGE_SIZE + 5)}
+
+    def test_hash_page_emptied_between_hkeys_and_fetch_is_not_reported_as_empty(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+        mocker,
+    ):
+        """Regression: the page's fields vanishing after HKEYS rendered "Hash is empty." under a non-zero count."""
+        test_cache.hset("racing:hash", mapping={"f1": "v1", "f2": "v2"})
+        mocker.patch("django_cachex.admin.helpers._hash_entries", return_value=[])
+
+        response = admin_client.get(_key_detail_url("default", "racing:hash"))
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Hash is empty." not in content
+        assert "No fields on this page." in content
+        assert "(2 fields)" in content
 
     def test_hash_page_on_locmem_uses_hmget(self, admin_client: Client, test_cache: RespCache, mocker):
         from django_cachex.admin.helpers import PAGE_SIZE
