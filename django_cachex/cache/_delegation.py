@@ -90,17 +90,11 @@ class DelegatingCacheMixin:
     ) -> list[tuple[str, int]]:
         return self._delegate("largest_keys", pattern, count, version=version, samples=samples, itersize=itersize)
 
-    def info(self, section: str | None = None) -> dict[str, Any]:
-        return self._delegate("info", section=section)
-
     def slowlog_get(self, count: int = 10) -> list[Any]:
         return self._delegate("slowlog_get", count)
 
     def slowlog_len(self) -> int:
         return self._delegate("slowlog_len")
-
-    def persist(self, key: str, version: int | None = None) -> bool:
-        return self._delegate("persist", key, version=version)
 
     async def akeys(self, pattern: str = "*", version: int | None = None) -> list[str]:
         return await self._adelegate("akeys", pattern, version=version)
@@ -161,9 +155,6 @@ class DelegatingCacheMixin:
             samples=samples,
             itersize=itersize,
         )
-
-    async def apersist(self, key: str, version: int | None = None) -> bool:
-        return await self._adelegate("apersist", key, version=version)
 
 
 __all__ = ["DelegatingCacheMixin"]

@@ -49,6 +49,7 @@ from django_cachex.utils import (
     _glob_to_regex,
     _lpos_positions,
     _score_bound,
+    _validate_linsert_where,
     _validate_lpos_args,
     _validate_pop_count,
     _validate_zadd_flags,
@@ -882,9 +883,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def linsert(self, key: str, where: str, pivot: Any, value: Any, version: int | None = None) -> int:
         """Insert value before or after pivot in list."""
-        if where.upper() not in {"BEFORE", "AFTER"}:
-            msg = "syntax error"
-            raise ValueError(msg)
+        _validate_linsert_where(where)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_list(internal_key, key)
@@ -1631,6 +1630,26 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     # =========================================================================
     # Each ``a*`` calls its sync twin directly. The per-LOCATION ``_lock`` can
     # block the loop under contention, bounded by short in-memory sections.
+
+    # Django 6.0's ``BaseCache`` composes these from ``aget``/``aset`` (6.1
+    # routes to an overridden sync twin), which would bypass the overrides above.
+    async def ahas_key(self, key: str, version: int | None = None) -> bool:
+        return self.has_key(key, version=version)
+
+    async def aincr(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        return self.incr(key, delta=delta, version=version)
+
+    async def adecr(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        return self.incr(key, -delta, version=version)
+
+    async def aget_many(self, keys: Iterable[str], version: int | None = None) -> dict[str, Any]:
+        return self.get_many(keys, version=version)
+
+    async def aincr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        return self.incr_version(key, delta=delta, version=version)
+
+    async def adecr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        return self.incr_version(key, -delta, version=version)
 
     async def attl(self, *args: Any, **kwargs: Any) -> Any:
         return self.ttl(*args, **kwargs)

@@ -429,6 +429,18 @@ class TestTrackingConfig:
         with pytest.raises(ImproperlyConfigured, match="KEY_PREFIX"):
             TrackingCache("", {"OPTIONS": {"transport": "t", "KEY_PREFIX": "x"}})
 
+    @pytest.mark.parametrize(
+        ("setting", "value"),
+        [("KEY_FUNCTION", _custom_key_func), ("VERSION", 2), ("TIMEOUT", None)],
+    )
+    def test_key_layout_and_timeout_settings_on_the_tracking_alias_are_rejected(self, setting: str, value: Any):
+        # Regression: they were silently ignored, since make_key and the
+        # default timeout are the transport's.
+        with pytest.raises(ImproperlyConfigured, match=setting):
+            TrackingCache("", {"OPTIONS": {"transport": "t"}, setting: value})
+        with pytest.raises(ImproperlyConfigured, match=setting):
+            TrackingCache("", {"OPTIONS": {"transport": "t", setting: value}})
+
     def test_overlapping_prefixes_are_rejected(self):
         with pytest.raises(ImproperlyConfigured, match="overlap"):
             TrackingCache("", {"OPTIONS": {"transport": "t", "prefixes": ["a:", "a:b:"]}})
@@ -672,6 +684,27 @@ class TestTrackingReads:
         assert tracking_cache.has_key("hk")
         assert spy.call_count == 0
 
+    def test_has_key_is_not_counted_as_a_hit(self, tracking_cache):
+        # Regression: the probe went through ``local_get`` and bumped ``hits``.
+        _settled(tracking_cache, lambda: tracking_cache.set("hk", 1))
+        assert tracking_cache.get("hk") == 1
+        assert tracking_cache.get("hk") == 1
+        assert tracking_cache.has_key("hk")
+        assert tracking_cache.has_key("hk")
+        assert _tracking_section(tracking_cache)["hits"] == 1
+
+    def test_has_key_does_not_refresh_the_lru_position(self, tracking_config: dict):
+        # Regression: the probe moved the entry to the end, so a later
+        # eviction dropped the entry actually read least recently.
+        tracking_config["default"]["OPTIONS"]["MAX_ENTRIES"] = 2
+        with _connected(tracking_config) as cache:
+            _settled(cache, lambda: cache.set_many({"k1": 1, "k2": 2, "k3": 3}), count=3)
+            assert cache.get("k1") == 1
+            assert cache.get("k2") == 2
+            assert cache.has_key("k1")
+            assert cache.get("k3") == 3
+            assert set(cache._state.store) == {cache.make_key(k) for k in ("k2", "k3")}
+
     def test_get_or_set_populates(self, tracking_cache):
         assert tracking_cache.get_or_set("gos", "computed") == "computed"
         assert tracking_cache.get("gos") == "computed"
@@ -740,6 +773,16 @@ class TestTrackingWrites:
         assert tracking_cache.clear() is True
         assert _tracking_section(tracking_cache)["entries"] == 0
         assert tracking_cache.get("x") is None
+
+    def test_clear_counts_one_flush(self, tracking_cache):
+        # The transport's ``clear()`` is a DEL of its namespace, not FLUSHDB, so
+        # the listener sees per-key invalidations and no second flush.
+        _settled(tracking_cache, lambda: tracking_cache.set("x", 1))
+        before = _tracking_section(tracking_cache)
+        tracking_cache.clear()
+        if before["coherence"] == "tracking":
+            assert _wait_for(lambda: _tracking_section(tracking_cache)["invalidations"] > before["invalidations"])
+        assert _tracking_section(tracking_cache)["flushes"] == before["flushes"] + 1
 
     def test_delete_pattern_evicts_matching_keys_only(self, tracking_cache):
         _settled(tracking_cache, lambda: tracking_cache.set_many({"user:1": 1, "user:2": 2, "other": 3}), count=3)

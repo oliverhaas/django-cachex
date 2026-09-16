@@ -479,6 +479,23 @@ class TestKeysAndAdmin:
         with pytest.raises(WrongTypeError):
             locmem_cache.incr("k")
 
+    @pytest.mark.asyncio
+    async def test_aincr_keeps_the_ttl(self, locmem_cache: LocMemCache):
+        # Regression: Django 6.0's BaseCache.aincr is aget then aset with the
+        # default timeout, which reset a 3600 s TTL to 300.
+        locmem_cache.set("c", 5, timeout=3600)
+        assert await locmem_cache.aincr("c") == 6
+        assert await locmem_cache.adecr("c", 2) == 4
+        assert locmem_cache.ttl("c") > 3000
+
+    @pytest.mark.asyncio
+    async def test_ahas_key_finds_collections(self, locmem_cache: LocMemCache):
+        # Regression: on Django 6.0 ahas_key went through aget and raised
+        # WrongTypeError on a list key.
+        locmem_cache.rpush("l", "x")
+        assert await locmem_cache.ahas_key("l") is True
+        assert await locmem_cache.ahas_key("missing") is False
+
     def test_info_returns_dict(self, locmem_cache: LocMemCache):
         locmem_cache.set("key1", "value1")
         info = locmem_cache.info()
@@ -1619,6 +1636,16 @@ class TestVersion:
         locmem_cache.sadd("k", "m", version=2)
         assert locmem_cache.decr_version("k", version=2) == 1
         assert locmem_cache.smembers("k") == {"m"}
+
+    @pytest.mark.asyncio
+    async def test_aincr_version_moves_collection(self, locmem_cache: LocMemCache):
+        # Regression: on Django 6.0 aincr_version composed aget/aset/adelete
+        # and raised WrongTypeError on a list key.
+        locmem_cache.rpush("k", "a", "b")
+        assert await locmem_cache.aincr_version("k") == 2
+        assert locmem_cache.lrange("k", 0, -1, version=2) == ["a", "b"]
+        assert await locmem_cache.adecr_version("k", version=2) == 1
+        assert locmem_cache.lrange("k", 0, -1) == ["a", "b"]
 
 
 # =============================================================================

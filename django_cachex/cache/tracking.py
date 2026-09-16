@@ -119,6 +119,17 @@ class _TrackingState:
             self.hits += 1
             return raw
 
+    def local_contains(self, made_key: str, now: float) -> bool:
+        """Probe for a live local copy: no hit counted, no LRU refresh, no XFetch roll."""
+        with self.lock:
+            entry = self.store.get(made_key)
+            if entry is None:
+                return False
+            if entry[1] is not None and entry[1] <= now:
+                del self.store[made_key]
+                return False
+            return True
+
     def begin_fetch(self, made_keys: list[str]) -> dict[str, object]:
         """Register fetches for ``made_keys``; no tokens while disconnected."""
         with self.lock:
@@ -258,12 +269,13 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         if not transport or not isinstance(transport, str):
             msg = f"TrackingCache requires OPTIONS['transport'] naming a Redis/Valkey cache alias. Got: {transport!r}"
             raise ImproperlyConfigured(msg)
-        if "KEY_PREFIX" in options or params.get("KEY_PREFIX"):
-            msg = (
-                "TrackingCache does not apply KEY_PREFIX; keys are made by the transport. "
-                "Set KEY_PREFIX on the transport cache alias instead."
-            )
-            raise ImproperlyConfigured(msg)
+        for setting in ("KEY_PREFIX", "KEY_FUNCTION", "VERSION", "TIMEOUT"):
+            if setting in params or setting in options:
+                msg = (
+                    f"TrackingCache does not apply {setting}; keys and the default timeout come from the transport. "
+                    f"Set {setting} on the transport cache alias instead."
+                )
+                raise ImproperlyConfigured(msg)
         self._transport_alias: str = transport
         self._storage_key: str = server or transport
         self._explicit_prefixes: tuple[str, ...] | None = self._validate_prefixes(options.get("prefixes"))
@@ -743,16 +755,14 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
 
     def has_key(self, key: str, version: int | None = None) -> bool:
         self._ensure_listener()
-        made_key = self._local_key(key, version)
         # A probe, not a read: no XFetch roll, which would evict a healthy entry.
-        if self._state.local_get(made_key, time.monotonic(), None) is not _MISS:
+        if self._state.local_contains(self._local_key(key, version), time.monotonic()):
             return True
         return self._transport.has_key(key, version=version)
 
     async def ahas_key(self, key: str, version: int | None = None) -> bool:
         await self._aensure_listener()
-        made_key = self._local_key(key, version)
-        if self._state.local_get(made_key, time.monotonic(), None) is not _MISS:
+        if self._state.local_contains(self._local_key(key, version), time.monotonic()):
             return True
         return await self._transport.ahas_key(key, version=version)
 

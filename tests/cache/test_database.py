@@ -152,6 +152,23 @@ class TestStringReads:
         with pytest.raises(WrongTypeError):
             db_cache.incr("lk")
 
+    def test_aget_many_and_ahas_key_dispatch_to_the_sync_twins(self, db_cache: DatabaseCache):
+        # Regression: Django 6.0's BaseCache composes aget_many/ahas_key from
+        # aget, which raised WrongTypeError on a list key. ``async_to_sync``
+        # for the same reason as ``test_ascan_mirrors_scan``.
+        db_cache.set("plain", 1)
+        db_cache.rpush("lst", "a")
+        assert async_to_sync(db_cache.aget_many)(["plain", "lst", "missing"]) == {"plain": 1}
+        assert async_to_sync(db_cache.ahas_key)("lst") is True
+        assert async_to_sync(db_cache.ahas_key)("missing") is False
+
+    def test_adelete_many_deletes_collections(self, db_cache: DatabaseCache):
+        db_cache.set("plain", 1)
+        db_cache.rpush("lst", "a")
+        async_to_sync(db_cache.adelete_many)(["plain", "lst"])
+        assert db_cache.has_key("plain") is False
+        assert db_cache.has_key("lst") is False
+
     def test_wrongtype_message_uses_the_user_key(self, db_cache: DatabaseCache):
         db_cache.set("sk", "abc")
         with pytest.raises(WrongTypeError, match="'sk'") as exc_info:
@@ -222,6 +239,7 @@ class TestIncr:
         db_cache.set("c", 5, timeout=3600)
         before = self._expires(db_cache, "c")
         assert async_to_sync(db_cache.aincr)("c") == 6
+        assert async_to_sync(db_cache.adecr)("c", 2) == 4
         assert self._expires(db_cache, "c") == before
 
 
@@ -875,6 +893,15 @@ class TestVersionMove:
         db_cache.rpush("l", 1, version=2)
         assert db_cache.decr_version("l", version=2) == 1
         assert db_cache.lrange("l", 0, -1, version=1) == [1]
+
+    def test_aincr_version_moves_a_collection(self, db_cache: DatabaseCache):
+        # Regression: on Django 6.0 aincr_version composed aget/aset/adelete
+        # and raised WrongTypeError on a list key.
+        db_cache.rpush("l", 1, 2)
+        assert async_to_sync(db_cache.aincr_version)("l") == 2
+        assert db_cache.lrange("l", 0, -1, version=2) == [1, 2]
+        assert async_to_sync(db_cache.adecr_version)("l", version=2) == 1
+        assert db_cache.lrange("l", 0, -1) == [1, 2]
 
     def test_zero_delta_is_a_no_op(self, db_cache: DatabaseCache):
         # Regression: the destination delete hit the source row, so the key

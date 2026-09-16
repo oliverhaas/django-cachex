@@ -64,6 +64,7 @@ from django_cachex.utils import (
     _glob_to_regex,
     _lpos_positions,
     _score_bound,
+    _validate_linsert_where,
     _validate_lpos_args,
     _validate_pop_count,
     _validate_zadd_flags,
@@ -446,7 +447,8 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         the default. Running the read-modify-write through
         :meth:`_atomic_compound` serializes it on the row lock and keeps
         ``expires``. A missing key still raises ``ValueError`` per the Django
-        contract; ``aincr``/``decr``/``adecr`` dispatch here.
+        contract; ``aincr``/``decr``/``adecr`` dispatch here on both Django 6.0
+        and 6.1 (6.0 would otherwise compose ``aincr`` from ``aget``/``aset``).
         """
         internal_key = self.make_and_validate_key(key, version=version)
 
@@ -967,9 +969,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         return cast("bool", self._atomic_compound(self._internal_key(key, version=version), transform))
 
     def linsert(self, key: str, where: str, pivot: Any, value: Any, version: int | None = None) -> int:
-        if where.upper() not in {"BEFORE", "AFTER"}:
-            msg = "syntax error"
-            raise ValueError(msg)
+        _validate_linsert_where(where)
 
         def transform(current: Any) -> tuple[Any, int]:
             existing = self._coerce_list(key, current)
@@ -1563,6 +1563,29 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
     # same connection (Django connections are thread-local). When Django gains
     # native async DB-cursor APIs, we'll swap each ``await sync_to_async(...)``
     # for a real async query without touching the public surface.
+
+    # Django 6.0's ``BaseCache`` composes these from ``aget``/``aset``/``adelete``
+    # (6.1 routes to an overridden sync twin), which would bypass the overrides above.
+    async def ahas_key(self, key: str, version: int | None = None) -> bool:
+        return await sync_to_async(self.has_key, thread_sensitive=True)(key, version=version)
+
+    async def aincr(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        return await sync_to_async(self.incr, thread_sensitive=True)(key, delta=delta, version=version)
+
+    async def adecr(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        return await sync_to_async(self.incr, thread_sensitive=True)(key, -delta, version=version)
+
+    async def aget_many(self, keys: Iterable[str], version: int | None = None) -> dict[str, Any]:
+        return await sync_to_async(self.get_many, thread_sensitive=True)(keys, version=version)
+
+    async def adelete_many(self, keys: Iterable[str], version: int | None = None) -> None:
+        await sync_to_async(self.delete_many, thread_sensitive=True)(keys, version=version)
+
+    async def aincr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        return await sync_to_async(self.incr_version, thread_sensitive=True)(key, delta=delta, version=version)
+
+    async def adecr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
+        return await sync_to_async(self.incr_version, thread_sensitive=True)(key, -delta, version=version)
 
     async def attl(self, *args: Any, **kwargs: Any) -> Any:
         return await sync_to_async(self.ttl, thread_sensitive=True)(*args, **kwargs)
