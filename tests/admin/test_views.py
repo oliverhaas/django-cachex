@@ -1926,6 +1926,18 @@ class TestContainerValueInputs:
         assert 'name="new_field" value="field1" class="cachex-value-input" form="hash-update-0"' in content
         assert 'name="action" value="hupdate"' in content
 
+    def test_hash_field_name_is_read_only_for_a_viewer(self, db, test_cache: RespCache):
+        """Regression: the field-name input followed only the JSON gate, so a view-only user could type into it."""
+        test_cache.hset("inputs:hash_viewer", "field1", "a")
+        client = _staff_client(["view_key"])
+
+        response = client.get(_key_detail_url("default", "inputs:hash_viewer"))
+        content = response.content.decode()
+
+        assert response.status_code == 200
+        assert re.search(r'name="new_field" value="field1"[^>]*\sreadonly\s', content)
+        assert re.search(r'name="field_value"[^>]*\sreadonly\s', content)
+
     def test_hash_field_can_be_renamed(self, admin_client: Client, test_cache: RespCache):
         test_cache.hset("inputs:hrename", "old", "a")
 

@@ -38,7 +38,7 @@
             <tbody>
                 {% for field, value, sha1, editable in type_data.field_entries %}
                 <tr class="{% cycle "row1" "row2" %}">
-                    <td><input type="text" name="new_field" value="{{ field }}" class="cachex-value-input" form="hash-update-{{ forloop.counter0 }}" aria-label="{% trans "Field name" %}"{% if not editable %} readonly title="{% trans "Not JSON-serializable, so this row cannot be edited safely." %}"{% endif %}></td>
+                    <td><input type="text" name="new_field" value="{{ field }}" class="cachex-value-input" form="hash-update-{{ forloop.counter0 }}" aria-label="{% trans "Field name" %}"{% if not can_mutate %} readonly title="{% trans "You do not have permission to change cache keys." %}"{% elif not editable %} readonly title="{% trans "Not JSON-serializable, so this row cannot be edited safely." %}"{% endif %}></td>
                     <td>{% include input_tpl with name="field_value" value=value rows=2 form_id="hash-update-" row_index=forloop.counter0 editable=editable can_mutate=can_mutate only %}</td>
                     {% if can_mutate %}
                     <td>

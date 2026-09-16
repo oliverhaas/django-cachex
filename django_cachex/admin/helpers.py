@@ -36,6 +36,8 @@ class CacheUnavailableError(Exception):
 # The password runs to the last ``@`` before the path, the way ``urllib.parse``
 # splits userinfo, so one holding a colon or an ``@`` is masked whole.
 _URL_PASSWORD_RE = re.compile(r"([a-zA-Z][a-zA-Z0-9+.\-]*://[^/@\s:]*:)[^/\s]*(@)")
+# redis-py and valkey-py also read the password from a ``?password=`` query parameter.
+_QUERY_PASSWORD_RE = re.compile(r"([?&]password=)[^&\s]*", re.IGNORECASE)
 
 
 def mask_credentials(text: str) -> str:
@@ -44,7 +46,7 @@ def mask_credentials(text: str) -> str:
     Anyone holding ``view_cache`` sees the rendered ``LOCATION``, and the error
     strings the list view echoes can quote it back.
     """
-    return _URL_PASSWORD_RE.sub(r"\1***\2", text)
+    return _QUERY_PASSWORD_RE.sub(r"\1***", _URL_PASSWORD_RE.sub(r"\1***\2", text))
 
 
 def mask_location(location: Any) -> str:
@@ -436,8 +438,8 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
                 pagination = _paginate(length, page)
                 s, e = pagination["start_index"], pagination["end_index"]
                 try:
-                    # SSCAN stops once the page is full instead of pulling
-                    # every member; the page comes out in server order.
+                    # SSCAN stops once the page is full; server order is only
+                    # stable while the set is unchanged, so writes can shift pages.
                     page_members = list(itertools.islice(cache.sscan_iter(key, count=PAGE_SIZE), s, e))
                     members = [format_value_for_display(m) for m in page_members]
                 except NotSupportedError:

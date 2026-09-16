@@ -302,3 +302,16 @@ class TestMaskLocation:
         masked = mask_credentials(text)
         assert "pw1" not in masked
         assert "pw2" not in masked
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("redis://h:6379/0?password=hunter2", "redis://h:6379/0?password=***"),
+            ("redis://h:6379/0?db=1&password=hunter2&ssl=true", "redis://h:6379/0?db=1&password=***&ssl=true"),
+            ("unix:///run/redis.sock?password=hun:t@er", "unix:///run/redis.sock?password=***"),
+            ("redis://u:pw@h?password=other", "redis://u:***@h?password=***"),
+        ],
+    )
+    def test_query_parameter_password_is_masked(self, text: str, expected: str):
+        """Regression: redis-py reads ``?password=`` too, and it rendered in clear."""
+        assert mask_credentials(text) == expected
