@@ -354,6 +354,8 @@ Scripts support `pre_hook` (transform keys/args before execution) and `post_hook
 
 ```python
 from django_cachex import (
+    Encoded,  # Marks an ARGV entry for encoded_pre
+    encoded_pre,  # Prefix keys, encode only the args wrapped in Encoded(...)
     keys_only_pre,  # Prefix keys, leave args unchanged
     full_encode_pre,  # Prefix keys AND encode args (serialize values)
     decode_single_post,  # Decode a single returned value
@@ -363,6 +365,45 @@ from django_cachex import (
 
 Pass `post_hook=None` (the default) when no decoding is needed; the result is
 returned unchanged.
+
+#### Mixed Values and Scalars
+
+Most real scripts carry two kinds of ARGV: values that a later `get()` has to
+read back, which must go through the serializer and compressor, and scalars
+that Lua itself consumes with `tonumber` or a string compare, which must not.
+Wrap the values in `Encoded` and use `encoded_pre`:
+
+```python
+from django_cachex import Encoded, encoded_pre
+
+SETEXPIRE = """
+local value = ARGV[1]
+local ex    = tonumber(ARGV[2])
+local nx    = ARGV[3] == "1"
+if nx and redis.call('EXISTS', KEYS[1]) == 1 then
+    return 0
+end
+redis.call('SET', KEYS[1], value, 'EX', ex)
+return 1
+"""
+
+cache.eval_script(
+    SETEXPIRE,
+    keys=["session:abc"],
+    args=[Encoded({"user_id": 123}), 300, "1"],
+    pre_hook=encoded_pre,
+)
+```
+
+The marker is position-independent, so a variadic tail is
+`[str(score), "0", *map(Encoded, members)]` and alternating field/value
+pairs are `[field, Encoded(value), ...]`. With nothing wrapped `encoded_pre`
+behaves like `keys_only_pre`; with everything wrapped, like `full_encode_pre`.
+
+An `Encoded` that reaches the adapter unwrapped, because the call passed no
+`pre_hook` or one that does not handle it, raises `TypeError` instead of
+sending the dataclass repr to the server. `Encoded` in `keys` and
+`Encoded(Encoded(...))` raise too.
 
 #### Key Prefixing
 

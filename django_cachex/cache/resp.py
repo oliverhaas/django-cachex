@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 from django_cachex.cache.base import BaseCachex, CachexSupportLevel
 from django_cachex.exceptions import CompressorError, NotSupportedError, SerializerError
-from django_cachex.script import ScriptHelpers
+from django_cachex.script import ScriptHelpers, reject_stray_encoded
 
 # Alias for the `set` builtin shadowed by the `set` method (PEP 649 defers
 # annotations at runtime, but type checkers still resolve them in class scope).
@@ -3870,6 +3870,7 @@ class RespCache(BaseCachex):
         proc_args: list[Any] = list(args)
         if pre_hook is not None:
             proc_keys, proc_args = pre_hook(helpers, proc_keys, proc_args)
+        reject_stray_encoded(keys, proc_args)
 
         result = self.adapter.eval(script, len(proc_keys), *proc_keys, *proc_args)
 
@@ -3904,6 +3905,7 @@ class RespCache(BaseCachex):
         proc_args: list[Any] = list(args)
         if pre_hook is not None:
             proc_keys, proc_args = pre_hook(helpers, proc_keys, proc_args)
+        reject_stray_encoded(keys, proc_args)
 
         result = await self.adapter.aeval(script, len(proc_keys), *proc_keys, *proc_args)
 

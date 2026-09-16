@@ -25,9 +25,11 @@ if TYPE_CHECKING:
     )
     from django_cachex.lock import LockError, LockNotOwnedError
     from django_cachex.script import (
+        Encoded,
         ScriptHelpers,
         decode_list_post,
         decode_single_post,
+        encoded_pre,
         full_encode_pre,
         keys_only_pre,
     )
@@ -50,9 +52,11 @@ _LAZY_EXPORTS = {
     "WrongTypeError": "django_cachex.exceptions",
     "LockError": "django_cachex.lock",
     "LockNotOwnedError": "django_cachex.lock",
+    "Encoded": "django_cachex.script",
     "ScriptHelpers": "django_cachex.script",
     "decode_list_post": "django_cachex.script",
     "decode_single_post": "django_cachex.script",
+    "encoded_pre": "django_cachex.script",
     "full_encode_pre": "django_cachex.script",
     "keys_only_pre": "django_cachex.script",
     "Semaphore": "django_cachex.semaphore",
@@ -81,6 +85,7 @@ __all__ = [
     "AsyncPipeline",
     "CachexError",
     "CompressorError",
+    "Encoded",
     "KeyNotFoundError",
     "LockError",
     "LockNotOwnedError",
@@ -96,6 +101,7 @@ __all__ = [
     "__version__",
     "decode_list_post",
     "decode_single_post",
+    "encoded_pre",
     "full_encode_pre",
     "keys_only_pre",
 ]

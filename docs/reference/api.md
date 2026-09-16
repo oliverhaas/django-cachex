@@ -238,10 +238,13 @@ result = cache.eval_script(
 
 | Hook | Description |
 |------|-------------|
+| `encoded_pre` | Prefix keys, encode the args wrapped in `Encoded(...)`, pass the rest through |
 | `keys_only_pre` | Prefix keys, leave args unchanged |
 | `full_encode_pre` | Prefix keys AND encode all args |
 | `decode_single_post` | Decode a single returned value |
 | `decode_list_post` | Decode a list of returned values |
+
+`Encoded(value)` marks one ARGV entry for `encoded_pre`. An `Encoded` that reaches the adapter unwrapped (no `pre_hook`, or a hook that does not handle it) raises `TypeError`, as does `Encoded` in `keys` or `Encoded(Encoded(...))`.
 
 #### ScriptHelpers
 

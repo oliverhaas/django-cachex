@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from django_cachex.adapters.protocols import RespAsyncPipelineProtocol, RespPipelineProtocol
     from django_cachex.stampede import StampedeConfig
 
-from django_cachex.script import ScriptHelpers
+from django_cachex.script import ScriptHelpers, reject_stray_encoded
 from django_cachex.types import KeyType
 
 # Alias for the ``set`` builtin shadowed by the ``set`` method (PEP 649
@@ -1948,6 +1948,7 @@ class Pipeline:
         proc_args: list[Any] = list(args)
         if pre_hook is not None:
             proc_keys, proc_args = pre_hook(helpers, proc_keys, proc_args)
+        reject_stray_encoded(keys, proc_args)
 
         # EVAL via execute_command, not EVALSHA: cluster pipelines block EVALSHA
         # and ClusterPipeline.eval has a different signature than the standalone one.

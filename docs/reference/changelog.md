@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- `Encoded` and `encoded_pre` for `eval_script()`: wrap the ARGV entries that must go through the serializer and compressor, and leave the scalars Lua reads with `tonumber` or a string compare bare. The existing hooks are the two extremes (`keys_only_pre` encodes nothing, `full_encode_pre` encodes everything); `encoded_pre` covers the scripts in between without a hand-rolled `encode()` at the call site. An `Encoded` that reaches the adapter unwrapped raises `TypeError` naming the missing hook, as do `Encoded` in `keys` and `Encoded(Encoded(...))`.
+
 ### Fixes
 
 - The `Changelog` link in the package metadata, shown on PyPI, pointed at `reference/changelog/` on the docs site, a path that does not exist because the site is versioned with mike and every page lives under a version prefix. It now points at `latest/reference/changelog/`.
