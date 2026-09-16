@@ -220,8 +220,7 @@ _GLIDE_ASYNC_REGISTRY_LOCK = threading.RLock()
 # =============================================================================
 # Script registry
 # =============================================================================
-# ``invoke_script`` sends EVALSHA and loads the source on NOSCRIPT. glide_sync
-# and glide keep separate script containers, hence one registry per package.
+# glide_sync and glide keep separate script containers, so one registry each.
 
 _GLIDE_SYNC_SCRIPTS: dict[str, Any] = {}
 _GLIDE_ASYNC_SCRIPTS: dict[str, Any] = {}
