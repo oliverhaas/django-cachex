@@ -21,6 +21,7 @@ import os
 import threading
 import time
 import weakref
+from collections import OrderedDict
 from itertools import batched
 from typing import TYPE_CHECKING, Any, Self, cast
 from urllib.parse import parse_qs, unquote, urlparse
@@ -58,6 +59,7 @@ from django_cachex.stampede import (
     should_recompute,
 )
 from django_cachex.types import KeyType
+from django_cachex.utils import _validate_zadd_flags
 
 if TYPE_CHECKING:
     import datetime
@@ -220,21 +222,28 @@ _GLIDE_ASYNC_REGISTRY_LOCK = threading.RLock()
 # =============================================================================
 # Script registry
 # =============================================================================
-# glide_sync and glide keep separate script containers, so one registry each.
-
-_GLIDE_SYNC_SCRIPTS: dict[str, Any] = {}
-_GLIDE_ASYNC_SCRIPTS: dict[str, Any] = {}
+# One LRU per glide flavour; an evicted entry's ``Script.__del__`` releases
+# the native registration.
+_GLIDE_SCRIPTS_MAX = 256
+_GLIDE_SYNC_SCRIPTS: OrderedDict[str, Any] = OrderedDict()
+_GLIDE_ASYNC_SCRIPTS: OrderedDict[str, Any] = OrderedDict()
 _GLIDE_SCRIPTS_LOCK = threading.Lock()
 
 
-def _sync_script(source: str) -> Any:
-    script = _GLIDE_SYNC_SCRIPTS.get(source)
-    if script is None:
-        with _GLIDE_SCRIPTS_LOCK:
-            script = _GLIDE_SYNC_SCRIPTS.get(source)
-            if script is None:
-                script = _GLIDE_SYNC_SCRIPTS[source] = Script(source)
+def _cached_script(registry: OrderedDict[str, Any], source: str, script_cls: Any) -> Any:
+    with _GLIDE_SCRIPTS_LOCK:
+        script = registry.get(source)
+        if script is None:
+            script = registry[source] = script_cls(source)
+            while len(registry) > _GLIDE_SCRIPTS_MAX:
+                registry.popitem(last=False)
+        else:
+            registry.move_to_end(source)
     return script
+
+
+def _sync_script(source: str) -> Any:
+    return _cached_script(_GLIDE_SYNC_SCRIPTS, source, Script)
 
 
 def _split_script_args(numkeys: int, keys_and_args: tuple[Any, ...]) -> tuple[list[Any], list[Any]]:
@@ -243,13 +252,7 @@ def _split_script_args(numkeys: int, keys_and_args: tuple[Any, ...]) -> tuple[li
 
 
 def _async_script(source: str) -> Any:
-    script = _GLIDE_ASYNC_SCRIPTS.get(source)
-    if script is None:
-        with _GLIDE_SCRIPTS_LOCK:
-            script = _GLIDE_ASYNC_SCRIPTS.get(source)
-            if script is None:
-                script = _GLIDE_ASYNC_SCRIPTS[source] = AsyncScript(source)
-    return script
+    return _cached_script(_GLIDE_ASYNC_SCRIPTS, source, AsyncScript)
 
 
 async def _aclose_glide_client(client: Any) -> None:
@@ -458,6 +461,7 @@ def _zadd_args(
     turns a serialized ``bytes`` member into its repr, and it exposes no
     ``INCR``, so every call goes through the raw command instead.
     """
+    _validate_zadd_flags(nx=nx, xx=xx, gt=gt, lt=lt)
     args: list[Any] = [b"ZADD", key]
     if nx:
         args.append(b"NX")
@@ -474,6 +478,41 @@ def _zadd_args(
     for member, score in mapping.items():
         args.extend([_enc(score), _enc(member)])
     return args
+
+
+def _limit_args(start: int | None, num: int | None) -> list[bytes]:
+    """``LIMIT offset count`` tail for the BYSCORE ranges; both or neither, as redis-py insists."""
+    if start is None and num is None:
+        return []
+    if start is None or num is None:
+        msg = "start and num must both be specified"
+        raise ValueError(msg)
+    return [b"LIMIT", str(start).encode(), str(num).encode()]
+
+
+def _conditional_set(*, nx: bool, xx: bool) -> dict[str, Any]:
+    """``conditional_set`` kwarg for glide's ``set``; redis-py rejects both flags client-side."""
+    if nx and xx:
+        msg = "set() accepts at most one of nx and xx"
+        raise ValueError(msg)
+    if nx:
+        return {"conditional_set": ConditionalChange.ONLY_IF_DOES_NOT_EXIST}
+    if xx:
+        return {"conditional_set": ConditionalChange.ONLY_IF_EXISTS}
+    return {}
+
+
+def _set_expiry(timeout: int | None) -> dict[str, Any]:
+    """``expiry`` kwarg for a flagged ``SET``.
+
+    ``timeout=0`` is a past deadline: ``PXAT 1`` keeps the NX/XX/GET reply of
+    a plain SET and the key is expired on arrival, with no UNLINK to lose.
+    """
+    if timeout is None:
+        return {}
+    if timeout == 0:
+        return {"expiry": ExpirySet(ExpiryType.UNIX_MILLSEC, 1)}
+    return {"expiry": ExpirySet(ExpiryType.SEC, timeout)}
 
 
 def _trim_args(
@@ -729,13 +768,9 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         if len(given) > 1:
             msg = "set() accepts at most one of ex, px, exat, pxat and keepttl"
             raise ValueError(msg)
-        options: dict[str, Any] = {}
+        options = _conditional_set(nx=nx, xx=xx)
         if given:
             options["expiry"] = ExpirySet(*given[0])
-        if nx:
-            options["conditional_set"] = ConditionalChange.ONLY_IF_DOES_NOT_EXIST
-        elif xx:
-            options["conditional_set"] = ConditionalChange.ONLY_IF_EXISTS
         if get:
             options["return_old_value"] = True
         self._batch.set(key, _enc(value), **options)
@@ -1144,8 +1179,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         args = [b"ZRANGEBYSCORE", key, _enc(min), _enc(max)]
         if withscores:
             args.append(b"WITHSCORES")
-        if start is not None and num is not None:
-            args.extend([b"LIMIT", str(start).encode(), str(num).encode()])
+        args.extend(_limit_args(start, num))
         self._batch.custom_command(args)
         self._track(lambda r: _decode_zrange(r, withscores=withscores))
         return self
@@ -1163,8 +1197,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         args = [b"ZREVRANGEBYSCORE", key, _enc(max), _enc(min)]
         if withscores:
             args.append(b"WITHSCORES")
-        if start is not None and num is not None:
-            args.extend([b"LIMIT", str(start).encode(), str(num).encode()])
+        args.extend(_limit_args(start, num))
         self._batch.custom_command(args)
         self._track(lambda r: _decode_zrange(r, withscores=withscores))
         return self
@@ -1760,21 +1793,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     ) -> bool:
         client = self._client()
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
-
-        if actual_timeout == 0:
-            result = client.set(
-                key,
-                _enc(value),
-                conditional_set=ConditionalChange.ONLY_IF_DOES_NOT_EXIST,
-            )
-            if _ok_to_bool(result):
-                client.unlink([key])
-                return True
-            return False
-
-        kw: dict[str, Any] = {"conditional_set": ConditionalChange.ONLY_IF_DOES_NOT_EXIST}
-        if actual_timeout is not None:
-            kw["expiry"] = ExpirySet(ExpiryType.SEC, actual_timeout)
+        kw = {"conditional_set": ConditionalChange.ONLY_IF_DOES_NOT_EXIST, **_set_expiry(actual_timeout)}
         return _ok_to_bool(client.set(key, _enc(value), **kw))
 
     def get(self, key: str, *, stampede_prevention: bool | StampedeConfig | None = None) -> Any:
@@ -1783,7 +1802,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         if val is None:
             return None
         config = self.resolve_stampede(stampede_prevention)
-        if config and isinstance(val, bytes):
+        if config:
             ttl = client.ttl(key)
             if ttl > 0 and should_recompute(ttl, config):
                 return None
@@ -1820,33 +1839,11 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     ) -> bool | Any:
         client = self._client()
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
-
-        kw: dict[str, Any] = {}
-        if nx:
-            kw["conditional_set"] = ConditionalChange.ONLY_IF_DOES_NOT_EXIST
-        elif xx:
-            kw["conditional_set"] = ConditionalChange.ONLY_IF_EXISTS
+        kw = _conditional_set(nx=nx, xx=xx) | _set_expiry(actual_timeout)
         if get:
             kw["return_old_value"] = True
-
-        if actual_timeout == 0:
-            # timeout=0 means expire immediately: run the SET unexpired so
-            # the nx/xx/get semantics still apply, then delete when it wrote.
-            result = client.set(key, _enc(value), **kw)
-            if get:
-                executed = result is None if nx else (result is not None if xx else True)
-            else:
-                executed = _ok_to_bool(result)
-            if executed:
-                client.unlink([key])
-            return result if get else _ok_to_bool(result)
-
-        if actual_timeout is not None:
-            kw["expiry"] = ExpirySet(ExpiryType.SEC, actual_timeout)
         result = client.set(key, _enc(value), **kw)
-        if get:
-            return result
-        return _ok_to_bool(result)
+        return result if get else _ok_to_bool(result)
 
     def touch(self, key: str, timeout: int | None) -> bool:
         client = self._client()
@@ -1875,7 +1872,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
         config = self.resolve_stampede(stampede_prevention)
         if config and found:
-            stampede_keys = [k for k, v in found.items() if isinstance(v, bytes)]
+            stampede_keys = list(found)
             if stampede_keys:
                 pipe = self._pipeline()
                 for k in stampede_keys:
@@ -2348,8 +2345,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args = [b"ZRANGEBYSCORE", key, _enc(min_score), _enc(max_score)]
         if withscores:
             args.append(b"WITHSCORES")
-        if start is not None and num is not None:
-            args.extend([b"LIMIT", str(start).encode(), str(num).encode()])
+        args.extend(_limit_args(start, num))
         return _decode_zrange(self._cmd(args), withscores=withscores)
 
     def zrevrangebyscore(
@@ -2365,8 +2361,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args = [b"ZREVRANGEBYSCORE", key, _enc(max_score), _enc(min_score)]
         if withscores:
             args.append(b"WITHSCORES")
-        if start is not None and num is not None:
-            args.extend([b"LIMIT", str(start).encode(), str(num).encode()])
+        args.extend(_limit_args(start, num))
         return _decode_zrange(self._cmd(args), withscores=withscores)
 
     def zpopmin(self, key: str, count: int | None = None) -> list[tuple[Any, float]]:
@@ -2825,21 +2820,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     ) -> bool:
         client = await self.get_async_client()
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
-
-        if actual_timeout == 0:
-            result = await client.set(
-                key,
-                _enc(value),
-                conditional_set=ConditionalChange.ONLY_IF_DOES_NOT_EXIST,
-            )
-            if _ok_to_bool(result):
-                await client.unlink([key])
-                return True
-            return False
-
-        kw: dict[str, Any] = {"conditional_set": ConditionalChange.ONLY_IF_DOES_NOT_EXIST}
-        if actual_timeout is not None:
-            kw["expiry"] = ExpirySet(ExpiryType.SEC, actual_timeout)
+        kw = {"conditional_set": ConditionalChange.ONLY_IF_DOES_NOT_EXIST, **_set_expiry(actual_timeout)}
         return _ok_to_bool(await client.set(key, _enc(value), **kw))
 
     async def aget(self, key: str, *, stampede_prevention: bool | StampedeConfig | None = None) -> Any:
@@ -2848,7 +2829,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         if val is None:
             return None
         config = self.resolve_stampede(stampede_prevention)
-        if config and isinstance(val, bytes):
+        if config:
             ttl = await client.ttl(key)
             if ttl > 0 and should_recompute(ttl, config):
                 return None
@@ -2885,33 +2866,11 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     ) -> bool | Any:
         client = await self.get_async_client()
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
-
-        kw: dict[str, Any] = {}
-        if nx:
-            kw["conditional_set"] = ConditionalChange.ONLY_IF_DOES_NOT_EXIST
-        elif xx:
-            kw["conditional_set"] = ConditionalChange.ONLY_IF_EXISTS
+        kw = _conditional_set(nx=nx, xx=xx) | _set_expiry(actual_timeout)
         if get:
             kw["return_old_value"] = True
-
-        if actual_timeout == 0:
-            # timeout=0 means expire immediately: run the SET unexpired so
-            # the nx/xx/get semantics still apply, then delete when it wrote.
-            result = await client.set(key, _enc(value), **kw)
-            if get:
-                executed = result is None if nx else (result is not None if xx else True)
-            else:
-                executed = _ok_to_bool(result)
-            if executed:
-                await client.unlink([key])
-            return result if get else _ok_to_bool(result)
-
-        if actual_timeout is not None:
-            kw["expiry"] = ExpirySet(ExpiryType.SEC, actual_timeout)
         result = await client.set(key, _enc(value), **kw)
-        if get:
-            return result
-        return _ok_to_bool(result)
+        return result if get else _ok_to_bool(result)
 
     async def atouch(self, key: str, timeout: int | None) -> bool:
         client = await self.get_async_client()
@@ -2938,7 +2897,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
         config = self.resolve_stampede(stampede_prevention)
         if config and found:
-            stampede_keys = [k for k, v in found.items() if isinstance(v, bytes)]
+            stampede_keys = list(found)
             if stampede_keys:
                 batch = self._batch_factory(atomic=False)
                 for k in stampede_keys:
@@ -3429,8 +3388,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args = [b"ZRANGEBYSCORE", key, _enc(min_score), _enc(max_score)]
         if withscores:
             args.append(b"WITHSCORES")
-        if start is not None and num is not None:
-            args.extend([b"LIMIT", str(start).encode(), str(num).encode()])
+        args.extend(_limit_args(start, num))
         return _decode_zrange(
             await self._acmd(args),
             withscores=withscores,
@@ -3449,8 +3407,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args = [b"ZREVRANGEBYSCORE", key, _enc(max_score), _enc(min_score)]
         if withscores:
             args.append(b"WITHSCORES")
-        if start is not None and num is not None:
-            args.extend([b"LIMIT", str(start).encode(), str(num).encode()])
+        args.extend(_limit_args(start, num))
         return _decode_zrange(
             await self._acmd(args),
             withscores=withscores,

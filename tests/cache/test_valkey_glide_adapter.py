@@ -4,6 +4,7 @@ on interpreters without a glide wheel, e.g. free-threaded cp314t)."""
 import asyncio
 import datetime
 import inspect
+from collections import OrderedDict
 
 import pytest
 
@@ -13,6 +14,9 @@ pytest.importorskip("glide")
 from django.core.exceptions import ImproperlyConfigured
 from glide_sync import (
     ClusterBatch,
+    ConditionalChange,
+    ExpirySet,
+    ExpiryType,
     NodeAddress,
     RandomNode,
     ReadFrom,
@@ -122,6 +126,29 @@ def test_pipeline_zadd_forwards_gt_flag(mocker):
     pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
     pipe.zadd("k", {b"m": 2.0}, gt=True)
     assert pipe._batch.commands[-1][1] == [b"ZADD", "k", b"GT", b"2.0", b"m"]
+
+
+def test_zadd_rejects_nx_with_xx(mocker):
+    # Regression: the ``if nx ... elif xx`` chain sent NX alone where redis-py raises.
+    adapter, client = _adapter(mocker)
+    with pytest.raises(ValueError, match="either 'nx' or 'xx'"):
+        adapter.zadd("k", {b"m": 1.0}, nx=True, xx=True)
+    client.custom_command.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_azadd_rejects_gt_with_lt(mocker):
+    adapter, client = _async_adapter(mocker)
+    with pytest.raises(ValueError, match="either 'gt' or 'lt'"):
+        await adapter.azadd("k", {b"m": 1.0}, gt=True, lt=True)
+    client.custom_command.assert_not_awaited()
+
+
+def test_pipeline_zadd_rejects_nx_with_gt(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    with pytest.raises(ValueError, match="only one of 'nx', 'gt' or 'lt'"):
+        pipe.zadd("k", {b"m": 1.0}, nx=True, gt=True)
+    assert pipe._batch.commands == []
 
 
 # ------------------------------------------- Pipeline stream command coverage
@@ -834,6 +861,23 @@ def test_aeval_invokes_a_registered_script(mocker):
     assert client.invoke_script.await_args[1] == {"keys": ["k"], "args": ["v"]}
 
 
+def test_script_registry_evicts_the_least_recently_used_source(mocker, monkeypatch):
+    # Regression: the registries grew by one Script (and one native
+    # registration) per distinct source for the life of the process.
+    import django_cachex.adapters.valkey_glide as vg
+
+    monkeypatch.setattr(vg, "_GLIDE_SYNC_SCRIPTS", OrderedDict())
+    monkeypatch.setattr(vg, "_GLIDE_SCRIPTS_MAX", 2)
+    adapter, _client = _adapter(mocker)
+
+    adapter.eval("return 1", 0)
+    adapter.eval("return 2", 0)
+    adapter.eval("return 1", 0)  # refresh: ``return 2`` is now the oldest
+    adapter.eval("return 3", 0)
+
+    assert list(vg._GLIDE_SYNC_SCRIPTS) == ["return 1", "return 3"]
+
+
 # ----------------------------------------------------------------- lock errors
 
 
@@ -1173,6 +1217,72 @@ def test_pipeline_set_with_get_returns_the_old_value(mocker):
     pipe = ValkeyGlidePipelineAdapter(client, transaction=False)
     pipe.set("k", b"v", get=True)
     assert pipe.execute() == [b"old"]
+
+
+def test_pipeline_set_rejects_nx_with_xx(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    with pytest.raises(ValueError, match="at most one of nx and xx"):
+        pipe.set("k", b"v", nx=True, xx=True)
+    assert pipe._batch.commands == []
+
+
+def test_set_with_flags_rejects_nx_with_xx(mocker):
+    # Regression: NX alone went to the server where redis-py raises client-side.
+    adapter, client = _adapter(mocker)
+    with pytest.raises(ValueError, match="at most one of nx and xx"):
+        adapter.set_with_flags("k", b"v", 60, nx=True, xx=True)
+    client.set.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_aset_with_flags_rejects_nx_with_xx(mocker):
+    adapter, client = _async_adapter(mocker)
+    with pytest.raises(ValueError, match="at most one of nx and xx"):
+        await adapter.aset_with_flags("k", b"v", 60, nx=True, xx=True)
+    client.set.assert_not_awaited()
+
+
+# ------------------------------------------------------ timeout=0 flagged SET
+
+_PXAT_1 = ExpirySet(ExpiryType.UNIX_MILLSEC, 1)
+
+
+def test_add_with_zero_timeout_sends_one_set_with_pxat(mocker):
+    # Regression: SET NX then UNLINK left the key resident without a TTL if the
+    # process died in between; PXAT 1 expires it on arrival.
+    adapter, client = _adapter(mocker)
+    client.set.return_value = "OK"
+    assert adapter.add("k", b"v", 0) is True
+    assert client.set.call_args[1] == {"conditional_set": ConditionalChange.ONLY_IF_DOES_NOT_EXIST, "expiry": _PXAT_1}
+    client.unlink.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("flags", "reply", "expected"),
+    [
+        ({"nx": True}, "OK", True),
+        ({"xx": True}, None, False),
+        ({"get": True}, b"old", b"old"),
+        ({"xx": True, "get": True}, None, None),
+    ],
+)
+def test_set_with_flags_zero_timeout_sends_one_set_with_pxat(mocker, flags, reply, expected):
+    adapter, client = _adapter(mocker)
+    client.set.return_value = reply
+    assert adapter.set_with_flags("k", b"v", 0, **flags) == expected
+    assert client.set.call_count == 1
+    assert client.set.call_args[1]["expiry"] == _PXAT_1
+    client.unlink.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_async_twins_zero_timeout_send_one_set_with_pxat(mocker):
+    adapter, client = _async_adapter(mocker)
+    client.set.return_value = b"old"
+    assert await adapter.aadd("k", b"v", 0) is False
+    assert await adapter.aset_with_flags("k", b"v", 0, get=True) == b"old"
+    assert [call[1]["expiry"] for call in client.set.await_args_list] == [_PXAT_1, _PXAT_1]
+    client.unlink.assert_not_awaited()
 
 
 # ---------------------------------------------- protocol parameter spellings
@@ -1689,6 +1799,29 @@ async def test_azrangebyscore_takes_the_score_keywords(mocker):
     assert client.custom_command.await_args[0][0] == [b"ZRANGEBYSCORE", "k", b"1", b"5"]
 
 
+def test_zrangebyscore_rejects_start_without_num(mocker):
+    # Regression: a lone ``start`` dropped LIMIT and returned the whole range.
+    adapter, client = _adapter(mocker)
+    with pytest.raises(ValueError, match="start and num must both be specified"):
+        adapter.zrangebyscore("k", min_score=1, max_score=5, start=100)
+    client.custom_command.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_azrevrangebyscore_rejects_num_without_start(mocker):
+    adapter, client = _async_adapter(mocker)
+    with pytest.raises(ValueError, match="start and num must both be specified"):
+        await adapter.azrevrangebyscore("k", max_score=5, min_score=1, num=2)
+    client.custom_command.assert_not_awaited()
+
+
+def test_pipeline_zrangebyscore_rejects_start_without_num(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    with pytest.raises(ValueError, match="start and num must both be specified"):
+        pipe.zrangebyscore("k", 1, 5, start=1)
+    assert pipe._batch.commands == []
+
+
 def test_set_store_commands_take_the_dest_keyword(mocker):
     adapter, client = _adapter(mocker)
     adapter.sinterstore(dest="d", keys=["a", "b"])
@@ -1827,6 +1960,8 @@ def test_sweep_closes_a_live_client_of_a_dead_loop(mocker):
 
 
 def test_get_async_client_sweeps_only_when_it_creates(mocker):
+    import django_cachex.adapters.valkey_glide as vg
+
     adapter = ValkeyGlideAdapter.__new__(ValkeyGlideAdapter)
     adapter._config_key = ("sweep-on-create",)
     mocker.patch.object(
@@ -1840,9 +1975,15 @@ def test_get_async_client_sweeps_only_when_it_creates(mocker):
         await adapter.get_async_client()
         after_create = sweep.call_count
         await adapter.get_async_client()
-        return after_create, sweep.call_count
+        return asyncio.get_running_loop(), after_create, sweep.call_count
 
-    assert asyncio.run(scenario()) == (1, 1)
+    loop, *counts = asyncio.run(scenario())
+    try:
+        assert counts == [1, 1]
+    finally:
+        # The sweep is mocked, so nothing else reaps this closed loop's entries.
+        vg._GLIDE_ASYNC_CLIENTS.pop(loop, None)
+        vg._GLIDE_ASYNC_LOCKS.pop(loop, None)
 
 
 # --------------------------------------------- aget_many discarded TTL batch
