@@ -2,7 +2,7 @@
 
 Three Redis keys cooperate per semaphore name (passed as ``KEYS[1..3]``):
 
-  1. ``{name}:state`` - hash with fields ``capacity``, ``used``.
+  1. ``{name}:state`` - hash with the field ``used``.
   2. ``{name}:claims`` - hash mapping ``token`` -> ``weight``.
   3. ``{name}:queue`` - sorted set, score = enqueue timestamp (ms), member = ``token``.
 
@@ -64,12 +64,6 @@ local function bump(key, ms)
   if redis.call('PTTL', key) < ms then
     redis.call('PEXPIRE', key, ms)
   end
-end
-
--- Sync capacity: caller's value wins (capacity-at-call-site).
-local stored_cap = tonumber(redis.call('HGET', state_key, 'capacity') or '0')
-if stored_cap ~= capacity then
-  redis.call('HSET', state_key, 'capacity', capacity)
 end
 
 -- A missing 'used' field can't be trusted as zero: claims may still be live

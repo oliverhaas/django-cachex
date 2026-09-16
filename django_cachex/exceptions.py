@@ -9,6 +9,7 @@
 
 import re
 import socket
+from functools import partial
 from typing import Any
 
 
@@ -82,6 +83,11 @@ class NotSupportedError(CachexError):
             msg += f": {detail}"
         super().__init__(msg)
 
+    def __reduce__(self) -> tuple[Any, ...]:
+        # The default re-runs ``__init__`` with the formatted message as
+        # ``operation``, nesting it on every pickle or copy round trip.
+        return partial(type(self), detail=self.detail), (self.operation, self.backend), self.__dict__
+
 
 class KeyNotFoundError(CachexError, ValueError):
     """Raised when an operation needs a key that does not exist.
@@ -95,6 +101,10 @@ class KeyNotFoundError(CachexError, ValueError):
     def __init__(self, key: str) -> None:
         self.key = key
         super().__init__(f"Key {key!r} not found")
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        # See ``NotSupportedError.__reduce__``.
+        return type(self), (self.key,), self.__dict__
 
 
 class WrongTypeError(CachexError, TypeError):

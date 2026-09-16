@@ -103,6 +103,7 @@ class _StreamSync:
         "publish_executor",
         "publish_executor_shutdown",
         "publish_shutdown_timeout",
+        "publish_traced",
         "seq_counter",
         "stop_event",
     )
@@ -133,6 +134,8 @@ class _StreamSync:
         self.publish_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sync-pub")
         self.publish_executor_shutdown = False
         self.publish_budget = BoundedSemaphore(max_pending_publishes)
+        # One traceback per publish outage; reset by the next successful XADD.
+        self.publish_traced = False
 
     def next_seq(self) -> int:
         return next(self.seq_counter)
@@ -361,11 +364,16 @@ class StreamCache(BaseCachex, LocMemCache):
         val: Any = None,
         exp: float | None = None,
         keys: Sequence[str] | None = None,
+        vals: Sequence[Any] | None = None,
+        exps: Sequence[float | None] | None = None,
     ) -> None:
         """Publish a cache mutation to the stream (non-blocking, best-effort).
 
         ``val`` is the original Python value. The transport cache's serializer
-        and compressor handle wire encoding. The single-worker executor
+        and compressor handle wire encoding. Multi-key entries carry ``keys``
+        and, for ``set_many``, the parallel ``vals``/``exps`` lists; one entry
+        per operation, since a per-key burst could exhaust the publish budget
+        and drop writes other pods then never see. The single-worker executor
         preserves stream order while keeping the calling thread off the
         network round-trip. Mutators call this while holding ``self._lock``
         so broadcasts are enqueued in local write order.
@@ -379,7 +387,10 @@ class StreamCache(BaseCachex, LocMemCache):
         """
         state = self._sync
         made_keys = tuple(keys) if keys else ((key,) if key else ())
-        if not state.publish_budget.acquire(blocking=False):
+        # Hold on to the semaphore this publish takes from: a consumer restart
+        # swaps in a fresh one, and releasing that instead would overflow it.
+        budget = state.publish_budget
+        if not budget.acquire(blocking=False):
             logger.warning(
                 "StreamCache: publish backlog full (cap=%d); dropping %s broadcast",
                 state.max_pending_publishes,
@@ -400,14 +411,17 @@ class StreamCache(BaseCachex, LocMemCache):
             # A list, not a joined string: any separator is legal inside a
             # Django cache key.
             fields["keys"] = list(keys)
+        if vals is not None and exps is not None:
+            fields["vals"] = list(vals)
+            fields["exps"] = [str(e) if e is not None else "" for e in exps]
         try:
-            state.publish_executor.submit(self._do_xadd, fields, state.publish_budget)
+            state.publish_executor.submit(self._do_xadd, fields, budget)
         except RuntimeError:
             # Executor was shut down and a thread is racing the teardown. Drop
             # the publish; losing the broadcast is preferable to crashing the
             # caller. If the cache is still in active use ``_ensure_consumer``
             # rebuilds the executor on the next get/set.
-            state.publish_budget.release()
+            budget.release()
             logger.warning(
                 "StreamCache: publish executor closed; dropping %s broadcast",
                 op,
@@ -443,6 +457,7 @@ class StreamCache(BaseCachex, LocMemCache):
 
     def _do_xadd(self, fields: dict[str, Any], budget: BoundedSemaphore) -> None:
         """Execute a single XADD via the transport's high-level API."""
+        state = self._sync
         try:
             self._transport.xadd(  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
                 self._stream_key,
@@ -450,12 +465,16 @@ class StreamCache(BaseCachex, LocMemCache):
                 maxlen=self._maxlen,
                 approximate=True,
             )
+            state.publish_traced = False
         except Exception:
+            # One traceback per outage: a transport that stays down would
+            # otherwise log a full one for every dropped write.
             logger.warning(
                 "StreamCache: Failed to publish %s to stream",
                 fields.get("op", "?"),
-                exc_info=True,
+                exc_info=not state.publish_traced,
             )
+            state.publish_traced = True
             keys = fields.get("keys") or ((fields["key"],) if fields.get("key") else ())
             with self._lock:
                 self._forget_pending(fields.get("op", ""), keys, seq=int(fields["seq"]))
@@ -544,14 +563,14 @@ class StreamCache(BaseCachex, LocMemCache):
 
     def _consumer_loop(self, stop_event: Event) -> None:
         state = self._sync
-        # A multiplexed transport (valkey-glide) carries every command on one
-        # connection, so parking in XREAD BLOCK would hold up each publish.
-        block = None if self._transport_is_multiplexed else self._block_timeout
         # One traceback per outage: a transport that stays down would log a
         # full one every second for as long as it is out.
         traced = False
         while not stop_event.is_set():
             try:
+                # Resolved inside the try so a bad alias backs off instead of
+                # killing the thread; no XREAD BLOCK on a multiplexed transport.
+                block = None if self._transport_is_multiplexed else self._block_timeout
                 result = self._transport.xread(  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
                     streams={self._stream_key: state.last_id},
                     count=100,
@@ -632,12 +651,16 @@ class StreamCache(BaseCachex, LocMemCache):
                     return
                 del pending[key]
             else:
-                live = [key for key in keys if pending.get(key) == seq]
+                live = [i for i, key in enumerate(keys) if pending.get(key) == seq]
                 if not live:
                     return
-                for key in live:
-                    del pending[key]
-                fields = {**fields, "keys": live}
+                for i in live:
+                    del pending[keys[i]]
+                # ``set_many`` carries ``vals``/``exps`` parallel to ``keys``.
+                fields = {
+                    **fields,
+                    **{name: [fields[name][i] for i in live] for name in ("keys", "vals", "exps") if name in fields},
+                }
         handler(self, fields)
 
     def _handle_set(self, fields: dict[str, Any]) -> None:
@@ -647,6 +670,11 @@ class StreamCache(BaseCachex, LocMemCache):
         exp_time = float(exp_str) if exp_str else None
         pickled = pickle.dumps(value, self.pickle_protocol)
         self._local_set(key, pickled, exp_time)
+
+    def _handle_set_many(self, fields: dict[str, Any]) -> None:
+        for key, value, exp_str in zip(fields["keys"], fields["vals"], fields["exps"], strict=True):
+            exp_time = float(exp_str) if exp_str else None
+            self._local_set(key, pickle.dumps(value, self.pickle_protocol), exp_time)
 
     def _handle_delete(self, fields: dict[str, Any]) -> None:
         self._delete(fields["key"])
@@ -675,6 +703,7 @@ class StreamCache(BaseCachex, LocMemCache):
 
     _MESSAGE_HANDLERS: ClassVar[dict[str, Any]] = {
         "set": _handle_set,
+        "set_many": _handle_set_many,
         "delete": _handle_delete,
         "delete_many": _handle_delete_many,
         "clear": _handle_clear,
@@ -778,8 +807,25 @@ class StreamCache(BaseCachex, LocMemCache):
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
     ) -> list[Any]:
-        for key, value in data.items():
-            self.set(key, value, timeout, version=version)
+        """Set several keys locally and broadcast them as one ``set_many`` entry.
+
+        One entry, not one per key, for the reason ``_delete_many_locked``
+        gives: a per-key burst can exhaust the publish budget and drop writes
+        other pods then never see.
+        """
+        self._ensure_consumer()
+        made = [(self.make_and_validate_key(key, version=version), value) for key, value in data.items()]
+        with self._lock:
+            keys: list[str] = []
+            vals: list[Any] = []
+            exps: list[float | None] = []
+            for made_key, value in made:
+                self._set(made_key, pickle.dumps(value, self.pickle_protocol), timeout)
+                keys.append(made_key)
+                vals.append(value)
+                exps.append(self._expire_info.get(made_key))
+            if keys:
+                self._publish("set_many", keys=keys, vals=vals, exps=exps)
         return []
 
     def delete_many(self, keys: Iterable[str], version: int | None = None) -> int:  # type: ignore[override]
@@ -1010,6 +1056,45 @@ class StreamCache(BaseCachex, LocMemCache):
         made_keys = [self.make_and_validate_key(k, version=version) for k in self.keys(pattern, version=version)]
         with self._lock:
             return self._delete_many_locked(made_keys)
+
+    # Async twins call the sync method directly, as ``LocMemCache`` does:
+    # reads are dict lookups and writes only enqueue a broadcast.
+
+    async def aget_or_set(
+        self,
+        key: str,
+        default: Any,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+    ) -> Any:
+        # Django 6.0's ``BaseCache.aget_or_set`` writes with ``aadd``, which
+        # this backend rejects (6.1 defers to an overridden ``get_or_set``).
+        return self.get_or_set(key, default, timeout=timeout, version=version)
+
+    async def attl(self, *args: Any, **kwargs: Any) -> Any:
+        return self.ttl(*args, **kwargs)
+
+    async def apttl(self, *args: Any, **kwargs: Any) -> Any:
+        return self.pttl(*args, **kwargs)
+
+    async def apersist(self, *args: Any, **kwargs: Any) -> Any:
+        return self.persist(*args, **kwargs)
+
+    async def aexpire(self, *args: Any, **kwargs: Any) -> Any:
+        return self.expire(*args, **kwargs)
+
+    async def akeys(self, *args: Any, **kwargs: Any) -> Any:
+        return self.keys(*args, **kwargs)
+
+    async def ascan(self, *args: Any, **kwargs: Any) -> Any:
+        return self.scan(*args, **kwargs)
+
+    async def aiter_keys(self, *args: Any, **kwargs: Any) -> Any:
+        for key in self.iter_keys(*args, **kwargs):
+            yield key
+
+    async def adelete_pattern(self, *args: Any, **kwargs: Any) -> Any:
+        return self.delete_pattern(*args, **kwargs)
 
 
 __all__ = [

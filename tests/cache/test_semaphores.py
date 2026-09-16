@@ -1067,6 +1067,17 @@ class TestRespEvictedState:
         assert cache.adapter.hlen(f"{prefix}:state") == 0
         assert cache.adapter.hlen(f"{prefix}:claims") == 0
 
+    def test_state_hash_holds_only_the_used_counter(self, cache):
+        # ``capacity`` comes from the caller on every ACQUIRE; the field the
+        # scripts once mirrored it into was never read back.
+        prefix = "{" + cache.make_and_validate_key("resp_state_fields") + "}"
+        sem = cache.semaphore("resp_state_fields", capacity=3, weight=2, lease=60)
+        assert sem.acquire(blocking=False) is True
+        try:
+            assert cache.adapter.hkeys(f"{prefix}:state") == ["used"]
+        finally:
+            sem.release()
+
     def test_state_hash_survives_while_another_claim_is_live(self, cache):
         """The drop is last-holder-out only, never mid-flight."""
         full_name = cache.make_and_validate_key("resp_state_gc_partial")

@@ -456,9 +456,8 @@ class Semaphore:
             _notify_next(state)
 
     def __enter__(self) -> Self:
-        if not self.acquire():
-            msg = f"could not acquire semaphore {self.name!r}"
-            raise SemaphoreError(msg)
+        # Blocking ``acquire`` admits or raises; it never returns False.
+        self.acquire()
         return self
 
     def __exit__(
@@ -470,9 +469,7 @@ class Semaphore:
         self.release()
 
     async def __aenter__(self) -> Self:
-        if not await self.aacquire():
-            msg = f"could not acquire semaphore {self.name!r}"
-            raise SemaphoreError(msg)
+        await self.aacquire()
         return self
 
     async def __aexit__(
@@ -808,9 +805,8 @@ class RespSemaphore:
     # ------------------------------------------------------------- managers
 
     def __enter__(self) -> Self:
-        if not self.acquire():
-            msg = f"could not acquire semaphore {self.name!r}"
-            raise SemaphoreError(msg)
+        # Blocking ``acquire`` admits or raises; it never returns False.
+        self.acquire()
         return self
 
     def __exit__(
@@ -822,9 +818,7 @@ class RespSemaphore:
         self.release()
 
     async def __aenter__(self) -> Self:
-        if not await self.aacquire():
-            msg = f"could not acquire semaphore {self.name!r}"
-            raise SemaphoreError(msg)
+        await self.aacquire()
         return self
 
     async def __aexit__(
