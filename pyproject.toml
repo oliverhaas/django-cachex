@@ -1,7 +1,7 @@
 [project]
 name = "django-cachex"
 version = "0.9.0"
-description = "Full featured Valkey and Redis cache backend for Django"
+description = "Valkey and Redis cache backends for Django: standalone, Sentinel and Cluster topologies, sync and async APIs"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.14"
@@ -252,7 +252,7 @@ include = ["tests/**"]
 unresolved-attribute = "ignore"
 # Tests verify edge cases with generators and None values
 invalid-argument-type = "ignore"
-# Tests patch timezone.now for expiry testing
+# test_session.py assigns a mock over timezone.now for Django's session expiry path
 invalid-assignment = "ignore"
 
 # orjson is an opt-in extra (no cp314t wheel as of 3.11.8); ty mustn't fail
@@ -264,20 +264,14 @@ include = ["django_cachex/serializers/orjson.py"]
 unresolved-import = "ignore"
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "settings.base"
+DJANGO_SETTINGS_MODULE = "tests.settings.base"
 addopts = "--cov=django_cachex --cov-report=term-missing --cov-report=xml --no-cov-on-fail"
-pythonpath = ["tests"]
 testpaths = ["tests"]
 xfail_strict = true
 
 [tool.coverage.run]
 # types.py contains only type aliases and Protocol definitions - no executable code.
-# serializers/base.py is an abstract base class with NotImplementedError stubs.
-omit = [
-  "tests/*",
-  "django_cachex/types.py",
-  "django_cachex/serializers/base.py",
-]
+omit = ["tests/*", "django_cachex/types.py"]
 
 [tool.coverage.report]
 precision = 2

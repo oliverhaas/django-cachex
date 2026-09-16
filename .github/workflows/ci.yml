@@ -33,6 +33,18 @@ jobs:
       - name: Run ty check
         run: uv run ty check django_cachex/
 
+      - name: Cache pre-commit hook environments
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      # ruff and the type checkers run above so their failures stay readable;
+      # this adds djlint (admin templates), taplo, add-trailing-comma and the
+      # pre-commit-hooks file checks, which have no separate step.
+      - name: Run pre-commit hooks
+        run: uv run --no-sync pre-commit run --all-files --show-diff-on-failure
+
   test-backend:
     runs-on: ubuntu-latest
     strategy:
@@ -83,8 +95,21 @@ jobs:
           uv pip install "redis @ git+https://github.com/redis/redis-py.git@master"
           uv pip install "valkey @ git+https://github.com/valkey-io/valkey-py.git@main"
 
+      # Without --no-sync, `uv run` would reinstall the locked Django over the
+      # pinned one above (the "6.0" cell used to run 6.1 that way).
+      - name: Check the installed Django matches the matrix
+        run: |
+          uv run --no-sync python - "${{ matrix.django-version }}" <<'EOF'
+          import sys
+          import django
+          want, got = sys.argv[1], django.__version__
+          print("Django", got)
+          ok = django.VERSION[3] != "final" if want == "main" else got.startswith(f"{want}.")
+          sys.exit(0 if ok else f"expected Django {want}, got {got}")
+          EOF
+
       - name: Run backend tests
-        run: uv run pytest tests/cache/ -n auto
+        run: uv run --no-sync pytest tests/cache/ -n auto
         env:
           # Guard against pyc write races on first concurrent import
           # (intermittent xdist collection ImportError on fresh checkouts).
@@ -118,8 +143,19 @@ jobs:
       - name: Install Django ${{ matrix.django-version }}
         run: uv pip install "Django~=${{ matrix.django-version }}.0"
 
+      - name: Check the installed Django matches the matrix
+        run: |
+          uv run --no-sync python - "${{ matrix.django-version }}" <<'EOF'
+          import sys
+          import django
+          want, got = sys.argv[1], django.__version__
+          print("Django", got)
+          ok = django.VERSION[3] != "final" if want == "main" else got.startswith(f"{want}.")
+          sys.exit(0 if ok else f"expected Django {want}, got {got}")
+          EOF
+
       - name: Run admin tests
-        run: uv run pytest tests/admin/ -n auto
+        run: uv run --no-sync pytest tests/admin/ -n auto
         env:
           PYTHONDONTWRITEBYTECODE: "1"
 
@@ -141,9 +177,13 @@ jobs:
       # The cache fixtures skip an adapter whose client library is missing
       # (_adapter_library_available in tests/fixtures/cache.py), and no other
       # job installs the glide extra, so this is the only place the shared
-      # suite reaches the glide adapter.
+      # suite reaches the glide adapter. A broken glide install would turn the
+      # whole slice into skips, hence the explicit import first.
+      - name: Check the glide client libraries import
+        run: uv run --no-sync python -c "import glide, glide_sync"
+
       - name: Run backend tests with the glide adapter
-        run: uv run pytest tests/cache/ -n auto
+        run: uv run --no-sync pytest tests/cache/ -n auto
         env:
           PYTHONDONTWRITEBYTECODE: "1"
 
@@ -166,12 +206,18 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
 
+      # hiredis and libvalkey have not declared free-threading support, so
+      # importing redis/valkey re-enables the GIL unless PYTHON_GIL=0 forces it
+      # to stay off. Report the state after those imports, not before.
       - name: Report GIL state
-        run: uv run python -c "import sys; print('gil_enabled =', sys._is_gil_enabled())"
+        run: uv run --no-sync python -c "import sys, redis, valkey; print('gil_enabled =', sys._is_gil_enabled())"
+        env:
+          PYTHON_GIL: "0"
 
       - name: Run backend tests
-        run: uv run pytest tests/cache/ -n auto
+        run: uv run --no-sync pytest tests/cache/ -n auto
         env:
+          PYTHON_GIL: "0"
           PYTHONDONTWRITEBYTECODE: "1"
 
   build-pure-wheel:

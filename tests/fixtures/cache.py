@@ -49,9 +49,9 @@ BACKENDS = {
 # image; everything else lives on the Valkey image. Each adapter has exactly
 # one home image so we don't multiply the matrix by image.
 ADAPTER_IMAGES = {
-    "redis-py": ("redis:latest", "redis"),
-    "valkey-py": ("valkey/valkey:latest", "valkey"),
-    "valkey-glide": ("valkey/valkey:latest", "valkey"),
+    "redis-py": ("redis:8", "redis"),
+    "valkey-py": ("valkey/valkey:9", "valkey"),
+    "valkey-glide": ("valkey/valkey:9", "valkey"),
 }
 
 # Non-default TIMEOUT for the ``default`` alias, so the default-timeout paths
@@ -327,10 +327,13 @@ def _skip_unsupported_combo(resp_adapter: str, topology: str) -> None:
 def cache(
     topology: str,
     resp_adapter: str,
-    redis_container: RedisContainerInfo,
     request: pytest.FixtureRequest,
 ) -> Iterator[RespCache]:
-    """Django cache fixture parametrized by topology × resp_adapter."""
+    """Django cache fixture parametrized by topology × resp_adapter.
+
+    Containers are requested per topology so a cluster cell does not also
+    start the standalone image.
+    """
     _skip_unsupported_combo(resp_adapter, topology)
 
     compressor_val = None
@@ -363,9 +366,10 @@ def cache(
             native_parser=native_parser_val,
         )
     else:
+        redis_info: RedisContainerInfo = request.getfixturevalue("redis_container")
         caches = build_cache_config(
-            redis_container.host,
-            redis_container.port,
+            redis_info.host,
+            redis_info.port,
             compressor=compressor_val,
             serializer=serializer_val,
             resp_adapter=resp_adapter,
@@ -380,7 +384,6 @@ def cache(
 def stampede_cache(
     stampede_topology: str,
     resp_adapter: str,
-    redis_container: RedisContainerInfo,
     request: pytest.FixtureRequest,
 ) -> Iterator[RespCache]:
     """Django cache fixture with stampede prevention enabled.
@@ -398,9 +401,10 @@ def stampede_cache(
             resp_adapter=resp_adapter,
         )
     else:
+        redis_info: RedisContainerInfo = request.getfixturevalue("redis_container")
         caches = build_cache_config(
-            redis_container.host,
-            redis_container.port,
+            redis_info.host,
+            redis_info.port,
             resp_adapter=resp_adapter,
             db=15,
         )

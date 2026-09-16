@@ -30,7 +30,7 @@ def _start(image: str) -> tuple[str, DockerContainer]:
 
 @pytest.fixture(scope="session")
 def redis_url() -> Iterator[str]:
-    url, container = _start("redis:latest")
+    url, container = _start("redis:8")
     try:
         yield url
     finally:
@@ -39,7 +39,7 @@ def redis_url() -> Iterator[str]:
 
 @pytest.fixture(scope="session")
 def valkey_url() -> Iterator[str]:
-    url, container = _start("valkey/valkey:latest")
+    url, container = _start("valkey/valkey:9")
     try:
         yield url
     finally:

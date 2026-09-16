@@ -50,8 +50,6 @@ MIDDLEWARE = [
 
 USE_TZ = False
 
-EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
-
 # Base CACHES configuration. Test fixtures override this for parametrized tests.
 # The annotation keeps django-stubs from inferring ``dict[str, object]`` for
 # ``settings.CACHES`` once the literal mixes value types.

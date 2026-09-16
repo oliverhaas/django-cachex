@@ -16,11 +16,11 @@ from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 # Format: (image, client_library) where client_library is "redis" or "valkey".
 # Used by the opt-in ``resp_images`` fixture for cross-image tests.
 RESP_IMAGES = [
-    ("redis:latest", "redis"),
+    ("redis:8", "redis"),
     ("redis/redis-stack-server:latest", "redis"),
-    ("valkey/valkey:latest", "valkey"),
+    ("valkey/valkey:9", "valkey"),
 ]
-DEFAULT_REDIS_IMAGE = "redis:latest"
+DEFAULT_REDIS_IMAGE = "redis:8"
 DEFAULT_CLIENT_LIBRARY = "redis"
 
 # Redis Cluster image (runs 6 nodes in single container: 3 masters + 3 replicas)
@@ -29,7 +29,9 @@ REDIS_CLUSTER_IMAGE = "grokzen/redis-cluster:7.0.10"
 CLUSTER_NODE_COUNT = 6  # 3 masters + 3 replicas
 CLUSTER_BASE_PORT = 17000  # High port to avoid conflicts with example containers
 CLUSTER_PORT_SPACING = 10  # Gap between worker port ranges for xdist
-CLUSTER_RETRY_OFFSET = 100  # Port offset between retry attempts
+# Far above any plausible worker count times the spacing, so a retry never
+# lands on another worker's base range (offset 100 made gw0's retry gw10's base).
+CLUSTER_RETRY_OFFSET = 5000
 
 
 class ContainerInfo(NamedTuple):
@@ -174,14 +176,14 @@ def _start_cluster_container(base_port: int) -> ContainerInfo:
         container.waiting_for(LogMessageWaitStrategy("Cluster state changed: ok"))
         try:
             container.start()
+            host = container.get_container_host_ip()
+            # The log message lands before every node serves commands (ClusterDownError race).
+            _wait_for_cluster_ready(host, current_base)
         except Exception as e:  # noqa: BLE001
             last_error = e
             with suppress(Exception):
                 container.stop()
             continue
-        host = container.get_container_host_ip()
-        # The log message lands before every node serves commands (ClusterDownError race).
-        _wait_for_cluster_ready(host, current_base)
         return ContainerInfo(
             host=host,
             port=current_base,  # First master node
