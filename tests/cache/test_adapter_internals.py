@@ -5,11 +5,13 @@ suppression, stub-shaped driver pipelines)."""
 import gc
 import importlib
 import weakref
+from collections import deque
 from typing import Any
 
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
+from django_cachex.adapters.protocols import Invalidation
 from django_cachex.adapters.redis_py import RedisPySentinelAdapter
 from django_cachex.adapters.valkey_py import (
     _VALKEY_AVAILABLE,
@@ -19,6 +21,7 @@ from django_cachex.adapters.valkey_py import (
     ValkeyPyPipelineAdapter,
     ValkeyPySentinelAdapter,
     _options_key,
+    _ValkeyPyInvalidationListener,
 )
 from django_cachex.exceptions import NotSupportedError, WrongTypeError, translate_server_error
 from django_cachex.script import script_sha
@@ -290,24 +293,39 @@ class TestXAutoclaimJustid:
 
         assert result == ("5-1", ["1-0", "2-0"], ["3-0"])
 
-    def test_cluster_justid_keeps_shared_client_untouched(self):
-        # The cluster client is shared process-wide, so the adapter must not
-        # override its response callbacks; the lossy "" cursor stays.
+    def test_cluster_justid_is_rejected(self):
         class StubClusterClient:
             def set_response_callback(self, command: str, callback: Any) -> None:
                 msg = "shared cluster client must not be mutated"
                 raise AssertionError(msg)
 
             def xautoclaim(self, *args: Any, **kwargs: Any) -> Any:
-                return [b"1-0", b"2-0"]
+                msg = "no command may reach the server"
+                raise AssertionError(msg)
 
         client = StubClusterClient()
         adapter = ValkeyPyClusterAdapter.__new__(ValkeyPyClusterAdapter)
         adapter.get_client = lambda key=None, *, write=False: client
 
-        result = adapter.xautoclaim("stream", "group", "consumer", 0, justid=True)
+        with pytest.raises(NotSupportedError, match=r"xautoclaim\(justid=True\).*cluster"):
+            adapter.xautoclaim("stream", "group", "consumer", 0, justid=True)
 
-        assert result == ("", ["1-0", "2-0"], [])
+    @pytest.mark.asyncio
+    async def test_async_cluster_justid_is_rejected(self):
+        adapter = ValkeyPyClusterAdapter.__new__(ValkeyPyClusterAdapter)
+
+        with pytest.raises(NotSupportedError, match=r"xautoclaim\(justid=True\).*cluster"):
+            await adapter.axautoclaim("stream", "group", "consumer", 0, justid=True)
+
+    def test_cluster_justid_false_still_works(self):
+        class StubClusterClient:
+            def xautoclaim(self, *args: Any, **kwargs: Any) -> Any:
+                return [b"0-0", [(b"1-0", {b"field": b"value"})], []]
+
+        adapter = ValkeyPyClusterAdapter.__new__(ValkeyPyClusterAdapter)
+        adapter.get_client = lambda key=None, *, write=False: StubClusterClient()
+
+        assert adapter.xautoclaim("stream", "group", "consumer", 0) == ("0-0", [("1-0", {"field": b"value"})], [])
 
     def test_non_justid_parses_entries(self):
         class StubClient:
@@ -745,14 +763,17 @@ class TestOptionsKeyStability:
         assert _options_key({"retry": outer_a}) != _options_key({"retry": outer_c})
 
     def test_key_stays_hashable_for_container_options(self):
-        key = _options_key({"nodes": [{"host": "a"}, {"host": "b"}], "flags": {"x", "y"}})
-        assert hash(key)
+        options = {"nodes": [{"host": "a"}, {"host": "b"}], "flags": {"x", "y"}}
+        key = _options_key(options)
+        # Usable as a dict key: hashable, and equal to a key built from equal options.
+        assert {key: "pool"}[_options_key({"flags": {"y", "x"}, "nodes": [{"host": "a"}, {"host": "b"}]})] == "pool"
 
     def test_self_referencing_value_does_not_recurse_forever(self):
         looped = _Retry(3)
         looped.self_ref = looped  # type: ignore[attr-defined]
 
-        assert hash(_options_key({"retry": looped}))
+        key = _options_key({"retry": looped})
+        assert {key: "pool"}[key] == "pool"
 
 
 @requires_valkey
@@ -972,6 +993,82 @@ class TestSentinelPoolClass:
         )
 
         assert adapter._sentinel_pool_class is SentinelConnectionPool
+
+    def test_a_plain_async_pool_class_is_rejected(self):
+        with pytest.raises(ImproperlyConfigured, match=r"async_pool_class .* cannot serve a Sentinel cache"):
+            ValkeyPySentinelAdapter(
+                ["redis://mymaster/0"],
+                async_pool_class="valkey.asyncio.ConnectionPool",
+                sentinels=[("sentinel-a", 26379)],
+            )
+
+    def test_an_async_sentinel_pool_subclass_is_honoured(self):
+        from valkey.asyncio.sentinel import SentinelConnectionPool
+
+        class CustomAsyncSentinelPool(SentinelConnectionPool):
+            pass
+
+        adapter = ValkeyPySentinelAdapter(
+            ["redis://mymaster/0"],
+            async_pool_class=CustomAsyncSentinelPool,
+            sentinels=[("sentinel-a", 26379)],
+        )
+
+        assert adapter._async_sentinel_pool_class is CustomAsyncSentinelPool
+        # The generic slot stays clear: it marks adapters that manage their own async pools.
+        assert adapter._async_pool_class is None
+
+    @pytest.mark.asyncio
+    async def test_the_async_pool_class_builds_the_pool(self, monkeypatch: pytest.MonkeyPatch):
+        from valkey.asyncio.sentinel import SentinelConnectionPool
+
+        built: list[str] = []
+
+        class CustomAsyncSentinelPool(SentinelConnectionPool):
+            @classmethod
+            def from_url(cls, url: str, **kwargs: Any) -> Any:
+                built.append(url)
+                return object()
+
+        monkeypatch.setattr(ValkeyPySentinelAdapter, "_async_pools", weakref.WeakKeyDictionary())
+        adapter = ValkeyPySentinelAdapter(
+            ["redis://mymaster/0"],
+            async_pool_class=CustomAsyncSentinelPool,
+            sentinels=[("sentinel-a", 26379)],
+        )
+
+        adapter._get_async_connection_pool(write=True)
+
+        assert built == ["redis://mymaster/0"]
+
+
+@requires_valkey
+class TestSentinelLocation:
+    """LOCATION names one Sentinel service; Sentinel discovers the replicas."""
+
+    def test_several_locations_are_rejected(self):
+        with pytest.raises(ImproperlyConfigured, match=r"single LOCATION URL .* got 2 entries"):
+            ValkeyPySentinelAdapter(
+                ["redis://mymaster/0", "redis://other/0"],
+                sentinels=[("sentinel-a", 26379)],
+            )
+
+    def test_one_location_becomes_a_primary_and_a_replica_url(self):
+        adapter = ValkeyPySentinelAdapter(["redis://mymaster/0"], sentinels=[("sentinel-a", 26379)])
+
+        assert adapter._servers == ["redis://mymaster/0?is_master=1", "redis://mymaster/0?is_master=0"]
+
+    def test_async_pool_targets_are_computed_once(self):
+        adapter = ValkeyPySentinelAdapter(["redis://mymaster/0"], sentinels=[("sentinel-a", 26379)])
+        parsed: list[int] = []
+        original = adapter._parse_sentinel_url
+        adapter._parse_sentinel_url = lambda index: parsed.append(index) or original(index)
+
+        keys = [adapter._async_pool_key(0), adapter._async_pool_key(0), adapter._async_pool_key(1)]
+
+        assert parsed == [0, 1]
+        assert keys[0] is keys[1]
+        assert keys[0] != keys[2]
 
 
 class _TypeClient:
@@ -1242,6 +1339,26 @@ class TestAcloseScope:
 
         assert pool.closed == 1
 
+    @pytest.mark.asyncio
+    async def test_a_failing_pool_leaves_the_rest_registered(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(ValkeyPyAdapter, "_async_pools", weakref.WeakKeyDictionary())
+        adapter = self._adapter("valkey://primary:6379/0", "valkey://replica:6379/0")
+        primary, replica = (adapter._get_async_connection_pool(write=write) for write in (True, False))
+
+        async def fail() -> None:
+            msg = "socket already gone"
+            raise OSError(msg)
+
+        primary.aclose = fail
+
+        with pytest.raises(OSError, match="socket already gone"):
+            await adapter.aclose()
+
+        assert replica.closed == 0
+        assert adapter._get_async_connection_pool(write=False) is replica
+        await adapter.aclose()
+        assert replica.closed == 1
+
 
 class _StubDiscoveryClient:
     def __init__(self) -> None:
@@ -1298,3 +1415,179 @@ class TestSentinelAcloseClosesDiscoveryClients:
 
         assert pool.closed == 1
         assert [client.closed for client in pool.sentinel_manager.sentinels] == [1]
+
+
+class _DeadConnection:
+    """Driver connection stub whose socket has dropped."""
+
+    _sock = None
+
+    def can_read(self, timeout: float = 0) -> bool:
+        msg = "can_read reconnects through the driver; poll must not get here"
+        raise AssertionError(msg)
+
+
+class TestInvalidationListenerPoll:
+    """poll() must fail on a dropped socket instead of letting the driver reconnect."""
+
+    def test_dropped_socket_raises(self):
+        # Regression: ``can_read`` on a connection without a socket calls
+        # ``connect()``, which comes back without CLIENT TRACKING and under a
+        # new client id, so invalidations were silently lost from then on.
+        listener = _ValkeyPyInvalidationListener.__new__(_ValkeyPyInvalidationListener)
+        listener._buffered = deque()
+        listener._conn = _DeadConnection()
+
+        with pytest.raises(ConnectionError, match="lost its connection"):
+            listener.poll(0.01)
+
+    def test_buffered_pushes_are_still_drained(self):
+        listener = _ValkeyPyInvalidationListener.__new__(_ValkeyPyInvalidationListener)
+        listener._buffered = deque([Invalidation(keys=("k",))])
+        listener._conn = _DeadConnection()
+
+        assert listener.poll(0.01) == Invalidation(keys=("k",))
+
+
+class _SetClient:
+    """Driver stub recording SET / UNLINK calls."""
+
+    def __init__(self, reply: Any = True) -> None:
+        self.reply = reply
+        self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
+
+    def set(self, *args: Any, **kwargs: Any) -> Any:
+        self.calls.append(("set", args, kwargs))
+        return self.reply
+
+    def unlink(self, *args: Any) -> int:
+        self.calls.append(("unlink", args, {}))
+        return 1
+
+
+class _AsyncSetClient(_SetClient):
+    async def set(self, *args: Any, **kwargs: Any) -> Any:
+        return super().set(*args, **kwargs)
+
+    async def unlink(self, *args: Any) -> int:
+        return super().unlink(*args)
+
+
+def _set_adapter(client: Any) -> ValkeyPyAdapter:
+    adapter = ValkeyPyAdapter.__new__(ValkeyPyAdapter)
+    adapter._stampede_config = None
+    adapter.get_client = lambda key=None, *, write=False: client
+
+    async def get_async_client(key: Any = None, *, write: bool = False) -> Any:
+        return client
+
+    adapter.get_async_client = get_async_client
+    return adapter
+
+
+class TestZeroTimeoutWrites:
+    """timeout=0 with NX/XX/GET is one SET with a past deadline, never SET then UNLINK."""
+
+    def test_add_sends_one_set(self):
+        client = _SetClient(reply=True)
+
+        assert _set_adapter(client).add("k", b"v", 0) is True
+        assert client.calls == [("set", ("k", b"v"), {"nx": True, "pxat": 1})]
+
+    def test_add_reports_an_existing_key(self):
+        client = _SetClient(reply=None)
+
+        assert _set_adapter(client).add("k", b"v", 0) is False
+        assert [name for name, *_ in client.calls] == ["set"]
+
+    @pytest.mark.parametrize(
+        ("flags", "reply", "expected"),
+        [
+            ({"nx": True}, True, True),
+            ({"xx": True}, None, False),
+            ({"get": True}, b"old", b"old"),
+            ({"xx": True, "get": True}, None, None),
+        ],
+    )
+    def test_set_with_flags_sends_one_set(self, flags: dict[str, Any], reply: Any, expected: Any):
+        client = _SetClient(reply=reply)
+
+        result = _set_adapter(client).set_with_flags("k", b"v", 0, **flags)
+
+        assert result == expected
+        ((name, args, kwargs),) = client.calls
+        assert (name, args) == ("set", ("k", b"v"))
+        assert kwargs == {
+            "nx": flags.get("nx", False),
+            "xx": flags.get("xx", False),
+            "get": flags.get("get", False),
+            "pxat": 1,
+        }
+
+    @pytest.mark.asyncio
+    async def test_async_twins_send_one_set(self):
+        client = _AsyncSetClient(reply=b"old")
+        adapter = _set_adapter(client)
+
+        assert await adapter.aadd("k", b"v", 0) is True
+        assert await adapter.aset_with_flags("k", b"v", 0, get=True) == b"old"
+        assert [name for name, *_ in client.calls] == ["set", "set"]
+        assert all(kwargs["pxat"] == 1 for _, _, kwargs in client.calls)
+
+
+class _UnlinkClusterClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[Any, ...]] = []
+
+    def unlink(self, *keys: Any) -> int:
+        self.calls.append(keys)
+        return len(keys)
+
+
+class _AsyncUnlinkClusterClient(_UnlinkClusterClient):
+    async def unlink(self, *keys: Any) -> int:
+        return super().unlink(*keys)
+
+
+class TestClusterMultiKeyDelete:
+    """The cluster client splits UNLINK by slot itself; the adapter sends every key at once."""
+
+    def test_delete_many_is_one_call(self):
+        client = _UnlinkClusterClient()
+        adapter = ValkeyPyClusterAdapter.__new__(ValkeyPyClusterAdapter)
+        adapter.get_client = lambda key=None, *, write=False: client
+
+        assert adapter.delete_many(["{a}1", "{b}2", "{c}3"]) == 3
+        assert client.calls == [("{a}1", "{b}2", "{c}3")]
+
+    @pytest.mark.asyncio
+    async def test_async_delete_many_is_one_call(self):
+        client = _AsyncUnlinkClusterClient()
+        adapter = ValkeyPyClusterAdapter.__new__(ValkeyPyClusterAdapter)
+
+        async def get_async_client(key: Any = None, *, write: bool = False) -> Any:
+            return client
+
+        adapter.get_async_client = get_async_client
+
+        assert await adapter.adelete_many(["{a}1", "{b}2"]) == 2
+        assert client.calls == [("{a}1", "{b}2")]
+
+
+class TestXReadEmpty:
+    """The driver maps a nil XREAD reply to an empty container; the adapter returns {}."""
+
+    @pytest.mark.parametrize("reply", [[], {}], ids=["resp2", "resp3"])
+    def test_empty_read_is_an_empty_dict(self, reply: Any):
+        class StubClient:
+            def xread(self, **kwargs: Any) -> Any:
+                return reply
+
+            def xreadgroup(self, **kwargs: Any) -> Any:
+                return reply
+
+        adapter = ValkeyPyAdapter.__new__(ValkeyPyAdapter)
+        adapter.get_client = lambda key=None, *, write=False: StubClient()
+
+        assert adapter.xread({"s": "$"}, block=1) == {}
+        assert adapter.xreadgroup("g", "c", {"s": ">"}, block=1) == {}

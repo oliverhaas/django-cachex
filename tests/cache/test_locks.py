@@ -1,5 +1,7 @@
 """Tests for lock operations."""
 
+import copy
+import pickle
 import threading
 from typing import TYPE_CHECKING
 
@@ -172,6 +174,60 @@ class TestLockErrors:
             assert lock.owned() is True
         finally:
             lock.release()
+
+    def test_native_lock_attributes_can_be_assigned(self, cache: RespCache, resp_adapter: str):
+        if resp_adapter == "valkey-glide":
+            pytest.skip("valkey-glide's lock has no driver lock underneath")
+        lock = cache.lock("attr_assign", lease=30, timeout=5)
+
+        lock.blocking_timeout = 1
+        lock.timeout = 10
+
+        assert lock.blocking_timeout == 1
+        assert lock._lock.blocking_timeout == 1
+        assert lock.acquire(blocking=False) is True
+        try:
+            assert 9_000 < (cache.pttl("attr_assign") or 0) <= 10_000
+        finally:
+            lock.release()
+
+    def test_assigning_a_method_replaces_the_wrapped_one(self, cache: RespCache, resp_adapter: str):
+        if resp_adapter == "valkey-glide":
+            pytest.skip("valkey-glide's lock has no driver lock underneath")
+        lock = cache.lock("attr_method", lease=30)
+        assert lock.locked() is False
+
+        lock.locked = lambda: "patched"
+
+        assert lock.locked() == "patched"
+
+    def test_wrapper_can_be_copied(self, cache: RespCache, resp_adapter: str):
+        # Regression: __getattr__ read a slot first, so ``copy.copy`` (which
+        # probes an instance built by __new__ for __setstate__) recursed forever.
+        if resp_adapter == "valkey-glide":
+            pytest.skip("valkey-glide's lock has no driver lock underneath")
+        lock = cache.lock("attr_copy", lease=30)
+
+        clone = copy.copy(lock)
+
+        assert type(clone) is type(lock)
+        assert clone._lock is lock._lock
+        assert clone.timeout == 30
+        with pytest.raises(LockError):
+            clone.release()
+
+    def test_pickling_fails_in_the_driver_lock_not_by_recursion(self, cache: RespCache, resp_adapter: str):
+        if resp_adapter == "valkey-glide":
+            pytest.skip("valkey-glide's lock has no driver lock underneath")
+        lock = cache.lock("attr_pickle", lease=30)
+        # The driver lock holds thread locks (its client's pool), which is what pickle rejects.
+        with pytest.raises(TypeError) as driver_error:
+            pickle.dumps(lock._lock)
+
+        with pytest.raises(TypeError) as wrapper_error:
+            pickle.dumps(lock)
+
+        assert str(wrapper_error.value) == str(driver_error.value)
 
     @pytest.mark.asyncio
     async def test_async_release_after_expiry_raises_not_owned(self, cache: RespCache):

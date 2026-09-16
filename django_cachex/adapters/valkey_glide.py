@@ -269,6 +269,8 @@ def _glide_config_key(servers: list[str], options: dict[str, Any]) -> tuple[Any,
 
 
 _TLS_SCHEMES = frozenset({"rediss", "valkeys"})
+_TCP_SCHEMES = frozenset({"redis", "valkey", *_TLS_SCHEMES})
+_SOCKET_SCHEMES = frozenset({"unix", "redis+socket", "valkey+socket"})
 
 
 def _parse_db(u: Any, options: dict[str, Any]) -> int | None:
@@ -284,6 +286,27 @@ def _parse_db(u: Any, options: dict[str, Any]) -> int | None:
     return None
 
 
+def _hostport(raw: str) -> tuple[str, int]:
+    """``(host, port)`` of one LOCATION URL, rejecting the forms glide cannot dial."""
+    # ``hostname=None`` from urlparse would quietly become localhost:6379.
+    u = urlparse(raw)
+    if u.scheme in _SOCKET_SCHEMES:
+        msg = f"LOCATION {raw!r} is a unix socket, which valkey-glide does not support; connect over TCP instead."
+        raise ImproperlyConfigured(msg)
+    if u.scheme not in _TCP_SCHEMES:
+        msg = (
+            f"LOCATION {raw!r} is not a URL valkey-glide can connect to. Use "
+            f"'redis://[user:password@]host:port[/db]' (or rediss://, valkey://, valkeys://)."
+        )
+        raise ImproperlyConfigured(msg)
+    try:
+        port = u.port
+    except ValueError as exc:
+        msg = f"LOCATION {raw!r} has an invalid port."
+        raise ImproperlyConfigured(msg) from exc
+    return u.hostname or "localhost", port or 6379
+
+
 def _hostports(servers: list[str]) -> list[tuple[str, int]]:
     """Distinct ``(host, port)`` pairs from the URL list, in the order given.
 
@@ -292,8 +315,7 @@ def _hostports(servers: list[str]) -> list[tuple[str, int]]:
     """
     seen: dict[tuple[str, int], None] = {}
     for raw in servers:
-        u = urlparse(raw)
-        seen.setdefault((u.hostname or "localhost", u.port or 6379), None)
+        seen.setdefault(_hostport(raw), None)
     return list(seen)
 
 
@@ -301,22 +323,25 @@ def _node_addresses(servers: list[str], node_address_cls: Any) -> list[Any]:
     return [node_address_cls(host, port) for host, port in _hostports(servers)]
 
 
-def _check_uniform_servers(servers: list[str], *, check_database: bool) -> None:
+def _check_uniform_servers(servers: list[str], options: dict[str, Any], *, check_database: bool) -> None:
     """Reject a URL list whose entries disagree on how to connect.
 
     Glide takes one set of credentials, one TLS flag and one database for the
-    whole address list, so a list that mixes them cannot be honored.
+    whole address list, so a list that mixes them cannot be honored. An
+    OPTIONS ``db``, ``username`` or ``password`` applies to every URL, so
+    it settles the corresponding mismatch.
     """
     first = urlparse(servers[0])
+    username, password = options.get("username"), options.get("password")
     for raw in servers[1:]:
         u = urlparse(raw)
         differing = [
             name
             for name, a, b in (
                 ("TLS", first.scheme in _TLS_SCHEMES, u.scheme in _TLS_SCHEMES),
-                ("username", first.username, u.username),
-                ("password", first.password, u.password),
-                ("database", _parse_db(first, {}), _parse_db(u, {})),
+                ("username", username or first.username, username or u.username),
+                ("password", password or first.password, password or u.password),
+                ("database", _parse_db(first, options), _parse_db(u, options)),
             )
             if a != b and (check_database or name != "database")
         ]
@@ -342,7 +367,7 @@ def _glide_config_kwargs(
     Cluster configs pass ``standalone=False``: cluster serves db 0 only and
     routes its own reads, so neither ``database_id`` nor ``read_from`` applies.
     """
-    _check_uniform_servers(servers, check_database=standalone)
+    _check_uniform_servers(servers, options, check_database=standalone)
     u = urlparse(servers[0])
     kwargs: dict[str, Any] = {}
 
@@ -477,6 +502,22 @@ def _trim_args(
     if limit is not None:
         args.extend([b"LIMIT", str(limit).encode()])
     return args
+
+
+def _xtrim_args(
+    key: Any,
+    *,
+    maxlen: int | None = None,
+    approximate: bool = True,
+    minid: str | None = None,
+    limit: int | None = None,
+) -> list[Any]:
+    if maxlen is None and minid is None:
+        # A bare ``XTRIM key`` is a syntax error on the wire; redis-py raises
+        # ``DataError`` for it before sending.
+        msg = "xtrim requires maxlen or minid"
+        raise ValueError(msg)
+    return [b"XTRIM", key, *_trim_args(maxlen=maxlen, approximate=approximate, minid=minid, limit=limit)]
 
 
 def _xadd_args(
@@ -617,7 +658,9 @@ def _decode_xread_pipeline(raw: Any) -> Any:
     We hand it ``[(stream_key, [(entry_id, {field: value_bytes}), ...]), ...]``
     so the cache layer can decode the values without further reshaping.
     """
-    if raw is None:
+    if not raw:
+        # ``None`` like the direct ``xread``: an empty map would reach the
+        # cache layer as ``{}`` from one path and ``None`` from the other.
         return None
     if not isinstance(raw, dict):
         return raw
@@ -805,6 +848,11 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
     def hmget(self, key: Any, *fields: Any) -> Self:
         if len(fields) == 1 and isinstance(fields[0], (list, tuple)):
             fields = tuple(fields[0])
+        if not fields:
+            # ``HMGET key`` is a syntax error on the wire, and queueing nothing
+            # would shift every later result in the batch.
+            msg = "hmget requires at least one field"
+            raise ValueError(msg)
         self._batch.hmget(key, list(fields))
         return self
 
@@ -1336,9 +1384,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         minid: str | None = None,
         limit: int | None = None,
     ) -> Self:
-        args: list[Any] = [b"XTRIM", key]
-        args.extend(_trim_args(maxlen=maxlen, approximate=approximate, minid=minid, limit=limit))
-        self._batch.custom_command(args)
+        self._batch.custom_command(_xtrim_args(key, maxlen=maxlen, approximate=approximate, minid=minid, limit=limit))
         return self
 
     def xack(self, key: Any, group: str, *entry_ids: Any) -> Self:
@@ -1473,22 +1519,12 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         return self
 
     # ---- raw ----
+    # No ``__getattr__`` command fallback: a typo or an introspection probe
+    # (``hasattr``, ``copy``, ``pickle``) must not queue a stray command.
+    # Anything outside the protocol goes through ``execute_command``.
     def execute_command(self, *args: Any) -> Self:
         self._batch.custom_command(_enc_list(args))
         return self
-
-    def __getattr__(self, name: str) -> Any:
-        # RESP commands are single words, so an underscore is a lookup miss,
-        # not a command: without this, ``deepcopy`` queued ``__DEEPCOPY__``.
-        if "_" in name:
-            raise AttributeError(name)
-        cmd = name.upper()
-
-        def call(*args: Any) -> ValkeyGlidePipelineAdapter:
-            self._batch.custom_command([cmd, *_enc_list(args)])
-            return self
-
-        return call
 
     # ---- execution ----
     def execute(self) -> list[Any]:
@@ -1587,6 +1623,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
                 f"(or a list of them, primary first)."
             )
             raise ImproperlyConfigured(msg)
+        _hostports(servers)
         self._servers = servers
         self._options = options
         self._stampede_config: StampedeConfig | None = make_stampede_config(options.get("stampede_prevention"))
@@ -1675,27 +1712,33 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         registry = self._async_registry()
         locks = self._async_locks()
         loop = asyncio.get_running_loop()
-        with _GLIDE_ASYNC_REGISTRY_LOCK:
-            sub = registry.get(loop)
-            if sub is None:
-                sub = {}
-                registry[loop] = sub
-            lock = locks.get(loop)
-            if lock is None:
-                lock = asyncio.Lock()
-                locks[loop] = lock
-        client = sub.get(self._config_key)
-        if client is not None:
-            return client
-        async with lock:
+        while True:
+            with _GLIDE_ASYNC_REGISTRY_LOCK:
+                sub = registry.get(loop)
+                if sub is None:
+                    sub = {}
+                    registry[loop] = sub
+                lock = locks.get(loop)
+                if lock is None:
+                    lock = asyncio.Lock()
+                    locks[loop] = lock
             client = sub.get(self._config_key)
-            if client is None:
-                # Only a miss grows the registry, so the dead-loop sweep runs
-                # here rather than on every call under the process-wide lock.
-                self._sweep_async_clients()
-                client = _WrongTypeClient(await self._create_async_client())
-                sub[self._config_key] = client
-        return cast("AsyncGlideClient", client)
+            if client is not None:
+                return client
+            async with lock:
+                if locks.get(loop) is not lock:
+                    # ``aclose`` dropped the loop's entries while this task
+                    # waited for the lock; a client stored in the detached
+                    # ``sub`` would never be closed, so start over.
+                    continue
+                client = sub.get(self._config_key)
+                if client is None:
+                    # Only a miss grows the registry, so the dead-loop sweep runs
+                    # here rather than on every call under the process-wide lock.
+                    self._sweep_async_clients()
+                    client = _WrongTypeClient(await self._create_async_client())
+                    sub[self._config_key] = client
+            return cast("AsyncGlideClient", client)
 
     def _cmd(self, args: list[Any], route: Any = None) -> Any:
         # Glide types every raw reply as one big union; each caller knows the
@@ -2458,7 +2501,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         nomkstream: bool = False,
         minid: str | None = None,
         limit: int | None = None,
-    ) -> str:
+    ) -> str | None:
         args = _xadd_args(
             key,
             fields,
@@ -2510,9 +2553,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         minid: str | None = None,
         limit: int | None = None,
     ) -> int:
-        args: list[Any] = [b"XTRIM", key]
-        args.extend(_trim_args(maxlen=maxlen, approximate=approximate, minid=minid, limit=limit))
-        return self._cmd(args)
+        return self._cmd(_xtrim_args(key, maxlen=maxlen, approximate=approximate, minid=minid, limit=limit))
 
     def xack(self, key: str, group: str, *entry_ids: Any) -> int:
         return self._cmd([b"XACK", key, _enc(group), *_enc_list(entry_ids)])
@@ -2906,7 +2947,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
                 batch = self._batch_factory(atomic=False)
                 for k in stampede_keys:
                     batch.ttl(k)
-                ttls = await client.exec(batch, raise_on_error=True) or []
+                ttls = _checked_exec(await client.exec(batch, raise_on_error=True))
                 for k, ttl in zip(stampede_keys, ttls, strict=False):
                     if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
                         del found[k]
@@ -2974,8 +3015,15 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         except RuntimeError:
             return
         with _GLIDE_ASYNC_REGISTRY_LOCK:
-            sub = self._async_registry().get(loop)
+            registry, locks = self._async_registry(), self._async_locks()
+            sub = registry.get(loop)
             client = sub.pop(self._config_key, None) if sub else None
+            # Drop the loop's own entries once it holds no client, unless a
+            # create is in flight under its lock and about to insert one.
+            lock = locks.get(loop)
+            if not sub and (lock is None or not lock.locked()):
+                registry.pop(loop, None)
+                locks.pop(loop, None)
         if client is not None:
             await _aclose_glide_client(client)
 
@@ -3547,7 +3595,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         nomkstream: bool = False,
         minid: str | None = None,
         limit: int | None = None,
-    ) -> str:
+    ) -> str | None:
         args = _xadd_args(
             key,
             fields,
@@ -3599,9 +3647,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         minid: str | None = None,
         limit: int | None = None,
     ) -> int:
-        args: list[Any] = [b"XTRIM", key]
-        args.extend(_trim_args(maxlen=maxlen, approximate=approximate, minid=minid, limit=limit))
-        return await self._acmd(args)
+        return await self._acmd(_xtrim_args(key, maxlen=maxlen, approximate=approximate, minid=minid, limit=limit))
 
     async def axack(self, key: str, group: str, *entry_ids: Any) -> int:
         return await self._acmd([b"XACK", key, _enc(group), *_enc_list(entry_ids)])

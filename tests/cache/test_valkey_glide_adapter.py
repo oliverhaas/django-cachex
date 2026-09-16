@@ -42,6 +42,7 @@ from django_cachex.adapters.valkey_glide import (
 from django_cachex.exceptions import CachexError, NotSupportedError
 from django_cachex.lock import LockError
 from django_cachex.script import script_sha
+from django_cachex.stampede import StampedeConfig
 from django_cachex.types import KeyType
 
 
@@ -676,9 +677,23 @@ def test_pipeline_rejects_underscored_typo(mocker):
     assert pipe._batch.commands == []
 
 
-def test_pipeline_still_forwards_unknown_single_word_command(mocker):
+def test_pipeline_rejects_unknown_single_word_command(mocker):
     pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
-    pipe.getdel("k")
+    with pytest.raises(AttributeError):
+        pipe.getdel("k")
+    assert pipe._batch.commands == []
+
+
+@pytest.mark.parametrize("probe", ["__reduce_ex__", "__getstate__", "__copy__", "__deepcopy__", "_ipython_display_"])
+def test_pipeline_introspection_probes_do_not_enqueue(mocker, probe):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    hasattr(pipe, probe)
+    assert pipe._batch.commands == []
+
+
+def test_pipeline_execute_command_queues_a_raw_command(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    assert pipe.execute_command("GETDEL", "k") is pipe
     assert pipe._batch.commands[-1][1] == ["GETDEL", "k"]
 
 
@@ -896,12 +911,13 @@ def test_aclose_closes_and_drops_the_per_loop_client(mocker):
     async def scenario():
         loop = asyncio.get_running_loop()
         vg._GLIDE_ASYNC_CLIENTS[loop] = {("cfg",): client}
+        vg._GLIDE_ASYNC_LOCKS[loop] = asyncio.Lock()
         await adapter.aclose()
-        return vg._GLIDE_ASYNC_CLIENTS.get(loop)
+        return loop in vg._GLIDE_ASYNC_CLIENTS, loop in vg._GLIDE_ASYNC_LOCKS
 
     remaining = asyncio.run(scenario())
     client.close.assert_awaited_once()
-    assert remaining == {}
+    assert remaining == (False, False)
 
 
 def test_aclose_without_a_registered_client_is_quiet(mocker):
@@ -921,12 +937,90 @@ def test_cluster_aclose_uses_the_cluster_registry(mocker):
     async def scenario():
         loop = asyncio.get_running_loop()
         vg._GLIDE_ASYNC_CLUSTER_CLIENTS[loop] = {("cfg",): client}
+        vg._GLIDE_ASYNC_CLUSTER_LOCKS[loop] = asyncio.Lock()
         await adapter.aclose()
-        return vg._GLIDE_ASYNC_CLUSTER_CLIENTS.get(loop)
+        return loop in vg._GLIDE_ASYNC_CLUSTER_CLIENTS, loop in vg._GLIDE_ASYNC_CLUSTER_LOCKS
 
     remaining = asyncio.run(scenario())
     client.close.assert_awaited_once()
-    assert remaining == {}
+    assert remaining == (False, False)
+
+
+def test_aclose_keeps_the_loop_entries_while_another_config_remains(mocker):
+    import django_cachex.adapters.valkey_glide as vg
+
+    adapter = ValkeyGlideAdapter.__new__(ValkeyGlideAdapter)
+    adapter._config_key = ("cfg",)
+    other = mocker.AsyncMock()
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        vg._GLIDE_ASYNC_CLIENTS[loop] = {("cfg",): mocker.AsyncMock(), ("other",): other}
+        vg._GLIDE_ASYNC_LOCKS[loop] = asyncio.Lock()
+        await adapter.aclose()
+        return vg._GLIDE_ASYNC_CLIENTS.get(loop), loop in vg._GLIDE_ASYNC_LOCKS
+
+    sub, lock_kept = asyncio.run(scenario())
+    assert sub == {("other",): other}
+    assert lock_kept
+    other.close.assert_not_awaited()
+
+
+def test_aclose_keeps_the_loop_entries_while_a_create_holds_the_lock(mocker):
+    # A creator that took the lock before aclose ran is about to insert its
+    # client into ``sub``; dropping the dict now would strand that client.
+    import django_cachex.adapters.valkey_glide as vg
+
+    adapter = ValkeyGlideAdapter.__new__(ValkeyGlideAdapter)
+    adapter._config_key = ("cfg",)
+    client = mocker.AsyncMock()
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        lock = asyncio.Lock()
+        vg._GLIDE_ASYNC_CLIENTS[loop] = {("cfg",): client}
+        vg._GLIDE_ASYNC_LOCKS[loop] = lock
+        async with lock:
+            await adapter.aclose()
+            kept = vg._GLIDE_ASYNC_CLIENTS.get(loop), vg._GLIDE_ASYNC_LOCKS.get(loop) is lock
+        vg._GLIDE_ASYNC_CLIENTS.pop(loop, None)
+        vg._GLIDE_ASYNC_LOCKS.pop(loop, None)
+        return kept
+
+    assert asyncio.run(scenario()) == ({}, True)
+    client.close.assert_awaited_once()
+
+
+def test_get_async_client_restarts_after_aclose_dropped_its_loop_entries(mocker):
+    # Regression: a task that woke up holding a lock aclose had already
+    # discarded stored its new client in a dict nothing referenced.
+    import django_cachex.adapters.valkey_glide as vg
+
+    adapter = ValkeyGlideAdapter.__new__(ValkeyGlideAdapter)
+    adapter._config_key = ("cfg",)
+    closer = ValkeyGlideAdapter.__new__(ValkeyGlideAdapter)
+    closer._config_key = ("other",)
+    created = mocker.AsyncMock()
+    mocker.patch.object(ValkeyGlideAdapter, "_create_async_client", mocker.AsyncMock(return_value=created))
+    mocker.patch.object(ValkeyGlideAdapter, "_sweep_async_clients")
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        lock = asyncio.Lock()
+        vg._GLIDE_ASYNC_CLIENTS[loop] = {("other",): mocker.AsyncMock()}
+        vg._GLIDE_ASYNC_LOCKS[loop] = lock
+        await lock.acquire()
+        getter = asyncio.ensure_future(adapter.get_async_client())
+        await asyncio.sleep(0)  # the getter now waits on ``lock``
+        lock.release()  # hands the lock to the getter, which has not run yet
+        await closer.aclose()  # ``other`` was the last client: entries dropped
+        assert loop not in vg._GLIDE_ASYNC_CLIENTS
+        client = await getter
+        return client, vg._GLIDE_ASYNC_CLIENTS.get(loop)
+
+    client, sub = asyncio.run(scenario())
+    assert client._glide_client is created
+    assert sub == {("cfg",): client}
 
 
 # ------------------------------------------------------- LOCATION validation
@@ -1751,3 +1845,191 @@ def test_get_async_client_sweeps_only_when_it_creates(mocker):
         return after_create, sweep.call_count
 
     assert asyncio.run(scenario()) == (1, 1)
+
+
+# --------------------------------------------- aget_many discarded TTL batch
+
+
+@pytest.mark.asyncio
+async def test_aget_many_reports_a_discarded_ttl_batch(mocker):
+    adapter, client = _async_adapter(mocker)
+    adapter._stampede_config = StampedeConfig()
+    client.mget.return_value = [b"1"]
+    client.exec.return_value = None
+    with pytest.raises(CachexError, match="aborted"):
+        await adapter.aget_many(["a"])
+
+
+# ------------------------------------------------ xtrim without a strategy
+
+
+def test_xtrim_requires_maxlen_or_minid(mocker):
+    adapter, client = _adapter(mocker)
+    with pytest.raises(ValueError, match="requires maxlen or minid"):
+        adapter.xtrim("s")
+    client.custom_command.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_axtrim_requires_maxlen_or_minid(mocker):
+    adapter, client = _async_adapter(mocker)
+    with pytest.raises(ValueError, match="requires maxlen or minid"):
+        await adapter.axtrim("s")
+    client.custom_command.assert_not_awaited()
+
+
+def test_pipeline_xtrim_requires_maxlen_or_minid(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    with pytest.raises(ValueError, match="requires maxlen or minid"):
+        pipe.xtrim("s")
+    assert pipe._batch.commands == []
+
+
+def test_xtrim_minid_alone_is_sent(mocker):
+    adapter, client = _adapter(mocker)
+    adapter.xtrim("s", minid="1-0", approximate=False)
+    assert client.custom_command.call_args[0][0] == [b"XTRIM", "s", b"MINID", "1-0"]
+
+
+# ------------------------------------------------ LOCATION forms glide cannot dial
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["unix:///tmp/valkey.sock", "redis+socket:///tmp/valkey.sock", "valkey+socket:///run/v.sock"],
+)
+def test_unix_socket_location_is_rejected(raw):
+    with pytest.raises(ImproperlyConfigured, match="unix socket"):
+        ValkeyGlideAdapter([raw])
+
+
+@pytest.mark.parametrize("raw", ["localhost:6379", "127.0.0.1", "not a url", "http://h:6379", ""])
+def test_unparseable_location_is_rejected(raw):
+    with pytest.raises(ImproperlyConfigured, match="not a URL valkey-glide can connect to"):
+        ValkeyGlideAdapter([raw])
+
+
+def test_location_with_an_invalid_port_is_rejected():
+    with pytest.raises(ImproperlyConfigured, match="invalid port"):
+        ValkeyGlideAdapter(["redis://h:notaport/0"])
+
+
+def test_cluster_location_is_validated_too():
+    with pytest.raises(ImproperlyConfigured, match="unix socket"):
+        ValkeyGlideClusterAdapter(["unix:///tmp/valkey.sock"])
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("redis://h:6380/1", ("h", 6380)),
+        ("rediss://u:pw@h/1", ("h", 6379)),
+        ("valkey://h", ("h", 6379)),
+        ("valkeys://[::1]:6390", ("::1", 6390)),
+        ("redis://:6380", ("localhost", 6380)),
+    ],
+)
+def test_node_addresses_accept_the_tcp_schemes(raw, expected):
+    (node,) = _node_addresses([raw], NodeAddress)
+    assert (node.host, node.port) == expected
+
+
+# ------------------------------------------ OPTIONS settle a URL-list mismatch
+
+
+def test_config_kwargs_options_db_settles_a_database_mismatch():
+    kwargs = _glide_config_kwargs(
+        ["redis://h:6379/1", "redis://h2:6379/2"],
+        {"db": 3},
+        credentials_cls=ServerCredentials,
+    )
+    assert kwargs["database_id"] == 3
+
+
+def test_config_kwargs_options_credentials_settle_a_credential_mismatch():
+    kwargs = _glide_config_kwargs(
+        ["redis://u:pw@h:6379/1", "redis://other:pw2@h2:6379/1"],
+        {"username": "app", "password": "secret"},
+        credentials_cls=ServerCredentials,
+    )
+    assert (kwargs["credentials"].username, kwargs["credentials"].password) == ("app", "secret")
+
+
+def test_config_kwargs_options_password_alone_leaves_a_username_mismatch():
+    with pytest.raises(ImproperlyConfigured, match="username"):
+        _glide_config_kwargs(
+            ["redis://u:pw@h:6379/1", "redis://other:pw2@h2:6379/1"],
+            {"password": "secret"},
+            credentials_cls=ServerCredentials,
+        )
+
+
+# --------------------------------------------------- pipeline xread on a miss
+
+
+@pytest.mark.parametrize("raw", [None, {}])
+def test_pipeline_xread_returns_none_for_no_entries(mocker, raw):
+    client = mocker.Mock()
+    client.exec.return_value = [raw]
+    pipe = ValkeyGlidePipelineAdapter(client, transaction=False)
+    pipe.xread({"s": "0-0"})
+    assert pipe.execute() == [None]
+
+
+def test_xread_returns_none_for_no_entries(mocker):
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = None
+    assert adapter.xread({"s": "0-0"}) is None
+
+
+# ------------------------------------------------- pipeline hmget field guard
+
+
+def test_pipeline_hmget_without_fields_raises(mocker):
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
+    with pytest.raises(ValueError, match="at least one field"):
+        pipe.hmget("h")
+    with pytest.raises(ValueError, match="at least one field"):
+        pipe.hmget("h", [])
+    assert pipe._batch.commands == []
+
+
+# -------------------------------------------------- xadd NOMKSTREAM miss
+
+
+def test_xadd_nomkstream_returns_none_for_a_missing_stream(mocker):
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = None
+    assert adapter.xadd("s", {"f": b"v"}, nomkstream=True) is None
+    assert b"NOMKSTREAM" in client.custom_command.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_axadd_nomkstream_returns_none_for_a_missing_stream(mocker):
+    adapter, client = _async_adapter(mocker)
+    client.custom_command.return_value = None
+    assert await adapter.axadd("s", {"f": b"v"}, nomkstream=True) is None
+
+
+# ------------------------------------------- sync and async value objects
+
+
+def test_glide_value_objects_are_shared_between_the_sync_and_async_packages():
+    # Both distributions re-export ``glide_shared``; only Script and the
+    # cluster scan cursor are per-package, and the adapter keeps those apart.
+    import glide
+    import glide_sync
+
+    for name in ("ExpirySet", "ExpiryType", "ConditionalChange", "Batch", "ClusterBatch", "RequestError"):
+        assert getattr(glide, name) is getattr(glide_sync, name), name
+    assert glide.Script is not glide_sync.Script
+
+
+@pytest.mark.asyncio
+async def test_aset_passes_an_expiry_the_async_client_accepts(mocker):
+    import glide
+
+    adapter, client = _async_adapter(mocker)
+    client.set.return_value = b"OK"
+    await adapter.aset("k", b"v", 60)
+    assert isinstance(client.set.await_args.kwargs["expiry"], glide.ExpirySet)

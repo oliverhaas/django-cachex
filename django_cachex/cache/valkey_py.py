@@ -29,8 +29,8 @@ class ValkeySentinelCache(RespSentinelCache):
     """Django cache backend for Valkey Sentinel high availability (valkey-py).
 
     Failover and service discovery happen through Valkey Sentinel; the
-    ``LOCATION`` hostname is the Sentinel service name. Raises
-    :class:`ImportError` on instantiation if ``valkey-py`` isn't installed.
+    ``LOCATION`` hostname is the Sentinel service name. Instantiation
+    raises :class:`ImportError` if ``valkey-py`` isn't installed.
     """
 
     _adapter_class = ValkeyPySentinelAdapter
@@ -39,8 +39,8 @@ class ValkeySentinelCache(RespSentinelCache):
 class ValkeyClusterCache(RespClusterCache):
     """Django cache backend for Valkey Cluster mode (valkey-py).
 
-    Keys are sharded across nodes by hash slot. Raises :class:`ImportError`
-    on instantiation if ``valkey-py`` isn't installed.
+    Keys are sharded across nodes by hash slot. Instantiation raises
+    :class:`ImportError` if ``valkey-py`` isn't installed.
     """
 
     _adapter_class = ValkeyPyClusterAdapter

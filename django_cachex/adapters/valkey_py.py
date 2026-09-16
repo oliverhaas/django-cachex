@@ -25,9 +25,10 @@ import inspect
 import random
 import threading
 import weakref
-from collections import defaultdict, deque
+from collections import deque
 from contextlib import contextmanager, suppress
 from datetime import datetime, timedelta
+from functools import cached_property
 from itertools import batched
 from typing import TYPE_CHECKING, Any, cast, override
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
@@ -108,12 +109,8 @@ def _loop_slot(registry: AsyncPoolsRegistry, loop: asyncio.AbstractEventLoop) ->
         return slot
 
 
-def _pop_loop_entries(
-    registry: AsyncPoolsRegistry,
-    loop: asyncio.AbstractEventLoop,
-    keys: Iterable[tuple[Any, ...]],
-) -> list[Any]:
-    """Remove and return ``loop``'s entries under ``keys``.
+def _pop_loop_entry(registry: AsyncPoolsRegistry, loop: asyncio.AbstractEventLoop, key: tuple[Any, ...]) -> Any:
+    """Remove and return ``loop``'s entry under ``key``, or None.
 
     Only the caller's own keys go. The registry is shared by every alias on
     the driver, and disconnecting a pool drops the connections another
@@ -121,9 +118,7 @@ def _pop_loop_entries(
     """
     with _ASYNC_REGISTRY_LOCK:
         slot = registry.get(loop)
-        if slot is None:
-            return []
-        return [slot.pop(key) for key in keys if key in slot]
+        return None if slot is None else slot.pop(key, None)
 
 
 # How deep ``_stable_value`` walks a nested option value before giving up.
@@ -276,10 +271,10 @@ class _DriverLock:
     ``LockNotOwnedError``, which neither subclass nor share a base with
     :class:`django_cachex.lock.LockError`. Wrapping the lock (rather than
     subclassing it) keeps the driver's ``acquire()`` signature and attributes
-    (``timeout``, ``blocking_timeout``, ``locked()``, ``owned()``) intact while
-    every call surfaces the cachex classes, with the driver error as
-    ``__cause__``. Callables come back wrapped (cached per name); anything
-    else passes through. The async lock's ``release()`` and ``extend()`` are
+    (``timeout``, ``blocking_timeout``, ``locked()``, ``owned()``) intact, for
+    reads and assignments alike, while every call surfaces the cachex classes,
+    with the driver error as ``__cause__``. Callables come back wrapped (cached
+    per name); anything else passes through. The async lock's ``release()`` and ``extend()`` are
     plain ``def`` returning an awaitable, so the wrapper translates on the
     call and again on the await.
     """
@@ -322,6 +317,10 @@ class _DriverLock:
         return call
 
     def __getattr__(self, name: str) -> Any:
+        # ``copy`` and ``pickle`` probe an instance built by ``__new__`` for
+        # dunders before the slots exist; reading a slot here would recurse.
+        if name in _DriverLock.__slots__ or (name.startswith("__") and name.endswith("__")):
+            raise AttributeError(name)
         wrapper = self._wrappers.get(name)
         if wrapper is not None:
             return wrapper
@@ -331,6 +330,13 @@ class _DriverLock:
         wrapper = self._translating(attr)
         self._wrappers[name] = wrapper
         return wrapper
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in _DriverLock.__slots__:
+            object.__setattr__(self, name, value)
+            return
+        setattr(self._lock, name, value)
+        self._wrappers.pop(name, None)
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._lock!r})"
@@ -376,7 +382,6 @@ try:
         SentinelManagedSSLConnection as AsyncValkeySentinelManagedSSLConnection,
     )
     from valkey.cluster import ValkeyCluster
-    from valkey.cluster import key_slot as valkey_key_slot
     from valkey.sentinel import Sentinel as ValkeySentinel
     from valkey.sentinel import SentinelConnectionPool as ValkeySentinelConnectionPool
     from valkey.sentinel import SentinelManagedSSLConnection as ValkeySentinelManagedSSLConnection
@@ -560,6 +565,12 @@ class _ValkeyPyInvalidationListener(InvalidationListenerProtocol):
     def poll(self, timeout: float) -> Invalidation | None:
         if self._buffered:
             return self._buffered.popleft()
+        # ``can_read`` on a dropped socket would reconnect through the driver,
+        # without CLIENT TRACKING and under a new client id. Fail instead;
+        # TrackingCache rebuilds the listener.
+        if not _is_connected(self._conn):
+            msg = "The invalidation listener lost its connection"
+            raise ConnectionError(msg)
         if not self._conn.can_read(timeout=timeout):
             return None
         # Straight to the parser: valkey-py's ``read_response`` drops ``push_request``.
@@ -840,12 +851,18 @@ class ValkeyPyAdapter(RespAdapterProtocol):
     async def aclose(self, **kwargs: Any) -> None:
         """Disconnect this adapter's async pools on this event loop, and release those of closed loops.
 
-        Pools another alias opened on the same loop stay up: ``aclose()`` on a
-        driver pool drops in-use connections along with idle ones.
+        Only pools under this adapter's own registry keys go; an alias with a
+        different URL or options keeps its pools. An alias configured
+        identically shares the very same pool, so it is disconnected too (a
+        driver pool's ``aclose()`` drops in-use connections along with idle
+        ones) and reconnects lazily on its next command. Each pool leaves the
+        registry as it is closed, so a failure mid-way keeps the rest reachable.
         """
-        keys = {self._async_pool_key(index) for index in range(len(self._servers))}
-        for pool in _pop_loop_entries(self._async_pools, asyncio.get_running_loop(), keys):
-            await self._aclose_pool(pool)
+        loop = asyncio.get_running_loop()
+        for index in range(len(self._servers)):
+            pool = _pop_loop_entry(self._async_pools, loop, self._async_pool_key(index))
+            if pool is not None:
+                await self._aclose_pool(pool)
         _evict_closed_loops(self._async_pools)
 
     async def _aclose_pool(self, pool: Any) -> None:
@@ -878,9 +895,10 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
-            if ret := bool(client.set(key, value, nx=True)):
-                client.unlink(key)
-            return ret
+            # A deadline already in the past: the reply is that of a plain
+            # SET NX and the key is expired the moment it lands, with no
+            # window in which it exists without a TTL.
+            return bool(client.set(key, value, nx=True, pxat=1))
         return bool(client.set(key, value, nx=True, ex=actual_timeout))
 
     async def aadd(
@@ -895,9 +913,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
-            if ret := bool(await client.set(key, value, nx=True)):
-                await client.unlink(key)
-            return ret
+            return bool(await client.set(key, value, nx=True, pxat=1))
         return bool(await client.set(key, value, nx=True, ex=actual_timeout))
 
     def get(self, key: str, *, stampede_prevention: bool | StampedeConfig | None = None) -> Any:
@@ -978,13 +994,8 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
-            result = client.set(key, value, nx=nx, xx=xx, get=get)
-            if get:
-                executed = result is None if nx else (result is not None if xx else True)
-            else:
-                executed = bool(result)
-            if executed:
-                client.unlink(key)
+            # Past deadline, see add(): same reply as without a TTL, key expired on arrival.
+            result = client.set(key, value, nx=nx, xx=xx, get=get, pxat=1)
             return result if get else bool(result)
         result = client.set(key, value, ex=actual_timeout, nx=nx, xx=xx, get=get)
         return result if get else bool(result)
@@ -1004,13 +1015,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
-            result = await client.set(key, value, nx=nx, xx=xx, get=get)
-            if get:
-                executed = result is None if nx else (result is not None if xx else True)
-            else:
-                executed = bool(result)
-            if executed:
-                await client.unlink(key)
+            result = await client.set(key, value, nx=nx, xx=xx, get=get, pxat=1)
             return result if get else bool(result)
         result = await client.set(key, value, ex=actual_timeout, nx=nx, xx=xx, get=get)
         return result if get else bool(result)
@@ -1333,7 +1338,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         return bool(await client.persist(key))
 
-    def keys(self, pattern: str) -> list[str]:
+    def keys(self, pattern: str = "*") -> list[str]:
         """Get all keys matching pattern (already prefixed)."""
         client = self.get_client(write=False)
 
@@ -1428,7 +1433,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
                 return False
             raise
 
-    async def akeys(self, pattern: str) -> list[str]:
+    async def akeys(self, pattern: str = "*") -> list[str]:
         client = await self.get_async_client(write=False)
 
         keys_result = await client.keys(pattern)
@@ -2921,8 +2926,8 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         nomkstream: bool = False,
         minid: str | None = None,
         limit: int | None = None,
-    ) -> str:
-        """Add an entry to a stream."""
+    ) -> str | None:
+        """Add an entry to a stream (``None`` with ``nomkstream`` on a missing stream)."""
         client = self.get_client(key, write=True)
 
         result = client.xadd(
@@ -3010,15 +3015,13 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         streams: dict[str, str],
         count: int | None = None,
         block: int | None = None,
-    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]]:
         """Read entries from one or more streams."""
         client = self.get_client(write=False)
 
-        results = client.xread(streams=streams, count=count, block=block)
-        if results is None:
-            return None
-
-        return self._decode_stream_results(results)
+        # The driver's XREAD callback turns a nil reply into an empty
+        # container, so an empty read decodes to ``{}``.
+        return self._decode_stream_results(client.xread(streams=streams, count=count, block=block))
 
     def xtrim(
         self,
@@ -3109,7 +3112,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         count: int | None = None,
         block: int | None = None,
         noack: bool = False,
-    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]]:
         """Read entries from streams as a consumer group member."""
         client = self.get_client(write=True)
 
@@ -3121,9 +3124,6 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             block=block,
             noack=noack,
         )
-        if results is None:
-            return None
-
         return self._decode_stream_results(results)
 
     def xack(self, key: str, group: str, *entry_ids: str) -> int:
@@ -3190,6 +3190,16 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             return [r.decode() if isinstance(r, bytes) else r for r in results]
         return self._decode_stream_entries(results)
 
+    def _check_justid_supported(self) -> None:
+        # The cluster client is shared, so its JUSTID callback cannot be
+        # swapped out, and the callback drops the cursor and the deleted ids.
+        if not self._per_call_clients:
+            raise NotSupportedError(
+                "xautoclaim(justid=True)",
+                "cluster",
+                detail="the driver's JUSTID reply drops the cursor; call xautoclaim() without justid",
+            )
+
     def xautoclaim(
         self,
         key: str,
@@ -3201,9 +3211,10 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         justid: bool = False,
     ) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
         """Auto-claim pending messages that have been idle."""
-        if justid and self._per_call_clients:
+        if justid:
             # The driver's JUSTID callback strips next_id and deleted. Override
             # it on a throwaway client so the pooled one stays pristine.
+            self._check_justid_supported()
             client = self._new_client(self._get_connection_pool(write=True))
             client.set_response_callback("XAUTOCLAIM", _raw_response)
         else:
@@ -3218,12 +3229,6 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             count=count,
             justid=justid,
         )
-
-        if justid and not self._per_call_clients:
-            # Shared client (cluster): the driver callback already stripped
-            # next_id/deleted, so the cursor cannot be recovered.
-            claimed: list[str] = [r.decode() if isinstance(r, bytes) else r for r in result]
-            return ("", claimed, [])
 
         next_id = result[0].decode() if isinstance(result[0], bytes) else result[0]
         deleted = [d.decode() if isinstance(d, bytes) else d for d in result[2]] if len(result) > 2 else []
@@ -3245,7 +3250,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         nomkstream: bool = False,
         minid: str | None = None,
         limit: int | None = None,
-    ) -> str:
+    ) -> str | None:
         client = await self.get_async_client(key, write=True)
 
         result = await client.xadd(
@@ -3294,14 +3299,10 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         streams: dict[str, str],
         count: int | None = None,
         block: int | None = None,
-    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]]:
         client = await self.get_async_client(write=False)
 
-        results = await client.xread(streams=streams, count=count, block=block)
-        if results is None:
-            return None
-
-        return self._decode_stream_results(results)
+        return self._decode_stream_results(await client.xread(streams=streams, count=count, block=block))
 
     async def axtrim(
         self,
@@ -3383,7 +3384,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         count: int | None = None,
         block: int | None = None,
         noack: bool = False,
-    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]]:
         client = await self.get_async_client(write=True)
 
         results = await client.xreadgroup(
@@ -3394,9 +3395,6 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             block=block,
             noack=noack,
         )
-        if results is None:
-            return None
-
         return self._decode_stream_results(results)
 
     async def axack(self, key: str, group: str, *entry_ids: str) -> int:
@@ -3470,9 +3468,9 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         count: int | None = None,
         justid: bool = False,
     ) -> tuple[str, list[tuple[str, dict[str, Any]]] | list[str], list[str]]:
-        if justid and self._per_call_clients:
-            # The driver's JUSTID callback strips next_id and deleted. Override
-            # it on a throwaway client so the pooled one stays pristine.
+        if justid:
+            # See xautoclaim().
+            self._check_justid_supported()
             client = self._new_async_client(self._get_async_connection_pool(write=True))
             client.set_response_callback("XAUTOCLAIM", _raw_response)
         else:
@@ -3487,12 +3485,6 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             count=count,
             justid=justid,
         )
-
-        if justid and not self._per_call_clients:
-            # Shared client (cluster): the driver callback already stripped
-            # next_id/deleted, so the cursor cannot be recovered.
-            claimed: list[str] = [r.decode() if isinstance(r, bytes) else r for r in result]
-            return ("", claimed, [])
 
         next_id = result[0].decode() if isinstance(result[0], bytes) else result[0]
         deleted = [d.decode() if isinstance(d, bytes) else d for d in result[2]] if len(result) > 2 else []
@@ -3579,25 +3571,41 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
         servers: list[str],
         pool_class: str | type | None = None,
         parser_class: str | type | None = None,
+        async_pool_class: str | type | None = None,
         **options: Any,
     ) -> None:
-        # Transform the first URL into two: one with ``is_master=1`` (primary)
-        # and one with ``is_master=0`` (replica).
+        # Sentinel discovers the replicas itself, so LOCATION is one service
+        # URL. A list would silently lose every entry but the first.
+        if len(servers) > 1:
+            msg = (
+                f"{type(self).__name__} takes a single LOCATION URL naming the Sentinel service "
+                f"(for example 'redis://mymaster/0'), got {len(servers)} entries. "
+                f"Sentinel discovers the replicas; list the Sentinel nodes under OPTIONS['sentinels']."
+            )
+            raise ImproperlyConfigured(msg)
+        # Transform the URL into two: one with ``is_master=1`` (primary) and
+        # one with ``is_master=0`` (replica).
         if servers:
             servers = self._transform_sentinel_urls(servers[0])
 
-        super().__init__(servers, pool_class, parser_class, **options)
+        super().__init__(servers, pool_class, parser_class, async_pool_class, **options)
 
         # A plain pool takes none of the Sentinel discovery kwargs; fail early with a clear message.
-        base_pool_class = type(self)._sentinel_pool_class
-        if pool_class is not None and base_pool_class is not None:
-            if not (isinstance(self._pool_class, type) and issubclass(self._pool_class, base_pool_class)):
-                msg = (
-                    f"pool_class {self._pool_class!r} cannot serve a Sentinel cache. "
-                    f"Use {base_pool_class.__module__}.{base_pool_class.__qualname__} or a subclass of it."
-                )
-                raise ImproperlyConfigured(msg)
-            self._sentinel_pool_class = self._pool_class
+        if pool_class is not None:
+            self._sentinel_pool_class = self._checked_pool_class(
+                "pool_class",
+                self._pool_class,
+                type(self)._sentinel_pool_class,
+            )
+        if async_pool_class is not None:
+            self._async_sentinel_pool_class = self._checked_pool_class(
+                "async_pool_class",
+                self._async_pool_class,
+                type(self)._async_sentinel_pool_class,
+            )
+        # The generic async slot stays None (see the class attribute); the
+        # Sentinel-managed class lives on ``_async_sentinel_pool_class``.
+        self._async_pool_class = None
 
         self._async_sentinels = weakref.WeakKeyDictionary()
 
@@ -3618,6 +3626,18 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
             sentinel_kwargs=sentinel_kwargs,
             **pool_options,
         )
+
+    @staticmethod
+    def _checked_pool_class(option: str, pool_class: Any, base_pool_class: builtins.type[Any] | None) -> Any:
+        if base_pool_class is not None and not (
+            isinstance(pool_class, type) and issubclass(pool_class, base_pool_class)
+        ):
+            msg = (
+                f"{option} {pool_class!r} cannot serve a Sentinel cache. "
+                f"Use {base_pool_class.__module__}.{base_pool_class.__qualname__} or a subclass of it."
+            )
+            raise ImproperlyConfigured(msg)
+        return pool_class
 
     def _transform_sentinel_urls(self, server: str) -> list[str]:
         """Transform a single URL into primary and replica URLs."""
@@ -3712,28 +3732,27 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
     def _get_async_sentinel(self) -> Any:
         """Get or create an async sentinel instance for the current event loop."""
         loop = asyncio.get_running_loop()
-        _evict_closed_loops(self._async_sentinels)
+        with _ASYNC_REGISTRY_LOCK:
+            _evict_closed_loops(self._async_sentinels)
 
-        if loop in self._async_sentinels:
-            return self._async_sentinels[loop]
+            if loop in self._async_sentinels:
+                return self._async_sentinels[loop]
 
-        if self._async_sentinel_class is None:
-            msg = "Subclasses must set _async_sentinel_class"
-            raise RuntimeError(msg)
+            if self._async_sentinel_class is None:
+                msg = "Subclasses must set _async_sentinel_class"
+                raise RuntimeError(msg)
 
-        sentinels = self._options.get("sentinels")
-        # None, not {}: see the note in __init__ about socket_* inheritance.
-        sentinel_kwargs = self._options.get("sentinel_kwargs")
-        # Filter out parser_class - it's sync-specific
-        pool_options = {k: v for k, v in self._pool_options.items() if k != "parser_class"}
+            sentinels = self._options.get("sentinels")
+            # None, not {}: see the note in __init__ about socket_* inheritance.
+            sentinel_kwargs = self._options.get("sentinel_kwargs")
 
-        async_sentinel = self._async_sentinel_class(
-            sentinels,
-            sentinel_kwargs=sentinel_kwargs,
-            **pool_options,
-        )
-        self._async_sentinels[loop] = async_sentinel
-        return async_sentinel
+            async_sentinel = self._async_sentinel_class(
+                sentinels,
+                sentinel_kwargs=sentinel_kwargs,
+                **self._async_sentinel_pool_options(),
+            )
+            self._async_sentinels[loop] = async_sentinel
+            return async_sentinel
 
     @override
     def _get_async_connection_pool(self, *, write: bool) -> Any:
@@ -3751,9 +3770,7 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
             msg = "Subclasses must set _async_sentinel_pool_class"
             raise RuntimeError(msg)
 
-        service_name, is_master, clean_url = self._parse_sentinel_url(index)
-        pool_options = self._async_sentinel_pool_options()
-        key = self._async_sentinel_pool_key(index, service_name, is_master, clean_url)
+        service_name, is_master, clean_url, key = self._async_pool_targets[index]
 
         slot = _loop_slot(self._async_pools, loop)
         pool = slot.get(key)
@@ -3763,7 +3780,7 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
                 service_name=service_name,
                 sentinel_manager=self._get_async_sentinel(),
                 is_master=is_master,
-                **pool_options,
+                **self._async_sentinel_pool_options(),
             )
             tls_connection_class = self._tls_connection_class(clean_url, is_async=True)
             if tls_connection_class is not None:
@@ -3781,30 +3798,38 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
         """
         return {k: v for k, v in self._pool_options.items() if k != "parser_class"}
 
-    def _async_sentinel_pool_key(
-        self,
-        index: int,
-        service_name: str,
-        is_master: bool,
-        clean_url: str,
-    ) -> tuple[Any, ...]:
-        # The key must be stable across adapter instances (asgiref hands each
-        # task a fresh one), so the fleet stands in for its sentinel manager.
+    @cached_property
+    def _async_pool_targets(self) -> tuple[tuple[str, bool, str, tuple[Any, ...]], ...]:
+        """``(service_name, is_master, clean_url, registry key)`` per server index.
+
+        Computed once: the async path looks its pool up on every awaited
+        command. The key must be stable across adapter instances (asgiref
+        hands each task a fresh one), so the fleet stands in for its
+        sentinel manager.
+        """
         sentinels = self._options.get("sentinels") or ()
-        return (
-            self._async_sentinel_pool_class,
-            clean_url,
-            service_name,
-            is_master,
-            tuple(tuple(entry) for entry in sentinels),
-            _options_key(self._options.get("sentinel_kwargs") or {}),
-            _options_key(self._async_sentinel_pool_options()),
-            index,
-        )
+        fleet = tuple(tuple(entry) for entry in sentinels)
+        sentinel_kwargs_key = _options_key(self._options.get("sentinel_kwargs") or {})
+        pool_options_key = _options_key(self._async_sentinel_pool_options())
+        targets = []
+        for index in range(len(self._servers)):
+            service_name, is_master, clean_url = self._parse_sentinel_url(index)
+            key = (
+                self._async_sentinel_pool_class,
+                clean_url,
+                service_name,
+                is_master,
+                fleet,
+                sentinel_kwargs_key,
+                pool_options_key,
+                index,
+            )
+            targets.append((service_name, is_master, clean_url, key))
+        return tuple(targets)
 
     @override
     def _async_pool_key(self, index: int) -> tuple[Any, ...]:
-        return self._async_sentinel_pool_key(index, *self._parse_sentinel_url(index))
+        return self._async_pool_targets[index][3]
 
     @override
     def close(self, **kwargs: Any) -> None:
@@ -3852,7 +3877,6 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
     # Subclasses must set these
     _cluster_class: builtins.type[Any] | None = None
     _async_cluster_class: builtins.type[Any] | None = None
-    _key_slot_func: Any = None  # Function to calculate key slot
 
     # Process-wide cluster registries. Subclasses (RedisPyClusterAdapter)
     # can point at their own dicts so cluster instances aren't shared
@@ -3864,7 +3888,6 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
     if _VALKEY_AVAILABLE:
         _cluster_class = ValkeyCluster
         _async_cluster_class = AsyncValkeyCluster
-        _key_slot_func = staticmethod(valkey_key_slot)
 
     @property
     def _cluster(self) -> builtins.type[Any]:
@@ -3919,14 +3942,6 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
             cluster = self._async_cluster.from_url(self._servers[0], **cluster_options)
             slot[cache_key] = cluster
         return _install_error_translation(cluster)
-
-    def _group_keys_by_slot(self, keys: Iterable[str]) -> dict[int, list[str]]:
-        slots: dict[int, list[str]] = defaultdict(list)
-        for key in keys:
-            key_bytes = key.encode() if isinstance(key, str) else key
-            slot = self._key_slot_func(key_bytes)
-            slots[slot].append(key)
-        return dict(slots)
 
     # Override methods that need cluster-specific handling
 
@@ -3983,8 +3998,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
-            for slot_keys in self._group_keys_by_slot(data.keys()).values():
-                client.unlink(*slot_keys)
+            client.unlink(*data.keys())
         elif actual_timeout is None:
             client.mset_nonatomic(data)
         else:
@@ -3999,18 +4013,12 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
 
     @override
     def delete_many(self, keys: Sequence[str]) -> int:
-        """Remove multiple keys, grouping by slot."""
+        """Remove multiple keys; the cluster client splits them by slot."""
         if not keys:
             return 0
 
         client = self.get_client(write=True)
-
-        slots = self._group_keys_by_slot(keys)
-
-        total_deleted = 0
-        for slot_keys in slots.values():
-            total_deleted += cast("int", client.unlink(*slot_keys))
-        return total_deleted
+        return cast("int", client.unlink(*keys))
 
     @override
     def clear(self) -> bool:
@@ -4021,7 +4029,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         return True
 
     @override
-    def keys(self, pattern: str) -> list[str]:
+    def keys(self, pattern: str = "*") -> list[str]:
         """Execute KEYS command across all primary nodes (pattern is already prefixed)."""
         client = self.get_client(write=False)
 
@@ -4072,8 +4080,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
             itersize,
             strict=False,
         ):
-            for slot_keys in self._group_keys_by_slot(batch).values():
-                total_deleted += cast("int", client.unlink(*slot_keys))
+            total_deleted += cast("int", client.unlink(*batch))
         return total_deleted
 
     @override
@@ -4156,8 +4163,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
 
         if actual_timeout == 0:
-            for slot_keys in self._group_keys_by_slot(data.keys()).values():
-                await client.unlink(*slot_keys)
+            await client.unlink(*data.keys())
         elif actual_timeout is None:
             await client.mset_nonatomic(data)
         else:
@@ -4176,13 +4182,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
             return 0
 
         client = await self.get_async_client(write=True)
-
-        slots = self._group_keys_by_slot(keys)
-
-        total_deleted = 0
-        for slot_keys in slots.values():
-            total_deleted += cast("int", await client.unlink(*slot_keys))
-        return total_deleted
+        return cast("int", await client.unlink(*keys))
 
     @override
     async def aclear(self) -> bool:
@@ -4192,7 +4192,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         return True
 
     @override
-    async def akeys(self, pattern: str) -> list[str]:
+    async def akeys(self, pattern: str = "*") -> list[str]:
         client = await self.get_async_client(write=False)
 
         keys_result = cast(
@@ -4239,12 +4239,10 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         ):
             batch.append(key)
             if len(batch) >= itersize:
-                for slot_keys in self._group_keys_by_slot(batch).values():
-                    total_deleted += cast("int", await client.unlink(*slot_keys))
+                total_deleted += cast("int", await client.unlink(*batch))
                 batch.clear()
         if batch:
-            for slot_keys in self._group_keys_by_slot(batch).values():
-                total_deleted += cast("int", await client.unlink(*slot_keys))
+            total_deleted += cast("int", await client.unlink(*batch))
         return total_deleted
 
     @override
@@ -4262,11 +4260,12 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
     async def aclose(self, **kwargs: Any) -> None:
         """Close this adapter's async cluster client on this loop, and release those of closed loops.
 
-        A client another alias opened on the same loop stays up; closing it
-        would drop the connections its in-flight tasks are using.
+        Only the client under this adapter's own registry key goes; an alias
+        with a different URL or options keeps its client, one configured
+        identically shares this client and reconnects lazily on its next command.
         """
-        cache_key = self._cluster_options()[1]
-        for cluster in _pop_loop_entries(self._async_clusters, asyncio.get_running_loop(), [cache_key]):
+        cluster = _pop_loop_entry(self._async_clusters, asyncio.get_running_loop(), self._cluster_options()[1])
+        if cluster is not None:
             await cluster.aclose()
         _evict_closed_loops(self._async_clusters)
 

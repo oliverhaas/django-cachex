@@ -13,8 +13,8 @@ from django_cachex.exceptions import CachexError
 class LockError(CachexError, ValueError):
     """Raised when a lock operation fails.
 
-    Subclasses :class:`ValueError` like ``threading.Lock`` and the driver
-    lock errors do, so existing ``except ValueError`` callers keep working.
+    Subclasses :class:`ValueError` like the redis-py and valkey-py lock
+    errors do, so existing ``except ValueError`` callers keep working.
     """
 
 

@@ -10,6 +10,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import pytest
+import redis
 from django.core.cache import caches
 from django.test import override_settings
 
@@ -155,17 +156,25 @@ class TestReplicaDataIntegrity:
 
         replica_cache.delete("counter")
 
-    def test_delete_propagates_to_replicas(self, replica_cache: RespCache):
+    def test_delete_propagates_to_replicas(self, replica_cache: RespCache, replica_urls: list[str]):
         replica_cache.set("delete_test", "value", timeout=60)
         assert wait_for_replication(replica_cache, {"delete_test": "value"}) == {"delete_test": "value"}
 
         replica_cache.delete("delete_test")
 
-        # A miss reads back as None, which wait_for_replication cannot express.
-        for _ in range(50):
-            if replica_cache.get("delete_test") is None:
-                break
-            time.sleep(0.1)
+        # Reads pick a replica at random, so polling ``get`` until one miss
+        # says nothing about the other replica. Ask every server directly.
+        made_key = replica_cache.make_key("delete_test")
+        servers = [redis.Redis.from_url(url) for url in replica_urls]
+        try:
+            for _ in range(50):
+                if not any(server.exists(made_key) for server in servers):
+                    break
+                time.sleep(0.1)
+            assert [server.exists(made_key) for server in servers] == [0] * len(servers)
+        finally:
+            for server in servers:
+                server.close()
         assert replica_cache.get("delete_test") is None
 
 

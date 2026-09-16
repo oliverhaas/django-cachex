@@ -7,9 +7,11 @@ import weakref
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from redis.cluster import RedisCluster, key_slot
+from redis.cluster import RedisCluster
 
 from django_cachex.adapters import RedisPyClusterAdapter
+from django_cachex.cache import RedisClusterCache
+from django_cachex.exceptions import NotSupportedError
 
 
 def setup_cluster_client(mock_cluster_cls=None):
@@ -30,7 +32,6 @@ def setup_cluster_client(mock_cluster_cls=None):
         client._cluster_class = mock_cluster_cls
     else:
         client._cluster_class = RedisCluster
-    client._key_slot_func = key_slot
     return client
 
 
@@ -59,27 +60,6 @@ class TestRedisClusterAdapter:
 
         assert result1 is result2
         assert mock_cluster_cls.from_url.call_count == 1
-
-    def test_group_keys_by_slot(self):
-        client = setup_cluster_client()
-
-        keys = ["{user}:1", "{user}:2", "{user}:3"]
-        slots = client._group_keys_by_slot(keys)
-
-        assert len(slots) == 1
-        slot_keys = list(slots.values())[0]
-        assert len(slot_keys) == 3
-
-    def test_group_keys_by_slot_different_slots(self):
-        client = setup_cluster_client()
-
-        # {a} -> slot 15495, {b} -> slot 3300, {c} -> slot 7365
-        keys = ["{a}key1", "{b}key2", "{c}key3"]
-        slots = client._group_keys_by_slot(keys)
-
-        assert len(slots) == 3
-        total_keys = sum(len(v) for v in slots.values())
-        assert total_keys == 3
 
     def test_get_many_uses_mget_nonatomic(self):
         """Test get_many uses mget_nonatomic for cross-slot keys."""
@@ -117,7 +97,7 @@ class TestRedisClusterAdapter:
         result = client.get_many([])
         assert result == {}
 
-    def test_delete_many_groups_by_slot(self):
+    def test_delete_many_is_one_unlink(self):
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
         mock_cluster_cls.from_url.return_value = mock_cluster
@@ -126,12 +106,11 @@ class TestRedisClusterAdapter:
 
         client.key_func = lambda k, p, v: k
 
-        mock_cluster.unlink.return_value = 1
+        mock_cluster.unlink.return_value = 3
 
-        # {a} -> slot 15495, {b} -> slot 3300, {c} -> slot 7365
         client.delete_many(["{a}key1", "{b}key2", "{c}key3"])
 
-        assert mock_cluster.unlink.call_count == 3
+        mock_cluster.unlink.assert_called_once_with("{a}key1", "{b}key2", "{c}key3")
 
     def test_delete_many_empty_keys(self):
         mock_cluster_cls = MagicMock()
@@ -286,7 +265,7 @@ class TestRedisClusterAdapter:
                 b"prefix:1:temp_3",
             ],
         )
-        mock_cluster.unlink.return_value = 1
+        mock_cluster.unlink.return_value = 3
 
         result = client.delete_pattern("temp_*")
 
@@ -314,7 +293,7 @@ class TestRedisClusterAdapter:
         assert result == 0
         mock_cluster.unlink.assert_not_called()
 
-    def test_delete_pattern_groups_by_slot(self):
+    def test_delete_pattern_is_one_unlink_per_batch(self):
         mock_cluster_cls = MagicMock()
         mock_cluster = MagicMock()
         mock_cluster_cls.from_url.return_value = mock_cluster
@@ -325,7 +304,6 @@ class TestRedisClusterAdapter:
         client._default_scan_itersize = 10
         client.key_func = lambda k, p, v: k
 
-        # {a} -> slot 15495, {b} -> slot 3300
         mock_cluster.scan_iter.return_value = iter(
             [
                 b"{a}key1",
@@ -333,12 +311,12 @@ class TestRedisClusterAdapter:
                 b"{b}key3",
             ],
         )
-        mock_cluster.unlink.side_effect = [2, 1]  # 2 keys in slot a, 1 in slot b
+        mock_cluster.unlink.return_value = 3
 
         result = client.delete_pattern("*")
 
-        assert mock_cluster.unlink.call_count == 2
-        assert result == 3  # 2 + 1 = 3 total deleted
+        mock_cluster.unlink.assert_called_once_with(b"{a}key1", b"{a}key2", b"{b}key3")
+        assert result == 3
 
     def test_close_keeps_the_sync_cluster(self):
         """The sync cluster client is shared process-wide, so close() must leave it alone."""
@@ -403,3 +381,60 @@ class TestRedisClusterAdapter:
         clusters[0].aclose.assert_awaited_once()
         clusters[1].aclose.assert_not_awaited()
         assert await clients[1].get_async_client() is clusters[1]
+
+
+def _version_in_tag(key: str, key_prefix: str, version: int) -> str:
+    """A KEY_FUNCTION that hash-tags the version, so v1 and v2 of a key land in different slots."""
+    return f"{{{key_prefix}:{version}}}:{key}"
+
+
+def setup_cluster_cache(**params):
+    """Build a RedisClusterCache over a mock adapter, so the hash-tag check runs without a cluster."""
+    cache = RedisClusterCache("redis://localhost:7000", params)
+    cache.__dict__["adapter"] = MagicMock(rename=MagicMock(), arename=AsyncMock())
+    return cache
+
+
+class TestClusterVersionRename:
+    """incr_version/decr_version only RENAME when both versions share a hash tag."""
+
+    def test_incr_version_renames_inside_the_tag(self):
+        cache = setup_cluster_cache()
+        assert cache.incr_version("{user}:k") == 2
+        cache.adapter.rename.assert_called_once_with(":1:{user}:k", ":2:{user}:k")
+
+    def test_key_prefix_tag_colocates_versions(self):
+        cache = setup_cluster_cache(KEY_PREFIX="{app}")
+        assert cache.incr_version("k", delta=2, version=3) == 5
+        cache.adapter.rename.assert_called_once_with("{app}:3:k", "{app}:5:k")
+
+    def test_incr_version_without_tag_is_rejected(self):
+        cache = setup_cluster_cache()
+        with pytest.raises(NotSupportedError, match="hash tag"):
+            cache.incr_version("plain")
+        cache.adapter.rename.assert_not_called()
+
+    def test_tag_that_includes_the_version_is_rejected(self):
+        # Regression: any {...} in the made key used to pass, but "{:1}:k" and
+        # "{:2}:k" hash to different slots, so the RENAME failed with CROSSSLOT.
+        cache = setup_cluster_cache(KEY_FUNCTION=_version_in_tag)
+        with pytest.raises(NotSupportedError, match=r"'\{:1\}:k' and '\{:2\}:k'"):
+            cache.incr_version("k")
+        cache.adapter.rename.assert_not_called()
+
+    def test_decr_version_error_names_decr_version(self):
+        cache = setup_cluster_cache()
+        with pytest.raises(NotSupportedError, match="decr_version"):
+            cache.decr_version("plain")
+        cache.adapter.rename.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_aincr_version_checks_both_versions(self):
+        cache = setup_cluster_cache(KEY_FUNCTION=_version_in_tag)
+        with pytest.raises(NotSupportedError, match="hash tag"):
+            await cache.aincr_version("k")
+        cache.adapter.arename.assert_not_awaited()
+
+        cache = setup_cluster_cache()
+        assert await cache.adecr_version("{user}:k", version=2) == 1
+        cache.adapter.arename.assert_awaited_once_with(":2:{user}:k", ":1:{user}:k")

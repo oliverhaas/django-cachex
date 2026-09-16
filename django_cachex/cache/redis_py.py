@@ -29,8 +29,8 @@ class RedisSentinelCache(RespSentinelCache):
     """Django cache backend for Redis Sentinel high availability (redis-py).
 
     Failover and service discovery happen through Redis Sentinel; the
-    ``LOCATION`` hostname is the Sentinel service name. Raises
-    :class:`ImportError` on instantiation if ``redis-py`` isn't installed.
+    ``LOCATION`` hostname is the Sentinel service name. Instantiation
+    raises :class:`ImportError` if ``redis-py`` isn't installed.
     """
 
     _adapter_class = RedisPySentinelAdapter
@@ -39,8 +39,8 @@ class RedisSentinelCache(RespSentinelCache):
 class RedisClusterCache(RespClusterCache):
     """Django cache backend for Redis Cluster mode (redis-py).
 
-    Keys are sharded across nodes by hash slot. Raises :class:`ImportError`
-    on instantiation if ``redis-py`` isn't installed.
+    Keys are sharded across nodes by hash slot. Instantiation raises
+    :class:`ImportError` if ``redis-py`` isn't installed.
     """
 
     _adapter_class = RedisPyClusterAdapter

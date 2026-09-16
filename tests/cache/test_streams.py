@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from django_cachex.exceptions import NotSupportedError
+
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
 
@@ -214,12 +216,16 @@ class TestStreamConsumerGroups:
         assert isinstance(next_id, str)
         assert len(claimed) >= 1
 
-    def test_xautoclaim_justid(self, cache: RespCache):
+    def test_xautoclaim_justid(self, cache: RespCache, client_class: str, resp_adapter: str):
         eid = cache.xadd("stream_autoclaim_jid", {"msg": "auto"})
         cache.xgroup_create("stream_autoclaim_jid", "ac_jid_grp", entry_id="0")
         cache.xreadgroup("ac_jid_grp", "consumer1", {"stream_autoclaim_jid": ">"})
 
         time.sleep(0.01)
+        if client_class == "cluster" and resp_adapter != "valkey-glide":
+            with pytest.raises(NotSupportedError, match=r"xautoclaim\(justid=True\)"):
+                cache.xautoclaim("stream_autoclaim_jid", "ac_jid_grp", "consumer2", 0, justid=True)
+            return
         _next_id, claimed, _deleted = cache.xautoclaim(
             "stream_autoclaim_jid",
             "ac_jid_grp",
@@ -289,6 +295,12 @@ class TestAsyncStreamBasicOps:
         assert len(entries) == 3
         assert entries[0][1]["c"] == 3
         assert entries[2][1]["a"] == 1
+
+    @pytest.mark.asyncio
+    async def test_axadd_without_fields_is_rejected(self, cache: RespCache):
+        with pytest.raises(ValueError, match="at least one field/value pair"):
+            await cache.axadd("aempty_stream", {})
+        assert await cache.axlen("aempty_stream") == 0
 
     @pytest.mark.asyncio
     async def test_axdel(self, cache: RespCache):
@@ -464,12 +476,16 @@ class TestAsyncStreamConsumerGroups:
         assert len(claimed) >= 1
 
     @pytest.mark.asyncio
-    async def test_axautoclaim_justid(self, cache: RespCache):
+    async def test_axautoclaim_justid(self, cache: RespCache, client_class: str, resp_adapter: str):
         eid = await cache.axadd("astream_autoclaim_jid", {"msg": "auto"})
         await cache.axgroup_create("astream_autoclaim_jid", "ac_jid_grp", entry_id="0")
         await cache.axreadgroup("ac_jid_grp", "consumer1", {"astream_autoclaim_jid": ">"})
 
         await asyncio.sleep(0.01)
+        if client_class == "cluster" and resp_adapter != "valkey-glide":
+            with pytest.raises(NotSupportedError, match=r"xautoclaim\(justid=True\)"):
+                await cache.axautoclaim("astream_autoclaim_jid", "ac_jid_grp", "consumer2", 0, justid=True)
+            return
         _next_id, claimed, _deleted = await cache.axautoclaim(
             "astream_autoclaim_jid",
             "ac_jid_grp",
@@ -483,6 +499,11 @@ class TestAsyncStreamConsumerGroups:
 
 class TestStreamEmptyArgumentCalls:
     """A call with no entry ids answers locally instead of sending an invalid command."""
+
+    def test_xadd_without_fields_is_rejected(self, cache: RespCache):
+        with pytest.raises(ValueError, match="at least one field/value pair"):
+            cache.xadd("empty_stream", {})
+        assert cache.xlen("empty_stream") == 0
 
     def test_xdel(self, cache: RespCache):
         cache.xadd("empty_stream", {"a": 1})
