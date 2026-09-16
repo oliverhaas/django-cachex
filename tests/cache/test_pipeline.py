@@ -1,18 +1,20 @@
 """Tests for pipeline operations."""
 
+import inspect
 import time
 import warnings
 from importlib import import_module
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import pytest
 
 from django_cachex.adapters.pipeline import AsyncPipeline, Pipeline
+from django_cachex.cache import RespCache
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
-    from django_cachex.cache import RespCache
+    from collections.abc import Callable
 
 
 class TestPipelineBasic:
@@ -1317,18 +1319,58 @@ class TestPipelineTypeParity:
         assert cache.pipeline()._decode_type(b"ReJSON-RL") is KeyType.UNKNOWN
 
 
-class TestPipelineZsetSignatureParity:
-    """``pipe.zadd``/``pipe.zrange`` take what the cache takes, and nothing more."""
+class TestPipelineZaddIncr:
+    """``pipe.zadd(incr=True)`` decodes to the new score, or None when a flag blocks the update."""
 
-    def test_zadd_has_no_incr_flag(self, cache: RespCache):
-        pipe = cache.pipeline()
-        with pytest.raises(TypeError, match="incr"):
-            pipe.zadd("pipe_zadd_incr", {"a": 1.0}, incr=True)
+    def test_returns_the_new_score(self, cache: RespCache):
+        cache.zadd("pipe_zadd_incr", {"a": 1.0})
 
-    def test_zrange_has_no_desc_flag(self, cache: RespCache):
         pipe = cache.pipeline()
-        with pytest.raises(TypeError, match="desc"):
-            pipe.zrange("pipe_zrange_desc", 0, -1, desc=True)
+        pipe.zadd("pipe_zadd_incr", {"a": 2.5}, incr=True)
+        pipe.zadd("pipe_zadd_incr", {"new": 4}, incr=True)
+        pipe.zscore("pipe_zadd_incr", "a")
+        results = pipe.execute()
+
+        assert results == [3.5, 4.0, 3.5]
+        assert all(isinstance(score, float) for score in results)
+
+    def test_blocked_update_returns_none(self, cache: RespCache):
+        cache.zadd("pipe_zadd_incr_flags", {"a": 1.0})
+
+        pipe = cache.pipeline()
+        pipe.zadd("pipe_zadd_incr_flags", {"a": 5}, incr=True, nx=True)
+        pipe.zadd("pipe_zadd_incr_flags", {"missing": 5}, incr=True, xx=True)
+        pipe.zadd("pipe_zadd_incr_flags", {"a": -5}, incr=True, gt=True)
+        pipe.zadd("pipe_zadd_incr_flags", {"a": 5}, incr=True, gt=True)
+        results = pipe.execute()
+
+        assert results == [None, None, None, 6.0]
+        assert cache.zscore("pipe_zadd_incr_flags", "a") == 6.0
+        assert cache.zscore("pipe_zadd_incr_flags", "missing") is None
+
+    def test_without_incr_still_counts(self, cache: RespCache):
+        pipe = cache.pipeline()
+        pipe.zadd("pipe_zadd_plain", {"a": 1, "b": 2})
+        assert pipe.execute() == [2]
+
+
+class TestPipelineZrangeDesc:
+    """``pipe.zrange(desc=True)`` walks from the top like ``zrevrange``."""
+
+    def test_matches_zrevrange(self, cache: RespCache):
+        cache.zadd("pipe_zrange_desc", {"a": 1, "b": 2, "c": 3, "d": 4})
+
+        pipe = cache.pipeline()
+        pipe.zrange("pipe_zrange_desc", 0, -1, desc=True)
+        pipe.zrange("pipe_zrange_desc", 0, 1, desc=True)
+        pipe.zrange("pipe_zrange_desc", 0, 1, desc=True, withscores=True)
+        pipe.zrange("pipe_zrange_desc", 0, 1)
+        results = pipe.execute()
+
+        assert results[0] == ["d", "c", "b", "a"]
+        assert results[1] == cache.zrevrange("pipe_zrange_desc", 0, 1)
+        assert results[2] == [("d", 4.0), ("c", 3.0)]
+        assert results[3] == ["a", "b"]
 
 
 class TestPipelineSaddMemberGuard:
@@ -1569,3 +1611,220 @@ class TestPipelineXreadResp3Shape:
 
         reply = [[nkey.encode(), [(b"1-1", {b"msg": cache.encode("hello")})]]]
         assert decode(reply) == {"pipe_resp2_xread": [("1-1", {"msg": "hello"})]}
+
+
+class TestPipelineNilStreamEntries:
+    """A nil entry (Redis 6 XCLAIM after XDEL, RESP3 empty reply) decodes like the direct path."""
+
+    @staticmethod
+    def _last_decoder(pipe: Pipeline) -> Callable:
+        return pipe._decoders[-1]  # type: ignore[return-value]
+
+    def test_decoder_keeps_the_id_and_empties_the_fields(self, cache: RespCache):
+        pipe = cache.pipeline()
+        reply = [(b"1-1", {b"msg": cache.encode("hello")}), (b"1-2", None), (None, None)]
+
+        assert pipe._decode_stream_entries(reply) == [("1-1", {"msg": "hello"}), ("1-2", {}), (None, {})]
+
+    def test_xclaim_step_survives_a_nil_entry(self, cache: RespCache):
+        with cache.pipeline() as pipe:
+            pipe.xclaim("pipe_nil_xclaim", "grp", "c1", 0, ["1-1"])
+            decode = self._last_decoder(pipe)
+
+        assert decode([(b"1-1", None)]) == [("1-1", {})]
+
+    def test_xautoclaim_step_survives_a_nil_entry(self, cache: RespCache):
+        with cache.pipeline() as pipe:
+            pipe.xautoclaim("pipe_nil_xautoclaim", "grp", "c1", 0)
+            decode = self._last_decoder(pipe)
+
+        assert decode([b"0-0", [(b"1-1", None)], [b"1-1"]]) == ("0-0", [("1-1", {})], ["1-1"])
+
+    def test_xread_step_survives_nil_entries(self, cache: RespCache):
+        with cache.pipeline() as pipe:
+            pipe.xread({"pipe_nil_xread": "0-0"})
+            decode = self._last_decoder(pipe)
+            nkey = pipe._make_key("pipe_nil_xread")
+
+        assert decode([[nkey.encode(), [(b"1-1", None)]]]) == {"pipe_nil_xread": [("1-1", {})]}
+        assert decode([[nkey.encode(), None]]) == {"pipe_nil_xread": []}
+        assert decode({nkey.encode(): []}) == {"pipe_nil_xread": []}
+        assert decode({nkey.encode(): [[]]}) == {"pipe_nil_xread": []}
+        assert decode(None) is None
+
+
+class TestPipelineXautoclaimJustid:
+    """The cursor is lost in the pipelined JUSTID reply, so the call is refused up front."""
+
+    def test_justid_is_rejected_at_queue_time(self, cache: RespCache):
+        pipe = cache.pipeline()
+        with pytest.raises(NotSupportedError, match=r"xautoclaim\(justid=True\) is not supported in pipelines"):
+            pipe.xautoclaim("pipe_xac_justid", "grp", "c1", 0, justid=True)
+
+        assert pipe.execute() == []
+
+    def test_without_justid_reports_the_cursor(self, cache: RespCache):
+        cache.xadd("pipe_xac_cursor", {"msg": "a"})
+        cache.xadd("pipe_xac_cursor", {"msg": "b"})
+        cache.xgroup_create("pipe_xac_cursor", "grp", entry_id="0")
+        cache.xreadgroup("grp", "c1", {"pipe_xac_cursor": ">"})
+
+        pipe = cache.pipeline()
+        pipe.xautoclaim("pipe_xac_cursor", "grp", "c2", 0, count=1)
+        ((next_id, claimed, deleted),) = pipe.execute()
+
+        assert next_id != "0-0"
+        assert [fields for _entry_id, fields in claimed] == [{"msg": "a"}]
+        assert deleted == []
+
+
+class TestPipelineGetDefault:
+    """``pipe.get(key, default)`` fills in ``default`` for a miss, like ``cache.get``."""
+
+    def test_default_applies_to_a_miss_only(self, cache: RespCache):
+        cache.set("pipe_get_default_hit", "value")
+        cache.delete("pipe_get_default_miss")
+
+        pipe = cache.pipeline()
+        pipe.get("pipe_get_default_hit", "fallback")
+        pipe.get("pipe_get_default_miss", "fallback")
+        pipe.get("pipe_get_default_miss", default=0)
+        pipe.get("pipe_get_default_miss")
+        results = pipe.execute()
+
+        assert results == ["value", "fallback", 0, None]
+        assert results[1] == cache.get("pipe_get_default_miss", "fallback")
+
+    def test_version_stays_third_positional(self, cache: RespCache):
+        cache.set("pipe_get_default_v", "v2", version=2)
+
+        pipe = cache.pipeline()
+        pipe.get("pipe_get_default_v", None, 2)
+        pipe.get("pipe_get_default_v", "fallback", 1)
+        assert pipe.execute() == ["v2", "fallback"]
+
+
+class TestPipelineSetGet:
+    """``pipe.set(get=True)`` decodes to the previous value, like ``cache.set(get=True)``."""
+
+    def test_returns_the_old_value(self, cache: RespCache):
+        cache.set("pipe_set_get", 42)
+        cache.delete("pipe_set_get_missing")
+
+        pipe = cache.pipeline()
+        pipe.set("pipe_set_get", "new", get=True)
+        pipe.set("pipe_set_get_missing", "first", get=True)
+        pipe.get("pipe_set_get")
+        pipe.get("pipe_set_get_missing")
+
+        assert pipe.execute() == [42, None, "new", "first"]
+
+    def test_get_with_nx_and_xx(self, cache: RespCache):
+        cache.set("pipe_set_get_nx", "original")
+        cache.delete("pipe_set_get_xx")
+
+        pipe = cache.pipeline()
+        pipe.set("pipe_set_get_nx", "new", nx=True, get=True)
+        pipe.set("pipe_set_get_xx", "new", xx=True, get=True)
+        pipe.get("pipe_set_get_nx")
+        pipe.exists("pipe_set_get_xx")
+
+        assert pipe.execute() == ["original", None, "original", False]
+
+    def test_get_with_timeout_keeps_the_ttl(self, cache: RespCache):
+        cache.set("pipe_set_get_ttl", "original", timeout=None)
+
+        pipe = cache.pipeline()
+        pipe.set("pipe_set_get_ttl", "updated", 60, get=True)
+        pipe.ttl("pipe_set_get_ttl")
+        old, ttl = pipe.execute()
+
+        assert old == "original"
+        assert ttl is not None and 0 < ttl <= 60
+
+    @pytest.mark.parametrize("flag", [None, "nx", "xx"])
+    @pytest.mark.parametrize("preexisting", [True, False], ids=["existing", "absent"])
+    def test_immediate_expiry_matches_cache_set(self, cache: RespCache, flag: str | None, preexisting: bool):
+        state = "existing" if preexisting else "absent"
+        direct = f"pipe_zeroget_direct_{flag}_{state}"
+        piped = f"pipe_zeroget_pipe_{flag}_{state}"
+        for key in (direct, piped):
+            cache.delete(key)
+            if preexisting:
+                cache.set(key, "original")
+        flags = {flag: True} if flag else {}
+
+        expected = cache.set(direct, "new", 0, get=True, **flags)
+
+        pipe = cache.pipeline()
+        pipe.set(piped, "new", 0, get=True, **flags)
+
+        assert pipe.execute() == [expected]
+        assert expected == ("original" if preexisting else None)
+        assert cache.has_key(piped) == cache.has_key(direct)
+        assert cache.get(piped) == cache.get(direct)
+
+
+class TestPipelineSignatureParity:
+    """Every queueing method takes the parameters of the cache method it queues.
+
+    The docs promise a pipeline call reads the same as the cache call, so the
+    two signatures are compared parameter by parameter (name, kind, default).
+    Intentional differences are spelled out below rather than tolerated.
+    """
+
+    # Methods the pipeline has and the cache spells differently or not at all.
+    PIPELINE_ONLY_METHODS = frozenset(
+        {
+            "execute",  # pipeline lifecycle
+            "exists",  # the cache exposes EXISTS as ``has_key``, which the docs list as not pipelined
+        },
+    )
+    # Cache parameters the pipeline intentionally lacks: stale serving means no
+    # per-call stampede knob on reads.
+    CACHE_ONLY_PARAMS = frozenset({"stampede_prevention"})
+    # Pipeline parameters the cache lacks: ZADD INCR and ZRANGE REV are only
+    # reachable through the pipeline adapters.
+    PIPELINE_ONLY_PARAMS: ClassVar = {"zadd": frozenset({"incr"}), "zrange": frozenset({"desc"})}
+
+    @staticmethod
+    def _params(fn: Callable) -> list[tuple[str, inspect._ParameterKind, object]]:
+        signature = inspect.signature(fn, annotation_format=inspect.Format.FORWARDREF)
+        return [(p.name, p.kind, p.default) for p in signature.parameters.values() if p.name != "self"]
+
+    @classmethod
+    def _public_methods(cls) -> list[str]:
+        return sorted(
+            name
+            for name, member in vars(Pipeline).items()
+            if not name.startswith("_") and callable(member) and name not in cls.PIPELINE_ONLY_METHODS
+        )
+
+    def test_every_pipeline_method_exists_on_the_cache(self):
+        missing = [name for name in self._public_methods() if not callable(getattr(RespCache, name, None))]
+        assert missing == []
+
+    def test_signatures_match_the_cache(self):
+        mismatches = {}
+        for name in self._public_methods():
+            pipeline_only = self.PIPELINE_ONLY_PARAMS.get(name, frozenset())
+            pipe_params = [p for p in self._params(getattr(Pipeline, name)) if p[0] not in pipeline_only]
+            pipe_names = {p[0] for p in pipe_params}
+            cache_params = [
+                p
+                for p in self._params(getattr(RespCache, name))
+                if p[0] not in self.CACHE_ONLY_PARAMS or p[0] in pipe_names
+            ]
+            if pipe_params != cache_params:
+                mismatches[name] = (pipe_params, cache_params)
+        assert mismatches == {}
+
+    def test_pipeline_only_params_are_really_pipeline_only(self):
+        # Once the cache grows one of these, drop it from the allowlist.
+        for name, params in self.PIPELINE_ONLY_PARAMS.items():
+            cache_names = {p[0] for p in self._params(getattr(RespCache, name))}
+            assert not params & cache_names, name
+
+    def test_async_pipeline_inherits_the_same_surface(self):
+        own = {name for name in vars(AsyncPipeline) if not name.startswith("_")}
+        assert own == {"execute"}

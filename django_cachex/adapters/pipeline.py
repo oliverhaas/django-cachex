@@ -20,12 +20,13 @@ from typing import TYPE_CHECKING, Any, Self
 from django.core.cache.backends.base import DEFAULT_TIMEOUT
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
     from datetime import datetime, timedelta
 
     from django_cachex.adapters.protocols import RespAsyncPipelineProtocol, RespPipelineProtocol
     from django_cachex.stampede import StampedeConfig
 
+from django_cachex.exceptions import NotSupportedError
 from django_cachex.script import ScriptHelpers, reject_stray_encoded
 from django_cachex.types import KeyType
 
@@ -178,6 +179,10 @@ class Pipeline:
         """Decode sorted set members with scores."""
         return [(self._cache.decode(member), score) for member, score in value]
 
+    def _decode_score(self, value: bytes | str | float | None) -> float | None:
+        """Decode a ZADD INCR reply: the new score, or None when a flag blocked the update."""
+        return None if value is None else float(value)
+
     def _make_zset_decoder(self, *, withscores: bool) -> Callable[[Any], list[Any]]:
         """Create decoder based on whether scores are included."""
         if withscores:
@@ -198,12 +203,19 @@ class Pipeline:
         """Decode stream entry ID."""
         return value.decode() if isinstance(value, bytes) else value
 
-    def _decode_stream_entries(self, results: list[tuple[Any, dict[Any, Any]]]) -> list[tuple[str, dict[str, Any]]]:
-        """Decode raw stream entries from Redis."""
+    def _decode_stream_entries(
+        self,
+        results: list[tuple[Any, dict[Any, Any] | None]],
+    ) -> list[tuple[str, dict[str, Any]]]:
+        """Decode raw stream entries from Redis.
+
+        ``fields`` is None for a nil entry, which Redis 6 returns from XCLAIM
+        when the pending id has since been XDEL'd.
+        """
         return [
             (
                 entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
-                {k.decode() if isinstance(k, bytes) else k: self._cache.decode(v) for k, v in fields.items()},
+                {k.decode() if isinstance(k, bytes) else k: self._cache.decode(v) for k, v in (fields or {}).items()},
             )
             for entry_id, fields in results
         ]
@@ -226,7 +238,7 @@ class Pipeline:
         for stream_key, value in results.items():
             # An entry is a ``(id, fields)`` pair, so a lone list element is the
             # RESP3 wrapper around the entry list rather than an entry itself.
-            wrapped = len(value) == 1 and isinstance(value[0], list)
+            wrapped = bool(value) and len(value) == 1 and isinstance(value[0], list)
             pairs.append((stream_key, value[0] if wrapped else value))
         return pairs
 
@@ -244,7 +256,7 @@ class Pipeline:
             decoded: dict[str, list[tuple[str, dict[str, Any]]]] = {}
             for stream_key, entries in self._stream_key_pairs(results):
                 sk = stream_key.decode() if isinstance(stream_key, bytes) else str(stream_key)
-                decoded[key_map.get(sk, sk)] = self._decode_stream_entries(entries)
+                decoded[key_map.get(sk, sk)] = self._decode_stream_entries(entries or [])
             return decoded
 
         return decode
@@ -277,9 +289,10 @@ class Pipeline:
         timeout: float | None = DEFAULT_TIMEOUT,
         version: int | None = None,
         *,
+        stampede_prevention: bool | StampedeConfig | None = None,
         nx: bool = False,
         xx: bool = False,
-        stampede_prevention: bool | StampedeConfig | None = None,
+        get: bool = False,
     ) -> Self:
         """Queue a SET command.
 
@@ -288,7 +301,9 @@ class Pipeline:
         ``TIMEOUT``, ``None`` stores the key forever, floats are truncated to
         whole seconds, and a non-positive timeout expires the key immediately.
         Decodes to ``True`` when the write ran and ``False`` on an ``nx`` /
-        ``xx`` miss, like :meth:`RespCache.set` with those flags.
+        ``xx`` miss, like :meth:`RespCache.set` with those flags. With
+        ``get=True`` it decodes to the previous value instead (``None`` when
+        the key was absent), again like :meth:`RespCache.set`.
         """
         nkey = self._make_key(key, version)
         nvalue = self._encode(value)
@@ -298,7 +313,15 @@ class Pipeline:
 
         # Immediate expiry: queue the net effect of SET-with-flags followed by DEL.
         if actual_timeout == 0 and not (nx and xx):
-            if nx:
+            if get:
+                # SET GET hands back the old value; the key is gone afterwards
+                # unless NX left an existing one untouched.
+                if nx:
+                    self._pipeline_adapter.get(nkey)
+                else:
+                    self._pipeline_adapter.execute_command("GETDEL", nkey)
+                self._decoders.append(self._decode_single)
+            elif nx:
                 # SET NX then DEL leaves the key absent either way; EXISTS tells whether SET ran.
                 self._pipeline_adapter.exists(nkey)
                 self._decoders.append(lambda result: not result)
@@ -316,16 +339,21 @@ class Pipeline:
             kwargs["nx"] = True
         if xx:
             kwargs["xx"] = True
+        if get:
+            kwargs["get"] = True
 
         self._pipeline_adapter.set(nkey, nvalue, **kwargs)
-        self._decoders.append(bool)
+        self._decoders.append(self._decode_single if get else bool)
         return self
 
-    def get(self, key: str, version: int | None = None) -> Self:
-        """Queue a GET command."""
+    def get(self, key: str, default: Any = None, version: int | None = None) -> Self:
+        """Queue a GET command. Decodes to ``default`` for a missing key, like :meth:`RespCache.get`."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.get(nkey)
-        self._decoders.append(self._decode_single)
+        if default is None:
+            self._decoders.append(self._decode_single)
+        else:
+            self._decoders.append(lambda value: default if value is None else self._cache.decode(value))
         return self
 
     def delete(self, key: str, version: int | None = None) -> Self:
@@ -715,8 +743,8 @@ class Pipeline:
         self,
         src: str,
         dst: str,
-        wherefrom: str = "LEFT",
-        whereto: str = "RIGHT",
+        wherefrom: str,
+        whereto: str,
         version: int | None = None,
         version_src: int | None = None,
         version_dst: int | None = None,
@@ -737,7 +765,7 @@ class Pipeline:
     def sadd(
         self,
         key: str,
-        *values: Any,
+        *members: Any,
         version: int | None = None,
     ) -> Self:
         """Queue SADD command (add members to set).
@@ -749,11 +777,11 @@ class Pipeline:
         With no members the step resolves to ``0`` and no command is sent, the
         result :meth:`RespCache.sadd` gives for the same call.
         """
-        if not values:
+        if not members:
             return self._fixed(0)
         nkey = self._make_key(key, version)
-        encoded_values = [self._encode_member(value) for value in values]
-        self._pipeline_adapter.sadd(nkey, *encoded_values)
+        encoded_members = [self._encode_member(member) for member in members]
+        self._pipeline_adapter.sadd(nkey, *encoded_members)
         self._decoders.append(self._noop)
         return self
 
@@ -873,8 +901,8 @@ class Pipeline:
 
     def smove(
         self,
-        source: str,
-        destination: str,
+        src: str,
+        dst: str,
         member: Any,
         version: int | None = None,
         version_src: int | None = None,
@@ -883,10 +911,10 @@ class Pipeline:
         """Queue SMOVE command (move member between sets)."""
         src_ver = version_src if version_src is not None else version
         dst_ver = version_dst if version_dst is not None else version
-        nsource = self._make_key(source, src_ver)
-        ndestination = self._make_key(destination, dst_ver)
+        nsrc = self._make_key(src, src_ver)
+        ndst = self._make_key(dst, dst_ver)
         nmember = self._encode(member)
-        self._pipeline_adapter.smove(nsource, ndestination, nmember)
+        self._pipeline_adapter.smove(nsrc, ndst, nmember)
         self._decoders.append(bool)
         return self
 
@@ -947,7 +975,7 @@ class Pipeline:
 
     def sunionstore(
         self,
-        destination: str,
+        dest: str,
         keys: str | Sequence[str],
         version: int | None = None,
         version_dest: int | None = None,
@@ -957,9 +985,9 @@ class Pipeline:
         keys = [keys] if isinstance(keys, str) else keys
         dest_ver = version_dest if version_dest is not None else version
         keys_ver = version_keys if version_keys is not None else version
-        ndestination = self._make_key(destination, dest_ver)
+        ndest = self._make_key(dest, dest_ver)
         nkeys = [self._make_key(key, keys_ver) for key in keys]
-        self._pipeline_adapter.sunionstore(ndestination, *nkeys)
+        self._pipeline_adapter.sunionstore(ndest, *nkeys)
         self._decoders.append(self._noop)
         return self
 
@@ -1311,28 +1339,26 @@ class Pipeline:
     def zadd(
         self,
         key: str,
-        mapping: dict[Any, float],
+        mapping: Mapping[Any, float],
         *,
         nx: bool = False,
         xx: bool = False,
         ch: bool = False,
         gt: bool = False,
         lt: bool = False,
+        incr: bool = False,
         version: int | None = None,
     ) -> Self:
-        """Queue ZADD command (add members with scores)."""
+        """Queue ZADD command (add members with scores).
+
+        ``incr=True`` turns the single ``mapping`` pair into ZINCRBY with the
+        other flags applied: the step decodes to the member's new score, or
+        ``None`` when ``nx`` / ``xx`` / ``gt`` / ``lt`` blocked the update.
+        """
         nkey = self._make_key(key, version)
         encoded_mapping = {self._encode(member): score for member, score in mapping.items()}
-        self._pipeline_adapter.zadd(
-            nkey,
-            encoded_mapping,
-            nx=nx,
-            xx=xx,
-            ch=ch,
-            gt=gt,
-            lt=lt,
-        )
-        self._decoders.append(self._noop)
+        self._pipeline_adapter.zadd(nkey, encoded_mapping, nx=nx, xx=xx, ch=ch, gt=gt, lt=lt, incr=incr)
+        self._decoders.append(self._decode_score if incr else self._noop)
         return self
 
     def zcard(
@@ -1363,13 +1389,13 @@ class Pipeline:
         self,
         key: str,
         amount: float,
-        value: Any,
+        member: Any,
         version: int | None = None,
     ) -> Self:
         """Queue ZINCRBY command (increment member's score)."""
         nkey = self._make_key(key, version)
-        encoded_value = self._encode(value)
-        self._pipeline_adapter.zincrby(nkey, amount, encoded_value)
+        encoded_member = self._encode(member)
+        self._pipeline_adapter.zincrby(nkey, amount, encoded_member)
         self._decoders.append(self._noop)
         return self
 
@@ -1404,16 +1430,16 @@ class Pipeline:
         end: int,
         *,
         withscores: bool = False,
+        desc: bool = False,
         version: int | None = None,
     ) -> Self:
-        """Queue ZRANGE command (get members by index range)."""
+        """Queue ZRANGE command (get members by index range).
+
+        ``desc=True`` walks the set from the highest score down (ZRANGE REV),
+        indexing ``start`` / ``end`` from that end like :meth:`zrevrange`.
+        """
         nkey = self._make_key(key, version)
-        self._pipeline_adapter.zrange(
-            nkey,
-            start,
-            end,
-            withscores=withscores,
-        )
+        self._pipeline_adapter.zrange(nkey, start, end, withscores=withscores, desc=desc)
         self._decoders.append(self._make_zset_decoder(withscores=withscores))
         return self
 
@@ -1444,20 +1470,20 @@ class Pipeline:
     def zrank(
         self,
         key: str,
-        value: Any,
+        member: Any,
         version: int | None = None,
     ) -> Self:
         """Queue ZRANK command (get rank, low to high)."""
         nkey = self._make_key(key, version)
-        encoded_value = self._encode(value)
-        self._pipeline_adapter.zrank(nkey, encoded_value)
+        encoded_member = self._encode(member)
+        self._pipeline_adapter.zrank(nkey, encoded_member)
         self._decoders.append(self._noop)
         return self
 
     def zrem(
         self,
         key: str,
-        *values: Any,
+        *members: Any,
         version: int | None = None,
     ) -> Self:
         """Queue ZREM command (remove members).
@@ -1465,11 +1491,11 @@ class Pipeline:
         With no members the step resolves to ``0`` and no command is sent, the
         result :meth:`RespCache.zrem` gives for the same call.
         """
-        if not values:
+        if not members:
             return self._fixed(0)
         nkey = self._make_key(key, version)
-        encoded_values = [self._encode(value) for value in values]
-        self._pipeline_adapter.zrem(nkey, *encoded_values)
+        encoded_members = [self._encode(member) for member in members]
+        self._pipeline_adapter.zrem(nkey, *encoded_members)
         self._decoders.append(self._noop)
         return self
 
@@ -1546,26 +1572,26 @@ class Pipeline:
     def zscore(
         self,
         key: str,
-        value: Any,
+        member: Any,
         version: int | None = None,
     ) -> Self:
         """Queue ZSCORE command (get member's score)."""
         nkey = self._make_key(key, version)
-        encoded_value = self._encode(value)
-        self._pipeline_adapter.zscore(nkey, encoded_value)
+        encoded_member = self._encode(member)
+        self._pipeline_adapter.zscore(nkey, encoded_member)
         self._decoders.append(self._noop)
         return self
 
     def zrevrank(
         self,
         key: str,
-        value: Any,
+        member: Any,
         version: int | None = None,
     ) -> Self:
         """Queue ZREVRANK command (get rank, high to low)."""
         nkey = self._make_key(key, version)
-        encoded_value = self._encode(value)
-        self._pipeline_adapter.zrevrank(nkey, encoded_value)
+        encoded_member = self._encode(member)
+        self._pipeline_adapter.zrevrank(nkey, encoded_member)
         self._decoders.append(self._noop)
         return self
 
@@ -1884,7 +1910,18 @@ class Pipeline:
         justid: bool = False,
         version: int | None = None,
     ) -> Self:
-        """Queue XAUTOCLAIM command (auto-claim idle messages)."""
+        """Queue XAUTOCLAIM command (auto-claim idle messages).
+
+        ``justid=True`` is rejected: redis-py's ``parse_xautoclaim`` callback
+        (applied inside ``Pipeline.execute()``, against a ``response_callbacks``
+        dict shared with the client) drops everything but the ID list, and
+        glide's batch adapter drops the cursor too. The non-pipelined path
+        works around this with a per-call client, which a pipeline has no
+        equivalent of, so the next cursor cannot be reported here.
+        """
+        if justid:
+            msg = "xautoclaim(justid=True) is not supported in pipelines"
+            raise NotSupportedError(msg)
         nkey = self._make_key(key, version)
         self._pipeline_adapter.xautoclaim(
             nkey,
@@ -1893,40 +1930,15 @@ class Pipeline:
             min_idle_time,
             start_id=start_id,
             count=count,
-            justid=justid,
         )
-        self._decoders.append(self._make_xautoclaim_decoder(justid=justid))
+        self._decoders.append(self._decode_xautoclaim)
         return self
 
-    def _make_xautoclaim_decoder(
-        self,
-        *,
-        justid: bool,
-    ) -> Callable[[Any], tuple[str, list[Any], list[str]]]:
-        """Create decoder for XAUTOCLAIM result.
-
-        The pipeline adapters normalize to two shapes:
-
-        - ``justid=False``: ``[next_id, [(id, fields), ...], [deleted]]``
-        - ``justid=True``: ``[id1, id2, ...]`` (flat list of claimed IDs)
-
-        The cursor is unrecoverable in the ``justid`` case: redis-py's
-        ``parse_xautoclaim`` callback (applied inside ``Pipeline.execute()``,
-        against a ``response_callbacks`` dict shared with the client) drops
-        everything but the ID list, and glide's batch adapter drops it too.
-        The non-pipelined path works around this with a per-call client, which
-        a pipeline has no equivalent of, so ``next_id`` is reported as ``""``.
-        """
-
-        def decode(result: Any) -> tuple[str, list[Any], list[str]]:
-            if justid:
-                return ("", self._decode_id_list(result), [])
-
-            next_id = result[0].decode() if isinstance(result[0], bytes) else result[0]
-            deleted = [d.decode() if isinstance(d, bytes) else d for d in result[2]] if len(result) > 2 else []
-            return (next_id, self._decode_stream_entries(result[1]), deleted)
-
-        return decode
+    def _decode_xautoclaim(self, result: Any) -> tuple[str, list[tuple[str, dict[str, Any]]], list[str]]:
+        """Decode an XAUTOCLAIM reply, ``[next_id, [(id, fields), ...], [deleted]]``."""
+        next_id = result[0].decode() if isinstance(result[0], bytes) else result[0]
+        deleted = [d.decode() if isinstance(d, bytes) else d for d in result[2]] if len(result) > 2 else []
+        return (next_id, self._decode_stream_entries(result[1]), deleted)
 
     # -------------------------------------------------------------------------
     # Lua Script Operations
