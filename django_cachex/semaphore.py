@@ -19,6 +19,7 @@ instance per acquire/release lifecycle, the same way :class:`Lock` is used.
 import asyncio
 import contextlib
 import logging
+import math
 import secrets
 import sys
 import threading
@@ -228,8 +229,8 @@ def _validate_init(capacity: int, weight: int) -> None:
 
 
 def _validate_extend(additional_seconds: float) -> None:
-    if additional_seconds <= 0:
-        msg = "additional_seconds must be a positive number of seconds"
+    if not math.isfinite(additional_seconds) or additional_seconds <= 0:
+        msg = "additional_seconds must be a positive finite number of seconds"
         raise ValueError(msg)
 
 
@@ -535,8 +536,8 @@ class RespSemaphore:
         timeout: float | None = None,
     ) -> None:
         _validate_init(capacity, weight)
-        if lease is None or lease <= 0:
-            msg = "lease must be a positive number of seconds (Redis backend)"
+        if lease is None or not math.isfinite(lease) or lease <= 0:
+            msg = "lease must be a positive finite number of seconds (Redis backend)"
             raise ValueError(msg)
         self._adapter = adapter
         self.name = name
@@ -646,10 +647,14 @@ class RespSemaphore:
                 # dead head blocks acquirers until the liveness TTL expires.
                 # The interrupt can also land after the server admitted us
                 # but before the reply was read, so release the claim too.
-                _dequeue_token()
-                with contextlib.suppress(Exception):
-                    self._release_token(token)
-                self._clear_token(token)
+                # A second interrupt mid-cleanup must not skip the later steps.
+                try:
+                    with contextlib.suppress(BaseException):
+                        _dequeue_token()
+                    with contextlib.suppress(BaseException):
+                        self._release_token(token)
+                finally:
+                    self._clear_token(token)
                 raise
             if status == "acquired":
                 return True
@@ -764,10 +769,14 @@ class RespSemaphore:
             except BaseException:
                 # Cancellation can land after the server admitted us but
                 # before the reply was read; releasing an unadmitted token is a no-op.
-                await _dequeue_token()
-                with contextlib.suppress(Exception):
-                    await self._arelease_token(token)
-                self._clear_token(token)
+                # A second cancel mid-cleanup must not skip the later steps.
+                try:
+                    with contextlib.suppress(BaseException):
+                        await _dequeue_token()
+                    with contextlib.suppress(BaseException):
+                        await self._arelease_token(token)
+                finally:
+                    self._clear_token(token)
                 raise
             if status == "acquired":
                 return True

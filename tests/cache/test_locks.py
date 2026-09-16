@@ -97,6 +97,25 @@ class TestLockExtend:
             lock.release()
 
 
+class TestLockLease:
+    """Below 1 ms the drivers send ``PX 0`` (glide a bare ``PX``) and the server rejects every acquire."""
+
+    @pytest.mark.parametrize("lease", [0, 0.0005, -1])
+    def test_sub_millisecond_lease_is_rejected(self, cache: RespCache, lease: float):
+        with pytest.raises(ValueError, match="lease must be at least 1 ms"):
+            cache.lock("tiny_lease", lease=lease)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("lease", [0, 0.0005, -1])
+    async def test_async_sub_millisecond_lease_is_rejected(self, cache: RespCache, lease: float):
+        with pytest.raises(ValueError, match="lease must be at least 1 ms"):
+            await cache.alock("tiny_lease", lease=lease)
+
+    def test_one_millisecond_lease_is_accepted(self, cache: RespCache):
+        lock = cache.lock("ms_lease", lease=0.001)
+        assert lock.acquire(blocking=False) is True
+
+
 class TestLockRelease:
     def test_double_release_raises(self, cache: RespCache):
         lock = cache.lock("dbl_release_resource", lease=5)

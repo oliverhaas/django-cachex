@@ -14,7 +14,7 @@ import pytest
 
 import django_cachex
 from django_cachex.cache import LocMemCache
-from django_cachex.cache._semaphore_lua import ACQUIRE_LUA, RELEASE_LUA
+from django_cachex.cache._semaphore_lua import ACQUIRE_LUA, DEQUEUE_LUA, RELEASE_LUA
 from django_cachex.semaphore import (
     RespSemaphore,
     Semaphore,
@@ -83,10 +83,11 @@ class TestLocalExtend:
     def test_extend_without_a_claim_returns_false(self):
         assert Semaphore("local_extend_unheld", capacity=1).extend(10) is False
 
-    def test_extend_rejects_a_non_positive_bump(self):
+    @pytest.mark.parametrize("additional_seconds", [0, -30, float("nan"), float("inf")])
+    def test_extend_rejects_a_non_positive_bump(self, additional_seconds):
         sem = Semaphore("local_extend_bad", capacity=1)
-        with sem, pytest.raises(ValueError, match="must be a positive number of seconds"):
-            sem.extend(0)
+        with sem, pytest.raises(ValueError, match="must be a positive finite number of seconds"):
+            sem.extend(additional_seconds)
 
     @pytest.mark.asyncio
     async def test_aextend_mirrors_extend(self):
@@ -236,36 +237,41 @@ def _wait_for_waiters(state, count, timeout=5.0):
 
 class TestLocalFifoFairness:
     def test_big_weight_not_starved_by_small(self):
-        """Big waiter at head of queue blocks smaller waiters behind it."""
+        """Big waiter at head of queue blocks smaller waiters behind it.
+
+        Regression: the old version asserted on the order two threads appended
+        to a list after ``acquire()`` returned. Admitting big wakes small inside
+        the same critical section, so under free threading small's thread could
+        append first although it was admitted second. The property under test is
+        that small is not admitted while it fits but big is ahead of it.
+        """
         holder = Semaphore("fifo", capacity=10, weight=6)
         assert holder.acquire(blocking=False) is True
+        state = holder._state
 
-        order = []
         big = Semaphore("fifo", capacity=10, weight=6)
         small = Semaphore("fifo", capacity=10, weight=2)
 
-        def big_acquire():
-            big.acquire(blocking=True, timeout=2)
-            order.append("big")
-
-        def small_acquire():
-            small.acquire(blocking=True, timeout=2)
-            order.append("small")
-
-        t_big = threading.Thread(target=big_acquire)
+        t_big = threading.Thread(target=big.acquire, kwargs={"blocking": True, "timeout": 2})
         t_big.start()
-        _wait_for_waiters(holder._state, 1)  # big holds the head before small starts
-        t_small = threading.Thread(target=small_acquire)
+        _wait_for_waiters(state, 1)  # big holds the head before small starts
+        t_small = threading.Thread(target=small.acquire, kwargs={"blocking": True, "timeout": 2})
         t_small.start()
-        _wait_for_waiters(holder._state, 2)
+        _wait_for_waiters(state, 2)
+
+        # Four units are free, so small would fit, but big is ahead of it.
+        with state.lock:
+            assert state.used == 6
+            assert small._held is False
+            assert list(state.waiters.values()) == [6, 2]
 
         holder.release()
         t_big.join(timeout=2)
-        big.release()
         t_small.join(timeout=2)
+        assert big._held is True
+        assert small._held is True
+        big.release()
         small.release()
-
-        assert order == ["big", "small"]
 
 
 class TestLocalCascadeWake:
@@ -679,6 +685,11 @@ class TestRespSemaphoreNonBlocking:
         with pytest.raises(ValueError, match="requires a positive 'lease'"):
             cache.semaphore("resp_missing_lease", capacity=2)
 
+    @pytest.mark.parametrize("lease", [float("nan"), float("inf")])
+    def test_resp_lease_must_be_finite(self, cache, lease):
+        with pytest.raises(ValueError, match="positive finite number of seconds"):
+            cache.semaphore("resp_bad_lease", capacity=2, lease=lease)
+
     def test_resp_weight(self, cache):
         sem_a = cache.semaphore("resp_w", capacity=10, weight=7, lease=10)
         sem_b = cache.semaphore("resp_w", capacity=10, weight=4, lease=10)
@@ -944,6 +955,90 @@ class TestRespAcquireInterrupted:
         fresh = await cache.asemaphore("aresp_cancel_admit", capacity=1, lease=10)
         assert await fresh.aacquire(blocking=False) is True
         await fresh.arelease()
+
+    @pytest.mark.asyncio
+    async def test_task_cancel_while_the_acquire_reply_is_in_flight(self, cache):
+        """A real ``task.cancel()`` at the ``await aeval`` suspension point, not a raise from the stub."""
+        admitted = asyncio.Event()
+
+        class HoldReply:
+            def __init__(self, inner) -> None:
+                self._inner = inner
+
+            async def aeval(self, script, numkeys, *args):
+                result = await self._inner.aeval(script, numkeys, *args)
+                if script == ACQUIRE_LUA and _decode_status(result) == "acquired":
+                    admitted.set()
+                    await asyncio.sleep(30)  # cancelled by the test below
+                return result
+
+        sem = await cache.asemaphore("aresp_task_cancel", capacity=1, lease=60)
+        sem._adapter = HoldReply(cache.adapter)
+        task = asyncio.create_task(sem.aacquire(blocking=False))
+        await asyncio.wait_for(admitted.wait(), timeout=5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert sem._token is None
+        prefix = "{" + cache.make_and_validate_key("aresp_task_cancel") + "}"
+        assert cache.adapter.hlen(f"{prefix}:claims") == 0
+        sem._adapter = cache.adapter
+        assert await sem.aacquire(blocking=False) is True
+        await sem.arelease()
+
+    @pytest.mark.asyncio
+    async def test_second_cancel_during_cleanup_still_releases_the_claim(self, cache):
+        """Regression: a cancel landing on the DEQUEUE round trip skipped the release and left ``_token`` set."""
+
+        class CancelTwice:
+            def __init__(self, inner) -> None:
+                self._inner = inner
+
+            async def aeval(self, script, numkeys, *args):
+                result = await self._inner.aeval(script, numkeys, *args)
+                if script == ACQUIRE_LUA and _decode_status(result) == "acquired":
+                    raise asyncio.CancelledError
+                if script == DEQUEUE_LUA:
+                    raise asyncio.CancelledError
+                return result
+
+        sem = await cache.asemaphore("aresp_cancel_twice", capacity=1, lease=60)
+        sem._adapter = CancelTwice(cache.adapter)
+        with pytest.raises(asyncio.CancelledError):
+            await sem.aacquire(blocking=False)
+
+        assert sem._token is None
+        prefix = "{" + cache.make_and_validate_key("aresp_cancel_twice") + "}"
+        assert cache.adapter.hlen(f"{prefix}:claims") == 0
+        sem._adapter = cache.adapter
+        assert await sem.aacquire(blocking=False) is True
+        await sem.arelease()
+
+    def test_second_interrupt_during_cleanup_still_releases_the_claim(self, cache):
+        class InterruptTwice:
+            def __init__(self, inner) -> None:
+                self._inner = inner
+
+            def eval(self, script, numkeys, *args):
+                result = self._inner.eval(script, numkeys, *args)
+                if script == ACQUIRE_LUA and _decode_status(result) == "acquired":
+                    raise KeyboardInterrupt
+                if script == DEQUEUE_LUA:
+                    raise KeyboardInterrupt
+                return result
+
+        sem = cache.semaphore("resp_interrupt_twice", capacity=1, lease=60)
+        sem._adapter = InterruptTwice(cache.adapter)
+        with pytest.raises(KeyboardInterrupt):
+            sem.acquire(blocking=False)
+
+        assert sem._token is None
+        prefix = "{" + cache.make_and_validate_key("resp_interrupt_twice") + "}"
+        assert cache.adapter.hlen(f"{prefix}:claims") == 0
+        sem._adapter = cache.adapter
+        assert sem.acquire(blocking=False) is True
+        sem.release()
 
 
 class TestRespFifoFairness:
@@ -1378,13 +1473,13 @@ class TestRespExtend:
         finally:
             reaper.release()
 
-    @pytest.mark.parametrize("additional_seconds", [0, -30])
+    @pytest.mark.parametrize("additional_seconds", [0, -30, float("nan"), float("inf")])
     def test_extend_rejects_a_non_positive_bump(self, cache, additional_seconds):
         holder = cache.semaphore("resp_extend_bad", capacity=1, lease=60)
         assert holder.acquire(blocking=False) is True
         try:
             claim_key = "{" + cache.make_and_validate_key("resp_extend_bad") + "}:state:claim:" + holder._token
-            with pytest.raises(ValueError, match="must be a positive number of seconds"):
+            with pytest.raises(ValueError, match="must be a positive finite number of seconds"):
                 holder.extend(additional_seconds)
             after = cache.adapter.pttl(claim_key)
             assert after is not None
@@ -1457,13 +1552,13 @@ class TestRespAsyncSemaphore:
                 await holder.arelease()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("additional_seconds", [0, -30])
+    @pytest.mark.parametrize("additional_seconds", [0, -30, float("nan"), float("inf")])
     async def test_resp_aextend_rejects_a_non_positive_bump(self, cache, additional_seconds):
         holder = await cache.asemaphore("aresp_ext_bad", capacity=1, lease=60)
         assert await holder.aacquire(blocking=False) is True
         try:
             claim_key = "{" + cache.make_and_validate_key("aresp_ext_bad") + "}:state:claim:" + holder._token
-            with pytest.raises(ValueError, match="must be a positive number of seconds"):
+            with pytest.raises(ValueError, match="must be a positive finite number of seconds"):
                 await holder.aextend(additional_seconds)
             after = cache.adapter.pttl(claim_key)
             assert after is not None

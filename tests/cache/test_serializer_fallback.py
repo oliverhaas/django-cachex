@@ -2,6 +2,8 @@
 
 import json
 import pickle
+from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
 import pytest
 from django.core.cache import cache
@@ -13,10 +15,23 @@ from django_cachex.serializers.json import JsonSerializer
 from django_cachex.serializers.pickle import PickleSerializer
 from tests.cache.support import make_cache
 
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
 JSON_THEN_PICKLE = [
     "django_cachex.serializers.json.JsonSerializer",
     "django_cachex.serializers.pickle.PickleSerializer",
 ]
+
+
+@contextmanager
+def _override_caches(caches: dict) -> Iterator[None]:
+    """``override_settings`` drops the handler without closing the cache it built; close it ourselves."""
+    with override_settings(CACHES=caches):
+        try:
+            yield
+        finally:
+            cache.close()
 
 
 class TestSerializerConfig:
@@ -52,7 +67,7 @@ class TestSerializerConfig:
             },
         }
 
-        with override_settings(CACHES=caches_pickle):
+        with _override_caches(caches_pickle):
             cache.set("old_key", {"data": "from_pickle"})
 
         caches_migration = {
@@ -63,7 +78,7 @@ class TestSerializerConfig:
             },
         }
 
-        with override_settings(CACHES=caches_migration):
+        with _override_caches(caches_migration):
             assert cache.get("old_key") == {"data": "from_pickle"}
 
             cache.set("new_key", {"data": "from_json"})

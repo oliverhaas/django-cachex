@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.fixtures.cache import TEST_DEFAULT_TIMEOUT
+from tests.fixtures.cache import TEST_DEFAULT_TIMEOUT, skip_below_server
 
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
@@ -137,9 +137,10 @@ class TestTTLOperations:
         cache.set("pttl_key", "data", 10)
         assert cache.pttl("pttl_key") == pytest.approx(10_000, abs=1000)
 
-    def test_pttl_with_fractional_timeout(self, cache: RespCache):
+    def test_fractional_timeout_truncates_to_whole_seconds(self, cache: RespCache):
+        # ``get_backend_timeout`` does ``int(timeout)``, so 5.5 is stored as a 5 s TTL.
         cache.set("half_sec", "data", 5.5)
-        assert cache.pttl("half_sec") == pytest.approx(5500, abs=1000)
+        assert cache.pttl("half_sec") == pytest.approx(5000, abs=500)
 
     def test_pttl_returns_none_for_persistent(self, cache: RespCache):
         cache.set("pttl_persist", "data", timeout=None)
@@ -150,20 +151,24 @@ class TestTTLOperations:
         assert pttl is not None and pttl < 0
 
     def test_expiretime_returns_unix_timestamp(self, cache: RespCache):
+        skip_below_server(cache, redis=(7, 0), feature="EXPIRETIME")
         cache.set("et_key", "data", timeout=3600)
         result = cache.expiretime("et_key")
         assert result is not None
         assert abs(result - (int(time.time()) + 3600)) < 5
 
     def test_expiretime_returns_none_for_persistent_key(self, cache: RespCache):
+        skip_below_server(cache, redis=(7, 0), feature="EXPIRETIME")
         cache.set("et_persist", "permanent", timeout=None)
         assert cache.expiretime("et_persist") is None
 
     def test_expiretime_negative_for_nonexistent_key(self, cache: RespCache):
+        skip_below_server(cache, redis=(7, 0), feature="EXPIRETIME")
         result = cache.expiretime("et_missing")
         assert result is not None and result < 0
 
     def test_expiretime_after_expireat(self, cache: RespCache):
+        skip_below_server(cache, redis=(7, 0), feature="EXPIRETIME")
         cache.set("et_at", "data", timeout=None)
         target = int(time.time()) + 7200
         cache.expireat("et_at", target)
@@ -416,6 +421,7 @@ class TestAsyncTimeouts:
 
     @pytest.mark.asyncio
     async def test_aexpiretime_returns_unix_timestamp(self, cache: RespCache):
+        skip_below_server(cache, redis=(7, 0), feature="EXPIRETIME")
         cache.set("aet_key", "data", timeout=3600)
         result = await cache.aexpiretime("aet_key")
         assert result is not None
@@ -423,16 +429,19 @@ class TestAsyncTimeouts:
 
     @pytest.mark.asyncio
     async def test_aexpiretime_returns_none_for_persistent_key(self, cache: RespCache):
+        skip_below_server(cache, redis=(7, 0), feature="EXPIRETIME")
         cache.set("aet_persist", "permanent", timeout=None)
         assert await cache.aexpiretime("aet_persist") is None
 
     @pytest.mark.asyncio
     async def test_aexpiretime_negative_for_nonexistent_key(self, cache: RespCache):
+        skip_below_server(cache, redis=(7, 0), feature="EXPIRETIME")
         result = await cache.aexpiretime("aet_missing")
         assert result is not None and result < 0
 
     @pytest.mark.asyncio
     async def test_aexpiretime_after_expireat(self, cache: RespCache):
+        skip_below_server(cache, redis=(7, 0), feature="EXPIRETIME")
         await cache.aset("aet_at", "data", timeout=None)
         target = int(time.time()) + 7200
         await cache.aexpireat("aet_at", target)

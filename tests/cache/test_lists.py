@@ -708,3 +708,18 @@ class TestListArgumentValidation:
         with pytest.raises(ValueError, match="syntax error"):
             await cache.alinsert("alinsert_bad", "SIDEWAYS", "a", "b")
         assert cache.lrange("alinsert_bad", 0, -1) == ["a"]
+
+    @pytest.mark.parametrize("method", ["lpop", "rpop"])
+    def test_pop_rejects_a_negative_count(self, cache: RespCache, method: str):
+        cache.rpush("pop_neg", "a")
+        with pytest.raises(ValueError, match="value is out of range, must be positive"):
+            getattr(cache, method)("pop_neg", -1)
+        assert cache.lrange("pop_neg", 0, -1) == ["a"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["alpop", "arpop"])
+    async def test_apop_rejects_a_negative_count(self, cache: RespCache, method: str):
+        cache.rpush("apop_neg", "a")
+        with pytest.raises(ValueError, match="value is out of range, must be positive"):
+            await getattr(cache, method)("apop_neg", -1)
+        assert cache.lrange("apop_neg", 0, -1) == ["a"]

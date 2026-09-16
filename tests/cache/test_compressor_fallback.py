@@ -2,6 +2,8 @@
 
 import gzip
 import zlib
+from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
 import pytest
 from django.core.cache import cache
@@ -9,6 +11,9 @@ from django.test import override_settings
 
 from django_cachex.exceptions import CompressorError, SerializerError
 from tests.cache.support import make_cache
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 GZIP_THEN_ZLIB = [
     "django_cachex.compressors.gzip.GzipCompressor",
@@ -26,6 +31,16 @@ def _caches(host: str, port: int, compressor, db: int) -> dict:
     }
 
 
+@contextmanager
+def _override_caches(caches: dict) -> Iterator[None]:
+    """``override_settings`` drops the handler without closing the cache it built; close it ourselves."""
+    with override_settings(CACHES=caches):
+        try:
+            yield
+        finally:
+            cache.close()
+
+
 class TestCompressorConfig:
     def test_single_string_config_backwards_compatible(self, redis_container):
         caches = _caches(
@@ -35,7 +50,7 @@ class TestCompressorConfig:
             db=10,
         )
 
-        with override_settings(CACHES=caches):
+        with _override_caches(caches):
             cache.set("test_key", "test_value" * 100)
             assert cache.get("test_key") == "test_value" * 100
             cache.delete("test_key")
@@ -43,7 +58,7 @@ class TestCompressorConfig:
     def test_list_config_writes_with_the_first_compressor(self, redis_container):
         caches = _caches(redis_container.host, redis_container.port, GZIP_THEN_ZLIB, db=11)
 
-        with override_settings(CACHES=caches):
+        with _override_caches(caches):
             cache.set("test_key", "test_value" * 100)
             assert [type(c).__name__ for c in cache._compressors] == ["GzipCompressor", "ZlibCompressor"]
             assert cache.adapter.get(cache.make_key("test_key"))[:2] == b"\x1f\x8b"
@@ -59,7 +74,7 @@ class TestCompressorConfig:
             db=13,
         )
 
-        with override_settings(CACHES=caches):
+        with _override_caches(caches):
             # Serialized form is below the 256-byte min_length: stored raw.
             cache.set("small_key", "tiny")
             assert cache.get("small_key") == "tiny"
@@ -75,11 +90,11 @@ class TestCompressorConfig:
         host, port = redis_container.host, redis_container.port
 
         caches_zlib = _caches(host, port, "django_cachex.compressors.zlib.ZlibCompressor", db=12)
-        with override_settings(CACHES=caches_zlib):
+        with _override_caches(caches_zlib):
             cache.set("old_key", "old_value" * 100)
 
         caches_gzip_fallback = _caches(host, port, GZIP_THEN_ZLIB, db=12)
-        with override_settings(CACHES=caches_gzip_fallback):
+        with _override_caches(caches_gzip_fallback):
             assert cache.get("old_key") == "old_value" * 100
 
             cache.set("new_key", "new_value" * 100)

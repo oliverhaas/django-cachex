@@ -147,6 +147,8 @@ _COMMAND_REQUIREMENTS: dict[str, str] = {
     ),
     "hsetex": "Redis 8.0+ or Valkey 9.0+",
     "hgetex": "Redis 8.0+ or Valkey 9.0+",
+    "expiretime": "Redis 7.0+ or Valkey 7.2+",
+    "pexpiretime": "Redis 7.0+ or Valkey 7.2+",
 }
 
 _UNKNOWN_COMMAND_RE = re.compile(

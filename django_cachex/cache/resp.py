@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from functools import cached_property
 from itertools import batched
 from typing import TYPE_CHECKING, Any, cast, override
+from urllib.parse import parse_qs, urlsplit
 
 from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.exceptions import ImproperlyConfigured
@@ -35,7 +36,13 @@ if TYPE_CHECKING:
 from django_cachex.cache.base import BaseCachex, CachexSupportLevel
 from django_cachex.exceptions import CompressorError, NotSupportedError, SerializerError
 from django_cachex.script import ScriptHelpers, reject_stray_encoded
-from django_cachex.utils import _validate_linsert_where, _validate_lpos_args, _validate_pop_count
+from django_cachex.utils import (
+    _validate_linsert_where,
+    _validate_lpos_args,
+    _validate_pop_count,
+    _validate_zadd_flags,
+    _validate_zrange_limit,
+)
 
 # Alias for the `set` builtin shadowed by the `set` method (PEP 649 defers
 # annotations at runtime, but type checkers still resolve them in class scope).
@@ -89,6 +96,13 @@ def _load_codec(config: str | type | Any) -> Any:
     return config
 
 
+def _validate_lock_lease(lease: float | None) -> None:
+    """The drivers send ``PX int(lease * 1000)``; below 1 ms that is ``PX 0`` (or a bare ``PX`` on glide)."""
+    if lease is not None and lease * 1000 < 1:
+        msg = "lease must be at least 1 ms"
+        raise ValueError(msg)
+
+
 # =============================================================================
 # RespCache - base class extending Django's BaseCache
 # =============================================================================
@@ -108,15 +122,16 @@ class RespCache(BaseCachex):
 
     _adapter_class: builtins.type[RespAdapterProtocol]
 
-    def __init__(self, server: str, params: dict[str, Any]) -> None:
+    def __init__(self, server: str | list[str], params: dict[str, Any]) -> None:
         super().__init__(params)
         # Django's own RedisCache accepts both separators. Blank entries are
         # dropped so a trailing separator does not become an empty URL.
-        if isinstance(server, str):
-            self._servers = [s.strip() for s in re.split("[;,]", server) if s.strip()]
-        else:
-            self._servers = server
-        if not any(s.strip() for s in self._servers):
+        raw = re.split("[;,]", server) if isinstance(server, str) else list(server)
+        if not all(isinstance(s, str) for s in raw):
+            msg = f"{type(self).__name__} LOCATION entries must be URL strings."
+            raise ImproperlyConfigured(msg)
+        self._servers = [s.strip() for s in raw if s.strip()]
+        if not self._servers:
             msg = (
                 f"{type(self).__name__} requires a LOCATION. Set it to a URL such as "
                 f"'redis://127.0.0.1:6379/0' (or a list of them, primary first)."
@@ -126,9 +141,13 @@ class RespCache(BaseCachex):
         # ``super().__init__`` already read these off ``params``, so dropping
         # them here just keeps them out of the pool kwargs.
         self._options = {k: v for k, v in params.get("OPTIONS", {}).items() if k not in _DJANGO_GENERIC_OPTIONS}
-        if self._options.get("decode_responses"):
+        # The drivers merge URL query parameters over the pool kwargs and
+        # keep the raw string, so even ``?decode_responses=false`` is truthy.
+        in_url = any(parse_qs(urlsplit(url).query).get("decode_responses") for url in self._servers)
+        if self._options.get("decode_responses") or in_url:
+            where = "?decode_responses in LOCATION" if in_url else "OPTIONS['decode_responses']=True"
             msg = (
-                f"{type(self).__name__} does not support OPTIONS['decode_responses']=True: "
+                f"{type(self).__name__} does not support {where}: "
                 f"the cache layer deserializes the raw bytes the server returns, so a "
                 f"str-decoding client breaks every read. Remove the option."
             )
@@ -1283,6 +1302,7 @@ class RespCache(BaseCachex):
         thread_local: bool = True,
     ) -> Any:
         """Return a Lock object for distributed locking."""
+        _validate_lock_lease(lease)
         key = self.make_and_validate_key(key, version=version)
         return self.adapter.lock(
             key,
@@ -1311,6 +1331,7 @@ class RespCache(BaseCachex):
         before building the lock. Use as
         ``async with await cache.alock(key) as lock:``.
         """
+        _validate_lock_lease(lease)
         key = self.make_and_validate_key(key, version=version)
         return await self.adapter.alock(
             key,
@@ -2072,6 +2093,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> Any | list[Any] | None:
         """Remove and return element(s) from head of list."""
+        _validate_pop_count(count)
         key = self.make_and_validate_key(key, version=version)
         result = self.adapter.lpop(key, count=count)
         if result is None:
@@ -2087,6 +2109,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> Any | list[Any] | None:
         """Remove and return element(s) from tail of list."""
+        _validate_pop_count(count)
         key = self.make_and_validate_key(key, version=version)
         result = self.adapter.rpop(key, count=count)
         if result is None:
@@ -2278,6 +2301,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> Any | list[Any] | None:
         """Remove and return element(s) from head of list asynchronously."""
+        _validate_pop_count(count)
         key = self.make_and_validate_key(key, version=version)
         result = await self.adapter.alpop(key, count=count)
         if result is None:
@@ -2293,6 +2317,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> Any | list[Any] | None:
         """Remove and return element(s) from tail of list asynchronously."""
+        _validate_pop_count(count)
         key = self.make_and_validate_key(key, version=version)
         result = await self.adapter.arpop(key, count=count)
         if result is None:
@@ -2935,6 +2960,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Add members to a sorted set."""
+        _validate_zadd_flags(nx=nx, xx=xx, gt=gt, lt=lt)
         if not mapping:
             return 0
         key = self.make_and_validate_key(key, version=version)
@@ -2975,6 +3001,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> list[tuple[Any, float]]:
         """Remove and return members with highest scores."""
+        _validate_pop_count(count)
         key = self.make_and_validate_key(key, version=version)
         return [(self.decode(m), s) for m, s in self.adapter.zpopmax(key, count)]
 
@@ -2985,6 +3012,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> list[tuple[Any, float]]:
         """Remove and return members with lowest scores."""
+        _validate_pop_count(count)
         key = self.make_and_validate_key(key, version=version)
         return [(self.decode(m), s) for m, s in self.adapter.zpopmin(key, count)]
 
@@ -3016,6 +3044,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> list[Any] | list[tuple[Any, float]]:
         """Return members with scores between min and max."""
+        _validate_zrange_limit(start, num)
         key = self.make_and_validate_key(key, version=version)
         result = self.adapter.zrangebyscore(key, min_score, max_score, withscores=withscores, start=start, num=num)
         if withscores:
@@ -3094,6 +3123,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> list[Any] | list[tuple[Any, float]]:
         """Return members with scores between max and min, highest first."""
+        _validate_zrange_limit(start, num)
         key = self.make_and_validate_key(key, version=version)
         result = self.adapter.zrevrangebyscore(key, max_score, min_score, withscores=withscores, start=start, num=num)
         if withscores:
@@ -3145,6 +3175,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> int:
         """Add members to a sorted set asynchronously."""
+        _validate_zadd_flags(nx=nx, xx=xx, gt=gt, lt=lt)
         if not mapping:
             return 0
         key = self.make_and_validate_key(key, version=version)
@@ -3185,6 +3216,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> list[tuple[Any, float]]:
         """Remove and return members with highest scores asynchronously."""
+        _validate_pop_count(count)
         key = self.make_and_validate_key(key, version=version)
         return [(self.decode(m), s) for m, s in await self.adapter.azpopmax(key, count)]
 
@@ -3195,6 +3227,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> list[tuple[Any, float]]:
         """Remove and return members with lowest scores asynchronously."""
+        _validate_pop_count(count)
         key = self.make_and_validate_key(key, version=version)
         return [(self.decode(m), s) for m, s in await self.adapter.azpopmin(key, count)]
 
@@ -3226,6 +3259,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> list[Any] | list[tuple[Any, float]]:
         """Return members with scores between min and max asynchronously."""
+        _validate_zrange_limit(start, num)
         key = self.make_and_validate_key(key, version=version)
         result = await self.adapter.azrangebyscore(
             key,
@@ -3311,6 +3345,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> list[Any] | list[tuple[Any, float]]:
         """Return members with scores between max and min, highest first, asynchronously."""
+        _validate_zrange_limit(start, num)
         key = self.make_and_validate_key(key, version=version)
         result = await self.adapter.azrevrangebyscore(
             key,

@@ -265,6 +265,10 @@ class BaseCachex(BaseCache):
         """Delete all keys matching pattern."""
         raise NotSupportedError("delete_pattern", self.__class__.__name__)
 
+    def clear_all_versions(self, itersize: int | None = None) -> int:
+        """Delete every key under this cache's prefix, across all versions."""
+        raise NotSupportedError("clear_all_versions", self.__class__.__name__)
+
     def rename(
         self,
         src: str,
@@ -331,6 +335,10 @@ class BaseCachex(BaseCache):
     ) -> int:
         """Async: delete all keys matching pattern."""
         raise NotSupportedError("adelete_pattern", self.__class__.__name__)
+
+    async def aclear_all_versions(self, itersize: int | None = None) -> int:
+        """Async: delete every key under this cache's prefix, across all versions."""
+        raise NotSupportedError("aclear_all_versions", self.__class__.__name__)
 
     async def arename(
         self,

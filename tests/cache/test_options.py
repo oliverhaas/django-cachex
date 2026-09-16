@@ -141,6 +141,20 @@ class TestRejectedOptions:
     def test_decode_responses_false_is_accepted(self):
         assert make_cache(decode_responses=False).adapter is not None
 
+    @pytest.mark.parametrize("value", ["true", "1", "yes", "True", "false"])
+    def test_decode_responses_in_the_location_query_is_rejected(self, value: str):
+        """Regression: the drivers merge URL query parameters over the pool kwargs and keep the raw string."""
+        with pytest.raises(ImproperlyConfigured, match="decode_responses in LOCATION"):
+            RedisCache(server=f"redis://a:6379/0?decode_responses={value}", params={})
+
+    def test_decode_responses_in_a_replica_url_is_rejected(self):
+        with pytest.raises(ImproperlyConfigured, match="decode_responses in LOCATION"):
+            RedisCache(server=["redis://a:6379/0", "redis://b:6379/0?decode_responses=1"], params={})
+
+    def test_other_query_parameters_are_left_alone(self):
+        cache = RedisCache(server="redis://a:6379/0?socket_timeout=5", params={})
+        assert cache._servers == ["redis://a:6379/0?socket_timeout=5"]
+
 
 class TestLocationParsing:
     @pytest.mark.parametrize(
@@ -161,3 +175,22 @@ class TestLocationParsing:
     def test_only_separators_is_still_rejected(self, location: str):
         with pytest.raises(ImproperlyConfigured, match="requires a LOCATION"):
             RedisCache(server=location, params={})
+
+    @pytest.mark.parametrize(
+        "location",
+        [["redis://a:6379/0", ""], ["redis://a:6379/0", " "], [" redis://a:6379/0\n"]],
+        ids=["blank", "whitespace", "padded"],
+    )
+    def test_list_entries_are_stripped_and_blanks_dropped(self, location: list[str]):
+        """Regression: only the string form was cleaned, so a blank list entry reached the driver as a replica URL."""
+        cache = RedisCache(server=location, params={})
+        assert cache._servers == ["redis://a:6379/0"]
+
+    @pytest.mark.parametrize("location", [[], ["", ""], [" "]], ids=["empty", "blanks", "whitespace"])
+    def test_list_without_a_usable_entry_is_rejected(self, location: list[str]):
+        with pytest.raises(ImproperlyConfigured, match="requires a LOCATION"):
+            RedisCache(server=location, params={})
+
+    def test_non_string_list_entry_is_rejected(self):
+        with pytest.raises(ImproperlyConfigured, match="must be URL strings"):
+            RedisCache(server=["redis://a:6379/0", None], params={})  # type: ignore[list-item]

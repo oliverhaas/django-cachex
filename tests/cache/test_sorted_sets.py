@@ -516,3 +516,48 @@ class TestSortedSetEmptyArgumentCalls:
     async def test_azmscore(self, cache: RespCache):
         await cache.azadd("aempty_zset", {"a": 1.0})
         assert await cache.azmscore("aempty_zset") == []
+
+
+class TestSortedSetArgumentValidation:
+    """The RESP backends raise the same ``ValueError`` LocMem and Database do, not a driver ``ResponseError``."""
+
+    @pytest.mark.parametrize("method", ["zpopmin", "zpopmax"])
+    def test_pop_rejects_a_negative_count(self, cache: RespCache, method: str):
+        cache.zadd("zpop_neg", {"a": 1.0})
+        with pytest.raises(ValueError, match="value is out of range, must be positive"):
+            getattr(cache, method)("zpop_neg", -1)
+        assert cache.zcard("zpop_neg") == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["azpopmin", "azpopmax"])
+    async def test_apop_rejects_a_negative_count(self, cache: RespCache, method: str):
+        cache.zadd("azpop_neg", {"a": 1.0})
+        with pytest.raises(ValueError, match="value is out of range, must be positive"):
+            await getattr(cache, method)("azpop_neg", -1)
+        assert cache.zcard("azpop_neg") == 1
+
+    @pytest.mark.parametrize("flags", [{"nx": True, "xx": True}, {"gt": True, "lt": True}, {"nx": True, "gt": True}])
+    def test_zadd_rejects_conflicting_flags(self, cache: RespCache, flags: dict[str, bool]):
+        with pytest.raises(ValueError, match="ZADD allows"):
+            cache.zadd("zadd_flags", {"a": 1.0}, **flags)
+        assert cache.zcard("zadd_flags") == 0
+
+    @pytest.mark.asyncio
+    async def test_azadd_rejects_conflicting_flags(self, cache: RespCache):
+        with pytest.raises(ValueError, match="ZADD allows"):
+            await cache.azadd("azadd_flags", {"a": 1.0}, nx=True, xx=True)
+        assert cache.zcard("azadd_flags") == 0
+
+    @pytest.mark.parametrize("method", ["zrangebyscore", "zrevrangebyscore"])
+    @pytest.mark.parametrize("limit", [{"start": 0}, {"num": 1}])
+    def test_one_sided_limit_is_rejected(self, cache: RespCache, method: str, limit: dict[str, int]):
+        cache.zadd("zrange_limit", {"a": 1.0, "b": 2.0})
+        with pytest.raises(ValueError, match="start and num must both be specified"):
+            getattr(cache, method)("zrange_limit", "-inf", "+inf", **limit)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["azrangebyscore", "azrevrangebyscore"])
+    async def test_async_one_sided_limit_is_rejected(self, cache: RespCache, method: str):
+        cache.zadd("azrange_limit", {"a": 1.0, "b": 2.0})
+        with pytest.raises(ValueError, match="start and num must both be specified"):
+            await getattr(cache, method)("azrange_limit", "-inf", "+inf", num=1)
