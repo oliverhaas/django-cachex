@@ -290,6 +290,32 @@ RENDERABLE_TYPES = CONTAINER_TYPES | {KeyType.STRING}
 CREATABLE_TYPES = tuple(t for t in KeyType if t is not KeyType.UNKNOWN)
 
 
+def creatable_types(cache: Any) -> tuple[KeyType, ...]:
+    """Types the add flow offers for ``cache``.
+
+    Stock Django backends have no ``type()``, and every create action checks
+    the type first, so nothing can be created there. A "limited" cachex
+    backend such as ``TrackingCache`` only writes strings. Streams live on
+    ``RespCache`` alone.
+    """
+    if not hasattr(cache, "type"):
+        return ()
+    if getattr(cache, "_cachex_support", None) != "cachex":
+        return (KeyType.STRING,)
+    if hasattr(cache, "xadd"):
+        return CREATABLE_TYPES
+    return tuple(t for t in CREATABLE_TYPES if t is not KeyType.STREAM)
+
+
+def unknown_type_message(cache: Any, requested: str) -> str:
+    """Explain a ``type`` the add flow will not create on ``cache``."""
+    if requested not in {t.value for t in CREATABLE_TYPES}:
+        return f"Unknown key type '{requested}'."
+    if not creatable_types(cache):
+        return "This cache backend does not support adding keys from the admin."
+    return f"This cache backend does not support {requested} keys."
+
+
 def get_type_data(
     cache: Any,
     key: str,
@@ -501,6 +527,10 @@ def get_size(cache: Any, key: str, key_type: str | None = None) -> int | None:
 
         method = size_methods.get(key_type)
         return method() if method else None
+    except NotSupportedError:
+        # A backend that reports the type but cannot size it (TrackingCache
+        # sees its transport's containers) is not an error worth a traceback.
+        return None
     except Exception:
         logger.exception("get_size: size lookup failed for key %r (type=%s)", key, key_type)
         return None

@@ -1544,6 +1544,40 @@ class TestKeyOperations:
         members = test_cache.smembers("spop:test")
         assert members == set()
 
+    def test_popping_the_last_member_lands_in_create_mode(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+    ):
+        """Emptying a key keeps the user on it instead of bouncing to the key list."""
+        test_cache.sadd("spop:last", "only_member")
+
+        response = admin_client.post(_key_detail_url("default", "spop:last"), {"action": "spop"}, follow=True)
+
+        assert response.status_code == 200
+        assert response.redirect_chain[-1][0].endswith("?type=set")
+        content = response.content.decode()
+        assert "Popped" in content
+        assert "This key does not exist yet" in content
+        assert "does not exist in cache" not in content
+
+    def test_removing_the_last_member_of_a_zset_lands_in_create_mode(
+        self,
+        admin_client: Client,
+        test_cache: RespCache,
+    ):
+        test_cache.zadd("zrem:last", {"only": 1.0})
+
+        response = admin_client.post(
+            _key_detail_url("default", "zrem:last"),
+            {"action": "zrem", "member": "only"},
+            follow=True,
+        )
+
+        assert response.status_code == 200
+        assert response.redirect_chain[-1][0].endswith("?type=zset")
+        assert "This key does not exist yet" in response.content.decode()
+
     def test_set_spop_with_count(
         self,
         admin_client: Client,
@@ -3623,6 +3657,25 @@ class TestOpaqueKeyType:
 
         assert "Unknown key type" in response.content.decode()
 
+    def test_add_form_offers_no_stream_on_a_backend_without_streams(self, admin_client: Client, test_cache: RespCache):
+        """LocMem and Database have no xadd(); offering "Stream" led to an AttributeError message."""
+        response = admin_client.get(_key_add_url("local"))
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert '<option value="zset"' in content
+        assert '<option value="stream"' not in content
+
+    def test_stream_type_is_rejected_on_a_backend_without_streams(self, admin_client: Client, test_cache: RespCache):
+        add_response = admin_client.post(_key_add_url("local"), {"key": "nostream:add", "type": "stream"})
+        assert add_response.status_code == 200
+        assert "does not support stream keys" in add_response.content.decode()
+
+        detail_response = admin_client.get(_key_detail_create_url("local", "nostream:create", "stream"), follow=True)
+        content = detail_response.content.decode()
+        assert "does not support stream keys" in content
+        assert "does not exist yet" not in content
+
 
 class TestViewOnlyUserSeesNoMutationControls:
     def test_string_key_page(self, db, test_cache: RespCache):
@@ -3844,6 +3897,19 @@ class TestBackendWithoutTypeSupport:
             assert cache.get("stock:doomed") is None
 
         assert response.status_code == 200
+
+    def test_add_key_is_not_offered(self, admin_client: Client, test_cache):
+        """No ``type()`` means no create action can run, so the link and the form both go."""
+        with self._stock_alias():
+            listing = admin_client.get(_key_list_url("stock"))
+            add_page = admin_client.get(_key_add_url("stock"), follow=True)
+            create_page = admin_client.get(_key_detail_create_url("stock", "stock:new", "string"), follow=True)
+
+        assert listing.status_code == 200
+        assert "Add key" not in listing.content.decode()
+        assert add_page.redirect_chain[-1][0].endswith("?cache=stock")
+        assert "does not support adding keys from the admin" in add_page.content.decode()
+        assert "does not support adding keys from the admin" in create_page.content.decode()
 
 
 class TestStampedePreventionDoesNotHideValues:

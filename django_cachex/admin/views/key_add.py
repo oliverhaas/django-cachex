@@ -6,7 +6,13 @@ from urllib.parse import urlencode
 from django.contrib import admin, messages
 from django.shortcuts import redirect, render
 
-from django_cachex.admin.helpers import CREATABLE_TYPES, CacheUnavailableError, get_cache, unreachable_message
+from django_cachex.admin.helpers import (
+    CacheUnavailableError,
+    creatable_types,
+    get_cache,
+    unknown_type_message,
+    unreachable_message,
+)
 from django_cachex.admin.views.base import (
     ViewConfig,
     cache_list_url,
@@ -43,15 +49,19 @@ def key_add_view(
         messages.error(request, str(exc))
         return redirect(cache_list_url())
 
+    offered_types = creatable_types(cache)
+    if not offered_types:
+        messages.info(request, unknown_type_message(cache, KeyType.STRING.value))
+        return redirect(key_list_url(cache_name))
     if request.method == "POST":
         key_name = request.POST.get("key", "").strip()
         key_type = request.POST.get("type", KeyType.STRING).strip()
 
         if not key_name:
             messages.error(request, "Key name is required.")
-        elif key_type not in _TYPE_LABELS:
-            # The select only offers ``CREATABLE_TYPES``; anything else is a hand-crafted POST.
-            messages.error(request, f"Unknown key type '{key_type}'.")
+        elif key_type not in {t.value for t in offered_types}:
+            # The select only offers the backend's types; anything else is a hand-crafted POST.
+            messages.error(request, unknown_type_message(cache, key_type))
         else:
             try:
                 exists = cache.has_key(key_name)
@@ -77,7 +87,7 @@ def key_add_view(
             "key_list_href": key_list_url(cache_name),
             "prefill_key": prefill_key,
             "prefill_type": prefill_type,
-            "type_choices": [(t.value, _TYPE_LABELS[t]) for t in CREATABLE_TYPES],
+            "type_choices": [(t.value, _TYPE_LABELS[t]) for t in offered_types],
             "help_active": help_active,
         },
     )

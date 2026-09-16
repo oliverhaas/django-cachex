@@ -22,7 +22,7 @@ from django.utils.safestring import mark_safe
 from django.utils.timesince import timeuntil
 from django.utils.translation import gettext_lazy as _
 
-from django_cachex.admin.helpers import CacheUnavailableError, get_cache, get_size, mask_credentials
+from django_cachex.admin.helpers import CacheUnavailableError, creatable_types, get_cache, get_size, mask_credentials
 from django_cachex.admin.models import Cache, Key
 from django_cachex.cache.resp import RespClusterCache
 from django_cachex.exceptions import NotSupportedError
@@ -699,6 +699,11 @@ class KeyAdminMixin:
             return HttpResponseRedirect(reverse("admin:django_cachex_cache_changelist"))
         extra_context["cache_name"] = cache_name
         extra_context["title"] = f"Keys in '{cache_name}'"
+        with contextlib.suppress(CacheUnavailableError):
+            # Django sets ``has_add_permission`` from the ModelAdmin; the link is
+            # also pointless where no key type can be created.
+            if not creatable_types(get_cache(cache_name)):
+                extra_context["has_add_permission"] = False
 
         if request.method == "POST" and request.POST.get("action") == "clear_cache":
             return self._handle_clear_cache(request, cache_name)

@@ -7,11 +7,15 @@ from django.template.loader import render_to_string
 from django.test import override_settings
 
 from django_cachex.admin.helpers import (
+    CREATABLE_TYPES,
     PAGE_SIZE,
     _fetch_type_data,
     _paginate,
+    creatable_types,
+    get_size,
     mask_credentials,
     mask_location,
+    unknown_type_message,
 )
 from django_cachex.admin.views.key_detail import _set_preserving_ttl
 from django_cachex.exceptions import NotSupportedError
@@ -219,6 +223,71 @@ class TestZsetMemberEditability:
 
     def test_plain_member_stays_editable(self):
         assert self._editable("plain") is True
+
+
+class TestCreatableTypes:
+    """The add flow offers what the backend can write; each of these was found by
+    creating a key of an unsupported type in the example project's admin."""
+
+    def test_resp_cache_offers_everything(self, test_cache):
+        assert creatable_types(test_cache) == CREATABLE_TYPES
+
+    def test_locmem_and_database_have_no_streams(self):
+        from django.core.cache import caches
+
+        with override_settings(
+            CACHES={
+                "default": {"BACKEND": "django_cachex.cache.LocMemCache", "LOCATION": "creatable-locmem"},
+            },
+        ):
+            offered = creatable_types(caches["default"])
+        assert KeyType.STREAM not in offered
+        assert set(offered) == set(CREATABLE_TYPES) - {KeyType.STREAM}
+
+    def test_tracking_cache_writes_strings_only(self):
+        from django_cachex.cache.tracking import _TRACKING_REGISTRY, TrackingCache
+
+        location = "tracking:creatable-types"
+        try:
+            cache = TrackingCache(location, {"OPTIONS": {"transport": "unused"}})
+            assert creatable_types(cache) == (KeyType.STRING,)
+        finally:
+            state = _TRACKING_REGISTRY.pop(location, None)
+            if state is not None:
+                state.shutdown()
+
+    def test_stock_django_backend_creates_nothing(self):
+        from django.core.cache.backends.locmem import LocMemCache
+
+        cache = LocMemCache("creatable-stock", {})
+        assert creatable_types(cache) == ()
+        assert "does not support adding keys" in unknown_type_message(cache, "string")
+
+    def test_message_for_an_unsupported_and_an_unknown_type(self):
+        from django.core.cache import caches
+
+        with override_settings(
+            CACHES={
+                "default": {"BACKEND": "django_cachex.cache.LocMemCache", "LOCATION": "creatable-msg"},
+            },
+        ):
+            cache = caches["default"]
+            assert unknown_type_message(cache, "stream") == "This cache backend does not support stream keys."
+            assert unknown_type_message(cache, "blob") == "Unknown key type 'blob'."
+
+
+class TestGetSizeOnAnUnsupportedContainer:
+    def test_not_supported_is_quiet(self, caplog):
+        """TrackingCache lists its transport's containers but cannot size them;
+        that used to log a full traceback per key on every key list."""
+
+        class _StringsOnly:
+            def llen(self, key: str) -> int:
+                raise NotSupportedError("llen", "StringsOnly")
+
+        with caplog.at_level("DEBUG", logger="django_cachex.admin.helpers"):
+            assert get_size(_StringsOnly(), "k", KeyType.LIST) is None
+        assert caplog.records == []
 
 
 class TestStreamBrowsingUnsupported:

@@ -21,9 +21,9 @@ from django_cachex.admin.cas import (
     supports_cas,
 )
 from django_cachex.admin.helpers import (
-    CREATABLE_TYPES,
     RENDERABLE_TYPES,
     CacheUnavailableError,
+    creatable_types,
     format_value_for_display,
     get_cache,
     get_type_data,
@@ -31,6 +31,7 @@ from django_cachex.admin.helpers import (
     mask_credentials,
     parse_json_or_str,
     read_value_with_sha1,
+    unknown_type_message,
     unreachable_message,
 )
 from django_cachex.admin.views.base import (
@@ -50,9 +51,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_CREATABLE_TYPE_VALUES = frozenset(t.value for t in CREATABLE_TYPES)
-
-
 # -- Small helpers --------------------------------------------------------------
 
 
@@ -70,6 +68,29 @@ def _redirect_to_key(request: HttpRequest, cache_name: str, key: str, page: int)
     if params:
         url += "?" + urlencode(params)
     return redirect(url)
+
+
+def _stay_after_emptying(
+    response: HttpResponse,
+    request: HttpRequest,
+    cache: Any,
+    cache_name: str,
+    key: str,
+    key_type: KeyType,
+) -> HttpResponse:
+    """Keep the user on a key that a removal just emptied.
+
+    Without ``type`` the follow-up GET bounces to the key list with a "does not
+    exist" error right after the success message; create mode reads better.
+    """
+    if request.GET.get("type"):
+        return response
+    try:
+        if cache.has_key(key):
+            return response
+    except Exception:  # noqa: BLE001
+        return response
+    return redirect(key_detail_url(cache_name, key) + "?" + urlencode({"type": key_type.value}))
 
 
 def _parse_count(request: HttpRequest, field: str, *, default: int = 1, min_value: int = 1) -> int:
@@ -723,6 +744,11 @@ _CREATE_ACTIONS = frozenset(
 
 _TYPE_AGNOSTIC_ACTIONS = frozenset({"delete", "set_ttl"})
 
+# Actions that can remove the last member; the server drops the key with it.
+_EMPTYING_ACTIONS = frozenset(
+    {"lpop", "rpop", "lrem", "ltrim", "srem", "spop", "hdel", "zrem", "zpopmin", "zpopmax"},
+)
+
 # A key can change type between page load and submit; a string ``update``
 # applied to what is now a hash would overwrite it.
 _ACTION_TYPES: dict[str, KeyType] = {
@@ -812,6 +838,8 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         elif handler is not None:
             response = handler(request, cache, cache_name, key, page)
             if response is not None:
+                if key_type is not None and action in _EMPTYING_ACTIONS:
+                    response = _stay_after_emptying(response, request, cache, cache_name, key, key_type)
                 return response
         else:
             messages.error(request, f"Unknown action: {action!r}." if action else "No action specified.")
@@ -826,7 +854,7 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     requested_type = request.GET.get("type", "").strip().lower()
     # Anything outside ``KeyType`` would be rendered as a badge class/label and
     # interpolated into the help key, yielding an undefined-state page.
-    create_type = requested_type if requested_type in _CREATABLE_TYPE_VALUES else ""
+    create_type = requested_type if requested_type in {t.value for t in creatable_types(cache)} else ""
     if not key_exists:
         # Materializing a key is an add, so create mode needs ``add_key``.
         may_create = create_type and request.user.has_perm("django_cachex.add_key")  # ty: ignore[unresolved-attribute]
@@ -837,7 +865,7 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 "This key does not exist yet. Use the operations below to add your first item and create the key.",
             )
         elif requested_type and not create_type:
-            messages.error(request, f"Unknown key type '{requested_type}'.")
+            messages.error(request, unknown_type_message(cache, requested_type))
             return redirect(key_list_url(cache_name))
         else:
             messages.error(request, f"Key '{key}' does not exist in cache '{cache_name}'.")
