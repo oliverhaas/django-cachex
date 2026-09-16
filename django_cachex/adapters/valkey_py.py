@@ -31,7 +31,7 @@ from datetime import datetime, timedelta
 from functools import cached_property
 from itertools import batched
 from typing import TYPE_CHECKING, Any, cast, override
-from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlsplit, urlunparse
 
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
@@ -164,6 +164,36 @@ def _attribute_state(value: Any) -> list[tuple[str, Any]] | None:
 def _options_key(options: Mapping[str, Any]) -> tuple[tuple[str, Any], ...]:
     """Make a hashable, instance-stable key from pool options."""
     return tuple((k, _stable_value(options[k])) for k in sorted(options))
+
+
+def _strip_url_credentials(url: str, overridden: frozenset[str]) -> str:
+    """Drop the ``username`` / ``password`` a URL carries when OPTIONS overrides them.
+
+    The driver's ``from_url`` applies URL values after keyword arguments,
+    so a credential left in the URL would beat the option. Both the
+    userinfo and the query-string spelling (``?password=``) go.
+    """
+    parts = urlsplit(url)
+    userinfo, at, hostport = parts.netloc.rpartition("@")
+    username, colon, password = userinfo.partition(":")
+    if "username" in overridden:
+        username = ""
+    if "password" in overridden:
+        colon = password = ""
+    netloc = f"{username}{colon}{password}@{hostport}" if at and (username or colon) else hostport
+    query = parts.query
+    if query:
+        pairs = parse_qsl(query, keep_blank_values=True)
+        kept = [(name, value) for name, value in pairs if name not in overridden]
+        if len(kept) != len(pairs):
+            query = urlencode(kept)
+    # Not urlunsplit(): it drops the "//" of a netloc-less "unix://" URL, which the driver rejects.
+    rebuilt = f"{parts.scheme}://{netloc}{parts.path}"
+    if query:
+        rebuilt += f"?{query}"
+    if parts.fragment:
+        rebuilt += f"#{parts.fragment}"
+    return rebuilt
 
 
 def _raw_response(response: Any, **_options: Any) -> Any:
@@ -687,7 +717,8 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             )
             raise ImproperlyConfigured(msg)
 
-        self._servers = servers
+        overridden = frozenset(name for name in ("username", "password") if options.get(name))
+        self._servers = [_strip_url_credentials(url, overridden) for url in servers] if overridden else servers
         self._options = options
         self._pools: dict[int, Any] = {}
         self._stampede_config: StampedeConfig | None = make_stampede_config(options.get("stampede_prevention"))
@@ -920,7 +951,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         if val is None:
             return None
         config = self.resolve_stampede(stampede_prevention)
-        if config and isinstance(val, bytes):
+        if config:
             ttl = client.ttl(key)
             if ttl > 0 and should_recompute(ttl, config):
                 return None
@@ -932,7 +963,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         if val is None:
             return None
         config = self.resolve_stampede(stampede_prevention)
-        if config and isinstance(val, bytes):
+        if config:
             ttl = await client.ttl(key)
             if ttl > 0 and should_recompute(ttl, config):
                 return None
@@ -1060,11 +1091,9 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
-        # Stampede filtering: pipeline TTL for found keys with bytes values
-        # (integers bypass stampede, matching get() behavior)
         config = self.resolve_stampede(stampede_prevention)
         if config and found:
-            stampede_keys = [k for k, v in found.items() if isinstance(v, bytes)]
+            stampede_keys = list(found)
             if stampede_keys:
                 pipe = client.pipeline()
                 for k in stampede_keys:
@@ -1091,11 +1120,9 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
-        # Stampede filtering: pipeline TTL for found keys with bytes values
-        # (integers bypass stampede, matching aget() behavior)
         config = self.resolve_stampede(stampede_prevention)
         if config and found:
-            stampede_keys = [k for k, v in found.items() if isinstance(v, bytes)]
+            stampede_keys = list(found)
             if stampede_keys:
                 pipe = client.pipeline()
                 for k in stampede_keys:
@@ -3851,8 +3878,9 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
     async def aclose(self, **kwargs: Any) -> None:
         """Also drop this event loop's Sentinel manager, and release those of closed loops."""
         await super().aclose(**kwargs)
-        self._async_sentinels.pop(asyncio.get_running_loop(), None)
-        _evict_closed_loops(self._async_sentinels)
+        with _ASYNC_REGISTRY_LOCK:
+            self._async_sentinels.pop(asyncio.get_running_loop(), None)
+            _evict_closed_loops(self._async_sentinels)
 
 
 class ValkeyPyClusterAdapter(ValkeyPyAdapter):
@@ -3885,6 +3913,35 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
     if _VALKEY_AVAILABLE:
         _cluster_class = ValkeyCluster
         _async_cluster_class = AsyncValkeyCluster
+
+    @override
+    def __init__(
+        self,
+        servers: list[str],
+        pool_class: str | builtins.type[Any] | None = None,
+        parser_class: str | builtins.type[Any] | None = None,
+        async_pool_class: str | builtins.type[Any] | None = None,
+        **options: Any,
+    ) -> None:
+        # The cluster client owns its per-node pools, and neither driver lets it
+        # take a parser (redis-py drops the kwarg, valkey-py forces ClusterParser).
+        given = [
+            name
+            for name, value in (
+                ("pool_class", pool_class),
+                ("async_pool_class", async_pool_class),
+                ("parser_class", parser_class),
+            )
+            if value is not None
+        ]
+        if given:
+            msg = (
+                f"{type(self).__name__} does not take {', '.join(given)}: the cluster client manages its own "
+                f"connections and picks its own parser (the C parser when hiredis / libvalkey is installed). "
+                f"Remove them from OPTIONS."
+            )
+            raise ImproperlyConfigured(msg)
+        super().__init__(servers, **options)
 
     @property
     def _cluster(self) -> builtins.type[Any]:
@@ -3962,11 +4019,9 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
 
         found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
-        # Stampede filtering: pipeline TTL for found keys with bytes values
-        # (integers bypass stampede, matching the standalone get_many path).
         config = self.resolve_stampede(stampede_prevention)
         if config and found:
-            stampede_keys = [k for k, v in found.items() if isinstance(v, bytes)]
+            stampede_keys = list(found)
             if stampede_keys:
                 pipe = client.pipeline()
                 for k in stampede_keys:
@@ -4128,11 +4183,9 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
 
         found = {k: v for k, v in zip(keys, results, strict=False) if v is not None}
 
-        # Stampede filtering: pipeline TTL for found keys with bytes values
-        # (integers bypass stampede, matching the standalone aget_many path).
         config = self.resolve_stampede(stampede_prevention)
         if config and found:
-            stampede_keys = [k for k, v in found.items() if isinstance(v, bytes)]
+            stampede_keys = list(found)
             if stampede_keys:
                 pipe = client.pipeline()
                 for k in stampede_keys:

@@ -232,7 +232,9 @@ class TestRedisAdapterMethods:
 
         with redis_cache([url, url, url]) as cache:
             assert cache.adapter._get_connection_pool_index(write=True) == 0
-            assert 0 <= cache.adapter._get_connection_pool_index(write=False) < 3
+            with mock.patch("django_cachex.adapters.valkey_py.random.randint", return_value=2) as randint:
+                assert cache.adapter._get_connection_pool_index(write=False) == 2
+            randint.assert_called_once_with(1, 2)
 
 
 class TestConnectionCleanup:

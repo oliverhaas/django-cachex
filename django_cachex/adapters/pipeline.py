@@ -1104,7 +1104,13 @@ class Pipeline:
         *fields: str,
         version: int | None = None,
     ) -> Self:
-        """Queue HMGET command (get multiple field values)."""
+        """Queue HMGET command (get multiple field values).
+
+        With no fields the step resolves to ``[]`` and no command is sent, the
+        result :meth:`RespCache.hmget` gives for the same call.
+        """
+        if not fields:
+            return self._fixed([])
         nkey = self._make_key(key, version)
         self._pipeline_adapter.hmget(nkey, *fields)
         self._decoders.append(self._decode_values)
@@ -1354,7 +1360,11 @@ class Pipeline:
         ``incr=True`` turns the single ``mapping`` pair into ZINCRBY with the
         other flags applied: the step decodes to the member's new score, or
         ``None`` when ``nx`` / ``xx`` / ``gt`` / ``lt`` blocked the update.
+        An empty ``mapping`` resolves to ``0`` with no command sent, like
+        :meth:`RespCache.zadd`.
         """
+        if not mapping:
+            return self._fixed(0)
         nkey = self._make_key(key, version)
         encoded_mapping = {self._encode(member): score for member, score in mapping.items()}
         self._pipeline_adapter.zadd(nkey, encoded_mapping, nx=nx, xx=xx, ch=ch, gt=gt, lt=lt, incr=incr)

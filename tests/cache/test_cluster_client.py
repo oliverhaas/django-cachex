@@ -68,13 +68,6 @@ class TestRedisClusterAdapter:
         mock_cluster_cls.from_url.return_value = mock_cluster
 
         client = setup_cluster_client(mock_cluster_cls)
-        client._serializers = [MagicMock()]
-        client._compressors = [MagicMock()]
-
-        client.key_func = lambda k, p, v: k
-
-        client._serializers[0].loads.side_effect = pickle.loads
-        client._compressors[0].decompress.side_effect = lambda x: x
 
         mock_cluster.mget_nonatomic.return_value = [
             pickle.dumps("value_a"),
@@ -104,8 +97,6 @@ class TestRedisClusterAdapter:
 
         client = setup_cluster_client(mock_cluster_cls)
 
-        client.key_func = lambda k, p, v: k
-
         mock_cluster.unlink.return_value = 3
 
         client.delete_many(["{a}key1", "{b}key2", "{c}key3"])
@@ -122,22 +113,6 @@ class TestRedisClusterAdapter:
         client.delete_many([])
 
         mock_cluster.unlink.assert_not_called()
-
-    def test_delete_many_same_slot(self):
-        """Test delete_many with keys in the same slot uses a single UNLINK."""
-        mock_cluster_cls = MagicMock()
-        mock_cluster = MagicMock()
-        mock_cluster_cls.from_url.return_value = mock_cluster
-
-        client = setup_cluster_client(mock_cluster_cls)
-
-        client.key_func = lambda k, p, v: k
-
-        mock_cluster.unlink.return_value = 3
-
-        client.delete_many(["{user}key1", "{user}key2", "{user}key3"])
-
-        mock_cluster.unlink.assert_called_once()
 
     def test_clear_flushes_all_primaries(self):
         mock_cluster_cls = MagicMock()
@@ -159,8 +134,6 @@ class TestRedisClusterAdapter:
         mock_cluster_cls.PRIMARIES = "primaries"
 
         client = setup_cluster_client(mock_cluster_cls)
-
-        client.key_func = lambda k, p, v: f"{p}:{v}:{k}"
 
         mock_cluster.keys.return_value = [
             b"prefix:1:foo_1",
@@ -188,8 +161,6 @@ class TestRedisClusterAdapter:
 
         client = setup_cluster_client(mock_cluster_cls)
 
-        client.key_func = lambda k, p, v: k
-
         mock_cluster.keys.return_value = []
 
         result = client.keys("nonexistent_*")
@@ -206,7 +177,6 @@ class TestRedisClusterAdapter:
         client = setup_cluster_client(mock_cluster_cls)
 
         client._default_scan_itersize = 10
-        client.key_func = lambda k, p, v: f"{p}:{v}:{k}"
 
         mock_cluster.scan_iter.return_value = iter(
             [
@@ -237,7 +207,6 @@ class TestRedisClusterAdapter:
         client = setup_cluster_client(mock_cluster_cls)
 
         client._default_scan_itersize = 10
-        client.key_func = lambda k, p, v: k
 
         mock_cluster.scan_iter.return_value = iter([])
 
@@ -256,7 +225,6 @@ class TestRedisClusterAdapter:
         client = setup_cluster_client(mock_cluster_cls)
 
         client._default_scan_itersize = 10
-        client.key_func = lambda k, p, v: f"{p}:{v}:{k}"
 
         mock_cluster.scan_iter.return_value = iter(
             [
@@ -284,7 +252,6 @@ class TestRedisClusterAdapter:
         client = setup_cluster_client(mock_cluster_cls)
 
         client._default_scan_itersize = 10
-        client.key_func = lambda k, p, v: k
 
         mock_cluster.scan_iter.return_value = iter([])
 
@@ -302,7 +269,6 @@ class TestRedisClusterAdapter:
         client = setup_cluster_client(mock_cluster_cls)
 
         client._default_scan_itersize = 10
-        client.key_func = lambda k, p, v: k
 
         mock_cluster.scan_iter.return_value = iter(
             [

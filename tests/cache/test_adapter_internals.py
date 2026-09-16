@@ -12,7 +12,7 @@ import pytest
 from django.core.exceptions import ImproperlyConfigured
 
 from django_cachex.adapters.protocols import Invalidation
-from django_cachex.adapters.redis_py import RedisPySentinelAdapter
+from django_cachex.adapters.redis_py import RedisPyAdapter, RedisPySentinelAdapter
 from django_cachex.adapters.valkey_py import (
     _VALKEY_AVAILABLE,
     ValkeyPyAdapter,
@@ -98,6 +98,28 @@ class TestClusterClientConstruction:
         assert captured["url"] == SERVER_URL
         assert captured["kwargs"] == {"socket_connect_timeout": 3}
         assert isinstance(client, StubAsyncCluster)
+
+    @requires_valkey
+    @pytest.mark.parametrize(
+        "option",
+        [
+            {"parser_class": "valkey._parsers.resp2._RESP2Parser"},
+            {"pool_class": "valkey.connection.BlockingConnectionPool"},
+            {"async_pool_class": "valkey.asyncio.BlockingConnectionPool"},
+        ],
+        ids=["parser_class", "pool_class", "async_pool_class"],
+    )
+    def test_pool_and_parser_options_are_rejected(self, option: dict[str, str]):
+        # Regression: the options were accepted and silently dropped; the
+        # cluster client has no pool to configure and cannot take a parser.
+        with pytest.raises(ImproperlyConfigured, match=f"does not take {next(iter(option))}"):
+            ValkeyPyClusterAdapter([SERVER_URL], **option)
+
+    @requires_valkey
+    def test_plain_options_still_build(self):
+        adapter = ValkeyPyClusterAdapter([SERVER_URL], socket_connect_timeout=3)
+
+        assert adapter._cluster_options()[0] == {"socket_connect_timeout": 3}
 
 
 class TestSentinelAsyncPoolRegistry:
@@ -955,6 +977,98 @@ class TestConnectionOptionsReachThePool:
             assert pool.connection_kwargs["retry_on_timeout"] is True
         finally:
             await adapter.aclose()
+
+
+_CREDENTIALS_URL = "redis://alice:urlpw@example.com:7000/2?socket_timeout=5"
+
+_STANDALONE_DRIVERS = [
+    pytest.param(RedisPyAdapter, id="redis-py"),
+    pytest.param(ValkeyPyAdapter, id="valkey-py"),
+]
+
+
+@requires_valkey
+class TestOptionsCredentialsBeatTheUrl:
+    """OPTIONS username / password win over the credentials in the LOCATION URL, as documented."""
+
+    # Regression: the driver's from_url() applies URL values after keyword
+    # arguments, so the URL credentials silently beat OPTIONS on redis-py and valkey-py.
+
+    @pytest.mark.parametrize("adapter_class", _STANDALONE_DRIVERS)
+    def test_both_options_win_in_the_sync_pool(self, adapter_class: Any):
+        adapter = adapter_class([_CREDENTIALS_URL], username="bob", password="optpw")  # noqa: S106
+
+        kwargs = adapter._get_connection_pool(write=True).connection_kwargs
+
+        assert (kwargs["username"], kwargs["password"]) == ("bob", "optpw")
+        assert (kwargs["host"], kwargs["port"], kwargs["db"], kwargs["socket_timeout"]) == ("example.com", 7000, 2, 5)
+
+    @pytest.mark.parametrize("adapter_class", _STANDALONE_DRIVERS)
+    def test_password_alone_keeps_the_url_username(self, adapter_class: Any):
+        adapter = adapter_class([_CREDENTIALS_URL], password="optpw")  # noqa: S106
+
+        kwargs = adapter._get_connection_pool(write=True).connection_kwargs
+
+        assert (kwargs["username"], kwargs["password"]) == ("alice", "optpw")
+
+    def test_url_credentials_stay_when_options_has_none(self):
+        adapter = ValkeyPyAdapter([_CREDENTIALS_URL], socket_connect_timeout=1)
+
+        kwargs = adapter._get_connection_pool(write=True).connection_kwargs
+
+        assert (kwargs["username"], kwargs["password"]) == ("alice", "urlpw")
+
+    def test_ipv6_host_and_query_credentials_are_handled(self):
+        adapter = ValkeyPyAdapter(
+            ["unix://alice@/run/valkey.sock?db=3&password=urlpw", "rediss://alice:urlpw@[::1]:7001/0?a=%2520"],
+            username="bob",
+            password="optpw",  # noqa: S106
+        )
+
+        assert adapter._servers == ["unix:///run/valkey.sock?db=3", "rediss://[::1]:7001/0?a=%2520"]
+
+    @pytest.mark.asyncio
+    async def test_options_win_in_the_async_pool(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(ValkeyPyAdapter, "_async_pools", weakref.WeakKeyDictionary())
+        adapter = ValkeyPyAdapter([_CREDENTIALS_URL], username="bob", password="optpw")  # noqa: S106
+
+        pool = adapter._get_async_connection_pool(write=True)
+        try:
+            assert (pool.connection_kwargs["username"], pool.connection_kwargs["password"]) == ("bob", "optpw")
+        finally:
+            await adapter.aclose()
+
+    def test_options_win_in_the_sentinel_pool(self):
+        adapter = ValkeyPySentinelAdapter(
+            ["redis://alice:urlpw@mymaster/0"],
+            sentinels=[("sentinel-a", 26379)],
+            username="bob",
+            password="optpw",  # noqa: S106
+        )
+
+        kwargs = adapter._get_connection_pool(write=True).connection_kwargs
+
+        assert (kwargs["username"], kwargs["password"]) == ("bob", "optpw")
+        assert adapter._parse_sentinel_url(0)[0] == "mymaster"
+
+    def test_options_win_in_the_cluster_client(self, monkeypatch: pytest.MonkeyPatch):
+        captured: dict[str, Any] = {}
+
+        class StubCluster:
+            @classmethod
+            def from_url(cls, url: str, **kwargs: Any) -> StubCluster:
+                captured["url"] = url
+                captured["kwargs"] = kwargs
+                return cls()
+
+        monkeypatch.setattr(ValkeyPyClusterAdapter, "_cluster_class", StubCluster)
+        monkeypatch.setattr(ValkeyPyClusterAdapter, "_clusters", {})
+        adapter = ValkeyPyClusterAdapter([_CREDENTIALS_URL], username="bob", password="optpw")  # noqa: S106
+
+        adapter.get_client()
+
+        assert captured["url"] == "redis://example.com:7000/2?socket_timeout=5"
+        assert captured["kwargs"] == {"username": "bob", "password": "optpw"}
 
 
 @requires_valkey

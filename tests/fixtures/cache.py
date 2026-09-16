@@ -239,15 +239,14 @@ def build_cluster_cache_config(
     resp_adapter: str = "redis-py",
     native_parser: bool = False,
 ) -> dict:
-    """Build a CACHES configuration for Redis Cluster."""
-    options: dict = {}
-    if resp_adapter in POOL_OPTION_ADAPTERS:
-        # Cluster manages its own connections; pass parser_class only.
-        client_library = ADAPTER_IMAGES[resp_adapter][1]
-        lib_options = _get_client_library_options(client_library, native_parser)
-        lib_options.pop("pool_class", None)
-        options.update(lib_options)
+    """Build a CACHES configuration for Redis Cluster.
 
+    The cluster adapters reject ``pool_class`` / ``parser_class`` (the cluster
+    client owns both), so ``native_parser`` is accepted for signature parity
+    with ``build_cache_config`` and otherwise ignored.
+    """
+    del native_parser
+    options: dict = {}
     if compressor and compressor in COMPRESSORS:
         options["compressor"] = COMPRESSORS[compressor]
     if serializer and serializer in SERIALIZERS:

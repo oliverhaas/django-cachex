@@ -1499,6 +1499,8 @@ class TestPipelineEmptyArgumentCalls:
         ("hset", ("pipe_empty_args",), {"mapping": {}}, 0),
         ("hset", ("pipe_empty_args",), {"items": []}, 0),
         ("hdel", ("pipe_empty_args",), {}, 0),
+        ("hmget", ("pipe_empty_args",), {}, []),
+        ("zadd", ("pipe_empty_args",), {"mapping": {}}, 0),
         ("zrem", ("pipe_empty_args",), {}, 0),
         ("zmscore", ("pipe_empty_args",), {}, []),
         ("xdel", ("pipe_empty_args",), {}, 0),
@@ -1536,9 +1538,10 @@ class TestPipelineEmptyArgumentCalls:
         pipe.hset("pipe_empty_align_hash", items=[])
         pipe.hget("pipe_empty_align_hash", "f")
         pipe.hdel("pipe_empty_align_hash")
+        pipe.hmget("pipe_empty_align_hash")
         pipe.hlen("pipe_empty_align_hash")
 
-        assert pipe.execute() == [0, 1, [], 0, 0, "v", 0, 1]
+        assert pipe.execute() == [0, 1, [], 0, 0, "v", 0, [], 1]
 
     def test_list_zset_and_stream_forms_keep_the_batch_aligned(self, cache: RespCache):
         cache.rpush("pipe_empty_align_list", "a")
@@ -1549,6 +1552,7 @@ class TestPipelineEmptyArgumentCalls:
         pipe.lpush("pipe_empty_align_list")
         pipe.rpush("pipe_empty_align_list")
         pipe.llen("pipe_empty_align_list")
+        pipe.zadd("pipe_empty_align_zset", {})
         pipe.zrem("pipe_empty_align_zset")
         pipe.zmscore("pipe_empty_align_zset")
         pipe.zcard("pipe_empty_align_zset")
@@ -1556,7 +1560,7 @@ class TestPipelineEmptyArgumentCalls:
         pipe.xack("pipe_empty_align_stream", "pipe_empty_align_group")
         pipe.xlen("pipe_empty_align_stream")
 
-        assert pipe.execute() == [0, 0, 1, 0, [], 1, 0, 0, 1]
+        assert pipe.execute() == [0, 0, 1, 0, 0, [], 1, 0, 0, 1]
 
     def test_a_field_beside_an_empty_mapping_still_writes(self, cache: RespCache):
         pipe = cache.pipeline()
