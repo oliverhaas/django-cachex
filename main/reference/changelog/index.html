@@ -945,15 +945,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#unreleased" class="md-nav__link">
+  <a href="#0100-september-2026" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Unreleased
+        0.10.0 (September 2026)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Unreleased">
+    <nav class="md-nav" aria-label="0.10.0 (September 2026)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1860,15 +1860,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#unreleased" class="md-nav__link">
+  <a href="#0100-september-2026" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Unreleased
+        0.10.0 (September 2026)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Unreleased">
+    <nav class="md-nav" aria-label="0.10.0 (September 2026)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2664,7 +2664,7 @@
 
 
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
-<h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h2 id="0100-september-2026">0.10.0 (September 2026)<a class="headerlink" href="#0100-september-2026" title="Permanent link">&para;</a></h2>
 <h3 id="breaking-changes">Breaking changes<a class="headerlink" href="#breaking-changes" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>StreamCache</code> is removed. Its consumer started reading at <code>$</code> on every empty <code>XREAD</code>, so writes landing between two reads were lost, and on a valkey-glide transport it never applied a remote entry at all; <code>TrackingCache</code> covers the same use case with a coherence guarantee. <code>django_cachex.cache.StreamCache</code> and the <code>django_cachex.cache.stream</code> module are gone.</li>
