@@ -921,8 +921,11 @@ class TestTrackingInvalidation:
         assert pod1.get_many(["f1", "f2"]) == {"f1": 1, "f2": 2}
         assert pod2.get_many(["f1", "f2"]) == {"f1": 1, "f2": 2}
         caches["transport"].flush_db()
-        assert _wait_for(lambda: _tracking_section(pod1)["entries"] == 0 and _tracking_section(pod2)["entries"] == 0)
-        assert _tracking_section(pod1)["flushes"] >= 1
+        # Wait for the flush itself: the pods' own-write invalidations from
+        # ``set_many`` can empty the store before FLUSHDB reaches them.
+        assert _wait_for(lambda: _tracking_section(pod1)["flushes"] >= 1 and _tracking_section(pod2)["flushes"] >= 1)
+        assert _tracking_section(pod1)["entries"] == 0
+        assert _tracking_section(pod2)["entries"] == 0
         assert pod1.get("f1") is None
 
     def test_own_writes_are_counted_as_invalidations_too(self, tracking_cache):
