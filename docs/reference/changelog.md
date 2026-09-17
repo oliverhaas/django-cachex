@@ -101,6 +101,7 @@
 - `DatabaseCache.zpopmin()` and `zpopmax()` with `count=0` no longer rewrite the row; the no-op returns `[]` without an `UPDATE`.
 - The wheel CI job failed with `No module named 'tests'` after the settings module moved to `tests.settings.base`; pytest now puts the repository root on `sys.path` itself.
 - `DatabaseCache.keys()` and `delete_pattern()` under a custom `KEY_FUNCTION` strip the stored row by the exact prefix `make_key` produces, as `LocMemCache` does, instead of assuming Django's `prefix:version:key` layout. A key function such as `f"{prefix}|{version}|{key}"` used to return mangled keys from `keys()` and `delete_pattern()` then deleted nothing.
+- A `TrackingCache` instance created before a fork (gunicorn `--preload`, Celery prefork, warmed at import time) binds itself to a fresh per-process state on first use in the child instead of reusing the parent's: the inherited store, which the child's listener never covered, is dropped, and the child starts its own listener without logging the parent's thread as `listener thread died, restarting` in every worker.
 
 ## 0.9.0 (September 2026)
 

@@ -1149,6 +1149,37 @@ class TestTrackingListenerLifecycle:
             assert cache.get("early") == 1
             assert _tracking_section(cache)["entries"] == 1
 
+    def test_an_instance_inherited_across_a_fork_rebinds_its_state(self, tracking_cache, mocker, caplog):
+        """gunicorn --preload and Celery prefork hand the child an instance whose
+        listener thread does not exist and whose store may already be stale."""
+        transport = tracking_cache._transport
+        _settled(tracking_cache, lambda: tracking_cache.set("inherited", "parent"))
+        assert tracking_cache.get("inherited") == "parent"
+        parent_state = tracking_cache._state
+        # The child sees the parent's state under a new pid; a write it never
+        # observed lands on the transport in between.
+        transport.set("inherited", "child")
+        mocker.patch("django_cachex.cache.tracking.os.getpid", return_value=parent_state.pid + 1)
+        # A fork copies the memory but not the thread: stop the parent's
+        # thread, then put back what the child would have inherited, the
+        # stale store and the flags of a state that believes it is running.
+        inherited_store = dict(parent_state.store)
+        parent_thread = parent_state.listener_thread
+        parent_state.shutdown()
+        parent_state.store.update(inherited_store)
+        parent_state.listener_thread = parent_thread
+        parent_state.initialized = True
+        parent_state.connected = True
+        try:
+            with caplog.at_level("WARNING", logger="django_cachex.cache.tracking"):
+                assert tracking_cache.get("inherited") == "child"
+            assert tracking_cache._state is not parent_state
+            assert tracking_cache._state.pid == parent_state.pid + 1
+            assert "listener thread died" not in caplog.text
+            assert _wait_for(lambda: tracking_cache._state.connected)
+        finally:
+            tracking_cache._state.shutdown()
+
     def test_losing_the_listener_flushes_and_reconnects(self, tracking_cache):
         transport = tracking_cache._transport
         _settled(tracking_cache, lambda: tracking_cache.set("survivor", 1))

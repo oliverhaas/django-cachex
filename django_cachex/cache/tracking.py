@@ -309,7 +309,19 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
             "health_check_interval": self._health_check_interval,
             "reconnect_delay": self._reconnect_delay,
         }
-        # A forked child inherits the registry but none of the parent's threads.
+        self._shared_options = shared_options
+        self._state = self._bind_state()
+
+        self._cachex_location = f"tracking:{self._storage_key} [transport: {self._transport_alias}]"
+
+    def _bind_state(self) -> _TrackingState:
+        """Return this process's shared state for the LOCATION, creating it after a fork.
+
+        A forked child inherits the registry and the instances bound to it but
+        none of the parent's threads, and its copy of the store may already be
+        stale, so a state from another pid is replaced rather than revived.
+        """
+        shared_options = self._shared_options
         pid = os.getpid()
         with _REGISTRY_LOCK:
             state = _TRACKING_REGISTRY.get(self._storage_key)
@@ -327,9 +339,7 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
                     f"listener, so their transport and OPTIONS must agree. They disagree on {differing}."
                 )
                 raise ImproperlyConfigured(msg)
-        self._state = state
-
-        self._cachex_location = f"tracking:{self._storage_key} [transport: {self._transport_alias}]"
+        return state
 
     @staticmethod
     def _positive_float(name: str, value: Any) -> float:
@@ -430,6 +440,11 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         state = self._state
         if state.initialized and self._listener_alive():
             return
+        if state.pid != os.getpid():
+            # Instance created before a fork (gunicorn --preload, Celery
+            # prefork): drop the parent's store and start this process's
+            # listener without reporting the parent's thread as dead.
+            state = self._state = self._bind_state()
         with state.start_lock:
             if state.initialized and self._listener_alive():
                 return
