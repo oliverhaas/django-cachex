@@ -100,6 +100,7 @@
 - `LocMemCache` and `DatabaseCache` `hset(items=...)` raise `ValueError("items must hold field/value pairs")` for an odd-length list, the same message as the RESP backends.
 - `DatabaseCache.zpopmin()` and `zpopmax()` with `count=0` no longer rewrite the row; the no-op returns `[]` without an `UPDATE`.
 - The wheel CI job failed with `No module named 'tests'` after the settings module moved to `tests.settings.base`; pytest now puts the repository root on `sys.path` itself.
+- `DatabaseCache.keys()` and `delete_pattern()` under a custom `KEY_FUNCTION` strip the stored row by the exact prefix `make_key` produces, as `LocMemCache` does, instead of assuming Django's `prefix:version:key` layout. A key function such as `f"{prefix}|{version}|{key}"` used to return mangled keys from `keys()` and `delete_pattern()` then deleted nothing.
 
 ## 0.9.0 (September 2026)
 

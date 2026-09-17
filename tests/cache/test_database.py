@@ -749,6 +749,33 @@ class TestKeyPrefixWildcards:
             assert wild.keys("*") == ["mine"]
 
 
+def _pipe_key(key: str, key_prefix: str, version: int) -> str:
+    return f"kf|{key_prefix}|{version}|{key}"
+
+
+class TestCustomKeyFunction:
+    """Rows are stripped by the prefix ``make_key`` produces, not by ``prefix:version:``."""
+
+    def test_keys_and_delete_pattern_round_trip(self, db):
+        # Regression: ``keys()`` returned the raw ``kf|p|2|k`` rows, so
+        # ``delete_pattern("k*")`` re-made keys that did not exist and deleted
+        # nothing while reporting the matches.
+        call_command("createcachetable", "django_cachex_test_cache")
+        config = {"kf": {**DATABASE_CACHES["db"], "KEY_FUNCTION": _pipe_key, "KEY_PREFIX": "p", "VERSION": 2}}
+        with override_settings(CACHES=config):
+            cache = caches["kf"]
+            cache.clear()
+            cache.set("k", 1)
+            cache.set("k2", 1)
+            cache.set("other", 1)
+
+            assert cache.keys("*") == ["k", "k2", "other"]
+            assert cache.keys("k*") == ["k", "k2"]
+            assert cache.delete_pattern("k*") == 2
+            assert cache.keys("*") == ["other"]
+            assert cache.get("other") == 1
+
+
 class TestInfoKeyspace:
     """``keyspace.db0.expires`` counts keys that carry a TTL, like Redis INFO."""
 

@@ -606,11 +606,10 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         Globs translate to SQL ``LIKE`` wildcards where there is an
         equivalent (``*`` to ``%``, ``?`` to ``_``); a ``[...]`` class widens
-        to ``_`` and the rows it over-matches are dropped in Python.
-        Assumes Django's default key format ``KEY_PREFIX:VERSION:key``;
-        falls back to the raw cache key if it doesn't fit that shape.
-        ``version`` scopes results to a single version (default: this
-        cache's ``self.version``).
+        to ``_`` and the rows it over-matches are dropped in Python. Rows are
+        stripped back to user keys by the exact prefix ``make_key`` produces
+        for ``version`` (default: this cache's ``self.version``), so a custom
+        ``KEY_FUNCTION`` that appends the user key works too.
         """
         return self._matching_keys(pattern, version=version)
 
@@ -697,18 +696,18 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         # ``LIKE`` only narrows the row set: it has no character classes and
         # SQLite folds ASCII case, so every row is re-checked against the glob.
         matches = _glob_to_regex(pattern).match
-        # Anchor the prefix match with a trailing ``:`` so a key_prefix like
-        # ``"cache"`` doesn't claim rows from a sibling prefix ``"cache_buster:"``.
-        prefix_match = f"{self.key_prefix}:" if self.key_prefix else ""
         result = []
         for cache_key, *rest in rows:
             if wanted is not None and self._type_of(self._decode_value(rest[0], conn)) is not wanted:
                 continue
-            if prefix_match and cache_key.startswith(prefix_match):
-                without_prefix = cache_key[len(prefix_match) :]
-                parts = without_prefix.split(":", 1)
-                user_key = parts[1] if len(parts) >= 2 else without_prefix
+            if cache_key.startswith(key_prefix):
+                # Whatever ``KEY_FUNCTION`` put in front of the user key, this
+                # is it (``LocMemCache`` strips the same way), so ``make_key``
+                # of the result is the row again and ``delete_pattern`` hits.
+                user_key = cache_key[len(key_prefix) :]
             else:
+                # A key function that does not end with the user key; assume
+                # Django's ``prefix:version:key`` layout.
                 parts = cache_key.split(":", 2)
                 user_key = parts[2] if len(parts) >= 3 else cache_key
             if matches(user_key):
