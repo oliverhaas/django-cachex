@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- `django_cachex.orm`, an opt-in ORM cache derived from django-cachalot 2.9.1. With the app in `INSTALLED_APPS`, the results of ORM queries on PostgreSQL and SQLite are cached in a Redis, Valkey or `TrackingCache` alias and invalidated per table by every write. Cachalot's timestamps are replaced by table generations and write leases, kept by Lua scripts on the cache server, so a query that runs while a write commits can no longer store a stale result. Subqueries count with their tables wherever they sit in a query, and `Now()` anywhere keeps a query from being cached. `invalidate()`, `orm_cache_disabled()`, `table_generations()`, the `invalidate_orm_cache` command and the `post_invalidation` signal make up its API. See [ORM Cache](../user-guide/orm-cache.md), and [Migration](../migration.md#from-django-cachalot) for moving from cachalot.
+
 ## 0.10.0 (September 2026)
 
 ### Breaking changes
