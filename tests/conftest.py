@@ -1,5 +1,6 @@
 """Pytest configuration for django-cachex tests."""
 
+import os
 from typing import TYPE_CHECKING
 
 import pytest
@@ -31,6 +32,13 @@ from tests.fixtures.cache import REDIS_PY_INTERNALS_TEST_FILES
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+
+# The ORM cache tests need their own settings module (``--ds=tests.orm.settings``),
+# and the other tests can't run under it.
+if os.environ.get("DJANGO_SETTINGS_MODULE") == "tests.orm.settings":
+    collect_ignore = ["admin", "cache"]
+else:
+    collect_ignore = ["orm"]
 
 
 @pytest_asyncio.fixture
