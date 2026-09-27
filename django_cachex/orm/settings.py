@@ -62,9 +62,19 @@ def database_vendor(alias: str) -> str | None:
         return None
 
 
+def replica_of(alias: str) -> str | None:
+    """Return the alias database ``alias`` mirrors in tests (``TEST['MIRROR']``), as replicas do."""
+    database: dict[str, Any] = settings.DATABASES[alias]
+    return (database.get("TEST") or {}).get("MIRROR")
+
+
 def supported_databases() -> set[str]:
-    """Return the aliases of the databases whose vendor the ORM cache supports."""
-    return {alias for alias in settings.DATABASES if database_vendor(alias) in SUPPORTED_VENDORS}
+    """Return the aliases of the databases whose vendor the ORM cache supports, replicas excepted."""
+    # Writes to a primary invalidate the queries cached from its own alias
+    # only, so results read from a replica would go stale.
+    return {
+        alias for alias in settings.DATABASES if database_vendor(alias) in SUPPORTED_VENDORS and not replica_of(alias)
+    }
 
 
 def _convert_databases(value: Any, _raw: dict[str, Any]) -> Any:

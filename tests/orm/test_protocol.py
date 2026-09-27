@@ -15,6 +15,7 @@ from django.db import DEFAULT_DB_ALIAS, connection, connections, models, transac
 from django.test import SimpleTestCase, TestCase
 from django.test.utils import isolate_apps
 
+from django_cachex.exceptions import CachexError
 from django_cachex.orm import transaction as orm_transaction
 from django_cachex.orm.api import invalidate
 from django_cachex.orm.exceptions import InvalidationError
@@ -344,8 +345,10 @@ class WriteTestCase(TestUtilsMixin, FilteredTransactionTestCase):
         store_class = type(orm_store())
         with patch.object(store_class, "begin_write", side_effect=ConnectionError("cache down")):
             message = "Could not invalidate the ORM cache of ormtest_test in database 'default'"
-            with self.assertRaisesMessage(InvalidationError, message):
+            with self.assertRaisesMessage(InvalidationError, message) as raised:
                 Test.objects.create(name="autocommit")
+            self.assertIsInstance(raised.exception, CachexError)
+            self.assertIsInstance(raised.exception.__cause__, ConnectionError)
             # The commit fails, so the transaction rolls back.
             with self.assertRaisesMessage(InvalidationError, message), transaction.atomic():
                 Test.objects.create(name="atomic")

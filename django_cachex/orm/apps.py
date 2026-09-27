@@ -22,6 +22,7 @@ from django_cachex.orm.settings import (
     SUPPORTED_VENDORS,
     database_vendor,
     orm_settings,
+    replica_of,
     user_settings,
 )
 
@@ -71,7 +72,8 @@ def check_databases_compatibility(app_configs: Any, **kwargs: Any) -> list[Check
                         id="cachex_orm.E001",
                     ),
                 )
-            elif (vendor := database_vendor(db_alias)) not in SUPPORTED_VENDORS:
+                continue
+            if (vendor := database_vendor(db_alias)) not in SUPPORTED_VENDORS:
                 errors.append(
                     Warning(
                         f"Database {db_alias!r} ({vendor or 'backend not loadable'}) is not supported by the "
@@ -79,6 +81,15 @@ def check_databases_compatibility(app_configs: Any, **kwargs: Any) -> list[Check
                         hint="The ORM cache cannot read its transaction isolation, so inside transactions it "
                         "caches results for the transaction only.",
                         id="cachex_orm.W003",
+                    ),
+                )
+            if primary := replica_of(db_alias):
+                errors.append(
+                    Warning(
+                        f"Database {db_alias!r} mirrors {primary!r} (TEST['MIRROR']), so it looks like a replica.",
+                        hint=f"Writes to {primary!r} do not invalidate the queries the ORM cache caches from "
+                        f"{db_alias!r}. Remove it from `{SETTING_NAME}['DATABASES']`.",
+                        id="cachex_orm.W006",
                     ),
                 )
 

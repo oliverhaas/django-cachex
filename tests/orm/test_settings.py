@@ -288,6 +288,22 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
             errors = run_checks(tags=[Tags.compatibility])
             self.assertListEqual(errors, [error002])
 
+    def test_replica(self):
+        database = {"ENGINE": "django.db.backends.sqlite3", "NAME": "non_existent_db.sqlite3"}
+        replica = {**database, "TEST": {"MIRROR": "default"}}
+        warning006 = Warning(
+            "Database 'replica' mirrors 'default' (TEST['MIRROR']), so it looks like a replica.",
+            hint="Writes to 'default' do not invalidate the queries the ORM cache caches from 'replica'. Remove "
+            "it from `CACHEX_ORM['DATABASES']`.",
+            id="cachex_orm.W006",
+        )
+        with self.settings(DATABASES={"default": database, "replica": replica}):
+            # Left out unless listed.
+            self.assertSetEqual(supported_databases(), {"default"})
+            self.assertListEqual(run_checks(tags=[Tags.compatibility]), [])
+            with override_orm_settings(DATABASES=["default", "replica"]):
+                self.assertListEqual(run_checks(tags=[Tags.compatibility]), [warning006])
+
     def test_cache_checks(self):
         self.assertListEqual(run_checks(tags=[Tags.caches]), [])
 
