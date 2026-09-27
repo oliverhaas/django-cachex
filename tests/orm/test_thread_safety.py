@@ -3,6 +3,7 @@
 
 from threading import Thread
 
+import pytest
 from django.db import connection, transaction
 from django.test import skipUnlessDBFeature
 
@@ -20,6 +21,12 @@ class TestThread(Thread):
 
     def run(self):
         self.t = Test.objects.first()
+        connection.close()
+
+
+class CreateThread(TestThread):
+    def run(self):
+        self.t = Test.objects.create(name="test")
         connection.close()
 
 
@@ -117,3 +124,35 @@ class ThreadSafetyTestCase(TestUtilsMixin, FilteredTransactionTestCase):
         with self.assertNumQueries(0):
             data = Test.objects.first()
         self.assertEqual(data, t)
+
+    # Timestamp invalidation happens before the write, so a read that runs
+    # between the invalidation and the INSERT caches the old rows for good.
+    @pytest.mark.xfail(strict=True, reason="timestamp invalidation caches a read taken during an autocommit write")
+    def test_concurrent_caching_during_autocommit_write(self):
+        results = []
+
+        def read_before_write(execute, sql, params, many, context):
+            results.append(TestThread().start_and_join())
+            return execute(sql, params, many, context)
+
+        with connection.execute_wrapper(read_before_write):
+            t = Test.objects.create(name="test")
+
+        self.assertListEqual(results, [None])
+        self.assertEqual(Test.objects.first(), t)
+
+    # A result read before a concurrent write is stamped with the time it is
+    # cached, which is after the write's invalidation.
+    @pytest.mark.xfail(strict=True, reason="timestamp invalidation caches a result read before a concurrent write")
+    def test_concurrent_write_between_query_and_caching(self):
+        created = []
+
+        def write_after_read(execute, sql, params, many, context):
+            result = execute(sql, params, many, context)
+            created.append(CreateThread().start_and_join())
+            return result
+
+        with connection.execute_wrapper(write_after_read):
+            self.assertIsNone(Test.objects.first())
+
+        self.assertEqual(Test.objects.first(), created[0])
