@@ -8,6 +8,10 @@ from typing import TYPE_CHECKING, Any
 
 from django.apps import apps
 from django.conf import settings
+from django.core.cache import DEFAULT_CACHE_ALIAS
+from django.core.cache.backends.base import DEFAULT_TIMEOUT
+from django.core.exceptions import ImproperlyConfigured
+from django.db.utils import load_backend
 from django.utils.module_loading import import_string
 
 if TYPE_CHECKING:
@@ -15,34 +19,21 @@ if TYPE_CHECKING:
 
 SETTING_NAME = "CACHEX_ORM"
 
-SUPPORTED_DATABASE_ENGINES = {
-    "django.db.backends.sqlite3",
-    "django.db.backends.postgresql",
-    "django.db.backends.mysql",
-    # GeoDjango
-    "django.contrib.gis.db.backends.spatialite",
-    "django.contrib.gis.db.backends.postgis",
-    "django.contrib.gis.db.backends.mysql",
-    # django-transaction-hooks
-    "transaction_hooks.backends.sqlite3",
-    "transaction_hooks.backends.postgis",
-    "transaction_hooks.backends.mysql",
-    # django-prometheus wrapped engines
-    "django_prometheus.db.backends.sqlite3",
-    "django_prometheus.db.backends.postgresql",
-    "django_prometheus.db.backends.mysql",
-}
+# Database vendors whose transaction isolation the ORM cache knows how to read.
+SUPPORTED_VENDORS = frozenset({"postgresql", "sqlite"})
 
 SUPPORTED_ONLY = "supported_only"
 ITERABLES = {tuple, list, frozenset, set}
 
 DEFAULTS: dict[str, Any] = {
     "ENABLED": True,
-    "CACHE": "default",
+    "CACHE": DEFAULT_CACHE_ALIAS,
     "DATABASES": SUPPORTED_ONLY,
-    "USE_UNSUPPORTED_DATABASE": False,
-    "ADDITIONAL_SUPPORTED_DATABASES": (),
-    "TIMEOUT": None,
+    # The cache's own default timeout.
+    "TIMEOUT": DEFAULT_TIMEOUT,
+    # Seconds a write keeps its lease if it cannot release it; keep it above
+    # the database's statement timeout.
+    "LEASE_TIMEOUT": 60,
     "CACHE_RANDOM": False,
     "CACHE_ITERATORS": True,
     "INVALIDATE_RAW": True,
@@ -62,17 +53,23 @@ def user_settings() -> dict[str, Any]:
     return getattr(settings, SETTING_NAME, None) or {}
 
 
-def _convert_databases(value: Any, raw: dict[str, Any]) -> Any:
+def database_vendor(alias: str) -> str | None:
+    """Return the vendor of database ``alias``, or None if its backend does not load."""
+    # From the backend class, so no connection is set up.
+    try:
+        return load_backend(settings.DATABASES[alias]["ENGINE"]).DatabaseWrapper.vendor
+    except ImproperlyConfigured, KeyError:
+        return None
+
+
+def supported_databases() -> set[str]:
+    """Return the aliases of the databases whose vendor the ORM cache supports."""
+    return {alias for alias in settings.DATABASES if database_vendor(alias) in SUPPORTED_VENDORS}
+
+
+def _convert_databases(value: Any, _raw: dict[str, Any]) -> Any:
     if value == SUPPORTED_ONLY:
-        if raw["USE_UNSUPPORTED_DATABASE"]:
-            value = set(settings.DATABASES)
-        else:
-            additional = raw["ADDITIONAL_SUPPORTED_DATABASES"]
-            value = {
-                alias
-                for alias, db in settings.DATABASES.items()
-                if db["ENGINE"] in SUPPORTED_DATABASE_ENGINES or db["ENGINE"] in additional
-            }
+        value = supported_databases()
     if value.__class__ in ITERABLES:
         return frozenset(value)
     return value
@@ -110,9 +107,8 @@ class OrmSettings:
     ENABLED: bool
     CACHE: str
     DATABASES: Any
-    USE_UNSUPPORTED_DATABASE: bool
-    ADDITIONAL_SUPPORTED_DATABASES: Any
     TIMEOUT: Any
+    LEASE_TIMEOUT: float
     CACHE_RANDOM: bool
     CACHE_ITERATORS: bool
     INVALIDATE_RAW: bool
@@ -148,7 +144,7 @@ class OrmSettings:
             self.patched = False
 
     def reload(self) -> None:
-        self.unload()
+        # The patches read these settings on every call, so they stay in place.
         self.load()
 
 

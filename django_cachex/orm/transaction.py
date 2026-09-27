@@ -1,64 +1,195 @@
-"""Per-atomic-block cache layer."""
+"""What the current transaction of a connection wrote and cached, and how it isolates its reads."""
 
-# Derived from django-cachalot 2.9.1 (BSD-3-Clause, Copyright (c) 2014-2016
-# Bertrand Bordage); see the LICENSE file in this directory.
+import logging
+import pickle
+from typing import TYPE_CHECKING, Any
 
-from typing import Any
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
-from django_cachex.orm.settings import orm_settings
+    from django.db.backends.base.base import BaseDatabaseWrapper
+
+logger = logging.getLogger("django_cachex.orm")
+
+# Each statement of a transaction reads the data committed when it starts
+# (PostgreSQL READ COMMITTED, SQLite with a rollback journal). Queries on
+# tables the transaction has not written use the shared cache; queries on
+# tables it has written run against the database.
+SHARED = "shared"
+# The transaction reads a snapshot taken at its first query (PostgreSQL
+# REPEATABLE READ and SERIALIZABLE, SQLite in WAL mode), which may be older
+# than the shared cache. Results are cached for the transaction alone.
+SNAPSHOT = "snapshot"
+
+_STATE = "_cachex_orm_state"
 
 
-class AtomicCache(dict[str, Any]):
-    def __init__(self, parent_cache: Any, db_alias: str) -> None:
-        super().__init__()
-        self.parent_cache = parent_cache
-        self.db_alias = db_alias
-        self.to_be_invalidated: set[str] = set()
+class _Layer:
+    """What a transaction did since a savepoint, or since it began for the first layer."""
 
-    def set(self, k: str, v: Any, timeout: Any) -> None:
-        self[k] = v
+    __slots__ = ("entries", "sid", "written")
 
-    def get_many(self, keys: Any) -> dict[str, Any]:
-        # Values present at this level.
-        data = {k: self[k] for k in keys if k in self}
+    def __init__(self, sid: str | None) -> None:
+        self.sid = sid
+        self.written: set[str] = set()
+        # Query key -> (tables read, pickled result).
+        self.entries: dict[str, tuple[frozenset[str], bytes]] = {}
 
-        missing_keys = set(keys)
-        missing_keys.difference_update(data)
 
-        if missing_keys:
-            # Walk down to the first non-AtomicCache without recursing.
-            current_cache = self.parent_cache
-            visited_caches = {id(self)}
+class _State:
+    __slots__ = ("isolation", "isolation_connection", "layers")
 
-            while isinstance(current_cache, AtomicCache) and id(current_cache) not in visited_caches:
-                visited_caches.add(id(current_cache))
+    def __init__(self) -> None:
+        self.layers: list[_Layer] = []
+        self.isolation: str | None = None
+        # The DB-API connection ``isolation`` was read from.
+        self.isolation_connection: Any = None
 
-                available_keys = missing_keys.intersection(current_cache.keys())
-                if available_keys:
-                    for k in available_keys:
-                        data[k] = current_cache[k]
-                    missing_keys.difference_update(available_keys)
 
-                if not missing_keys:
-                    break
+def _state(connection: BaseDatabaseWrapper) -> _State:
+    state = getattr(connection, _STATE, None)
+    if state is None:
+        state = _State()
+        setattr(connection, _STATE, state)
+    return state
 
-                current_cache = current_cache.parent_cache
 
-            if missing_keys and not isinstance(current_cache, AtomicCache) and hasattr(current_cache, "get_many"):
-                parent_data = current_cache.get_many(missing_keys)
-                data.update(parent_data)
+def _top_layer(state: _State) -> _Layer:
+    if not state.layers:
+        state.layers.append(_Layer(None))
+    return state.layers[-1]
 
-        return data
 
-    def set_many(self, data: dict[str, Any], timeout: Any) -> None:
-        self.update(data)
+def _find(state: _State, sid: str) -> int | None:
+    for index, layer in enumerate(state.layers):
+        if layer.sid == sid:
+            return index
+    return None
 
-    def commit(self) -> None:
-        # Imported here to avoid a circular import.
-        from django_cachex.orm.utils import _invalidate_tables
 
-        if self:
-            self.parent_cache.set_many(self, orm_settings.TIMEOUT)
-        # The set_many above is not enough: another transaction may have
-        # written in the meantime, so the parent is invalidated too.
-        _invalidate_tables(self.parent_cache, self.db_alias, self.to_be_invalidated)
+def in_transaction(connection: BaseDatabaseWrapper) -> bool:
+    """Whether statements on ``connection`` run in a transaction rather than commit one by one."""
+    if connection.in_atomic_block:
+        return True
+    if connection.connection is None:
+        # Not connected yet: the first statement opens a transaction unless
+        # the connection is set to autocommit.
+        return not connection.settings_dict["AUTOCOMMIT"]
+    return not connection.autocommit
+
+
+def written(connection: BaseDatabaseWrapper) -> set[str]:
+    """Tables the current transaction has written."""
+    state = getattr(connection, _STATE, None)
+    if state is None:
+        return set()
+    return set().union(*(layer.written for layer in state.layers))
+
+
+def mark_written(connection: BaseDatabaseWrapper, tables: Iterable[str]) -> None:
+    """Record a write to ``tables`` and drop the results the transaction cached from them."""
+    tables = frozenset(tables)
+    state = _state(connection)
+    _top_layer(state).written.update(tables)
+    for layer in state.layers:
+        for query_key in [key for key, (read, _) in layer.entries.items() if not read.isdisjoint(tables)]:
+            del layer.entries[query_key]
+
+
+def cached(connection: BaseDatabaseWrapper, query_key: str) -> tuple[bool, Any]:
+    """Return ``(True, result)`` if the transaction cached a result for ``query_key``, else ``(False, None)``."""
+    state = getattr(connection, _STATE, None)
+    if state is not None:
+        for layer in reversed(state.layers):
+            entry = layer.entries.get(query_key)
+            if entry is not None:
+                return True, pickle.loads(entry[1])  # noqa: S301
+    return False, None
+
+
+def cache(connection: BaseDatabaseWrapper, query_key: str, tables: Iterable[str], result: Any) -> None:
+    """Cache ``result`` for the rest of the transaction."""
+    # Pickled so a caller that changes the result cannot change the cached copy.
+    pickled = pickle.dumps(result, pickle.HIGHEST_PROTOCOL)
+    _top_layer(_state(connection)).entries[query_key] = (frozenset(tables), pickled)
+
+
+def reset(connection: BaseDatabaseWrapper) -> None:
+    """Forget the transaction: it was committed or rolled back, or the connection closed."""
+    state = getattr(connection, _STATE, None)
+    if state is not None:
+        state.layers.clear()
+
+
+def savepoint_created(connection: BaseDatabaseWrapper, sid: str) -> None:
+    state = _state(connection)
+    _top_layer(state)
+    state.layers.append(_Layer(sid))
+
+
+def savepoint_rolled_back(connection: BaseDatabaseWrapper, sid: str) -> None:
+    # The savepoint survives a rollback to it, with nothing done since.
+    state = _state(connection)
+    index = _find(state, sid)
+    if index is not None:
+        del state.layers[index:]
+        state.layers.append(_Layer(sid))
+
+
+def savepoint_released(connection: BaseDatabaseWrapper, sid: str) -> None:
+    state = _state(connection)
+    index = _find(state, sid)
+    if not index:
+        return
+    parent = state.layers[index - 1]
+    for layer in state.layers[index:]:
+        parent.written.update(layer.written)
+        parent.entries.update(layer.entries)
+    del state.layers[index:]
+
+
+def isolation(connection: BaseDatabaseWrapper) -> str:
+    """Return SHARED or SNAPSHOT for the transactions on ``connection``, read once per database connection."""
+    state = _state(connection)
+    if state.isolation is not None and state.isolation_connection is connection.connection:
+        return state.isolation
+    try:
+        connection.ensure_connection()
+        kind = _read_isolation(connection)
+    except Exception:
+        logger.warning(
+            "Could not read the transaction isolation of database %r; caching results per transaction.",
+            connection.alias,
+            exc_info=True,
+        )
+        return SNAPSHOT
+    state.isolation, state.isolation_connection = kind, connection.connection
+    return kind
+
+
+def _read_isolation(connection: BaseDatabaseWrapper) -> str:
+    raw: Any = connection.connection
+    if connection.vendor == "postgresql":
+        if "isolation_level" in connection.settings_dict["OPTIONS"]:
+            from django.db.backends.postgresql.psycopg_any import IsolationLevel
+
+            level = getattr(connection, "isolation_level", None)
+            return SHARED if level in {IsolationLevel.READ_UNCOMMITTED, IsolationLevel.READ_COMMITTED} else SNAPSHOT
+        # On the database connection itself, so it is not logged as a query.
+        with raw.cursor() as cursor:
+            cursor.execute("SHOW default_transaction_isolation")
+            (name,) = cursor.fetchone()
+        return SHARED if name in {"read uncommitted", "read committed"} else SNAPSHOT
+    if connection.vendor == "sqlite":
+        (mode,) = raw.execute("PRAGMA journal_mode").fetchone()
+        return SNAPSHOT if str(mode).lower() == "wal" else SHARED
+    return SNAPSHOT
+
+
+def isolation_changed(connection: BaseDatabaseWrapper, *, known: bool) -> None:
+    """Raw SQL changed the isolation: read it again if ``known``, else assume SNAPSHOT until reconnecting."""
+    state = _state(connection)
+    if known:
+        state.isolation = None
+    else:
+        state.isolation, state.isolation_connection = SNAPSHOT, connection.connection

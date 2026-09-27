@@ -3,7 +3,6 @@
 
 from threading import Thread
 
-import pytest
 from django.db import connection, transaction
 from django.test import skipUnlessDBFeature
 
@@ -125,9 +124,8 @@ class ThreadSafetyTestCase(TestUtilsMixin, FilteredTransactionTestCase):
             data = Test.objects.first()
         self.assertEqual(data, t)
 
-    # Timestamp invalidation happens before the write, so a read that runs
-    # between the invalidation and the INSERT caches the old rows for good.
-    @pytest.mark.xfail(strict=True, reason="timestamp invalidation caches a read taken during an autocommit write")
+    # A read between the start of the write and its commit returns the old
+    # rows, which must not be cached.
     def test_concurrent_caching_during_autocommit_write(self):
         results = []
 
@@ -141,9 +139,7 @@ class ThreadSafetyTestCase(TestUtilsMixin, FilteredTransactionTestCase):
         self.assertListEqual(results, [None])
         self.assertEqual(Test.objects.first(), t)
 
-    # A result read before a concurrent write is stamped with the time it is
-    # cached, which is after the write's invalidation.
-    @pytest.mark.xfail(strict=True, reason="timestamp invalidation caches a result read before a concurrent write")
+    # A result read before a concurrent write must not be cached after it.
     def test_concurrent_write_between_query_and_caching(self):
         created = []
 

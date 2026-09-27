@@ -1,17 +1,17 @@
 # Derived from django-cachalot 2.9.1 (BSD-3-Clause, Copyright (c) 2014-2016
 # Bertrand Bordage); see django_cachex/orm/LICENSE.
 
-from time import sleep, time
+from io import StringIO
 from unittest import skipIf
 
 from django.conf import settings
 from django.contrib.auth.models import Permission, User
 from django.core.cache import DEFAULT_CACHE_ALIAS
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
 from django.db import DEFAULT_DB_ALIAS, connection, transaction
 from django.test import TransactionTestCase
 
-from django_cachex.orm.api import get_last_invalidation, invalidate, orm_cache_disabled
+from django_cachex.orm.api import invalidate, orm_cache_disabled, table_generations
 from tests.orm.app.models import Test
 from tests.orm.utils import TestUtilsMixin, override_orm_settings
 
@@ -118,73 +118,91 @@ class APITestCase(TestUtilsMixin, TransactionTestCase):
         with self.assertNumQueries(1):
             Test.objects.get()
 
-    def test_get_last_invalidation(self):
-        invalidate()
-        timestamp = get_last_invalidation()
-        delta = 0.1
-        self.assertAlmostEqual(timestamp, time(), delta=delta)
+    def test_table_generations(self):
+        generations = table_generations(Test)
+        self.assertIsNotNone(generations)
+        self.assertEqual(len(generations), 1)
+        self.assertEqual(table_generations(Test), generations)
+        self.assertEqual(table_generations("ormtest.Test"), generations)
+        self.assertEqual(table_generations("ormtest_test"), generations)
 
-        sleep(0.1)
+        Test.objects.create(name="test2")
+        self.assertNotEqual(table_generations(Test), generations)
 
-        invalidate("ormtest_test")
-        timestamp = get_last_invalidation("ormtest_test")
-        self.assertAlmostEqual(timestamp, time(), delta=delta)
-        same_timestamp = get_last_invalidation("ormtest.Test")
-        self.assertEqual(same_timestamp, timestamp)
-        same_timestamp = get_last_invalidation(Test)
-        self.assertEqual(same_timestamp, timestamp)
+    def test_table_generations_of_several_tables(self):
+        generations = table_generations(Test, User)
+        self.assertEqual(generations, table_generations(Test) + table_generations(User))
 
-        timestamp = get_last_invalidation("ormtest_testparent")
-        self.assertNotAlmostEqual(timestamp, time(), delta=0.1)
-        timestamp = get_last_invalidation("ormtest_testparent", "ormtest_test")
-        self.assertAlmostEqual(timestamp, time(), delta=delta)
+        invalidate(User)
 
-    def test_orm_cache_disabled_multiple_queries_ignoring_in_mem_cache(self):
-        """
-        Test that when queries are given the `orm_cache_disabled` context manager,
-        the queries will not be cached.
-        """
-        with orm_cache_disabled(True):
-            qs = Test.objects.all()
-            with self.assertNumQueries(1):
-                data1 = list(qs.all())
-            Test.objects.create(
-                name="test3",
-                owner=self.user,
-                date="1789-07-14",
-                datetime="1789-07-14T16:43:27",
-                permission=self.t1__permission,
-            )
-            with self.assertNumQueries(1):
-                data2 = list(qs.all())
-            self.assertNotEqual(data1, data2)
+        test_generation, user_generation = table_generations(Test, User)
+        self.assertEqual(test_generation, generations[0])
+        self.assertNotEqual(user_generation, generations[1])
 
-    def test_query_orm_cache_disabled_even_if_already_cached(self):
-        """
-        Test that when a query is given the `orm_cache_disabled` context manager,
-        the query outside of the context manager will be cached. Any duplicated
-        query will use the original query's cached result.
-        """
+    def test_table_generations_needs_a_table(self):
+        with self.assertRaises(TypeError):
+            table_generations()
+
+    def test_table_generations_when_not_cached(self):
+        with override_orm_settings(ENABLED=False):
+            self.assertIsNone(table_generations(Test))
+        with orm_cache_disabled():
+            self.assertIsNone(table_generations(Test))
+        with override_orm_settings(UNCACHABLE_TABLES=("ormtest_test",)):
+            self.assertIsNone(table_generations(Test, User))
+        with override_orm_settings(DATABASES=[]):
+            self.assertIsNone(table_generations(Test))
+
+    def test_table_generations_during_a_write(self):
+        generations = []
+
+        def read_generations(execute, sql, params, many, context):
+            generations.append(table_generations(Test))
+            return execute(sql, params, many, context)
+
+        with connection.execute_wrapper(read_generations):
+            Test.objects.create(name="test2")
+
+        self.assertListEqual(generations, [None])
+        self.assertIsNotNone(table_generations(Test))
+
+    def test_table_generations_in_a_transaction(self):
+        before = table_generations(Test)
+        with transaction.atomic():
+            self.assertEqual(table_generations(Test), before)
+            Test.objects.create(name="test2")
+            # The transaction's own write is not committed yet.
+            self.assertIsNone(table_generations(Test))
+            self.assertIsNotNone(table_generations(User))
+        after = table_generations(Test)
+        self.assertIsNotNone(after)
+        self.assertNotEqual(after, before)
+
+    def test_orm_cache_disabled(self):
         qs = Test.objects.all()
         self.assert_query_cached(qs)
-        with orm_cache_disabled() and self.assertNumQueries(0):
-            list(qs.all())
+        with orm_cache_disabled():
+            with self.assertNumQueries(1):
+                self.assertListEqual(list(qs.all()), [self.t1])
+            self.assert_query_cached(qs, after=1)
+        with self.assertNumQueries(0):
+            self.assertListEqual(list(qs.all()), [self.t1])
 
-    def test_duplicate_query_execute_anyways(self):
-        """After an object is created, a duplicate query should execute
-        rather than use the cached result.
-        """
+    def test_orm_cache_disabled_still_invalidates(self):
         qs = Test.objects.all()
         self.assert_query_cached(qs)
-        Test.objects.create(
-            name="test3",
-            owner=self.user,
-            date="1789-07-14",
-            datetime="1789-07-14T16:43:27",
-            permission=self.t1__permission,
-        )
-        with orm_cache_disabled() and self.assertNumQueries(1):
-            list(qs.all())
+        with orm_cache_disabled():
+            t2 = Test.objects.create(name="test2")
+        with self.assertNumQueries(1):
+            self.assertListEqual(list(qs.all()), [self.t1, t2])
+
+    def test_orm_cache_disabled_nested(self):
+        qs = Test.objects.all()
+        with orm_cache_disabled():
+            with orm_cache_disabled():
+                pass
+            self.assert_query_cached(qs, after=1)
+        self.assert_query_cached(qs)
 
 
 class CommandTestCase(TransactionTestCase):
@@ -230,6 +248,45 @@ class CommandTestCase(TransactionTestCase):
             self.assertListEqual(list(Test.objects.all()), [self.t1])
         with self.assertNumQueries(1):
             self.assertListEqual(list(User.objects.all()), [self.u])
+
+    def test_invalidate_orm_cache_app_includes_many_to_many_tables(self):
+        permissions = User.user_permissions.through.objects.all()
+        with self.assertNumQueries(1):
+            self.assertListEqual(list(permissions.all()), [])
+        call_command("invalidate_orm_cache", "auth", verbosity=0)
+        with self.assertNumQueries(1):
+            self.assertListEqual(list(permissions.all()), [])
+
+    def test_invalidate_orm_cache_app_without_models(self):
+        with self.assertNumQueries(1):
+            self.assertListEqual(list(Test.objects.all()), [self.t1])
+        out = StringIO()
+        call_command("invalidate_orm_cache", "cachex_orm", stdout=out)
+        self.assertEqual(out.getvalue(), "No models to invalidate.\n")
+        with self.assertNumQueries(0):
+            self.assertListEqual(list(Test.objects.all()), [self.t1])
+
+    def test_invalidate_orm_cache_unknown_label(self):
+        for label in ("unknown", "ormtest.unknown", "ormtest.test.name"):
+            with self.subTest(label=label), self.assertRaises(CommandError):
+                call_command("invalidate_orm_cache", label, verbosity=0)
+
+    def test_invalidate_orm_cache_output(self):
+        out = StringIO()
+        call_command("invalidate_orm_cache", "ormtest.test", "ormtest", stdout=out)
+        self.assertEqual(out.getvalue(), "Invalidating 6 models...\nORM cache invalidated.\n")
+        out = StringIO()
+        call_command("invalidate_orm_cache", "ormtest.test", stdout=out, db_alias=DEFAULT_DB_ALIAS)
+        self.assertEqual(
+            out.getvalue(),
+            f"Invalidating 1 model for database '{DEFAULT_DB_ALIAS}'...\nORM cache invalidated.\n",
+        )
+        out = StringIO()
+        call_command("invalidate_orm_cache", stdout=out, cache_alias=DEFAULT_CACHE_ALIAS)
+        self.assertEqual(
+            out.getvalue(),
+            f"Invalidating all tables on cache '{DEFAULT_CACHE_ALIAS}'...\nORM cache invalidated.\n",
+        )
 
     @skipIf(len(settings.DATABASES) == 1, "We can't change the DB used since there's only one configured")
     def test_invalidate_orm_cache_multi_db(self):

@@ -8,21 +8,21 @@ from uuid import UUID
 
 from django.contrib.auth.models import Group, Permission, User
 from django.contrib.contenttypes.models import ContentType
-from django.db import DEFAULT_DB_ALIAS, OperationalError, ProgrammingError, connection, transaction
+from django.db import OperationalError, ProgrammingError, connection, transaction
 from django.db.models import Case, Count, Q, Value, When
 from django.db.models.expressions import Exists, OuterRef, RawSQL, Subquery
 from django.db.models.functions import Coalesce, Now
 from django.db.transaction import TransactionManagementError
 from django.test import TransactionTestCase, override_settings, skipUnlessDBFeature
 
-from django_cachex.orm.cache import orm_caches
-from django_cachex.orm.settings import orm_settings
 from django_cachex.orm.utils import UncachableQuery
 from tests.orm.app.models import SomeChoices, Test, TestChild, TestParent, UnmanagedModel
 from tests.orm.utils import (
     FilteredTransactionTestCase,
     TestUtilsMixin,
     all_final_sql_checks,
+    corrupt_entry,
+    evict_generation,
     no_final_sql_check,
     override_orm_settings,
     with_final_sql_check,
@@ -856,17 +856,16 @@ class ReadTestCase(TestUtilsMixin, FilteredTransactionTestCase):
                 r"  Buffers: shared hit=\d+\n"
                 r"  ->  Seq Scan on ormtest_test %s\n"
                 r"        Buffers: shared hit=\d+\n"
-                r"Planning:\n"
-                r"  Buffers: shared hit=\d+\n"
+                # A warm catalog leaves the planner nothing to read.
+                r"(Planning:\n  Buffers: shared hit=\d+\n)?"
                 r"Planning Time: [\d\.]+ ms\n"
                 r"Execution Time: [\d\.]+ ms$"
             ) % (operation_detail, operation_detail)
-        with self.assertNumQueries(1):
-            explanation1 = Test.objects.explain(**explain_kwargs)
-        self.assertRegex(explanation1, expected)
-        with self.assertNumQueries(0):
-            explanation2 = Test.objects.explain(**explain_kwargs)
-        self.assertEqual(explanation2, explanation1)
+        # EXPLAIN describes the plan, not the rows, so it is never cached.
+        for _ in range(2):
+            with self.assertNumQueries(1):
+                explanation = Test.objects.explain(**explain_kwargs)
+            self.assertRegex(explanation, expected)
 
     def test_raw(self):
         """
@@ -940,34 +939,28 @@ class ReadTestCase(TestUtilsMixin, FilteredTransactionTestCase):
         self.assertListEqual(data2, [(1,), (2,)])
 
     @all_final_sql_checks
-    def test_missing_table_cache_key(self):
+    def test_evicted_generation(self):
         qs = Test.objects.all()
         self.assert_tables(qs, Test)
         self.assert_query_cached(qs)
 
-        table_cache_key = orm_settings.TABLE_KEYGEN(connection.alias, Test._meta.db_table)
-        orm_caches.get_cache().delete(table_cache_key)
+        # The generation comes back new, so the result cached under the old one
+        # is not served.
+        evict_generation(connection.alias, Test._meta.db_table)
 
         self.assert_query_cached(qs)
 
     @all_final_sql_checks
-    def test_broken_query_cache_value(self):
-        """
-        In some undetermined cases, cache.get_many return wrong values such
-        as `None` or other invalid values. They should be gracefully handled.
-        See https://github.com/noripyt/django-cachalot/issues/110
-
-        This test artificially creates a wrong value, but it's usually
-        a cache backend bug that leads to these wrong values.
-        """
+    def test_undecodable_cached_result(self):
+        # Say a result cached by a deploy with another serializer.
         qs = Test.objects.all()
         self.assert_tables(qs, Test)
         self.assert_query_cached(qs)
 
-        query_cache_key = orm_settings.QUERY_KEYGEN(qs.query.get_compiler(DEFAULT_DB_ALIAS))
-        orm_caches.get_cache().set(query_cache_key, (), orm_settings.TIMEOUT)
+        corrupt_entry(qs)
 
-        self.assert_query_cached(qs)
+        with self.assertLogs("django_cachex.orm", "WARNING"):
+            self.assert_query_cached(qs)
 
     def test_unicode_get(self):
         with self.assertNumQueries(1), self.assertRaises(Test.DoesNotExist):

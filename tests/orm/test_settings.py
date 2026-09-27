@@ -9,11 +9,11 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.cache import DEFAULT_CACHE_ALIAS
 from django.core.checks import Error, Tags, Warning, run_checks  # noqa: A004
-from django.db import connection
+from django.db import DEFAULT_DB_ALIAS, connection
 from django.test import TransactionTestCase
 
 from django_cachex.orm.api import invalidate
-from django_cachex.orm.settings import SUPPORTED_DATABASE_ENGINES, SUPPORTED_ONLY
+from django_cachex.orm.settings import DEFAULTS, SUPPORTED_ONLY, database_vendor, orm_settings, supported_databases
 from django_cachex.orm.utils import _get_tables
 from tests.orm.app.models import Test, TestChild, TestParent, UnmanagedModel
 from tests.orm.utils import TestUtilsMixin, override_orm_settings
@@ -73,29 +73,33 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
         qs = Test.objects.all()
         with override_orm_settings(DATABASES=SUPPORTED_ONLY):
             self.assert_query_cached(qs)
-
         invalidate(Test)
 
-        engine = connection.settings_dict["ENGINE"]
-        SUPPORTED_DATABASE_ENGINES.remove(engine)
-        with override_orm_settings(DATABASES=SUPPORTED_ONLY):
-            self.assert_query_cached(qs, after=1)
-        invalidate(Test)
-
-        with override_orm_settings(USE_UNSUPPORTED_DATABASE=True):
+        with override_orm_settings(DATABASES=[DEFAULT_DB_ALIAS]):
             self.assert_query_cached(qs)
         invalidate(Test)
-
-        with override_orm_settings(ADDITIONAL_SUPPORTED_DATABASES={engine}):
-            self.assert_query_cached(qs)
-        invalidate(Test)
-
-        SUPPORTED_DATABASE_ENGINES.add(engine)
-        with override_orm_settings(DATABASES=SUPPORTED_ONLY):
-            self.assert_query_cached(qs)
 
         with override_orm_settings(DATABASES=[]):
             self.assert_query_cached(qs, after=1)
+
+    def test_unsupported_vendor(self):
+        # Reloaded once the vendors are back.
+        self.addCleanup(orm_settings.reload)
+        qs = Test.objects.all()
+        with patch("django_cachex.orm.settings.SUPPORTED_VENDORS", frozenset()):
+            self.assertSetEqual(supported_databases(), set())
+            with override_orm_settings(DATABASES=SUPPORTED_ONLY):
+                self.assert_query_cached(qs, after=1)
+            # A listed database is cached whatever its vendor.
+            with override_orm_settings(DATABASES=[DEFAULT_DB_ALIAS]):
+                self.assert_query_cached(qs)
+
+    def test_database_vendor(self):
+        self.assertEqual(database_vendor(DEFAULT_DB_ALIAS), connection.vendor)
+        self.assertIsNone(database_vendor("undefined"))
+        with self.settings(DATABASES={"default": {"ENGINE": "django.db.backends.oracle", "NAME": "db"}}):
+            # Without the oracledb driver, the backend does not load.
+            self.assertIsNone(database_vendor(DEFAULT_DB_ALIAS))
 
     def test_cache_timeout(self):
         qs = Test.objects.all()
@@ -213,22 +217,22 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": "non_existent_db.sqlite3",
         }
+        # Loads without a driver; its vendor is "unknown".
         incompatible_database = {
-            "ENGINE": "django.db.backends.oracle",
+            "ENGINE": "django.db.backends.dummy",
             "NAME": "non_existent_db",
         }
 
         warning002 = Warning(
             "None of the configured databases are supported by the ORM cache.",
-            hint="Use a supported database, or remove django_cachex.orm, or put at least one "
-            "database alias in `CACHEX_ORM['DATABASES']` to force the ORM cache to use it.",
+            hint="The ORM cache supports PostgreSQL and SQLite. Use one of them, remove django_cachex.orm, or "
+            "list database aliases in `CACHEX_ORM['DATABASES']` to cache them anyway.",
             id="cachex_orm.W002",
         )
         warning003 = Warning(
-            "Database engine %r is not supported by the ORM cache." % "django.db.backends.oracle",
-            hint="Switch to a supported database engine, add an entry in "
-            "`CACHEX_ORM['ADDITIONAL_SUPPORTED_DATABASES']`, or set "
-            "`CACHEX_ORM['USE_UNSUPPORTED_DATABASE']` to True.",
+            "Database 'default' (unknown) is not supported by the ORM cache.",
+            hint="The ORM cache cannot read its transaction isolation, so inside transactions it caches results "
+            "for the transaction only.",
             id="cachex_orm.W003",
         )
         warning004 = Warning(
@@ -283,6 +287,69 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
         with override_orm_settings(DATABASES="invalid value"):
             errors = run_checks(tags=[Tags.compatibility])
             self.assertListEqual(errors, [error002])
+
+    def test_cache_checks(self):
+        self.assertListEqual(run_checks(tags=[Tags.caches]), [])
+
+        with override_orm_settings(TIMEOUTS=5):
+            self.assertListEqual(
+                run_checks(tags=[Tags.caches]),
+                [
+                    Warning(
+                        "Unknown `CACHEX_ORM` settings: TIMEOUTS.",
+                        hint="The ORM cache ignores them. Settings are upper case: " + ", ".join(DEFAULTS) + ".",
+                        id="cachex_orm.W005",
+                    ),
+                ],
+            )
+
+        with override_orm_settings(CACHE="undefined"):
+            self.assertListEqual(
+                run_checks(tags=[Tags.caches]),
+                [
+                    Error(
+                        "`CACHEX_ORM['CACHE']` is 'undefined', which is not defined in `CACHES`.",
+                        hint="Set `CACHEX_ORM['CACHE']` to an alias from `CACHES`.",
+                        id="cachex_orm.E003",
+                    ),
+                ],
+            )
+
+        dummy = {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}
+        with self.settings(CACHES={**settings.CACHES, "dummy": dummy}), override_orm_settings(CACHE="dummy"):
+            self.assertListEqual(
+                run_checks(tags=[Tags.caches]),
+                [
+                    Warning(
+                        "The ORM cache cannot use the cache 'dummy' "
+                        "(django.core.cache.backends.dummy.DummyCache), so it caches nothing.",
+                        hint="Use a django-cachex Redis or Valkey backend, TrackingCache or LocMemCache.",
+                        id="cachex_orm.W001",
+                    ),
+                ],
+            )
+            self.assert_query_cached(Test.objects.all(), after=1)
+
+    @skipIf(
+        settings.CACHES[DEFAULT_CACHE_ALIAS]["BACKEND"] == "django_cachex.cache.LocMemCache",
+        "only the Redis stores go through the cache's serializer",
+    )
+    def test_cache_serializer_check(self):
+        cache = {**settings.CACHES[DEFAULT_CACHE_ALIAS]}
+        if "transport" in cache.get("OPTIONS", {}):
+            cache = {**settings.CACHES[cache["OPTIONS"]["transport"]]}
+        cache["OPTIONS"] = {**cache.get("OPTIONS", {}), "serializer": "django_cachex.serializers.json.JsonSerializer"}
+        with self.settings(CACHES={**settings.CACHES, "json": cache}), override_orm_settings(CACHE="json"):
+            self.assertListEqual(
+                run_checks(tags=[Tags.caches]),
+                [
+                    Error(
+                        "The serializer of the cache 'json' does not round-trip query results.",
+                        hint="Results must come back with their Python types; the default pickle serializer does.",
+                        id="cachex_orm.E004",
+                    ),
+                ],
+            )
 
     def call_get_tables(self):
         qs = Test.objects.all()

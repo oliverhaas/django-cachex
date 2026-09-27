@@ -224,6 +224,11 @@ ignore_missing_imports = true
 module = "msgpack"
 ignore_missing_imports = true
 
+# The ORM cache falls back to psycopg2's parameter types when psycopg is absent.
+[[tool.mypy.overrides]]
+module = "psycopg2.*"
+ignore_missing_imports = true
+
 [[tool.mypy.overrides]]
 module = "ormsgpack"
 ignore_missing_imports = true

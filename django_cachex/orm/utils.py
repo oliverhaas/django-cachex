@@ -6,12 +6,12 @@
 import datetime
 from decimal import Decimal
 from hashlib import sha1
-from time import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
+from django.apps import apps
 from django.contrib.postgres.functions import TransactionNow
-from django.db.models import Exists, QuerySet, Subquery
+from django.db.models import Exists, QuerySet, Subquery, deletion
 from django.db.models.enums import Choices
 from django.db.models.expressions import RawSQL
 from django.db.models.functions import Now
@@ -19,12 +19,18 @@ from django.db.models.sql import AggregateQuery, Query
 from django.db.models.sql.where import ExtraWhere, NothingNode, WhereNode
 
 from django_cachex.orm.settings import ITERABLES, orm_settings
-from django_cachex.orm.transaction import AtomicCache
+
+# The on_delete of foreign keys the database enforces itself (Django 6.1+).
+_DATABASE_ON_DELETE: Any = getattr(deletion, "DatabaseOnDelete", None)
+
+# Where get_query_cache_key leaves the lowercased SQL of a compiler.
+_GENERATED_SQL = "_cachex_orm_generated_sql"
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
     from django.db.backends.base.base import BaseDatabaseWrapper
+    from django.db.models import Model
     from django.db.models.expressions import BaseExpression
     from django.db.models.sql.compiler import SQLCompiler
 
@@ -55,54 +61,38 @@ CACHABLE_PARAM_TYPES: set[type] = {
 UNCACHABLE_FUNCS: set[type] = {Now, TransactionNow}
 
 
-try:
+def _psycopg_param_types() -> tuple[type, ...]:
     from ipaddress import IPv4Address, IPv6Address
 
-    from django.db.backends.postgresql.psycopg_any import (
+    from psycopg.dbapi20 import Binary
+    from psycopg.types.json import Json, Jsonb
+    from psycopg.types.numeric import Float4, Float8, Int2, Int4, Int8
+    from psycopg.types.range import Range
+
+    return (Binary, Range, Json, Jsonb, Int2, Int4, Int8, Float4, Float8, IPv4Address, IPv6Address)
+
+
+def _psycopg2_param_types() -> tuple[type, ...]:
+    from psycopg2 import Binary  # ty: ignore[unresolved-import]
+    from psycopg2.extras import (  # ty: ignore[unresolved-import]
         DateRange,
         DateTimeRange,
         DateTimeTZRange,
         Inet,
+        Json,
         NumericRange,
     )
-    from psycopg.dbapi20 import Binary
-    from psycopg.types.json import Json, Jsonb
-    from psycopg.types.numeric import Float4, Float8, Int2, Int4, Int8
 
-    CACHABLE_PARAM_TYPES.update(
-        (
-            NumericRange,
-            DateRange,
-            DateTimeRange,
-            DateTimeTZRange,
-            Inet,
-            Json,
-            Jsonb,
-            Int2,
-            Int4,
-            Int8,
-            Float4,
-            Float8,
-            IPv4Address,
-            IPv6Address,
-            Binary,
-        ),
-    )
-except ImportError:
+    return (Binary, NumericRange, DateRange, DateTimeRange, DateTimeTZRange, Inet, Json)
+
+
+# Parameter types of the PostgreSQL driver Django uses: psycopg, else psycopg2.
+for _driver_param_types in (_psycopg_param_types, _psycopg2_param_types):
     try:
-        from psycopg2 import Binary  # ty: ignore[unresolved-import]
-        from psycopg2.extras import (  # ty: ignore[unresolved-import]
-            DateRange,
-            DateTimeRange,
-            DateTimeTZRange,
-            Inet,
-            Json,
-            NumericRange,
-        )
-
-        CACHABLE_PARAM_TYPES.update((Binary, NumericRange, DateRange, DateTimeRange, DateTimeTZRange, Inet, Json))
+        CACHABLE_PARAM_TYPES.update(_driver_param_types())
     except ImportError:
-        pass
+        continue
+    break
 
 
 def check_parameter_types(params: Iterable[Any]) -> None:
@@ -126,7 +116,7 @@ def get_query_cache_key(compiler: SQLCompiler) -> str:
     check_parameter_types(params)
     cache_key = f"{compiler.using}:{sql}:{[str(p) for p in params]}"
     # Kept for the final SQL check, which would otherwise call as_sql() again.
-    compiler._cachex_orm_generated_sql = sql.lower()  # ty: ignore[unresolved-attribute]
+    setattr(compiler, _GENERATED_SQL, sql.lower())
 
     return sha1(cache_key.encode("utf-8")).hexdigest()  # noqa: S324
 
@@ -252,8 +242,7 @@ def _get_tables(db_alias: str, query: Query, compiler: SQLCompiler | None = None
                 elif isinstance(expression, Query) and getattr(expression, "subquery", False):
                     tables.update(_get_tables(db_alias, expression))
                 elif isinstance(expression, RawSQL):
-                    sql = expression.as_sql(None, None)[0].lower()  # ty: ignore[invalid-argument-type]
-                    tables.update(_get_tables_from_sql(connections[db_alias], sql))
+                    tables.update(_get_tables_from_sql(connections[db_alias], expression.sql.lower()))
         # Gets tables in WHERE subqueries.
         for subquery in _find_subqueries_in_where(query.where.children):
             tables.update(_get_tables(db_alias, subquery))
@@ -272,12 +261,12 @@ def _get_tables(db_alias: str, query: Query, compiler: SQLCompiler | None = None
         # Safety net for expressions the checks above do not handle yet: any
         # table named in the final SQL counts too.
         if orm_settings.FINAL_SQL_CHECK:
-            if compiler is not None:
-                # Stored by get_query_cache_key, saving another as_sql() call.
-                sql = compiler._cachex_orm_generated_sql  # ty: ignore[unresolved-attribute]
-            else:
-                sql = query.get_compiler(db_alias).as_sql()[0].lower()
-            final_check_tables = _get_tables_from_sql(connections[db_alias], sql, enable_quote=True)
+            # Stored by get_query_cache_key, saving another as_sql() call; a
+            # custom QUERY_KEYGEN may not store it.
+            final_sql = getattr(compiler, _GENERATED_SQL, None)
+            if final_sql is None:
+                final_sql = query.get_compiler(db_alias).as_sql()[0].lower()
+            final_check_tables = _get_tables_from_sql(connections[db_alias], final_sql, enable_quote=True)
             tables.update(final_check_tables)
 
     if not are_all_cachable(tables):
@@ -285,19 +274,41 @@ def _get_tables(db_alias: str, query: Query, compiler: SQLCompiler | None = None
     return tables
 
 
-def _get_table_cache_keys(compiler: SQLCompiler) -> list[str]:
-    db_alias = compiler.using
-    get_table_cache_key = orm_settings.TABLE_KEYGEN
-    return [get_table_cache_key(db_alias, t) for t in _get_tables(db_alias, compiler.query, compiler)]
+def models_of_tables(tables: set[str]) -> list[type[Model]]:
+    """Return the installed models stored in ``tables``."""
+    return [model for model in apps.get_models(include_auto_created=True) if model._meta.db_table in tables]
 
 
-def _invalidate_tables(cache: Any, db_alias: str, tables: Iterable[str]) -> None:
-    tables = filter_cachable(set(tables))
-    if not tables:
-        return
-    now = time()
-    get_table_cache_key = orm_settings.TABLE_KEYGEN
-    cache.set_many({get_table_cache_key(db_alias, t): now for t in tables}, orm_settings.TIMEOUT)
+def _concrete(model: type[Model]) -> type[Model]:
+    return model._meta.concrete_model or model
 
-    if isinstance(cache, AtomicCache):
-        cache.to_be_invalidated.update(tables)
+
+def deletion_dependents(models: Iterable[type[Model]], *, truncate: bool = False) -> set[str]:
+    """Return the tables the database itself changes when rows of ``models`` are deleted."""
+    # A delete reaches the tables whose foreign keys have a database-level
+    # on_delete (DB_CASCADE, DB_SET_NULL, DB_SET_DEFAULT), onwards through
+    # DB_CASCADE. TRUNCATE ... CASCADE reaches every table with a foreign key
+    # to a truncated one, onwards through all of them.
+    tables: set[str] = set()
+    pending = [_concrete(model) for model in models]
+    seen: set[type[Model]] = set()
+    while pending:
+        model = pending.pop()
+        if model in seen:
+            continue
+        seen.add(model)
+        # Reverse relations (ForeignObjectRel), which the stubs type as fields.
+        relations = cast("Iterable[Any]", deletion.get_candidate_relations_to_delete(model._meta))
+        for relation in relations:
+            on_delete = relation.field.remote_field.on_delete
+            if truncate:
+                onwards = True
+            elif _DATABASE_ON_DELETE is not None and isinstance(on_delete, _DATABASE_ON_DELETE):
+                onwards = on_delete.operation == "CASCADE"
+            else:
+                continue
+            related = _concrete(relation.related_model)
+            tables.add(related._meta.db_table)
+            if onwards:
+                pending.append(related)
+    return tables

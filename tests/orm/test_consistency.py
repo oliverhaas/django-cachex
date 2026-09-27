@@ -1,4 +1,4 @@
-"""Stale entries that timestamp invalidation, inherited from django-cachalot, leaves behind."""
+"""Writes that left stale entries behind under django-cachalot's timestamp invalidation."""
 
 import os
 import subprocess
@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 from django.conf import settings
-from django.core.cache import DEFAULT_CACHE_ALIAS, caches
+from django.core.cache import DEFAULT_CACHE_ALIAS
 from django.db import connection
 from django.test import TransactionTestCase
 
@@ -60,13 +60,6 @@ def run_in_other_process(*args: str) -> str:
 
 
 class ClockSkewTestCase(TestUtilsMixin, TransactionTestCase):
-    def tearDown(self):
-        super().tearDown()
-        # A result stamped in the future outlives the flush between tests.
-        for cache in caches.all(initialized_only=True):
-            cache.clear()
-
-    @pytest.mark.xfail(strict=True, reason="timestamp invalidation trusts the clocks of every process")
     def test_reader_clock_ahead_of_writer(self):
         # A process whose clock runs ahead caches a result, then a process with
         # the right clock writes to the table.
@@ -85,7 +78,6 @@ class ClockSkewTestCase(TestUtilsMixin, TransactionTestCase):
     "needs a database and a cache shared between processes",
 )
 class TwoProcessTestCase(TestUtilsMixin, TransactionTestCase):
-    @pytest.mark.xfail(strict=True, reason="timestamp invalidation caches a result read before a concurrent write")
     def test_other_process_writes_between_query_and_caching(self):
         created = []
 
@@ -100,7 +92,6 @@ class TwoProcessTestCase(TestUtilsMixin, TransactionTestCase):
         expected = Test.objects.get(pk=created[0])
         self.assertEqual(Test.objects.first(), expected)
 
-    @pytest.mark.xfail(strict=True, reason="timestamp invalidation caches a read taken during an autocommit write")
     def test_other_process_reads_during_autocommit_write(self):
         results = []
 
