@@ -1,6 +1,7 @@
 # Derived from django-cachalot 2.9.1 (BSD-3-Clause, Copyright (c) 2014-2016
 # Bertrand Bordage); see django_cachex/orm/LICENSE.
 
+from hashlib import sha1
 from time import sleep
 from unittest import skipIf
 from unittest.mock import MagicMock, patch
@@ -10,6 +11,7 @@ from django.contrib.auth.models import User
 from django.core.cache import DEFAULT_CACHE_ALIAS
 from django.core.checks import Error, Tags, Warning, run_checks  # noqa: A004
 from django.db import DEFAULT_DB_ALIAS, connection
+from django.db.models.functions import Random
 from django.test import TransactionTestCase
 
 from django_cachex.orm.api import invalidate
@@ -128,11 +130,34 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
                 list(Test.objects.all())
 
     def test_cache_random(self):
-        qs = Test.objects.order_by("?")
-        self.assert_query_cached(qs, after=1, compare_results=False)
+        for qs in (
+            Test.objects.order_by("?"),
+            # Not order_by(Random()) alone: it compiles to the SQL of order_by("?").
+            Test.objects.order_by(Random(), "pk"),
+            Test.objects.annotate(random=Random()),
+        ):
+            with self.subTest(query=str(qs.query)):
+                self.assert_query_cached(qs, after=1, compare_results=False)
 
-        with override_orm_settings(CACHE_RANDOM=True):
+                with override_orm_settings(CACHE_RANDOM=True):
+                    self.assert_query_cached(qs)
+
+    def test_query_keygen_without_compiling(self):
+        """The tables compiling a query joins count although QUERY_KEYGEN does not compile it."""
+        user = User.objects.create_user("user")
+        Test.objects.create(name="test", owner=user)
+
+        def query_keygen(compiler):
+            query = compiler.query
+            key = f"{compiler.using}:{query.model._meta.label}:{query.select_related}:{query.where}"
+            return sha1(key.encode()).hexdigest()  # noqa: S324
+
+        qs = Test.objects.select_related("owner")
+        with override_orm_settings(QUERY_KEYGEN=query_keygen):
             self.assert_query_cached(qs)
+            User.objects.filter(pk=user.pk).update(username="renamed")
+            with self.assertNumQueries(1):
+                self.assertListEqual([test.owner.username for test in qs.all()], ["renamed"])
 
     def test_invalidate_raw(self):
         with self.assertNumQueries(1):

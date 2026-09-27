@@ -9,7 +9,7 @@ from uuid import UUID
 from django.contrib.auth.models import Group, Permission, User
 from django.contrib.contenttypes.models import ContentType
 from django.db import OperationalError, ProgrammingError, connection, transaction
-from django.db.models import Case, Count, Q, Value, When
+from django.db.models import Case, Count, F, FilteredRelation, Q, Value, When
 from django.db.models.expressions import Exists, OuterRef, RawSQL, Subquery
 from django.db.models.functions import Coalesce, Now
 from django.db.transaction import TransactionManagementError
@@ -425,6 +425,51 @@ class ReadTestCase(TestUtilsMixin, FilteredTransactionTestCase):
         qs = Test.objects.filter(pk__in=Test.objects.filter(permission=raw_sql))
         self.assert_tables(qs, Test, Permission)
         self.assert_query_cached(qs, [self.t1])
+
+    @no_final_sql_check
+    def test_subquery_in_expression(self):
+        group_name = Subquery(Group.objects.order_by("pk").values("name")[:1])
+        qs = Test.objects.filter(name=Coalesce(group_name, Value("")))
+        self.assert_tables(qs, Test, Group)
+        self.assert_query_cached(qs, [])
+
+        self.group.name = "test1"
+        self.group.save()
+        with self.assertNumQueries(1):
+            self.assertListEqual(list(qs), [self.t1])
+
+    @no_final_sql_check
+    def test_subquery_in_order_by(self):
+        group_pk = Subquery(Group.objects.filter(name=OuterRef("name")).values("pk")[:1])
+        for ordering, qs in (
+            ("expression", Test.objects.order_by(group_pk)),
+            ("alias", Test.objects.alias(group_pk=group_pk).order_by("group_pk")),
+        ):
+            with self.subTest(ordering=ordering):
+                Group.objects.filter(name__in=["test1", "test2"]).delete()
+                group2 = Group.objects.create(name="test2")
+                Group.objects.create(name="test1")
+                self.assert_tables(qs, Test, Group)
+                self.assert_query_cached(qs, [self.t2, self.t1])
+
+                # The group of t2 now has the highest pk.
+                group2.delete()
+                Group.objects.create(name="test2")
+                with self.assertNumQueries(1):
+                    self.assertListEqual(list(qs), [self.t1, self.t2])
+
+    @no_final_sql_check
+    def test_subquery_in_filtered_relation(self):
+        qs = User.objects.annotate(
+            grouped_tests=FilteredRelation("test", condition=Q(test__name__in=Subquery(Group.objects.values("name")))),
+        ).filter(grouped_tests__isnull=False)
+        self.assert_tables(qs, User, Test, Group)
+        self.assert_query_cached(qs, [])
+
+        self.group.name = "test1"
+        self.group.save()
+        with self.assertNumQueries(1):
+            self.assertListEqual(list(qs), [self.user])
 
     @all_final_sql_checks
     def test_aggregate(self):
@@ -979,10 +1024,9 @@ class ReadTestCase(TestUtilsMixin, FilteredTransactionTestCase):
         with connection.cursor() as cursor:
             cursor.execute("CREATE TABLE %s (taste VARCHAR(20));" % table_name)
         qs = Test.objects.extra(tables=["Clémentine"], select={"taste": "%s.taste" % table_name})
-        # Here the table `Clémentine` is not detected because it is not
-        # registered by Django, and we only check for registered tables
-        # to avoid creating an extra SQL query fetching table names.
-        self.assert_tables(qs, Test)
+        # Named by extra(tables=...), so detected although Django does not
+        # know about it.
+        self.assert_tables(qs, Test, "Clémentine")
         self.assert_query_cached(qs)
         with connection.cursor() as cursor:
             cursor.execute("DROP TABLE %s;" % table_name)
@@ -997,6 +1041,23 @@ class ReadTestCase(TestUtilsMixin, FilteredTransactionTestCase):
         """Check that queries with a Now() annotation are not cached #193"""
         qs = Test.objects.annotate(now=Now())
         self.assert_query_cached(qs, after=1)
+
+    def test_now_nested(self):
+        """Now() keeps a query from being cached wherever it is."""
+        day = datetime.timedelta(days=1)
+        for qs in (
+            Test.objects.filter(datetime__gte=Now() - day),
+            Test.objects.filter(datetime__range=(Now() - day, Now())),
+            Test.objects.annotate(age=Now() - F("datetime")),
+            Test.objects.order_by(Now() - F("datetime")),
+            Test.objects.filter(pk__in=Test.objects.filter(datetime__lte=Now()).values("pk")),
+            Test.objects.filter(Exists(Test.objects.filter(datetime__lte=Now() - day))),
+            User.objects.annotate(
+                past_tests=FilteredRelation("test", condition=Q(test__datetime__lte=Now())),
+            ).filter(past_tests__isnull=False),
+        ):
+            with self.subTest(query=str(qs.query)):
+                self.assert_query_cached(qs, after=1)
 
 
 class ParameterTypeTestCase(TestUtilsMixin, TransactionTestCase):

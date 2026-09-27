@@ -10,13 +10,16 @@ from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
 from django.apps import apps
-from django.contrib.postgres.functions import TransactionNow
-from django.db.models import Exists, QuerySet, Subquery, deletion
+from django.contrib.postgres.functions import RandomUUID, TransactionNow
+from django.db import connections
+from django.db.models import F, Lookup, QuerySet, deletion, functions
+from django.db.models.constants import LOOKUP_SEP
 from django.db.models.enums import Choices
 from django.db.models.expressions import RawSQL
-from django.db.models.functions import Now
+from django.db.models.functions import Now, Random
 from django.db.models.sql import AggregateQuery, Query
-from django.db.models.sql.where import ExtraWhere, NothingNode, WhereNode
+from django.db.models.sql.where import ExtraWhere, NothingNode
+from django.utils.tree import Node
 
 from django_cachex.orm.settings import ITERABLES, orm_settings
 
@@ -27,19 +30,14 @@ _DATABASE_ON_DELETE: Any = getattr(deletion, "DatabaseOnDelete", None)
 _GENERATED_SQL = "_cachex_orm_generated_sql"
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Iterable, Sequence
 
     from django.db.backends.base.base import BaseDatabaseWrapper
     from django.db.models import Model
-    from django.db.models.expressions import BaseExpression
     from django.db.models.sql.compiler import SQLCompiler
 
 
 class UncachableQuery(Exception):  # noqa: N818
-    pass
-
-
-class IsRawQuery(Exception):  # noqa: N818
     pass
 
 
@@ -58,7 +56,13 @@ CACHABLE_PARAM_TYPES: set[type] = {
     datetime.timedelta,
     UUID,
 }
+# Functions whose result changes over time: a query calling one is not cached.
 UNCACHABLE_FUNCS: set[type] = {Now, TransactionNow}
+# Functions returning a new random value on every call: a query calling one is
+# cached only with CACHE_RANDOM. UUID4 and UUID7 are new in Django 6.1.
+RANDOM_FUNCS: set[type] = {Random, RandomUUID} | {
+    func for name in ("UUID4", "UUID7") if (func := getattr(functions, name, None))
+}
 
 
 def _psycopg_param_types() -> tuple[type, ...]:
@@ -146,42 +150,6 @@ def _quote_table_name(table_name: str, connection: BaseDatabaseWrapper, *, enabl
     return f"{connection.ops.quote_name(table_name)}" if enable_quote else table_name
 
 
-def _find_rhs_lhs_subquery(side: Any) -> Query | None:
-    h_class = side.__class__
-    if h_class is Query:
-        return side
-    if h_class is QuerySet:
-        return side.query
-    if h_class in (Subquery, Exists):  # Subquery allows QuerySet & Query
-        return side.query.query if side.query.__class__ is QuerySet else side.query
-    if h_class in UNCACHABLE_FUNCS:
-        raise UncachableQuery
-    return None
-
-
-def _find_subqueries_in_where(children: Iterable[Any]) -> Iterator[Query]:
-    for child in children:
-        child_class = child.__class__
-        if child_class is WhereNode:
-            yield from _find_subqueries_in_where(child.children)
-        elif child_class is ExtraWhere:
-            raise IsRawQuery
-        elif child_class is NothingNode:
-            pass
-        else:
-            try:
-                child_rhs = child.rhs
-                child_lhs = child.lhs
-            except AttributeError as e:
-                raise UncachableQuery from e
-            rhs = _find_rhs_lhs_subquery(child_rhs)
-            if rhs is not None:
-                yield rhs
-            lhs = _find_rhs_lhs_subquery(child_lhs)
-            if lhs is not None:
-                yield lhs
-
-
 def is_cachable(table: str) -> bool:
     whitelist = orm_settings.ONLY_CACHABLE_TABLES
     if whitelist and table not in whitelist:
@@ -204,71 +172,103 @@ def filter_cachable(tables: set[str]) -> set[str]:
     return tables
 
 
-def _flatten(expression: BaseExpression) -> Iterator[Any]:
-    """Yield ``expression`` and all its subexpressions, depth first."""
-    yield expression
-    for expr in expression.get_source_expressions():
-        if expr:
-            if hasattr(expr, "flatten"):
-                yield from _flatten(expr)
-            else:
-                yield expr
+class _TableFinder:
+    """Find the tables a query and its subqueries read.
 
+    Raise UncachableQuery if the query calls a function whose result changes
+    between calls.
+    """
 
-def _get_tables(db_alias: str, query: Query, compiler: SQLCompiler | None = None) -> set[str]:  # noqa: C901, PLR0912
-    from django.db import connections
+    def __init__(self, db_alias: str) -> None:
+        self.db_alias = db_alias
+        self.tables: set[str] = set()
+        # Raw SQL conditions may name any table, unquoted: look for all of
+        # them in the final SQL.
+        self.raw_sql = False
+        self.check_final_sql = orm_settings.FINAL_SQL_CHECK
+        self.subqueries = 0
 
-    if query.select_for_update or (not orm_settings.CACHE_RANDOM and "?" in query.order_by):
-        raise UncachableQuery
-
-    try:
+    def add_query(self, query: Query) -> None:
+        meta = query.get_meta()
+        ordering: Sequence[Any] = query.order_by
+        if not ordering and query.default_ordering and meta:
+            ordering = meta.ordering or ()
+        if query.select_for_update or (not orm_settings.CACHE_RANDOM and "?" in ordering):
+            raise UncachableQuery
         if query.extra_select:
-            raise IsRawQuery  # noqa: TRY301
-
-        # Gets all tables already found by the ORM.
-        tables = set(query.table_map)
-        if query.get_meta():
-            tables.add(query.get_meta().db_table)
-
-        # Gets tables in subquery annotations.
-        for annotation in query.annotations.values():
-            if type(annotation) in UNCACHABLE_FUNCS:
-                raise UncachableQuery
-            for expression in _flatten(annotation):
-                if isinstance(expression, Subquery):
-                    tables.update(_get_tables(db_alias, expression.query))
-                # Django 6.0+: Subquery.resolve_expression() returns the Query
-                # itself, flagged with subquery=True.
-                elif isinstance(expression, Query) and getattr(expression, "subquery", False):
-                    tables.update(_get_tables(db_alias, expression))
-                elif isinstance(expression, RawSQL):
-                    tables.update(_get_tables_from_sql(connections[db_alias], expression.sql.lower()))
-        # Gets tables in WHERE subqueries.
-        for subquery in _find_subqueries_in_where(query.where.children):
-            tables.update(_get_tables(db_alias, subquery))
-        # Gets tables in HAVING subqueries.
+            self.raw_sql = True
+        # The tables joined so far. Compiling joins the ones select_related()
+        # and the ordering need, so queries are compiled before they get here.
+        self.tables.update(query.table_map, query.extra_tables)
+        if meta:
+            self.tables.add(meta.db_table)
+        self.visit([*query.annotations.values(), query.where, *query.combined_queries])
+        for join in query.alias_map.values():
+            if (relation := join.filtered_relation) is not None:
+                self.visit((relation.condition, getattr(relation, "resolved_condition", None)))
         if isinstance(query, AggregateQuery):
-            tables.update(_get_tables(db_alias, query.inner_query))
-        # Gets tables in combined queries
-        # using `.union`, `.intersection`, or `difference`.
-        if query.combined_queries:
-            for combined_query in query.combined_queries:
-                tables.update(_get_tables(db_alias, combined_query))
-    except IsRawQuery:
-        sql = query.get_compiler(db_alias).as_sql()[0].lower()
-        tables = _get_tables_from_sql(connections[db_alias], sql)
-    else:
-        # Safety net for expressions the checks above do not handle yet: any
-        # table named in the final SQL counts too.
-        if orm_settings.FINAL_SQL_CHECK:
-            # Stored by get_query_cache_key, saving another as_sql() call; a
-            # custom QUERY_KEYGEN may not store it.
-            final_sql = getattr(compiler, _GENERATED_SQL, None)
-            if final_sql is None:
-                final_sql = query.get_compiler(db_alias).as_sql()[0].lower()
-            final_check_tables = _get_tables_from_sql(connections[db_alias], final_sql, enable_quote=True)
-            tables.update(final_check_tables)
+            self.add_query(query.inner_query)
+        self.visit_ordering(query, ordering)
 
+    def visit_ordering(self, query: Query, ordering: Sequence[Any]) -> None:
+        # ORDER BY compiles copies of the expressions it holds and of the
+        # unselected annotations it names, so the joins that the ordering of
+        # a subquery in them needs show in the final SQL only.
+        subqueries = self.subqueries
+        for item in ordering:
+            if not isinstance(item, str):
+                self.visit(item)
+                continue
+            name = item.removeprefix("-")
+            if name not in query.annotations:
+                name = name.split(LOOKUP_SEP, 1)[0]
+            if name not in query.annotation_select:
+                self.visit(query.annotations.get(name))
+        if self.subqueries > subqueries:
+            self.check_final_sql = True
+
+    def visit(self, node: Any) -> None:  # noqa: C901
+        """Visit ``node``, a part of a query, and the expressions it holds."""
+        if isinstance(node, list | tuple):  # e.g. the right-hand side of __in or __range
+            for item in node:
+                self.visit(item)
+        elif isinstance(node, Query | QuerySet):  # a subquery
+            self.subqueries += 1
+            self.add_query(node if isinstance(node, Query) else node.query)
+        elif isinstance(node, Node):  # a WhereNode, or a Q not resolved yet
+            self.visit(node.children)
+        elif isinstance(node, ExtraWhere):
+            self.raw_sql = True
+        elif isinstance(node, RawSQL):
+            self.tables.update(_get_tables_from_sql(connections[self.db_alias], node.sql.lower()))
+        elif isinstance(node, tuple(UNCACHABLE_FUNCS)) or (
+            not orm_settings.CACHE_RANDOM and isinstance(node, tuple(RANDOM_FUNCS))
+        ):
+            raise UncachableQuery
+        elif isinstance(node, Lookup):
+            # A right-hand side of plain values is not a source expression.
+            self.visit((node.lhs, node.rhs))
+        elif hasattr(node, "get_source_expressions"):
+            self.visit(node.get_source_expressions())
+        elif isinstance(node, F | NothingNode):
+            pass
+        elif hasattr(node, "as_sql"):
+            # SQL this class cannot look into.
+            raise UncachableQuery
+
+
+def _get_tables(db_alias: str, query: Query, compiler: SQLCompiler | None = None) -> set[str]:
+    """Return the tables ``query`` reads, or raise UncachableQuery if its result must not be cached."""
+    finder = _TableFinder(db_alias)
+    finder.add_query(query)
+    tables = finder.tables
+    if finder.raw_sql or finder.check_final_sql:
+        # Stored by get_query_cache_key, saving another as_sql() call.
+        final_sql = getattr(compiler, _GENERATED_SQL, None)
+        if final_sql is None:
+            final_sql = query.get_compiler(db_alias).as_sql()[0].lower()
+        # The ORM quotes the tables it names, raw SQL may not.
+        tables |= _get_tables_from_sql(connections[db_alias], final_sql, enable_quote=not finder.raw_sql)
     if not are_all_cachable(tables):
         raise UncachableQuery
     return tables

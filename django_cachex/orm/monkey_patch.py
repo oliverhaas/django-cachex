@@ -23,6 +23,7 @@ from django_cachex.orm.api import LOCAL_STORAGE, _invalidation_failed, _send_sig
 from django_cachex.orm.settings import ITERABLES, orm_settings
 from django_cachex.orm.store import Store, get_store
 from django_cachex.orm.utils import (
+    _GENERATED_SQL,
     UncachableQuery,
     _get_tables,
     _get_tables_from_sql,
@@ -88,6 +89,10 @@ def _key_and_tables(compiler: Any, result_type: Any, store: Store | None) -> tup
     try:
         # A SINGLE and a MULTI query can share their SQL but not their result.
         query_key = f"{orm_settings.QUERY_KEYGEN(compiler)}:{result_type}"
+        if getattr(compiler, _GENERATED_SQL, None) is None:
+            # Compiling joins the tables select_related() and the ordering
+            # need, and a custom QUERY_KEYGEN may not compile.
+            setattr(compiler, _GENERATED_SQL, compiler.as_sql()[0].lower())
         tables = _get_tables(compiler.connection.alias, compiler.query, compiler)
     except EmptyResultSet, UncachableQuery:
         return None
