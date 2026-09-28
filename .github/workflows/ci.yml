@@ -159,6 +159,61 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: "1"
 
+  test-orm:
+    name: Test the ORM cache (Django ${{ matrix.django-version }}, ${{ matrix.setup.database }}, ${{ matrix.setup.cache }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        django-version: ["6.0", "6.1"]
+        setup:
+          - { database: sqlite, cache: locmem }
+          - { database: postgresql, cache: locmem }
+          - { database: postgresql, cache: redis }
+          - { database: postgresql, cache: tracking }
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Install Django ${{ matrix.django-version }}
+        run: uv pip install "Django~=${{ matrix.django-version }}.0"
+
+      - name: Check the installed Django matches the matrix
+        run: |
+          uv run --no-sync python - "${{ matrix.django-version }}" <<'EOF'
+          import sys
+          import django
+          want, got = sys.argv[1], django.__version__
+          print("Django", got)
+          ok = django.VERSION[3] != "final" if want == "main" else got.startswith(f"{want}.")
+          sys.exit(0 if ok else f"expected Django {want}, got {got}")
+          EOF
+
+      # tests/orm has its own settings module, so the other jobs skip it. It
+      # takes under a minute, and under xdist every worker would start its own
+      # PostgreSQL and Redis containers, so it runs in one process.
+      - name: Run ORM cache tests
+        run: uv run --no-sync pytest tests/orm --ds=tests.orm.settings
+        env:
+          CACHEX_ORM_TEST_DB: ${{ matrix.setup.database }}
+          CACHEX_ORM_TEST_CACHE: ${{ matrix.setup.cache }}
+          PYTHONDONTWRITEBYTECODE: "1"
+
+      - name: Upload coverage to Codecov
+        if: matrix.django-version == '6.1' && matrix.setup.database == 'postgresql' && matrix.setup.cache == 'redis'
+        uses: codecov/codecov-action@v7
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
   test-glide-adapter:
     runs-on: ubuntu-latest
     steps:
@@ -331,3 +386,34 @@ jobs:
           from django_cachex.cache import RedisCache, ValkeyCache
           print('OK: package imports with no client library installed')
           "
+
+      # The ORM cache must run on a LocMemCache and SQLite with nothing else
+      # installed: psycopg and the client libraries are optional.
+      - name: Verify the ORM cache runs without a client library
+        run: |
+          uv run --no-sync python - <<'EOF'
+          import django
+          from django.conf import settings
+
+          settings.configure(
+              INSTALLED_APPS=["django.contrib.contenttypes", "django.contrib.auth", "django_cachex.orm"],
+              DATABASES={"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}},
+          )
+          django.setup()
+
+          from django.contrib.auth.models import Group
+          from django.core.management import call_command
+          from django.db import connection
+          from django.test.utils import CaptureQueriesContext
+
+          call_command("migrate", verbosity=0)
+          call_command("check", fail_level="WARNING")
+          Group.objects.create(name="a")
+          with CaptureQueriesContext(connection) as queries:
+              assert [group.name for group in Group.objects.all()] == ["a"]
+              assert [group.name for group in Group.objects.all()] == ["a"]
+          assert len(queries) == 1, queries.captured_queries
+          Group.objects.create(name="b")
+          assert sorted(group.name for group in Group.objects.all()) == ["a", "b"]
+          print("OK: the ORM cache runs with no client library installed")
+          EOF
