@@ -29,7 +29,7 @@ From then on, ORM queries on PostgreSQL and SQLite databases are served from the
 
 The ORM cache runs Lua scripts on the cache server, or keeps its state in the process:
 
-- The Redis and Valkey backends: standalone, Sentinel and Cluster, on redis-py, valkey-py and valkey-glide.
+- The Redis and Valkey backends: standalone, Sentinel and Cluster on redis-py and valkey-py, standalone and Cluster on valkey-glide.
 - `TrackingCache`: results live on its transport, and each process also keeps a copy of the results it read (see [TrackingCache](#trackingcache)).
 - `LocMemCache`, Django's or django-cachex's: results, generations and leases live in the process, so a write in one process does not invalidate the others. Use it in tests and single-process setups.
 
@@ -94,6 +94,8 @@ The keys go through the cache alias's key function, so they carry its `KEY_PREFI
 - `orm:{<database alias>}:l:<table key>`: the leases on a table, without expiry: each lease carries its own, and the key goes when its last lease is removed.
 
 The database alias is the hash tag, so on a cluster all keys of one database live in one slot, and on one shard. A generation that is evicted or cleared comes back derived from the server clock in microseconds, which no result stored under its old value matches.
+
+The keys name database aliases, not the databases behind them, so projects or environments sharing a cache server need distinct `KEY_PREFIX`es or database numbers. Otherwise each serves the results the other read.
 
 ### Eviction
 
