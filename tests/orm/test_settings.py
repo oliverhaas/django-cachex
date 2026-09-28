@@ -153,7 +153,7 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
         def query_keygen(compiler):
             query = compiler.query
             key = f"{compiler.using}:{query.model._meta.label}:{query.select_related}:{query.where}"
-            return sha1(key.encode()).hexdigest()  # noqa: S324
+            return sha1(key.encode(), usedforsecurity=False).hexdigest()
 
         qs = Test.objects.select_related("owner")
         with override_orm_settings(QUERY_KEYGEN=query_keygen):
