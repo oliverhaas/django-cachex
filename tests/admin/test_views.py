@@ -2288,6 +2288,8 @@ class TestKeyPkRoundTrip:
         """
         assert Key.parse_pk(Key.make_pk("tier:hot", "user:1")) == ("tier:hot", "user:1")
 
+    # The space is on purpose, and Django warns that memcached would reject it.
+    @pytest.mark.filterwarnings("ignore::django.core.cache.CacheKeyWarning")
     def test_key_detail_url_roundtrips_special_characters(
         self,
         admin_client: Client,
@@ -4164,19 +4166,20 @@ class TestContainerPagesFetchOnlyThePage:
 
         test_cache.hset("paged:hash", mapping={f"f{i:04d}": f"v{i}" for i in range(PAGE_SIZE + 5)})
         mocker.patch.object(type(test_cache), "hgetall", side_effect=AssertionError("whole hash fetched"))
-        script_args: list[list[str]] = []
+        mocker.patch.object(type(test_cache), "hkeys", side_effect=AssertionError("every field name fetched"))
+        script_results: list[list] = []
         eval_script = test_cache.eval_script
 
         def record(*args, **kwargs):
-            script_args.append(kwargs["args"])
-            return eval_script(*args, **kwargs)
+            script_results.append(eval_script(*args, **kwargs))
+            return script_results[-1]
 
         mocker.patch.object(test_cache, "eval_script", side_effect=record)
 
         response = admin_client.get(_key_detail_url("default", "paged:hash") + "?page=2")
 
         assert response.status_code == 200
-        assert script_args == [[f"f{i:04d}" for i in range(PAGE_SIZE, PAGE_SIZE + 5)]]
+        assert [len(rows) for _cursor, _skip, rows in script_results] == [5]
         content = response.content.decode()
         assert set(re.findall(r"&quot;v(\d+)&quot;", content)) == {str(i) for i in range(PAGE_SIZE, PAGE_SIZE + 5)}
 
@@ -4441,3 +4444,121 @@ class TestGatedPostsDenyStaffWithoutPermission:
 
         assert response.status_code == 403
         assert test_cache.get("gated:key") == "value"
+
+
+def test_stream_entry_with_a_field_named_items_renders(admin_client: Client, test_cache: RespCache):
+    # Regression: the template looped over ``fields.items``, which resolved the "items" field.
+    test_cache.xadd("fields:stream", {"items": "3", "name": "a"})
+
+    response = admin_client.get(_key_detail_url("default", "fields:stream"))
+
+    assert response.status_code == 200
+    assert "items: 3, name: a" in response.content.decode()
+
+
+def test_key_list_pagination_keeps_a_param_named_items(admin_client: Client, test_cache: RespCache):
+    # Regression: ``cl.params.items`` in the template resolved the ``items`` param.
+    for i in range(20):
+        test_cache.set(f"paging:key{i}", i)
+
+    response = admin_client.get(_key_list_url("default") + "&count=1&items=x")
+
+    assert response.status_code == 200
+    next_link = BeautifulSoup(response.content, "html.parser").find("a", string="Next")
+    assert next_link is not None
+    assert "&items=x&" in next_link["href"]
+
+
+@pytest.mark.parametrize("original_score", ["", "1"], ids=["without_cas", "with_cas"])
+def test_zset_rename_refuses_to_overwrite_an_existing_member(
+    admin_client: Client,
+    test_cache: RespCache,
+    original_score: str,
+):
+    test_cache.zadd("inputs:zclobber", {"alpha": 1.0, "beta": 2.0})
+
+    response = admin_client.post(
+        _key_detail_url("default", "inputs:zclobber"),
+        {
+            "action": "zupdate",
+            "member": '"alpha"',
+            "new_member": '"beta"',
+            "score_value": "5",
+            "original_score": original_score,
+        },
+        follow=True,
+    )
+
+    assert test_cache.zrange("inputs:zclobber", 0, -1, withscores=True) == [("alpha", 1.0), ("beta", 2.0)]
+    assert "Member &#x27;beta&#x27; already exists." in response.content.decode()
+
+
+def test_zset_rename_with_the_loaded_score_moves_the_member(admin_client: Client, test_cache: RespCache):
+    test_cache.zadd("inputs:zcas", {"alpha": 1.0})
+
+    response = admin_client.post(
+        _key_detail_url("default", "inputs:zcas"),
+        {"action": "zupdate", "member": '"alpha"', "new_member": '"beta"', "score_value": "3.5", "original_score": "1"},
+    )
+
+    assert response.status_code == 302
+    assert test_cache.zrange("inputs:zcas", 0, -1, withscores=True) == [("beta", 3.5)]
+
+
+def test_zset_rename_after_a_concurrent_score_change_is_refused(admin_client: Client, test_cache: RespCache):
+    test_cache.zadd("inputs:zstale", {"alpha": 2.0})
+
+    admin_client.post(
+        _key_detail_url("default", "inputs:zstale"),
+        {"action": "zupdate", "member": '"alpha"', "new_member": '"beta"', "score_value": "3.5", "original_score": "1"},
+    )
+
+    assert test_cache.zrange("inputs:zstale", 0, -1, withscores=True) == [("alpha", 2.0)]
+
+
+def test_hash_field_with_surrounding_spaces_can_be_edited(admin_client: Client, test_cache: RespCache):
+    test_cache.hset("inputs:hpadded", " padded ", "a")
+
+    response = admin_client.post(
+        _key_detail_url("default", "inputs:hpadded"),
+        {"action": "hupdate", "field": " padded ", "new_field": " padded ", "field_value": '"b"'},
+    )
+
+    assert response.status_code == 302
+    assert test_cache.hgetall("inputs:hpadded") == {" padded ": "b"}
+
+
+def test_hash_field_with_surrounding_spaces_can_be_deleted(admin_client: Client, test_cache: RespCache):
+    test_cache.hset("inputs:hpadded", mapping={" padded ": "a", "padded": "b"})
+
+    response = admin_client.post(_key_detail_url("default", "inputs:hpadded"), {"action": "hdel", "field": " padded "})
+
+    assert response.status_code == 302
+    assert test_cache.hgetall("inputs:hpadded") == {"padded": "b"}
+
+
+def test_flush_database_warns_that_a_cluster_loses_every_primary(admin_client: Client, test_cache: RespCache):
+    response = admin_client.get(_cache_detail_url("default"))
+
+    content = response.content.decode()
+    assert "On a cluster, every primary is flushed." in content
+    assert "targeted primary" not in content
+
+
+@pytest.mark.parametrize("key_type", ["list", "set", "hash", "zset", "stream"])
+def test_confirm_dialogs_escape_translated_text(admin_client: Client, test_cache: RespCache, mocker, key_type: str):
+    # A translation with an apostrophe used to end the JavaScript string early.
+    {
+        "list": lambda: test_cache.rpush("confirm:key", "a"),
+        "set": lambda: test_cache.sadd("confirm:key", "a"),
+        "hash": lambda: test_cache.hset("confirm:key", "f", "a"),
+        "zset": lambda: test_cache.zadd("confirm:key", {"a": 1.0}),
+        "stream": lambda: test_cache.xadd("confirm:key", {"f": "a"}),
+    }[key_type]()
+    mocker.patch("django.template.base.gettext_lazy", side_effect=lambda msgid: msgid.replace("?", " l'élément ?"))
+
+    response = admin_client.get(_key_detail_url("default", "confirm:key"))
+
+    confirms = re.findall(r"confirm\('([^)]*)'\)", response.content.decode())
+    assert len(confirms) > 1
+    assert all("&#x27;" not in text for text in confirms)

@@ -14,6 +14,7 @@ from django.utils.http import urlencode
 
 from django_cachex.admin.cas import (
     cas_rename_hash_field,
+    cas_rename_zset_member,
     cas_update_hash_field,
     cas_update_list_element,
     cas_update_string,
@@ -109,7 +110,7 @@ def _parse_count(request: HttpRequest, field: str, *, default: int = 1, min_valu
 _UNHASHABLE_MEMBER_ERROR = "JSON arrays and objects cannot be used as sorted set members."
 
 
-# Extra CAS result, returned only by the hash field rename script.
+# Extra CAS result, returned only by the rename scripts.
 _CAS_NAME_TAKEN = -2
 
 
@@ -425,7 +426,8 @@ def _handle_spop(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
 
 
 def _handle_hset(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
-    field = request.POST.get("field", "").strip()
+    # Field names are kept verbatim: stripping would miss a field with surrounding spaces.
+    field = request.POST.get("field", "")
     value = parse_json_or_str(request.POST.get("field_value", "").strip())
     if not field:
         messages.error(request, "Field name is required.")
@@ -453,8 +455,8 @@ def _handle_hset(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
 
 def _handle_hupdate(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
     """Update one hash row: its value, its field name, or both."""
-    field = request.POST.get("field", "").strip()
-    new_field = request.POST.get("new_field", "").strip()
+    field = request.POST.get("field", "")
+    new_field = request.POST.get("new_field", "")
     if not new_field:
         messages.error(request, "Field name is required.")
         return _redirect_to_key(request, cache_name, key, page)
@@ -493,7 +495,7 @@ def _handle_hupdate(request: HttpRequest, cache: Any, cache_name: str, key: str,
 
 
 def _handle_hdel(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
-    field = request.POST.get("field", "").strip()
+    field = request.POST.get("field", "")
     if not field:
         messages.error(request, "Field name is required.")
         return _redirect_to_key(request, cache_name, key, page)
@@ -598,11 +600,30 @@ def _handle_zupdate(request: HttpRequest, cache: Any, cache_name: str, key: str,
         messages.error(request, "Score must be a number.")
         return _redirect_to_key(request, cache_name, key, page)
     try:
-        # Add before removing, so an interruption leaves a visible duplicate
-        # rather than dropping the member entirely.
-        cache.zadd(key, {new_member: score})
-        cache.zrem(key, member)
-        messages.success(request, f"Renamed '{member}' to '{new_member}' (score {score}).")
+        original_score = request.POST.get("original_score", "").strip()
+        if original_score and supports_cas(cache):
+            cas_result = cas_rename_zset_member(cache, key, member, new_member, original_score, score)
+            if cas_result == _CAS_NAME_TAKEN:
+                messages.error(request, f"Member '{new_member}' already exists.")
+            else:
+                _apply_cas_result(
+                    request,
+                    cas_result,
+                    success=f"Renamed '{member}' to '{new_member}' (score {score}).",
+                    conflict=(
+                        f"Conflict: score of '{member}' was modified since you loaded the page. "
+                        "Please refresh and try again."
+                    ),
+                    missing=f"Member '{member}' no longer exists.",
+                )
+        elif cache.zscore(key, new_member) is not None:
+            messages.error(request, f"Member '{new_member}' already exists.")
+        else:
+            # Add before removing, so an interruption leaves a visible duplicate
+            # rather than dropping the member entirely.
+            cache.zadd(key, {new_member: score})
+            cache.zrem(key, member)
+            messages.success(request, f"Renamed '{member}' to '{new_member}' (score {score}).")
     except Exception as e:  # noqa: BLE001
         messages.error(request, f"Could not rename the member: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)

@@ -55,7 +55,8 @@
             <input type="hidden" name="action" value="ltrim">
             <input type="number" name="trim_start" value="0" class="vIntegerField" style="width: 60px;" aria-label="{% trans "Start index" %}" placeholder="{% trans "start" %}">
             <input type="number" name="trim_stop" value="-1" class="vIntegerField" style="width: 60px;" aria-label="{% trans "Stop index (-1 for last)" %}" placeholder="{% trans "stop" %}">
-            <button type="submit" class="button btn-small" onclick="return confirm('{% trans "Trim list to this range? Elements outside the range will be removed." %}');">{% trans "Trim" %}</button>
+            {% translate "Trim list to this range? Elements outside the range will be removed." as confirm_ltrim %}
+            <button type="submit" class="button btn-small" onclick="return confirm('{{ confirm_ltrim|escapejs }}');">{% trans "Trim" %}</button>
         </form>
     </div>
 </fieldset>

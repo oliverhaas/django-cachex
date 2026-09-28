@@ -71,7 +71,8 @@
                         <div class="cachex-row-actions">
                             {% if editable %}
                             <button type="submit" form="zset-update-{{ forloop.counter0 }}" class="button btn-small">{% trans "Update" %}</button>
-                            <button type="submit" form="zset-remove-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{% trans "Remove this member?" %}');">{% trans "Remove" %}</button>
+                            {% translate "Remove this member?" as confirm_zrem %}
+                            <button type="submit" form="zset-remove-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{{ confirm_zrem|escapejs }}');">{% trans "Remove" %}</button>
                             {% else %}
                             <button type="button" class="button btn-small" disabled title="{% trans "This member cannot be safely edited or matched for removal." %}">{% trans "Update" %}</button>
                             <button type="button" class="button delete-btn btn-small" disabled title="{% trans "This member cannot be safely edited or matched for removal." %}">{% trans "Remove" %}</button>

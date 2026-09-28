@@ -26,7 +26,8 @@
             {% translate "max length" as maxlen_placeholder %}
             {% translate "Max length" as maxlen_label %}
             <input type="number" name="maxlen" placeholder="{{ maxlen_placeholder }}" class="vIntegerField" style="width: 100px;" min="0" aria-label="{{ maxlen_label }}">
-            <button type="submit" class="button btn-small" onclick="return confirm('{% trans "Trim stream to this length? Older entries will be removed." %}');">{% trans "Trim" %}</button>
+            {% translate "Trim stream to this length? Older entries will be removed." as confirm_xtrim %}
+            <button type="submit" class="button btn-small" onclick="return confirm('{{ confirm_xtrim|escapejs }}');">{% trans "Trim" %}</button>
         </form>
     </div>
 </fieldset>
@@ -50,14 +51,15 @@
                 {% for entry_id, fields in type_data.entries %}
                 <tr class="{% cycle "row1" "row2" %}">
                     <td><code class="quiet">{{ entry_id }}</code></td>
-                    <td><code>{% for field, value in fields.items %}{{ field }}: {{ value }}{% if not forloop.last %}, {% endif %}{% endfor %}</code></td>
+                    <td><code>{% for field, value in fields %}{{ field }}: {{ value }}{% if not forloop.last %}, {% endif %}{% endfor %}</code></td>
                     {% if can_mutate %}
                     <td>
                         <form method="post" style="display: inline;">
                             {% csrf_token %}
                             <input type="hidden" name="action" value="xdel">
                             <input type="hidden" name="entry_id" value="{{ entry_id }}">
-                            <button type="submit" class="button delete-btn btn-small" onclick="return confirm('{% trans "Delete this entry?" %}');">{% trans "Delete" %}</button>
+                            {% translate "Delete this entry?" as confirm_xdel %}
+                            <button type="submit" class="button delete-btn btn-small" onclick="return confirm('{{ confirm_xdel|escapejs }}');">{% trans "Delete" %}</button>
                         </form>
                     </td>
                     {% endif %}

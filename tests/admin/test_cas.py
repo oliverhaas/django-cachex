@@ -6,12 +6,14 @@ import pytest
 
 from django_cachex.admin.cas import (
     cas_rename_hash_field,
+    cas_rename_zset_member,
     cas_update_hash_field,
     cas_update_list_element,
     cas_update_string,
     cas_update_zset_score,
-    get_hash_fields_with_sha1s,
+    get_hash_page_with_sha1s,
     get_list_range_with_sha1s,
+    get_set_page,
     get_string_with_sha1,
     supports_cas,
 )
@@ -31,7 +33,7 @@ def _list_sha1s(cache: RespCache, key: str) -> list[str]:
 
 
 def _hash_sha1s(cache: RespCache, key: str) -> dict[str, str]:
-    return {field: sha1 for field, _, sha1 in get_hash_fields_with_sha1s(cache, key, cache.hkeys(key))}
+    return {field: sha1 for field, _, sha1 in get_hash_page_with_sha1s(cache, key, 0, cache.hlen(key))}
 
 
 class TestSupportsCAS:
@@ -294,10 +296,10 @@ class TestValueWithSHA1Readers:
     def test_list_missing(self, test_cache: RespCache):
         assert get_list_range_with_sha1s(test_cache, "nonexistent", 0, 10) == []
 
-    def test_hash_fields(self, test_cache: RespCache):
+    def test_hash_page(self, test_cache: RespCache):
         test_cache.hset("pair_hash", mapping={"f1": "v1", "f2": 2, "f3": "v3"})
-        triples = get_hash_fields_with_sha1s(test_cache, "pair_hash", ["f1", "missing", "f2"])
-        assert [(f, v) for f, v, _ in triples] == [("f1", "v1"), ("f2", 2)]
+        triples = get_hash_page_with_sha1s(test_cache, "pair_hash", 1, 2)
+        assert [(f, v) for f, v, _ in triples] == [("f2", 2), ("f3", "v3")]
         assert all(len(s) == 40 for _, _, s in triples)
 
     def test_hash_field_sha1_follows_the_value(self, test_cache: RespCache):
@@ -307,9 +309,64 @@ class TestValueWithSHA1Readers:
         test_cache.hset("pair_hash", "f1", "v2")
         assert _hash_sha1s(test_cache, "pair_hash")["f1"] != first
 
-    def test_hash_empty_fields(self, test_cache: RespCache):
+    def test_hash_page_beyond_length(self, test_cache: RespCache):
         test_cache.hset("pair_hash", "f1", "v1")
-        assert get_hash_fields_with_sha1s(test_cache, "pair_hash", []) == []
+        assert get_hash_page_with_sha1s(test_cache, "pair_hash", 1, 10) == []
 
     def test_hash_missing_key(self, test_cache: RespCache):
-        assert get_hash_fields_with_sha1s(test_cache, "nonexistent", ["f1"]) == []
+        assert get_hash_page_with_sha1s(test_cache, "nonexistent", 0, 10) == []
+
+
+def test_zset_rename_moves_the_member(test_cache: RespCache):
+    test_cache.zadd("cas_zrename", {"alpha": 1.0, "other": 5.0})
+
+    assert cas_rename_zset_member(test_cache, "cas_zrename", "alpha", "beta", "1", 2.5) == 1
+    assert test_cache.zrange("cas_zrename", 0, -1, withscores=True) == [("beta", 2.5), ("other", 5.0)]
+
+
+def test_zset_rename_after_a_score_change_is_a_conflict(test_cache: RespCache):
+    test_cache.zadd("cas_zrename", {"alpha": 3.0})
+
+    assert cas_rename_zset_member(test_cache, "cas_zrename", "alpha", "beta", "1", 2.5) == 0
+    assert test_cache.zrange("cas_zrename", 0, -1, withscores=True) == [("alpha", 3.0)]
+
+
+def test_zset_rename_of_a_missing_member_is_gone(test_cache: RespCache):
+    test_cache.zadd("cas_zrename", {"other": 5.0})
+
+    assert cas_rename_zset_member(test_cache, "cas_zrename", "alpha", "beta", "1", 2.5) == -1
+    assert test_cache.zrange("cas_zrename", 0, -1, withscores=True) == [("other", 5.0)]
+
+
+def test_zset_rename_onto_an_existing_member_is_refused(test_cache: RespCache):
+    test_cache.zadd("cas_zrename", {"alpha": 1.0, "beta": 2.0})
+
+    assert cas_rename_zset_member(test_cache, "cas_zrename", "alpha", "beta", "1", 9.0) == -2
+    assert test_cache.zrange("cas_zrename", 0, -1, withscores=True) == [("alpha", 1.0), ("beta", 2.0)]
+
+
+def test_hash_pages_carry_the_walk_across_script_calls(test_cache: RespCache, mocker):
+    mocker.patch("django_cachex.admin.cas._WALK_BUDGET", 50)
+    # Values past hash-max-listpack-value keep the hash out of listpack, so HSCAN walks it in steps.
+    fields = {f"f{i:04d}": f"v{i}-" + "x" * 64 for i in range(300)}
+    test_cache.hset("walk_hash", mapping=fields)
+    walk = mocker.patch.object(test_cache, "eval_script", side_effect=test_cache.eval_script)
+
+    pages = [get_hash_page_with_sha1s(test_cache, "walk_hash", start, 100) for start in (0, 100, 200)]
+
+    assert walk.call_count > len(pages)
+    assert [len(page) for page in pages] == [100, 100, 100]
+    assert {field: value for page in pages for field, value, _ in page} == fields
+
+
+def test_set_pages_carry_the_walk_across_script_calls(test_cache: RespCache, mocker):
+    mocker.patch("django_cachex.admin.cas._WALK_BUDGET", 50)
+    members = {f"m{i:04d}" for i in range(300)}
+    test_cache.sadd("walk_set", *members)
+    walk = mocker.patch.object(test_cache, "eval_script", side_effect=test_cache.eval_script)
+
+    pages = [get_set_page(test_cache, "walk_set", start, 100) for start in (0, 100, 200, 300)]
+
+    assert walk.call_count > len(pages)
+    assert [len(page) for page in pages] == [100, 100, 100, 0]
+    assert set().union(*pages) == members

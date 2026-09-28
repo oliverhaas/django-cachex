@@ -13,8 +13,9 @@ from django.core.cache import caches
 from django.utils.translation import gettext_lazy as _
 
 from django_cachex.admin.cas import (
-    get_hash_fields_with_sha1s,
+    get_hash_page_with_sha1s,
     get_list_range_with_sha1s,
+    get_set_page,
     get_string_with_sha1,
     supports_cas,
 )
@@ -384,7 +385,11 @@ def _zset_rows(entries: Any) -> list[tuple[str, float, bool]]:
 
 
 def _fetch_stream_data(cache: Any, key: str, *, page: int) -> dict[str, Any]:
-    """Fetch one page of stream entries."""
+    """Fetch one page of stream entries as ``(entry_id, [(field, value), ...])`` rows.
+
+    XRANGE has no offset, so a page past the midpoint is read back from the
+    tail with XREVRANGE, and no page reads more than about half the stream.
+    """
     if not hasattr(cache, "xrange"):
         # Falling through would return {} and render "Stream is empty",
         # which is a different claim entirely.
@@ -395,9 +400,14 @@ def _fetch_stream_data(cache: Any, key: str, *, page: int) -> dict[str, Any]:
         # XRANGE rejects COUNT 0, which is what an empty stream asks for once
         # its last entry has been deleted.
         return {"entries": [], "length": 0, "pagination": pagination}
-    # Fetch up to page*PAGE_SIZE entries and slice to the last page
-    entries = cache.xrange(key, count=pagination["end_index"])
-    return {"entries": entries[pagination["start_index"] :], "length": length, "pagination": pagination}
+    start, end = pagination["start_index"], pagination["end_index"]
+    if end <= length - start:
+        entries = cache.xrange(key, count=end)[start:]
+    else:
+        entries = cache.xrevrange(key, count=length - start)[::-1][: end - start]
+    # Pairs rather than the dict: a field named "items" would shadow dict.items in the template.
+    rows = [(entry_id, list(fields.items())) for entry_id, fields in entries]
+    return {"entries": rows, "length": length, "pagination": pagination}
 
 
 def _list_entries(cache: Any, key: str, start: int, stop: int) -> list[tuple[Any, str]]:
@@ -417,25 +427,53 @@ def _list_entries(cache: Any, key: str, start: int, stop: int) -> list[tuple[Any
     return [(raw, "") for raw in cache.lrange(key, start, stop)]
 
 
-def _hash_entries(cache: Any, key: str, fields: list[str]) -> list[tuple[str, Any, str]]:
-    """The given hash fields as ``(field, raw, sha1)`` triples. See :func:`_list_entries`."""
-    if not fields:
-        return []
+def _hash_entries(cache: Any, key: str, start: int, stop: int) -> list[tuple[str, Any, str]]:
+    """One page of hash fields as ``(field, raw, sha1)`` triples. See :func:`_list_entries`.
+
+    Without scripting, the page's field names come from HKEYS.
+    """
     if supports_cas(cache):
         try:
-            return get_hash_fields_with_sha1s(cache, key, fields)
+            return get_hash_page_with_sha1s(cache, key, start, stop - start)
         except CompressorError, SerializerError:
             raise
         except Exception:  # noqa: BLE001
             _log_cas_fallback(key, KeyType.HASH)
+    fields = [str(f) for f in cache.hkeys(key)][start:stop]
+    if not fields:
+        return []
     return [(field, raw, "") for field, raw in zip(fields, cache.hmget(key, *fields), strict=True)]
+
+
+def _set_page(cache: Any, key: str, start: int, stop: int) -> list[tuple[str, bool]]:
+    """One page of set members, formatted for display.
+
+    Without scripting, RESP walks SSCAN from the client. LocMem and Database
+    have no SSCAN, so their members are sorted for a stable page order.
+    """
+    if supports_cas(cache):
+        try:
+            return [format_value_for_display(m) for m in get_set_page(cache, key, start, stop - start)]
+        except CompressorError, SerializerError:
+            raise
+        except Exception:
+            logger.warning("Set page script failed for key %r; paging with SSCAN instead", key, exc_info=True)
+    try:
+        # Server order is only stable while the set is unchanged, so writes can shift pages.
+        page_members = itertools.islice(cache.sscan_iter(key, count=PAGE_SIZE), start, stop)
+        return [format_value_for_display(m) for m in page_members]
+    except NotSupportedError:
+        return sorted(format_value_for_display(m) for m in cache.smembers(key))[start:stop]
 
 
 def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> dict[str, Any]:  # noqa: PLR0911
     """Fetch type-specific data from cache, paginated.
 
-    Only the requested page travels: lists and sorted sets are ranged, a hash
-    is read through HKEYS plus the page's fields, a set through SSCAN.
+    Lists and sorted sets read only the page. A stream reads from its nearer
+    end, so a middle page reads about half the stream. Hashes and sets have no
+    offset: on RESP a script walks HSCAN or SSCAN past the earlier pages in
+    bounded steps and returns only the page, while LocMem and Database slice
+    their HKEYS or SMEMBERS.
     """
     try:
         match key_type:
@@ -452,24 +490,15 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
             case KeyType.HASH:
                 length = cache.hlen(key)
                 pagination = _paginate(length, page)
-                s, e = pagination["start_index"], pagination["end_index"]
-                fields = [str(f) for f in cache.hkeys(key)][s:e]
                 field_entries = []
-                for field, raw, sha1 in _hash_entries(cache, key, fields):
+                for field, raw, sha1 in _hash_entries(cache, key, pagination["start_index"], pagination["end_index"]):
                     value, editable = format_value_for_display(raw)
                     field_entries.append((field, value, sha1, editable))
                 return {"length": length, "pagination": pagination, "field_entries": field_entries}
             case KeyType.SET:
                 length = cache.scard(key)
                 pagination = _paginate(length, page)
-                s, e = pagination["start_index"], pagination["end_index"]
-                try:
-                    # SSCAN stops once the page is full; server order is only
-                    # stable while the set is unchanged, so writes can shift pages.
-                    page_members = list(itertools.islice(cache.sscan_iter(key, count=PAGE_SIZE), s, e))
-                    members = [format_value_for_display(m) for m in page_members]
-                except NotSupportedError:
-                    members = sorted(format_value_for_display(m) for m in cache.smembers(key))[s:e]
+                members = _set_page(cache, key, pagination["start_index"], pagination["end_index"])
                 return {"members": members, "length": length, "pagination": pagination}
             case KeyType.ZSET:
                 length = cache.zcard(key)

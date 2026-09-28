@@ -23,7 +23,8 @@
             {% csrf_token %}
             <input type="hidden" name="action" value="spop">
             <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" aria-label="{% trans "Count" %}">
-            <button type="submit" class="button btn-small" onclick="return confirm('{% trans "Pop random members? They will be removed from the set." %}');">{% trans "Random" %}</button>
+            {% translate "Pop random members? They will be removed from the set." as confirm_spop %}
+            <button type="submit" class="button btn-small" onclick="return confirm('{{ confirm_spop|escapejs }}');">{% trans "Random" %}</button>
         </form>
     </div>
 </fieldset>
@@ -51,7 +52,8 @@
                         <div class="cachex-row-actions">
                             {% if editable %}
                             <button type="submit" form="set-update-{{ forloop.counter0 }}" class="button btn-small">{% trans "Update" %}</button>
-                            <button type="submit" form="set-remove-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{% trans "Remove this member?" %}');">{% trans "Remove" %}</button>
+                            {% translate "Remove this member?" as confirm_srem %}
+                            <button type="submit" form="set-remove-{{ forloop.counter0 }}" class="button delete-btn btn-small" onclick="return confirm('{{ confirm_srem|escapejs }}');">{% trans "Remove" %}</button>
                             {% else %}
                             <button type="button" class="button btn-small" disabled title="{% trans "Not JSON-serializable, so this member cannot be edited or matched for removal." %}">{% trans "Update" %}</button>
                             <button type="button" class="button delete-btn btn-small" disabled title="{% trans "Not JSON-serializable, so this member cannot be edited or matched for removal." %}">{% trans "Remove" %}</button>

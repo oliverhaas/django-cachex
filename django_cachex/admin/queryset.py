@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.admin import ShowFacets
+from django.contrib.admin.views.main import ERROR_FLAG, PAGE_VAR
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseRedirect
 from django.urls import reverse
@@ -732,6 +733,12 @@ class KeyAdminMixin:
         for key in ("cursor", "count", "help"):
             mutable.pop(key, None)
         request.GET = mutable  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+
+        # Built here: in the template, ``cl.params.items`` would resolve a ``?items=`` param.
+        carried = mutable.copy()
+        for key in ("cache", PAGE_VAR, ERROR_FLAG):
+            carried.pop(key, None)
+        extra_context["pagination_query"] = carried.urlencode()
 
         return super().changelist_view(request, extra_context)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
 
