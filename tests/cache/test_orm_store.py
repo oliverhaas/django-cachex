@@ -59,7 +59,6 @@ class TestOrmStore:
         assert len(generations) == len(TABLES)
         assert all(generation.isdigit() for generation in generations)
         assert store.generations(DB, TABLES) == generations
-        # A lookup reads the same generations.
         assert store.lookup(DB, "query", TABLES).token == ":".join(generations).encode()
 
     def test_lease(self, cache: RespCache):

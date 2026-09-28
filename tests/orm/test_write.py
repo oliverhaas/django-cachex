@@ -884,8 +884,6 @@ class WriteTestCase(TestUtilsMixin, FilteredTransactionTestCase):
         with self.assertNumQueries(1), connection.cursor() as cursor:
             cursor.execute("DROP TABLE ormtest_test;")
 
-        # The table no longer exists, so an error should be raised
-        # after querying it.
         with self.assertRaises((ProgrammingError, OperationalError)), self.assertNumQueries(1):
             self.assertListEqual(list(Test.objects.all()), [])
 

@@ -22,8 +22,7 @@ class MultiDatabaseTestCase(TransactionTestCase):
         connection2 = connections[self.db_alias2]
         self.is_sqlite2 = connection2.vendor == "sqlite"
         if connection2.vendor == "postgresql":
-            # We need to reopen the connection or Django
-            # will execute an extra SQL request below.
+            # Reopen the connection now, or Django runs an extra SQL query below.
             connection2.cursor()
 
     def test_read(self):

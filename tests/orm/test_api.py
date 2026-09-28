@@ -5,7 +5,7 @@ from io import StringIO
 from unittest import skipIf
 
 from django.conf import settings
-from django.contrib.auth.models import Permission, User
+from django.contrib.auth.models import User
 from django.core.cache import DEFAULT_CACHE_ALIAS
 from django.core.management import CommandError, call_command
 from django.db import DEFAULT_DB_ALIAS, connection, transaction
@@ -23,9 +23,6 @@ class APITestCase(TestUtilsMixin, TransactionTestCase):
         super().setUp()
         self.t1 = Test.objects.create(name="test1")
         self.cache_alias2 = next(alias for alias in settings.CACHES if alias != DEFAULT_CACHE_ALIAS)
-        # For the orm_cache_disabled tests
-        self.user = User.objects.create_user("user")
-        self.t1__permission = Permission.objects.order_by("?").select_related("content_type")[0]
 
     def test_invalidate_tables(self):
         with self.assertNumQueries(1):

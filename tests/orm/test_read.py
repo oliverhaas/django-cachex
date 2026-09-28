@@ -562,7 +562,6 @@ class ReadTestCase(TestUtilsMixin, FilteredTransactionTestCase):
 
     @all_final_sql_checks
     def test_select_related(self):
-        # Simple select_related
         with self.assertNumQueries(1):
             t1 = Test.objects.select_related("owner").get(name="test1")
             self.assertEqual(t1.owner, self.user)
@@ -572,7 +571,6 @@ class ReadTestCase(TestUtilsMixin, FilteredTransactionTestCase):
         self.assertEqual(t2, t1)
         self.assertEqual(t2, self.t1)
 
-        # Select_related through a foreign key
         with self.assertNumQueries(1):
             t3 = Test.objects.select_related("permission__content_type")[0]
             self.assertEqual(t3.permission, self.t1.permission)
@@ -586,7 +584,6 @@ class ReadTestCase(TestUtilsMixin, FilteredTransactionTestCase):
 
     @all_final_sql_checks
     def test_prefetch_related(self):
-        # Simple prefetch_related
         with self.assertNumQueries(2):
             data1 = list(User.objects.prefetch_related("user_permissions"))
         with self.assertNumQueries(0):
@@ -621,7 +618,6 @@ class ReadTestCase(TestUtilsMixin, FilteredTransactionTestCase):
         self.assertListEqual(permissions6, permissions5)
         self.assertListEqual(permissions6, self.user__permissions)
 
-        # Prefetch_related through a many to many
         with self.assertNumQueries(2):
             data7 = list(Test.objects.select_related("owner").prefetch_related("owner__groups__permissions"))
         with self.assertNumQueries(0):

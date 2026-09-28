@@ -69,8 +69,7 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
 
         Test.objects.create(name="test")
 
-        # Only the `CACHE` alias is invalidated, so changing the database should
-        # not invalidate all caches.
+        # The write invalidated the tables only in the `CACHE` alias it ran under.
         with override_orm_settings(CACHE=other_cache_alias):
             self.assert_query_cached(qs, before=0)
 
@@ -125,8 +124,6 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
             with self.assertNumQueries(1):
                 list(qs.all())
 
-        # We have to test with a full second and not a shorter time because
-        # memcached only takes the integer part of the timeout into account.
         with override_orm_settings(TIMEOUT=1):
             self.assert_query_cached(qs)
             sleep(1)
@@ -199,13 +196,10 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
         with override_orm_settings(ONLY_CACHABLE_TABLES=("ormtest_test", "ormtest_testchild", "auth_user")):
             self.assert_query_cached(Test.objects.select_related("owner"))
 
-            # TestChild uses multi-table inheritance, and since its parent,
-            # 'ormtest_testparent', is not cachable, a basic
-            # TestChild query can't be cached
+            # A TestChild query also reads the table of its parent, which is not listed.
             self.assert_query_cached(TestChild.objects.all(), after=1)
 
-            # However, if we only fetch data from the 'ormtest_testchild'
-            # table, it's cachable.
+            # This one reads only the table of TestChild.
             self.assert_query_cached(TestChild.objects.values("public"))
 
     @override_orm_settings(ONLY_CACHABLE_APPS=("ormtest",))
@@ -392,7 +386,6 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
                 id="cachex_orm.E007",
             )
 
-        # ("django_session") is a string, not a tuple.
         with override_orm_settings(
             UNCACHABLE_TABLES="django_session",
             UNCACHABLE_APPS="ormtest",

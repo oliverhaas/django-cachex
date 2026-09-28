@@ -39,7 +39,6 @@ if TEST_DB not in {"sqlite", "postgresql"}:
 
 DATABASES: dict[str, dict[str, Any]] = {
     "default": _POSTGRESQL if TEST_DB == "postgresql" else _SQLITE,
-    # A second database for the multi-database tests.
     "second": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"},
 }
 DATABASE_ROUTERS = ["tests.orm.router.PostgresRouter"]

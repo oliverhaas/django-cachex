@@ -157,8 +157,7 @@ class PostgresReadTestCase(TestUtilsMixin, TransactionTestCase):
 
         self.assertListEqual(list(qs.all()), [[1, 2, 3], [4, None, 6]])
 
-        # Upstream mutated django.contrib.postgres's removed JSONField here;
-        # hstore values are mutable dicts too.
+        # hstore values are mutable dicts.
         qs = PostgresModel.objects.values_list("hstore", flat=True)
 
         data = list(qs.all())
