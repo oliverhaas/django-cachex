@@ -1,117 +1,84 @@
 # Derived from django-cachalot 2.9.1 (BSD-3-Clause, Copyright (c) 2014-2016
 # Bertrand Bordage); see django_cachex/orm/LICENSE.
 
-from unittest import skipIf
+from types import SimpleNamespace
 
-from django.conf import settings
-from django.db import DEFAULT_DB_ALIAS, connections, transaction
-from django.test import TransactionTestCase
+import pytest
+from django.db import transaction
 
 from tests.orm.app.models import Test
+from tests.orm.utils import assert_num_queries
+
+pytestmark = pytest.mark.django_db(transaction=True, databases="__all__")
 
 
-@skipIf(len(settings.DATABASES) == 1, "We can't change the DB used since there's only one configured")
-class MultiDatabaseTestCase(TransactionTestCase):
-    multi_db = True
-    databases = "__all__"
+@pytest.fixture(autouse=True)
+def rows():
+    return SimpleNamespace(t1=Test.objects.create(name="test1"), t2=Test.objects.create(name="test2"))
 
-    def setUp(self):
-        self.t1 = Test.objects.create(name="test1")
-        self.t2 = Test.objects.create(name="test2")
-        self.db_alias2 = next(alias for alias in settings.DATABASES if alias != DEFAULT_DB_ALIAS)
-        connection2 = connections[self.db_alias2]
-        self.is_sqlite2 = connection2.vendor == "sqlite"
-        if connection2.vendor == "postgresql":
-            # Reopen the connection now, or Django runs an extra SQL query below.
-            connection2.cursor()
 
-    def test_read(self):
-        with self.assertNumQueries(1):
-            data1 = list(Test.objects.all())
-            self.assertListEqual(data1, [self.t1, self.t2])
+def test_read(rows):
+    with assert_num_queries(1):
+        assert list(Test.objects.all()) == [rows.t1, rows.t2]
 
-        with self.assertNumQueries(1, using=self.db_alias2):
-            data2 = list(Test.objects.using(self.db_alias2))
-            self.assertListEqual(data2, [])
+    with assert_num_queries(1, using="second"):
+        assert list(Test.objects.using("second")) == []
 
-        with self.assertNumQueries(0, using=self.db_alias2):
-            data3 = list(Test.objects.using(self.db_alias2))
-            self.assertListEqual(data3, [])
+    with assert_num_queries(0, using="second"):
+        assert list(Test.objects.using("second")) == []
 
-    def test_invalidate_other_db(self):
-        """
-        Tests if the non-default database is invalidated when modified.
-        """
-        with self.assertNumQueries(1, using=self.db_alias2):
-            data1 = list(Test.objects.using(self.db_alias2))
-            self.assertListEqual(data1, [])
 
-        with self.assertNumQueries(1, using=self.db_alias2):
-            t3 = Test.objects.using(self.db_alias2).create(name="test3")
+def test_invalidate_other_db():
+    """The non-default database is invalidated when modified."""
+    with assert_num_queries(1, using="second"):
+        assert list(Test.objects.using("second")) == []
 
-        with self.assertNumQueries(1, using=self.db_alias2):
-            data2 = list(Test.objects.using(self.db_alias2))
-            self.assertListEqual(data2, [t3])
+    with assert_num_queries(1, using="second"):
+        t3 = Test.objects.using("second").create(name="test3")
 
-    def test_invalidation_independence(self):
-        """
-        Tests if invalidation doesn't affect the unmodified databases.
-        """
-        with self.assertNumQueries(1):
-            data1 = list(Test.objects.all())
-            self.assertListEqual(data1, [self.t1, self.t2])
+    with assert_num_queries(1, using="second"):
+        assert list(Test.objects.using("second")) == [t3]
 
-        with self.assertNumQueries(1, using=self.db_alias2):
-            Test.objects.using(self.db_alias2).create(name="test3")
 
-        with self.assertNumQueries(0):
-            data2 = list(Test.objects.all())
-            self.assertListEqual(data2, [self.t1, self.t2])
+def test_invalidation_independence(rows):
+    """Invalidation doesn't affect the unmodified databases."""
+    with assert_num_queries(1):
+        assert list(Test.objects.all()) == [rows.t1, rows.t2]
 
-    def test_heterogeneous_atomics(self):
-        """
-        Checks that an atomic block for a database nested inside
-        another atomic block for another database has no impact on their
-        caching.
-        """
-        with transaction.atomic():
-            with transaction.atomic(self.db_alias2):
-                with self.assertNumQueries(1):
-                    data1 = list(Test.objects.all())
-                    self.assertListEqual(data1, [self.t1, self.t2])
-                with self.assertNumQueries(1, using=self.db_alias2):
-                    data2 = list(Test.objects.using(self.db_alias2))
-                    self.assertListEqual(data2, [])
-                t3 = Test.objects.using(self.db_alias2).create(name="test3")
-                with self.assertNumQueries(1, using=self.db_alias2):
-                    data3 = list(Test.objects.using(self.db_alias2))
-                    self.assertListEqual(data3, [t3])
+    with assert_num_queries(1, using="second"):
+        Test.objects.using("second").create(name="test3")
 
-            with self.assertNumQueries(0):
-                data4 = list(Test.objects.all())
-                self.assertListEqual(data4, [self.t1, self.t2])
+    with assert_num_queries(0):
+        assert list(Test.objects.all()) == [rows.t1, rows.t2]
 
-            with self.assertNumQueries(1):
-                data5 = list(Test.objects.filter(name="test3"))
-                self.assertListEqual(data5, [])
 
-    def test_heterogeneous_atomics_independence(self):
-        """
-        Checks that interrupting an atomic block after the commit of another
-        atomic block for another database nested inside it
-        correctly invalidates the cache for the committed transaction.
-        """
-        with self.assertNumQueries(1, using=self.db_alias2):
-            data1 = list(Test.objects.using(self.db_alias2))
-            self.assertListEqual(data1, [])
+def test_heterogeneous_atomics(rows):
+    """An atomic block for one database nested in an atomic block for another does not affect their caching."""
+    with transaction.atomic():
+        with transaction.atomic("second"):
+            with assert_num_queries(1):
+                assert list(Test.objects.all()) == [rows.t1, rows.t2]
+            with assert_num_queries(1, using="second"):
+                assert list(Test.objects.using("second")) == []
+            t3 = Test.objects.using("second").create(name="test3")
+            with assert_num_queries(1, using="second"):
+                assert list(Test.objects.using("second")) == [t3]
 
-        try:
-            with transaction.atomic():
-                with transaction.atomic(self.db_alias2):
-                    t3 = Test.objects.using(self.db_alias2).create(name="test3")
-                raise ZeroDivisionError
-        except ZeroDivisionError:
-            pass
-        with self.assertNumQueries(1, using=self.db_alias2):
-            data2 = list(Test.objects.using(self.db_alias2))
-            self.assertListEqual(data2, [t3])
+        with assert_num_queries(0):
+            assert list(Test.objects.all()) == [rows.t1, rows.t2]
+
+        with assert_num_queries(1):
+            assert list(Test.objects.filter(name="test3")) == []
+
+
+def test_heterogeneous_atomics_independence():
+    """Rolling back an atomic block still invalidates what a nested atomic block for another database committed."""
+    with assert_num_queries(1, using="second"):
+        assert list(Test.objects.using("second")) == []
+
+    with pytest.raises(ZeroDivisionError), transaction.atomic():
+        with transaction.atomic("second"):
+            t3 = Test.objects.using("second").create(name="test3")
+        raise ZeroDivisionError
+    with assert_num_queries(1, using="second"):
+        assert list(Test.objects.using("second")) == [t3]

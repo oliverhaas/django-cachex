@@ -3,7 +3,7 @@ from django.db.models import SET_NULL, CharField, ForeignKey, Model, Q, UniqueCo
 
 
 class TestModel(Model):
-    __test__ = False  # Not a pytest test class.
+    __test__ = False
 
     name = CharField(max_length=20)
     owner = ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=SET_NULL)

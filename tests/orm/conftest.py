@@ -8,6 +8,7 @@ import pytest
 from django.conf import settings
 
 from tests.fixtures.containers import REDIS_IMAGE
+from tests.orm.utils import override_orm_settings
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -61,3 +62,10 @@ def django_db_modify_db_settings(
     os.environ["CACHEX_ORM_TEST_REDIS_URL"] = location
     for alias in redis_aliases:
         settings.CACHES[alias]["LOCATION"] = location
+
+
+@pytest.fixture(params=[True, False], ids=["final_sql_check", "no_final_sql_check"])
+def final_sql_check(request: pytest.FixtureRequest) -> Generator[bool]:
+    """Run the test with the ``FINAL_SQL_CHECK`` setting on, then off."""
+    with override_orm_settings(FINAL_SQL_CHECK=request.param):
+        yield request.param

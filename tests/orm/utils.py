@@ -3,22 +3,24 @@
 # Derived from django-cachalot 2.9.1 (BSD-3-Clause, Copyright (c) 2014-2016
 # Bertrand Bordage); see django_cachex/orm/LICENSE.
 
-from functools import wraps
-from typing import Any
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
-from django.core.cache import caches
-from django.core.management.color import no_style
-from django.db import DEFAULT_DB_ALIAS, connection, connections, transaction
+from django.db import DEFAULT_DB_ALIAS, connections
 from django.db.models.sql.constants import MULTI
-from django.test import TransactionTestCase
 from django.test.utils import CaptureQueriesContext, override_settings
 
 from django_cachex.orm.settings import orm_settings
 from django_cachex.orm.store import LocMemStore, RespStore, _entry_key, _generation_key, get_store
 from django_cachex.orm.utils import _get_tables
 from django_cachex.script import keys_only_pre
-from tests.orm.app.models import PostgresModel
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+# Django logs these as queries, but they read nothing.
+_TRANSACTION_CONTROL = frozenset({"BEGIN", "COMMIT", "ROLLBACK"})
 
 
 class override_orm_settings(override_settings):  # noqa: N801
@@ -37,103 +39,41 @@ class override_orm_settings(override_settings):  # noqa: N801
         super().enable()
 
 
-class TestUtilsMixin:
-    def setUp(self):
-        self.is_sqlite = connection.vendor == "sqlite"
-        self.is_postgresql = connection.vendor == "postgresql"
-        self.force_reopen_connection()
+@contextmanager
+def assert_num_queries(num: int, using: str = DEFAULT_DB_ALIAS) -> Iterator[CaptureQueriesContext]:
+    """Assert that the block runs ``num`` queries on ``using``, not counting BEGIN, COMMIT and ROLLBACK."""
+    with CaptureQueriesContext(connections[using]) as context:
+        yield context
+    queries = [query["sql"] for query in context.captured_queries if query["sql"].upper() not in _TRANSACTION_CONTROL]
+    listed = "".join(f"\n{number}. {sql}" for number, sql in enumerate(queries, start=1))
+    assert len(queries) == num, f"{len(queries)} queries ran on {context.connection.vendor}, {num} expected:{listed}"
 
-    # The flush of TransactionTestCase misses PostgresModel: https://code.djangoproject.com/ticket/29494
-    def tearDown(self):
-        if connection.vendor == "postgresql":
-            flush_sql_list = connection.ops.sql_flush(no_style(), (PostgresModel._meta.db_table,))
-            with transaction.atomic():
-                for sql in flush_sql_list:
-                    with connection.cursor() as cursor:
-                        cursor.execute(sql)
 
-    def force_reopen_connection(self):
-        if connection.vendor == "postgresql":
-            # Reopen the connection now, or Django runs an extra SQL query below.
-            connection.cursor()
+def assert_tables(queryset: Any, *tables: Any) -> None:
+    """Assert that the ORM cache finds ``queryset`` reading ``tables``, given as models or table names."""
+    expected = {table if isinstance(table, str) else table._meta.db_table for table in tables}
+    # Compiled first, as the ORM cache does: compiling joins the tables the ordering needs.
+    queryset.query.get_compiler(queryset.db).as_sql()
+    assert _get_tables(queryset.db, queryset.query) == expected, str(queryset.query)
 
-    def assert_tables(self, queryset, *tables):
-        tables = {table if isinstance(table, str) else table._meta.db_table for table in tables}
-        self.assertSetEqual(_get_tables(queryset.db, queryset.query), tables, str(queryset.query))
 
-    def assert_query_cached(self, queryset, result=None, result_type=None, compare_results=True, before=1, after=0):
-        if result_type is None:
-            result_type = list if result is None else type(result)
-        with self.assertNumQueries(before):
-            data1 = queryset.all()
-            if result_type is list:
-                data1 = list(data1)
-        with self.assertNumQueries(after):
-            data2 = queryset.all()
-            if result_type is list:
-                data2 = list(data2)
-        if not compare_results:
-            return
-        assert_functions = {
-            list: self.assertListEqual,
-            set: self.assertSetEqual,
-            dict: self.assertDictEqual,
-        }
-        assert_function = assert_functions.get(result_type, self.assertEqual)
-        assert_function(data2, data1)
+def assert_query_cached(
+    queryset: Any,
+    result: list[Any] | None = None,
+    *,
+    before: int = 1,
+    after: int = 0,
+    compare_results: bool = True,
+) -> None:
+    """Evaluate ``queryset`` twice, running ``before`` queries the first time and ``after`` the second."""
+    with assert_num_queries(before, using=queryset.db):
+        first = list(queryset.all())
+    with assert_num_queries(after, using=queryset.db):
+        second = list(queryset.all())
+    if compare_results:
+        assert second == first
         if result is not None:
-            assert_function(data2, result)
-
-
-class FilteredTransactionTestCase(TransactionTestCase):
-    """TransactionTestCase whose assertNumQueries ignores BEGIN, COMMIT and ROLLBACK."""
-
-    def assertNumQueries(self, num, func=None, *args, using=DEFAULT_DB_ALIAS, **kwargs):  # noqa: N802
-        conn = connections[using]
-
-        context = FilteredAssertNumQueriesContext(self, num, conn)
-        if func is None:
-            return context
-
-        with context:
-            func(*args, **kwargs)
-        return None
-
-
-class FilteredAssertNumQueriesContext(CaptureQueriesContext):
-    """Capture queries and assert their number, ignoring BEGIN, COMMIT and ROLLBACK."""
-
-    EXCLUDE = ("BEGIN", "COMMIT", "ROLLBACK")
-
-    def __init__(self, test_case, num, connection):
-        self.test_case = test_case
-        self.num = num
-        super().__init__(connection)
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        super().__exit__(exc_type, exc_value, traceback)
-        if exc_type is not None:
-            return
-
-        filtered_queries = []
-        excluded_queries = []
-        for q in self.captured_queries:
-            if q["sql"].upper() not in self.EXCLUDE:
-                filtered_queries.append(q)
-            else:
-                excluded_queries.append(q)
-
-        executed = len(filtered_queries)
-
-        self.test_case.assertEqual(
-            executed,
-            self.num,
-            f"\n{executed} queries executed on {self.connection.vendor}, {self.num} expected\n"
-            "\nCaptured queries were:\n"
-            + "".join(f"{i}. {query['sql']}\n" for i, query in enumerate(filtered_queries, start=1))
-            + "\nCaptured queries, that were excluded:\n"
-            + "".join(f"{i}. {query['sql']}\n" for i, query in enumerate(excluded_queries, start=1)),
-        )
+            assert second == result
 
 
 def orm_store() -> Any:
@@ -173,43 +113,3 @@ def corrupt_entry(queryset: Any) -> None:
     if store.local is not None:
         generations, _ = store.local.entries[entry_key]
         store.local.entries[entry_key] = (generations, b"garbage")
-
-
-def all_final_sql_checks(func):
-    """Run the test twice, with ``FINAL_SQL_CHECK`` on and off."""
-
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
-        for final_sql_check in (True, False):
-            with (
-                self.subTest(msg=f"FINAL_SQL_CHECK = {final_sql_check}"),
-                override_orm_settings(
-                    FINAL_SQL_CHECK=final_sql_check,
-                ),
-            ):
-                func(self, *args, **kwargs)
-            caches["default"].clear()
-
-    return wrapper
-
-
-def no_final_sql_check(func):
-    """Run the test with ``FINAL_SQL_CHECK`` off."""
-
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
-        with override_orm_settings(FINAL_SQL_CHECK=False):
-            func(self, *args, **kwargs)
-
-    return wrapper
-
-
-def with_final_sql_check(func):
-    """Run the test with ``FINAL_SQL_CHECK`` on."""
-
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
-        with override_orm_settings(FINAL_SQL_CHECK=True):
-            func(self, *args, **kwargs)
-
-    return wrapper

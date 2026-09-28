@@ -158,17 +158,12 @@ suppress-none-returning = true # Don't require -> None on functions
   "S311",   # random is fine for tests
 ]
 "tests/orm/**" = [
-  # The ORM cache tests derive from django-cachalot's unittest-style suite.
   "B018",   # Querysets are evaluated for the queries they run
   "DTZ001", # The ORM test settings run with USE_TZ = False
-  "E741",   # Ported tests name lists `l`
-  "PT009",  # Django test cases use unittest assertions
-  "PT027",  # and assertRaises
+  "PT012",  # Raising inside atomic() is how the tests roll back
   "RUF012", # Django migrations and model Meta classes use mutable class attributes
   "S608",   # Raw SQL statements are what the tests exercise
   "S610",   # and so is QuerySet.extra()
-  "TRY301", # Raising inside atomic() is how the tests roll back
-  "UP031",  # Ported tests build raw SQL with %-formatting
 ]
 "benchmarks/**" = [
   "ANN",     # Type annotations not required in benchmarks

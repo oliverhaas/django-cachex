@@ -4,42 +4,24 @@ import os
 import subprocess
 import sys
 import time
-from contextlib import ExitStack, contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING
-from unittest import skipUnless
-from unittest.mock import patch
 
 import pytest
 from django.conf import settings
 from django.core.cache import DEFAULT_CACHE_ALIAS
 from django.db import connection
-from django.test import TransactionTestCase
 
 from tests.orm.app.models import Test
-from tests.orm.utils import TestUtilsMixin
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+pytestmark = pytest.mark.django_db(transaction=True)
 
-@contextmanager
-def skewed_clock(offset: float) -> Iterator[None]:
-    """Make the wall clock of this process run ``offset`` seconds off."""
-    real_time = time.time
-
-    def skewed_time() -> float:
-        return real_time() + offset
-
-    with ExitStack() as stack:
-        stack.enter_context(patch("time.time", skewed_time))
-        # Modules that did `from time import time` hold the real function.
-        for name, module in list(sys.modules.items()):
-            if name.startswith("django_cachex") and getattr(module, "time", None) is real_time:
-                stack.enter_context(patch.object(module, "time", skewed_time))
-        yield
+needs_shared_backends = pytest.mark.skipif(
+    connection.vendor != "postgresql"
+    or settings.CACHES[DEFAULT_CACHE_ALIAS]["BACKEND"] == "django_cachex.cache.LocMemCache",
+    reason="needs a database and a cache shared between processes",
+)
 
 
 def run_in_other_process(*args: str) -> str:
@@ -59,45 +41,42 @@ def run_in_other_process(*args: str) -> str:
     return completed.stdout.strip()
 
 
-class ClockSkewTestCase(TestUtilsMixin, TransactionTestCase):
-    def test_reader_clock_ahead_of_writer(self):
-        # A process with a fast clock caches a result, then one with the right clock writes.
-        with skewed_clock(60):
-            self.assertIsNone(Test.objects.first())
+def test_reader_clock_ahead_of_writer(mocker):
+    real_time = time.time
+    mocker.patch("time.time", side_effect=lambda: real_time() + 60)
+    assert Test.objects.first() is None
+    mocker.stopall()
+    t = Test.objects.create(name="test")
+
+    assert Test.objects.first() == t
+
+
+@needs_shared_backends
+def test_other_process_writes_between_query_and_caching():
+    created = []
+
+    def write_after_read(execute, sql, params, many, context):
+        result = execute(sql, params, many, context)
+        created.append(int(run_in_other_process("create", "test")))
+        return result
+
+    with connection.execute_wrapper(write_after_read):
+        assert Test.objects.first() is None
+
+    expected = Test.objects.get(pk=created[0])
+    assert Test.objects.first() == expected
+
+
+@needs_shared_backends
+def test_other_process_reads_during_autocommit_write():
+    results = []
+
+    def read_before_write(execute, sql, params, many, context):
+        results.append(run_in_other_process("first"))
+        return execute(sql, params, many, context)
+
+    with connection.execute_wrapper(read_before_write):
         t = Test.objects.create(name="test")
 
-        self.assertEqual(Test.objects.first(), t)
-
-
-@skipUnless(
-    connection.vendor == "postgresql"
-    and settings.CACHES[DEFAULT_CACHE_ALIAS]["BACKEND"] != "django_cachex.cache.LocMemCache",
-    "needs a database and a cache shared between processes",
-)
-class TwoProcessTestCase(TestUtilsMixin, TransactionTestCase):
-    def test_other_process_writes_between_query_and_caching(self):
-        created = []
-
-        def write_after_read(execute, sql, params, many, context):
-            result = execute(sql, params, many, context)
-            created.append(int(run_in_other_process("create", "test")))
-            return result
-
-        with connection.execute_wrapper(write_after_read):
-            self.assertIsNone(Test.objects.first())
-
-        expected = Test.objects.get(pk=created[0])
-        self.assertEqual(Test.objects.first(), expected)
-
-    def test_other_process_reads_during_autocommit_write(self):
-        results = []
-
-        def read_before_write(execute, sql, params, many, context):
-            results.append(run_in_other_process("first"))
-            return execute(sql, params, many, context)
-
-        with connection.execute_wrapper(read_before_write):
-            t = Test.objects.create(name="test")
-
-        self.assertListEqual(results, [""])
-        self.assertEqual(run_in_other_process("first"), str(t.pk))
+    assert results == [""]
+    assert run_in_other_process("first") == str(t.pk)
