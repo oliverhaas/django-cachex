@@ -1,13 +1,22 @@
 [project]
 name = "django-cachex"
 version = "0.10.0"
-description = "Valkey and Redis cache backends for Django: standalone, Sentinel and Cluster topologies, sync and async APIs"
+description = "Valkey and Redis cache backends for Django: standalone, Sentinel and Cluster topologies, sync and async APIs, and an ORM query cache"
 readme = "README.md"
 license = "MIT AND BSD-3-Clause"
-# django_cachex/orm is derived from django-cachalot (BSD-3-Clause).
-license-files = ["LICENSE", "django_cachex/orm/LICENSE"]
+# BSD-3-Clause: django_cachex/orm is derived from django-cachalot, and the
+# serializers, compressors and exceptions from django-redis.
+license-files = ["LICENSE", "LICENSE.django-redis", "django_cachex/orm/LICENSE"]
 requires-python = ">=3.14"
-keywords = ["django", "valkey", "redis", "cache", "backend"]
+keywords = [
+  "django",
+  "valkey",
+  "redis",
+  "cache",
+  "backend",
+  "orm",
+  "query cache",
+]
 authors = [{ name = "Oliver Haas", email = "ohaas@e1plus.de" }]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -97,7 +106,13 @@ build-backend = "hatchling.build"
 packages = ["django_cachex"]
 
 [tool.hatch.build.targets.sdist]
-include = ["django_cachex/**", "/README.md", "/LICENSE", "/pyproject.toml"]
+include = [
+  "django_cachex/**",
+  "/README.md",
+  "/LICENSE",
+  "/LICENSE.django-redis",
+  "/pyproject.toml",
+]
 
 [tool.uv.workspace]
 members = ["examples/full"]

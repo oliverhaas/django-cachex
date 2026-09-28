@@ -82,7 +82,7 @@ INSTALLED_APPS = [
 
 ## Acknowledgments
 
-This project started from [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some serializer and compressor utility code is derived from django-redis, licensed under BSD-3-Clause. The admin UI was inspired by [django-redisboard](https://github.com/ionelmc/django-redisboard). The ORM cache (`django_cachex.orm`) is derived from [django-cachalot](https://github.com/noripyt/django-cachalot) 2.9.1 by Bertrand Bordage, licensed under BSD-3-Clause.
+This project started from [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some serializer, compressor and exception code is derived from django-redis, licensed under BSD-3-Clause. The admin UI was inspired by [django-redisboard](https://github.com/ionelmc/django-redisboard). The ORM cache (`django_cachex.orm`) is derived from [django-cachalot](https://github.com/noripyt/django-cachalot) 2.9.1 by Bertrand Bordage, licensed under BSD-3-Clause.
 
 The ASGI benchmark follows the shape of [django-vcache](https://gitlab.com/glitchtip/django-vcache)'s `bench_compare.py` (MIT, by David Burke / GlitchTip), so the numbers are directly comparable.
 
@@ -90,4 +90,12 @@ See also [django-valkey](https://github.com/django-commons/django-valkey) and [d
 
 ## License
 
-MIT License. See [LICENSE](https://github.com/oliverhaas/django-cachex/blob/main/LICENSE) for details.
+MIT, see [LICENSE](https://github.com/oliverhaas/django-cachex/blob/main/LICENSE), except for two parts under BSD-3-Clause
+(the package metadata declares `MIT AND BSD-3-Clause`):
+
+- The ORM cache, `django_cachex/orm/`, derived from django-cachalot. See
+  [django_cachex/orm/LICENSE](https://github.com/oliverhaas/django-cachex/blob/main/django_cachex/orm/LICENSE).
+- Parts of `django_cachex/serializers/`, `django_cachex/compressors/` and
+  `django_cachex/exceptions.py`, derived from django-redis (Copyright (c)
+  2011-2016 Andrey Antukh). Each derived file says so in its header. See
+  [LICENSE.django-redis](https://github.com/oliverhaas/django-cachex/blob/main/LICENSE.django-redis).
