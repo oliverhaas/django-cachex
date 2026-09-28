@@ -171,6 +171,11 @@ jobs:
           - { database: postgresql, cache: locmem }
           - { database: postgresql, cache: redis }
           - { database: postgresql, cache: tracking }
+        include:
+          # Pre-release Django: the ORM cache patches Django's SQL compilers
+          # and database wrapper.
+          - django-version: "main"
+            setup: { database: postgresql, cache: redis }
     steps:
       - uses: actions/checkout@v7
 
@@ -184,7 +189,12 @@ jobs:
         run: uv sync --group dev
 
       - name: Install Django ${{ matrix.django-version }}
-        run: uv pip install "Django~=${{ matrix.django-version }}.0"
+        run: |
+          if [ "${{ matrix.django-version }}" = "main" ]; then
+            uv pip install "Django @ git+https://github.com/django/django.git@main"
+          else
+            uv pip install "Django~=${{ matrix.django-version }}.0"
+          fi
 
       - name: Check the installed Django matches the matrix
         run: |
