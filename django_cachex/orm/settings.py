@@ -168,17 +168,5 @@ class OrmSettings:
             patch()
             self.patched = True
 
-    def unload(self) -> None:
-        if self.patched:
-            # Imported here because monkey_patch imports this module.
-            from django_cachex.orm.monkey_patch import unpatch
-
-            unpatch()
-            self.patched = False
-
-    def reload(self) -> None:
-        # The patches read these settings on every call, so they stay in place.
-        self.load()
-
 
 orm_settings = OrmSettings()

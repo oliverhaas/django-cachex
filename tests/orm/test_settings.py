@@ -89,7 +89,7 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
 
     def test_unsupported_vendor(self):
         # Reloaded once the vendors are back.
-        self.addCleanup(orm_settings.reload)
+        self.addCleanup(orm_settings.load)
         qs = Test.objects.all()
         with patch("django_cachex.orm.settings.SUPPORTED_VENDORS", frozenset()):
             self.assertSetEqual(supported_databases(), set())

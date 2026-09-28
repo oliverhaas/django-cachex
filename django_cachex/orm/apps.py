@@ -195,8 +195,9 @@ def check_tables_and_apps(app_configs: Any, **kwargs: Any) -> list[CheckMessage]
 
 
 def _reload_settings(*, setting: str, **kwargs: Any) -> None:  # noqa: ARG001
+    # The patches read the settings on every call, so they stay in place.
     if setting in {SETTING_NAME, "DATABASES", "CACHES"}:
-        orm_settings.reload()
+        orm_settings.load()
 
 
 class OrmCacheConfig(AppConfig):

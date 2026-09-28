@@ -381,54 +381,32 @@ def _invalidate_on_migration(sender: Any, *, using: str, plan: Any = None, **kwa
         invalidate(*models, db_alias=using, cache_alias=orm_settings.CACHE)
 
 
-_MISSING = object()
-# (class, attribute) -> what the class itself defined before patching.
-_ORIGINALS: dict[tuple[type, str], Any] = {}
-
-
-def _replace(cls: type, name: str, patched: Any) -> None:
-    _ORIGINALS[cls, name] = cls.__dict__.get(name, _MISSING)
-    setattr(cls, name, patched)
-
-
 def patch() -> None:
-    """Patch Django to cache query results; a no-op if already patched."""
-    if _ORIGINALS:
-        return
-    read = SQLCompiler.execute_sql
-    _replace(SQLCompiler, "execute_sql", _patch_read(read))
-    # SQLDeleteCompiler inherits execute_sql from SQLCompiler.
-    _replace(SQLDeleteCompiler, "execute_sql", _patch_write(read))
-    _replace(SQLInsertCompiler, "execute_sql", _patch_write(SQLInsertCompiler.execute_sql))
-    _replace(SQLUpdateCompiler, "execute_sql", _patch_write(SQLUpdateCompiler.execute_sql))
-    if "execute_returning_sql" in SQLUpdateCompiler.__dict__:  # Django 6.1+
-        _replace(
-            SQLUpdateCompiler,
-            "execute_returning_sql",
-            _patch_write(SQLUpdateCompiler.execute_returning_sql),
+    """Patch Django to cache query results and invalidate them on writes."""
+    # All originals are looked up before any is replaced: SQLDeleteCompiler
+    # inherits SQLCompiler.execute_sql.
+    patches: list[tuple[type, str, Any]] = [
+        (SQLCompiler, "execute_sql", _patch_read(SQLCompiler.execute_sql)),
+        (SQLDeleteCompiler, "execute_sql", _patch_write(SQLDeleteCompiler.execute_sql)),
+        (SQLInsertCompiler, "execute_sql", _patch_write(SQLInsertCompiler.execute_sql)),
+        (SQLUpdateCompiler, "execute_sql", _patch_write(SQLUpdateCompiler.execute_sql)),
+        (SQLUpdateCompiler, "execute_returning_sql", _patch_write(SQLUpdateCompiler.execute_returning_sql)),
+        (CursorWrapper, "execute", _patch_cursor(CursorWrapper.execute)),
+        (CursorWrapper, "executemany", _patch_cursor(CursorWrapper.executemany)),
+    ]
+    patches.extend(
+        (BaseDatabaseWrapper, name, patcher(getattr(BaseDatabaseWrapper, name)))
+        for name, patcher in (
+            ("commit", _patch_commit),
+            ("set_autocommit", _patch_set_autocommit),
+            ("rollback", _patch_rollback),
+            ("close", _patch_close),
+            ("connect", _patch_connect),
+            ("savepoint", _patch_savepoint),
+            ("savepoint_rollback", _patch_savepoint_rollback),
+            ("savepoint_commit", _patch_savepoint_commit),
         )
-    _replace(CursorWrapper, "execute", _patch_cursor(CursorWrapper.execute))
-    _replace(CursorWrapper, "executemany", _patch_cursor(CursorWrapper.executemany))
-    for name, patcher in (
-        ("commit", _patch_commit),
-        ("set_autocommit", _patch_set_autocommit),
-        ("rollback", _patch_rollback),
-        ("close", _patch_close),
-        ("connect", _patch_connect),
-        ("savepoint", _patch_savepoint),
-        ("savepoint_rollback", _patch_savepoint_rollback),
-        ("savepoint_commit", _patch_savepoint_commit),
-    ):
-        _replace(BaseDatabaseWrapper, name, patcher(getattr(BaseDatabaseWrapper, name)))
+    )
+    for cls, name, patched in patches:
+        setattr(cls, name, patched)
     post_migrate.connect(_invalidate_on_migration, dispatch_uid="django_cachex.orm.invalidate_on_migration")
-
-
-def unpatch() -> None:
-    """Undo patch()."""
-    post_migrate.disconnect(dispatch_uid="django_cachex.orm.invalidate_on_migration")
-    for (cls, name), original in reversed(list(_ORIGINALS.items())):
-        if original is _MISSING:
-            delattr(cls, name)
-        else:
-            setattr(cls, name, original)
-    _ORIGINALS.clear()
