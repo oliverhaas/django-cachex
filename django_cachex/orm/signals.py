@@ -5,9 +5,7 @@
 
 from django.dispatch import Signal
 
-# Sent once a table's cached queries are invalidated: after a write under
-# autocommit, when a transaction that wrote to the table commits, and by
-# invalidate().
-# sender: name of the invalidated table
-# db_alias: alias of the database the table belongs to
+# Sent with the table name as sender and its database's db_alias once the table's
+# cached queries are invalidated: after a write under autocommit, when a
+# transaction that wrote to the table commits, and by invalidate().
 post_invalidation = Signal()

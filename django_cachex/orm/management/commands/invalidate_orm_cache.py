@@ -1,7 +1,7 @@
 """Management command invalidating the ORM cache."""
 
 # Derived from django-cachalot 2.9.1 (BSD-3-Clause, Copyright (c) 2014-2016
-# Bertrand Bordage); see the LICENSE file in this directory.
+# Bertrand Bordage); see django_cachex/orm/LICENSE.
 
 from typing import TYPE_CHECKING, Any
 
@@ -13,14 +13,6 @@ from django_cachex.orm.api import invalidate
 
 if TYPE_CHECKING:
     from django.db.models import Model
-
-
-def _models(label: str) -> list[type[Model]]:
-    # A label with a dot names a model; app labels are identifiers. An app
-    # includes its auto-created many-to-many tables.
-    if "." in label:
-        return [apps.get_model(label)]
-    return list(apps.get_app_config(label).get_models(include_auto_created=True))
 
 
 class Command(BaseCommand):
@@ -54,7 +46,12 @@ class Command(BaseCommand):
         models: list[type[Model]] = []
         for label in labels:
             try:
-                models.extend(_models(label))
+                # A label with a dot names a model; app labels are identifiers.
+                # An app includes its auto-created many-to-many tables.
+                if "." in label:
+                    models.append(apps.get_model(label))
+                else:
+                    models.extend(apps.get_app_config(label).get_models(include_auto_created=True))
             except (LookupError, ValueError) as e:
                 raise CommandError(str(e)) from e
         models = list(dict.fromkeys(models))

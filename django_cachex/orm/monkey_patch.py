@@ -57,18 +57,6 @@ _WRITING = "_cachex_orm_writing"
 _NOTHING: frozenset[str] = frozenset()
 
 
-def _cachable_call(compiler: Any, result_type: Any) -> bool:
-    return (
-        orm_settings.ENABLED
-        and getattr(LOCAL_STORAGE, "orm_cache_enabled", True)
-        and result_type in _CACHED_RESULT_TYPES
-        and not isinstance(compiler, WRITE_COMPILERS)
-        # EXPLAIN describes the plan, which a write to the tables does not change.
-        and compiler.query.explain_info is None
-        and compiler.connection.alias in orm_settings.DATABASES
-    )
-
-
 def _execute(execute: Callable[[], Any]) -> tuple[Any, bool]:
     """Run the query; return its result, materialized, and whether it may be cached."""
     result = execute()
@@ -161,7 +149,15 @@ def _patch_read(original: Callable[..., Any]) -> Callable[..., Any]:
         was_compiling = getattr(connection, _COMPILING, False)
         setattr(connection, _COMPILING, True)
         try:
-            if _cachable_call(compiler, result_type):
+            if (
+                orm_settings.ENABLED
+                and getattr(LOCAL_STORAGE, "orm_cache_enabled", True)
+                and result_type in _CACHED_RESULT_TYPES
+                and not isinstance(compiler, WRITE_COMPILERS)
+                # EXPLAIN describes the plan, which a write to the tables does not change.
+                and compiler.query.explain_info is None
+                and connection.alias in orm_settings.DATABASES
+            ):
                 return _read(compiler, result_type, execute)
             return execute()
         finally:

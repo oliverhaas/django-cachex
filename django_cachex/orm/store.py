@@ -1,11 +1,7 @@
-"""Stores for cached query results, table generations and write leases."""
+"""Stores for cached query results, table generations and write leases.
 
-# Every table has a generation. A result is stored with the generations of the
-# tables it read and served only while all of them are unchanged. A write takes
-# a lease on its tables and bumps their generations before it runs, then
-# releases the lease and bumps them again once it is committed. While a lease
-# is held, lookups neither serve nor store, so no result read before the commit
-# can be stored under generations that are current after it.
+"How invalidation works" in docs/user-guide/orm-cache.md describes the protocol.
+"""
 
 import itertools
 import logging
@@ -232,10 +228,6 @@ return current_generations(1, n)
 )
 
 
-def _as_str(value: Any) -> str:
-    return value.decode() if isinstance(value, bytes) else str(value)
-
-
 class _LocalResults:
     """Encoded results kept in process, next to the generations they were stored under."""
 
@@ -366,7 +358,7 @@ class RespStore:
 
     def generations(self, db_alias: str, table_keys: Sequence[str]) -> list[str] | None:
         reply = self._eval(_GENERATIONS, self._table_keys(db_alias, table_keys), [str(len(table_keys))])
-        return None if reply is None else [_as_str(g) for g in reply]
+        return None if reply is None else [g.decode() if isinstance(g, bytes) else str(g) for g in reply]
 
 
 # Generations in a local memory cache are (epoch, count) pairs. A generation

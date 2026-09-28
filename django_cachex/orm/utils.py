@@ -177,16 +177,12 @@ def _get_tables_from_sql(
     enable_quote: bool = False,
 ) -> set[str]:
     """Return the tables named in the final SQL of a query."""
+    # Quoted, a name like ``shop_order`` is not found inside ``shop_orderline``.
     return {
         table
         for table in (connection.introspection.django_table_names() + orm_settings.ADDITIONAL_TABLES)
-        if _quote_table_name(table, connection, enable_quote=enable_quote) in lowercased_sql
+        if (connection.ops.quote_name(table) if enable_quote else table) in lowercased_sql
     }
-
-
-def _quote_table_name(table_name: str, connection: BaseDatabaseWrapper, *, enable_quote: bool) -> str:
-    """Quote ``table_name`` so ``ormtest_testparent`` does not also match ``ormtest_test``."""
-    return f"{connection.ops.quote_name(table_name)}" if enable_quote else table_name
 
 
 def is_cachable(table: str) -> bool:

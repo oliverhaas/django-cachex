@@ -96,11 +96,11 @@ def invalidate(
 
 
 def table_generations(*tables_or_models: Any, db_alias: str = DEFAULT_DB_ALIAS) -> tuple[str, ...] | None:
-    """Return the current generations of the given tables or models, or None if a result read now must not be cached."""
-    # Every committed write to a table changes its generation, so a value
-    # computed from the tables can be cached under their generations. None
-    # while a write to one of them runs, and whenever the ORM cache itself
-    # would not cache a query of them.
+    """Return the current generations of the given tables or models, or None if a result read now must not be cached.
+
+    Every committed write to a table changes its generation, so a value computed from the tables can be cached
+    under their generations.
+    """
     tables = list(_table_names(tables_or_models))
     if not tables:
         msg = "table_generations() needs at least one table or model."
