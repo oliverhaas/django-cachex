@@ -16,7 +16,7 @@ from django_cachex.orm import transaction
 from django_cachex.orm.exceptions import InvalidationError
 from django_cachex.orm.settings import orm_settings
 from django_cachex.orm.store import get_store
-from django_cachex.orm.utils import are_all_cachable, filter_cachable, get_table_cache_key
+from django_cachex.orm.utils import are_all_cachable, filter_cachable, get_table_cache_key, known_tables
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -62,7 +62,7 @@ def invalidate(
     cache_aliases = list(settings.CACHES) if cache_alias is None else [cache_alias]
     db_aliases = list(settings.DATABASES) if db_alias is None else [db_alias]
     for db in db_aliases:
-        db_tables = filter_cachable(tables or set(connections[db].introspection.table_names()))
+        db_tables = filter_cachable(tables or known_tables().union(connections[db].introspection.table_names()))
         if not db_tables:
             continue
         table_keys = _table_keys(db, db_tables)

@@ -170,7 +170,7 @@ CACHEX_ORM = {
 | `CACHALOT_TIMEOUT` | `TIMEOUT`. The default is the cache's default timeout, not `None`. Either way a write leaves its tables' results in the cache until they expire or are evicted, see [Eviction](user-guide/orm-cache.md#eviction). |
 | `CACHALOT_ONLY_CACHABLE_APPS`, `CACHALOT_UNCACHABLE_APPS` | Removed. List the apps' tables, many-to-many tables included, in `ONLY_CACHABLE_TABLES` or `UNCACHABLE_TABLES`. |
 | `CACHALOT_CACHE_RANDOM`, `CACHALOT_CACHE_ITERATORS`, `CACHALOT_INVALIDATE_RAW` | Removed. Random queries and the results of `iterator()` are never cached, and raw SQL writes always invalidate. |
-| `CACHALOT_QUERY_KEYGEN`, `CACHALOT_TABLE_KEYGEN` | Removed. The keys go through the cache alias's `KEY_FUNCTION`, which can tell tenants apart. |
+| `CACHALOT_QUERY_KEYGEN`, `CACHALOT_TABLE_KEYGEN` | Removed. The keys go through the cache alias's `KEY_FUNCTION`, which can tell tenants apart. Table generations then differ per tenant too, so a write to a table the tenants share invalidates only the writing tenant's results: list shared tables in `UNCACHABLE_TABLES`. |
 | `CACHALOT_USE_UNSUPPORTED_DATABASE`, `CACHALOT_ADDITIONAL_SUPPORTED_DATABASES` | Removed. Only PostgreSQL and SQLite are cached. |
 | | `LEASE_TIMEOUT` is new, see [Failures](user-guide/orm-cache.md#failures). |
 

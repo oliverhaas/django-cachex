@@ -103,9 +103,9 @@ A write stops its tables' results from being served but leaves them in the cache
 What a transaction writes is tracked per savepoint; rolling back to a savepoint forgets what was written since. Leases are taken at `COMMIT`, so other connections keep using the cache while the transaction runs.
 
 - Under PostgreSQL's `READ COMMITTED` (the default) and on SQLite with a rollback journal (the default), each statement sees what was committed when it started, like the shared cache. A transaction reads the tables it has not written through the shared cache, and the tables it has written from the database.
-- Under `REPEATABLE READ` and `SERIALIZABLE`, and on SQLite in WAL mode, a transaction reads a snapshot that may be older than the shared cache. Its results are cached for the transaction alone and dropped when it ends.
+- Under `REPEATABLE READ` and `SERIALIZABLE`, and on SQLite in WAL mode, a transaction reads a snapshot that may be older than the shared cache. Its results are cached for the transaction alone, up to 16 MiB of them pickled, and dropped when it ends.
 
-The isolation is read once per database connection, from the `isolation_level` option or from the server. Raw SQL changing the session default (`SET SESSION CHARACTERISTICS`, `default_transaction_isolation`, `PRAGMA journal_mode`) makes the ORM cache read it again. Other statements naming an isolation, like `SET TRANSACTION ISOLATION LEVEL`, make the connection cache per transaction until it reconnects.
+The isolation is read once per database connection, from the `isolation_level` option or from the server. Raw SQL changing the session default (`SET SESSION CHARACTERISTICS`, `default_transaction_isolation`, `PRAGMA journal_mode`) makes the ORM cache read it again, inside a transaction once the transaction ends, since the new default applies to the transactions after it. Other statements naming an isolation, like `SET TRANSACTION ISOLATION LEVEL`, make the connection cache per transaction until it reconnects.
 
 ## Failures
 
@@ -197,7 +197,8 @@ An unknown label is an error; an app without models invalidates nothing.
 ## Limits
 
 - Writes the ORM cache does not see invalidate nothing: other applications and database clients, triggers and rules, stored procedures run with `callproc()`, `COPY`, and writes by processes without the app. Call `invalidate()` or `invalidate_orm_cache` after them. Deletes do follow the foreign keys that Django declares with a database-level `on_delete` (`DB_CASCADE`, `DB_SET_NULL`, `DB_SET_DEFAULT`), and `TRUNCATE ... CASCADE` every table that references a truncated one.
-- Raw SQL writes are recognized by keyword (`INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `ALTER`, `CREATE`, `DROP`, `REPLACE INTO`, `MERGE INTO`) and their tables by name, so a statement naming a table anywhere, even in a string, invalidates it. Tables without a model are found only when listed in `ADDITIONAL_TABLES`. Transactions opened with a raw `BEGIN` are not seen; use `atomic()`.
+- Raw SQL writes are recognized by keyword (`INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `ALTER`, `CREATE`, `DROP`, `REFRESH`, `REPLACE INTO`, `MERGE INTO`) and their tables by name, so a statement naming a table anywhere, even in a string, invalidates it. Tables without a model are found only when listed in `ADDITIONAL_TABLES`. Transactions opened with a raw `BEGIN` are not seen; use `atomic()`.
+- Results read from a view are cached under the view's name, not the tables behind it, so writes to those tables do not invalidate them. List views in `UNCACHABLE_TABLES`, or `invalidate()` them after such writes. `REFRESH MATERIALIZED VIEW` invalidates the view it names.
 - Leave replicas out of `DATABASES`. Generations are kept per database alias, so writes to the primary do not invalidate what was cached from the replica, and the replica lags behind anyway.
 - A failover of the cache server can lose the latest generation bumps to asynchronous replication, which makes stale results current again. Run `invalidate_orm_cache` after a failover.
 - Writes made while the app was not installed, while a database was left out of `DATABASES` or while `CACHE` pointed at another alias invalidated nothing in the cache in question. Run `invalidate_orm_cache` before switching back.

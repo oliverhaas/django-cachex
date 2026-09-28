@@ -1,9 +1,11 @@
 # Derived from django-cachalot 2.9.1 (BSD-3-Clause, Copyright (c) 2014-2016
 # Bertrand Bordage); see django_cachex/orm/LICENSE.
 
+from contextlib import suppress
+
 import pytest
 from django.contrib.auth.models import User
-from django.db import IntegrityError, connection, transaction
+from django.db import DatabaseError, IntegrityError, connection, transaction
 
 from tests.orm.app.models import Test
 from tests.orm.utils import assert_num_queries
@@ -172,3 +174,19 @@ def test_deferred_error():
     # PostgreSQL rejects the duplicate at COMMIT, after the bump; SQLite at the INSERT, before any write.
     with assert_num_queries(1 if connection.vendor == "postgresql" else 0):
         assert list(Test.objects.all()) == []
+
+
+def test_set_autocommit_off_again_keeps_the_transaction_writes():
+    with assert_num_queries(1):
+        assert list(Test.objects.all()) == []
+    transaction.set_autocommit(False)
+    try:
+        t = Test.objects.create(name="test")
+        # SQLite accepts this and psycopg refuses it; the transaction goes on either way.
+        with suppress(DatabaseError):
+            transaction.set_autocommit(False)
+        transaction.commit()
+    finally:
+        transaction.set_autocommit(True)
+    with assert_num_queries(1):
+        assert list(Test.objects.all()) == [t]

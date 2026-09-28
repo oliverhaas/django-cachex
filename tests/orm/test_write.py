@@ -16,8 +16,8 @@ from django.db.migrations import Migration
 from django.db.models import Count
 from django.db.models.expressions import RawSQL
 
-from tests.orm.app.models import MixedCaseModel, Test, TestChild, TestParent
-from tests.orm.utils import assert_num_queries
+from tests.orm.app.models import MixedCaseModel, Test, TestChild, TestParent, UnmanagedModel
+from tests.orm.utils import assert_num_queries, override_orm_settings
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -901,6 +901,21 @@ def test_raw_update_mixed_case_table():
         assert list(MixedCaseModel.objects.values_list("name", flat=True)) == ["new name"]
 
 
+def test_raw_insert_unmanaged_table():
+    with assert_num_queries(1):
+        assert UnmanagedModel.objects.count() == 0
+
+    try:
+        with assert_num_queries(1), connection.cursor() as cursor:
+            cursor.execute("INSERT INTO ormtest_unmanagedmodel (name) VALUES ('test')")
+
+        with assert_num_queries(1):
+            assert UnmanagedModel.objects.count() == 1
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM ormtest_unmanagedmodel")
+
+
 def test_raw_delete():
     with assert_num_queries(1):
         Test.objects.create(name="test")
@@ -958,6 +973,29 @@ def test_raw_drop():
 
     with pytest.raises((ProgrammingError, OperationalError)):
         list(Test.objects.all())
+
+
+@pytest.mark.skipif(connection.vendor != "postgresql", reason="Materialized views are PostgreSQL only.")
+def test_raw_refresh_materialized_view():
+    with connection.cursor() as cursor:
+        cursor.execute("CREATE MATERIALIZED VIEW ormtest_names AS SELECT name FROM ormtest_test")
+    try:
+        Test.objects.create(name="test")
+        qs = Test.objects.annotate(names=RawSQL("SELECT COUNT(*) FROM ormtest_names", ()))
+        with override_orm_settings(ADDITIONAL_TABLES=("ormtest_names",)):
+            with assert_num_queries(1):
+                assert qs.get().names == 0
+            with assert_num_queries(0):
+                assert qs.get().names == 0
+
+            with assert_num_queries(1), connection.cursor() as cursor:
+                cursor.execute("REFRESH MATERIALIZED VIEW ormtest_names")
+
+            with assert_num_queries(1):
+                assert qs.get().names == 1
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("DROP MATERIALIZED VIEW ormtest_names")
 
 
 @pytest.fixture

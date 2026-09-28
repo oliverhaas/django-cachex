@@ -12,7 +12,7 @@ from django.core.management.color import no_style
 from django.db import connection, transaction
 from django.db.backends.postgresql.psycopg_any import DateRange, DateTimeTZRange, NumericRange
 
-from django_cachex.orm.api import invalidate
+from django_cachex.orm.api import invalidate, table_generations
 from django_cachex.orm.utils import UncachableQuery
 from tests.orm.app.models import PostgresModel, Test
 from tests.orm.utils import assert_num_queries, assert_query_cached, assert_tables
@@ -289,3 +289,9 @@ def test_transaction_now():
     with pytest.raises(UncachableQuery):
         assert_tables(qs, Test)
     assert_query_cached(qs, [obj], after=1)
+
+
+def test_invalidate_all_includes_a_schema_qualified_table():
+    generations = table_generations(PostgresModel)
+    invalidate(db_alias=connection.alias)
+    assert table_generations(PostgresModel) != generations

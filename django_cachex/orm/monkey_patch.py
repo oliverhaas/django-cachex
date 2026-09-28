@@ -41,7 +41,9 @@ _CACHED_RESULT_TYPES = frozenset({MULTI, SINGLE})
 
 # Raw SQL that may change data or schema, matched on the lowercased SQL. A
 # statement that only reads but matches costs an invalidation, nothing more.
-SQL_DATA_CHANGE_RE = re.compile(r"\b(?:insert|update|delete|truncate|alter|create|drop)\b|\b(?:replace|merge)\s+into\b")
+SQL_DATA_CHANGE_RE = re.compile(
+    r"\b(?:insert|update|delete|truncate|alter|create|drop|refresh)\b|\b(?:replace|merge)\s+into\b",
+)
 _TRUNCATE_CASCADE_RE = re.compile(r"\btruncate\b.*\bcascade\b", flags=re.DOTALL)
 # Raw SQL changing the default isolation of the session, which can be read back.
 # Other statements naming isolation change it for one transaction only.
@@ -265,9 +267,11 @@ def _patch_set_autocommit(original: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(original)
     def set_autocommit(connection: Any, autocommit: bool, *args: Any, **kwargs: Any) -> None:
         if not autocommit:
-            # A new transaction begins.
-            transaction.reset(connection)
+            began = not transaction.in_transaction(connection)
             original(connection, autocommit, *args, **kwargs)
+            if began:
+                # A new transaction begins.
+                transaction.reset(connection)
             return
         tables = transaction.written(connection)
         if tables:

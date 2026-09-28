@@ -44,11 +44,10 @@ def test_miss_store_hit(cache: RespCache, store: RespStore):
     assert 0 < ttl <= 60
 
 
-def test_integer_result(cache: RespCache, store: RespStore):
-    # encode() passes ints through, so a count() result is sent as digits.
+def test_store_without_timeout(cache: RespCache, store: RespStore):
     miss = store.lookup(DB, "query", TABLES)
-    assert store.store(DB, "query", TABLES, miss.token, 42, None)
-    assert store.lookup(DB, "query", TABLES).value == 42
+    assert store.store(DB, "query", TABLES, miss.token, [(1, "a")], None)
+    assert store.lookup(DB, "query", TABLES).value == [(1, "a")]
     assert cache.ttl(ENTRY) is None
 
 

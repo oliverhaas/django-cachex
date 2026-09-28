@@ -320,8 +320,6 @@ class RespStore:
         if ttl is not None and ttl <= 0:
             return False
         payload = self.cache.encode(result)
-        if isinstance(payload, int):
-            payload = str(payload).encode()
         entry_key = _entry_key(db_alias, query_key)
         stored = self._eval(
             _STORE,

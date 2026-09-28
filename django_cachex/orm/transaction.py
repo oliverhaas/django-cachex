@@ -19,28 +19,34 @@ SHARED = "shared"
 SNAPSHOT = "snapshot"
 
 _STATE = "_cachex_orm_state"
+# Bytes of pickled results a transaction caches for itself; past them its queries run against the database.
+_CACHE_BUDGET = 16 * 1024 * 1024
 
 
 class _Layer:
     """What a transaction did since a savepoint, or since it began for the first layer."""
 
-    __slots__ = ("entries", "sid", "written")
+    __slots__ = ("entries", "sid", "size", "written")
 
     def __init__(self, sid: str | None) -> None:
         self.sid = sid
         self.written: set[str] = set()
         # Query key -> (tables read, pickled result).
         self.entries: dict[str, tuple[frozenset[str], bytes]] = {}
+        # Bytes of the pickled results in ``entries``.
+        self.size = 0
 
 
 class _State:
-    __slots__ = ("isolation", "isolation_connection", "layers")
+    __slots__ = ("isolation", "isolation_connection", "layers", "reread_isolation")
 
     def __init__(self) -> None:
         self.layers: list[_Layer] = []
         self.isolation: str | None = None
         # The DB-API connection ``isolation`` was read from.
         self.isolation_connection: Any = None
+        # The session default changed during the transaction: read it again once the transaction ends.
+        self.reread_isolation = False
 
 
 def _state(connection: BaseDatabaseWrapper) -> _State:
@@ -90,7 +96,7 @@ def mark_written(connection: BaseDatabaseWrapper, tables: Iterable[str]) -> None
     _top_layer(state).written.update(tables)
     for layer in state.layers:
         for query_key in [key for key, (read, _) in layer.entries.items() if not read.isdisjoint(tables)]:
-            del layer.entries[query_key]
+            layer.size -= len(layer.entries.pop(query_key)[1])
 
 
 def cached(connection: BaseDatabaseWrapper, query_key: str) -> tuple[bool, Any]:
@@ -105,10 +111,15 @@ def cached(connection: BaseDatabaseWrapper, query_key: str) -> tuple[bool, Any]:
 
 
 def cache(connection: BaseDatabaseWrapper, query_key: str, tables: Iterable[str], result: Any) -> None:
-    """Cache ``result`` for the rest of the transaction."""
+    """Cache ``result`` for the rest of the transaction if it fits in the budget."""
     # Pickled so a caller that changes the result cannot change the cached copy.
     pickled = pickle.dumps(result, pickle.HIGHEST_PROTOCOL)
-    _top_layer(_state(connection)).entries[query_key] = (frozenset(tables), pickled)
+    state = _state(connection)
+    if sum(layer.size for layer in state.layers) + len(pickled) > _CACHE_BUDGET:
+        return
+    layer = _top_layer(state)
+    layer.entries[query_key] = (frozenset(tables), pickled)
+    layer.size += len(pickled)
 
 
 def reset(connection: BaseDatabaseWrapper) -> None:
@@ -116,6 +127,8 @@ def reset(connection: BaseDatabaseWrapper) -> None:
     state = getattr(connection, _STATE, None)
     if state is not None:
         state.layers.clear()
+        if state.reread_isolation:
+            state.isolation, state.reread_isolation = None, False
 
 
 def savepoint_created(connection: BaseDatabaseWrapper, sid: str) -> None:
@@ -142,6 +155,7 @@ def savepoint_released(connection: BaseDatabaseWrapper, sid: str) -> None:
     for layer in state.layers[index:]:
         parent.written.update(layer.written)
         parent.entries.update(layer.entries)
+        parent.size += layer.size
     del state.layers[index:]
 
 
@@ -186,7 +200,13 @@ def _read_isolation(connection: BaseDatabaseWrapper) -> str:
 def isolation_changed(connection: BaseDatabaseWrapper, *, known: bool) -> None:
     """Raw SQL changed the isolation: read it again if ``known``, else assume SNAPSHOT until reconnecting."""
     state = _state(connection)
-    if known:
-        state.isolation = None
-    else:
+    if not known:
         state.isolation, state.isolation_connection = SNAPSHOT, connection.connection
+        state.reread_isolation = False
+    elif in_transaction(connection):
+        # A new session default applies from the next transaction, and SET LOCAL or a rollback undoes it.
+        if state.isolation is None or state.isolation_connection is not connection.connection:
+            state.isolation, state.isolation_connection = SNAPSHOT, connection.connection
+        state.reread_isolation = True
+    else:
+        state.isolation = None

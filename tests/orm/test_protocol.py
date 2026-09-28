@@ -564,6 +564,19 @@ def test_results_are_cached_for_the_transaction():
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.skipif(connection.vendor != "postgresql", reason="sets the transaction isolation of PostgreSQL")
 @pytest.mark.usefixtures("reset_session")
+def test_results_cached_for_the_transaction_keep_to_a_budget(mocker):
+    mocker.patch.object(orm_transaction, "_CACHE_BUDGET", 100)
+    set_session_isolation("REPEATABLE READ")
+    Test.objects.bulk_create(Test(name=f"test{i}") for i in range(20))
+    names = Test.objects.values_list("name", flat=True)
+    with transaction.atomic():
+        assert_query_cached(names.filter(name="test1"))
+        assert_query_cached(names, after=1)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.skipif(connection.vendor != "postgresql", reason="sets the transaction isolation of PostgreSQL")
+@pytest.mark.usefixtures("reset_session")
 def test_snapshot_is_not_mixed_with_newer_results():
     set_session_isolation("REPEATABLE READ")
 
@@ -596,6 +609,30 @@ def test_isolation_is_read_again():
     assert orm_transaction.isolation(connection) == orm_transaction.SNAPSHOT
     set_session_isolation("READ COMMITTED")
     assert orm_transaction.isolation(connection) == orm_transaction.SHARED
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.skipif(connection.vendor != "postgresql", reason="sets the transaction isolation of PostgreSQL")
+@pytest.mark.usefixtures("reset_session")
+def test_new_session_isolation_applies_from_the_next_transaction():
+    set_session_isolation("REPEATABLE READ")
+    with transaction.atomic():
+        assert orm_transaction.isolation(connection) == orm_transaction.SNAPSHOT
+        set_session_isolation("READ COMMITTED")
+        assert orm_transaction.isolation(connection) == orm_transaction.SNAPSHOT
+    assert orm_transaction.isolation(connection) == orm_transaction.SHARED
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.skipif(connection.vendor != "postgresql", reason="sets the transaction isolation of PostgreSQL")
+@pytest.mark.usefixtures("reset_session")
+def test_session_isolation_set_local_ends_with_the_transaction():
+    set_session_isolation("REPEATABLE READ")
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL default_transaction_isolation = 'read committed'")
+        assert orm_transaction.isolation(connection) == orm_transaction.SNAPSHOT
+    assert orm_transaction.isolation(connection) == orm_transaction.SNAPSHOT
 
 
 @pytest.mark.django_db(transaction=True)

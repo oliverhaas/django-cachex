@@ -143,6 +143,13 @@ def get_table_cache_key(db_alias: str, table: str) -> str:
     return sha1(f"{db_alias}:{table}".encode(), usedforsecurity=False).hexdigest()
 
 
+def known_tables() -> set[str]:
+    """Return the tables of every installed model, unmanaged ones included, and the ``ADDITIONAL_TABLES``."""
+    return {model._meta.db_table for model in apps.get_models(include_auto_created=True)}.union(
+        orm_settings.ADDITIONAL_TABLES,
+    )
+
+
 def _get_tables_from_sql(
     connection: BaseDatabaseWrapper,
     lowercased_sql: str,
@@ -151,19 +158,12 @@ def _get_tables_from_sql(
 ) -> set[str]:
     """Return the tables named in the final SQL of a query."""
     tables = set()
-    for table in connection.introspection.django_table_names() + orm_settings.ADDITIONAL_TABLES:
+    for table in known_tables():
         name = (connection.ops.quote_name(table) if enable_quote else table).lower()
         # Whole names only: ``shop_order`` is not found inside ``shop_orderline``.
         if name in lowercased_sql and re.search(rf"(?<!\w){re.escape(name)}(?!\w)", lowercased_sql):
             tables.add(table)
     return tables
-
-
-def is_cachable(table: str) -> bool:
-    whitelist = orm_settings.ONLY_CACHABLE_TABLES
-    if whitelist and table not in whitelist:
-        return False
-    return table not in orm_settings.UNCACHABLE_TABLES
 
 
 def are_all_cachable(tables: set[str]) -> bool:
