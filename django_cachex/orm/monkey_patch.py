@@ -219,14 +219,6 @@ def _write(connection: Any, tables: set[str], run: Callable[[], Any]) -> Any:
     return result
 
 
-def _compiler_tables(compiler: Any) -> set[str]:
-    meta = compiler.query.get_meta()
-    tables = {meta.db_table}
-    if isinstance(compiler, SQLDeleteCompiler):
-        tables |= deletion_dependents([meta.model])
-    return filter_cachable(tables)
-
-
 def _patch_write(original: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(original)
     def inner(compiler: Any, *args: Any, **kwargs: Any) -> Any:
@@ -234,23 +226,15 @@ def _patch_write(original: Callable[..., Any]) -> Callable[..., Any]:
         was_compiling = getattr(connection, _COMPILING, False)
         setattr(connection, _COMPILING, True)
         try:
-            return _write(connection, _compiler_tables(compiler), lambda: original(compiler, *args, **kwargs))
+            meta = compiler.query.get_meta()
+            tables = {meta.db_table}
+            if isinstance(compiler, SQLDeleteCompiler):
+                tables |= deletion_dependents([meta.model])
+            return _write(connection, filter_cachable(tables), lambda: original(compiler, *args, **kwargs))
         finally:
             setattr(connection, _COMPILING, was_compiling)
 
     return inner
-
-
-def _raw_tables(connection: Any, lowered_sql: str) -> set[str]:
-    """Tables raw SQL may write to, or change through their foreign keys."""
-    if not SQL_DATA_CHANGE_RE.search(lowered_sql):
-        return set()
-    tables = _get_tables_from_sql(connection, lowered_sql)
-    if tables:
-        truncate = bool(_TRUNCATE_CASCADE_RE.search(lowered_sql))
-        if truncate or "delete" in lowered_sql:
-            tables |= deletion_dependents(models_of_tables(tables), truncate=truncate)
-    return filter_cachable(tables)
 
 
 def _patch_cursor(original: Callable[..., Any]) -> Callable[..., Any]:
@@ -260,7 +244,14 @@ def _patch_cursor(original: Callable[..., Any]) -> Callable[..., Any]:
         if getattr(connection, _COMPILING, False) or connection.alias not in orm_settings.DATABASES:
             return original(cursor, sql, *args, **kwargs)
         lowered = (sql.decode(errors="replace") if isinstance(sql, bytes) else str(sql)).lower()
-        tables = _raw_tables(connection, lowered) if orm_settings.INVALIDATE_RAW else set()
+        tables: set[str] = set()
+        if orm_settings.INVALIDATE_RAW and SQL_DATA_CHANGE_RE.search(lowered):
+            # The tables the SQL may write to, and those it changes through their foreign keys.
+            tables = _get_tables_from_sql(connection, lowered)
+            truncate = bool(_TRUNCATE_CASCADE_RE.search(lowered))
+            if tables and (truncate or "delete" in lowered):
+                tables |= deletion_dependents(models_of_tables(tables), truncate=truncate)
+            tables = filter_cachable(tables)
         result = _write(connection, tables, lambda: original(cursor, sql, *args, **kwargs))
         if "isolation" in lowered or "journal_mode" in lowered:
             transaction.isolation_changed(connection, known=bool(_SESSION_ISOLATION_RE.search(lowered)))

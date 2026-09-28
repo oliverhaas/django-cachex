@@ -24,10 +24,8 @@ SUPPORTED_VENDORS = frozenset({"postgresql", "sqlite"})
 SUPPORTED_ONLY = "supported_only"
 ITERABLES = frozenset({tuple, list, frozenset, set})
 
-# Never cached, whatever UNCACHABLE_TABLES says. The model of the migration
-# recorder is in no installed app, so creating its table afresh, as each test
-# run does, invalidates nothing, and a cached read of it would list migrations
-# the new database lacks.
+# The migration recorder's model is in no installed app, so recreating the table,
+# as each test run does, would not invalidate a cached list of old migrations.
 ALWAYS_UNCACHABLE_TABLES = frozenset({"django_migrations"})
 
 # Settings holding table names or app labels.

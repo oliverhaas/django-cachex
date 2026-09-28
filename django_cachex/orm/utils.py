@@ -317,11 +317,12 @@ def _concrete(model: type[Model]) -> type[Model]:
 
 
 def deletion_dependents(models: Iterable[type[Model]], *, truncate: bool = False) -> set[str]:
-    """Return the tables the database itself changes when rows of ``models`` are deleted."""
-    # A delete reaches the tables whose foreign keys have a database-level
-    # on_delete (DB_CASCADE, DB_SET_NULL, DB_SET_DEFAULT), onwards through
-    # DB_CASCADE. TRUNCATE ... CASCADE reaches every table with a foreign key
-    # to a truncated one, onwards through all of them.
+    """Return the tables the database itself changes when rows of ``models`` are deleted.
+
+    A delete reaches the tables whose foreign keys have a database-level on_delete (DB_CASCADE, DB_SET_NULL,
+    DB_SET_DEFAULT), onwards through DB_CASCADE. With ``truncate``, TRUNCATE ... CASCADE reaches every table
+    with a foreign key to a truncated one, onwards through all of them.
+    """
     tables: set[str] = set()
     pending = [_concrete(model) for model in models]
     seen: set[type[Model]] = set()

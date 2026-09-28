@@ -73,7 +73,12 @@ def get_store(cache_alias: str) -> Store | None:
     """Return the store over cache ``cache_alias``, or None if its backend cannot hold one."""
     cache = caches[cache_alias]
     if isinstance(cache, TrackingCache):
-        return RespStore(cache._transport, _local_results(cache))
+        # This process's local results for the cache, bounded by its MAX_ENTRIES.
+        with _LOCAL_RESULTS_LOCK:
+            local = _LOCAL_RESULTS.get(cache._storage_key)
+            if local is None or local.pid != os.getpid():
+                local = _LOCAL_RESULTS[cache._storage_key] = _LocalResults(cache._max_entries)
+        return RespStore(cache._transport, local)
     if isinstance(cache, RespCache):
         return RespStore(cache)
     if isinstance(cache, LocMemCache):
@@ -99,10 +104,9 @@ def _lease_key(db_alias: str, table_key: str) -> str:
     return f"orm:{{{db_alias}}}:l:{table_key}"
 
 
-# A generation is created from the server clock in microseconds, times 1000,
-# and only ever incremented afterwards. An evicted generation therefore comes
-# back higher than any value it had, unless it was bumped over 1000 times per
-# microsecond, so a result stored before the eviction never matches again.
+# A new generation is the server clock in microseconds times 1000 and is only
+# incremented after that, so an evicted generation comes back higher than any
+# value it had (short of 1000 bumps a microsecond): older results never match.
 _LUA_PRELUDE = """
 local function now_ms()
   local t = redis.call('TIME')
@@ -140,10 +144,9 @@ local function bump_existing(first, n)
 end
 """
 
-# KEYS: entry, generations, leases. ARGV: table count, generations of the
-# result held locally ("" for none).
-# Returns {0} while leased, {1, payload, generations} on a hit, {2, generations}
-# on a miss and {3} on a hit whose result is held locally.
+# KEYS: entry, generations, leases. ARGV: table count, generations of the local
+# copy ("" for none). Returns {0} while leased, {1, payload, generations} on a
+# hit, {2, generations} on a miss and {3} on a hit served by the local copy.
 _LOOKUP = (
     _LUA_PRELUDE
     + """
@@ -176,10 +179,9 @@ return 1
 """
 )
 
-# KEYS: generations, leases. ARGV: table count, lease token, lease time in
-# milliseconds. A lease key has no expiry, so the volatile-* eviction policies
-# never pick it: each lease carries its own as its score, and the key goes
-# when its last lease is removed.
+# KEYS: generations, leases. ARGV: table count, lease token, lease milliseconds.
+# Lease keys never expire, so volatile-* eviction skips them: each lease holds
+# its own expiry as its score, and a key goes with its last lease.
 _BEGIN_WRITE = (
     _LUA_PRELUDE
     + """
@@ -256,24 +258,12 @@ _LOCAL_RESULTS: dict[str, _LocalResults] = {}
 _LOCAL_RESULTS_LOCK = Lock()
 
 
-def _local_results(cache: TrackingCache) -> _LocalResults:
-    """Return this process's local results for a TrackingCache, bounded by its MAX_ENTRIES."""
-    key = cache._storage_key
-    pid = os.getpid()
-    with _LOCAL_RESULTS_LOCK:
-        local = _LOCAL_RESULTS.get(key)
-        if local is None or local.pid != pid:
-            local = _LOCAL_RESULTS[key] = _LocalResults(cache._max_entries)
-        return local
-
-
 class RespStore:
-    """Results, generations and leases in Redis or Valkey, each operation one Lua script."""
+    """Results, generations and leases in Redis or Valkey, each operation one Lua script.
 
-    # With ``local``, a result is also kept in process and served from there
-    # while the server holds it under the same generations, so a hit costs a
-    # round trip but not the transfer of the result, and the result still
-    # expires with the server's copy.
+    With ``local``, results are also kept in process and served from there while the server holds them under
+    the same generations: a hit costs a round trip but no transfer, and still expires with the server's copy.
+    """
 
     def __init__(self, cache: RespCache, local: _LocalResults | None = None) -> None:
         self.cache = cache

@@ -11,10 +11,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Each statement of a transaction reads the data committed when it starts
-# (PostgreSQL READ COMMITTED, SQLite with a rollback journal). Queries on
-# tables the transaction has not written use the shared cache; queries on
-# tables it has written run against the database.
+# Each statement reads the data committed when it starts (PostgreSQL READ
+# COMMITTED, SQLite with a rollback journal). Queries on tables the transaction
+# wrote run against the database; the others use the shared cache.
 SHARED = "shared"
 # The transaction reads a snapshot taken at its first query (PostgreSQL
 # REPEATABLE READ and SERIALIZABLE, SQLite in WAL mode), which may be older
