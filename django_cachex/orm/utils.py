@@ -30,7 +30,7 @@ _DATABASE_ON_DELETE: Any = getattr(deletion, "DatabaseOnDelete", None)
 _GENERATED_SQL = "_cachex_orm_generated_sql"
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Callable, Iterable, Sequence
 
     from django.db.backends.base.base import BaseDatabaseWrapper
     from django.db.models import Model
@@ -41,31 +41,52 @@ class UncachableQuery(Exception):  # noqa: N818
     pass
 
 
-CACHABLE_PARAM_TYPES: set[type] = {
-    bool,
-    int,
-    float,
-    Decimal,
-    bytearray,
-    bytes,
-    str,
-    type(None),
-    datetime.date,
-    datetime.time,
-    datetime.datetime,
-    datetime.timedelta,
-    UUID,
-}
+# Parameters are keyed by their type and whole value, which repr() shows for
+# these types. str() would key 1 and "1" alike.
+_REPR_KEYED_TYPES = frozenset(
+    {
+        bool,
+        int,
+        float,
+        Decimal,
+        bytearray,
+        bytes,
+        str,
+        type(None),
+        datetime.date,
+        datetime.time,
+        datetime.datetime,
+        datetime.timedelta,
+        UUID,
+    },
+)
 # Functions whose result changes over time: a query calling one is not cached.
-UNCACHABLE_FUNCS: set[type] = {Now, TransactionNow}
+UNCACHABLE_FUNCS: tuple[type, ...] = (Now, TransactionNow)
 # Functions returning a new random value on every call: a query calling one is
 # cached only with CACHE_RANDOM. UUID4 and UUID7 are new in Django 6.1.
-RANDOM_FUNCS: set[type] = {Random, RandomUUID} | {
-    func for name in ("UUID4", "UUID7") if (func := getattr(functions, name, None))
-}
+RANDOM_FUNCS: tuple[type, ...] = (
+    Random,
+    RandomUUID,
+    *(func for name in ("UUID4", "UUID7") if (func := getattr(functions, name, None))),
+)
 
 
-def _psycopg_param_types() -> tuple[type, ...]:
+def _bytes_key(value: Any) -> str:
+    if value.__class__ not in {bytes, bytearray, memoryview}:
+        raise UncachableQuery
+    return repr(bytes(value))
+
+
+def _json_key(name: str, dumps: Callable[[Any], Any], value: Any) -> str:
+    try:
+        text = dumps(value)
+    except Exception as e:
+        # The query fails the same way without the cache.
+        raise UncachableQuery from e
+    return f"{name}({text!r})"
+
+
+def _psycopg_param_keys() -> dict[type, Callable[[Any], str]]:
     from ipaddress import IPv4Address, IPv6Address
 
     from psycopg.dbapi20 import Binary
@@ -73,10 +94,23 @@ def _psycopg_param_types() -> tuple[type, ...]:
     from psycopg.types.numeric import Float4, Float8, Int2, Int4, Int8
     from psycopg.types.range import Range
 
-    return (Binary, Range, Json, Jsonb, Int2, Int4, Int8, Float4, Float8, IPv4Address, IPv6Address)
+    def json_key(param: Any) -> str:
+        # Without a dumps of its own, the value is serialized by a function
+        # set on the connection, which the key cannot see.
+        if param.dumps is None:
+            raise UncachableQuery
+        return _json_key(param.__class__.__name__, param.dumps, param.obj)
+
+    return {
+        # The repr of these shortens long values.
+        Binary: lambda param: f"Binary({_bytes_key(param.obj)})",
+        Json: json_key,
+        Jsonb: json_key,
+        **dict.fromkeys((Range, Int2, Int4, Int8, Float4, Float8, IPv4Address, IPv6Address), repr),
+    }
 
 
-def _psycopg2_param_types() -> tuple[type, ...]:
+def _psycopg2_param_keys() -> dict[type, Callable[[Any], str]]:
     from psycopg2 import Binary  # ty: ignore[unresolved-import]
     from psycopg2.extras import (  # ty: ignore[unresolved-import]
         DateRange,
@@ -87,48 +121,54 @@ def _psycopg2_param_types() -> tuple[type, ...]:
         NumericRange,
     )
 
-    return (Binary, NumericRange, DateRange, DateTimeRange, DateTimeTZRange, Inet, Json)
+    return {
+        # These have no repr of their own.
+        Binary: lambda param: f"Binary({_bytes_key(param.adapted)})",
+        Json: lambda param: _json_key("Json", param.dumps, param.adapted),
+        **dict.fromkeys((NumericRange, DateRange, DateTimeRange, DateTimeTZRange, Inet), repr),
+    }
 
 
-# Parameter types of the PostgreSQL driver Django uses: psycopg, else psycopg2.
-for _driver_param_types in (_psycopg_param_types, _psycopg2_param_types):
+# Keys of the parameter types of the PostgreSQL driver Django uses: psycopg,
+# else psycopg2.
+_DRIVER_PARAM_KEYS: dict[type, Callable[[Any], str]] = {}
+for _driver_param_keys in (_psycopg_param_keys, _psycopg2_param_keys):
     try:
-        CACHABLE_PARAM_TYPES.update(_driver_param_types())
+        _DRIVER_PARAM_KEYS = _driver_param_keys()
     except ImportError:
         continue
     break
 
 
-def check_parameter_types(params: Iterable[Any]) -> None:
-    for p in params:
-        cl = p.__class__
-        if cl not in CACHABLE_PARAM_TYPES:
-            if cl in ITERABLES:
-                check_parameter_types(p)
-            elif cl is dict:
-                check_parameter_types(p.items())
-            elif issubclass(cl, Choices):
-                # Choices are unique enums, so the underlying value decides.
-                check_parameter_types([p.value])
-            else:
-                raise UncachableQuery
+def _param_key(param: Any) -> str:
+    """Return the text a query parameter is keyed by; raise UncachableQuery if it has none."""
+    cls = param.__class__
+    if cls in _REPR_KEYED_TYPES:
+        return repr(param)
+    if (key := _DRIVER_PARAM_KEYS.get(cls)) is not None:
+        return key(param)
+    if cls in ITERABLES:
+        return f"{cls.__name__}({', '.join(map(_param_key, param))})"
+    if cls is dict:
+        return f"dict({', '.join(f'{_param_key(k)}: {_param_key(v)}' for k, v in param.items())})"
+    if issubclass(cls, Choices):
+        # Choices are unique enums, so the underlying value decides.
+        return _param_key(param.value)
+    raise UncachableQuery
 
 
 def get_query_cache_key(compiler: SQLCompiler) -> str:
-    """Return a cache key for the query of ``compiler``, specific to its SQL and database."""
+    """Return a cache key for the query of ``compiler``, specific to its SQL, parameters and database."""
     sql, params = compiler.as_sql()
-    check_parameter_types(params)
-    cache_key = f"{compiler.using}:{sql}:{[str(p) for p in params]}"
+    cache_key = f"{compiler.using!r}:{sql!r}:({', '.join(map(_param_key, params))})"
     # Kept for the final SQL check, which would otherwise call as_sql() again.
     setattr(compiler, _GENERATED_SQL, sql.lower())
-
-    return sha1(cache_key.encode("utf-8")).hexdigest()  # noqa: S324
+    return sha1(cache_key.encode(), usedforsecurity=False).hexdigest()
 
 
 def get_table_cache_key(db_alias: str, table: str) -> str:
     """Return a cache key for ``table`` of database ``db_alias``."""
-    cache_key = f"{db_alias}:{table}"
-    return sha1(cache_key.encode("utf-8")).hexdigest()  # noqa: S324
+    return sha1(f"{db_alias}:{table}".encode(), usedforsecurity=False).hexdigest()
 
 
 def _get_tables_from_sql(
@@ -241,9 +281,7 @@ class _TableFinder:
             self.raw_sql = True
         elif isinstance(node, RawSQL):
             self.tables.update(_get_tables_from_sql(connections[self.db_alias], node.sql.lower()))
-        elif isinstance(node, tuple(UNCACHABLE_FUNCS)) or (
-            not orm_settings.CACHE_RANDOM and isinstance(node, tuple(RANDOM_FUNCS))
-        ):
+        elif isinstance(node, UNCACHABLE_FUNCS) or (not orm_settings.CACHE_RANDOM and isinstance(node, RANDOM_FUNCS)):
             raise UncachableQuery
         elif isinstance(node, Lookup):
             # A right-hand side of plain values is not a source expression.

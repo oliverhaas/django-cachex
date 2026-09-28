@@ -2,8 +2,10 @@
 # Bertrand Bordage); see django_cachex/orm/LICENSE.
 
 import datetime
+import json
 from decimal import Decimal
-from unittest import skipIf
+from importlib.util import find_spec
+from unittest import skipIf, skipUnless
 from uuid import UUID
 
 from django.contrib.auth.models import Group, Permission, User
@@ -13,9 +15,9 @@ from django.db.models import Case, Count, F, FilteredRelation, Q, Value, When
 from django.db.models.expressions import Exists, OuterRef, RawSQL, Subquery
 from django.db.models.functions import Coalesce, Now
 from django.db.transaction import TransactionManagementError
-from django.test import TransactionTestCase, override_settings, skipUnlessDBFeature
+from django.test import SimpleTestCase, TransactionTestCase, override_settings, skipUnlessDBFeature
 
-from django_cachex.orm.utils import UncachableQuery
+from django_cachex.orm.utils import UncachableQuery, _param_key, _psycopg2_param_keys, _psycopg_param_keys
 from tests.orm.app.models import SomeChoices, Test, TestChild, TestParent, UnmanagedModel
 from tests.orm.utils import (
     FilteredTransactionTestCase,
@@ -1113,6 +1115,27 @@ class ParameterTypeTestCase(TestUtilsMixin, TransactionTestCase):
         self.assert_tables(qs, Test)
         self.assert_query_cached(qs, after=1 if self.is_sqlite else 0)
 
+    def test_long_parameters(self):
+        # psycopg shortens the repr of long Json, Jsonb and Binary values, so
+        # two of them sharing a prefix must still get their own cache keys.
+        prefix = "x" * 60
+        for n in (1, 2):
+            Test.objects.create(name=f"test{n}", json={"key": prefix, "n": n}, bin=f"{prefix}{n}".encode())
+        for n in (1, 2):
+            with self.subTest(n=n):
+                qs = Test.objects.filter(json={"key": prefix, "n": n}).values_list("name", flat=True)
+                self.assert_query_cached(qs, [f"test{n}"])
+                qs = Test.objects.filter(bin=f"{prefix}{n}".encode()).values_list("name", flat=True)
+                self.assert_query_cached(qs, [f"test{n}"], after=1 if self.is_sqlite else 0)
+
+    def test_parameter_types(self):
+        # The same SQL with 1 and "1" returns an int and a str.
+        Test.objects.create(name="test1")
+        for value in (1, "1"):
+            with self.subTest(value=value):
+                qs = Test.objects.annotate(value=Value(value)).values_list("value", flat=True)
+                self.assert_query_cached(qs, [value])
+
     def test_float(self):
         with self.assertNumQueries(1):
             Test.objects.create(name="test1", a_float=0.123456789)
@@ -1246,3 +1269,60 @@ class ParameterTypeTestCase(TestUtilsMixin, TransactionTestCase):
             obj2 = qs.get()
         self.assertEqual(obj1, obj2)
         self.assertEqual(obj1, obj)
+
+
+class ParameterKeyTestCase(SimpleTestCase):
+    def test_type_and_value(self):
+        values = [1, "1", 1.0, True, b"1", bytearray(b"1"), Decimal(1), Decimal("1.0"), None, "None", [1], (1,)]
+        values += [{"a": 1}, {"a": "1"}, datetime.date(2026, 1, 1), datetime.datetime(2026, 1, 1)]
+        keys = [_param_key(value) for value in values]
+        self.assertEqual(len(set(keys)), len(keys), keys)
+
+    def test_choices(self):
+        self.assertEqual(_param_key(SomeChoices.foo), _param_key("foo"))
+
+    def test_uncachable(self):
+        for value in (object(), [1, object()], {"a": object()}, memoryview(b"a")):
+            with self.subTest(value=value), self.assertRaises(UncachableQuery):
+                _param_key(value)
+
+    @skipUnless(find_spec("psycopg"), "psycopg is not installed")
+    def test_psycopg(self):
+        from psycopg.dbapi20 import Binary
+        from psycopg.types.json import Json, Jsonb
+        from psycopg.types.range import Range
+
+        key = _psycopg_param_keys()
+        prefix = "x" * 60
+        for wrapper in (Json, Jsonb):
+            with self.subTest(wrapper=wrapper):
+                first = key[wrapper](wrapper({"key": prefix, "n": 1}, dumps=json.dumps))
+                self.assertNotEqual(first, key[wrapper](wrapper({"key": prefix, "n": 2}, dumps=json.dumps)))
+                self.assertIn(prefix, first)
+                # Serialized by a function set on the connection.
+                with self.assertRaises(UncachableQuery):
+                    key[wrapper](wrapper({"key": prefix}))
+                with self.assertRaises(UncachableQuery):
+                    key[wrapper](wrapper({"key": object()}, dumps=json.dumps))
+        self.assertNotEqual(key[Json](Json(1, dumps=json.dumps)), key[Jsonb](Jsonb(1, dumps=json.dumps)))
+        self.assertNotEqual(key[Binary](Binary(f"{prefix}1".encode())), key[Binary](Binary(f"{prefix}2".encode())))
+        self.assertEqual(key[Binary](Binary(memoryview(b"a"))), key[Binary](Binary(b"a")))
+        with self.assertRaises(UncachableQuery):
+            key[Binary](Binary("a"))
+        self.assertNotEqual(key[Range](Range(1, 2)), key[Range](Range(1, 2, "[]")))
+
+    @skipUnless(find_spec("psycopg2"), "psycopg2 is not installed")
+    def test_psycopg2(self):
+        from psycopg2 import Binary
+        from psycopg2.extras import Json, NumericRange
+
+        key = _psycopg2_param_keys()
+        prefix = "x" * 60
+        first = key[Json](Json({"key": prefix, "name": "J\u00fcrgen"}))
+        self.assertNotEqual(first, key[Json](Json({"key": prefix, "name": "J\u00f6rgen"})))
+        self.assertIn(prefix, first)
+        with self.assertRaises(UncachableQuery):
+            key[Json](Json({"key": object()}))
+        binary = type(Binary(b""))
+        self.assertNotEqual(key[binary](Binary(f"{prefix}1".encode())), key[binary](Binary(f"{prefix}2".encode())))
+        self.assertNotEqual(key[NumericRange](NumericRange(1, 2)), key[NumericRange](NumericRange(1, 2, "[]")))

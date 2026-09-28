@@ -212,6 +212,7 @@ def order_totals():
 - Subqueries nested in expressions, in the ordering or in `FilteredRelation` conditions count with their tables, and `Now()` anywhere in a query keeps it from being cached; cachalot looked at the top level of filters and annotations only. `Random()`, `UUID4()`, `UUID7()` and `RandomUUID()` count as random, like `order_by("?")`.
 - `"supported_only"` covers PostgreSQL and SQLite, and leaves out replicas, the aliases with a `TEST["MIRROR"]`. Cachalot also covered MySQL, which is untested here: listed in `DATABASES`, it raises the `cachex_orm.W003` warning, and inside transactions its results are cached for the transaction only.
 - Under autocommit, `post_invalidation` is sent after the write instead of before it.
+- Query parameters are keyed by their type and whole value. Cachalot keyed them by `str()`, which psycopg 3 shortens for long JSON and binary values, so two queries differing only there could share a result, as could `Value(1)` and `Value("1")`. A custom `QUERY_KEYGEN` copied from cachalot's has the same flaw; build it on `django_cachex.orm.utils.get_query_cache_key` instead.
 
 ### Rolling out
 
