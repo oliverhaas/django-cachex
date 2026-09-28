@@ -4,6 +4,7 @@
 # Bertrand Bordage); see the LICENSE file in this directory.
 
 import datetime
+import re
 from decimal import Decimal
 from hashlib import sha1
 from ipaddress import IPv4Address, IPv6Address
@@ -149,12 +150,13 @@ def _get_tables_from_sql(
     enable_quote: bool = False,
 ) -> set[str]:
     """Return the tables named in the final SQL of a query."""
-    # Quoted, a name like ``shop_order`` is not found inside ``shop_orderline``.
-    return {
-        table
-        for table in (connection.introspection.django_table_names() + orm_settings.ADDITIONAL_TABLES)
-        if (connection.ops.quote_name(table) if enable_quote else table) in lowercased_sql
-    }
+    tables = set()
+    for table in connection.introspection.django_table_names() + orm_settings.ADDITIONAL_TABLES:
+        name = (connection.ops.quote_name(table) if enable_quote else table).lower()
+        # Whole names only: ``shop_order`` is not found inside ``shop_orderline``.
+        if name in lowercased_sql and re.search(rf"(?<!\w){re.escape(name)}(?!\w)", lowercased_sql):
+            tables.add(table)
+    return tables
 
 
 def is_cachable(table: str) -> bool:
@@ -202,7 +204,8 @@ class _TableFinder:
             ordering = meta.ordering or ()
         if query.select_for_update or "?" in ordering:
             raise UncachableQuery
-        if query.extra_select:
+        # Not extra_select, which leaves out those values() hides: ordering by one keeps its SQL.
+        if query.extra:
             self.raw_sql = True
         # The tables joined so far. Compiling joins the ones select_related()
         # and the ordering need, so queries are compiled before they get here.

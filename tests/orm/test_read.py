@@ -22,7 +22,7 @@ from django.db.transaction import TransactionManagementError
 from django.test import override_settings
 
 from django_cachex.orm.utils import UncachableQuery
-from tests.orm.app.models import SomeChoices, Test, TestChild, TestParent, UnmanagedModel
+from tests.orm.app.models import MixedCaseModel, SomeChoices, Test, TestChild, TestParent, UnmanagedModel
 from tests.orm.utils import (
     assert_num_queries,
     assert_query_cached,
@@ -836,6 +836,37 @@ def test_extra_order_by(rows):
     qs = Test.objects.extra(order_by=["-ormtest_test.name"])
     assert_tables(qs, Test)
     assert_query_cached(qs, [rows.t2, rows.t1])
+
+
+@pytest.mark.usefixtures("final_sql_check")
+def test_extra_select_masked_by_values(rows):
+    # values() leaves the extra select out of SELECT, but ordering by it keeps its SQL in ORDER BY.
+    qs = (
+        Test.objects.extra(select={"parents": "SELECT COUNT(*) FROM ormtest_testparent"})
+        .values("id")
+        .order_by("parents", "name")
+    )
+    assert_tables(qs, Test, TestParent)
+    assert_query_cached(qs, [{"id": rows.t1.pk}, {"id": rows.t2.pk}])
+
+
+@pytest.mark.usefixtures("final_sql_check")
+def test_extra_where_similar_table_names():
+    through = TestChild.permissions.through._meta.db_table
+    qs = TestChild.objects.extra(
+        tables=[through],
+        where=[f"{through}.testchild_id = ormtest_testchild.testparent_ptr_id"],
+    )
+    assert_tables(qs, TestParent, TestChild, through)
+    assert_query_cached(qs)
+
+
+@pytest.mark.usefixtures("final_sql_check")
+def test_extra_where_mixed_case_table():
+    table = connection.ops.quote_name(MixedCaseModel._meta.db_table)
+    qs = Test.objects.extra(where=[f"id NOT IN (SELECT id FROM {table})"])
+    assert_tables(qs, Test, MixedCaseModel)
+    assert_query_cached(qs)
 
 
 def test_table_inheritance():

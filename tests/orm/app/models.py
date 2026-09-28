@@ -76,6 +76,16 @@ class TestChild(TestParent):
     permissions = ManyToManyField("auth.Permission", blank=True)
 
 
+class MixedCaseModel(Model):
+    name = CharField(max_length=50)
+
+    class Meta:
+        db_table = "OrmTest_MixedCase"
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class PostgresModel(Model):
     int_array = ArrayField(IntegerField(null=True, blank=True), size=3, null=True, blank=True)
     hstore = HStoreField(null=True, blank=True)

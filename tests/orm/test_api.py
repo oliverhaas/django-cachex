@@ -240,7 +240,7 @@ def test_invalidate_orm_cache_unknown_label(label):
 def test_invalidate_orm_cache_output():
     out = StringIO()
     call_command("invalidate_orm_cache", "ormtest.test", "ormtest", stdout=out)
-    assert out.getvalue() == "Invalidating 6 models...\nORM cache invalidated.\n"
+    assert out.getvalue() == "Invalidating 7 models...\nORM cache invalidated.\n"
     out = StringIO()
     call_command("invalidate_orm_cache", "ormtest.test", stdout=out, db_alias=DEFAULT_DB_ALIAS)
     assert out.getvalue() == f"Invalidating 1 model for database '{DEFAULT_DB_ALIAS}'...\nORM cache invalidated.\n"

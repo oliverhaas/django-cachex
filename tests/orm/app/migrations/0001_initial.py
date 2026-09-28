@@ -98,5 +98,15 @@ class Migration(migrations.Migration):
                 "db_table": '"public"."ormtest_postgresmodel"',
             },
         ),
+        migrations.CreateModel(
+            name="MixedCaseModel",
+            fields=[
+                ("id", models.AutoField(verbose_name="ID", serialize=False, auto_created=True, primary_key=True)),
+                ("name", models.CharField(max_length=50)),
+            ],
+            options={
+                "db_table": "OrmTest_MixedCase",
+            },
+        ),
         migrations.RunSQL("CREATE TABLE ormtest_unmanagedmodel (id SERIAL PRIMARY KEY, name VARCHAR(50));"),
     ]

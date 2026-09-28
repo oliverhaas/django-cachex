@@ -53,7 +53,7 @@ All settings live in the `CACHEX_ORM` dict. Keys are upper case; unknown keys ra
 | `ONLY_CACHABLE_TABLES` | `()` | If set, only queries whose tables are all listed are cached. |
 | `UNCACHABLE_TABLES` | `()` | Queries reading one of these tables are not cached, and writes to them invalidate nothing. `django_migrations` is never cached. |
 | `ADDITIONAL_TABLES` | `()` | Tables no model covers, to look for in raw SQL. |
-| `FINAL_SQL_CHECK` | `False` | Also search the final SQL of every query for table names, to catch the tables custom expressions name in SQL of their own, such as a `Func` template. Queries with `extra()` conditions or ordered by a subquery are always searched. |
+| `FINAL_SQL_CHECK` | `False` | Also search the final SQL of every query for table names, to catch the tables custom expressions name in SQL of their own, such as a `Func` template. Queries with `extra()` selects or conditions, or ordered by a subquery, are always searched. |
 
 The settings are read again when a test overrides `CACHEX_ORM`, `DATABASES` or `CACHES`.
 

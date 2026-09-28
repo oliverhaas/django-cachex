@@ -213,6 +213,7 @@ def order_totals():
 - A write can no longer leave a stale result behind: while a write holds its lease, queries on its tables are neither served from the cache nor stored in it. See [How invalidation works](user-guide/orm-cache.md#how-invalidation-works).
 - Writes need the cache. A write that cannot take its lease raises `InvalidationError`, a `DatabaseError`, before its statement or `COMMIT` runs, unless `ENABLED` is off. See [Failures](user-guide/orm-cache.md#failures).
 - Subqueries nested in expressions, in the ordering or in `FilteredRelation` conditions count with their tables, and `Now()` anywhere in a query keeps it from being cached; cachalot looked at the top level of filters and annotations only. Queries calling `Random()`, `UUID4()`, `UUID7()` or `RandomUUID()` are never cached, like those ordered by `"?"`.
+- Raw SQL is searched for whole table names, in any case. Cachalot found `shop_order` inside `shop_orderline`, which invalidated more than needed, and missed names with uppercase letters, which left stale results. It also missed the tables of an `extra()` select that `values()` hides and the ordering uses.
 - Only PostgreSQL and SQLite are cached. Cachalot also covered MySQL; listing it in `DATABASES` is now the error `cachex_orm.E006`. `"supported_only"` also leaves out replicas, the aliases with a `TEST["MIRROR"]`.
 - The results of `iterator()` are not cached; cachalot read them into memory in full and cached them by default.
 - With psycopg2 instead of psycopg 3, queries with JSON, binary or range parameters are not cached.

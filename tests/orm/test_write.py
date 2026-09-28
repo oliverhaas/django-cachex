@@ -16,7 +16,7 @@ from django.db.migrations import Migration
 from django.db.models import Count
 from django.db.models.expressions import RawSQL
 
-from tests.orm.app.models import Test, TestChild, TestParent
+from tests.orm.app.models import MixedCaseModel, Test, TestChild, TestParent
 from tests.orm.utils import assert_num_queries
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -660,6 +660,22 @@ def test_invalidate_select_for_update():
         assert [t.name for t in data2] == ["test3"] * 2
 
 
+def test_prefetch_related_similar_table_names():
+    # The prefetch selects a column of ormtest_testchild_permissions with extra(select=...).
+    child = TestChild.objects.create(name="child")
+    permission = Permission.objects.first()
+    child.permissions.add(permission)
+
+    def permissions():
+        return [list(c.permissions.all()) for c in TestChild.objects.prefetch_related("permissions")]
+
+    with assert_num_queries(2):
+        assert permissions() == [[permission]]
+    Test.objects.create(name="test")
+    with assert_num_queries(0):
+        assert permissions() == [[permission]]
+
+
 def test_invalidate_extra_select():
     user = User.objects.create_user("user")
     t1 = Test.objects.create(name="test1", owner=user, public=True)
@@ -856,6 +872,33 @@ def test_raw_update():
 
     with assert_num_queries(1):
         assert list(Test.objects.values_list("name", flat=True)) == ["new name"]
+
+
+def test_raw_update_similar_table_names():
+    with assert_num_queries(1):
+        Test.objects.create(name="test")
+    with assert_num_queries(1):
+        assert list(Test.objects.values_list("name", flat=True)) == ["test"]
+
+    with assert_num_queries(1), connection.cursor() as cursor:
+        cursor.execute("UPDATE ormtest_testparent SET name = 'new name';")
+
+    with assert_num_queries(0):
+        assert list(Test.objects.values_list("name", flat=True)) == ["test"]
+
+
+def test_raw_update_mixed_case_table():
+    with assert_num_queries(1):
+        MixedCaseModel.objects.create(name="test")
+    with assert_num_queries(1):
+        assert list(MixedCaseModel.objects.values_list("name", flat=True)) == ["test"]
+
+    table = connection.ops.quote_name(MixedCaseModel._meta.db_table)
+    with assert_num_queries(1), connection.cursor() as cursor:
+        cursor.execute(f"UPDATE {table} SET name = 'new name';")
+
+    with assert_num_queries(1):
+        assert list(MixedCaseModel.objects.values_list("name", flat=True)) == ["new name"]
 
 
 def test_raw_delete():
