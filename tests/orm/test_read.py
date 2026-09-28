@@ -840,7 +840,6 @@ def test_extra_order_by(rows):
 
 @pytest.mark.usefixtures("final_sql_check")
 def test_extra_select_masked_by_values(rows):
-    # values() leaves the extra select out of SELECT, but ordering by it keeps its SQL in ORDER BY.
     qs = (
         Test.objects.extra(select={"parents": "SELECT COUNT(*) FROM ormtest_testparent"})
         .values("id")
