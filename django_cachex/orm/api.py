@@ -44,8 +44,10 @@ def _table_keys(db_alias: str, tables: Iterable[str]) -> list[str]:
 
 
 def _send_signals(db_alias: str, tables: Iterable[str]) -> None:
+    # The write is done by now, so a receiver's error must not look like its
+    # failure: send_robust() logs the error to django.dispatch instead.
     for table in sorted(tables):
-        post_invalidation.send(table, db_alias=db_alias)
+        post_invalidation.send_robust(table, db_alias=db_alias)
 
 
 def _invalidation_failed(error: Exception, db_alias: str, tables: Iterable[str]) -> None:

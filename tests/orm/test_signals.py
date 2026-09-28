@@ -39,6 +39,31 @@ class SignalsTestCase(TransactionTestCase):
         self.assertListEqual(l, [("auth_user", DEFAULT_DB_ALIAS)])
         post_invalidation.disconnect(receiver, sender=User._meta.db_table)
 
+    def test_failing_receiver(self):
+        # A receiver's error is logged: the write happened already, and the
+        # other receivers still get the signal.
+        received = []
+
+        def failing(sender, **kwargs):
+            msg = "receiver failed"
+            raise ValueError(msg)
+
+        def receiver(sender, **kwargs):
+            received.append(sender)
+
+        post_invalidation.connect(failing)
+        self.addCleanup(post_invalidation.disconnect, failing)
+        post_invalidation.connect(receiver)
+        self.addCleanup(post_invalidation.disconnect, receiver)
+        with self.assertLogs("django.dispatch", "ERROR") as logs:
+            Test.objects.create(name="test1")
+            with transaction.atomic():
+                Test.objects.create(name="test2")
+            invalidate(Test, db_alias=DEFAULT_DB_ALIAS)
+        self.assertListEqual(received, ["ormtest_test"] * 3)
+        self.assertEqual(len(logs.records), 3)
+        self.assertEqual(Test.objects.count(), 2)
+
     def test_table_invalidated_in_transaction(self):
         """
         Checks that the ``post_invalidation`` signal is triggered only after

@@ -176,7 +176,7 @@ An unknown label is an error; an app without models invalidates nothing.
 
 ### Signal
 
-`django_cachex.orm.signals.post_invalidation` is sent once per table after its queries were invalidated: after a write under autocommit, when a transaction that wrote the table commits, and by `invalidate()` (at the commit, inside a transaction). The sender is the table name, and `db_alias` names the database.
+`django_cachex.orm.signals.post_invalidation` is sent once per table after its queries were invalidated: after a write under autocommit, when a transaction that wrote the table commits, and by `invalidate()` (at the commit, inside a transaction). The sender is the table name, and `db_alias` names the database. A receiver that raises does not fail the write, which has happened by then: the error is logged to the `django.dispatch` logger.
 
 ## System checks
 
