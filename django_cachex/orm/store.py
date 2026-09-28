@@ -181,7 +181,9 @@ return 1
 )
 
 # KEYS: generations, leases. ARGV: table count, lease token, lease time in
-# milliseconds.
+# milliseconds. A lease key has no expiry, so the volatile-* eviction policies
+# never pick it: each lease carries its own as its score, and the key goes
+# when its last lease is removed.
 _BEGIN_WRITE = (
     _LUA_PRELUDE
     + """
@@ -191,7 +193,6 @@ local now = now_ms()
 for i = n + 1, 2 * n do
   redis.call('ZREMRANGEBYSCORE', KEYS[i], '-inf', now)
   redis.call('ZADD', KEYS[i], now + lease_ms, ARGV[2])
-  if redis.call('PTTL', KEYS[i]) < lease_ms then redis.call('PEXPIRE', KEYS[i], lease_ms) end
 end
 bump_existing(1, n)
 return 1

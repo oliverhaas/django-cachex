@@ -48,7 +48,7 @@ All settings live in the `CACHEX_ORM` dict. Keys are upper case; unknown keys ra
 | `ENABLED` | `True` | Serve and store query results. While off, nothing is served from the cache, but writes still invalidate it. |
 | `CACHE` | `"default"` | Cache alias holding the results, generations and leases. |
 | `DATABASES` | `"supported_only"` | Database aliases whose queries are cached: every PostgreSQL and SQLite alias except replicas, or a list, tuple or set of aliases. |
-| `TIMEOUT` | the cache's default timeout | Seconds a result is kept. `None` keeps it until its tables are written or the server evicts it. |
+| `TIMEOUT` | the cache's default timeout | Seconds a result is kept. A write stops its tables' results from being served without deleting them, so `None` keeps a result until the cache evicts it, see [Eviction](#eviction). |
 | `LEASE_TIMEOUT` | `60` | Seconds a write's lease lasts if the write cannot release it. Keep it above the longest write, see [Failures](#failures). |
 | `CACHE_RANDOM` | `False` | Cache queries ordered by `"?"` or calling `Random()`, `UUID4()`, `UUID7()` or `RandomUUID()`. |
 | `CACHE_ITERATORS` | `True` | Cache the results of `iterator()`, which reads them into memory in full. |
@@ -91,9 +91,17 @@ The keys go through the cache alias's key function, so they carry its `KEY_PREFI
 
 - `orm:{<database alias>}:q:<query key>`: a result and the generations it was stored under, expiring after `TIMEOUT`.
 - `orm:{<database alias>}:g:<table key>`: the generation of a table, without expiry.
-- `orm:{<database alias>}:l:<table key>`: the leases on a table.
+- `orm:{<database alias>}:l:<table key>`: the leases on a table, without expiry: each lease carries its own, and the key goes when its last lease is removed.
 
 The database alias is the hash tag, so on a cluster all keys of one database live in one slot, and on one shard. A generation that is evicted or cleared comes back derived from the server clock in microseconds, which no result stored under its old value matches.
+
+### Eviction
+
+A write stops its tables' results from being served but leaves them in the cache until they expire or are evicted, or until the same query stores its result again. What a full Redis or Valkey server evicts depends on its `maxmemory-policy`:
+
+- `volatile-lru`, `volatile-lfu`, `volatile-random` and `volatile-ttl` evict only keys with an expiry. Of the ORM cache's keys only results have one, and only with a `TIMEOUT`. Use one of these policies with a `TIMEOUT`: with nothing left to evict, they act like `noeviction`.
+- `allkeys-lru`, `allkeys-lfu` and `allkeys-random` evict generations too, which is safe, and leases: a lease evicted during its write acts like one that expired early (see [Failures](#failures)).
+- Under `noeviction`, the default, a full server refuses writes, so every database write to a cached table fails with `InvalidationError` until memory is freed.
 
 ## Transactions
 

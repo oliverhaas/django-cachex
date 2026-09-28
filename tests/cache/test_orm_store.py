@@ -19,6 +19,8 @@ DB = "default"
 # database alias is their hash tag, which keeps them in one cluster slot.
 TABLES = ("shop_order", "shop_line")
 ENTRY = "orm:{default}:q:query"
+GENERATION = "orm:{default}:g:shop_order"
+LEASE = "orm:{default}:l:shop_order"
 
 
 def _store() -> RespStore:
@@ -91,6 +93,17 @@ class TestOrmStore:
         assert store.generations(DB, TABLES) is None
         store.end_write(DB, TABLES[1:], "second")
         assert store.generations(DB, TABLES) is not None
+
+    def test_keys_without_expiry(self, cache: RespCache):
+        # The volatile-* eviction policies evict only results: generation and
+        # lease keys have no expiry, and a lease key goes with its last lease.
+        store = _store()
+        assert store.generations(DB, TABLES) is not None
+        store.begin_write(DB, TABLES[:1], "writer", 60)
+        assert cache.ttl(GENERATION) is None
+        assert cache.ttl(LEASE) is None
+        store.end_write(DB, TABLES[:1], "writer")
+        assert cache.ttl(LEASE) == -2
 
     def test_bump(self, cache: RespCache):
         store = _store()
