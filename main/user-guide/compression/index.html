@@ -1082,95 +1082,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Development
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Development
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../development/locmem-vs-fakeredis/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    LocMemCache vs fakeredis
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -1312,7 +1223,7 @@
 
 
 <h1 id="compression">Compression<a class="headerlink" href="#compression" title="Permanent link">&para;</a></h1>
-<p>django-cachex supports pluggable compression to reduce memory usage. Compression is only applied to values larger than 256 bytes by default.</p>
+<p>Compressors shrink cached values to save server memory. By default, only values larger than 256 bytes are compressed.</p>
 <h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="s2">"default"</span><span class="p">:</span> <span class="p">{</span>
@@ -1325,9 +1236,9 @@
 </span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="p">}</span>
 </span></code></pre></div>
 <h2 id="minimum-size">Minimum Size<a class="headerlink" href="#minimum-size" title="Permanent link">&para;</a></h2>
-<p><code>min_length</code> is a constructor argument of the compressor, not a cache <code>OPTIONS</code>
-key. It defaults to <code>256</code>, so payloads at or below 256 bytes are stored
-uncompressed. Raise the threshold by configuring a compressor instance instead
+<p><code>min_length</code> is a constructor argument of the compressor, not a key in
+<code>OPTIONS</code>. It defaults to <code>256</code>, so payloads of 256 bytes or less are stored
+uncompressed. To change the threshold, configure a compressor instance instead
 of a dotted path:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex.compressors.zstd</span><span class="w"> </span><span class="kn">import</span> <span class="n">ZstdCompressor</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
@@ -1348,8 +1259,8 @@ of a dotted path:</p>
 <h2 id="compression-level">Compression level<a class="headerlink" href="#compression-level" title="Permanent link">&para;</a></h2>
 <p>Every compressor also takes a keyword-only <code>level</code>, passed the same way
 (<code>ZstdCompressor(level=10)</code>) or set as a class attribute on a subclass. The
-defaults are the library defaults: zlib <code>6</code>, gzip <code>9</code>, lzma preset <code>4</code>, lz4
-<code>0</code> (fast mode), zstd <code>3</code>.</p>
+defaults are zlib <code>6</code>, gzip <code>9</code>, lzma preset <code>4</code>, lz4 <code>0</code> (fast mode) and
+zstd <code>3</code>.</p>
 <h2 id="available-compressors">Available Compressors<a class="headerlink" href="#available-compressors" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1381,22 +1292,25 @@ defaults are the library defaults: zlib <code>6</code>, gzip <code>9</code>, lzm
 </tr>
 </tbody>
 </table>
-<p>Install optional dependencies:</p>
+<p>Install the <code>lz4</code> extra for <code>Lz4Compressor</code>:</p>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="go">uv add django-cachex[lz4]</span>
 </span></code></pre></div>
 <h2 id="performance">Performance<a class="headerlink" href="#performance" title="Permanent link">&para;</a></h2>
-<p>Two views; pick whichever matches the decision you're making.</p>
 <h3 id="micro-algorithm-in-isolation">Micro: algorithm in isolation<a class="headerlink" href="#micro-algorithm-in-isolation" title="Permanent link">&para;</a></h3>
-<p>Pure compress/decompress in a tight loop, no driver, no network. Output
-size is a percentage of the input (i.e. the no-compression baseline);
-compress/decompress are absolute MB/s on the benchmark host.</p>
+<p>This benchmark compresses and decompresses a ~14 KiB pickled
+queryset-shaped payload in a tight loop, with no driver and no network.
+Output size is the compressed size as a percentage of the input. Compress
+and decompress speeds are the median of 20 runs of 200 operations on a single
+core. They depend on the hardware, so compare the ratios between rows, not
+the absolute values. Real payloads vary: text and JSON compress about 10×,
+and already-compressed bytes barely shrink.</p>
 <table>
 <thead>
 <tr>
 <th>Compressor</th>
-<th style="text-align: center;">Output size¹</th>
-<th style="text-align: center;">Compress²</th>
-<th style="text-align: center;">Decompress²</th>
+<th style="text-align: center;">Output size</th>
+<th style="text-align: center;">Compress</th>
+<th style="text-align: center;">Decompress</th>
 </tr>
 </thead>
 <tbody>
@@ -1415,14 +1329,14 @@ compress/decompress are absolute MB/s on the benchmark host.</p>
 <tr>
 <td><code>lzma</code></td>
 <td style="text-align: center;">11%</td>
-<td style="text-align: center;"><strong>~13 MB/s</strong></td>
+<td style="text-align: center;">~13 MB/s</td>
 <td style="text-align: center;">~490 MB/s</td>
 </tr>
 <tr>
 <td><code>lz4</code></td>
 <td style="text-align: center;">17%</td>
-<td style="text-align: center;"><strong>~3.1 GB/s</strong></td>
-<td style="text-align: center;"><strong>~7.7 GB/s</strong></td>
+<td style="text-align: center;">~3.1 GB/s</td>
+<td style="text-align: center;">~7.7 GB/s</td>
 </tr>
 <tr>
 <td><code>zstd</code></td>
@@ -1433,15 +1347,17 @@ compress/decompress are absolute MB/s on the benchmark host.</p>
 </tbody>
 </table>
 <h3 id="macro-end-to-end-via-django-cache">Macro: end-to-end via Django cache<a class="headerlink" href="#macro-end-to-end-via-django-cache" title="Permanent link">&para;</a></h3>
-<p>Same compressors, but measured through <code>cache.get()</code> / <code>cache.set()</code> /
-<code>cache.get_many()</code> / <code>cache.set_many()</code> against a real Valkey server.
-Throughput factor is normalized to <strong>no compression</strong>, so the table reads
-"this is what enabling each compressor costs you."</p>
+<p>This benchmark runs <code>cache.get()</code>, <code>cache.set()</code>, <code>cache.get_many()</code> and
+<code>cache.set_many()</code> through the <code>valkey-py+libvalkey</code> adapter against a local
+Valkey server. The figure is the geometric mean of the four rates, relative
+to running without a compressor. The
+<a href="https://github.com/oliverhaas/django-cachex/tree/main/benchmarks">benchmarks</a>
+harness reproduces it.</p>
 <table>
 <thead>
 <tr>
 <th>Compressor</th>
-<th style="text-align: center;">Throughput vs no-compression³</th>
+<th style="text-align: center;">Throughput vs no compression</th>
 </tr>
 </thead>
 <tbody>
@@ -1459,31 +1375,27 @@ Throughput factor is normalized to <strong>no compression</strong>, so the table
 </tr>
 <tr>
 <td><code>lzma</code></td>
-<td style="text-align: center;"><strong>0.37×</strong></td>
+<td style="text-align: center;">0.37×</td>
 </tr>
 <tr>
 <td><code>lz4</code></td>
-<td style="text-align: center;"><strong>0.99×</strong></td>
+<td style="text-align: center;">0.99×</td>
 </tr>
 <tr>
 <td><code>zstd</code></td>
-<td style="text-align: center;"><strong>0.94×</strong></td>
+<td style="text-align: center;">0.94×</td>
 </tr>
 </tbody>
 </table>
-<p>Picking guide:</p>
 <ul>
-<li><code>zstd</code>: same ratio as <code>lzma</code> at ~60× the compress speed, and only ~6 % slower end-to-end than no compression at all. Default choice if available.</li>
-<li><code>lz4</code>: pick when CPU is the bottleneck and a ~40 % larger payload is acceptable. End-to-end throughput is statistically indistinguishable from no compression while still cutting payload size ~5×.</li>
-<li><code>lzma</code>: pick only when output size matters more than write latency. Even then, <code>zstd</code> is usually a better trade now (same ratio, ~2.5× faster end-to-end).</li>
-<li><code>zlib</code> / <code>gzip</code>: nearly identical. Pick <code>zlib</code> unless you need gzip's framing for an external consumer.</li>
-<li>No compression: sets the throughput ceiling but stores ~8× more server memory. Outside narrow latency-critical paths, compression almost always wins.</li>
+<li><code>zstd</code> has the same ratio as <code>lzma</code> at ~60× the compress speed, and runs ~6% slower end to end than no compression. Pick it by default.</li>
+<li><code>lz4</code> suits workloads where CPU is the bottleneck and a ~40% larger payload is acceptable. Its end-to-end throughput is within 1% of no compression, and it still cuts payload size ~5×.</li>
+<li><code>lzma</code> fits only when output size matters more than write latency. Even then, <code>zstd</code> has the same ratio and runs ~2.5× faster end to end.</li>
+<li><code>zlib</code> and <code>gzip</code> are nearly identical. Pick <code>zlib</code> unless an external consumer needs gzip's framing.</li>
+<li>No compression sets the throughput ceiling, but uses ~8× more server memory.</li>
 </ul>
-<p>¹ Compressed size as a percentage of the input (~14 KiB pickled queryset-shaped payload).
-² Absolute compress/decompress throughput in a tight loop (200 ops × 20 runs, median, single core). Numbers are hardware-dependent; use the ratios between rows, not the absolute values. Real-world impact also depends on payload compressibility (text/JSON compresses ~10×; already-compressed bytes barely shrink).
-³ Geometric mean of <code>get</code>/<code>set</code>/<code>mget</code>/<code>mset</code> ops/sec end-to-end via Django cache → <code>valkey-py+libvalkey</code> adapter → localhost Valkey, normalized to running without a compressor. Reproduce with the <a href="https://github.com/oliverhaas/django-cachex/tree/main/benchmarks">benchmarks</a> harness.</p>
 <h2 id="fallback-for-migration">Fallback for Migration<a class="headerlink" href="#fallback-for-migration" title="Permanent link">&para;</a></h2>
-<p>Specify a list of compressors to safely migrate between formats. The first is used for writing, all are tried for reading:</p>
+<p>To migrate between formats, pass a list of compressors. The cache writes with the first and tries each in order on read:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="s2">"OPTIONS"</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="s2">"compressor"</span><span class="p">:</span> <span class="p">[</span>
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>        <span class="s2">"django_cachex.compressors.zstd.ZstdCompressor"</span><span class="p">,</span>  <span class="c1"># Write with new format</span>

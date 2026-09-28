@@ -1054,95 +1054,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Development
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Development
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../development/locmem-vs-fakeredis/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    LocMemCache vs fakeredis
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -1256,7 +1167,7 @@
 
 
 <h1 id="serializers">Serializers<a class="headerlink" href="#serializers" title="Permanent link">&para;</a></h1>
-<p>django-cachex supports pluggable serializers for data before sending to Valkey/Redis.</p>
+<p>The <code>serializer</code> option sets how values are encoded before they are sent to Valkey or Redis.</p>
 <h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="s2">"default"</span><span class="p">:</span> <span class="p">{</span>
@@ -1280,7 +1191,7 @@
 <tbody>
 <tr>
 <td><code>django_cachex.serializers.pickle.PickleSerializer</code></td>
-<td>Python pickle (default); supports nearly all Python types</td>
+<td>Python pickle (default), for nearly all Python types</td>
 <td>(stdlib)</td>
 </tr>
 <tr>
@@ -1290,12 +1201,12 @@
 </tr>
 <tr>
 <td><code>django_cachex.serializers.msgpack.MsgpackSerializer</code></td>
-<td>MessagePack via the <code>msgpack</code> package (C extension when its wheel ships one); compact binary format</td>
+<td>MessagePack via the <code>msgpack</code> package (C extension when its wheel ships one), a compact binary format</td>
 <td><code>msgpack</code></td>
 </tr>
 <tr>
 <td><code>django_cachex.serializers.orjson.OrjsonSerializer</code></td>
-<td>Rust-backed JSON; fewer types than <code>DjangoJSONEncoder</code></td>
+<td>Rust-backed JSON, with fewer types than <code>DjangoJSONEncoder</code></td>
 <td><code>orjson</code></td>
 </tr>
 <tr>
@@ -1305,15 +1216,15 @@
 </tr>
 </tbody>
 </table>
-<p>Install optional serializers via the matching extra:</p>
+<p>Install the optional serializers with their extras:</p>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="go">uv add django-cachex[msgpack]</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="go">uv add django-cachex[orjson]</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="go">uv add django-cachex[ormsgpack]</span>
 </span></code></pre></div>
 <h2 id="constructor-options">Constructor options<a class="headerlink" href="#constructor-options" title="Permanent link">&para;</a></h2>
 <p><code>serializer</code> takes a dotted path, a class or an instance. A dotted path or
-class is instantiated with no arguments, so pass an instance to set a
-constructor option. Two serializers have one, both keyword-only:</p>
+class is instantiated with no arguments. To set a constructor option, pass an
+instance. Two serializers have one, both keyword-only:</p>
 <table>
 <thead>
 <tr>
@@ -1349,10 +1260,9 @@ constructor option. Two serializers have one, both keyword-only:</p>
 </span></code></pre></div>
 <p>An instance works in the fallback list too, mixed with dotted paths.</p>
 <h2 id="type-compatibility">Type compatibility<a class="headerlink" href="#type-compatibility" title="Permanent link">&para;</a></h2>
-<p>Round-trip behaviour for common Python types. A check mark means the value
-comes back as the same type; a tilde (<code>~</code>) followed by a type means the value
-is encoded but comes back as that type, so the caller converts on read; a cross
-means <code>dumps</code> raises <code>SerializerError</code>.</p>
+<p>A check mark means the value comes back as the same type. A tilde (<code>~</code>)
+followed by a type means the value comes back as that type, and the caller
+converts it on read. A cross means <code>dumps</code> raises <code>SerializerError</code>.</p>
 <table>
 <thead>
 <tr>
@@ -1366,12 +1276,12 @@ means <code>dumps</code> raises <code>SerializerError</code>.</p>
 </thead>
 <tbody>
 <tr>
-<td><strong>Throughput vs pickle</strong>¹</td>
-<td style="text-align: center;"><strong>1.00×</strong></td>
-<td style="text-align: center;"><strong>0.88×</strong></td>
-<td style="text-align: center;"><strong>0.99×</strong></td>
-<td style="text-align: center;"><strong>1.05×</strong></td>
-<td style="text-align: center;"><strong>1.05×</strong></td>
+<td>Throughput vs pickle¹</td>
+<td style="text-align: center;">1.00×</td>
+<td style="text-align: center;">0.88×</td>
+<td style="text-align: center;">0.99×</td>
+<td style="text-align: center;">1.05×</td>
+<td style="text-align: center;">1.05×</td>
 </tr>
 <tr>
 <td>JSON primitives (<code>str</code>, <code>int</code>, <code>float</code>, <code>bool</code>, <code>None</code>, <code>list</code>, <code>dict</code>)</td>
@@ -1463,27 +1373,22 @@ means <code>dumps</code> raises <code>SerializerError</code>.</p>
 </tr>
 </tbody>
 </table>
-<p>¹ End-to-end Django cache → <code>valkey-py+libvalkey</code> adapter → localhost Valkey,
-~150 B payload, geometric mean of <code>get</code>/<code>set</code>/<code>mget</code>/<code>mset</code> ops/sec.
-Real network or larger payloads dampen the spread. Reproduce with the
-<a href="https://github.com/oliverhaas/django-cachex/tree/main/benchmarks">benchmarks</a> harness.</p>
-<p>Notes:</p>
-<ul>
-<li>The "~" cells are not bugs; they reflect what the underlying format can
-  represent. <code>Decimal("1.99")</code> round-trips through <code>DjangoJSONEncoder</code> as the
-  string <code>"1.99"</code>; if you need a <code>Decimal</code> back, convert on read.</li>
-<li><code>orjson</code> natively encodes <code>dataclass</code> and <code>Enum</code> values, but loses the
-  original type on the way back (becomes a <code>dict</code> or the underlying value).</li>
-<li>For arbitrary Django model instances or types not listed above, prefer
-  <code>pickle</code> or write a custom serializer.</li>
-<li>If your values are JSON-compatible (or you pre-convert <code>Decimal</code>/<code>datetime</code>
-  to strings), <code>orjson</code> and <code>ormsgpack</code> are the fastest encoders on batch
-  writes: about 45% ahead of <code>json</code> on <code>mset</code> in the
-  <a href="../../reference/benchmarks/">benchmarks</a>. Single-key operations are
-  transport-bound, so the encoder barely moves them.</li>
-</ul>
+<p>¹ Geometric mean of the <code>get</code>, <code>set</code>, <code>mget</code> and <code>mset</code> rates, end to end
+through the <code>valkey-py+libvalkey</code> adapter to a local Valkey, with a ~150 B
+payload. A real network or larger payloads narrow the spread. The
+<a href="https://github.com/oliverhaas/django-cachex/tree/main/benchmarks">benchmarks</a>
+harness reproduces it.</p>
+<p><code>Decimal("1.99")</code> round-trips through <code>DjangoJSONEncoder</code> as the string
+<code>"1.99"</code>. To get a <code>Decimal</code> back, convert on read.</p>
+<p>For Django model instances and types the table does not list, use <code>pickle</code> or
+a custom serializer.</p>
+<p>For JSON-compatible values, or with <code>Decimal</code> and <code>datetime</code> converted to
+strings first, <code>orjson</code> and <code>ormsgpack</code> are the fastest encoders on batch
+writes. They are about 45% ahead of <code>json</code> on <code>mset</code> in the
+<a href="../../reference/benchmarks/">benchmarks</a>. Single-key operations are
+transport-bound, so the encoder changes them little.</p>
 <h2 id="fallback-for-migration">Fallback for Migration<a class="headerlink" href="#fallback-for-migration" title="Permanent link">&para;</a></h2>
-<p>Specify a list of serializers to safely migrate between formats. The first is used for writing, all are tried for reading:</p>
+<p>To migrate between formats, pass a list of serializers. The cache writes with the first and tries each in order on read:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="s2">"OPTIONS"</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="s2">"serializer"</span><span class="p">:</span> <span class="p">[</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>        <span class="s2">"django_cachex.serializers.json.JsonSerializer"</span><span class="p">,</span>     <span class="c1"># Write with new format</span>
@@ -1492,10 +1397,10 @@ Real network or larger payloads dampen the spread. Reproduce with the
 </span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="p">}</span>
 </span></code></pre></div>
 <h2 id="custom-serializers">Custom Serializers<a class="headerlink" href="#custom-serializers" title="Permanent link">&para;</a></h2>
-<p>Subclass <code>BaseSerializer</code> and implement <code>_dumps</code> and <code>_loads</code>. The base
-class wraps any exception they raise in <code>SerializerError</code> (which triggers
-the fallback chain) and passes plain ints through <code>loads</code> unchanged, so
-<code>incr()</code> results don't need re-decoding:</p>
+<p>Subclass <code>BaseSerializer</code> and implement <code>_dumps</code> and <code>_loads</code>. The base class
+wraps any exception they raise in <code>SerializerError</code>, which triggers the
+fallback chain. It passes plain ints through <code>loads</code> unchanged, so <code>incr()</code>
+results need no decoding:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex.serializers.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseSerializer</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>

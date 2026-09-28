@@ -1010,95 +1010,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Development
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Development
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../development/locmem-vs-fakeredis/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    LocMemCache vs fakeredis
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -1168,43 +1079,65 @@
 
 
 <h1 id="valkeyredis-cluster">Valkey/Redis Cluster<a class="headerlink" href="#valkeyredis-cluster" title="Permanent link">&para;</a></h1>
-<p>For basic cluster setup, see <a href="../configuration/#cluster-configuration">Configuration</a>.</p>
+<p>For the basic setup, see <a href="../configuration/#cluster-configuration">Configuration</a>.</p>
 <h2 id="slot-handling">Slot Handling<a class="headerlink" href="#slot-handling" title="Permanent link">&para;</a></h2>
-<p>Valkey/Redis Cluster distributes keys across 16,384 hash slots. django-cachex handles Django cache methods and direct commands differently:</p>
-<p>The Django cache methods (<code>get_many</code>, <code>set_many</code>, <code>delete_many</code>, <code>keys</code>, <code>clear</code>) are cluster-aware and handle cross-slot operations automatically. <code>delete_many()</code>, <code>delete_pattern()</code> and <code>set_many(timeout=0)</code> issue one <code>UNLINK</code> per batch and let the driver split it by slot.</p>
-<p>Direct commands (sets, lists, hashes, sorted sets) pass through to the server. Multi-key commands (<code>sdiff</code>, <code>sinter</code>, <code>sunion</code>, <code>lmove</code>) require all keys on the same slot.</p>
-<p>Not available on cluster:</p>
+<p>Valkey/Redis Cluster distributes keys across 16,384 hash slots. The cache
+methods <code>get_many()</code>, <code>set_many()</code>, <code>delete_many()</code>, <code>keys()</code> and <code>clear()</code>
+work across slots. <code>delete_many()</code>, <code>delete_pattern()</code> and
+<code>set_many(timeout=0)</code> send one <code>UNLINK</code> per batch, and the driver splits it by
+slot.</p>
+<p>The set, list, hash and sorted-set commands go to the server unchanged. A
+multi-key command such as <code>sdiff</code>, <code>sinter</code>, <code>sunion</code> or <code>lmove</code> therefore
+needs all its keys in one slot.</p>
+<p>Not available on a cluster:</p>
 <ul>
-<li><code>pipeline(transaction=True)</code> and <code>apipeline(transaction=True)</code> raise <code>NotSupportedError</code>; cluster pipelines default to <code>transaction=False</code>, since <code>MULTI</code>/<code>EXEC</code> cannot span slots.</li>
-<li><code>lock()</code> and <code>alock()</code> raise <code>NotSupportedError</code>; use <code>semaphore()</code>, whose keys share a <code>{name}</code> hash tag.</li>
-<li><code>incr_version()</code> and <code>decr_version()</code> rename <code>prefix:V:key</code> to <code>prefix:V+1:key</code>, which only stays in one slot when both made keys carry the same <code>{...}</code> hash tag. Without one (or with a <code>KEY_FUNCTION</code> that puts the version inside the tag) they raise <code>NotSupportedError</code> up front instead of a <code>CROSSSLOT</code> error from the server. A <code>KEY_PREFIX</code> of the form <code>"{app}"</code> colocates every key it produces and satisfies the rule.</li>
-<li>Queueing <code>rename</code>, <code>renamenx</code>, <code>smove</code>, <code>sdiff</code>, <code>sinter</code>, <code>sunion</code>, <code>sdiffstore</code>, <code>sinterstore</code> or <code>sunionstore</code> on a pipeline raises the driver's <code>RedisClusterException</code> or <code>ValkeyClusterException</code> on the redis-py and valkey-py cluster backends: their cluster pipelines refuse these multi-key commands. Call them on the cache instead, with hash-tagged keys.</li>
-<li><code>xautoclaim(justid=True)</code> and <code>axautoclaim(justid=True)</code> raise <code>NotSupportedError</code> on the redis-py and valkey-py cluster backends: the driver's <code>JUSTID</code> reply drops the cursor. Call <code>xautoclaim()</code> without <code>justid</code>. The valkey-glide cluster backend is unaffected.</li>
-<li>Key browsing in the <a href="../admin/#browsing-a-cluster-alias">admin</a>: cluster <code>SCAN</code> returns one cursor per node, so the key list stays empty with a message. The key detail page still opens a key by name.</li>
-<li><code>pool_class</code>, <code>async_pool_class</code> and <code>parser_class</code> in <code>OPTIONS</code> raise <code>ImproperlyConfigured</code>; the cluster client owns its per-node pools and picks its own parser.</li>
+<li><code>pipeline(transaction=True)</code> and <code>apipeline(transaction=True)</code> raise
+  <code>NotSupportedError</code>, because <code>MULTI</code>/<code>EXEC</code> cannot span slots. Cluster
+  pipelines default to <code>transaction=False</code>.</li>
+<li><code>lock()</code> and <code>alock()</code> raise <code>NotSupportedError</code>. Use <code>semaphore()</code>, whose
+  keys share a <code>{name}</code> hash tag.</li>
+<li><code>incr_version()</code> and <code>decr_version()</code> rename <code>prefix:V:key</code> to
+  <code>prefix:V+1:key</code>, and both keys stay in one slot only when they carry the
+  same <code>{...}</code> hash tag. Without one, or with a <code>KEY_FUNCTION</code> that puts the
+  version inside the tag, they raise <code>NotSupportedError</code> before the server can
+  reply with <code>CROSSSLOT</code>. A <code>KEY_PREFIX</code> of the form <code>"{app}"</code> puts every key
+  it produces in one slot and satisfies the rule.</li>
+<li>On the redis-py and valkey-py cluster backends, the driver's cluster
+  pipeline refuses <code>rename</code>, <code>renamenx</code>, <code>smove</code>, <code>sdiff</code>, <code>sinter</code>, <code>sunion</code>,
+  <code>sdiffstore</code>, <code>sinterstore</code> and <code>sunionstore</code>. Queueing one raises the
+  driver's <code>RedisClusterException</code> or <code>ValkeyClusterException</code>. Call these
+  commands on the cache instead, with hash-tagged keys.</li>
+<li>On the redis-py and valkey-py cluster backends, <code>xautoclaim(justid=True)</code>
+  and <code>axautoclaim(justid=True)</code> raise <code>NotSupportedError</code>, because the
+  driver's <code>JUSTID</code> reply drops the cursor. Call <code>xautoclaim()</code> without
+  <code>justid</code>. The valkey-glide cluster backend is unaffected.</li>
+<li>Key browsing in the <a href="../admin/#browsing-a-cluster-alias">admin</a>. Cluster
+  <code>SCAN</code> returns one cursor per node, so the key list stays empty and shows a
+  message. The key detail page still opens a key by name.</li>
+<li><code>pool_class</code>, <code>async_pool_class</code> and <code>parser_class</code> in <code>OPTIONS</code> raise
+  <code>ImproperlyConfigured</code>. The cluster client owns its per-node pools and picks
+  its own parser.</li>
 </ul>
 <h2 id="hash-tags">Hash Tags<a class="headerlink" href="#hash-tags" title="Permanent link">&para;</a></h2>
-<p>Force keys to the same slot using hash tags (the substring between <code>{</code> and <code>}</code>):</p>
+<p>Keys with the same hash tag, the part between <code>{</code> and <code>}</code>, land in the same
+slot:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Same slot (hash tag is "user:123")</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">cache</span><span class="o">.</span><span class="n">sadd</span><span class="p">(</span><span class="s2">"</span><span class="si">{user:123}</span><span class="s2">:followers"</span><span class="p">,</span> <span class="s2">"alice"</span><span class="p">,</span> <span class="s2">"bob"</span><span class="p">)</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">cache</span><span class="o">.</span><span class="n">sadd</span><span class="p">(</span><span class="s2">"</span><span class="si">{user:123}</span><span class="s2">:following"</span><span class="p">,</span> <span class="s2">"charlie"</span><span class="p">)</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># Multi-key operations now work</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># Multi-key operations work</span>
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">cache</span><span class="o">.</span><span class="n">sdiff</span><span class="p">([</span><span class="s2">"</span><span class="si">{user:123}</span><span class="s2">:followers"</span><span class="p">,</span> <span class="s2">"</span><span class="si">{user:123}</span><span class="s2">:following"</span><span class="p">])</span>
 </span></code></pre></div>
-<p>Use hash tags when you need:</p>
-<ul>
-<li>Multi-key set operations: <code>sdiff</code>, <code>sinter</code>, <code>sunion</code></li>
-<li>List moves: <code>lmove</code></li>
-<li><code>incr_version</code> / <code>decr_version</code> (see above)</li>
-</ul>
+<p>The multi-key set commands (<code>sdiff</code>, <code>sinter</code>, <code>sunion</code>), <code>lmove</code>,
+<code>incr_version</code> and <code>decr_version</code> need hash tags.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Group related keys: one hash tag per slot</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">user_keys</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"</span><span class="si">{user:123}</span><span class="s2">:profile"</span><span class="p">,</span> <span class="s2">"</span><span class="si">{user:123}</span><span class="s2">:settings"</span><span class="p">]</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">order_keys</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"</span><span class="si">{order:456}</span><span class="s2">:items"</span><span class="p">,</span> <span class="s2">"</span><span class="si">{order:456}</span><span class="s2">:status"</span><span class="p">]</span>
 </span></code></pre></div>
 <div class="admonition warning">
 <p class="admonition-title">Avoid Hot Spots</p>
-<p>Don't use overly broad hash tags like <code>{app}:user:123</code> which puts all users on one slot.</p>
+<p>Keep hash tags narrow. A broad tag such as the <code>{app}</code> in
+<code>{app}:user:123</code> puts all users on one slot.</p>
 </div>
 
 

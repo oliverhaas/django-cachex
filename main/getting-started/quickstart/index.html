@@ -1060,95 +1060,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Development
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Development
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../development/locmem-vs-fakeredis/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    LocMemCache vs fakeredis
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -1277,8 +1188,7 @@
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">}</span>
 </span></code></pre></div>
 <h2 id="backend-classes">Backend Classes<a class="headerlink" href="#backend-classes" title="Permanent link">&para;</a></h2>
-<p>All backends live in <code>django_cachex.cache</code>. See the <a href="../../user-guide/configuration/#backend-classes">configuration reference</a> for the full table.</p>
-<p><strong>Valkey / Redis (Python driver, default):</strong></p>
+<p>All backends live in <code>django_cachex.cache</code>. The valkey-py and redis-py backends are the default. The <a href="../../user-guide/configuration/#backend-classes">configuration reference</a> has the full table.</p>
 <table>
 <thead>
 <tr>
@@ -1289,34 +1199,23 @@
 <tbody>
 <tr>
 <td><code>ValkeyCache</code> / <code>RedisCache</code></td>
-<td>Standard connection</td>
+<td>Standard connection (valkey-py / redis-py)</td>
 </tr>
 <tr>
 <td><code>ValkeySentinelCache</code> / <code>RedisSentinelCache</code></td>
-<td>Sentinel high availability</td>
+<td>Sentinel high availability (valkey-py / redis-py)</td>
 </tr>
 <tr>
 <td><code>ValkeyClusterCache</code> / <code>RedisClusterCache</code></td>
-<td>Cluster sharding</td>
+<td>Cluster sharding (valkey-py / redis-py)</td>
 </tr>
-</tbody>
-</table>
-<p><strong>Other adapters:</strong></p>
-<table>
-<thead>
-<tr>
-<th>Backend</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
 <tr>
 <td><code>ValkeyGlideCache</code></td>
-<td>valkey-glide (opt-in via <code>valkey-glide</code> extra; experimental)</td>
+<td>Standard connection through valkey-glide (<code>valkey-glide</code> extra, experimental)</td>
 </tr>
 <tr>
 <td><code>ValkeyGlideClusterCache</code></td>
-<td>Cluster sharding via valkey-glide (same extra; experimental)</td>
+<td>Cluster sharding through valkey-glide (same extra, experimental)</td>
 </tr>
 <tr>
 <td><code>LocMemCache</code></td>
@@ -1328,30 +1227,46 @@
 </tr>
 <tr>
 <td><code>TrackingCache</code></td>
-<td>Local read cache over a Redis/Valkey alias, kept coherent by <code>CLIENT TRACKING</code></td>
+<td>Local read cache over a Redis or Valkey alias, kept coherent by <code>CLIENT TRACKING</code></td>
 </tr>
 </tbody>
 </table>
-<div class="admonition note">
-<p class="admonition-title">Valkey and Redis Compatibility</p>
 <p>Valkey and Redis are protocol-compatible, so either backend works with either server.
-Prefer Valkey: it remains fully open source.</p>
-</div>
+Prefer Valkey, which remains fully open source.</p>
 <h2 id="connection-url-formats">Connection URL Formats<a class="headerlink" href="#connection-url-formats" title="Permanent link">&para;</a></h2>
-<p>Uses the valkey-py/redis-py native URL notation:</p>
-<ul>
-<li><code>valkey://[[username]:[password]]@localhost:6379/0</code> - Valkey TCP connection</li>
-<li><code>redis://[[username]:[password]]@localhost:6379/0</code> - Redis TCP connection</li>
-<li><code>valkeys://[[username]:[password]]@localhost:6379/0</code> - Valkey SSL/TLS connection</li>
-<li><code>rediss://[[username]:[password]]@localhost:6379/0</code> - Redis SSL/TLS connection</li>
-<li><code>unix://[[username]:[password]]@/path/to/socket.sock?db=0</code> - Unix socket</li>
-</ul>
+<p><code>LOCATION</code> uses the valkey-py and redis-py URL notation:</p>
+<table>
+<thead>
+<tr>
+<th>URL</th>
+<th>Connection</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>valkey://[[username]:[password]]@localhost:6379/0</code></td>
+<td>Valkey TCP</td>
+</tr>
+<tr>
+<td><code>redis://[[username]:[password]]@localhost:6379/0</code></td>
+<td>Redis TCP</td>
+</tr>
+<tr>
+<td><code>valkeys://[[username]:[password]]@localhost:6379/0</code></td>
+<td>Valkey SSL/TLS</td>
+</tr>
+<tr>
+<td><code>rediss://[[username]:[password]]@localhost:6379/0</code></td>
+<td>Redis SSL/TLS</td>
+</tr>
+<tr>
+<td><code>unix://[[username]:[password]]@/path/to/socket.sock?db=0</code></td>
+<td>Unix socket</td>
+</tr>
+</tbody>
+</table>
 <h3 id="database-selection">Database Selection<a class="headerlink" href="#database-selection" title="Permanent link">&para;</a></h3>
-<p>Two ways to specify the database number:</p>
-<ol>
-<li>Query string: <code>valkey://localhost?db=0</code></li>
-<li>Path (for <code>valkey://</code> or <code>redis://</code> scheme): <code>valkey://localhost/0</code></li>
-</ol>
+<p>Set the database number in the query string (<code>valkey://localhost?db=0</code>) or, on every scheme except <code>unix://</code>, in the path (<code>valkey://localhost/0</code>).</p>
 <h2 id="basic-usage">Basic Usage<a class="headerlink" href="#basic-usage" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
@@ -1368,7 +1283,7 @@ Prefer Valkey: it remains fully open source.</p>
 </span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aset</span><span class="p">(</span><span class="s2">"key"</span><span class="p">,</span> <span class="s2">"value"</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">300</span><span class="p">)</span>
 </span></code></pre></div>
 <h2 id="raw-client-access">Raw Client Access<a class="headerlink" href="#raw-client-access" title="Permanent link">&para;</a></h2>
-<p>For operations not exposed by the cache interface:</p>
+<p>For commands the cache does not wrap, use the driver client from <code>cache.get_client()</code>:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">client</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get_client</span><span class="p">()</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">client</span><span class="o">.</span><span class="n">publish</span><span class="p">(</span><span class="s2">"channel"</span><span class="p">,</span> <span class="s2">"message"</span><span class="p">)</span>
 </span></code></pre></div>

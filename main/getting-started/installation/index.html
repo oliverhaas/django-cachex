@@ -1032,95 +1032,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Development
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Development
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../development/locmem-vs-fakeredis/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    LocMemCache vs fakeredis
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -1216,11 +1127,11 @@
 <ul>
 <li>Python 3.14+. The free-threaded build (3.14t) is supported, with one caveat for the C parsers below.</li>
 <li>Django 6.0 to 6.x (<code>Django&gt;=6,&lt;7</code>)</li>
-<li>valkey-py 6.1 to 6.x (<code>valkey&gt;=6.1,&lt;7</code>) or redis-py 6.0 to 8.x (<code>redis&gt;=6,&lt;9</code>)</li>
-<li>Valkey server 7.2+ or Redis server 6.2+. <code>set(get=True)</code> and the immediate-expiry conditional writes (<code>add()</code> and <code>set(nx=/xx=/get=)</code> with <code>timeout=0</code>) send <code>SET ... GET</code> and <code>SET ... PXAT</code>, both Redis 6.2 commands; <code>set(nx=True, get=True)</code> and <code>expiretime()</code> need Redis 7.0+. Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and <code>hsetex</code>/<code>hgetex</code> Valkey 9.0+ or Redis 8.0+; older servers raise <code>NotSupportedError</code> for those methods only.</li>
+<li>valkey-py 6.1 to 6.x (<code>valkey&gt;=6.1,&lt;7</code>) or redis-py 7.2 to 8.x (<code>redis&gt;=7.2,&lt;9</code>)</li>
+<li>Valkey server 7.2+ or Redis server 6.2+. <code>set(get=True)</code> and the immediate-expiry conditional writes (<code>add()</code> and <code>set(nx=/xx=/get=)</code> with <code>timeout=0</code>) send <code>SET ... GET</code> and <code>SET ... PXAT</code>, both Redis 6.2 commands. <code>set(nx=True, get=True)</code> and <code>expiretime()</code> need Redis 7.0+. Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and <code>hsetex</code>/<code>hgetex</code> Valkey 9.0+ or Redis 8.0+. Older servers raise <code>NotSupportedError</code> for those methods only.</li>
 </ul>
 <h2 id="install-with-uv">Install with uv<a class="headerlink" href="#install-with-uv" title="Permanent link">&para;</a></h2>
-<p>The base package pulls in no client driver; pick the extra that matches your setup:</p>
+<p>The base package installs no client driver. Add the extra for your server:</p>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="gp"># </span>For<span class="w"> </span>Valkey
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="go">uv add django-cachex[valkey-py]</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
@@ -1228,38 +1139,36 @@
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="go">uv add django-cachex[redis-py]</span>
 </span></code></pre></div>
 <h2 id="install-with-libvalkeyhiredis">Install with libvalkey/hiredis<a class="headerlink" href="#install-with-libvalkeyhiredis" title="Permanent link">&para;</a></h2>
-<p>For better performance, install with the libvalkey (for Valkey) or hiredis (for Redis) parser:</p>
+<p>The <code>libvalkey</code> (Valkey) and <code>hiredis</code> (Redis) extras add a C parser, which parses server replies faster than the pure-Python parser:</p>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="gp"># </span>For<span class="w"> </span>Valkey
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="go">uv add django-cachex[libvalkey]</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="gp"># </span>For<span class="w"> </span>Redis
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="go">uv add django-cachex[hiredis]</span>
 </span></code></pre></div>
-<p>These provide C-based parsers that improve protocol parsing throughput on the hot read path.</p>
-<p>Neither <code>hiredis</code> nor <code>libvalkey</code> declares free-threading support, so on the
-free-threaded build (3.14t) importing either re-enables the GIL for the
-process, with a <code>RuntimeWarning</code> at import. Use the pure-Python parser
-(the plain <code>valkey-py</code> / <code>redis-py</code> extras) to keep the GIL off.</p>
+<p>Neither <code>hiredis</code> nor <code>libvalkey</code> declares free-threading support. On the
+free-threaded build (3.14t), importing either re-enables the GIL for the
+process and emits a <code>RuntimeWarning</code>. Use the pure-Python parser (the plain
+<code>valkey-py</code> or <code>redis-py</code> extra) to keep the GIL off.</p>
 <h2 id="valkey-glide-adapter-optional">Valkey-Glide adapter (optional)<a class="headerlink" href="#valkey-glide-adapter-optional" title="Permanent link">&para;</a></h2>
 <div class="admonition warning">
 <p class="admonition-title">Experimental</p>
-<p>The valkey-glide adapter is experimental: interfaces and behavior may
-change, and it has seen less production testing than the
-redis-py/valkey-py paths.</p>
+<p>The valkey-glide adapter is experimental. Its interfaces and behavior can
+change, and it has less production testing than the redis-py and
+valkey-py backends.</p>
 </div>
-<p>The <code>ValkeyGlideCache</code> backend wraps Valkey's official client,
-<a href="https://github.com/valkey-io/valkey-glide">valkey-glide</a>. It has a Rust core, packaged through PyPI as two
-distributions, <code>valkey-glide-sync</code> and <code>valkey-glide</code>,
-pulled in together via the <code>valkey-glide</code> extra:</p>
+<p><code>ValkeyGlideCache</code> wraps <a href="https://github.com/valkey-io/valkey-glide">valkey-glide</a>, Valkey's official client with a
+Rust core. The <code>valkey-glide</code> extra installs its two PyPI distributions,
+<code>valkey-glide-sync</code> and <code>valkey-glide</code>:</p>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="go">uv add django-cachex[valkey-glide]</span>
 </span></code></pre></div>
-<p>The extra pins <code>valkey-glide-sync</code> and <code>valkey-glide</code> 2.5 to 2.x. cp314 GIL
-only; no cp314t (free-threaded) wheels are published yet.
-Standalone (<code>ValkeyGlideCache</code>) and cluster (<code>ValkeyGlideClusterCache</code>)
-backends are wired up; Sentinel is not exposed (<code>valkey-glide</code> itself does
-not ship a Sentinel client). See the
-<a href="../../user-guide/configuration/#valkey-glide">user-guide configuration page</a>
-for setup details.</p>
+<p>The extra pins <code>valkey-glide-sync</code> and <code>valkey-glide</code> 2.5 to 2.x. The
+adapter runs on the cp314 GIL build only, because valkey-glide publishes no
+cp314t (free-threaded) wheels. It has a standalone backend
+(<code>ValkeyGlideCache</code>) and a cluster backend (<code>ValkeyGlideClusterCache</code>). It
+has no Sentinel backend, because <code>valkey-glide</code> does not ship a Sentinel
+client. See <a href="../../user-guide/configuration/#valkey-glide">Configuration</a>
+for the setup.</p>
 
 
 

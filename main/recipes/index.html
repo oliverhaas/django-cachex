@@ -1082,95 +1082,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Development
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Development
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../development/locmem-vs-fakeredis/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    LocMemCache vs fakeredis
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -1312,9 +1223,8 @@
 
 
 <h1 id="recipes">Recipes<a class="headerlink" href="#recipes" title="Permanent link">&para;</a></h1>
-<p>Practical solutions for common caching scenarios.</p>
 <h2 id="session-storage">Session Storage<a class="headerlink" href="#session-storage" title="Permanent link">&para;</a></h2>
-<p>Use Valkey/Redis for Django sessions:</p>
+<p>Store Django sessions in Valkey or Redis:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># settings.py</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">SESSION_ENGINE</span> <span class="o">=</span> <span class="s2">"django.contrib.sessions.backends.cache"</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">SESSION_CACHE_ALIAS</span> <span class="o">=</span> <span class="s2">"default"</span>
@@ -1326,7 +1236,7 @@
 </span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="p">}</span>
 </span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="p">}</span>
 </span></code></pre></div>
-<p>For dedicated session storage with longer TTL:</p>
+<p>To give sessions their own alias and a longer TTL:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="s2">"default"</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>        <span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.ValkeyCache"</span><span class="p">,</span>
@@ -1342,43 +1252,34 @@
 </span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="n">SESSION_CACHE_ALIAS</span> <span class="o">=</span> <span class="s2">"sessions"</span>
 </span></code></pre></div>
 <h2 id="rate-limiting">Rate Limiting<a class="headerlink" href="#rate-limiting" title="Permanent link">&para;</a></h2>
-<p>Simple rate limiter using sorted sets:</p>
+<p>A rate limiter on a sorted set:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
 </span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">is_rate_limited</span><span class="p">(</span><span class="n">user_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span><span class="p">,</span> <span class="n">window</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">60</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="sd">"""Check if user has exceeded rate limit.</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="sd">    Args:</span>
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="sd">        user_id: Unique identifier for the user</span>
-</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="sd">        limit: Maximum requests allowed in window</span>
-</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="sd">        window: Time window in seconds</span>
-</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>
-</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="sd">    Returns:</span>
-</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="sd">        True if rate limited, False otherwise</span>
-</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="sd">    """</span>
-</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>    <span class="n">key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"ratelimit:</span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2">"</span>
-</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>    <span class="n">now</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>    <span class="n">window_start</span> <span class="o">=</span> <span class="n">now</span> <span class="o">-</span> <span class="n">window</span>
-</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>
-</span><span id="__span-2-20"><a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>    <span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">pipeline</span><span class="p">()</span> <span class="k">as</span> <span class="n">pipe</span><span class="p">:</span>
-</span><span id="__span-2-21"><a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>        <span class="c1"># Remove old entries</span>
-</span><span id="__span-2-22"><a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>        <span class="n">pipe</span><span class="o">.</span><span class="n">zremrangebyscore</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">window_start</span><span class="p">)</span>
-</span><span id="__span-2-23"><a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>        <span class="c1"># Add current request</span>
-</span><span id="__span-2-24"><a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>        <span class="n">pipe</span><span class="o">.</span><span class="n">zadd</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="p">{</span><span class="nb">str</span><span class="p">(</span><span class="n">now</span><span class="p">):</span> <span class="n">now</span><span class="p">})</span>
-</span><span id="__span-2-25"><a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a>        <span class="c1"># Count requests in window</span>
-</span><span id="__span-2-26"><a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>        <span class="n">pipe</span><span class="o">.</span><span class="n">zcard</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
-</span><span id="__span-2-27"><a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a>        <span class="c1"># Set expiry</span>
-</span><span id="__span-2-28"><a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a>        <span class="n">pipe</span><span class="o">.</span><span class="n">expire</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">window</span><span class="p">)</span>
-</span><span id="__span-2-29"><a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a>        <span class="n">results</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
-</span><span id="__span-2-30"><a id="__codelineno-2-30" name="__codelineno-2-30" href="#__codelineno-2-30"></a>
-</span><span id="__span-2-31"><a id="__codelineno-2-31" name="__codelineno-2-31" href="#__codelineno-2-31"></a>    <span class="n">count</span> <span class="o">=</span> <span class="n">results</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
-</span><span id="__span-2-32"><a id="__codelineno-2-32" name="__codelineno-2-32" href="#__codelineno-2-32"></a>    <span class="k">return</span> <span class="n">count</span> <span class="o">&gt;</span> <span class="n">limit</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="sd">"""Record one request and return True if the user is over the limit."""</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"ratelimit:</span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2">"</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">now</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">window_start</span> <span class="o">=</span> <span class="n">now</span> <span class="o">-</span> <span class="n">window</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>    <span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">pipeline</span><span class="p">()</span> <span class="k">as</span> <span class="n">pipe</span><span class="p">:</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>        <span class="c1"># Remove old entries</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>        <span class="n">pipe</span><span class="o">.</span><span class="n">zremrangebyscore</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">window_start</span><span class="p">)</span>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>        <span class="c1"># Add current request</span>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>        <span class="n">pipe</span><span class="o">.</span><span class="n">zadd</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="p">{</span><span class="nb">str</span><span class="p">(</span><span class="n">now</span><span class="p">):</span> <span class="n">now</span><span class="p">})</span>
+</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>        <span class="c1"># Count requests in window</span>
+</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>        <span class="n">pipe</span><span class="o">.</span><span class="n">zcard</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>        <span class="c1"># Set expiry</span>
+</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>        <span class="n">pipe</span><span class="o">.</span><span class="n">expire</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">window</span><span class="p">)</span>
+</span><span id="__span-2-20"><a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>        <span class="n">results</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
+</span><span id="__span-2-21"><a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>
+</span><span id="__span-2-22"><a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>    <span class="n">count</span> <span class="o">=</span> <span class="n">results</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+</span><span id="__span-2-23"><a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>    <span class="k">return</span> <span class="n">count</span> <span class="o">&gt;</span> <span class="n">limit</span>
 </span></code></pre></div>
 <h2 id="cache-invalidation-patterns">Cache Invalidation Patterns<a class="headerlink" href="#cache-invalidation-patterns" title="Permanent link">&para;</a></h2>
 <h3 id="pattern-based-deletion">Pattern-based deletion<a class="headerlink" href="#pattern-based-deletion" title="Permanent link">&para;</a></h3>
-<p>Delete all keys matching a pattern:</p>
+<p>Delete every key that matches a pattern:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="c1"># Delete all user-related cache entries</span>
@@ -1388,10 +1289,9 @@
 </span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">cache</span><span class="o">.</span><span class="n">delete_pattern</span><span class="p">(</span><span class="s2">"api:*:response"</span><span class="p">)</span>
 </span></code></pre></div>
 <h3 id="versioned-cache-keys">Versioned cache keys<a class="headerlink" href="#versioned-cache-keys" title="Permanent link">&para;</a></h3>
-<p>Invalidate entire cache groups by incrementing a version counter. The counter
-is created with <code>add()</code> before it is incremented, and stored with
-<code>timeout=None</code> so it cannot expire while the data keys it namespaces are
-still alive:</p>
+<p>Invalidate a group of keys by incrementing a version counter. The counter is
+created with <code>add()</code> before the increment. It has <code>timeout=None</code>, so it cannot
+expire while the data keys it namespaces are alive:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
@@ -1422,23 +1322,22 @@ still alive:</p>
 </span><span id="__span-4-28"><a id="__codelineno-4-28" name="__codelineno-4-28" href="#__codelineno-4-28"></a>        <span class="n">cache</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">3600</span><span class="p">)</span>
 </span><span id="__span-4-29"><a id="__codelineno-4-29" name="__codelineno-4-29" href="#__codelineno-4-29"></a>    <span class="k">return</span> <span class="n">data</span>
 </span></code></pre></div>
-<p>The <code>add()</code> is what makes the recipe portable. On the Valkey/Redis backends
-<code>incr()</code> on a missing key creates it at <code>delta</code>, so without the <code>add()</code> the
-first invalidation would leave the counter at <code>1</code>, the same value a missing
-key reads as, and the stale <code>v1</code> data would keep being served. On
-<code>LocMemCache</code> and <code>DatabaseCache</code> <code>incr()</code> on a missing key raises
-<code>ValueError</code>. With the counter created at <code>1</code> first, the increment moves it
-to <code>2</code> on every backend.</p>
+<p>On the Valkey and Redis backends, <code>incr()</code> on a missing key creates it at
+<code>delta</code>. Without the <code>add()</code>, the first invalidation would leave the counter at
+<code>1</code>, the value a missing key reads as, and the stale <code>v1</code> data would still be
+served. On <code>LocMemCache</code> and <code>DatabaseCache</code>, <code>incr()</code> on a missing key raises
+<code>ValueError</code>. With the counter created at <code>1</code> first, the increment moves it to
+<code>2</code> on every backend.</p>
 <h2 id="distributed-locking">Distributed Locking<a class="headerlink" href="#distributed-locking" title="Permanent link">&para;</a></h2>
-<p>Prevent concurrent execution of critical sections. <code>lease</code> is the TTL of
-the held lock (auto-released if the holder crashes); <code>timeout</code> is the
-maximum time <code>acquire()</code> waits before giving up:</p>
+<p>A lock keeps a critical section from running concurrently. <code>lease</code> is the TTL
+of the held lock, so the lock is released if the holder crashes. <code>timeout</code> is
+the longest time <code>acquire()</code> waits:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
 </span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
 </span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">"process-payments"</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">):</span>
 </span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">process_pending_payments</span><span class="p">()</span>
 </span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1"># Or, to bound how long we wait for the lock:</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1"># Or bound the wait for the lock:</span>
 </span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">"process-payments"</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
 </span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="k">if</span> <span class="n">lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">():</span>
 </span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    <span class="k">try</span><span class="p">:</span>
@@ -1446,20 +1345,20 @@ maximum time <code>acquire()</code> waits before giving up:</p>
 </span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>    <span class="k">finally</span><span class="p">:</span>
 </span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>        <span class="n">lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
 </span></code></pre></div>
-<p>The redis-py and valkey-py backends hand back a thin wrapper around the
-driver's lock object, so <code>acquire()</code> there takes the driver's
-<code>blocking_timeout</code> name; failures raise <code>django_cachex.lock.LockError</code> with
-the driver's error as <code>__cause__</code>. Setting <code>timeout</code> on <code>cache.lock()</code> works
-across every backend.</p>
+<p>On the redis-py and valkey-py backends, <code>cache.lock()</code> returns a wrapper around
+the driver's lock. Its <code>acquire()</code> takes the driver's <code>blocking_timeout</code>
+argument, and its failures raise <code>django_cachex.lock.LockError</code> with the
+driver's error as <code>__cause__</code>. <code>timeout</code> on <code>cache.lock()</code> works on every
+backend with locks.</p>
 <h2 id="gate-memory-heavy-work-with-a-weighted-semaphore">Gate Memory-Heavy Work With a Weighted Semaphore<a class="headerlink" href="#gate-memory-heavy-work-with-a-weighted-semaphore" title="Permanent link">&para;</a></h2>
-<p>When a worker pod has a limited memory budget but multiple task types compete for it, a weighted semaphore lets each caller declare how much it intends to consume. A task blocks while the budget cannot accommodate its weight. Admission is FIFO: a large task that is waiting holds back the smaller tasks queued behind it, even when their weight would fit, so the queue cannot starve the large task.</p>
+<p>A weighted semaphore shares a budget, such as a worker's memory, between tasks of different sizes. Each caller declares its weight and blocks while the budget has no room for it. Admission is FIFO. A waiting large task holds back the smaller tasks queued behind it, even when their weight would fit, so they cannot starve it.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
 </span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1"># Stay under 500 MB across all callers; this task uses ~100 MB.</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1"># 500 MB budget across all callers. This task uses ~100 MB.</span>
 </span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">semaphore</span><span class="p">(</span><span class="s2">"memory-pool"</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">300</span><span class="p">):</span>
 </span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">convert_huge_image</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
 </span></code></pre></div>
-<p>If <code>acquire()</code> should give up after some bounded wait, pass <code>timeout</code>:</p>
+<p>To bound the wait in <code>acquire()</code>, pass <code>timeout</code>:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex</span><span class="w"> </span><span class="kn">import</span> <span class="n">SemaphoreTimeoutError</span>
 </span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
 </span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="k">try</span><span class="p">:</span>
@@ -1479,9 +1378,9 @@ across every backend.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">async</span> <span class="k">with</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">asemaphore</span><span class="p">(</span><span class="s2">"memory-pool"</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">300</span><span class="p">):</span>
 </span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="k">await</span> <span class="n">convert_async</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
 </span></code></pre></div>
-<p>On RESP backends, <code>lease</code> is required and acts as a TTL on the held claim: if the worker crashes mid-task, the next acquirer reclaims the budget after the lease expires. Use <code>sem.extend(seconds)</code> to bump the TTL for tasks that may legitimately exceed their original lease.</p>
+<p>On the RESP backends, <code>lease</code> is required. It is the TTL of the held claim, so if a worker crashes mid-task, the next acquirer reclaims the budget after the lease expires. For a task that can run longer than its lease, call <code>sem.extend(seconds)</code>.</p>
 <h2 id="development-without-a-server">Development Without a Server<a class="headerlink" href="#development-without-a-server" title="Permanent link">&para;</a></h2>
-<p>For local development without a running server, use <code>LocMemCache</code>:</p>
+<p>For local development without a server, use <code>LocMemCache</code>:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># settings_dev.py</span>
 </span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
 </span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="s2">"default"</span><span class="p">:</span> <span class="p">{</span>
@@ -1493,15 +1392,13 @@ across every backend.</p>
 <p><code>django_cachex.cache.LocMemCache</code> extends Django's built-in <code>LocMemCache</code>
 with the hash, list, set and sorted-set commands (<code>hset</code>, <code>lpush</code>, <code>zadd</code> and
 the rest), the <code>ttl()</code> / <code>expire()</code> / <code>persist()</code> helpers, and admin support.
-It has no streams, locks, pipelines or Lua;
-<a href="../user-guide/configuration/#local-backends">Local backends</a> lists the exact
-surface, and
-<a href="../development/locmem-vs-fakeredis/">LocMemCache vs fakeredis</a> covers the
-performance comparison and rationale.</p>
+It has no streams, locks, pipelines or Lua.
+<a href="../user-guide/configuration/#local-backends">Local backends</a> lists what it
+supports.</p>
 <div class="admonition tip">
 <p class="admonition-title">For testing</p>
-<p>django-cachex uses <a href="https://testcontainers.com/">testcontainers</a> for its test suite.
-Consider using the same approach for accurate behavior in your tests.</p>
+<p>django-cachex runs its test suite with <a href="https://testcontainers.com/">testcontainers</a>.
+Use it in your tests for accurate server behavior.</p>
 </div>
 
 

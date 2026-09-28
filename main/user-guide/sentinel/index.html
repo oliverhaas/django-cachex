@@ -1021,95 +1021,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Development
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Development
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../development/locmem-vs-fakeredis/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    LocMemCache vs fakeredis
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -1190,7 +1101,7 @@
 
 
 <h1 id="valkeyredis-sentinel">Valkey/Redis Sentinel<a class="headerlink" href="#valkeyredis-sentinel" title="Permanent link">&para;</a></h1>
-<p>For basic sentinel setup, see <a href="../configuration/#sentinel-configuration">Configuration</a>.</p>
+<p>For the basic setup, see <a href="../configuration/#sentinel-configuration">Configuration</a>.</p>
 <h2 id="configuration-options">Configuration Options<a class="headerlink" href="#configuration-options" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1202,29 +1113,33 @@
 <tbody>
 <tr>
 <td><code>sentinels</code></td>
-<td>List of (host, port) tuples for Sentinel nodes (required)</td>
+<td>List of <code>(host, port)</code> tuples for the Sentinel nodes (required)</td>
 </tr>
 <tr>
 <td><code>sentinel_kwargs</code></td>
-<td>Dict of kwargs passed to Sentinel connection (e.g., password)</td>
+<td>Dict of kwargs for the connections to the Sentinel nodes, such as <code>password</code></td>
 </tr>
 </tbody>
 </table>
-<p>The <code>LOCATION</code> URL format is <code>redis://service_name/db</code> (or <code>valkey://service_name/db</code> for ValkeySentinelCache) where <code>service_name</code> is the master name configured in Sentinel. It is a single URL: a list (or a comma-separated string) with more than one entry raises <code>ImproperlyConfigured</code> at <code>caches[alias]</code>, since Sentinel discovers the primary and replicas itself. The Sentinel nodes go in <code>OPTIONS["sentinels"]</code>.</p>
-<p><code>OPTIONS["pool_class"]</code> must be the driver's <code>SentinelConnectionPool</code> or a subclass, and <code>OPTIONS["async_pool_class"]</code> its async counterpart (used by the <code>a*</code> methods); any other class raises <code>ImproperlyConfigured</code> at <code>caches[alias]</code>. See <a href="../configuration/#connection-pool">Connection Pool</a>.</p>
+<p><code>LOCATION</code> is one URL of the form <code>redis://service_name/db</code>, or
+<code>valkey://service_name/db</code> for <code>ValkeySentinelCache</code>. <code>service_name</code> is the
+master name configured in Sentinel. Sentinel discovers the primary and replicas
+itself, so a list or comma-separated string with more than one entry raises
+<code>ImproperlyConfigured</code> at <code>caches[alias]</code>.</p>
+<p><code>OPTIONS["pool_class"]</code> must be the driver's <code>SentinelConnectionPool</code> or a
+subclass, and <code>OPTIONS["async_pool_class"]</code> its async counterpart, which the
+<code>a*</code> methods use. Any other class raises <code>ImproperlyConfigured</code> at
+<code>caches[alias]</code>. See <a href="../configuration/#connection-pool">Connection Pool</a>.</p>
 <h2 id="tls">TLS<a class="headerlink" href="#tls" title="Permanent link">&para;</a></h2>
-<p>A TLS scheme in <code>LOCATION</code> (<code>rediss://service_name/db</code> for <code>RedisSentinelCache</code>,
-<code>valkeys://service_name/db</code> for <code>ValkeySentinelCache</code>) gives TLS data
-connections to the primary and replicas Sentinel discovers, and discovery keeps
-running. The connection to the Sentinel nodes themselves is configured through
-<code>sentinel_kwargs</code>, separately from the scheme.</p>
+<p>A TLS scheme in <code>LOCATION</code> is <code>rediss://service_name/db</code> for
+<code>RedisSentinelCache</code> and <code>valkeys://service_name/db</code> for <code>ValkeySentinelCache</code>.
+With it, the backend still discovers the primary and replicas through Sentinel
+and connects to them over TLS. <code>sentinel_kwargs</code> configures the connections to
+the Sentinel nodes themselves, independent of the scheme.</p>
 <h2 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
-<p>The Sentinel backend automatically:</p>
-<ol>
-<li>Connects to Sentinel nodes to discover the current primary</li>
-<li>Creates separate connection pools for primary (writes) and replica (reads)</li>
-<li>Handles failover automatically when the primary changes</li>
-</ol>
+<p>The backend asks the Sentinel nodes for the current primary and keeps separate
+connection pools for the primary (writes) and the replicas (reads). After a
+failover, it connects to the new primary.</p>
 
 
 

@@ -869,15 +869,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#behaviour-differences" class="md-nav__link">
+  <a href="#differences-from-django-redis-and-django-valkey" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Behaviour differences
+        Differences from django-redis and django-valkey
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Behaviour differences">
+    <nav class="md-nav" aria-label="Differences from django-redis and django-valkey">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1121,95 +1121,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Development
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Development
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../development/locmem-vs-fakeredis/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    LocMemCache vs fakeredis
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -1270,15 +1181,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#behaviour-differences" class="md-nav__link">
+  <a href="#differences-from-django-redis-and-django-valkey" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Behaviour differences
+        Differences from django-redis and django-valkey
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Behaviour differences">
+    <nav class="md-nav" aria-label="Differences from django-redis and django-valkey">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1400,10 +1311,10 @@
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Or (Redis)</span>
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.RedisCache"</span>
 </span></code></pre></div>
-<p>All existing Django cache options work unchanged. Two behaviours differ:</p>
+<p>All Django cache options work unchanged. Two behaviors differ on the Valkey and Redis backends:</p>
 <ul>
-<li><code>incr()</code> and <code>decr()</code> on a missing key create it at <code>delta</code> on the Valkey/Redis backends (Redis <code>INCRBY</code> semantics) where Django's <code>RedisCache</code> raises <code>ValueError</code>. Code that relied on the <code>ValueError</code> to detect an expired counter should check <code>has_key()</code> first. <code>LocMemCache</code> and <code>DatabaseCache</code> keep Django's behaviour.</li>
-<li><code>clear()</code> deletes this alias's keys only (a pattern delete over <code>KEY_PREFIX</code> and <code>VERSION</code>), not the whole database. <code>flush_db()</code> is the <code>FLUSHDB</code> equivalent.</li>
+<li><code>incr()</code> and <code>decr()</code> on a missing key start it from 0, like Redis <code>INCRBY</code>, where Django's <code>RedisCache</code> raises <code>ValueError</code>. Code that relies on the <code>ValueError</code> to detect an expired counter must check <code>has_key()</code> first. django-cachex's <code>LocMemCache</code> and <code>DatabaseCache</code> keep Django's behavior.</li>
+<li><code>clear()</code> deletes only this alias's keys, with a pattern delete over <code>KEY_PREFIX</code> and <code>VERSION</code>, not the whole database. <code>flush_db()</code> is the <code>FLUSHDB</code> equivalent.</li>
 </ul>
 <h2 id="from-django-valkey">From django-valkey<a class="headerlink" href="#from-django-valkey" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Before</span>
@@ -1413,7 +1324,6 @@
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="c1"># After</span>
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.ValkeyCache"</span>
 </span></code></pre></div>
-<p>Key changes:</p>
 <table>
 <thead>
 <tr>
@@ -1424,7 +1334,7 @@
 <tbody>
 <tr>
 <td><code>CLIENT_CLASS</code></td>
-<td>Removed - use specific backend class</td>
+<td>Removed. Use the backend class for the topology.</td>
 </tr>
 <tr>
 <td><code>SERIALIZER</code></td>
@@ -1440,7 +1350,7 @@
 </tr>
 <tr>
 <td><code>CONNECTION_POOL_KWARGS</code></td>
-<td>Flat keys in <code>OPTIONS</code>; they are forwarded to the pool's <code>from_url()</code></td>
+<td>Flat keys in <code>OPTIONS</code>, forwarded to the pool's <code>from_url()</code></td>
 </tr>
 <tr>
 <td><code>PARSER_CLASS</code></td>
@@ -1452,7 +1362,7 @@
 </tr>
 <tr>
 <td><code>get_valkey_connection()</code></td>
-<td><code>cache.get_client()</code></td>
+<td><code>cache.get_client(write=True)</code></td>
 </tr>
 <tr>
 <td><code>cache.lock(key, timeout=30)</code></td>
@@ -1472,10 +1382,8 @@
 </tr>
 </tbody>
 </table>
-<p>Import paths: <code>django_valkey.*</code> → <code>django_cachex.*</code>, with the class-name
-changes above. Any uppercase key left in <code>OPTIONS</code> is forwarded to the
-driver's <code>from_url()</code> as is and fails at connect time with a <code>TypeError</code>.</p>
-<p>For Sentinel: Use <code>django_cachex.cache.RedisSentinelCache</code> (or <code>ValkeySentinelCache</code>) instead of <code>CLIENT_CLASS</code>.</p>
+<p>Import paths change from <code>django_valkey.*</code> to <code>django_cachex.*</code>, with the class names above. An uppercase key left in <code>OPTIONS</code> is forwarded to the driver's <code>from_url()</code> as is and fails at connect time with a <code>TypeError</code>.</p>
+<p>For Sentinel, use <code>django_cachex.cache.RedisSentinelCache</code> or <code>ValkeySentinelCache</code> instead of <code>CLIENT_CLASS</code>.</p>
 <h2 id="from-django-redis">From django-redis<a class="headerlink" href="#from-django-redis" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Before</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_redis.cache.RedisCache"</span>
@@ -1484,7 +1392,6 @@ driver's <code>from_url()</code> as is and fails at connect time with a <code>Ty
 </span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># After</span>
 </span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.RedisCache"</span>
 </span></code></pre></div>
-<p>Key changes:</p>
 <table>
 <thead>
 <tr>
@@ -1495,7 +1402,7 @@ driver's <code>from_url()</code> as is and fails at connect time with a <code>Ty
 <tbody>
 <tr>
 <td><code>CLIENT_CLASS</code></td>
-<td>Removed - use specific backend class</td>
+<td>Removed. Use the backend class for the topology.</td>
 </tr>
 <tr>
 <td><code>SERIALIZER</code></td>
@@ -1511,7 +1418,7 @@ driver's <code>from_url()</code> as is and fails at connect time with a <code>Ty
 </tr>
 <tr>
 <td><code>CONNECTION_POOL_KWARGS</code></td>
-<td>Flat keys in <code>OPTIONS</code>; they are forwarded to the pool's <code>from_url()</code></td>
+<td>Flat keys in <code>OPTIONS</code>, forwarded to the pool's <code>from_url()</code></td>
 </tr>
 <tr>
 <td><code>PARSER_CLASS</code></td>
@@ -1523,7 +1430,7 @@ driver's <code>from_url()</code> as is and fails at connect time with a <code>Ty
 </tr>
 <tr>
 <td><code>get_redis_connection()</code></td>
-<td><code>cache.get_client()</code></td>
+<td><code>cache.get_client(write=True)</code></td>
 </tr>
 <tr>
 <td><code>cache.lock(key, timeout=30)</code></td>
@@ -1543,28 +1450,16 @@ driver's <code>from_url()</code> as is and fails at connect time with a <code>Ty
 </tr>
 </tbody>
 </table>
-<p>Import paths: <code>django_redis.*</code> → <code>django_cachex.*</code>, with the class-name
-changes above. A path-swapped <code>"django_cachex.serializers.json.JSONSerializer"</code>
-raises <code>ImportError</code> at <code>caches[alias]</code>. Any uppercase key left in <code>OPTIONS</code> is
-forwarded to the driver's <code>from_url()</code> as is and fails at connect time with a
-<code>TypeError</code>.</p>
-<p>For Sentinel: Use <code>django_cachex.cache.RedisSentinelCache</code> instead of <code>CLIENT_CLASS</code>.</p>
-<h2 id="behaviour-differences">Behaviour differences<a class="headerlink" href="#behaviour-differences" title="Permanent link">&para;</a></h2>
-<p>django-cachex differs from both libraries in these ways:</p>
+<p>Import paths change from <code>django_redis.*</code> to <code>django_cachex.*</code>, with the class names above. A path-swapped <code>"django_cachex.serializers.json.JSONSerializer"</code> raises <code>ImportError</code> at <code>caches[alias]</code>. An uppercase key left in <code>OPTIONS</code> is forwarded to the driver's <code>from_url()</code> as is and fails at connect time with a <code>TypeError</code>.</p>
+<p>For Sentinel, use <code>django_cachex.cache.RedisSentinelCache</code> instead of <code>CLIENT_CLASS</code>.</p>
+<h2 id="differences-from-django-redis-and-django-valkey">Differences from django-redis and django-valkey<a class="headerlink" href="#differences-from-django-redis-and-django-valkey" title="Permanent link">&para;</a></h2>
 <ul>
-<li><code>incr()</code> on a missing key creates it at <code>delta</code> (Redis <code>INCRBY</code> semantics) rather than raising.</li>
+<li><code>incr()</code> and <code>decr()</code> on a missing key start it from 0, like Redis <code>INCRBY</code>, instead of raising <code>ValueError</code>.</li>
 <li><code>clear()</code> is a pattern delete over this alias's <code>KEY_PREFIX</code> and <code>VERSION</code>, not <code>FLUSHDB</code>. Call <code>flush_db()</code> for <code>FLUSHDB</code>.</li>
-<li><code>ttl()</code> of a missing key returns <code>-2</code>, of a key without expiry <code>None</code>.</li>
+<li><code>ttl()</code> returns <code>-2</code> for a missing key and <code>None</code> for a key without expiry.</li>
 </ul>
 <h3 id="locks">Locks<a class="headerlink" href="#locks" title="Permanent link">&para;</a></h3>
-<p><code>cache.lock()</code> keeps the name but not the meaning of <code>timeout</code>. In
-django-redis and django-valkey <code>timeout=30</code> is the TTL of the held lock,
-forwarded to the driver's <code>client.lock(timeout=...)</code>. In django-cachex the
-lock TTL is <code>lease</code>, and <code>timeout</code> is the keyword-only maximum time
-<code>acquire()</code> waits before giving up. A mechanically migrated
-<code>cache.lock(key, timeout=30)</code> therefore waits up to 30 seconds to acquire and
-then holds the lock with no TTL, so a crashed holder blocks every peer until
-the key is deleted by hand. Rename the argument:</p>
+<p>The <code>timeout</code> argument of <code>cache.lock()</code> keeps its name but changes its meaning. In django-redis and django-valkey, <code>timeout=30</code> is the TTL of the held lock, forwarded to the driver's <code>client.lock(timeout=...)</code>. In django-cachex, the lock TTL is <code>lease</code>, and the keyword-only <code>timeout</code> is how long <code>acquire()</code> waits at most before giving up. A mechanically migrated <code>cache.lock(key, timeout=30)</code> waits up to 30 seconds to acquire and then holds the lock with no TTL. A crashed holder then blocks every peer until the key is deleted by hand. Rename the argument:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># django-redis / django-valkey</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">"job"</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">30</span><span class="p">):</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="o">...</span>
@@ -1574,23 +1469,20 @@ the key is deleted by hand. Rename the argument:</p>
 </span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="o">...</span>
 </span></code></pre></div>
 <h2 id="new-features">New Features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h2>
-<p>Coming from Django's built-in backend, everything django-cachex adds is new:
-data structures, TTL and pattern helpers, locks, semaphores, pipelines and
-scripting. Coming from django-redis or django-valkey, which already have TTL
-and pattern helpers and <code>cache.lock()</code>, you gain:</p>
+<p>Compared with Django's built-in backend, django-cachex adds data structures, TTL and pattern helpers, locks, semaphores, pipelines and scripting. django-redis and django-valkey have TTL and pattern helpers and <code>cache.lock()</code>. Compared with them, django-cachex adds:</p>
 <ul>
-<li>Valkey and Redis in one package, redis-py, valkey-py and valkey-glide behind one API.</li>
-<li>Multi-serializer/compressor fallback for safe migrations.</li>
-<li>Pipelines via <code>cache.pipeline()</code> and <code>cache.apipeline()</code>, with key prefixing and serialization applied.</li>
-<li>Weighted semaphores via <code>cache.semaphore()</code>.</li>
+<li>Valkey and Redis in one package, with redis-py, valkey-py and valkey-glide behind one API.</li>
+<li>Serializer and compressor fallback chains, to migrate between formats.</li>
+<li>Pipelines through <code>cache.pipeline()</code> and <code>cache.apipeline()</code>, with key prefixing and serialization applied.</li>
+<li>Weighted semaphores with <code>cache.semaphore()</code>.</li>
 <li>Hash-field TTL (<code>hexpire()</code>, <code>hsetex()</code>, <code>hgetex()</code> and relatives).</li>
 <li>Lua scripting with key-prefixing and encoding hooks (<code>eval_script()</code>).</li>
 <li>Stampede prevention (<code>OPTIONS["stampede_prevention"]</code>).</li>
 <li>An ORM query cache, <code>django_cachex.orm</code>, see <a href="../user-guide/orm-cache/">ORM Cache</a>.</li>
 </ul>
 <h2 id="from-django-cachalot">From django-cachalot<a class="headerlink" href="#from-django-cachalot" title="Permanent link">&para;</a></h2>
-<p>The <a href="../user-guide/orm-cache/">ORM cache</a> started as a copy of django-cachalot 2.9.1, so most of its settings and functions carry over under new names. Invalidation works differently: results are stored under table generations instead of timestamps, and writes take leases, so a query that runs while a write commits can no longer leave a stale result in the cache.</p>
-<p>Replace the app and uninstall cachalot; running both would patch the ORM twice:</p>
+<p>The <a href="../user-guide/orm-cache/">ORM cache</a> started as a copy of django-cachalot 2.9.1, so most of its settings and functions carry over under new names. Invalidation works differently: results are stored under table generations instead of timestamps, and writes take leases.</p>
+<p>Replace the app and uninstall cachalot, because running both patches the ORM twice:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Before</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">INSTALLED_APPS</span> <span class="o">=</span> <span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="s2">"cachalot"</span><span class="p">]</span>
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
@@ -1627,7 +1519,7 @@ and pattern helpers and <code>cache.lock()</code>, you gain:</p>
 </tr>
 <tr>
 <td><code>CACHALOT_TIMEOUT</code></td>
-<td><code>TIMEOUT</code>. The default is the cache's default timeout, not <code>None</code>. Either way a write leaves its tables' results in the cache until they expire or are evicted, see <a href="../user-guide/orm-cache/#eviction">Eviction</a>.</td>
+<td><code>TIMEOUT</code>. The default is the cache's default timeout, not <code>None</code>. Either way, a write leaves its tables' results in the cache until they expire or are evicted (see <a href="../user-guide/orm-cache/#eviction">Eviction</a>).</td>
 </tr>
 <tr>
 <td><code>CACHALOT_ONLY_CACHABLE_APPS</code>, <code>CACHALOT_UNCACHABLE_APPS</code></td>
@@ -1639,7 +1531,7 @@ and pattern helpers and <code>cache.lock()</code>, you gain:</p>
 </tr>
 <tr>
 <td><code>CACHALOT_QUERY_KEYGEN</code>, <code>CACHALOT_TABLE_KEYGEN</code></td>
-<td>Removed. The keys go through the cache alias's <code>KEY_FUNCTION</code>, which can tell tenants apart. Table generations then differ per tenant too, so a write to a table the tenants share invalidates only the writing tenant's results: list shared tables in <code>UNCACHABLE_TABLES</code>.</td>
+<td>Removed. The keys go through the cache alias's <code>KEY_FUNCTION</code>, which can tell tenants apart. Table generations then differ per tenant too, so a write to a table the tenants share invalidates only the writing tenant's results. List shared tables in <code>UNCACHABLE_TABLES</code>.</td>
 </tr>
 <tr>
 <td><code>CACHALOT_USE_UNSUPPORTED_DATABASE</code>, <code>CACHALOT_ADDITIONAL_SUPPORTED_DATABASES</code></td>
@@ -1647,11 +1539,11 @@ and pattern helpers and <code>cache.lock()</code>, you gain:</p>
 </tr>
 <tr>
 <td></td>
-<td><code>LEASE_TIMEOUT</code> is new, see <a href="../user-guide/orm-cache/#failures">Failures</a>.</td>
+<td><code>LEASE_TIMEOUT</code> has no cachalot counterpart (see <a href="../user-guide/orm-cache/#failures">Failures</a>).</td>
 </tr>
 </tbody>
 </table>
-<p><code>CACHE</code> must name a django-cachex Redis or Valkey backend, or a <code>TrackingCache</code> over one, with a serializer that keeps Python types, like the default pickle one. Other backends cache nothing (<code>cachex_orm.W001</code>), apart from <code>LocMemCache</code> for tests and single processes. See <a href="../user-guide/orm-cache/#caches-and-databases">Caches and databases</a>.</p>
+<p><code>CACHE</code> must name a django-cachex Redis or Valkey backend, or a <code>TrackingCache</code> over one. Its serializer must keep Python types, as the default pickle serializer does. Other backends cache nothing (<code>cachex_orm.W001</code>), apart from <code>LocMemCache</code> for tests and single processes. See <a href="../user-guide/orm-cache/#caches-and-databases">Caches and databases</a>.</p>
 <h3 id="api">API<a class="headerlink" href="#api" title="Permanent link">&para;</a></h3>
 <p>Import from <code>django_cachex.orm.api</code> instead of <code>cachalot.api</code>:</p>
 <table>
@@ -1668,7 +1560,7 @@ and pattern helpers and <code>cache.lock()</code>, you gain:</p>
 </tr>
 <tr>
 <td><code>cachalot_disabled(all_queries=False)</code></td>
-<td><code>orm_cache_disabled()</code>. The <code>all_queries</code> argument is gone; cachalot 2.9.1 ignored it.</td>
+<td><code>orm_cache_disabled()</code>, without the <code>all_queries</code> argument, which cachalot 2.9.1 ignored.</td>
 </tr>
 <tr>
 <td><code>get_last_invalidation(*tables_or_models, cache_alias=None, db_alias=None)</code></td>
@@ -1692,7 +1584,7 @@ and pattern helpers and <code>cache.lock()</code>, you gain:</p>
 </tr>
 </tbody>
 </table>
-<p>A value cached under <code>get_last_invalidation()</code> is cached under the generations instead, which are <code>None</code> when a value computed now must not be cached:</p>
+<p>A value cached under <code>get_last_invalidation()</code> is cached under the generations instead. They are <code>None</code> when a value computed now must not be cached:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Before</span>
 </span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">order_totals</span><span class="p">():</span>
 </span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"totals:</span><span class="si">{</span><span class="n">get_last_invalidation</span><span class="p">(</span><span class="n">Order</span><span class="p">,</span><span class="w"> </span><span class="n">OrderLine</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
@@ -1709,24 +1601,24 @@ and pattern helpers and <code>cache.lock()</code>, you gain:</p>
 </span></code></pre></div>
 <h3 id="behavior-differences">Behavior differences<a class="headerlink" href="#behavior-differences" title="Permanent link">&para;</a></h3>
 <ul>
-<li>A write can no longer leave a stale result behind: while a write holds its lease, queries on its tables are neither served from the cache nor stored in it. See <a href="../user-guide/orm-cache/#how-invalidation-works">How invalidation works</a>.</li>
-<li>Writes need the cache. A write that cannot take its lease raises <code>InvalidationError</code>, a <code>DatabaseError</code>, before its statement or <code>COMMIT</code> runs, unless <code>ENABLED</code> is off. See <a href="../user-guide/orm-cache/#failures">Failures</a>.</li>
-<li>Subqueries nested in expressions, in the ordering or in <code>FilteredRelation</code> conditions count with their tables, and <code>Now()</code> anywhere in a query keeps it from being cached; cachalot looked at the top level of filters and annotations only. Queries calling <code>Random()</code>, <code>UUID4()</code>, <code>UUID7()</code> or <code>RandomUUID()</code> are never cached, like those ordered by <code>"?"</code>.</li>
+<li>Unlike with cachalot, a query that runs while a write commits cannot leave a stale result behind. While a write holds its lease, queries on its tables are neither served from the cache nor stored in it (see <a href="../user-guide/orm-cache/#how-invalidation-works">How invalidation works</a>).</li>
+<li>Writes need the cache. A write that cannot take its lease raises <code>InvalidationError</code>, a <code>DatabaseError</code>, before its statement or <code>COMMIT</code> runs, unless <code>ENABLED</code> is off (see <a href="../user-guide/orm-cache/#failures">Failures</a>).</li>
+<li>Subqueries nested in expressions, in the ordering or in <code>FilteredRelation</code> conditions count with their tables. <code>Now()</code> anywhere in a query keeps it from being cached. Cachalot looked at the top level of filters and annotations only. Queries calling <code>Random()</code>, <code>UUID4()</code>, <code>UUID7()</code> or <code>RandomUUID()</code> are never cached, like those ordered by <code>"?"</code>.</li>
 <li>Raw SQL is searched for whole table names, in any case. Cachalot found <code>shop_order</code> inside <code>shop_orderline</code>, which invalidated more than needed, and missed names with uppercase letters, which left stale results. It also missed the tables of an <code>extra()</code> select that <code>values()</code> hides and the ordering uses.</li>
-<li>Only PostgreSQL and SQLite are cached. Cachalot also covered MySQL; listing it in <code>DATABASES</code> is now the error <code>cachex_orm.E006</code>. <code>"supported_only"</code> also leaves out replicas, the aliases with a <code>TEST["MIRROR"]</code>.</li>
-<li>The results of <code>iterator()</code> are not cached; cachalot read them into memory in full and cached them by default.</li>
+<li>Only PostgreSQL and SQLite are cached. Cachalot also covered MySQL, and listing a MySQL alias in <code>DATABASES</code> is the error <code>cachex_orm.E006</code>. <code>"supported_only"</code> also leaves out replicas, the aliases with a <code>TEST["MIRROR"]</code>.</li>
+<li>The results of <code>iterator()</code> are not cached. Cachalot read them into memory in full and cached them by default.</li>
 <li>With psycopg2 instead of psycopg 3, queries with JSON, binary or range parameters are not cached.</li>
-<li><code>migrate</code> invalidates only when it applied a migration, and then the many-to-many tables too; cachalot invalidated every model after each <code>migrate</code> and left out the many-to-many tables.</li>
-<li>Query parameters are keyed by their type and whole value. Cachalot keyed them by <code>str()</code>, which psycopg 3 shortens for long JSON and binary values, so two queries differing only there could share a result, as could <code>Value(1)</code> and <code>Value("1")</code>.</li>
+<li><code>migrate</code> invalidates only when it applied a migration, and then the many-to-many tables too. Cachalot invalidated every model after each <code>migrate</code> and left out the many-to-many tables.</li>
+<li>Query parameters are keyed by their type and whole value. Cachalot keyed them by <code>str()</code>, which psycopg 3 shortens for long JSON and binary values. Two queries differing only in such a value could share a result under cachalot, as could <code>Value(1)</code> and <code>Value("1")</code>.</li>
 </ul>
 <h3 id="rolling-out">Rolling out<a class="headerlink" href="#rolling-out" title="Permanent link">&para;</a></h3>
-<p>Cachalot and the ORM cache keep separate keys, so while both run, the writes of one do not invalidate what the other cached. A deployment that stops every process before starting the new ones can switch in one go. A rolling deployment takes three:</p>
+<p>Cachalot and the ORM cache keep separate keys, so while both run, the writes of one do not invalidate what the other cached. A deployment that stops every process before starting the new ones can switch in one go. A rolling deployment takes three steps:</p>
 <ol>
-<li>Set <code>CACHALOT_ENABLED = False</code> and deploy. Once every process runs it, nothing is served from cachalot's cache, and its processes still invalidate it.</li>
+<li>Set <code>CACHALOT_ENABLED = False</code> and deploy. After every process runs with it, nothing is served from cachalot's cache, and its processes still invalidate it.</li>
 <li>Replace cachalot with <code>django_cachex.orm</code>, with <code>"ENABLED": False</code> in <code>CACHEX_ORM</code>, and deploy. Nothing is served from either cache.</li>
-<li>Once no cachalot process remains, set <code>"ENABLED": True</code> and deploy.</li>
+<li>After the last cachalot process stops, set <code>"ENABLED": True</code> and deploy.</li>
 </ol>
-<p>Cachalot stored its entries without expiry by default. If they live in a cache of their own, clear it; otherwise they stay until the server evicts them, which it never does under a <code>volatile-*</code> or <code>noeviction</code> policy.</p>
+<p>Cachalot stored its entries without expiry by default. If they live in a cache of their own, clear it. Otherwise they stay until the server evicts them, which it never does under a <code>volatile-*</code> or <code>noeviction</code> policy.</p>
 
 
 

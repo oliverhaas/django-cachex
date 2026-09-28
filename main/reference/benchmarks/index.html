@@ -1109,95 +1109,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Development
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Development
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../development/locmem-vs-fakeredis/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    LocMemCache vs fakeredis
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -1366,10 +1277,10 @@
 
 
 <h1 id="benchmarks">Benchmarks<a class="headerlink" href="#benchmarks" title="Permanent link">&para;</a></h1>
-<p>Reference numbers for adapter, serializer, and compressor combinations
-under the workloads in <a href="https://github.com/oliverhaas/django-cachex/tree/main/benchmarks"><code>benchmarks/</code></a> (the README there has
-the full methodology). Results shift run-to-run; ordering is the part
-to trust.</p>
+<p>Reference numbers for adapter, serializer and compressor combinations,
+measured with the workloads in <a href="https://github.com/oliverhaas/django-cachex/tree/main/benchmarks"><code>benchmarks/</code></a>. Its README has
+the full methodology. Results shift from run to run, so trust the ordering
+more than the exact values.</p>
 <h2 id="run-environment">Run environment<a class="headerlink" href="#run-environment" title="Permanent link">&para;</a></h2>
 <ul>
 <li>AMD Ryzen 9 5950X (16C/32T) · 32 GiB RAM · Ubuntu 24.04 · Linux 6.17</li>
@@ -1380,19 +1291,20 @@ to trust.</p>
 </ul>
 <h2 id="what-the-workload-does">What the workload does<a class="headerlink" href="#what-the-workload-does" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Sync, async, and request-cycle benchmarks all run the same seven
-  phases: <code>get</code>, <code>get-miss</code>, <code>set</code>, <code>mget</code>/<code>mset</code> (10-key batches,
-  reported per-key), <code>incr</code>, <code>delete</code>. 1,000 ops per phase, 10 timed
-  runs after a warmup pass.</li>
-<li>ASGI benchmark spawns <code>granian</code> (4 workers), drives 100 concurrent
-  <code>httpx</code> clients for 20 s against a 6-op view, and samples server RSS
-  and <code>connected_clients</code> every 5 s.</li>
-<li>Compressor micro skips the cache path entirely; pure
-  <code>compress</code> / <code>decompress</code> on a 14 KiB pickle of queryset-shaped data.</li>
+<li>The sync, async and request-cycle benchmarks run the same seven phases:
+  <code>get</code>, <code>get-miss</code>, <code>set</code>, <code>mget</code>, <code>mset</code>, <code>incr</code> and <code>delete</code>. A phase
+  makes 1,000 calls, or 100 calls of 10 keys for <code>mget</code> and <code>mset</code>. The
+  throughput columns show calls per second. Each phase has 10 timed runs
+  after a warmup pass.</li>
+<li>The ASGI benchmark starts <code>granian</code> with 4 workers and drives 100
+  concurrent <code>httpx</code> clients for 20 s against a view that makes 6 cache
+  calls. It samples server RSS and <code>connected_clients</code> every 5 s.</li>
+<li>The compressor micro benchmark skips the cache and times <code>compress</code> and
+  <code>decompress</code> on a 14 KiB pickle of queryset-shaped data.</li>
 </ul>
 <h2 id="sync-direct">Sync direct<a class="headerlink" href="#sync-direct" title="Permanent link">&para;</a></h2>
-<p><code>cache.get(...)</code> etc. against the configured backend, no Django
-request, no asyncio.</p>
+<p>Cache calls such as <code>cache.get(...)</code> against the configured backend, with
+no Django request and no asyncio.</p>
 <table>
 <thead>
 <tr>
@@ -1476,12 +1388,8 @@ request, no asyncio.</p>
 </tr>
 </tbody>
 </table>
-<p><code>valkey-glide</code> is ~2.5× the fastest pure-Python adapter on single-key
-ops and uses ~2-4× less Python memory. The C parsers (<code>hiredis</code>,
-<code>libvalkey</code>) shave Python memory in half on their respective adapters
-but only move throughput by a few percent.</p>
 <h2 id="serializers">Serializers<a class="headerlink" href="#serializers" title="Permanent link">&para;</a></h2>
-<p><code>valkey-py+libvalkey</code> adapter, varying the serializer.</p>
+<p>The <code>valkey-py+libvalkey</code> adapter with each serializer.</p>
 <table>
 <thead>
 <tr>
@@ -1548,18 +1456,9 @@ but only move throughput by a few percent.</p>
 </tr>
 </tbody>
 </table>
-<p>The single-key phases are adapter-bound: <code>get</code>, <code>get-miss</code>, <code>incr</code> and
-<code>delete</code> land within a few percent of each other whatever the serializer,
-because the Python transport costs more than any encoder does. The
-serializer shows up on the batch phases, where payload size is multiplied
-by ten: <code>orjson</code> and <code>ormsgpack</code> (both Rust-cored) run <code>mset</code> ~4% ahead of
-<code>pickle</code> and ~45% ahead of <code>json</code>. <code>json.dumps</code> uses CPython's C encoder,
-so the gap comes from <code>DjangoJSONEncoder.default()</code> running in Python for
-every non-primitive value and from the <code>str</code> encode/decode round trip on
-each payload.</p>
 <h2 id="compressors-macro">Compressors (macro)<a class="headerlink" href="#compressors-macro" title="Permanent link">&para;</a></h2>
-<p><code>valkey-py+libvalkey</code> + <code>pickle</code> on a 14 KiB queryset-shaped payload,
-end-to-end cache ops.</p>
+<p>End-to-end cache calls through <code>valkey-py+libvalkey</code> with <code>pickle</code>, on a
+14 KiB queryset-shaped payload.</p>
 <table>
 <thead>
 <tr>
@@ -1643,14 +1542,9 @@ end-to-end cache ops.</p>
 </tr>
 </tbody>
 </table>
-<p>Server-memory tells the trade-off: <code>lz4</code> keeps <code>set</code> throughput level
-with <code>none</code> while shrinking the working set ~5.4×; <code>zstd</code> is the densest
-of the cheap options, at ~4% off <code>none</code> on <code>set</code>. <code>lzma</code> is too slow for
-hot paths (<code>set</code> drops to a quarter, <code>mset</code> to a twelfth); reach for it
-only on rarely-written, memory-constrained data.</p>
 <h2 id="compressors-micro">Compressors (micro)<a class="headerlink" href="#compressors-micro" title="Permanent link">&para;</a></h2>
-<p>Pure compress/decompress on the same 14 KiB payload. No adapter, no
-network.</p>
+<p><code>compress</code> and <code>decompress</code> alone on the same 14 KiB payload, with no
+adapter and no network.</p>
 <table>
 <thead>
 <tr>
@@ -1693,14 +1587,10 @@ network.</p>
 </tr>
 </tbody>
 </table>
-<p><code>lz4</code> is in a different league on raw throughput, at the cost of ~5
-percentage points of ratio. <code>zstd</code> matches <code>zlib</code>'s ratio at ~4× the
-compress speed.</p>
 <h2 id="django-request-cycle">Django request cycle<a class="headerlink" href="#django-request-cycle" title="Permanent link">&para;</a></h2>
-<p>Same workload as sync direct, but every cache op runs inside
-<code>Client().get(url)</code> (URL resolve → <code>CommonMiddleware</code> → view →
-<code>request_finished</code>). The gap to sync direct is the per-request
-overhead Django itself adds.</p>
+<p>The sync direct workload, with every cache call inside <code>Client().get(url)</code>
+(URL resolve → <code>CommonMiddleware</code> → view → <code>request_finished</code>). The gap to
+sync direct is Django's per-request overhead.</p>
 <table>
 <thead>
 <tr>
@@ -1777,14 +1667,12 @@ overhead Django itself adds.</p>
 </tr>
 </tbody>
 </table>
-<p>Django's per-request work caps the pure-Python adapters at ~1k req/s;
-at that point the cache is no longer the bottleneck. <code>valkey-glide</code>
-still lands ~1.4-1.8× higher because its per-op overhead is small
-enough that Django's per-request work doesn't fully mask it.</p>
 <h2 id="async-serial">Async serial<a class="headerlink" href="#async-serial" title="Permanent link">&para;</a></h2>
-<p>One <code>await cache.aget(...)</code> at a time, no <code>gather</code>. Direct comparison
-with sync; the gap is asyncio loop overhead (and <code>sync_to_async</code> for
-backends without native async).</p>
+<p>One awaited call at a time, such as <code>await cache.aget(...)</code>, with no
+<code>gather</code>. The gap to sync direct is asyncio loop overhead. The redis-py and
+valkey-py backends use the drivers' native async clients (<code>redis.asyncio</code>,
+<code>valkey.asyncio</code>). Django's built-in <code>RedisCache</code> has no native async path,
+so it also pays for <code>sync_to_async</code>.</p>
 <table>
 <thead>
 <tr>
@@ -1861,15 +1749,8 @@ backends without native async).</p>
 </tr>
 </tbody>
 </table>
-<p><code>valkey-glide</code> runs ~1.6-1.9× the C-parser Python adapters on every
-phase; the redis-py and valkey-py backends use the drivers' native async
-clients (<code>redis.asyncio</code>, <code>valkey.asyncio</code>), so the gap is the Python
-protocol work those clients do per call. Django's built-in <code>RedisCache</code>
-has no native async path, and its <code>mget</code>/<code>mset</code> collapse to ~190 ops/s
-under <code>sync_to_async</code>.</p>
 <h2 id="async-concurrent-50-in-flight">Async concurrent (50 in flight)<a class="headerlink" href="#async-concurrent-50-in-flight" title="Permanent link">&para;</a></h2>
-<p><code>asyncio.gather</code> of 50 ops at a time, closer to what an ASGI app
-under load actually generates.</p>
+<p><code>asyncio.gather</code> of 50 calls at a time.</p>
 <table>
 <thead>
 <tr>
@@ -1953,14 +1834,11 @@ under load actually generates.</p>
 </tr>
 </tbody>
 </table>
-<p>This is where the Rust-cored transport pays off: <code>valkey-glide</code> peaks
-at ~4-5× the Python adapters on single-key phases. Connection counts
-plateau (<code>Δ = 0</code> across phases on every adapter), so this also serves as
-the connection-leak smoke test.</p>
+<p>Connection counts stay flat between phases on every adapter (<code>Δ = 0</code>).
+This benchmark is also the connection-leak smoke test.</p>
 <h2 id="asgi-full-stack">ASGI full-stack<a class="headerlink" href="#asgi-full-stack" title="Permanent link">&para;</a></h2>
-<p>Granian (4 workers) + httpx (100 concurrent, 20 s) hitting a view that
-does six async cache ops per request. Closest shape to a real
-production load.</p>
+<p>Granian (4 workers) and httpx (100 concurrent clients, 20 s) against a view
+that makes six async cache calls per request.</p>
 <table>
 <thead>
 <tr>
@@ -2030,26 +1908,21 @@ production load.</p>
 </tr>
 </tbody>
 </table>
-<p>req/s is noisy run-to-run on this benchmark; treat the rough buckets
-(~600 / ~400 / ~200) as the signal, not exact ranks. The clearer
-takeaways: <code>valkey-glide</code> keeps the connection count to ~half the
-Python adapters, while Django's built-in <code>RedisCache</code> opens 316
-connections (it instantiates a fresh <code>redis.Redis</code> per cache call) and
-pays the highest average latency and the largest RSS.</p>
+<p>req/s is noisy from run to run on this benchmark. Read it in rough buckets
+(~600, ~400, ~200), not as exact ranks.</p>
 <h2 id="reproducing">Reproducing<a class="headerlink" href="#reproducing" title="Permanent link">&para;</a></h2>
-<p>The benchmarks live in <a href="https://github.com/oliverhaas/django-cachex/tree/main/benchmarks"><code>benchmarks/</code></a> and spin up their
-own Redis + Valkey containers via <code>testcontainers</code>, so a Docker daemon
-is the only host requirement:</p>
+<p>The benchmarks in <a href="https://github.com/oliverhaas/django-cachex/tree/main/benchmarks"><code>benchmarks/</code></a> start their own Redis and
+Valkey containers with <code>testcontainers</code>. A Docker daemon is the only host
+requirement:</p>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="go">uv run pytest benchmarks/ -c benchmarks/pytest.ini</span>
 </span></code></pre></div>
-<p>Single slice:</p>
+<p>To run a single slice:</p>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="go">uv run pytest benchmarks/test_throughput.py::test_adapters_sync \</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="go">  -c benchmarks/pytest.ini</span>
 </span></code></pre></div>
-<p><code>benchmarks/README.md</code> has the full list of slices, knobs (<code>N_OPS</code>,
-<code>K_RUNS</code>, <code>WARMUP_KEYS</code>, <code>MGET_BATCH</code>), and notes on running with
-simulated network latency to reproduce upstream connection-leak
-claims.</p>
+<p><code>benchmarks/README.md</code> lists the slices and the knobs (<code>N_OPS</code>, <code>K_RUNS</code>,
+<code>WARMUP_KEYS</code>, <code>MGET_BATCH</code>). It also covers running with simulated network
+latency to reproduce upstream connection-leak claims.</p>
 
 
 

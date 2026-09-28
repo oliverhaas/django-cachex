@@ -701,10 +701,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#expire-at-specific-time-milliseconds-precision" class="md-nav__link">
+  <a href="#expire-at-specific-time-in-milliseconds" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Expire at Specific Time (milliseconds precision)
+        Expire at Specific Time in Milliseconds
       
     </span>
   </a>
@@ -762,10 +762,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#iterate-keys-recommended" class="md-nav__link">
+  <a href="#iterate-keys" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Iterate Keys (Recommended)
+        Iterate Keys
       
     </span>
   </a>
@@ -1410,95 +1410,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Development
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Development
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../development/locmem-vs-fakeredis/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    LocMemCache vs fakeredis
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -1621,10 +1532,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#expire-at-specific-time-milliseconds-precision" class="md-nav__link">
+  <a href="#expire-at-specific-time-in-milliseconds" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Expire at Specific Time (milliseconds precision)
+        Expire at Specific Time in Milliseconds
       
     </span>
   </a>
@@ -1682,10 +1593,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#iterate-keys-recommended" class="md-nav__link">
+  <a href="#iterate-keys" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Iterate Keys (Recommended)
+        Iterate Keys
       
     </span>
   </a>
@@ -1969,7 +1880,8 @@
 
 <h1 id="advanced-usage">Advanced Usage<a class="headerlink" href="#advanced-usage" title="Permanent link">&para;</a></h1>
 <h2 id="serializer">Serializer<a class="headerlink" href="#serializer" title="Permanent link">&para;</a></h2>
-<p>By default, <code>PickleSerializer</code> is used with <code>pickle.DEFAULT_PROTOCOL</code>. To use a different serializer, name it in the <code>serializer</code> option:</p>
+<p>The default serializer is <code>PickleSerializer</code> with <code>pickle.DEFAULT_PROTOCOL</code>.
+To use another one, name it in the <code>serializer</code> option:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="s2">"default"</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        <span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.ValkeyCache"</span><span class="p">,</span>
@@ -1980,7 +1892,8 @@
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="p">}</span>
 </span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="p">}</span>
 </span></code></pre></div>
-<p>A dotted path is instantiated with no arguments. To set a constructor option such as the pickle protocol, pass an instance instead:</p>
+<p>cachex instantiates a dotted path with no arguments. To set a constructor
+option such as the pickle protocol, pass an instance:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex.serializers.pickle</span><span class="w"> </span><span class="kn">import</span> <span class="n">PickleSerializer</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="s2">"OPTIONS"</span><span class="p">:</span> <span class="p">{</span>
@@ -1996,12 +1909,8 @@
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">cache</span><span class="o">.</span><span class="n">ttl</span><span class="p">(</span><span class="s2">"foo"</span><span class="p">)</span>  <span class="c1"># Returns 25</span>
 </span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">cache</span><span class="o">.</span><span class="n">ttl</span><span class="p">(</span><span class="s2">"missing"</span><span class="p">)</span>  <span class="c1"># Returns -2 (key doesn't exist)</span>
 </span></code></pre></div>
-<p>Returns:</p>
-<ul>
-<li><code>-2</code> - Key doesn't exist or already expired</li>
-<li><code>None</code> - Key exists but has no expiration (set with <code>timeout=None</code>)</li>
-<li><code>int</code> - Seconds until expiration</li>
-</ul>
+<p><code>ttl()</code> returns the seconds until expiry, <code>None</code> for a key without expiry (set
+with <code>timeout=None</code>), and <code>-2</code> for a missing or expired key.</p>
 <h3 id="get-ttl-in-milliseconds">Get TTL in Milliseconds<a class="headerlink" href="#get-ttl-in-milliseconds" title="Permanent link">&para;</a></h3>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">cache</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">"foo"</span><span class="p">,</span> <span class="s2">"value"</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">25</span><span class="p">)</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">cache</span><span class="o">.</span><span class="n">pttl</span><span class="p">(</span><span class="s2">"foo"</span><span class="p">)</span>  <span class="c1"># Returns 25000</span>
@@ -2024,7 +1933,7 @@
 </span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">cache</span><span class="o">.</span><span class="n">expireat</span><span class="p">(</span><span class="s2">"foo"</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">hours</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span>
 </span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="n">cache</span><span class="o">.</span><span class="n">ttl</span><span class="p">(</span><span class="s2">"foo"</span><span class="p">)</span>  <span class="c1"># Returns ~3600</span>
 </span></code></pre></div>
-<h3 id="expire-at-specific-time-milliseconds-precision">Expire at Specific Time (milliseconds precision)<a class="headerlink" href="#expire-at-specific-time-milliseconds-precision" title="Permanent link">&para;</a></h3>
+<h3 id="expire-at-specific-time-in-milliseconds">Expire at Specific Time in Milliseconds<a class="headerlink" href="#expire-at-specific-time-in-milliseconds" title="Permanent link">&para;</a></h3>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">cache</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">"foo"</span><span class="p">,</span> <span class="s2">"bar"</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">22</span><span class="p">)</span>
 </span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">cache</span><span class="o">.</span><span class="n">pexpireat</span><span class="p">(</span><span class="s2">"foo"</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">milliseconds</span><span class="o">=</span><span class="mi">900</span><span class="p">,</span> <span class="n">hours</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span>
 </span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">cache</span><span class="o">.</span><span class="n">pttl</span><span class="p">(</span><span class="s2">"foo"</span><span class="p">)</span>  <span class="c1"># Returns ~3600900</span>
@@ -2035,7 +1944,7 @@
 </span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">cache</span><span class="o">.</span><span class="n">ttl</span><span class="p">(</span><span class="s2">"foo"</span><span class="p">)</span>  <span class="c1"># Returns None (no expiration)</span>
 </span></code></pre></div>
 <h2 id="locks">Locks<a class="headerlink" href="#locks" title="Permanent link">&para;</a></h2>
-<p>Distributed locks with the <code>threading.Lock</code> interface:</p>
+<p><code>lock()</code> returns a distributed lock with the <code>threading.Lock</code> interface:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
 </span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
 </span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">"somekey"</span><span class="p">):</span>
@@ -2048,8 +1957,8 @@
 </span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="c1"># Get all matching keys (not recommended for large datasets)</span>
 </span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="n">cache</span><span class="o">.</span><span class="n">keys</span><span class="p">(</span><span class="s2">"foo_*"</span><span class="p">)</span>  <span class="c1"># Returns ["foo_1", "foo_2"]</span>
 </span></code></pre></div>
-<h3 id="iterate-keys-recommended">Iterate Keys (Recommended)<a class="headerlink" href="#iterate-keys-recommended" title="Permanent link">&para;</a></h3>
-<p>For large datasets, use server-side cursors:</p>
+<h3 id="iterate-keys">Iterate Keys<a class="headerlink" href="#iterate-keys" title="Permanent link">&para;</a></h3>
+<p>For large datasets, iterate with server-side cursors:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># Returns a generator</span>
 </span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">cache</span><span class="o">.</span><span class="n">iter_keys</span><span class="p">(</span><span class="s2">"foo_*"</span><span class="p">):</span>
 </span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
@@ -2057,12 +1966,12 @@
 <h3 id="delete-by-pattern">Delete by Pattern<a class="headerlink" href="#delete-by-pattern" title="Permanent link">&para;</a></h3>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">cache</span><span class="o">.</span><span class="n">delete_pattern</span><span class="p">(</span><span class="s2">"foo_*"</span><span class="p">)</span>
 </span></code></pre></div>
-<p>For better performance with many keys:</p>
+<p>When many keys match, a larger <code>itersize</code> needs fewer round trips:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">cache</span><span class="o">.</span><span class="n">delete_pattern</span><span class="p">(</span><span class="s2">"foo_*"</span><span class="p">,</span> <span class="n">itersize</span><span class="o">=</span><span class="mi">100_000</span><span class="p">)</span>
 </span></code></pre></div>
-<p>The pattern is a Redis glob on every backend, matched case-sensitively. An
-empty pattern matches only the empty key, so <code>delete_pattern("")</code> deletes at
-most one key; pass <code>"*"</code> to clear everything. See
+<p>The pattern is a case-sensitive Redis glob on every backend. An empty pattern
+matches only the empty key, so <code>delete_pattern("")</code> deletes at most one key.
+<code>"*"</code> deletes every key under the cache's prefix and version. See
 <a href="../../reference/api/#key-patterns">Key patterns</a>.</p>
 <h2 id="atomic-operations">Atomic Operations<a class="headerlink" href="#atomic-operations" title="Permanent link">&para;</a></h2>
 <h3 id="setnx-set-if-not-exists">SETNX (Set if Not Exists)<a class="headerlink" href="#setnx-set-if-not-exists" title="Permanent link">&para;</a></h3>
@@ -2077,9 +1986,7 @@ most one key; pass <code>"*"</code> to clear everything. See
 </span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="n">cache</span><span class="o">.</span><span class="n">decr</span><span class="p">(</span><span class="s2">"counter"</span><span class="p">)</span>  <span class="c1"># Returns 5</span>
 </span></code></pre></div>
 <h2 id="data-structures">Data Structures<a class="headerlink" href="#data-structures" title="Permanent link">&para;</a></h2>
-<p>Direct access to Valkey/Redis data structures through the cache interface.</p>
 <h3 id="hashes">Hashes<a class="headerlink" href="#hashes" title="Permanent link">&para;</a></h3>
-<p>Maps of field-value pairs:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
 </span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>
 </span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="c1"># Set a single field</span>
@@ -2114,7 +2021,9 @@ most one key; pass <code>"*"</code> to clear everything. See
 </span><span id="__span-16-32"><a id="__codelineno-16-32" name="__codelineno-16-32" href="#__codelineno-16-32"></a><span class="n">cache</span><span class="o">.</span><span class="n">hvals</span><span class="p">(</span><span class="s2">"user:1"</span><span class="p">)</span>  <span class="c1"># ["Alice", "alice@example.com", 0.5]</span>
 </span></code></pre></div>
 <h4 id="field-expiration">Field Expiration<a class="headerlink" href="#field-expiration" title="Permanent link">&para;</a></h4>
-<p>Fields can carry their own TTL. This needs Redis 7.4+ or Valkey 9.0+, and <code>hsetex</code>/<code>hgetex</code> Redis 8.0+ or Valkey 9.0+; an older server raises <code>NotSupportedError</code>.</p>
+<p>Hash fields can have their own TTL. This needs Redis 7.4+ or Valkey 9.0+, and
+<code>hsetex</code> and <code>hgetex</code> need Redis 8.0+ or Valkey 9.0+. An older server raises
+<code>NotSupportedError</code>.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timedelta</span>
 </span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>
 </span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="n">cache</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">"session:42"</span><span class="p">,</span> <span class="n">mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">"token"</span><span class="p">:</span> <span class="s2">"abc"</span><span class="p">,</span> <span class="s2">"csrf"</span><span class="p">:</span> <span class="s2">"xyz"</span><span class="p">,</span> <span class="s2">"theme"</span><span class="p">:</span> <span class="s2">"dark"</span><span class="p">})</span>
@@ -2142,14 +2051,12 @@ most one key; pass <code>"*"</code> to clear everything. See
 </span><span id="__span-17-25"><a id="__codelineno-17-25" name="__codelineno-17-25" href="#__codelineno-17-25"></a>
 </span><span id="__span-17-26"><a id="__codelineno-17-26" name="__codelineno-17-26" href="#__codelineno-17-26"></a><span class="n">cache</span><span class="o">.</span><span class="n">hpersist</span><span class="p">(</span><span class="s2">"session:42"</span><span class="p">,</span> <span class="s2">"csrf"</span><span class="p">)</span>  <span class="c1"># [1]</span>
 </span></code></pre></div>
-<p>Field TTL rules:</p>
-<ul>
-<li>Rewriting a field with <code>hset</code>, or with <code>hsetex</code> without <code>keepttl=True</code>, clears that field's TTL.</li>
-<li><code>hsetex(timeout=...)</code> follows <code>set()</code>: the default uses the backend's <code>TIMEOUT</code>, <code>None</code> means no expiry, and <code>timeout=0</code> deletes the fields immediately.</li>
-<li>Stampede prevention pads key-level timeouts only; field TTLs are sent as given.</li>
-</ul>
+<p>Rewriting a field with <code>hset</code>, or with <code>hsetex</code> without <code>keepttl=True</code>, clears
+that field's TTL. <code>hsetex()</code> treats <code>timeout</code> the way <code>set()</code> does. The default
+uses the backend's <code>TIMEOUT</code>, <code>None</code> means no expiry, and <code>timeout=0</code> deletes
+the fields immediately. Stampede prevention pads key-level timeouts only and
+sends field TTLs as given.</p>
 <h3 id="sorted-sets">Sorted Sets<a class="headerlink" href="#sorted-sets" title="Permanent link">&para;</a></h3>
-<p>Unique members with scores, automatically sorted:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
 </span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>
 </span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="c1"># Add members with scores</span>
@@ -2190,7 +2097,6 @@ most one key; pass <code>"*"</code> to clear everything. See
 </span><span id="__span-18-38"><a id="__codelineno-18-38" name="__codelineno-18-38" href="#__codelineno-18-38"></a><span class="n">cache</span><span class="o">.</span><span class="n">zcard</span><span class="p">(</span><span class="s2">"leaderboard"</span><span class="p">)</span>
 </span></code></pre></div>
 <h3 id="lists">Lists<a class="headerlink" href="#lists" title="Permanent link">&para;</a></h3>
-<p>Ordered collections of elements:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
 </span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>
 </span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="c1"># Push elements</span>
@@ -2223,14 +2129,14 @@ most one key; pass <code>"*"</code> to clear everything. See
 </span><span id="__span-19-30"><a id="__codelineno-19-30" name="__codelineno-19-30" href="#__codelineno-19-30"></a><span class="n">cache</span><span class="o">.</span><span class="n">lmove</span><span class="p">(</span><span class="s2">"source"</span><span class="p">,</span> <span class="s2">"dest"</span><span class="p">,</span> <span class="s2">"LEFT"</span><span class="p">,</span> <span class="s2">"RIGHT"</span><span class="p">)</span>  <span class="c1"># LPOP source, RPUSH dest</span>
 </span></code></pre></div>
 <h2 id="raw-client-access">Raw Client Access<a class="headerlink" href="#raw-client-access" title="Permanent link">&para;</a></h2>
-<p>Access the underlying valkey-py/redis-py client directly:</p>
+<p><code>get_client()</code> returns the underlying valkey-py or redis-py client:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="n">client</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get_client</span><span class="p">()</span>
 </span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="n">client</span><span class="o">.</span><span class="n">publish</span><span class="p">(</span><span class="s2">"channel"</span><span class="p">,</span> <span class="s2">"message"</span><span class="p">)</span>
 </span></code></pre></div>
 <h2 id="lua-scripts">Lua Scripts<a class="headerlink" href="#lua-scripts" title="Permanent link">&para;</a></h2>
-<p>Execute Lua scripts with <code>eval_script()</code>. Keys and args go to the server as
-given: a <code>pre_hook</code> such as <code>keys_only_pre</code> adds this cache's key prefix and
-version, and the <a href="#prepost-processing-hooks">hooks</a> also encode and decode values.</p>
+<p><code>eval_script()</code> runs a Lua script and sends its keys and args as given. A
+<code>pre_hook</code> such as <code>keys_only_pre</code> adds the cache's key prefix and version, and
+the <a href="#prepost-processing-hooks">hooks</a> also encode and decode values.</p>
 <h3 id="basic-usage">Basic Usage<a class="headerlink" href="#basic-usage" title="Permanent link">&para;</a></h3>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
 </span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex</span><span class="w"> </span><span class="kn">import</span> <span class="n">keys_only_pre</span>
@@ -2246,13 +2152,14 @@ version, and the <a href="#prepost-processing-hooks">hooks</a> also encode and d
 </span><span id="__span-21-12"><a id="__codelineno-21-12" name="__codelineno-21-12" href="#__codelineno-21-12"></a>    <span class="n">pre_hook</span><span class="o">=</span><span class="n">keys_only_pre</span><span class="p">,</span>
 </span><span id="__span-21-13"><a id="__codelineno-21-13" name="__codelineno-21-13" href="#__codelineno-21-13"></a><span class="p">)</span>
 </span></code></pre></div>
-<p><code>eval_script()</code> runs the script by its SHA-1 (<code>EVALSHA</code>), loading it with
-<code>SCRIPT LOAD</code> on the first <code>NOSCRIPT</code> reply. The full source is sent once per
-script per server; every later call sends the 40-byte digest. Scripts queued
-in a pipeline are sent as plain <code>EVAL</code>, since a pipeline cannot retry a
-<code>NOSCRIPT</code> reply.</p>
+<p><code>eval_script()</code> sends the script's SHA-1 digest with <code>EVALSHA</code>. After a
+<code>NOSCRIPT</code> reply, it loads the script with <code>SCRIPT LOAD</code> and retries. Each
+server receives the full source once per script, and later calls send only the
+40-byte digest. A pipeline sends the full source with <code>EVAL</code>, because it cannot
+retry a <code>NOSCRIPT</code> reply.</p>
 <h3 id="prepost-processing-hooks">Pre/Post Processing Hooks<a class="headerlink" href="#prepost-processing-hooks" title="Permanent link">&para;</a></h3>
-<p>Scripts support <code>pre_hook</code> (transform keys/args before execution) and <code>post_hook</code> (transform results after execution).</p>
+<p><code>pre_hook</code> transforms the keys and args before the script runs, and
+<code>post_hook</code> transforms the result.</p>
 <h4 id="built-in-helpers">Built-in Helpers<a class="headerlink" href="#built-in-helpers" title="Permanent link">&para;</a></h4>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
 </span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>    <span class="n">Encoded</span><span class="p">,</span>  <span class="c1"># Marks an ARGV entry for encoded_pre</span>
@@ -2263,13 +2170,12 @@ in a pipeline are sent as plain <code>EVAL</code>, since a pipeline cannot retry
 </span><span id="__span-22-7"><a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a>    <span class="n">decode_list_post</span><span class="p">,</span>  <span class="c1"># Decode a list of returned values</span>
 </span><span id="__span-22-8"><a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a><span class="p">)</span>
 </span></code></pre></div>
-<p>Pass <code>post_hook=None</code> (the default) when no decoding is needed; the result is
-returned unchanged.</p>
+<p>With <code>post_hook=None</code>, the default, the result comes back unchanged.</p>
 <h4 id="mixed-values-and-scalars">Mixed Values and Scalars<a class="headerlink" href="#mixed-values-and-scalars" title="Permanent link">&para;</a></h4>
-<p>Most real scripts carry two kinds of ARGV: values that a later <code>get()</code> has to
-read back, which must go through the serializer and compressor, and scalars
-that Lua itself consumes with <code>tonumber</code> or a string compare, which must not.
-Wrap the values in <code>Encoded</code> and use <code>encoded_pre</code>:</p>
+<p>A script's ARGV often mixes two kinds of arguments. Values that a later <code>get()</code>
+reads back must go through the serializer and compressor. Scalars that Lua
+consumes with <code>tonumber</code> or a string compare must not. Wrap the values in
+<code>Encoded</code> and use <code>encoded_pre</code>:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex</span><span class="w"> </span><span class="kn">import</span> <span class="n">Encoded</span><span class="p">,</span> <span class="n">encoded_pre</span>
 </span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>
 </span><span id="__span-23-3"><a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="n">SETEXPIRE</span> <span class="o">=</span> <span class="s2">"""</span>
@@ -2290,14 +2196,13 @@ Wrap the values in <code>Encoded</code> and use <code>encoded_pre</code>:</p>
 </span><span id="__span-23-18"><a id="__codelineno-23-18" name="__codelineno-23-18" href="#__codelineno-23-18"></a>    <span class="n">pre_hook</span><span class="o">=</span><span class="n">encoded_pre</span><span class="p">,</span>
 </span><span id="__span-23-19"><a id="__codelineno-23-19" name="__codelineno-23-19" href="#__codelineno-23-19"></a><span class="p">)</span>
 </span></code></pre></div>
-<p>The marker is position-independent, so a variadic tail is
-<code>[str(score), "0", *map(Encoded, members)]</code> and alternating field/value
-pairs are <code>[field, Encoded(value), ...]</code>. With nothing wrapped <code>encoded_pre</code>
-behaves like <code>keys_only_pre</code>; with everything wrapped, like <code>full_encode_pre</code>.</p>
-<p>An <code>Encoded</code> that reaches the adapter unwrapped, because the call passed no
-<code>pre_hook</code> or one that does not handle it, raises <code>TypeError</code> instead of
-sending the dataclass repr to the server. <code>Encoded</code> in <code>keys</code> and
-<code>Encoded(Encoded(...))</code> raise too.</p>
+<p><code>Encoded</code> works at any position, for example in a variadic tail such as
+<code>[str(score), "0", *map(Encoded, members)]</code> or in alternating field/value pairs
+such as <code>[field, Encoded(value), ...]</code>. With nothing wrapped, <code>encoded_pre</code> behaves
+like <code>keys_only_pre</code>, and with everything wrapped, like <code>full_encode_pre</code>.</p>
+<p>An <code>Encoded</code> in <code>args</code> that no <code>pre_hook</code> unwraps raises <code>TypeError</code> before
+anything reaches the server. So do an <code>Encoded</code> in <code>keys</code> and
+<code>Encoded(Encoded(...))</code>.</p>
 <h4 id="key-prefixing">Key Prefixing<a class="headerlink" href="#key-prefixing" title="Permanent link">&para;</a></h4>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex</span><span class="w"> </span><span class="kn">import</span> <span class="n">keys_only_pre</span>
 </span><span id="__span-24-2"><a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>
@@ -2331,7 +2236,7 @@ sending the dataclass repr to the server. <code>Encoded</code> in <code>keys</co
 </span><span id="__span-25-14"><a id="__codelineno-25-14" name="__codelineno-25-14" href="#__codelineno-25-14"></a><span class="p">)</span>
 </span></code></pre></div>
 <h3 id="custom-processing-hooks">Custom Processing Hooks<a class="headerlink" href="#custom-processing-hooks" title="Permanent link">&para;</a></h3>
-<p>Create custom hooks with <code>ScriptHelpers</code>:</p>
+<p>Custom hooks receive a <code>ScriptHelpers</code> instance:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-26-1"><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScriptHelpers</span>
 </span><span id="__span-26-2"><a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a>
 </span><span id="__span-26-3"><a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a>
@@ -2373,20 +2278,21 @@ sending the dataclass repr to the server. <code>Encoded</code> in <code>keys</co
 </span></code></pre></div>
 <h3 id="async-support">Async Support<a class="headerlink" href="#async-support" title="Permanent link">&para;</a></h3>
 <p>Use <code>aeval_script()</code> for async execution:</p>
-<p>```python
-from django_cachex import keys_only_pre</p>
-<p>count = await cache.aeval_script(
-    """
-    local current = redis.call('INCR', KEYS[1])
-    if current == 1 then
-        redis.call('EXPIRE', KEYS[1], ARGV[1])
-    end
-    return current
-    """,
-    keys=["user:123:requests"],
-    args=[60],
-    pre_hook=keys_only_pre,
-)</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-28-1"><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex</span><span class="w"> </span><span class="kn">import</span> <span class="n">keys_only_pre</span>
+</span><span id="__span-28-2"><a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>
+</span><span id="__span-28-3"><a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a><span class="n">count</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aeval_script</span><span class="p">(</span>
+</span><span id="__span-28-4"><a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a><span class="w">    </span><span class="sd">"""</span>
+</span><span id="__span-28-5"><a id="__codelineno-28-5" name="__codelineno-28-5" href="#__codelineno-28-5"></a><span class="sd">    local current = redis.call('INCR', KEYS[1])</span>
+</span><span id="__span-28-6"><a id="__codelineno-28-6" name="__codelineno-28-6" href="#__codelineno-28-6"></a><span class="sd">    if current == 1 then</span>
+</span><span id="__span-28-7"><a id="__codelineno-28-7" name="__codelineno-28-7" href="#__codelineno-28-7"></a><span class="sd">        redis.call('EXPIRE', KEYS[1], ARGV[1])</span>
+</span><span id="__span-28-8"><a id="__codelineno-28-8" name="__codelineno-28-8" href="#__codelineno-28-8"></a><span class="sd">    end</span>
+</span><span id="__span-28-9"><a id="__codelineno-28-9" name="__codelineno-28-9" href="#__codelineno-28-9"></a><span class="sd">    return current</span>
+</span><span id="__span-28-10"><a id="__codelineno-28-10" name="__codelineno-28-10" href="#__codelineno-28-10"></a><span class="sd">    """</span><span class="p">,</span>
+</span><span id="__span-28-11"><a id="__codelineno-28-11" name="__codelineno-28-11" href="#__codelineno-28-11"></a>    <span class="n">keys</span><span class="o">=</span><span class="p">[</span><span class="s2">"user:123:requests"</span><span class="p">],</span>
+</span><span id="__span-28-12"><a id="__codelineno-28-12" name="__codelineno-28-12" href="#__codelineno-28-12"></a>    <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="mi">60</span><span class="p">],</span>
+</span><span id="__span-28-13"><a id="__codelineno-28-13" name="__codelineno-28-13" href="#__codelineno-28-13"></a>    <span class="n">pre_hook</span><span class="o">=</span><span class="n">keys_only_pre</span><span class="p">,</span>
+</span><span id="__span-28-14"><a id="__codelineno-28-14" name="__codelineno-28-14" href="#__codelineno-28-14"></a><span class="p">)</span>
+</span></code></pre></div>
 
 
 

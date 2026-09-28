@@ -1041,95 +1041,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Development
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Development
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="development/locmem-vs-fakeredis/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    LocMemCache vs fakeredis
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -1239,20 +1150,20 @@
 <h2 id="whats-in-the-box">What's in the box<a class="headerlink" href="#whats-in-the-box" title="Permanent link">&para;</a></h2>
 <p>A drop-in replacement for Django's built-in Redis cache, plus:</p>
 <ul>
-<li>One package for both Valkey and Redis, default and Sentinel and Cluster.</li>
-<li>Sync and async support sharing one configuration: every cache exposes both <code>get()</code> and <code>aget()</code>, backed by the same alias.</li>
-<li>Hash, list, set, sorted set, and stream operations on the cache object.</li>
+<li>One package for Valkey and Redis, standalone, Sentinel and Cluster.</li>
+<li>Sync and async methods on every cache, such as <code>get()</code> and <code>aget()</code>, from one alias and one configuration.</li>
+<li>Hash, list, set, sorted set and stream operations on the cache object.</li>
 <li>TTL and pattern helpers (<code>ttl()</code>, <code>expire()</code>, <code>keys()</code>, <code>delete_pattern()</code>).</li>
-<li>Distributed locks: <code>cache.lock()</code>.</li>
-<li>Weighted semaphores: <code>cache.semaphore()</code> for budget-based concurrency gating (counting and weighted, in-process and distributed).</li>
-<li>Lua scripting via <code>eval_script()</code>, with optional hooks for key prefixing and value encoding/decoding.</li>
-<li>Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with fallback chains for safe migrations.</li>
+<li>Distributed locks with <code>cache.lock()</code>.</li>
+<li>Counting and weighted semaphores with <code>cache.semaphore()</code>, in-process or distributed, to cap concurrent work at a budget.</li>
+<li>Lua scripting with <code>eval_script()</code>, with optional hooks for key prefixing and value encoding and decoding.</li>
+<li>Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with a fallback chain to migrate between formats.</li>
 <li>Cache stampede prevention (TTL-based XFetch).</li>
-<li><code>TrackingCache</code>, a local read cache over a Redis/Valkey alias, invalidated by the server's <code>CLIENT TRACKING</code> or bounded by a local TTL.</li>
-<li>An opt-in <a href="user-guide/orm-cache/">ORM cache</a>, <code>django_cachex.orm</code>: ORM query results cached per table and invalidated by every write, derived from django-cachalot with write leases that keep a write from leaving a stale result behind.</li>
-<li>Django <code>LocMemCache</code> and <code>DatabaseCache</code> extensions with the hash, list, set and sorted set ops, <code>ttl()</code>/<code>expire()</code>/<code>persist()</code>, key patterns, and admin support (no streams, locks, pipelines or Lua).</li>
-<li>Optional <code>valkey-glide</code> adapter: Valkey's official Rust-cored client, exposed as <code>ValkeyGlideCache</code>. Experimental.</li>
-<li>Django admin UI for browsing keys, inspecting values, editing, and flushing.</li>
+<li><code>TrackingCache</code>, a local read cache over a Redis or Valkey alias, invalidated by the server's <code>CLIENT TRACKING</code> or bounded by a local TTL.</li>
+<li>An opt-in <a href="user-guide/orm-cache/">ORM cache</a>, <code>django_cachex.orm</code>, derived from django-cachalot. It caches ORM query results per table and invalidates them on every write. Write leases keep a write from leaving a stale result behind.</li>
+<li><code>LocMemCache</code> and <code>DatabaseCache</code> extensions with the hash, list, set and sorted set operations, <code>ttl()</code>/<code>expire()</code>/<code>persist()</code>, key patterns and admin support. They have no streams, locks, pipelines or Lua.</li>
+<li>An experimental <code>ValkeyGlideCache</code> backend on <code>valkey-glide</code>, Valkey's official client with a Rust core.</li>
+<li>A Django admin UI to browse keys, inspect and edit values, and flush caches.</li>
 </ul>
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
 <ul>
@@ -1262,24 +1173,24 @@
   <code>RuntimeWarning</code>. Run with <code>PYTHON_GIL=0</code> (or <code>-Xgil=0</code>) to keep it
   disabled; that is how the CI 3.14t job runs the suite.</li>
 <li>Django 6.0 to 6.x (<code>Django&gt;=6,&lt;7</code>)</li>
-<li>valkey-py 6.1 to 6.x (<code>valkey&gt;=6.1,&lt;7</code>) or redis-py 6.0 to 8.x (<code>redis&gt;=6,&lt;9</code>)</li>
+<li>valkey-py 6.1 to 6.x (<code>valkey&gt;=6.1,&lt;7</code>) or redis-py 7.2 to 8.x (<code>redis&gt;=7.2,&lt;9</code>)</li>
 <li>Valkey 7.2+ or Redis 6.2+ on the server. <code>set(get=True)</code> and the
   immediate-expiry conditional writes (<code>add()</code> and <code>set(nx=/xx=/get=)</code> with
-  <code>timeout=0</code>) send <code>SET ... GET</code> and <code>SET ... PXAT</code>, both Redis 6.2 commands;
+  <code>timeout=0</code>) send <code>SET ... GET</code> and <code>SET ... PXAT</code>, both Redis 6.2 commands.
   <code>set(nx=True, get=True)</code> and <code>expiretime()</code> need Redis 7.0+</li>
 <li>Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and <code>hsetex</code>/<code>hgetex</code>
-  Valkey 9.0+ or Redis 8.0+; older servers raise <code>NotSupportedError</code> for those
+  Valkey 9.0+ or Redis 8.0+. Older servers raise <code>NotSupportedError</code> for those
   methods</li>
 </ul>
-<p>The <code>valkey-glide</code> adapter is optional and experimental: interfaces and
-behavior may still change, and it has seen less production testing than
-the redis-py/valkey-py paths. Install with the <code>valkey-glide</code> extra
-(<code>pip install django-cachex[valkey-glide]</code>) to enable
-<code>ValkeyGlideCache</code>; it pulls in <code>valkey-glide-sync</code> and <code>valkey-glide</code>
-(2.5 to 2.x), the official Rust-cored Valkey client. cp314 GIL only; no
-free-threaded wheels yet. Cluster is supported via
-<code>ValkeyGlideClusterCache</code>; Sentinel is not currently exposed
-(<code>valkey-glide</code> itself does not ship a Sentinel client).</p>
+<p>The <code>valkey-glide</code> adapter is optional and experimental. Its interfaces and
+behavior can change, and it has less production testing than the redis-py
+and valkey-py backends. The <code>valkey-glide</code> extra
+(<code>pip install django-cachex[valkey-glide]</code>) enables <code>ValkeyGlideCache</code> and
+installs <code>valkey-glide-sync</code> and <code>valkey-glide</code> (2.5 to 2.x), Valkey's
+official client with a Rust core. The adapter needs the cp314 GIL build,
+because <code>valkey-glide</code> publishes no free-threaded wheels.
+<code>ValkeyGlideClusterCache</code> supports Cluster. The adapter has no Sentinel
+backend, because <code>valkey-glide</code> does not ship a Sentinel client.</p>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <p>Install with pip:</p>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="go">pip install django-cachex[valkey-py]</span>

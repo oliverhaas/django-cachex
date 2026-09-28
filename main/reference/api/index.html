@@ -1349,95 +1349,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Development
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Development
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../development/locmem-vs-fakeredis/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    LocMemCache vs fakeredis
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -1848,7 +1759,6 @@
 <h1 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h1>
 <h2 id="cache-methods">Cache Methods<a class="headerlink" href="#cache-methods" title="Permanent link">&para;</a></h2>
 <h3 id="standard-django-cache-methods">Standard Django Cache Methods<a class="headerlink" href="#standard-django-cache-methods" title="Permanent link">&para;</a></h3>
-<p>All standard Django cache methods are supported:</p>
 <table>
 <thead>
 <tr>
@@ -1924,7 +1834,6 @@
 </tbody>
 </table>
 <h3 id="extended-methods">Extended Methods<a class="headerlink" href="#extended-methods" title="Permanent link">&para;</a></h3>
-<p>django-cachex adds these extended methods:</p>
 <table>
 <thead>
 <tr>
@@ -1971,15 +1880,15 @@
 </tr>
 <tr>
 <td><code>memory_usage(key, version=None, *, samples=None)</code></td>
-<td>Bytes the key and its value take on the server (<code>MEMORY USAGE</code>); <code>None</code> if the key is missing. <code>samples</code> bounds how many elements of a container are sampled (server default 5, <code>0</code> = all). Valkey/Redis backends only; other backends raise <code>NotSupportedError</code></td>
+<td>Bytes the key and its value take on the server (<code>MEMORY USAGE</code>), or <code>None</code> for a missing key. <code>samples</code> bounds how many elements of a container are sampled (server default 5, <code>0</code> = all). Valkey/Redis backends only; other backends raise <code>NotSupportedError</code></td>
 </tr>
 <tr>
 <td><code>largest_keys(pattern="*", count=10, version=None, *, samples=None, itersize=None)</code></td>
-<td>The <code>count</code> largest keys matching <code>pattern</code> as <code>(key, bytes)</code> pairs, largest first. Scans with <code>iter_keys()</code> and pipelines <code>MEMORY USAGE</code> in batches of 100. <code>count=0</code> returns <code>[]</code> without scanning; a negative <code>count</code> raises <code>ValueError</code>. Valkey/Redis backends only; other backends raise <code>NotSupportedError</code></td>
+<td>The <code>count</code> largest keys matching <code>pattern</code> as <code>(key, bytes)</code> pairs, largest first. Scans with <code>iter_keys()</code> and pipelines <code>MEMORY USAGE</code> in batches of 100. <code>count=0</code> returns <code>[]</code> without scanning, and a negative <code>count</code> raises <code>ValueError</code>. Valkey/Redis backends only; other backends raise <code>NotSupportedError</code></td>
 </tr>
 <tr>
 <td><code>clear_all_versions(itersize=None)</code></td>
-<td>Delete every key under this cache's <code>KEY_PREFIX</code> across all versions; returns the number deleted. The pattern <code>key_func("*", prefix, "*")</code>, built from the glob-escaped prefix, is handed to the adapter outside <code>make_key</code>, so <code>cache.delete_pattern()</code> with the same pattern is not equivalent: it would prefix the pattern a second time. <code>clear()</code> removes the current version only. Valkey/Redis backends only; other backends raise <code>NotSupportedError</code></td>
+<td>Delete every key under this cache's <code>KEY_PREFIX</code> in all versions, matched by the glob <code>key_func("*", prefix, "*")</code>, and return the number deleted. <code>delete_pattern()</code> adds the prefix and one version to its pattern, so it cannot match all versions. <code>clear()</code> removes the current version only. Valkey/Redis backends only; other backends raise <code>NotSupportedError</code></td>
 </tr>
 <tr>
 <td><code>lock(key, ...)</code></td>
@@ -1995,7 +1904,7 @@
 </tr>
 <tr>
 <td><code>scan(cursor=0, pattern="*", count=None, version=None, key_type=None)</code></td>
-<td>Single SCAN iteration; <code>key_type</code> keeps only keys of that RESP type. <code>version</code> is the fourth positional, so pass <code>key_type</code> by keyword</td>
+<td>Single SCAN iteration. <code>key_type</code> keeps only keys of that RESP type. <code>version</code> is the fourth positional parameter, so pass <code>key_type</code> by keyword</td>
 </tr>
 <tr>
 <td><code>delete_pattern(pattern)</code></td>
@@ -2007,32 +1916,18 @@
 </tr>
 <tr>
 <td><code>renamenx(src, dst)</code></td>
-<td>Rename key only if dest doesn't exist; <code>False</code> when <code>dst</code> exists or <code>src</code> does not</td>
+<td>Rename a key only if <code>dst</code> does not exist; <code>False</code> when <code>dst</code> exists or <code>src</code> does not</td>
 </tr>
 </tbody>
 </table>
 <h4 id="key-patterns">Key patterns<a class="headerlink" href="#key-patterns" title="Permanent link">&para;</a></h4>
-<p><code>keys()</code>, <code>iter_keys()</code>, <code>scan()</code> and <code>delete_pattern()</code> take a Redis glob on
-every backend: <code>*</code>, <code>?</code>, <code>[abc]</code>, <code>[a-z]</code>, <code>[^abc]</code> for negation, and <code>\</code> to
-escape any of them. Matching is case-sensitive everywhere, <code>LocMemCache</code> and
-<code>DatabaseCache</code> on SQLite included. A reversed range such as <code>[z-a]</code> reads as
-<code>[a-z]</code>, the way Redis reads it.</p>
-<p>The empty pattern matches only the empty key, again as Redis does. Use <code>"*"</code> to
-match everything; <code>delete_pattern("")</code> deletes at most one key.</p>
+<p><code>keys()</code>, <code>iter_keys()</code>, <code>scan()</code> and <code>delete_pattern()</code> take a Redis glob on every backend. The glob supports <code>*</code>, <code>?</code>, <code>[abc]</code>, <code>[a-z]</code>, <code>[^abc]</code> for negation, and <code>\</code> to escape any of them. Matching is case-sensitive, also on <code>LocMemCache</code> and on <code>DatabaseCache</code> with SQLite. A reversed range such as <code>[z-a]</code> matches like <code>[a-z]</code>, as in Redis.</p>
+<p>The empty pattern matches only the empty key, as in Redis, so <code>delete_pattern("")</code> deletes at most one key. Use <code>"*"</code> to match every key.</p>
 <h3 id="data-structure-calls-with-no-arguments">Data-structure calls with no arguments<a class="headerlink" href="#data-structure-calls-with-no-arguments" title="Permanent link">&para;</a></h3>
-<p><code>sadd</code>, <code>srem</code>, <code>hdel</code>, <code>hset</code>, <code>lpush</code>, <code>rpush</code>, <code>zrem</code>, <code>xdel</code> and <code>xack</code>
-called with no members, fields, values or entry ids return <code>0</code>, as does <code>zadd</code>
-with an empty mapping, and <code>smismember</code> and <code>zmscore</code> return an empty list. No
-command reaches the server, so no key is created. Every backend answers the
-same way, async twins included. <code>xadd</code> is the exception: an entry needs at
-least one field, so empty <code>fields</code> raise <code>ValueError</code>.</p>
-<p>A pipeline guards the same way: the step contributes <code>0</code> (or an empty list for
-<code>smismember</code> and <code>zmscore</code>) to the <code>execute()</code> result without a command being
-queued, so the results still line up with the calls. The hash-field commands
-called with no fields contribute <code>[]</code> the same way, and async pipelines behave
-identically.</p>
+<p>Called with no members, fields, values or entry ids, <code>sadd</code>, <code>srem</code>, <code>hdel</code>, <code>hset</code>, <code>lpush</code>, <code>rpush</code>, <code>zrem</code>, <code>xdel</code> and <code>xack</code> return <code>0</code>. So does <code>zadd</code> with an empty mapping. <code>smismember</code> and <code>zmscore</code> return an empty list. No command reaches the server, so no key is created. Every backend that supports the method answers the same way, and so do the async twins. <code>xadd</code> raises <code>ValueError</code> for empty <code>fields</code>, because an entry needs at least one field.</p>
+<p>The hash-field TTL commands (<code>hexpire</code>, <code>hpexpire</code>, <code>hexpireat</code>, <code>hpexpireat</code>, <code>httl</code>, <code>hpttl</code>, <code>hexpiretime</code>, <code>hpersist</code> and <code>hgetex</code>) called with no fields return <code>[]</code> and send nothing.</p>
+<p>In a pipeline, such a call queues no command. It still adds the same <code>0</code> or <code>[]</code> to the <code>execute()</code> result, so the results line up with the calls. Async pipelines behave the same way.</p>
 <h3 id="hash-methods">Hash Methods<a class="headerlink" href="#hash-methods" title="Permanent link">&para;</a></h3>
-<p>Hash operations for field-value data structures:</p>
 <table>
 <thead>
 <tr>
@@ -2091,7 +1986,7 @@ identically.</p>
 </tr>
 <tr>
 <td><code>hexpire(key, timeout, *fields, nx=False, xx=False, gt=False, lt=False)</code></td>
-<td>Set a TTL in seconds (or a <code>timedelta</code>) on hash fields; one reply code per field: <code>2</code> deleted, <code>1</code> set, <code>0</code> condition unmet, <code>-2</code> no such field</td>
+<td>Set a TTL in seconds (or a <code>timedelta</code>) on hash fields. Returns one code per field: <code>2</code> deleted, <code>1</code> set, <code>0</code> condition unmet, <code>-2</code> no such field</td>
 </tr>
 <tr>
 <td><code>hpexpire(key, timeout, *fields, ...)</code></td>
@@ -2131,10 +2026,9 @@ identically.</p>
 </tr>
 </tbody>
 </table>
-<p>Field expiration needs Redis 7.4+ or Valkey 9.0+, and <code>hsetex</code>/<code>hgetex</code> Redis 8.0+ or Valkey 9.0+; an older server raises <code>NotSupportedError</code>.</p>
-<p><code>hset(key, items=[...])</code> raises <code>ValueError("items must hold field/value pairs")</code> for an odd-length list, matching <code>hsetex</code>. On a pipeline the error is raised when the call is queued, so nothing in the batch is sent.</p>
+<p>Field expiration needs Redis 7.4+ or Valkey 9.0+, and <code>hsetex</code> and <code>hgetex</code> need Redis 8.0+ or Valkey 9.0+. An older server raises <code>NotSupportedError</code>.</p>
+<p><code>hset()</code> and <code>hsetex()</code> raise <code>ValueError("items must hold field/value pairs")</code> for an odd-length <code>items</code> list. In a pipeline the error comes when the call is queued, so nothing in the batch is sent.</p>
 <h3 id="set-methods">Set Methods<a class="headerlink" href="#set-methods" title="Permanent link">&para;</a></h3>
-<p>Set operations for unordered collections of unique elements:</p>
 <table>
 <thead>
 <tr>
@@ -2213,11 +2107,10 @@ identically.</p>
 </tr>
 </tbody>
 </table>
-<p><code>keys</code> on the multi-key set operations takes a single key or a sequence of them, not varargs. <code>sdiff(["a", "b"])</code>, not <code>sdiff("a", "b")</code>: the second positional argument is <code>version</code>.</p>
-<p><code>spop</code> rejects a negative <code>count</code> with Redis's <code>value is out of range, must be positive</code>.</p>
-<p>Members must be hashable, and must still be hashable after a round trip through the configured serializer (the JSON and MessagePack serializers hand a tuple back as a list); <code>sadd</code> rejects a member that is not, rather than letting a later read fail. The set readers (<code>smembers</code>, <code>sdiff</code>, <code>sinter</code>, <code>sunion</code>, <code>spop</code>, <code>sscan</code>) return a Python <code>set</code>, so Python equality decides membership on the way back: <code>1</code>, <code>True</code> and <code>1.0</code> are three members on the server (<code>scard</code> counts three) but one entry in the returned <code>set</code>, exactly as in <code>{1, True, 1.0}</code>.</p>
+<p>The multi-key set operations take <code>keys</code> as one key or a sequence. Their second positional parameter is <code>version</code>, so write <code>sdiff(["a", "b"])</code>, not <code>sdiff("a", "b")</code>.</p>
+<p><code>spop</code> raises <code>ValueError</code> for a negative <code>count</code>, with Redis's message <code>value is out of range, must be positive</code>.</p>
+<p>Members must be hashable before and after a round trip through the configured serializer, and <code>sadd</code> raises <code>TypeError</code> for a member that is not. The JSON and MessagePack serializers, for example, return a tuple as a list. The set readers (<code>smembers</code>, <code>sdiff</code>, <code>sinter</code>, <code>sunion</code>, <code>spop</code>, <code>sscan</code>) return a Python <code>set</code>, so Python equality decides membership. <code>1</code>, <code>True</code> and <code>1.0</code> are three members on the server, and <code>scard</code> counts three. In the returned <code>set</code> they are one entry, as in <code>{1, True, 1.0}</code>.</p>
 <h3 id="sorted-set-methods">Sorted Set Methods<a class="headerlink" href="#sorted-set-methods" title="Permanent link">&para;</a></h3>
-<p>Sorted set operations for scored, ordered collections:</p>
 <table>
 <thead>
 <tr>
@@ -2297,7 +2190,6 @@ identically.</p>
 </tbody>
 </table>
 <h3 id="list-methods">List Methods<a class="headerlink" href="#list-methods" title="Permanent link">&para;</a></h3>
-<p>List operations for ordered, indexable collections:</p>
 <table>
 <thead>
 <tr>
@@ -2372,10 +2264,9 @@ identically.</p>
 </tr>
 </tbody>
 </table>
-<p><code>blpop</code> and <code>brpop</code> take <code>keys</code> the same way: one key or a sequence, followed by <code>timeout</code>.</p>
-<p><code>lpos</code> rejects <code>rank=0</code> and a negative <code>count</code> or <code>maxlen</code>, and <code>linsert</code> rejects a <code>where</code> other than <code>"BEFORE"</code> or <code>"AFTER"</code>. Both raise <code>ValueError</code> carrying Redis's own message.</p>
+<p><code>blpop</code> and <code>brpop</code> take <code>keys</code> as one key or a sequence, followed by <code>timeout</code>.</p>
+<p><code>lpos</code> rejects <code>rank=0</code> and a negative <code>count</code> or <code>maxlen</code>, and <code>linsert</code> rejects a <code>where</code> other than <code>"BEFORE"</code> or <code>"AFTER"</code>. Both raise <code>ValueError</code> with Redis's own message.</p>
 <h3 id="stream-methods">Stream Methods<a class="headerlink" href="#stream-methods" title="Permanent link">&para;</a></h3>
-<p>Append-only log structure with consumer groups:</p>
 <table>
 <thead>
 <tr>
@@ -2462,43 +2353,16 @@ identically.</p>
 </tr>
 </tbody>
 </table>
-<p>All methods have an <code>a*</code> async counterpart (e.g. <code>axadd</code>, <code>axreadgroup</code>).</p>
 <h3 id="lua-script-methods">Lua Script Methods<a class="headerlink" href="#lua-script-methods" title="Permanent link">&para;</a></h3>
-<p>Execute Lua scripts with optional key prefixing and value encoding/decoding:</p>
-<table>
-<thead>
-<tr>
-<th>Method</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>eval_script(script, *, keys, args, ...)</code></td>
-<td>Execute a Lua script</td>
-</tr>
-<tr>
-<td><code>aeval_script(script, *, keys, args, ...)</code></td>
-<td>Execute a Lua script (async)</td>
-</tr>
-</tbody>
-</table>
-<p><code>eval_script()</code> sends <code>EVALSHA</code> with the SHA-1 of the script source. On the
-first <code>NOSCRIPT</code> reply it loads the script with <code>SCRIPT LOAD</code> and retries, so
-after that only the 40-byte digest crosses the wire. A <code>SCRIPT FLUSH</code> or a
-server restart costs one extra round trip. Scripts queued in a pipeline still
-go out as plain <code>EVAL</code>: a pipeline has no safe point to retry a <code>NOSCRIPT</code>
-reply, and cluster pipelines reject <code>EVALSHA</code>. <code>django_cachex.script_sha(script)</code>
-returns that digest (cached per source string) for code that wants to check
-<code>SCRIPT EXISTS</code> or call <code>EVALSHA</code> through <code>get_client()</code> itself.</p>
+<p><code>eval_script()</code> sends <code>EVALSHA</code> with the SHA-1 of the script. On a <code>NOSCRIPT</code> reply it loads the script with <code>SCRIPT LOAD</code> and retries, so a <code>SCRIPT FLUSH</code> or a server restart costs one extra round trip. A pipeline sends queued scripts as plain <code>EVAL</code>, because it cannot retry after a <code>NOSCRIPT</code> reply and cluster pipelines reject <code>EVALSHA</code>. <code>django_cachex.script_sha(script)</code> returns the digest, for code that calls <code>SCRIPT EXISTS</code> or <code>EVALSHA</code> through <code>get_client()</code>.</p>
 <h4 id="eval_script-aeval_script">eval_script / aeval_script<a class="headerlink" href="#eval_script-aeval_script" title="Permanent link">&para;</a></h4>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">eval_script</span><span class="p">(</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">script</span><span class="p">,</span>  <span class="c1"># Lua script source code</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">keys</span><span class="o">=</span><span class="p">(),</span>  <span class="c1"># KEYS to pass to script</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">args</span><span class="o">=</span><span class="p">(),</span>  <span class="c1"># ARGV to pass to script</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">pre_hook</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>  <span class="c1"># Pre-processing hook: (helpers, keys, args) -&gt; (keys, args)</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">post_hook</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>  <span class="c1"># Post-processing hook: (helpers, result) -&gt; result; None returns the result unchanged</span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">version</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>  <span class="c1"># Key version for prefixing</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">script</span><span class="p">,</span>  <span class="c1"># Lua source</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">keys</span><span class="o">=</span><span class="p">(),</span>  <span class="c1"># KEYS</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">args</span><span class="o">=</span><span class="p">(),</span>  <span class="c1"># ARGV</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">pre_hook</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>  <span class="c1"># (helpers, keys, args) -&gt; (keys, args)</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">post_hook</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>  <span class="c1"># (helpers, result) -&gt; result; None returns the result unchanged</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">version</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>  <span class="c1"># key version for prefixing</span>
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="p">)</span>
 </span></code></pre></div>
 <h4 id="pre-built-hooks">Pre-built Hooks<a class="headerlink" href="#pre-built-hooks" title="Permanent link">&para;</a></h4>
@@ -2520,7 +2384,7 @@ returns that digest (cached per source string) for code that wants to check
 </tr>
 <tr>
 <td><code>full_encode_pre</code></td>
-<td>Prefix keys AND encode all args</td>
+<td>Prefix keys and encode all args</td>
 </tr>
 <tr>
 <td><code>decode_single_post</code></td>
@@ -2532,9 +2396,9 @@ returns that digest (cached per source string) for code that wants to check
 </tr>
 </tbody>
 </table>
-<p><code>Encoded(value)</code> marks one ARGV entry for <code>encoded_pre</code>. An <code>Encoded</code> that reaches the adapter unwrapped (no <code>pre_hook</code>, or a hook that does not handle it) raises <code>TypeError</code>, as does <code>Encoded</code> in <code>keys</code> or <code>Encoded(Encoded(...))</code>.</p>
+<p><code>Encoded(value)</code> marks one ARGV entry for <code>encoded_pre</code> to encode. An <code>Encoded</code> in <code>keys</code>, a nested <code>Encoded(Encoded(...))</code>, and an <code>Encoded</code> that no <code>pre_hook</code> unwraps all raise <code>TypeError</code>.</p>
 <h4 id="scripthelpers">ScriptHelpers<a class="headerlink" href="#scripthelpers" title="Permanent link">&para;</a></h4>
-<p>The helpers object passed to pre/post hooks:</p>
+<p>The <code>helpers</code> argument of both hooks:</p>
 <table>
 <thead>
 <tr>
@@ -2602,44 +2466,22 @@ returns that digest (cached per source string) for code that wants to check
 </tr>
 </tbody>
 </table>
-<p>Backend coverage: the Valkey/Redis backends and <code>LocMemCache</code> take all three
-flags. <code>DatabaseCache</code> takes <code>nx</code> and raises <code>NotSupportedError</code> for <code>xx</code> and
-<code>get</code>. <code>TrackingCache</code> forwards the flags to its transport and supports
-whatever that transport supports.</p>
+<p>The Valkey/Redis backends and <code>LocMemCache</code> take all three flags. <code>DatabaseCache</code> takes <code>nx</code> and raises <code>NotSupportedError</code> for <code>xx</code> and <code>get</code>. <code>TrackingCache</code> passes the flags to its transport.</p>
 <h2 id="async-methods">Async Methods<a class="headerlink" href="#async-methods" title="Permanent link">&para;</a></h2>
-<p>Standard Django cache methods have async versions on the cache object:</p>
+<p>Every cache method on this page except <code>get_client()</code> has an async twin with an <code>a</code> prefix, such as <code>aget()</code> or <code>ahset()</code>. The twins apply the same key prefix, serializer and compressor:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Sync</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">value</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"key"</span><span class="p">)</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Async</span>
 </span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">value</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="s2">"key"</span><span class="p">)</span>
 </span></code></pre></div>
-<ul>
-<li><code>aadd</code>, <code>aget</code>, <code>aset</code>, <code>adelete</code>, <code>atouch</code>, <code>aget_many</code>, <code>aset_many</code>, <code>adelete_many</code></li>
-<li><code>ahas_key</code>, <code>aincr</code>, <code>adecr</code>, <code>aget_or_set</code>, <code>aclear</code>, <code>aclose</code></li>
-<li><code>aincr_version</code>, <code>adecr_version</code></li>
-<li><code>aeval_script</code></li>
-<li><code>alock</code>, <code>asemaphore</code>, <code>apipeline</code> (all three <code>async def</code>; see below)</li>
-</ul>
-<p>Extended methods (data structures, TTL, patterns) have async versions directly on the cache. Both forms apply key prefixing and the serializer/compressor pipeline:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Sync</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">cache</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">"hash"</span><span class="p">,</span> <span class="s2">"field"</span><span class="p">,</span> <span class="s2">"value"</span><span class="p">)</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
 </span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Async</span>
 </span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">ahset</span><span class="p">(</span><span class="s2">"hash"</span><span class="p">,</span> <span class="s2">"field"</span><span class="p">,</span> <span class="s2">"value"</span><span class="p">)</span>
 </span></code></pre></div>
-<p>For raw access that skips prefixing/serialization, use <code>cache.adapter</code> (e.g. <code>await cache.adapter.aget(prefixed_key)</code>).</p>
-<ul>
-<li><code>attl</code>, <code>apttl</code>, <code>aexpire</code>, <code>apexpire</code>, <code>aexpireat</code>, <code>apexpireat</code>, <code>aexpiretime</code>, <code>apersist</code>, <code>atype</code></li>
-<li><code>akeys</code>, <code>aiter_keys</code>, <code>ascan</code>, <code>adelete_pattern</code>, <code>aclear_all_versions</code>, <code>aflush_db</code>, <code>amemory_usage</code>, <code>alargest_keys</code>, <code>arename</code>, <code>arenamenx</code></li>
-<li><code>ahset</code>, <code>ahdel</code>, <code>ahexists</code>, <code>ahget</code>, <code>ahgetall</code>, <code>ahincrby</code>, <code>ahincrbyfloat</code>, <code>ahkeys</code>, <code>ahlen</code>, <code>ahmget</code>, <code>ahsetnx</code>, <code>ahvals</code></li>
-<li><code>ahexpire</code>, <code>ahpexpire</code>, <code>ahexpireat</code>, <code>ahpexpireat</code>, <code>ahttl</code>, <code>ahpttl</code>, <code>ahexpiretime</code>, <code>ahpersist</code>, <code>ahsetex</code>, <code>ahgetex</code></li>
-<li><code>asadd</code>, <code>asrem</code>, <code>asmembers</code>, <code>asismember</code>, <code>asmismember</code>, <code>ascard</code>, <code>aspop</code>, <code>asrandmember</code>, <code>asmove</code>, <code>asdiff</code>, <code>asdiffstore</code>, <code>asinter</code>, <code>asinterstore</code>, <code>asunion</code>, <code>asunionstore</code></li>
-<li><code>azadd</code>, <code>azcard</code>, <code>azcount</code>, <code>azincrby</code>, <code>azrange</code>, <code>azrevrange</code>, <code>azrangebyscore</code>, <code>azrevrangebyscore</code>, <code>azrank</code>, <code>azrevrank</code>, <code>azrem</code>, <code>azremrangebyrank</code>, <code>azremrangebyscore</code>, <code>azscore</code>, <code>azmscore</code>, <code>azpopmin</code>, <code>azpopmax</code></li>
-<li><code>allen</code>, <code>alpush</code>, <code>arpush</code>, <code>alpop</code>, <code>arpop</code>, <code>alindex</code>, <code>alrange</code>, <code>alset</code>, <code>altrim</code>, <code>alrem</code>, <code>alpos</code>, <code>almove</code>, <code>alinsert</code>, <code>ablpop</code>, <code>abrpop</code>, <code>ablmove</code></li>
-<li><code>asscan</code>, <code>asscan_iter</code></li>
-<li><code>axadd</code>, <code>axlen</code>, <code>axrange</code>, <code>axrevrange</code>, <code>axread</code>, <code>axtrim</code>, <code>axdel</code>, <code>axinfo_stream</code>, <code>axinfo_groups</code>, <code>axinfo_consumers</code>, <code>axgroup_create</code>, <code>axgroup_destroy</code>, <code>axgroup_setid</code>, <code>axgroup_delconsumer</code>, <code>axreadgroup</code>, <code>axack</code>, <code>axpending</code>, <code>axclaim</code>, <code>axautoclaim</code></li>
-</ul>
+<p><code>alock()</code>, <code>asemaphore()</code> and <code>apipeline()</code> are <code>async def</code>, so <code>async with</code> needs an extra <code>await</code>, as in <code>async with await cache.alock("k"):</code>. For raw access without prefixing or serialization, use <code>cache.adapter</code>, for example <code>await cache.adapter.aget(prefixed_key)</code>.</p>
 <h2 id="raw-client-access">Raw Client Access<a class="headerlink" href="#raw-client-access" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">client</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get_client</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">write</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 </span></code></pre></div>
@@ -2653,16 +2495,15 @@ whatever that transport supports.</p>
 <tbody>
 <tr>
 <td><code>key</code></td>
-<td>Accepted for signature compatibility with django-redis; every adapter ignores it. Connection choice depends on <code>write</code> only</td>
+<td>Ignored by every adapter. Accepted for compatibility with django-redis</td>
 </tr>
 <tr>
 <td><code>write</code></td>
-<td>Get write connection for primary (default: <code>False</code>). With a multi-URL <code>LOCATION</code> or Sentinel, <code>False</code> picks a replica pool when one exists; cluster ignores it</td>
+<td><code>True</code> returns a client for the primary. With a multi-URL <code>LOCATION</code> or Sentinel, <code>False</code> (the default) picks a replica pool when one exists. Cluster ignores it</td>
 </tr>
 </tbody>
 </table>
-<p>Returns the underlying client object. The concrete type depends on which
-adapter is configured:</p>
+<p>The return type depends on the backend:</p>
 <table>
 <thead>
 <tr>
@@ -2685,14 +2526,8 @@ adapter is configured:</p>
 </tr>
 </tbody>
 </table>
-<p>The three objects expose comparable command surfaces but are not
-interchangeable types; code that pins to one adapter for type-narrowing
-or vendor-specific calls won't work against the others. For
-adapter-portable code use the cache API directly; reach for
-<code>get_client()</code> only as an escape hatch, since it bypasses the configured
-key prefix, version, serializer, and compressor.</p>
-<p>There is no <code>get_async_client()</code> on the cache object. The async client
-lives on the adapter: <code>await cache.adapter.get_async_client()</code>.</p>
+<p>The three clients have similar commands but different types, so code that relies on one client's type or vendor-specific calls fails on the others. <code>get_client()</code> also bypasses the key prefix, version, serializer and compressor. Use the cache API for portable code.</p>
+<p>The cache has no <code>get_async_client()</code>. Get the async client from the adapter: <code>await cache.adapter.get_async_client()</code>.</p>
 <h2 id="lock-interface">Lock Interface<a class="headerlink" href="#lock-interface" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sleep</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">thread_local</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </span></code></pre></div>
@@ -2710,23 +2545,23 @@ lives on the adapter: <code>await cache.adapter.get_async_client()</code>.</p>
 </tr>
 <tr>
 <td><code>version</code></td>
-<td>Cache version namespace for the lock key</td>
+<td>Cache version of the lock key</td>
 </tr>
 <tr>
 <td><code>lease</code></td>
-<td>TTL of the held lock; the lock is auto-released after this many seconds (no auto-release if <code>None</code>); must be at least 1 ms, a smaller value raises <code>ValueError</code></td>
+<td>Seconds until a held lock expires and releases itself. <code>None</code> means no expiry. A value under 1 ms raises <code>ValueError</code></td>
 </tr>
 <tr>
 <td><code>sleep</code></td>
-<td>Time between acquire attempts</td>
+<td>Seconds between acquire attempts</td>
 </tr>
 <tr>
 <td><code>blocking</code></td>
-<td>Wait for lock if held</td>
+<td>Wait if the lock is held</td>
 </tr>
 <tr>
 <td><code>timeout</code></td>
-<td>Max time <code>acquire()</code> will wait before giving up (no upper bound if <code>None</code>)</td>
+<td>Longest time <code>acquire()</code> waits before it gives up. <code>None</code> means no limit</td>
 </tr>
 <tr>
 <td><code>thread_local</code></td>
@@ -2734,39 +2569,19 @@ lives on the adapter: <code>await cache.adapter.get_async_client()</code>.</p>
 </tr>
 </tbody>
 </table>
-<p><code>version</code> is the second positional parameter, ahead of <code>lease</code>. Pass <code>lease</code> by
-keyword: <code>cache.lock("k", 30)</code> sets <code>version=30</code> and leaves the lock without a
-TTL.</p>
-<p><code>alock()</code> takes the same parameters.</p>
-<p><code>acquire()</code> takes its arguments from whichever lock object the backend
-returns, and the spellings differ. The redis-py and valkey-py backends hand
-back a thin wrapper around the driver's own lock, whose <code>acquire()</code> signature is
-<code>acquire(sleep=None, blocking=None, blocking_timeout=None, token=None)</code>
-(the async lock drops <code>sleep</code>). The wrapper forwards attribute reads and
-assignments (<code>lock.blocking_timeout = 1</code> reaches the driver lock) and
-<code>copy.copy()</code> works; pickling fails inside the driver lock, as it does
-without the wrapper. The valkey-glide backend returns the
-django-cachex lock, whose <code>acquire()</code> is keyword-only:
-<code>acquire(*, blocking=None, timeout=None)</code>. Passing <code>timeout=</code> to a
-redis-py or valkey-py lock raises <code>TypeError</code>.</p>
+<p><code>version</code> comes before <code>lease</code>, so <code>cache.lock("k", 30)</code> sets <code>version=30</code> and leaves the lock without a TTL. Pass <code>lease</code> by keyword. <code>alock()</code> takes the same parameters.</p>
+<p>The <code>acquire()</code> signature depends on the backend. The redis-py and valkey-py backends return a thin wrapper around the driver's lock, with <code>acquire(sleep=None, blocking=None, blocking_timeout=None, token=None)</code>. The async <code>acquire()</code> has no <code>sleep</code>. The wrapper forwards attribute reads and writes, so <code>lock.blocking_timeout = 1</code> reaches the driver lock. <code>copy.copy()</code> works, and pickling fails as it does for the bare driver lock. Passing <code>timeout=</code> to this <code>acquire()</code> raises <code>TypeError</code>.</p>
+<p>The valkey-glide backend returns the django-cachex lock, whose <code>acquire()</code> is keyword-only: <code>acquire(*, blocking=None, timeout=None)</code>.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">"mylock"</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
 </span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">if</span> <span class="n">lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">(</span><span class="n">blocking_timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">):</span>  <span class="c1"># redis-py / valkey-py: wait up to 5s</span>
 </span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="o">...</span>
 </span></code></pre></div>
-<p>Set the wait on <code>cache.lock()</code> instead of on <code>acquire()</code> when the code has to
-run against every Valkey/Redis backend:</p>
+<p>For code that runs on every Valkey/Redis backend, set the wait on <code>cache.lock()</code>:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">"mylock"</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
 </span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="k">if</span> <span class="n">lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">():</span>
 </span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="o">...</span>
 </span></code></pre></div>
-<p>Lock failures raise <code>django_cachex.lock.LockError</code> on every Valkey/Redis backend, and
-<code>LockNotOwnedError</code> (a subclass) when the lock was lost before <code>release()</code> or
-<code>extend()</code>. redis-py and valkey-py raise their driver's own <code>LockError</code>
-internally; the backend translates it, keeping the driver error as
-<code>__cause__</code>. Both classes subclass <code>ValueError</code>, as the redis-py and
-valkey-py lock errors do, so <code>except ValueError</code> keeps working.
-(<code>threading.Lock</code> itself raises <code>RuntimeError</code> on a bad release; the
-cachex classes follow the drivers, not the stdlib.)</p>
+<p>Lock failures raise <code>django_cachex.lock.LockError</code> on every Valkey/Redis backend. A lock lost before <code>release()</code> or <code>extend()</code> raises its subclass <code>LockNotOwnedError</code>. On redis-py and valkey-py, the driver's own <code>LockError</code> is kept as <code>__cause__</code>. Both classes subclass <code>ValueError</code> like the driver lock errors, whereas <code>threading.Lock</code> raises <code>RuntimeError</code> on a bad release.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex.lock</span><span class="w"> </span><span class="kn">import</span> <span class="n">LockError</span><span class="p">,</span> <span class="n">LockNotOwnedError</span>
 </span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
 </span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
@@ -2782,7 +2597,7 @@ cachex classes follow the drivers, not the stdlib.)</p>
 </span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>    <span class="k">except</span> <span class="n">LockError</span><span class="p">:</span>
 </span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>        <span class="o">...</span>  <span class="c1"># released twice or by another owner</span>
 </span></code></pre></div>
-<p>Compatible with <code>threading.Lock</code>:</p>
+<p>The lock supports the <code>threading.Lock</code> usage patterns:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Context manager</span>
 </span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">"mylock"</span><span class="p">):</span>
 </span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="n">do_work</span><span class="p">()</span>
@@ -2796,7 +2611,6 @@ cachex classes follow the drivers, not the stdlib.)</p>
 </span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>        <span class="n">lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
 </span></code></pre></div>
 <h3 id="async-lock">Async lock<a class="headerlink" href="#async-lock" title="Permanent link">&para;</a></h3>
-<p><code>alock()</code> is <code>async def</code> (parallel to <code>apipeline()</code>):</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Context manager</span>
 </span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="k">async</span> <span class="k">with</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">alock</span><span class="p">(</span><span class="s2">"mylock"</span><span class="p">):</span>
 </span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>    <span class="k">await</span> <span class="n">do_work</span><span class="p">()</span>
@@ -2809,13 +2623,13 @@ cachex classes follow the drivers, not the stdlib.)</p>
 </span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>    <span class="k">finally</span><span class="p">:</span>
 </span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>        <span class="k">await</span> <span class="n">lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
 </span></code></pre></div>
-<p>Cluster mode rejects <code>lock()</code> and <code>alock()</code> on every adapter: the driver <code>Lock</code> implementations are not cluster-aware and a lock key carries no hash tag, so nothing guarantees that the lock key and the Lua release/extend scripts acting on it are routed together. Both raise <code>NotSupportedError</code>. Use <code>semaphore()</code> instead, which colocates its keys under a <code>{name}</code> hash tag.</p>
+<p>On the cluster backends, <code>lock()</code> and <code>alock()</code> raise <code>NotSupportedError</code>, because the driver locks are not cluster-aware. Use <code>semaphore()</code> instead.</p>
 <h2 id="semaphore-interface">Semaphore Interface<a class="headerlink" href="#semaphore-interface" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">sem</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">semaphore</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">capacity</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 </span></code></pre></div>
-<p>Return a weighted semaphore for concurrency gating. Use as a context manager.</p>
+<p><code>semaphore()</code> returns a weighted semaphore. Use it as a context manager:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">semaphore</span><span class="p">(</span><span class="s2">"image-convert"</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">60</span><span class="p">):</span>
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>    <span class="c1"># Up to 4 callers may hold this semaphore concurrently.</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>    <span class="c1"># Up to 4 callers can hold this semaphore at once.</span>
 </span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>    <span class="n">convert</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
 </span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>
 </span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="c1"># Weighted: claim 100 of a 500 budget.</span>
@@ -2832,72 +2646,63 @@ cachex classes follow the drivers, not the stdlib.)</p>
 <tbody>
 <tr>
 <td><code>key</code></td>
-<td>Logical name of the semaphore. Callers with the same name share budget.</td>
+<td>Semaphore name. Callers with the same name share the budget.</td>
 </tr>
 <tr>
 <td><code>capacity</code></td>
-<td>Total budget. The first caller establishes capacity. Subsequent callers passing a different value update it on every backend; <code>LocMemCache</code> additionally emits a <code>RuntimeWarning</code> (the RESP backends update silently).</td>
+<td>Total budget. The first caller sets it. A later caller that passes a different value updates it on every backend, and <code>LocMemCache</code> also emits a <code>RuntimeWarning</code>.</td>
 </tr>
 <tr>
 <td><code>weight</code></td>
-<td>How much of the capacity this caller claims (default <code>1</code>, i.e. counting semaphore).</td>
+<td>How much of the capacity this caller claims. The default <code>1</code> makes a counting semaphore.</td>
 </tr>
 <tr>
 <td><code>version</code></td>
-<td>Optional cache version namespace.</td>
+<td>Cache version of the semaphore keys.</td>
 </tr>
 <tr>
 <td><code>lease</code></td>
-<td>TTL of the held claim in seconds. Required for the RESP backend (auto-reclaim if the holder crashes); accepted but ignored on <code>LocMemCache</code>.</td>
+<td>Seconds until a held claim expires, which frees the claim of a crashed holder. Required on the RESP backends, ignored on <code>LocMemCache</code>.</td>
 </tr>
 <tr>
 <td><code>timeout</code></td>
-<td>Default wait for <code>acquire()</code> before it raises <code>SemaphoreTimeoutError</code>. <code>None</code> blocks indefinitely.</td>
+<td>Default wait for <code>acquire()</code> before it raises <code>SemaphoreTimeoutError</code>. <code>None</code> means no limit.</td>
 </tr>
 </tbody>
 </table>
-<p><code>acquire()</code> accepts <code>blocking</code> and <code>timeout</code> to override the defaults set on the semaphore object. Omit <code>timeout</code> and the value passed to <code>cache.semaphore(...)</code> applies; pass <code>timeout=None</code> explicitly and the call blocks indefinitely, whatever the instance default is. <code>aacquire()</code> reads it the same way, on both the local and the RESP backends.</p>
-<p><code>release()</code> returns the claim to the pool. <code>extend(additional_seconds)</code> bumps the TTL on RESP backends for tasks that may legitimately exceed their original lease; it raises <code>ValueError</code> unless <code>additional_seconds</code> is a positive finite number, and returns <code>False</code> without raising when the claim is no longer ours because it was released or reaped. <code>aextend(additional_seconds)</code> behaves the same. On <code>LocMemCache</code> both exist for API parity: there is no lease TTL to bump, so they return <code>True</code> while the claim is held and <code>False</code> otherwise.</p>
-<p>On RESP backends the semaphore's bookkeeping keys (<code>{name}:state</code>, <code>{name}:claims</code>, <code>{name}:queue</code>) expire after twice the longest lease seen. Acquire and release refresh all three; extend refreshes <code>{name}:state</code> and <code>{name}:claims</code>, and waiters keep <code>{name}:queue</code> alive by polling. A holder that dies without releasing therefore leaves nothing behind once its lease has run out.</p>
+<p><code>acquire()</code> and <code>aacquire()</code> take <code>blocking</code> and <code>timeout</code> to override the defaults of the semaphore object. Without a <code>timeout</code> argument, the value from <code>cache.semaphore()</code> applies. An explicit <code>timeout=None</code> waits without limit, whatever the default is.</p>
+<p><code>release()</code> returns the claim. On the RESP backends, <code>extend(additional_seconds)</code> and <code>aextend(additional_seconds)</code> add <code>additional_seconds</code> to the remaining lease. They raise <code>ValueError</code> unless <code>additional_seconds</code> is a positive finite number. They return <code>False</code> when the claim was already released or reaped. <code>LocMemCache</code> has no lease, so there they return <code>True</code> while the claim is held and <code>False</code> otherwise.</p>
+<p>On the RESP backends, a semaphore keeps three keys: <code>{name}:state</code>, <code>{name}:claims</code> and <code>{name}:queue</code>. Every operation renews the TTL of the keys it touches to twice the longest lease seen. When the last holder dies without releasing, the keys expire on their own.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">sem</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">semaphore</span><span class="p">(</span><span class="s2">"mysem"</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
-</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="k">if</span> <span class="n">sem</span><span class="o">.</span><span class="n">acquire</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">):</span>
-</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>    <span class="k">try</span><span class="p">:</span>
-</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>        <span class="n">do_work</span><span class="p">()</span>
-</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>    <span class="k">finally</span><span class="p">:</span>
-</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>        <span class="n">sem</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="n">sem</span><span class="o">.</span><span class="n">acquire</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>  <span class="c1"># raises SemaphoreTimeoutError after 5 seconds</span>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="k">try</span><span class="p">:</span>
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>    <span class="n">do_work</span><span class="p">()</span>
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="k">finally</span><span class="p">:</span>
+</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>    <span class="n">sem</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
 </span></code></pre></div>
 <h3 id="async-semaphore">Async semaphore<a class="headerlink" href="#async-semaphore" title="Permanent link">&para;</a></h3>
-<p><code>asemaphore()</code> is <code>async def</code> (parallel to <code>alock()</code>):</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># Context manager</span>
 </span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="k">async</span> <span class="k">with</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">asemaphore</span><span class="p">(</span><span class="s2">"mysem"</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">):</span>
 </span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>    <span class="k">await</span> <span class="n">do_work</span><span class="p">()</span>
 </span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>
 </span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="c1"># Manual acquire/release</span>
 </span><span id="__span-14-6"><a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="n">sem</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">asemaphore</span><span class="p">(</span><span class="s2">"mysem"</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">lease</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
-</span><span id="__span-14-7"><a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="k">if</span> <span class="k">await</span> <span class="n">sem</span><span class="o">.</span><span class="n">aacquire</span><span class="p">():</span>
-</span><span id="__span-14-8"><a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>    <span class="k">try</span><span class="p">:</span>
-</span><span id="__span-14-9"><a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>        <span class="k">await</span> <span class="n">do_work</span><span class="p">()</span>
-</span><span id="__span-14-10"><a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a>    <span class="k">finally</span><span class="p">:</span>
-</span><span id="__span-14-11"><a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a>        <span class="k">await</span> <span class="n">sem</span><span class="o">.</span><span class="n">arelease</span><span class="p">()</span>
+</span><span id="__span-14-7"><a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="k">await</span> <span class="n">sem</span><span class="o">.</span><span class="n">aacquire</span><span class="p">()</span>
+</span><span id="__span-14-8"><a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="k">try</span><span class="p">:</span>
+</span><span id="__span-14-9"><a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>    <span class="k">await</span> <span class="n">do_work</span><span class="p">()</span>
+</span><span id="__span-14-10"><a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a><span class="k">finally</span><span class="p">:</span>
+</span><span id="__span-14-11"><a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a>    <span class="k">await</span> <span class="n">sem</span><span class="o">.</span><span class="n">arelease</span><span class="p">()</span>
 </span></code></pre></div>
-<p>The awaitable methods are <code>aacquire()</code> and <code>arelease()</code>. <code>acquire()</code> and
-<code>release()</code> are the sync pair and are still present on the same object, so
-<code>await sem.acquire()</code> runs the sync acquire and then raises <code>TypeError</code> on the
-returned <code>bool</code>, leaving the claim held until its lease expires.</p>
+<p><code>aacquire()</code> and <code>arelease()</code> are the awaitable methods. The same object also has the sync <code>acquire()</code> and <code>release()</code>, so <code>await sem.acquire()</code> runs the sync acquire and then raises <code>TypeError</code> on the returned <code>bool</code>. The claim stays held until its lease expires.</p>
 <p>Sync and async callers on the same cache instance share state for a given name.</p>
-<p>Backends:</p>
-<ul>
-<li><code>LocMemCache</code> keeps its waiters in an in-process <code>OrderedDict</code>. FIFO fairness is strict within the process; <code>lease</code> is accepted but ignored.</li>
-<li>The RESP backends (<code>RedisCache</code>, <code>ValkeyCache</code>, <code>ValkeyGlideCache</code>, ...) use Lua scripts. FIFO fairness is best-effort across processes (head-of-queue check plus jittered polling).</li>
-</ul>
-<p>Cluster mode is supported on RESP backends: all keys for one semaphore name carry a <code>{name}</code> hash tag so they colocate on the same slot.</p>
+<p><code>LocMemCache</code> serves waiters in strict FIFO order within the process. The RESP backends run Lua scripts, and their FIFO order across processes is best-effort, with a head-of-queue check and jittered polling. Semaphores work on the cluster backends, because all keys of one semaphore carry the <code>{name}</code> hash tag and share a slot.</p>
 <h2 id="pipelines">Pipelines<a class="headerlink" href="#pipelines" title="Permanent link">&para;</a></h2>
-<p>Batch multiple operations for efficiency. Queueing methods (<code>set</code>, <code>hset</code>, <code>lpush</code>, ...) stay synchronous in both wrappers; only <code>execute()</code> performs I/O.</p>
+<p>Queueing methods (<code>set</code>, <code>hset</code>, <code>lpush</code>, ...) are synchronous in both wrappers. Only <code>execute()</code> sends the commands.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="n">pipe</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">transaction</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 </span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="n">pipe</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">apipeline</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">transaction</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 </span></code></pre></div>
-<p><code>transaction=True</code> (the default on standalone and Sentinel backends) wraps the batch in <code>MULTI</code>/<code>EXEC</code>; <code>transaction=False</code> sends a plain pipeline. The cluster backends default to <code>transaction=False</code> and raise <code>NotSupportedError</code> for <code>transaction=True</code>, since <code>MULTI</code>/<code>EXEC</code> cannot span slots. <code>version</code> overrides the cache's <code>VERSION</code> for every key queued on that pipeline.</p>
-<p><code>pipeline()</code> returns <code>django_cachex.Pipeline</code> and <code>apipeline()</code> returns <code>django_cachex.AsyncPipeline</code>, a subclass with the same queueing methods, an awaitable <code>execute()</code> and <code>async with</code> support. Using an <code>AsyncPipeline</code> in a plain <code>with</code> raises <code>TypeError</code> at <code>__enter__</code>. Leaving either context manager discards any commands still queued.</p>
+<p><code>transaction=True</code>, the default on the standalone and Sentinel backends, wraps the batch in <code>MULTI</code>/<code>EXEC</code>. <code>transaction=False</code> sends a plain pipeline. The cluster backends default to <code>transaction=False</code> and raise <code>NotSupportedError</code> for <code>transaction=True</code>, because <code>MULTI</code>/<code>EXEC</code> cannot span slots. <code>version</code> overrides the cache's <code>VERSION</code> for every key queued on the pipeline.</p>
+<p><code>pipeline()</code> returns a <code>django_cachex.Pipeline</code>. <code>apipeline()</code> returns its subclass <code>django_cachex.AsyncPipeline</code>, with the same queueing methods, an awaitable <code>execute()</code> and <code>async with</code> support. A plain <code>with</code> on an <code>AsyncPipeline</code> raises <code>TypeError</code> at <code>__enter__</code>. Leaving either context manager discards the commands still queued.</p>
 <h3 id="sync">Sync<a class="headerlink" href="#sync" title="Permanent link">&para;</a></h3>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="k">with</span> <span class="n">cache</span><span class="o">.</span><span class="n">pipeline</span><span class="p">()</span> <span class="k">as</span> <span class="n">pipe</span><span class="p">:</span>
 </span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">"key1"</span><span class="p">,</span> <span class="s2">"value1"</span><span class="p">)</span>
@@ -2911,31 +2716,23 @@ returned <code>bool</code>, leaving the claim held until its lease expires.</p>
 </span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">"hash"</span><span class="p">,</span> <span class="s2">"field"</span><span class="p">,</span> <span class="s2">"value"</span><span class="p">)</span>
 </span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>    <span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">pipe</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
 </span></code></pre></div>
-<p><code>apipeline()</code> is <code>async def</code> so adapters whose async-client construction is itself awaitable (e.g. valkey-glide) can resolve the client before returning the wrapper. Queueing methods stay synchronous; only <code>apipeline()</code> and <code>execute()</code> need to be awaited.</p>
-<p>Single-key commands are available on the pipeline: <code>get</code>, <code>set</code>, <code>delete</code>, <code>exists</code>, <code>incr</code>, <code>decr</code>, <code>type</code>, <code>rename</code>, <code>renamenx</code>, the TTL commands (<code>ttl</code>, <code>pttl</code>, <code>expire</code>, <code>pexpire</code>, <code>expireat</code>, <code>pexpireat</code>, <code>expiretime</code>, <code>persist</code>), <code>memory_usage</code>, <code>eval_script</code> and every non-blocking hash, list, set, sorted-set and stream command (<code>sscan</code> and the blocking pops <code>blpop</code>/<code>brpop</code>/<code>blmove</code> are not queueable). The multi-key helpers (<code>set_many</code>, <code>get_many</code>, <code>delete_many</code>), the read-modify-write helpers (<code>get_or_set</code>, <code>add</code>, <code>touch</code>, <code>has_key</code>), and the scanning helpers (<code>keys</code>, <code>scan</code>, <code>delete_pattern</code>, <code>clear</code>) are not: queue their underlying commands instead. Results are returned as a list in the same order as the commands.</p>
-<p>On <code>RedisClusterCache</code> and <code>ValkeyClusterCache</code>, queueing <code>rename</code>, <code>renamenx</code>, <code>smove</code>, <code>sdiff</code>, <code>sinter</code>, <code>sunion</code>, <code>sdiffstore</code>, <code>sinterstore</code> or <code>sunionstore</code> raises the driver's <code>RedisClusterException</code> or <code>ValkeyClusterException</code>: its cluster pipeline refuses these multi-key commands. Call them on the cache instead, with keys that share a hash tag (see <a href="../../user-guide/cluster/#hash-tags">Cluster</a>).</p>
-<p>The queueing methods take the same signatures and parameter names as the cache
-methods they queue, so a call reads the same either way: <code>smove(src, dst,
-member)</code>, <code>sunionstore(dest, keys)</code>, <code>zscore(key, member)</code>, <code>zincrby(key,
-amount, member)</code>, <code>sadd(key, *members)</code>, <code>zrem(key, *members)</code>, <code>lmove(src,
-dst, wherefrom, whereto)</code>, and the score-range methods with <code>min_score</code> /
-<code>max_score</code> and <code>start</code> / <code>num</code> by keyword:</p>
+<p>A pipeline queues <code>get</code>, <code>set</code>, <code>delete</code>, <code>exists</code>, <code>incr</code>, <code>decr</code>, <code>type</code>, <code>rename</code>, <code>renamenx</code>, <code>memory_usage</code> and <code>eval_script</code>. It also queues the TTL commands (<code>ttl</code>, <code>pttl</code>, <code>expire</code>, <code>pexpire</code>, <code>expireat</code>, <code>pexpireat</code>, <code>expiretime</code>, <code>persist</code>) and the hash, list, set, sorted-set and stream commands. The exceptions are <code>sscan</code>, <code>sscan_iter</code> and the blocking <code>blpop</code>, <code>brpop</code> and <code>blmove</code>. The pipeline has no <code>set_many</code>, <code>get_many</code>, <code>delete_many</code>, <code>get_or_set</code>, <code>add</code>, <code>touch</code>, <code>has_key</code>, <code>keys</code>, <code>scan</code>, <code>delete_pattern</code> or <code>clear</code>. Queue their underlying commands instead. <code>execute()</code> returns the results as a list in queue order.</p>
+<p>On <code>RedisClusterCache</code> and <code>ValkeyClusterCache</code>, the driver's cluster pipeline refuses the multi-key commands <code>rename</code>, <code>renamenx</code>, <code>smove</code>, <code>sdiff</code>, <code>sinter</code>, <code>sunion</code>, <code>sdiffstore</code>, <code>sinterstore</code> and <code>sunionstore</code>. Queueing one raises <code>RedisClusterException</code> or <code>ValkeyClusterException</code>. Call them on the cache instead, with keys that share a hash tag (see <a href="../../user-guide/cluster/#hash-tags">Cluster</a>).</p>
+<p>The queueing methods take the same parameters as the cache methods, including <code>min_score</code>, <code>max_score</code>, <code>start</code> and <code>num</code> on the score-range methods:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="n">pipe</span><span class="o">.</span><span class="n">zcount</span><span class="p">(</span><span class="s2">"z"</span><span class="p">,</span> <span class="n">min_score</span><span class="p">,</span> <span class="n">max_score</span><span class="p">)</span>
 </span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="n">pipe</span><span class="o">.</span><span class="n">zrangebyscore</span><span class="p">(</span><span class="s2">"z"</span><span class="p">,</span> <span class="n">min_score</span><span class="p">,</span> <span class="n">max_score</span><span class="p">,</span> <span class="n">withscores</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">num</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 </span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="n">pipe</span><span class="o">.</span><span class="n">zrevrangebyscore</span><span class="p">(</span><span class="s2">"z"</span><span class="p">,</span> <span class="n">max_score</span><span class="p">,</span> <span class="n">min_score</span><span class="p">,</span> <span class="n">withscores</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">num</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 </span><span id="__span-18-4"><a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="n">pipe</span><span class="o">.</span><span class="n">zremrangebyscore</span><span class="p">(</span><span class="s2">"z"</span><span class="p">,</span> <span class="n">min_score</span><span class="p">,</span> <span class="n">max_score</span><span class="p">)</span>
 </span></code></pre></div>
-<p>The flags follow the cache methods too, and decide what the step contributes
-to the results:</p>
+<p>The flags work as on the cache methods and decide what a step adds to the results:</p>
 <ul>
-<li><code>set(key, value, timeout=DEFAULT, version=None, *, nx=False, xx=False, get=False)</code> contributes <code>True</code>, or <code>False</code> on an <code>nx</code>/<code>xx</code> miss; with <code>get=True</code> it contributes the previous value (<code>None</code> when absent) instead, including with <code>nx</code>/<code>xx</code> and with an immediate timeout. <code>SET ... GET</code> needs Redis 6.2+, <code>nx</code> together with <code>get</code> Redis 7.0+.</li>
-<li><code>get(key, default=None, version=None)</code> contributes <code>default</code> for a missing key. <code>version</code> is the third positional argument.</li>
-<li><code>zadd(key, mapping, *, ..., incr=False)</code>: <code>incr=True</code> (pipeline only; <code>cache.zadd</code> has no such flag) turns the single pair in <code>mapping</code> into <code>ZINCRBY</code> with the other flags applied, and contributes the member's new score, or <code>None</code> when <code>nx</code>/<code>xx</code>/<code>gt</code>/<code>lt</code> blocked it.</li>
-<li><code>zrange(key, start, end, *, withscores=False, desc=False)</code>: <code>desc=True</code> (pipeline only) is <code>ZRANGE ... REV</code>, the same shape <code>zrevrange</code> gives.</li>
-<li><code>xautoclaim(..., justid=True)</code> raises <code>NotSupportedError</code> when queued: the driver's <code>JUSTID</code> reply drops the cursor inside a pipeline. Use <code>justid=False</code>, or call <code>cache.xautoclaim()</code> directly.</li>
-<li><code>memory_usage(key, version=None, *, samples=None)</code> contributes the byte count, or <code>None</code> for a missing key; <code>largest_keys()</code> is built on it.</li>
+<li><code>set(key, value, timeout=DEFAULT, version=None, *, nx=False, xx=False, get=False)</code> adds <code>True</code>, or <code>False</code> when <code>nx</code> or <code>xx</code> blocks the write. With <code>get=True</code> it adds the previous value or <code>None</code> instead, also with <code>nx</code>, <code>xx</code> or an immediate timeout. <code>SET ... GET</code> needs Redis 6.2+, and <code>nx</code> together with <code>get</code> needs Redis 7.0+.</li>
+<li><code>get(key, default=None, version=None)</code> adds <code>default</code> for a missing key. <code>version</code> is the third positional argument.</li>
+<li><code>zadd(key, mapping, *, ..., incr=False)</code>: <code>incr=True</code> exists on the pipeline only. It turns the single pair in <code>mapping</code> into <code>ZINCRBY</code> with the other flags applied. The step adds the member's new score, or <code>None</code> when <code>nx</code>, <code>xx</code>, <code>gt</code> or <code>lt</code> blocked it.</li>
+<li><code>zrange(key, start, end, *, withscores=False, desc=False)</code>: <code>desc=True</code> exists on the pipeline only. It sends <code>ZRANGE ... REV</code>, which gives the same result as <code>zrevrange</code>.</li>
+<li><code>xautoclaim(..., justid=True)</code> raises <code>NotSupportedError</code> when queued, because the driver drops the cursor from a pipelined <code>JUSTID</code> reply. Use <code>justid=False</code>, or call <code>cache.xautoclaim()</code>.</li>
+<li><code>memory_usage(key, version=None, *, samples=None)</code> adds the byte count, or <code>None</code> for a missing key.</li>
 </ul>
-<p>A hash field command queued with no fields (<code>pipe.httl("h")</code>, <code>pipe.hexpire("h", 60)</code>, <code>pipe.hgetex("h")</code> and the rest of the nine) contributes <code>[]</code> to the results and sends nothing to the server, the same result <code>cache.httl("h")</code> gives.</p>
 <h2 id="clearing-keys">Clearing keys<a class="headerlink" href="#clearing-keys" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2946,16 +2743,16 @@ to the results:</p>
 </thead>
 <tbody>
 <tr>
-<td><code>clear()</code> / <code>aclear()</code></td>
-<td>Remove only this cache's keys (<code>KEY_PREFIX</code> + <code>VERSION</code>). Implemented as <code>delete_pattern("*")</code>.</td>
+<td><code>clear()</code></td>
+<td>Delete only this cache's keys (<code>KEY_PREFIX</code> + <code>VERSION</code>), with <code>delete_pattern("*")</code>.</td>
 </tr>
 <tr>
-<td><code>flush_db()</code> / <code>aflush_db()</code></td>
-<td><code>FLUSHDB</code>: remove <strong>all</strong> keys in the underlying Redis/Valkey database, regardless of prefix.</td>
+<td><code>flush_db()</code></td>
+<td>Run <code>FLUSHDB</code>, which deletes every key in the Redis/Valkey database, whatever its prefix.</td>
 </tr>
 </tbody>
 </table>
-<p><code>clear()</code> deletes every key under this cache's <code>KEY_PREFIX</code> and <code>VERSION</code>, so apps that share a database keep each other's keys only when each has its own <code>KEY_PREFIX</code>: two caches on the default empty prefix both write <code>:1:*</code> keys, and <code>clear()</code> on either deletes both. Use <code>flush_db()</code> only when you want to empty the whole database, not just the configured Django namespace.</p>
+<p>On a shared database, <code>clear()</code> spares the keys of other caches only when each cache has its own <code>KEY_PREFIX</code>. Two caches on the default empty prefix both write <code>:1:*</code> keys, so <code>clear()</code> on either deletes the keys of both. Use <code>flush_db()</code> only to empty the whole database.</p>
 <h2 id="settings-reference">Settings Reference<a class="headerlink" href="#settings-reference" title="Permanent link">&para;</a></h2>
 <h3 id="cache-options">Cache OPTIONS<a class="headerlink" href="#cache-options" title="Permanent link">&para;</a></h3>
 <table>
@@ -3005,17 +2802,17 @@ to the results:</p>
 <tr>
 <td><code>pool_class</code></td>
 <td>redis-py, valkey-py</td>
-<td>Custom connection pool class (sync). Rejected with <code>ImproperlyConfigured</code> on the cluster backends, which have no pool to configure</td>
+<td>Custom connection pool class (sync). The cluster backends reject it with <code>ImproperlyConfigured</code></td>
 </tr>
 <tr>
 <td><code>async_pool_class</code></td>
 <td>redis-py, valkey-py</td>
-<td>Custom connection pool class (async). Rejected on the cluster backends the same way</td>
+<td>Custom connection pool class (async). The cluster backends reject it with <code>ImproperlyConfigured</code></td>
 </tr>
 <tr>
 <td><code>parser_class</code></td>
 <td>redis-py, valkey-py</td>
-<td>Custom RESP parser class. Rejected with <code>ImproperlyConfigured</code> on the cluster backends, whose client picks its own parser</td>
+<td>Custom RESP parser class. The cluster backends reject it with <code>ImproperlyConfigured</code>, because their client picks its own parser</td>
 </tr>
 <tr>
 <td><code>sentinels</code></td>
@@ -3049,25 +2846,9 @@ to the results:</p>
 </tr>
 </tbody>
 </table>
-<p>The redis-py and valkey-py adapters forward any key not listed above to the
-driver's <code>from_url()</code>, so <code>retry_on_timeout</code>, <code>ssl_ca_certs</code>, <code>socket_keepalive</code>
-and the rest of the driver's own options work there. The valkey-glide adapter
-does not: it reads only the keys marked "all Valkey/Redis" or "valkey-glide" and
-ignores everything else. <code>LocMemCache</code>, <code>DatabaseCache</code> and
-<code>TrackingCache</code> take their own <code>OPTIONS</code>; see
-<a href="../../user-guide/configuration/">Configuration</a> and
-<a href="../../user-guide/composite-backends/">TrackingCache</a>.</p>
+<p>The redis-py and valkey-py adapters pass every other key to the driver's <code>from_url()</code>, so driver options such as <code>retry_on_timeout</code>, <code>ssl_ca_certs</code> and <code>socket_keepalive</code> work there. The valkey-glide adapter reads only the keys marked "all Valkey/Redis" or "valkey-glide" and ignores the rest. <code>LocMemCache</code>, <code>DatabaseCache</code> and <code>TrackingCache</code> take their own <code>OPTIONS</code>, described in <a href="../../user-guide/configuration/">Configuration</a> and <a href="../../user-guide/composite-backends/">TrackingCache</a>.</p>
 <h3 id="stampedeconfig">StampedeConfig<a class="headerlink" href="#stampedeconfig" title="Permanent link">&para;</a></h3>
-<p><code>django_cachex.StampedeConfig(buffer=60, beta=1.0, delta=1.0)</code>, frozen
-dataclass that tunes the TTL-based XFetch stampede-prevention algorithm.
-Pass it to <code>OPTIONS["stampede_prevention"]</code> to apply globally, or to the
-<code>stampede_prevention=</code> kwarg on <code>get</code>/<code>set</code>/<code>get_many</code>/<code>set_many</code>/<code>add</code>/
-<code>touch</code>/<code>get_or_set</code>, on the TTL readers and setters (<code>ttl</code>, <code>pttl</code>,
-<code>expire</code>, <code>expireat</code>, <code>pexpire</code>, <code>pexpireat</code>, <code>expiretime</code>), and on their
-<code>a</code>-prefixed async counterparts, for per-call overrides. The keyword takes
-<code>True</code>, <code>False</code>, <code>None</code> or a <code>StampedeConfig</code>; the dict form is accepted in
-<code>OPTIONS</code> only, and anything else raises <code>TypeError</code>. <code>touch</code> uses it to
-decide whether the refreshed TTL gets the buffer added back.</p>
+<p><code>django_cachex.StampedeConfig(buffer=60, beta=1.0, delta=1.0)</code> is a frozen dataclass that tunes the TTL-based XFetch stampede prevention. Pass it to <code>OPTIONS["stampede_prevention"]</code> for the whole cache, or to the <code>stampede_prevention=</code> keyword for one call. <code>get</code>, <code>set</code>, <code>get_many</code>, <code>set_many</code>, <code>add</code>, <code>touch</code>, <code>get_or_set</code>, <code>ttl</code>, <code>pttl</code>, <code>expire</code>, <code>expireat</code>, <code>pexpire</code>, <code>pexpireat</code>, <code>expiretime</code> and their async twins take the keyword. Its value is <code>True</code>, <code>False</code>, <code>None</code> or a <code>StampedeConfig</code>, and any other value raises <code>TypeError</code>. The dict form works in <code>OPTIONS</code> only. On <code>touch</code>, the keyword decides whether the refreshed TTL gets the buffer added back.</p>
 <table>
 <thead>
 <tr>
@@ -3094,15 +2875,9 @@ decide whether the refreshed TTL gets the buffer added back.</p>
 </tr>
 </tbody>
 </table>
-<p>Only the Valkey/Redis backends implement it, and only their methods accept the
-<code>stampede_prevention=</code> keyword. <code>LocMemCache</code> and <code>DatabaseCache</code> ignore the
-<code>OPTIONS</code> key, and their <code>get</code>/<code>set</code>/... have no such parameter, so passing it
-raises <code>TypeError</code>. <code>TrackingCache</code> follows its transport's <code>OPTIONS</code> setting
-and has no per-call keyword either.</p>
+<p>Only the Valkey/Redis backends implement stampede prevention. <code>LocMemCache</code> and <code>DatabaseCache</code> ignore the <code>OPTIONS</code> key, and their methods raise <code>TypeError</code> for the <code>stampede_prevention=</code> keyword. <code>TrackingCache</code> follows the setting of its transport and has no per-call keyword either.</p>
 <h2 id="exceptions">Exceptions<a class="headerlink" href="#exceptions" title="Permanent link">&para;</a></h2>
-<p>All importable from the package root (<code>django_cachex</code>). Every exception
-subclasses <code>CachexError</code>, so one <code>except CachexError</code> handles any library
-failure.</p>
+<p>All exceptions below are importable from <code>django_cachex</code> and subclass <code>CachexError</code>, so <code>except CachexError</code> catches any of them.</p>
 <table>
 <thead>
 <tr>
@@ -3113,15 +2888,15 @@ failure.</p>
 <tbody>
 <tr>
 <td><code>CachexError</code></td>
-<td>Base class for every exception raised by django-cachex.</td>
+<td>Base class of every django-cachex exception.</td>
 </tr>
 <tr>
 <td><code>WrongTypeError</code></td>
-<td>Operation applied to a key holding the wrong RESP type (subclass of <code>TypeError</code>). Mirrors Redis <code>WRONGTYPE</code>; raised consistently across <code>LocMemCache</code>, <code>DatabaseCache</code>, redis-py, valkey-py, and valkey-glide.</td>
+<td>A command hit a key that holds another RESP type, as Redis <code>WRONGTYPE</code> reports. Subclass of <code>TypeError</code>. Raised by <code>LocMemCache</code>, <code>DatabaseCache</code>, redis-py, valkey-py and valkey-glide alike.</td>
 </tr>
 <tr>
 <td><code>KeyNotFoundError</code></td>
-<td>An operation needed a key that does not exist (subclass of <code>ValueError</code>). Mirrors Redis <code>ERR no such key</code>; raised by <code>rename()</code> for a missing source. The missing key is available as <code>key</code>.</td>
+<td>An operation needed a key that does not exist, as Redis <code>ERR no such key</code> reports. <code>rename()</code> raises it for a missing source. The missing key is in <code>key</code>. Subclass of <code>ValueError</code>.</td>
 </tr>
 <tr>
 <td><code>CompressorError</code></td>
@@ -3133,11 +2908,11 @@ failure.</p>
 </tr>
 <tr>
 <td><code>NotSupportedError</code></td>
-<td>Operation is not supported by this backend (e.g. <code>lpush</code> on <code>TrackingCache</code>) or by the connected server (e.g. <code>hexpire</code> on Redis 7.2). <code>operation</code> names the method or command, <code>backend</code> the cache class (<code>None</code> when the server rejected the command) and <code>detail</code> says why, including the server release that adds a missing command.</td>
+<td>The backend does not support the operation (e.g. <code>lpush</code> on <code>TrackingCache</code>), or the connected server does not (e.g. <code>hexpire</code> on Redis 7.2). <code>operation</code> names the method or command, and <code>backend</code> the cache class (<code>None</code> when the server rejected the command). <code>detail</code> gives the reason, including the server release that adds a missing command.</td>
 </tr>
 <tr>
 <td><code>LockError</code></td>
-<td>A lock operation failed (couldn't acquire, releasing an unlocked lock, ...). Raised by every backend; where the driver's own lock raised, that error is the <code>__cause__</code>. Subclass of <code>ValueError</code>.</td>
+<td>A lock operation failed, such as a <code>with</code> block that could not acquire the lock or a release of an unlocked lock. Raised by every Valkey/Redis backend. Where the driver's own lock raised, that error is the <code>__cause__</code>. Subclass of <code>ValueError</code>.</td>
 </tr>
 <tr>
 <td><code>LockNotOwnedError</code></td>
@@ -3153,7 +2928,7 @@ failure.</p>
 </tr>
 </tbody>
 </table>
-<p>The <a href="../../user-guide/orm-cache/">ORM cache</a> raises <code>django_cachex.orm.exceptions.InvalidationError</code> when a write cannot invalidate the cache. It subclasses <code>CachexError</code> and Django's <code>DatabaseError</code>, so <code>atomic()</code> rolls the transaction back; see <a href="../../user-guide/orm-cache/#failures">Failures</a>.</p>
+<p>The <a href="../../user-guide/orm-cache/">ORM cache</a> raises <code>django_cachex.orm.exceptions.InvalidationError</code> when a write cannot invalidate the cache. It subclasses <code>CachexError</code> and Django's <code>DatabaseError</code>, so <code>atomic()</code> rolls the transaction back. See <a href="../../user-guide/orm-cache/#failures">Failures</a>.</p>
 
 
 

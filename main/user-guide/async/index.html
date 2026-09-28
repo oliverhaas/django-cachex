@@ -578,17 +578,6 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Overview
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#basic-usage" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -610,17 +599,6 @@
   
     <nav class="md-nav" aria-label="Available Async Methods">
       <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#standard-django-cache-methods" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Standard Django Cache Methods
-      
-    </span>
-  </a>
-  
-</li>
         
           <li class="md-nav__item">
   <a href="#extended-methods" class="md-nav__link">
@@ -668,34 +646,6 @@
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="How It Works">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#connection-pool-architecture" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Connection Pool Architecture
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#per-event-loop-caching" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Per-Event-Loop Caching
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -1243,95 +1193,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Development
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Development
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../development/locmem-vs-fakeredis/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    LocMemCache vs fakeredis
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -1359,17 +1220,6 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Overview
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#basic-usage" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1391,17 +1241,6 @@
   
     <nav class="md-nav" aria-label="Available Async Methods">
       <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#standard-django-cache-methods" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Standard Django Cache Methods
-      
-    </span>
-  </a>
-  
-</li>
         
           <li class="md-nav__item">
   <a href="#extended-methods" class="md-nav__link">
@@ -1449,34 +1288,6 @@
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="How It Works">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#connection-pool-architecture" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Connection Pool Architecture
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#per-event-loop-caching" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Per-Event-Loop Caching
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -1634,113 +1445,28 @@
 
 
 <h1 id="async-support">Async Support<a class="headerlink" href="#async-support" title="Permanent link">&para;</a></h1>
-<p>django-cachex implements Django's async cache methods (<code>aget</code>, <code>aset</code>, <code>adelete</code>, etc.) using native async clients: <code>redis.asyncio</code> and <code>valkey.asyncio</code> on the redis-py and valkey-py backends, and glide's own async <code>glide.GlideClient</code> on the valkey-glide backends. Async callers don't pay the asgiref threadpool round-trip.</p>
-<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p><code>cache.get()</code> and <code>await cache.aget()</code> operate on the same backend with no separate configuration.</p>
+<p>django-cachex implements Django's async cache methods with native async clients. The redis-py and valkey-py backends use <code>redis.asyncio</code> and <code>valkey.asyncio</code>, and the valkey-glide backends use glide's own async <code>glide.GlideClient</code>. Their async calls do not go through the asgiref thread pool. <code>cache.get()</code> and <code>await cache.aget()</code> use the same backend, with no separate configuration.</p>
 <h2 id="basic-usage">Basic Usage<a class="headerlink" href="#basic-usage" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Async views (ASGI)</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">my_view</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="c1"># Read</span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">value</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="s2">"key"</span><span class="p">)</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="c1"># Write</span>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aset</span><span class="p">(</span><span class="s2">"key"</span><span class="p">,</span> <span class="s2">"value"</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">300</span><span class="p">)</span>
-</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
-</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="c1"># Delete</span>
-</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">adelete</span><span class="p">(</span><span class="s2">"key"</span><span class="p">)</span>
-</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
-</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="c1"># Check existence</span>
-</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    <span class="n">exists</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">ahas_key</span><span class="p">(</span><span class="s2">"key"</span><span class="p">)</span>
-</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>
-</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    <span class="k">return</span> <span class="n">JsonResponse</span><span class="p">({</span><span class="s2">"value"</span><span class="p">:</span> <span class="n">value</span><span class="p">})</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">value</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="s2">"key"</span><span class="p">)</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aset</span><span class="p">(</span><span class="s2">"key"</span><span class="p">,</span> <span class="s2">"value"</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">300</span><span class="p">)</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">adelete</span><span class="p">(</span><span class="s2">"key"</span><span class="p">)</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">exists</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">ahas_key</span><span class="p">(</span><span class="s2">"key"</span><span class="p">)</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="k">return</span> <span class="n">JsonResponse</span><span class="p">({</span><span class="s2">"value"</span><span class="p">:</span> <span class="n">value</span><span class="p">})</span>
 </span></code></pre></div>
 <h2 id="available-async-methods">Available Async Methods<a class="headerlink" href="#available-async-methods" title="Permanent link">&para;</a></h2>
-<h3 id="standard-django-cache-methods">Standard Django Cache Methods<a class="headerlink" href="#standard-django-cache-methods" title="Permanent link">&para;</a></h3>
-<p>All standard Django cache methods have async equivalents with the <code>a</code> prefix:</p>
-<table>
-<thead>
-<tr>
-<th>Sync</th>
-<th>Async</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>get(key)</code></td>
-<td><code>aget(key)</code></td>
-</tr>
-<tr>
-<td><code>set(key, value, timeout)</code></td>
-<td><code>aset(key, value, timeout)</code></td>
-</tr>
-<tr>
-<td><code>add(key, value, timeout)</code></td>
-<td><code>aadd(key, value, timeout)</code></td>
-</tr>
-<tr>
-<td><code>delete(key)</code></td>
-<td><code>adelete(key)</code></td>
-</tr>
-<tr>
-<td><code>get_many(keys)</code></td>
-<td><code>aget_many(keys)</code></td>
-</tr>
-<tr>
-<td><code>set_many(mapping, timeout)</code></td>
-<td><code>aset_many(mapping, timeout)</code></td>
-</tr>
-<tr>
-<td><code>delete_many(keys)</code></td>
-<td><code>adelete_many(keys)</code></td>
-</tr>
-<tr>
-<td><code>has_key(key)</code></td>
-<td><code>ahas_key(key)</code></td>
-</tr>
-<tr>
-<td><code>incr(key, delta)</code></td>
-<td><code>aincr(key, delta)</code></td>
-</tr>
-<tr>
-<td><code>decr(key, delta)</code></td>
-<td><code>adecr(key, delta)</code></td>
-</tr>
-<tr>
-<td><code>touch(key, timeout)</code></td>
-<td><code>atouch(key, timeout)</code></td>
-</tr>
-<tr>
-<td><code>clear()</code></td>
-<td><code>aclear()</code></td>
-</tr>
-<tr>
-<td><code>close()</code></td>
-<td><code>aclose()</code></td>
-</tr>
-<tr>
-<td><code>get_or_set(key, default, timeout)</code></td>
-<td><code>aget_or_set(key, default, timeout)</code></td>
-</tr>
-<tr>
-<td><code>incr_version(key)</code></td>
-<td><code>aincr_version(key)</code></td>
-</tr>
-<tr>
-<td><code>decr_version(key)</code></td>
-<td><code>adecr_version(key)</code></td>
-</tr>
-</tbody>
-</table>
+<p>Each standard Django cache method has an async twin with an <code>a</code> prefix, such as <code>aget()</code>, <code>aget_or_set()</code>, <code>aincr_version()</code> and <code>aclose()</code>.</p>
 <h3 id="extended-methods">Extended Methods<a class="headerlink" href="#extended-methods" title="Permanent link">&para;</a></h3>
-<p>django-cachex extended methods also have async versions, called directly on the cache:</p>
+<p>The django-cachex extensions have async twins on the cache too:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># TTL operations</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">ttl</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">attl</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>  <span class="c1"># Get TTL in seconds</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">pttl</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">apttl</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>  <span class="c1"># Get TTL in milliseconds</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aexpire</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">60</span><span class="p">)</span>  <span class="c1"># Set expiration</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">apersist</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>  <span class="c1"># Remove expiration</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">ttl</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">attl</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>  <span class="c1"># seconds</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">pttl</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">apttl</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>  <span class="c1"># milliseconds</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aexpire</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">60</span><span class="p">)</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">apersist</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>  <span class="c1"># remove the expiry</span>
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
 </span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="c1"># Key operations</span>
 </span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="n">keys</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">akeys</span><span class="p">(</span><span class="s2">"pattern:*"</span><span class="p">)</span>
@@ -1751,12 +1477,9 @@
 </span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="k">async</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">cache</span><span class="o">.</span><span class="n">aiter_keys</span><span class="p">(</span><span class="s2">"user:*"</span><span class="p">):</span>
 </span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
 </span></code></pre></div>
-<div class="admonition note">
-<p class="admonition-title">Adapter-level methods</p>
-<p>For ops that bypass the prefix/serializer pipeline, drop down to <code>cache.adapter</code> (e.g. <code>await cache.adapter.aget(raw_key)</code>). Adapter methods take already-prefixed keys and return raw bytes/values.</p>
-</div>
+<p>Methods on <code>cache.adapter</code>, such as <code>await cache.adapter.aget(raw_key)</code>, skip key prefixing and serialization. They take already-prefixed keys and return raw bytes or values.</p>
 <h3 id="data-structures">Data Structures<a class="headerlink" href="#data-structures" title="Permanent link">&para;</a></h3>
-<p>Data structure operations have async equivalents on the cache directly:</p>
+<p>The data structure methods have async twins as well:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Hashes</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">ahset</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="s2">"name"</span><span class="p">,</span> <span class="s2">"Alice"</span><span class="p">)</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">name</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">ahget</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="s2">"name"</span><span class="p">)</span>
@@ -1778,72 +1501,47 @@
 </span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="n">top_players</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">azrange</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="n">withscores</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </span></code></pre></div>
 <h3 id="async-pipelines">Async Pipelines<a class="headerlink" href="#async-pipelines" title="Permanent link">&para;</a></h3>
-<p>Batch multiple operations and dispatch them in a single round trip:</p>
+<p>An async pipeline sends the queued commands in one round trip:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">async</span> <span class="k">with</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">apipeline</span><span class="p">()</span> <span class="k">as</span> <span class="n">pipe</span><span class="p">:</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">"a"</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">"b"</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
 </span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">pipe</span><span class="o">.</span><span class="n">hset</span><span class="p">(</span><span class="s2">"h"</span><span class="p">,</span> <span class="s2">"field"</span><span class="p">,</span> <span class="s2">"value"</span><span class="p">)</span>
 </span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">pipe</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
 </span></code></pre></div>
-<p>Queueing methods (<code>set</code>, <code>hset</code>, <code>lpush</code>, ...) stay synchronous; only <code>apipeline()</code> and <code>execute()</code> are awaited. The wrapper's behaviour mirrors the sync <code>pipeline()</code>; see <a href="../../reference/api/#pipelines">Pipelines</a> for the shared command surface.</p>
-<p><code>apipeline()</code> is <code>async def</code> because the valkey-glide adapter resolves the underlying async client during construction. The <code>await</code> is required even on adapters where the construction is trivial.</p>
+<p>Queueing methods such as <code>set</code>, <code>hset</code> and <code>lpush</code> are synchronous. Only <code>apipeline()</code> and <code>execute()</code> are awaited. Otherwise the async pipeline behaves like the sync <code>pipeline()</code>, with the commands listed under <a href="../../reference/api/#pipelines">Pipelines</a>.</p>
+<p><code>apipeline()</code> must be awaited on every backend, because the valkey-glide adapter creates its async client asynchronously.</p>
 <h2 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
-<h3 id="connection-pool-architecture">Connection Pool Architecture<a class="headerlink" href="#connection-pool-architecture" title="Permanent link">&para;</a></h3>
-<p>Separate connection pools are maintained for sync and async operations:</p>
-<ul>
-<li>Sync pools: standard pools (<code>redis.ConnectionPool</code> / <code>valkey.ConnectionPool</code>), one per server</li>
-<li>Async pools: <code>redis.asyncio.ConnectionPool</code> / <code>valkey.asyncio.ConnectionPool</code>, cached per event loop</li>
-</ul>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>┌─────────────────────────────────────────────────────────┐
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>│                    Cache Backend                         │
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>├─────────────────────────────────────────────────────────┤
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>│  Sync Pools                 │  Async Pools              │
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>│  ────────────               │  ────────────             │
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>│  pools[0] → server1         │  loop1 → {0: pool, ...}   │
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>│  pools[1] → server2         │  loop2 → {0: pool, ...}   │
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>│  ...                        │  ...                      │
-</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>└─────────────────────────────────────────────────────────┘
-</span></code></pre></div>
-<h3 id="per-event-loop-caching">Per-Event-Loop Caching<a class="headerlink" href="#per-event-loop-caching" title="Permanent link">&para;</a></h3>
-<p>Async pools live in a registry keyed by event loop, so each loop gets its own
-pools and reuses them for every call it makes.</p>
-<p>A pool cannot outlive its loop: every open connection holds a transport that
-belongs to the loop that opened it. Weak keys alone would never free those
-entries, because the pool keeps its own loop alive. So cachex sweeps the
-registry on every pool lookup and on <code>close()</code>, dropping the entry of any loop
-that has been closed. Dropping the entry releases the pool, its client and its
-connections; each socket closes when the garbage collector reclaims the
-connection that owns it.</p>
+<p>On the redis-py and valkey-py backends, sync and async calls use separate connection pools. Sync calls use one <code>redis.ConnectionPool</code> or <code>valkey.ConnectionPool</code> per server. Async calls use a <code>redis.asyncio.ConnectionPool</code> or <code>valkey.asyncio.ConnectionPool</code> per server and event loop.</p>
+<p>Each event loop gets its own async pools and reuses them for every call it makes. A pool cannot outlive its loop, because its connections belong to the loop that opened them. On every pool lookup and on <code>close()</code>, django-cachex drops the pools of loops that have closed. The sockets of a dropped pool close when the garbage collector reclaims their connections.</p>
 <h2 id="performance-considerations">Performance Considerations<a class="headerlink" href="#performance-considerations" title="Permanent link">&para;</a></h2>
 <div class="admonition warning">
 <p class="admonition-title">Event Loop Lifecycle</p>
-<p>Async pools are cached <strong>per event loop</strong>. This is efficient for long-lived loops but wasteful for short-lived ones.</p>
+<p>Async pools are cached per event loop. That suits long-lived loops and wastes connections on short-lived ones.</p>
 </div>
 <h3 id="efficient-long-lived-event-loops">Efficient: Long-Lived Event Loops<a class="headerlink" href="#efficient-long-lived-event-loops" title="Permanent link">&para;</a></h3>
-<p>ASGI servers (uvicorn, daphne, hypercorn) maintain long-lived event loops where connections are reused across requests:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># In an ASGI application: the loop, and so the pool, outlives the request</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">my_view</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="c1"># Connections are reused across requests</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">value</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="s2">"key"</span><span class="p">)</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aset</span><span class="p">(</span><span class="s2">"key"</span><span class="p">,</span> <span class="s2">"new_value"</span><span class="p">)</span>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="k">return</span> <span class="n">JsonResponse</span><span class="p">({</span><span class="s2">"value"</span><span class="p">:</span> <span class="n">value</span><span class="p">})</span>
+<p>ASGI servers such as uvicorn, daphne and hypercorn run long-lived event loops, so connections are reused across requests:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># In an ASGI application, the loop, and so the pool, outlives the request</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">my_view</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">value</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="s2">"key"</span><span class="p">)</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aset</span><span class="p">(</span><span class="s2">"key"</span><span class="p">,</span> <span class="s2">"new_value"</span><span class="p">)</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="k">return</span> <span class="n">JsonResponse</span><span class="p">({</span><span class="s2">"value"</span><span class="p">:</span> <span class="n">value</span><span class="p">})</span>
 </span></code></pre></div>
 <h3 id="inefficient-short-lived-event-loops">Inefficient: Short-Lived Event Loops<a class="headerlink" href="#inefficient-short-lived-event-loops" title="Permanent link">&para;</a></h3>
-<p>Avoid async methods when event loops are frequently created and destroyed:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># BAD: each asyncio.run() gets a new event loop, so a new pool and a new</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="c1"># TCP connection. The 100 pools do not pile up (each run sweeps out the</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1"># previous one), but you pay 100 handshakes instead of one.</span>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="k">def</span><span class="w"> </span><span class="nf">sync_function</span><span class="p">():</span>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">100</span><span class="p">):</span>
-</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>        <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="sa">f</span><span class="s2">"key:</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span><span class="p">))</span>
-</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>
-</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>
-</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="c1"># BAD: async_to_sync() inside a sync_to_async() body finds the outer loop</span>
-</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="c1"># and schedules on it, so the pool is reused, but every call hops threads</span>
-</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="c1"># twice (loop -&gt; worker thread -&gt; loop and back). Await cache.aget() directly.</span>
-</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="nd">@sync_to_async</span>
-</span><span id="__span-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="k">def</span><span class="w"> </span><span class="nf">wrapped_function</span><span class="p">():</span>
-</span><span id="__span-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>    <span class="k">return</span> <span class="n">async_to_sync</span><span class="p">(</span><span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">)(</span><span class="s2">"key"</span><span class="p">)</span>
+<p>Avoid async methods when event loops are created and closed often:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Each asyncio.run() starts a new event loop, so a new pool and a new TCP</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1"># connection. The pools do not pile up, because each run sweeps out the</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="c1"># previous one, but this costs 100 handshakes instead of one.</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="k">def</span><span class="w"> </span><span class="nf">sync_function</span><span class="p">():</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">100</span><span class="p">):</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>        <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="sa">f</span><span class="s2">"key:</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span><span class="p">))</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="c1"># async_to_sync() inside a sync_to_async() body schedules on the outer loop,</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="c1"># so the pool is reused, but every call hops threads twice. Await</span>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="c1"># cache.aget() directly instead.</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="nd">@sync_to_async</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="k">def</span><span class="w"> </span><span class="nf">wrapped_function</span><span class="p">():</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>    <span class="k">return</span> <span class="n">async_to_sync</span><span class="p">(</span><span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">)(</span><span class="s2">"key"</span><span class="p">)</span>
 </span></code></pre></div>
 <h3 id="recommendations">Recommendations<a class="headerlink" href="#recommendations" title="Permanent link">&para;</a></h3>
 <table>
@@ -1856,11 +1554,11 @@ connection that owns it.</p>
 <tbody>
 <tr>
 <td>ASGI views (uvicorn, daphne)</td>
-<td>Use async methods (<code>aget</code>, <code>aset</code>, etc.)</td>
+<td>Use async methods (<code>aget</code>, <code>aset</code>)</td>
 </tr>
 <tr>
 <td>WSGI views (gunicorn, uwsgi)</td>
-<td>Use sync methods (<code>get</code>, <code>set</code>, etc.)</td>
+<td>Use sync methods (<code>get</code>, <code>set</code>)</td>
 </tr>
 <tr>
 <td>Management commands</td>
@@ -1878,129 +1576,99 @@ connection that owns it.</p>
 </table>
 <h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
 <h3 id="custom-async-pool-class">Custom Async Pool Class<a class="headerlink" href="#custom-async-pool-class" title="Permanent link">&para;</a></h3>
-<p>Provide a custom async connection pool class:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="s2">"default"</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>        <span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.RedisCache"</span><span class="p">,</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>        <span class="s2">"LOCATION"</span><span class="p">:</span> <span class="s2">"redis://127.0.0.1:6379/1"</span><span class="p">,</span>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>        <span class="s2">"OPTIONS"</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>            <span class="c1"># Custom async pool class (import path or class)</span>
-</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>            <span class="s2">"async_pool_class"</span><span class="p">:</span> <span class="s2">"myapp.pools.CustomAsyncConnectionPool"</span><span class="p">,</span>
-</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>        <span class="p">},</span>
-</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>    <span class="p">}</span>
-</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="p">}</span>
+<p><code>async_pool_class</code> sets the async connection pool class, as an import path or a class:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="s2">"default"</span><span class="p">:</span> <span class="p">{</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>        <span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.RedisCache"</span><span class="p">,</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>        <span class="s2">"LOCATION"</span><span class="p">:</span> <span class="s2">"redis://127.0.0.1:6379/1"</span><span class="p">,</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>        <span class="s2">"OPTIONS"</span><span class="p">:</span> <span class="p">{</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>            <span class="s2">"async_pool_class"</span><span class="p">:</span> <span class="s2">"myapp.pools.CustomAsyncConnectionPool"</span><span class="p">,</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>        <span class="p">},</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="p">}</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="p">}</span>
 </span></code></pre></div>
 <h3 id="closing-async-connections">Closing Async Connections<a class="headerlink" href="#closing-async-connections" title="Permanent link">&para;</a></h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aclose</span><span class="p">()</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aclose</span><span class="p">()</span>
 </span></code></pre></div>
-<p><code>aclose()</code> disconnects the async pools this cache alias opened on the loop it
-runs on and drops them from the registry. The next <code>await</code> on the cache opens
-fresh ones, so call it when you are done with a loop, not between requests. It
-also sweeps the registry, releasing the pools of any loop that has been closed.
-On a cluster backend it closes that loop's cluster client; on a Sentinel
-backend it also closes the loop's Sentinel manager and the clients it
-discovered with.</p>
-<p>Only pools under the calling alias's own registry keys are released: an alias
-with a different URL or options keeps its connections. An alias configured
-identically shares the very same pool object, so it is disconnected too
-(a driver pool's <code>aclose()</code> drops in-use connections along with idle ones) and
-reconnects lazily on its next command. Pools leave the registry one at a time
-as they close, so a failure mid-way keeps the rest reachable.</p>
-<p><code>close()</code> leaves the sync pools connected: Django fires it on every
-<code>request_finished</code> signal, and tearing pools down there would force a reconnect
-per request. It does sweep the registry, since that needs no running loop.</p>
-<p>Both are safe to skip. A process that only ever runs one loop never
-accumulates anything, and a process that creates loops (<code>asyncio.run()</code>, or
-<code>async_to_sync()</code> called from a sync thread) has each new loop sweep out the
-pools of the loops that closed before it.</p>
+<p><code>aclose()</code> disconnects and drops the async pools this cache alias opened on the running loop. The next <code>await</code> on the cache opens new ones, so call it when you are done with a loop, not between requests. It also drops the pools of loops that have closed. On a cluster backend, it closes the loop's cluster client. On a Sentinel backend, it also closes the loop's Sentinel manager and the clients it used for discovery.</p>
+<p>An alias with a different URL or options keeps its connections. An alias with the same configuration shares the same pools, so it is disconnected too, including connections in use, and reconnects on its next command. If closing one pool fails, the pools not yet closed stay registered.</p>
+<p><code>close()</code> leaves the sync pools connected, because Django calls it on every <code>request_finished</code> signal and a teardown there would force a reconnect per request. It does drop the async pools of closed loops.</p>
+<p>Calling either is optional. A process that runs one loop accumulates nothing. A process that creates loops, through <code>asyncio.run()</code> or <code>async_to_sync()</code> from a sync thread, drops the pools of closed loops with each new loop.</p>
 <h2 id="mixed-syncasync-usage">Mixed Sync/Async Usage<a class="headerlink" href="#mixed-syncasync-usage" title="Permanent link">&para;</a></h2>
-<p>A single backend works for both sync and async code:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># Sync code path</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">sync_view</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>    <span class="n">value</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"key"</span><span class="p">)</span>  <span class="c1"># Uses sync pool</span>
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>    <span class="n">cache</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">"key"</span><span class="p">,</span> <span class="s2">"value"</span><span class="p">)</span>
-</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>    <span class="k">return</span> <span class="n">HttpResponse</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
-</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>
-</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>
-</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="c1"># Async code path</span>
-</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">async_view</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
-</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>    <span class="n">value</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="s2">"key"</span><span class="p">)</span>  <span class="c1"># Uses async pool</span>
-</span><span id="__span-9-14"><a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a>    <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aset</span><span class="p">(</span><span class="s2">"key"</span><span class="p">,</span> <span class="s2">"value"</span><span class="p">)</span>
-</span><span id="__span-9-15"><a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a>    <span class="k">return</span> <span class="n">JsonResponse</span><span class="p">({</span><span class="s2">"value"</span><span class="p">:</span> <span class="n">value</span><span class="p">})</span>
+<p>One cache alias serves sync and async code:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Sync code path</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">sync_view</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="n">value</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"key"</span><span class="p">)</span>  <span class="c1"># Uses sync pool</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>    <span class="n">cache</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s2">"key"</span><span class="p">,</span> <span class="s2">"value"</span><span class="p">)</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>    <span class="k">return</span> <span class="n">HttpResponse</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="c1"># Async code path</span>
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">async_view</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>    <span class="n">value</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="s2">"key"</span><span class="p">)</span>  <span class="c1"># Uses async pool</span>
+</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>    <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aset</span><span class="p">(</span><span class="s2">"key"</span><span class="p">,</span> <span class="s2">"value"</span><span class="p">)</span>
+</span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>    <span class="k">return</span> <span class="n">JsonResponse</span><span class="p">({</span><span class="s2">"value"</span><span class="p">:</span> <span class="n">value</span><span class="p">})</span>
 </span></code></pre></div>
-<p>Both views use the same cache backend configured in settings.</p>
 <h2 id="other-backends">Other backends<a class="headerlink" href="#other-backends" title="Permanent link">&para;</a></h2>
-<p>The async ext surface (<code>alpush</code>, <code>ahset</code>, <code>azadd</code>, <code>attl</code>, <code>aexpire</code> and the
-rest) is also available on <code>LocMemCache</code> and <code>DatabaseCache</code>. The two backends
-take different routes because the underlying work is different:</p>
+<p><code>LocMemCache</code> and <code>DatabaseCache</code> also have the async extensions, such as <code>alpush()</code>, <code>ahset()</code>, <code>azadd()</code>, <code>attl()</code> and <code>aexpire()</code>:</p>
 <ul>
-<li><code>LocMemCache</code> is in-memory: each <code>a*</code> method calls its sync
-  counterpart directly with no thread offload. There's no I/O to await,
-  so awaiting from an event loop is harmless.</li>
-<li><code>DatabaseCache</code> does real DB queries, so each <code>a*</code> method offloads
-  the sync call via <code>asgiref.sync.sync_to_async</code> (Django's own pattern
-  for <code>BaseCache.aget</code>). Native async DB cursors will replace this path
-  once Django exposes them, without changing the public surface.</li>
+<li><code>LocMemCache</code> keeps its data in memory, so each <code>a*</code> method calls its sync twin directly, without a thread. It does no I/O, so awaiting it from an event loop is harmless.</li>
+<li><code>DatabaseCache</code> runs database queries, so each <code>a*</code> method runs its sync twin through <code>asgiref.sync.sync_to_async</code>, as Django's <code>BaseCache.aget()</code> does.</li>
 </ul>
-<p>Stock Django backends (<code>django.core.cache.backends.*</code>) and any other
-non-cachex backend don't get an ext surface from django-cachex. The admin
-shows them with a "limited" badge (configuration only, no key browsing)
-and recommends switching <code>BACKEND</code> to a cachex equivalent if available.</p>
+<p>Django's own backends (<code>django.core.cache.backends.*</code>) and other non-cachex backends get no extensions from django-cachex. The admin marks them "limited" and shows only their configuration, without key browsing. It suggests a cachex <code>BACKEND</code> where one exists.</p>
 <h2 id="cluster-and-sentinel">Cluster and Sentinel<a class="headerlink" href="#cluster-and-sentinel" title="Permanent link">&para;</a></h2>
-<p>Async works identically with Cluster and Sentinel backends:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Cluster - async works the same way</span>
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">cluster_example</span><span class="p">():</span>
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>    <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aset</span><span class="p">(</span><span class="s2">"key"</span><span class="p">,</span> <span class="s2">"value"</span><span class="p">)</span>
-</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>    <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aget_many</span><span class="p">([</span><span class="s2">"key1"</span><span class="p">,</span> <span class="s2">"key2"</span><span class="p">,</span> <span class="s2">"key3"</span><span class="p">])</span>
-</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>
-</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>
-</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="c1"># Sentinel - async works the same way</span>
-</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">sentinel_example</span><span class="p">():</span>
-</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>    <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aset</span><span class="p">(</span><span class="s2">"key"</span><span class="p">,</span> <span class="s2">"value"</span><span class="p">)</span>
-</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>    <span class="n">value</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="s2">"key"</span><span class="p">)</span>
+<p>The async methods work the same on Cluster and Sentinel backends:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Cluster</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">cluster_example</span><span class="p">():</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aset</span><span class="p">(</span><span class="s2">"key"</span><span class="p">,</span> <span class="s2">"value"</span><span class="p">)</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aget_many</span><span class="p">([</span><span class="s2">"key1"</span><span class="p">,</span> <span class="s2">"key2"</span><span class="p">,</span> <span class="s2">"key3"</span><span class="p">])</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="c1"># Sentinel</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">sentinel_example</span><span class="p">():</span>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>    <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aset</span><span class="p">(</span><span class="s2">"key"</span><span class="p">,</span> <span class="s2">"value"</span><span class="p">)</span>
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>    <span class="n">value</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="s2">"key"</span><span class="p">)</span>
 </span></code></pre></div>
 <h2 id="complete-example">Complete Example<a class="headerlink" href="#complete-example" title="Permanent link">&para;</a></h2>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># settings.py</span>
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
-</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    <span class="s2">"default"</span><span class="p">:</span> <span class="p">{</span>
-</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>        <span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.ValkeyCache"</span><span class="p">,</span>
-</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>        <span class="s2">"LOCATION"</span><span class="p">:</span> <span class="s2">"valkey://127.0.0.1:6379/1"</span><span class="p">,</span>
-</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>        <span class="s2">"TIMEOUT"</span><span class="p">:</span> <span class="mi">300</span><span class="p">,</span>
-</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>    <span class="p">}</span>
-</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="p">}</span>
-</span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>
-</span><span id="__span-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="c1"># views.py</span>
-</span><span id="__span-11-11"><a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
-</span><span id="__span-11-12"><a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.http</span><span class="w"> </span><span class="kn">import</span> <span class="n">JsonResponse</span>
-</span><span id="__span-11-13"><a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a>
-</span><span id="__span-11-14"><a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a>
-</span><span id="__span-11-15"><a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">user_profile</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">user_id</span><span class="p">):</span>
-</span><span id="__span-11-16"><a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a>    <span class="n">cache_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"user:</span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2">:profile"</span>
-</span><span id="__span-11-17"><a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a>
-</span><span id="__span-11-18"><a id="__codelineno-11-18" name="__codelineno-11-18" href="#__codelineno-11-18"></a>    <span class="c1"># Try cache first</span>
-</span><span id="__span-11-19"><a id="__codelineno-11-19" name="__codelineno-11-19" href="#__codelineno-11-19"></a>    <span class="n">profile</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
-</span><span id="__span-11-20"><a id="__codelineno-11-20" name="__codelineno-11-20" href="#__codelineno-11-20"></a>
-</span><span id="__span-11-21"><a id="__codelineno-11-21" name="__codelineno-11-21" href="#__codelineno-11-21"></a>    <span class="k">if</span> <span class="n">profile</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="__span-11-22"><a id="__codelineno-11-22" name="__codelineno-11-22" href="#__codelineno-11-22"></a>        <span class="c1"># Cache miss - fetch from database</span>
-</span><span id="__span-11-23"><a id="__codelineno-11-23" name="__codelineno-11-23" href="#__codelineno-11-23"></a>        <span class="n">profile</span> <span class="o">=</span> <span class="k">await</span> <span class="n">get_user_profile_from_db</span><span class="p">(</span><span class="n">user_id</span><span class="p">)</span>
-</span><span id="__span-11-24"><a id="__codelineno-11-24" name="__codelineno-11-24" href="#__codelineno-11-24"></a>        <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aset</span><span class="p">(</span><span class="n">cache_key</span><span class="p">,</span> <span class="n">profile</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">3600</span><span class="p">)</span>
-</span><span id="__span-11-25"><a id="__codelineno-11-25" name="__codelineno-11-25" href="#__codelineno-11-25"></a>
-</span><span id="__span-11-26"><a id="__codelineno-11-26" name="__codelineno-11-26" href="#__codelineno-11-26"></a>    <span class="k">return</span> <span class="n">JsonResponse</span><span class="p">(</span><span class="n">profile</span><span class="p">)</span>
-</span><span id="__span-11-27"><a id="__codelineno-11-27" name="__codelineno-11-27" href="#__codelineno-11-27"></a>
-</span><span id="__span-11-28"><a id="__codelineno-11-28" name="__codelineno-11-28" href="#__codelineno-11-28"></a>
-</span><span id="__span-11-29"><a id="__codelineno-11-29" name="__codelineno-11-29" href="#__codelineno-11-29"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">leaderboard</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
-</span><span id="__span-11-30"><a id="__codelineno-11-30" name="__codelineno-11-30" href="#__codelineno-11-30"></a>    <span class="c1"># Get top 10 from sorted set (descending by score)</span>
-</span><span id="__span-11-31"><a id="__codelineno-11-31" name="__codelineno-11-31" href="#__codelineno-11-31"></a>    <span class="n">top_players</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">azrevrange</span><span class="p">(</span>
-</span><span id="__span-11-32"><a id="__codelineno-11-32" name="__codelineno-11-32" href="#__codelineno-11-32"></a>        <span class="s2">"game:leaderboard"</span><span class="p">,</span>
-</span><span id="__span-11-33"><a id="__codelineno-11-33" name="__codelineno-11-33" href="#__codelineno-11-33"></a>        <span class="mi">0</span><span class="p">,</span>
-</span><span id="__span-11-34"><a id="__codelineno-11-34" name="__codelineno-11-34" href="#__codelineno-11-34"></a>        <span class="mi">9</span><span class="p">,</span>
-</span><span id="__span-11-35"><a id="__codelineno-11-35" name="__codelineno-11-35" href="#__codelineno-11-35"></a>        <span class="n">withscores</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-</span><span id="__span-11-36"><a id="__codelineno-11-36" name="__codelineno-11-36" href="#__codelineno-11-36"></a>    <span class="p">)</span>
-</span><span id="__span-11-37"><a id="__codelineno-11-37" name="__codelineno-11-37" href="#__codelineno-11-37"></a>
-</span><span id="__span-11-38"><a id="__codelineno-11-38" name="__codelineno-11-38" href="#__codelineno-11-38"></a>    <span class="k">return</span> <span class="n">JsonResponse</span><span class="p">({</span><span class="s2">"leaderboard"</span><span class="p">:</span> <span class="n">top_players</span><span class="p">})</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># settings.py</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>    <span class="s2">"default"</span><span class="p">:</span> <span class="p">{</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>        <span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.ValkeyCache"</span><span class="p">,</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>        <span class="s2">"LOCATION"</span><span class="p">:</span> <span class="s2">"valkey://127.0.0.1:6379/1"</span><span class="p">,</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>        <span class="s2">"TIMEOUT"</span><span class="p">:</span> <span class="mi">300</span><span class="p">,</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>    <span class="p">}</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="p">}</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="c1"># views.py</span>
+</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
+</span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.http</span><span class="w"> </span><span class="kn">import</span> <span class="n">JsonResponse</span>
+</span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>
+</span><span id="__span-10-14"><a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a>
+</span><span id="__span-10-15"><a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">user_profile</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">user_id</span><span class="p">):</span>
+</span><span id="__span-10-16"><a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a>    <span class="n">cache_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"user:</span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2">:profile"</span>
+</span><span id="__span-10-17"><a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a>    <span class="n">profile</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
+</span><span id="__span-10-18"><a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a>
+</span><span id="__span-10-19"><a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a>    <span class="k">if</span> <span class="n">profile</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="__span-10-20"><a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a>        <span class="c1"># Cache miss: load from the database</span>
+</span><span id="__span-10-21"><a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a>        <span class="n">profile</span> <span class="o">=</span> <span class="k">await</span> <span class="n">get_user_profile_from_db</span><span class="p">(</span><span class="n">user_id</span><span class="p">)</span>
+</span><span id="__span-10-22"><a id="__codelineno-10-22" name="__codelineno-10-22" href="#__codelineno-10-22"></a>        <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aset</span><span class="p">(</span><span class="n">cache_key</span><span class="p">,</span> <span class="n">profile</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">3600</span><span class="p">)</span>
+</span><span id="__span-10-23"><a id="__codelineno-10-23" name="__codelineno-10-23" href="#__codelineno-10-23"></a>
+</span><span id="__span-10-24"><a id="__codelineno-10-24" name="__codelineno-10-24" href="#__codelineno-10-24"></a>    <span class="k">return</span> <span class="n">JsonResponse</span><span class="p">(</span><span class="n">profile</span><span class="p">)</span>
+</span><span id="__span-10-25"><a id="__codelineno-10-25" name="__codelineno-10-25" href="#__codelineno-10-25"></a>
+</span><span id="__span-10-26"><a id="__codelineno-10-26" name="__codelineno-10-26" href="#__codelineno-10-26"></a>
+</span><span id="__span-10-27"><a id="__codelineno-10-27" name="__codelineno-10-27" href="#__codelineno-10-27"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">leaderboard</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+</span><span id="__span-10-28"><a id="__codelineno-10-28" name="__codelineno-10-28" href="#__codelineno-10-28"></a>    <span class="c1"># Top 10, highest score first</span>
+</span><span id="__span-10-29"><a id="__codelineno-10-29" name="__codelineno-10-29" href="#__codelineno-10-29"></a>    <span class="n">top_players</span> <span class="o">=</span> <span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">azrevrange</span><span class="p">(</span>
+</span><span id="__span-10-30"><a id="__codelineno-10-30" name="__codelineno-10-30" href="#__codelineno-10-30"></a>        <span class="s2">"game:leaderboard"</span><span class="p">,</span>
+</span><span id="__span-10-31"><a id="__codelineno-10-31" name="__codelineno-10-31" href="#__codelineno-10-31"></a>        <span class="mi">0</span><span class="p">,</span>
+</span><span id="__span-10-32"><a id="__codelineno-10-32" name="__codelineno-10-32" href="#__codelineno-10-32"></a>        <span class="mi">9</span><span class="p">,</span>
+</span><span id="__span-10-33"><a id="__codelineno-10-33" name="__codelineno-10-33" href="#__codelineno-10-33"></a>        <span class="n">withscores</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="__span-10-34"><a id="__codelineno-10-34" name="__codelineno-10-34" href="#__codelineno-10-34"></a>    <span class="p">)</span>
+</span><span id="__span-10-35"><a id="__codelineno-10-35" name="__codelineno-10-35" href="#__codelineno-10-35"></a>
+</span><span id="__span-10-36"><a id="__codelineno-10-36" name="__codelineno-10-36" href="#__codelineno-10-36"></a>    <span class="k">return</span> <span class="n">JsonResponse</span><span class="p">({</span><span class="s2">"leaderboard"</span><span class="p">:</span> <span class="n">top_players</span><span class="p">})</span>
 </span></code></pre></div>
 
 
