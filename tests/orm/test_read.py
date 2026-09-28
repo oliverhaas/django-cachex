@@ -979,7 +979,6 @@ def test_evicted_generation():
 
 @pytest.mark.usefixtures("final_sql_check")
 def test_undecodable_cached_result(caplog):
-    # Say a result cached by a deploy with another serializer.
     qs = Test.objects.all()
     assert_tables(qs, Test)
     assert_query_cached(qs)

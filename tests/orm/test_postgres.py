@@ -171,7 +171,6 @@ def test_mutable_result_change():
 
     assert list(qs.all()) == [[1, 2, 3], [4, None, 6]]
 
-    # hstore values are mutable dicts.
     qs = PostgresModel.objects.values_list("hstore", flat=True)
 
     data = list(qs.all())

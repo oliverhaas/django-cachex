@@ -86,7 +86,6 @@ def test_leases_of_two_writers(store: RespStore):
     store.begin_write(DB, TABLES, "first", 60)
     store.begin_write(DB, TABLES[1:], "second", 60)
     store.end_write(DB, TABLES, "first")
-    # The second writer still holds its lease on the second table.
     assert store.generations(DB, TABLES) is None
     store.end_write(DB, TABLES[1:], "second")
     assert store.generations(DB, TABLES) is not None

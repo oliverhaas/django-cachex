@@ -145,7 +145,6 @@ def test_write_to_other_tables(protocol):
 
 
 def test_expired_lease(protocol):
-    # A write that never released its lease, say because its process died.
     protocol.begin_write("writer", lease_timeout=0.001)
     time.sleep(0.05)
     lookup = protocol.lookup()
@@ -185,7 +184,6 @@ def test_timeout(protocol):
 @redis_only
 def test_hit_is_served_from_the_local_copy(local_results, caplog):
     assert local_results.store_result(local_results.lookup().token)
-    # The server's copy is not sent while the local one is current.
     local_results.set_server_payload(b"garbage")
     assert local_results.lookup() == Lookup(hit=True, value="result")
     server_only = RespStore(local_results.store.cache)
@@ -203,7 +201,6 @@ def test_local_copy_expires_with_the_server_copy(local_results):
 
 @redis_only
 def test_local_copy_of_a_result_stored_elsewhere(local_results):
-    # Another process stored a result; this one fetches it once.
     other_process = RespStore(local_results.store.cache, _LocalResults(10))
     assert local_results.store_result(local_results.lookup(other_process).token, store=other_process)
     assert local_results.lookup() == Lookup(hit=True, value="result")
