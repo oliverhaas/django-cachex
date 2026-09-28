@@ -293,7 +293,6 @@ def test_replica():
         id="cachex_orm.W005",
     )
     with override_settings(DATABASES={"default": database, "replica": replica}):
-        # Left out unless listed.
         assert supported_databases() == {"default"}
         assert run_checks(tags=[Tags.compatibility]) == []
         with override_orm_settings(DATABASES=["default", "replica"]):
