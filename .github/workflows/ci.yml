@@ -377,6 +377,13 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: "1"
 
+      - name: Run ORM cache tests against the built wheel
+        run: uv run --no-sync pytest tests/orm --ds=tests.orm.settings
+        env:
+          CACHEX_ORM_TEST_DB: sqlite
+          CACHEX_ORM_TEST_CACHE: locmem
+          PYTHONDONTWRITEBYTECODE: "1"
+
   smoke-test-minimal-install:
     name: Smoke-test minimal install (no client library)
     needs: build-pure-wheel
