@@ -41,8 +41,8 @@ dependencies = ["Django>=6,<7", "sortedcontainers>=2.4"]
 [project.optional-dependencies]
 valkey-py = ["valkey>=6.1.0,<7"]
 libvalkey = ["valkey[libvalkey]>=6.1.0,<7"]
-redis-py = ["redis>=6,<9"]
-hiredis = ["redis[hiredis]<9,>=6"]
+redis-py = ["redis>=7.2,<9"]
+hiredis = ["redis[hiredis]<9,>=7.2"]
 # valkey-glide: Rust-cored Valkey client. Sync and async are separate distributions.
 valkey-glide = ["valkey-glide-sync>=2.5,<3", "valkey-glide>=2.5,<3"]
 # Compressors

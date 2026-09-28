@@ -4,6 +4,7 @@
 
 ### Breaking changes
 
+- redis-py 7.2 is the oldest supported release (`redis>=7.2,<9`), up from 6.0. Releases before 7.1 drop the server's message from async pipeline errors. A queued command on a key of the wrong type then raised the driver's `ResponseError` from `apipeline()` instead of `WrongTypeError`. In 7.1, a new async cluster client can mark a primary as a replica after its first command. `SCRIPT LOAD` then skips that primary, so `aeval_script()` and async semaphores on its keys fail with `NOSCRIPT`.
 - valkey-glide: `xread()` and `xreadgroup()`, their async twins and their pipelined forms return `{}` when no entry arrived, as on the redis-py and valkey-py backends, instead of `None`. `if not result` works on every backend; `result is None` no longer matches an empty read.
 - The pipeline adapter protocols changed for anyone maintaining a custom adapter: `execute()` on `RespPipelineProtocol` and `RespAsyncPipelineProtocol` takes a keyword-only `raise_on_error=True`. With `False`, a failed command's error comes back as its result instead of being raised, which `Pipeline` uses to answer `rename()` and `renamenx()` of a missing key the way the cache does.
 
@@ -47,7 +48,7 @@
 ### Tooling
 
 - CI builds the docs with `mkdocs build --strict` on pull requests. The docs workflow only runs on `main` and tags, so a broken link used to surface after merging.
-- CI runs the cache tests against the oldest client libraries `pyproject.toml` allows (redis-py 6.0.0, valkey-py 6.1.0), and over RESP3, which the redis-py and valkey-py backends otherwise never speak in CI.
+- CI runs the cache tests against the oldest client libraries `pyproject.toml` allows (redis-py 7.2.0, valkey-py 6.1.0), and over RESP3, which the redis-py and valkey-py backends otherwise never speak in CI.
 - The release workflow runs the ORM cache tests on SQLite with `LocMemCache` and on PostgreSQL with Redis before tagging.
 
 ## 0.10.0 (September 2026)

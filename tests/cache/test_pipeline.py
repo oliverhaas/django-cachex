@@ -891,11 +891,7 @@ class TestPipelineXreadKeyUnprefixing:
 
 
 class TestPipelineNoSpuriousWarnings:
-    def test_default_pipeline_no_warnings(self, cache: RespCache, client_class: str, resp_adapter: str):
-        import redis
-
-        if client_class == "cluster" and resp_adapter == "redis-py" and redis.VERSION < (6, 3):
-            pytest.skip("redis-py before 6.3 warns from its own cluster pipeline")
+    def test_default_pipeline_no_warnings(self, cache: RespCache):
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             pipe = cache.pipeline()

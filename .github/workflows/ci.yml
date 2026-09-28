@@ -121,7 +121,7 @@ jobs:
 
       - name: Install minimum client libraries
         if: matrix.client-library-version == 'minimum'
-        run: uv pip install "redis[hiredis]==6.0.0" "valkey[libvalkey]==6.1.0"
+        run: uv pip install "redis[hiredis]==7.2.0" "valkey[libvalkey]==6.1.0"
 
       # Without --no-sync, `uv run` would reinstall the locked Django over the
       # pinned one above (the "6.0" cell used to run 6.1 that way).

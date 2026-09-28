@@ -33,7 +33,7 @@ A drop-in replacement for Django's built-in Redis cache, plus:
   `RuntimeWarning`. Run with `PYTHON_GIL=0` (or `-Xgil=0`) to keep it
   disabled; that is how the CI 3.14t job runs the suite.
 - Django 6.0 to 6.x (`Django>=6,<7`)
-- valkey-py 6.1 to 6.x (`valkey>=6.1,<7`) or redis-py 6.0 to 8.x (`redis>=6,<9`)
+- valkey-py 6.1 to 6.x (`valkey>=6.1,<7`) or redis-py 7.2 to 8.x (`redis>=7.2,<9`)
 - Valkey 7.2+ or Redis 6.2+ on the server. `set(get=True)` and the
   immediate-expiry conditional writes (`add()` and `set(nx=/xx=/get=)` with
   `timeout=0`) send `SET ... GET` and `SET ... PXAT`, both Redis 6.2 commands;
