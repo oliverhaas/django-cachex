@@ -1,5 +1,7 @@
 """Tests for list operations."""
 
+import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 import pytest
@@ -723,3 +725,18 @@ class TestListArgumentValidation:
         with pytest.raises(ValueError, match="value is out of range, must be positive"):
             await getattr(cache, method)("apop_neg", -1)
         assert cache.lrange("apop_neg", 0, -1) == ["a"]
+
+
+def test_blpop_does_not_stall_other_commands(cache: RespCache, client_class: str):
+    if client_class == "cluster":
+        pytest.skip("INFO answers for one node, not necessarily the one the pop blocks on")
+    blocked_before = cache.info("clients")["blocked_clients"]
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        waiter = pool.submit(cache.blpop, "blpop_no_stall", timeout=5)
+        deadline = time.monotonic() + 5
+        while cache.info("clients")["blocked_clients"] == blocked_before:
+            assert time.monotonic() < deadline, "the pop never blocked"
+            time.sleep(0.01)
+        cache.rpush("blpop_no_stall", "v")
+
+        assert waiter.result() == ("blpop_no_stall", "v")

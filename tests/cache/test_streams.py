@@ -526,3 +526,15 @@ class TestStreamEmptyArgumentCalls:
         await cache.axadd("aempty_stream", {"a": 1})
         await cache.axgroup_create("aempty_stream", "grp", entry_id="0")
         assert await cache.axack("aempty_stream", "grp") == 0
+
+
+def test_xread_that_times_out_returns_an_empty_dict(cache: RespCache):
+    assert cache.xread({"stream_timed_out": "$"}, block=10) == {}
+    with cache.pipeline() as pipe:
+        pipe.xread({"stream_timed_out": "$"}, block=10)
+        assert pipe.execute() == [{}]
+
+
+@pytest.mark.asyncio
+async def test_axread_that_times_out_returns_an_empty_dict(cache: RespCache):
+    assert await cache.axread({"astream_timed_out": "$"}, block=10) == {}

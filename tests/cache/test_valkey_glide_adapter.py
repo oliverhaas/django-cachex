@@ -35,6 +35,7 @@ from django_cachex.adapters.valkey_glide import (
     ValkeyGlideClusterAdapter,
     ValkeyGlidePipelineAdapter,
     _AsyncGlideLock,
+    _blocking_request_timeout,
     _coerce_info_value,
     _glide_config_kwargs,
     _GlideLock,
@@ -2107,18 +2108,18 @@ def test_config_kwargs_options_password_alone_leaves_a_username_mismatch():
 
 
 @pytest.mark.parametrize("raw", [None, {}])
-def test_pipeline_xread_returns_none_for_no_entries(mocker, raw):
+def test_pipeline_xread_returns_no_pairs_for_no_entries(mocker, raw):
     client = mocker.Mock()
     client.exec.return_value = [raw]
     pipe = ValkeyGlidePipelineAdapter(client, transaction=False)
     pipe.xread({"s": "0-0"})
-    assert pipe.execute() == [None]
+    assert pipe.execute() == [[]]
 
 
-def test_xread_returns_none_for_no_entries(mocker):
+def test_xread_returns_an_empty_dict_for_no_entries(mocker):
     adapter, client = _adapter(mocker)
     client.custom_command.return_value = None
-    assert adapter.xread({"s": "0-0"}) is None
+    assert adapter.xread({"s": "0-0"}) == {}
 
 
 # ------------------------------------------------- pipeline hmget field guard
@@ -2173,3 +2174,89 @@ async def test_aset_passes_an_expiry_the_async_client_accepts(mocker):
     client.set.return_value = b"OK"
     await adapter.aset("k", b"v", 60)
     assert isinstance(client.set.await_args.kwargs["expiry"], glide.ExpirySet)
+
+
+# ------------------------------------------------------- blocking commands
+
+
+@pytest.mark.parametrize(
+    ("options", "block_seconds", "timeout_ms"),
+    [
+        ({}, 2, 2250),
+        ({"request_timeout": 1000}, 0.5, 1500),
+        ({}, 0, 2**32 - 1),
+        ({}, 10**7, 2**32 - 1),
+    ],
+    ids=["default-base", "configured-base", "forever", "capped"],
+)
+def test_blocking_request_timeout_outlasts_the_block(options, block_seconds, timeout_ms):
+    assert _blocking_request_timeout(options, block_seconds) == timeout_ms
+
+
+def test_blpop_runs_on_its_own_client_and_closes_it(mocker):
+    adapter, shared = _adapter(mocker)
+    adapter._options = {}
+    dedicated = mocker.MagicMock()
+    dedicated.custom_command.return_value = [b"k", b"v"]
+    create = mocker.patch.object(ValkeyGlideAdapter, "_create_client", return_value=dedicated)
+
+    assert adapter.blpop("k", timeout=2) == ("k", b"v")
+
+    create.assert_called_once_with(request_timeout=2250)
+    dedicated.__exit__.assert_called_once()
+    shared.custom_command.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_axread_with_block_runs_on_its_own_client_and_closes_it(mocker):
+    adapter, shared = _async_adapter(mocker)
+    adapter._options = {}
+    dedicated = mocker.MagicMock()
+    dedicated.custom_command = mocker.AsyncMock(return_value=None)
+    create = mocker.patch.object(ValkeyGlideAdapter, "_create_async_client", return_value=dedicated)
+
+    assert await adapter.axread({"s": "$"}, block=1500) == {}
+
+    create.assert_awaited_once_with(request_timeout=1750)
+    dedicated.__aexit__.assert_awaited_once()
+    shared.custom_command.assert_not_called()
+
+
+def test_xread_without_block_stays_on_the_shared_client(mocker):
+    adapter, shared = _adapter(mocker)
+    shared.custom_command.return_value = None
+    create = mocker.patch.object(ValkeyGlideAdapter, "_create_client")
+
+    adapter.xread({"s": "0"})
+
+    create.assert_not_called()
+    shared.custom_command.assert_called_once()
+
+
+def test_pipeline_with_blocking_reads_runs_on_its_own_client(mocker):
+    shared = mocker.Mock()
+    dedicated = mocker.MagicMock()
+    dedicated.__enter__.return_value = dedicated
+    dedicated.exec.return_value = [None, None]
+    blocking_client = mocker.Mock(return_value=dedicated)
+    pipe = ValkeyGlidePipelineAdapter(shared, transaction=False, blocking_client=blocking_client)
+    pipe.xread({"s": "$"}, block=1500).xread({"t": "$"}, block=500)
+
+    assert pipe.execute() == [[], []]
+
+    blocking_client.assert_called_once_with(2.0)
+    dedicated.__exit__.assert_called_once()
+    shared.exec.assert_not_called()
+
+
+def test_pipeline_with_an_unbounded_block_waits_forever(mocker):
+    dedicated = mocker.MagicMock()
+    dedicated.__enter__.return_value = dedicated
+    dedicated.exec.return_value = [None, None]
+    blocking_client = mocker.Mock(return_value=dedicated)
+    pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False, blocking_client=blocking_client)
+    pipe.xread({"s": "$"}, block=1500).xread({"t": "$"}, block=0)
+
+    pipe.execute()
+
+    blocking_client.assert_called_once_with(0)

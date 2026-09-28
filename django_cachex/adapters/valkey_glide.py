@@ -17,6 +17,7 @@ Standalone and cluster topologies are supported; Sentinel is not exposed
 import asyncio
 import contextlib
 import inspect
+import math
 import os
 import threading
 import time
@@ -405,6 +406,19 @@ def _glide_config_kwargs(
     return kwargs
 
 
+# glide's request timeout when OPTIONS sets none, and the largest one it accepts (u32 ms).
+_GLIDE_DEFAULT_REQUEST_TIMEOUT_MS = 250
+_GLIDE_MAX_REQUEST_TIMEOUT_MS = 2**32 - 1
+
+
+def _blocking_request_timeout(options: dict[str, Any], block_seconds: float) -> int:
+    """A request timeout in ms that outlasts ``block_seconds`` of blocking; 0 blocks until data arrives."""
+    if block_seconds <= 0:
+        return _GLIDE_MAX_REQUEST_TIMEOUT_MS
+    base = int(options.get("request_timeout") or _GLIDE_DEFAULT_REQUEST_TIMEOUT_MS)
+    return min(base + math.ceil(block_seconds * 1000), _GLIDE_MAX_REQUEST_TIMEOUT_MS)
+
+
 # =============================================================================
 # Encoding helpers
 # =============================================================================
@@ -619,11 +633,12 @@ def _decode_stream_entries(raw: Any) -> list[tuple[str, dict[str, Any]]]:
     return out
 
 
-def _decode_xread(raw: Any) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
-    """Normalize XREAD/XREADGROUP response: ``{stream: [(id, {field: value}), ...]}``."""
-    if not raw:
-        return None
-    return {_dec_str(stream): _decode_stream_entries(entries) for stream, entries in raw.items()}
+def _decode_xread(raw: Any) -> dict[str, list[tuple[str, dict[str, Any]]]]:
+    """Normalize XREAD/XREADGROUP response: ``{stream: [(id, {field: value}), ...]}``.
+
+    A read that found nothing answers nil, which becomes ``{}`` as on valkey-py.
+    """
+    return {_dec_str(stream): _decode_stream_entries(entries) for stream, entries in (raw or {}).items()}
 
 
 def _decode_xinfo(raw: Any) -> Any:
@@ -696,9 +711,8 @@ def _decode_xread_pipeline(raw: Any) -> Any:
     so the cache layer can decode the values without further reshaping.
     """
     if not raw:
-        # ``None`` like the direct ``xread``: an empty map would reach the
-        # cache layer as ``{}`` from one path and ``None`` from the other.
-        return None
+        # Nothing arrived: the cache layer turns ``[]`` into ``{}``, as the direct ``xread`` returns.
+        return []
     if not isinstance(raw, dict):
         return raw
     out: list[tuple[Any, list[tuple[Any, dict[Any, Any]]]]] = []
@@ -714,6 +728,11 @@ def _decode_xread_pipeline(raw: Any) -> Any:
     return out
 
 
+def _batch_block_seconds(blocks: list[float]) -> float:
+    """How long a batch's blocking reads can hold its connection: they run in turn, and 0 waits forever."""
+    return 0 if 0 in blocks else sum(blocks)
+
+
 def _checked_exec(raw: Any) -> list[Any]:
     """Glide answers ``None`` when an atomic batch was discarded; say so."""
     if raw is None:
@@ -725,7 +744,14 @@ def _checked_exec(raw: Any) -> list[Any]:
 class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
     """Pipeline adapter that buffers cachex ops into glide's ``Batch``."""
 
-    def __init__(self, client: GlideClient, *, transaction: bool = False, batch_factory: Any = None) -> None:
+    def __init__(
+        self,
+        client: GlideClient,
+        *,
+        transaction: bool = False,
+        batch_factory: Any = None,
+        blocking_client: Any = None,
+    ) -> None:
         self._client: Any = client
         # ``GlideClusterClient.exec`` is typed for ``ClusterBatch``, so the
         # topology hands its own factory in.
@@ -734,6 +760,10 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         # Sparse post-processors keyed by the command's index in
         # ``self._batch.commands``; a reply that already fits skips this.
         self._post: dict[int, Any] = {}
+        # A batch that queues a BLOCK runs on the client ``blocking_client(seconds)``
+        # builds, so the wait can't stall the shared one; ``_blocks`` holds the seconds.
+        self._blocking_client = blocking_client
+        self._blocks: list[float] = []
 
     def _track(self, post: Any) -> None:
         """Apply ``post`` to the result of the most recently queued command."""
@@ -1347,6 +1377,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
             args.extend([b"COUNT", str(count).encode()])
         if block is not None:
             args.extend([b"BLOCK", str(block).encode()])
+            self._blocks.append(block / 1000)
         args.append(b"STREAMS")
         args.extend(_enc_list(streams.keys()))
         args.extend(_enc_list(streams.values()))
@@ -1368,6 +1399,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
             args.extend([b"COUNT", str(count).encode()])
         if block is not None:
             args.extend([b"BLOCK", str(block).encode()])
+            self._blocks.append(block / 1000)
         if noack:
             args.append(b"NOACK")
         args.append(b"STREAMS")
@@ -1556,22 +1588,28 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         return self
 
     # ---- execution ----
-    def execute(self) -> list[Any]:
+    def execute(self, *, raise_on_error: bool = True) -> list[Any]:
         # Capture before resetting so the pipeline is reusable even if a
         # transform raises mid-decode.
-        batch, post = self._batch, self._post
+        batch, post, blocks = self._batch, self._post, self._blocks
         self._batch = self._new_batch(atomic=batch.is_atomic)
         self._post = {}
+        self._blocks = []
         if not batch.commands:
             return []
-        raw = _checked_exec(self._client.exec(batch, raise_on_error=True))
+        if blocks and self._blocking_client is not None:
+            with self._blocking_client(_batch_block_seconds(blocks)) as client:
+                raw = _checked_exec(client.exec(batch, raise_on_error=raise_on_error))
+        else:
+            raw = _checked_exec(self._client.exec(batch, raise_on_error=raise_on_error))
         if not post:
             return list(raw)
-        return [post[i](r) if i in post else r for i, r in enumerate(raw)]
+        return [post[i](r) if i in post and not isinstance(r, Exception) else r for i, r in enumerate(raw)]
 
     def reset(self) -> None:
         self._batch = self._new_batch(atomic=self._batch.is_atomic)
         self._post = {}
+        self._blocks = []
 
     def __enter__(self) -> Self:
         return self
@@ -1595,22 +1633,28 @@ class ValkeyGlideAsyncPipelineAdapter(ValkeyGlidePipelineAdapter, RespAsyncPipel
     divergent copy would reject kwargs the cache layer sends.
     """
 
-    async def execute(self) -> list[Any]:  # type: ignore[override]
+    async def execute(self, *, raise_on_error: bool = True) -> list[Any]:  # type: ignore[override]
         # Capture before awaiting so a transform raising mid-decode doesn't
         # leave the next ``execute()`` replaying the same commands.
-        batch, post = self._batch, self._post
+        batch, post, blocks = self._batch, self._post, self._blocks
         self._batch = self._new_batch(atomic=batch.is_atomic)
         self._post = {}
+        self._blocks = []
         if not batch.commands:
             return []
-        raw = _checked_exec(await self._client.exec(batch, raise_on_error=True))
+        if blocks and self._blocking_client is not None:
+            async with await self._blocking_client(_batch_block_seconds(blocks)) as client:
+                raw = _checked_exec(await client.exec(batch, raise_on_error=raise_on_error))
+        else:
+            raw = _checked_exec(await self._client.exec(batch, raise_on_error=raise_on_error))
         if not post:
             return list(raw)
-        return [post[i](r) if i in post else r for i, r in enumerate(raw)]
+        return [post[i](r) if i in post and not isinstance(r, Exception) else r for i, r in enumerate(raw)]
 
     async def reset(self) -> None:  # type: ignore[override]
         self._batch = self._new_batch(atomic=self._batch.is_atomic)
         self._post = {}
+        self._blocks = []
 
     async def __aenter__(self) -> Self:
         return self
@@ -1676,13 +1720,17 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         with _GLIDE_SYNC_LOCK:
             client = _GLIDE_SYNC_CLIENTS.get(self._config_key)
             if client is None:
-                cfg = GlideClientConfiguration(
-                    addresses=_node_addresses(self._servers, NodeAddress),
-                    **_glide_config_kwargs(self._servers, self._options, credentials_cls=ServerCredentials),
-                )
-                client = _WrongTypeClient(GlideClient.create(cfg))
+                client = _WrongTypeClient(self._create_client())
                 _GLIDE_SYNC_CLIENTS[self._config_key] = client
         return cast("GlideClient", client)
+
+    def _create_client(self, **config: Any) -> Any:
+        """A new sync client for this adapter's settings, with ``config`` overriding its kwargs."""
+        cfg = GlideClientConfiguration(
+            addresses=_node_addresses(self._servers, NodeAddress),
+            **(_glide_config_kwargs(self._servers, self._options, credentials_cls=ServerCredentials) | config),
+        )
+        return GlideClient.create(cfg)
 
     def get_client(self, key: Any = None, *, write: bool = False) -> GlideClient:
         del key, write
@@ -1723,10 +1771,10 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
                         coro.close()
                 locks.pop(loop, None)
 
-    async def _create_async_client(self) -> Any:
+    async def _create_async_client(self, **config: Any) -> Any:
         cfg = AsyncGlideClientConfiguration(
             addresses=_node_addresses(self._servers, AsyncNodeAddress),
-            **_glide_config_kwargs(self._servers, self._options, credentials_cls=AsyncServerCredentials),
+            **(_glide_config_kwargs(self._servers, self._options, credentials_cls=AsyncServerCredentials) | config),
         )
         return await AsyncGlideClient.create(cfg)
 
@@ -1776,6 +1824,29 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def _acmd(self, args: list[Any]) -> Any:
         client: Any = await self.get_async_client()
         return await client.custom_command(args)
+
+    def _blocking_client(self, block_seconds: float) -> Any:
+        """A new client whose request timeout outlasts ``block_seconds``, closed by ``with``.
+
+        Glide multiplexes each client over one connection, so a command that
+        parks it runs here instead of stalling every call on the shared client.
+        """
+        timeout = _blocking_request_timeout(self._options, block_seconds)
+        return _WrongTypeClient(self._create_client(request_timeout=timeout))
+
+    def _blocking_cmd(self, args: list[Any], block_seconds: float) -> Any:
+        with self._blocking_client(block_seconds) as client:
+            return client.custom_command(args)
+
+    async def _ablocking_client(self, block_seconds: float) -> Any:
+        """Async twin of :meth:`_blocking_client`, closed by ``async with``."""
+        timeout = _blocking_request_timeout(self._options, block_seconds)
+        return _WrongTypeClient(await self._create_async_client(request_timeout=timeout))
+
+    async def _ablocking_cmd(self, args: list[Any], block_seconds: float) -> Any:
+        # Closing drops the connection, so a cancelled wait ends on the server too.
+        async with await self._ablocking_client(block_seconds) as client:
+            return await client.custom_command(args)
 
     # =========================================================================
     # Sync core ops
@@ -2448,7 +2519,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return self._cmd([b"LMOVE", src, dst, _enc(wherefrom.upper()), _enc(whereto.upper())])
 
     def blmove(self, src: str, dst: str, timeout: float, wherefrom: str = "LEFT", whereto: str = "RIGHT") -> Any:
-        return self._cmd(
+        return self._blocking_cmd(
             [
                 b"BLMOVE",
                 src,
@@ -2457,11 +2528,12 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
                 _enc(whereto.upper()),
                 str(timeout).encode(),
             ],
+            timeout,
         )
 
     def blpop(self, keys: Any, timeout: float = 0) -> Any:
         ks = list(keys) if isinstance(keys, (list, tuple)) else [keys]
-        result = self._cmd([b"BLPOP", *_enc_list(ks), str(timeout).encode()])
+        result = self._blocking_cmd([b"BLPOP", *_enc_list(ks), str(timeout).encode()], timeout)
         if result is None:
             return None
         # Server returns [key, value]; cache layer expects (key: str, value: bytes).
@@ -2470,7 +2542,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     def brpop(self, keys: Any, timeout: float = 0) -> Any:
         ks = list(keys) if isinstance(keys, (list, tuple)) else [keys]
-        result = self._cmd([b"BRPOP", *_enc_list(ks), str(timeout).encode()])
+        result = self._blocking_cmd([b"BRPOP", *_enc_list(ks), str(timeout).encode()], timeout)
         if result is None:
             return None
         key, value = result[0], result[1]
@@ -2693,7 +2765,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         streams: Mapping[str, str],
         count: int | None = None,
         block: int | None = None,
-    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]]:
         args: list[Any] = [b"XREAD"]
         if count is not None:
             args.extend([b"COUNT", str(count).encode()])
@@ -2702,7 +2774,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args.append(b"STREAMS")
         args.extend(_enc_list(streams.keys()))
         args.extend(_enc_list(streams.values()))
-        return _decode_xread(self._cmd(args))
+        return _decode_xread(self._cmd(args) if block is None else self._blocking_cmd(args, block / 1000))
 
     def xreadgroup(
         self,
@@ -2712,7 +2784,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         count: int | None = None,
         block: int | None = None,
         noack: bool = False,
-    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]]:
         args: list[Any] = [b"XREADGROUP", b"GROUP", _enc(group), _enc(consumer)]
         if count is not None:
             args.extend([b"COUNT", str(count).encode()])
@@ -2723,7 +2795,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args.append(b"STREAMS")
         args.extend(_enc_list(streams.keys()))
         args.extend(_enc_list(streams.values()))
-        return _decode_xread(self._cmd(args))
+        return _decode_xread(self._cmd(args) if block is None else self._blocking_cmd(args, block / 1000))
 
     # =========================================================================
     # Sync scripting
@@ -2795,14 +2867,24 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     # =========================================================================
 
     def _pipeline(self, *, transaction: bool = False) -> ValkeyGlidePipelineAdapter:
-        return ValkeyGlidePipelineAdapter(self._client(), transaction=transaction, batch_factory=self._batch_factory)
+        return ValkeyGlidePipelineAdapter(
+            self._client(),
+            transaction=transaction,
+            batch_factory=self._batch_factory,
+            blocking_client=self._blocking_client,
+        )
 
     def pipeline(self, *, transaction: bool = True) -> ValkeyGlidePipelineAdapter:
         return self._pipeline(transaction=transaction)
 
     async def apipeline(self, *, transaction: bool = True) -> ValkeyGlideAsyncPipelineAdapter:
         client = await self.get_async_client()
-        return ValkeyGlideAsyncPipelineAdapter(client, transaction=transaction, batch_factory=self._batch_factory)
+        return ValkeyGlideAsyncPipelineAdapter(
+            client,
+            transaction=transaction,
+            batch_factory=self._batch_factory,
+            blocking_client=self._ablocking_client,
+        )
 
     # =========================================================================
     # Async core ops
@@ -3505,7 +3587,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         wherefrom: str = "LEFT",
         whereto: str = "RIGHT",
     ) -> Any:
-        return await self._acmd(
+        return await self._ablocking_cmd(
             [
                 b"BLMOVE",
                 src,
@@ -3514,11 +3596,12 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
                 _enc(whereto.upper()),
                 str(timeout).encode(),
             ],
+            timeout,
         )
 
     async def ablpop(self, keys: Any, timeout: float = 0) -> Any:
         ks = list(keys) if isinstance(keys, (list, tuple)) else [keys]
-        result = await self._acmd([b"BLPOP", *_enc_list(ks), str(timeout).encode()])
+        result = await self._ablocking_cmd([b"BLPOP", *_enc_list(ks), str(timeout).encode()], timeout)
         if result is None:
             return None
         key, value = result[0], result[1]
@@ -3526,7 +3609,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     async def abrpop(self, keys: Any, timeout: float = 0) -> Any:
         ks = list(keys) if isinstance(keys, (list, tuple)) else [keys]
-        result = await self._acmd([b"BRPOP", *_enc_list(ks), str(timeout).encode()])
+        result = await self._ablocking_cmd([b"BRPOP", *_enc_list(ks), str(timeout).encode()], timeout)
         if result is None:
             return None
         key, value = result[0], result[1]
@@ -3750,7 +3833,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         streams: Mapping[str, str],
         count: int | None = None,
         block: int | None = None,
-    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]]:
         args: list[Any] = [b"XREAD"]
         if count is not None:
             args.extend([b"COUNT", str(count).encode()])
@@ -3759,7 +3842,9 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args.append(b"STREAMS")
         args.extend(_enc_list(streams.keys()))
         args.extend(_enc_list(streams.values()))
-        return _decode_xread(await self._acmd(args))
+        if block is None:
+            return _decode_xread(await self._acmd(args))
+        return _decode_xread(await self._ablocking_cmd(args, block / 1000))
 
     async def axreadgroup(
         self,
@@ -3769,7 +3854,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         count: int | None = None,
         block: int | None = None,
         noack: bool = False,
-    ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
+    ) -> dict[str, list[tuple[str, dict[str, Any]]]]:
         args: list[Any] = [b"XREADGROUP", b"GROUP", _enc(group), _enc(consumer)]
         if count is not None:
             args.extend([b"COUNT", str(count).encode()])
@@ -3780,7 +3865,9 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         args.append(b"STREAMS")
         args.extend(_enc_list(streams.keys()))
         args.extend(_enc_list(streams.values()))
-        return _decode_xread(await self._acmd(args))
+        if block is None:
+            return _decode_xread(await self._acmd(args))
+        return _decode_xread(await self._ablocking_cmd(args, block / 1000))
 
     # =========================================================================
     # Async eval
@@ -3848,13 +3935,12 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
     def pipeline(self, *, transaction: bool = True) -> ValkeyGlidePipelineAdapter:
         """Cluster pipelines can't be atomic across slots, force non-atomic batches."""
         del transaction
-        return ValkeyGlidePipelineAdapter(self._client(), transaction=False, batch_factory=self._batch_factory)
+        return self._pipeline(transaction=False)
 
     async def apipeline(self, *, transaction: bool = True) -> ValkeyGlideAsyncPipelineAdapter:
         """Async cluster pipelines can't be atomic across slots."""
         del transaction
-        client = await self.get_async_client()
-        return ValkeyGlideAsyncPipelineAdapter(client, transaction=False, batch_factory=self._batch_factory)
+        return await super().apipeline(transaction=False)
 
     def info(self, section: str | None = None) -> dict[str, Any]:
         """Ask one node for INFO instead of letting glide fan the command out."""
@@ -3920,18 +4006,22 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
         with _GLIDE_SYNC_CLUSTER_LOCK:
             client = _GLIDE_SYNC_CLUSTER_CLIENTS.get(self._config_key)
             if client is None:
-                cfg = GlideClusterClientConfiguration(
-                    addresses=_node_addresses(self._servers, NodeAddress),
-                    **_glide_config_kwargs(
-                        self._servers,
-                        self._options,
-                        credentials_cls=ServerCredentials,
-                        standalone=False,
-                    ),
-                )
-                client = _WrongTypeClient(GlideClusterClient.create(cfg))
+                client = _WrongTypeClient(self._create_client())
                 _GLIDE_SYNC_CLUSTER_CLIENTS[self._config_key] = client
         return client
+
+    def _create_client(self, **config: Any) -> Any:
+        kwargs = _glide_config_kwargs(
+            self._servers,
+            self._options,
+            credentials_cls=ServerCredentials,
+            standalone=False,
+        )
+        cfg = GlideClusterClientConfiguration(
+            addresses=_node_addresses(self._servers, NodeAddress),
+            **(kwargs | config),
+        )
+        return GlideClusterClient.create(cfg)
 
     @staticmethod
     def _async_registry() -> weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], Any]]:
@@ -3941,15 +4031,16 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
     def _async_locks() -> weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]:
         return _GLIDE_ASYNC_CLUSTER_LOCKS
 
-    async def _create_async_client(self) -> Any:
+    async def _create_async_client(self, **config: Any) -> Any:
+        kwargs = _glide_config_kwargs(
+            self._servers,
+            self._options,
+            credentials_cls=AsyncServerCredentials,
+            standalone=False,
+        )
         cfg = AsyncGlideClusterClientConfiguration(
             addresses=_node_addresses(self._servers, AsyncNodeAddress),
-            **_glide_config_kwargs(
-                self._servers,
-                self._options,
-                credentials_cls=AsyncServerCredentials,
-                standalone=False,
-            ),
+            **(kwargs | config),
         )
         return await AsyncGlideClusterClient.create(cfg)
 

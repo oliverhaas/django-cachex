@@ -201,6 +201,16 @@ def _raw_response(response: Any, **_options: Any) -> Any:
     return response
 
 
+def _zpop_pairs(result: list[Any]) -> list[tuple[Any, float]]:
+    """``(member, score)`` pairs from a ZPOPMIN / ZPOPMAX reply.
+
+    Over RESP3 a pop without a count replies with one flat ``[member, score]``.
+    """
+    if result and not isinstance(result[0], list | tuple):
+        result = [result]
+    return [(member, float(score)) for member, score in result]
+
+
 def _as_key_type(result: str) -> KeyType | None:
     """Map a TYPE reply to :class:`KeyType`, or None for a missing key.
 
@@ -2760,15 +2770,13 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         """Remove and return members with lowest scores."""
         client = self.get_client(key, write=True)
 
-        result = client.zpopmin(key, count)
-        return [(m, float(s)) for m, s in result]
+        return _zpop_pairs(client.zpopmin(key, count))
 
     def zpopmax(self, key: str, count: int | None = None) -> list[tuple[Any, float]]:
         """Remove and return members with highest scores."""
         client = self.get_client(key, write=True)
 
-        result = client.zpopmax(key, count)
-        return [(m, float(s)) for m, s in result]
+        return _zpop_pairs(client.zpopmax(key, count))
 
     def zmscore(self, key: str, *members: Any) -> list[float | None]:
         """Get scores for multiple members."""
@@ -2919,14 +2927,12 @@ class ValkeyPyAdapter(RespAdapterProtocol):
     async def azpopmin(self, key: str, count: int | None = None) -> list[tuple[Any, float]]:
         client = await self.get_async_client(key, write=True)
 
-        result = await client.zpopmin(key, count)
-        return [(m, float(s)) for m, s in result]
+        return _zpop_pairs(await client.zpopmin(key, count))
 
     async def azpopmax(self, key: str, count: int | None = None) -> list[tuple[Any, float]]:
         client = await self.get_async_client(key, write=True)
 
-        result = await client.zpopmax(key, count)
-        return [(m, float(s)) for m, s in result]
+        return _zpop_pairs(await client.zpopmax(key, count))
 
     async def azmscore(self, key: str, *members: Any) -> list[float | None]:
         client = await self.get_async_client(key, write=False)
@@ -3941,6 +3947,20 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
             raise ImproperlyConfigured(msg)
         super().__init__(servers, **options)
 
+    def _startup_nodes(self, node_class: builtins.type[Any]) -> dict[str, Any]:
+        """``from_url`` kwargs that seed node discovery with every LOCATION URL.
+
+        Connection options such as credentials and TLS come from the first URL only.
+        """
+        if len(self._servers) == 1:
+            return {}
+        nodes = []
+        for url in self._servers:
+            # valkey-py 6.1.0 has no ``valkey.connection.parse_url``.
+            parsed = urlparse(url)
+            nodes.append(node_class(parsed.hostname or "localhost", parsed.port or 6379))
+        return {"startup_nodes": nodes}
+
     @property
     def _cluster(self) -> builtins.type[Any]:
         """Get the cluster class, asserting it's configured."""
@@ -3960,14 +3980,13 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
     def _cluster_options(self) -> tuple[dict[str, Any], tuple[Any, ...]]:
         """Build extra kwargs for ``from_url`` and a hashable cache key.
 
-        The server URL goes to ``from_url`` verbatim so TLS, auth, db and
+        The first server URL goes to ``from_url`` verbatim so TLS, auth, db and
         query parameters survive; only OPTIONS-derived kwargs live here.
         """
-        url = self._servers[0]
         cluster_options = {
             key_opt: value for key_opt, value in self._options.items() if key_opt not in self._CLIENT_ONLY_OPTIONS
         }
-        return cluster_options, (self._cluster_class, url, _options_key(cluster_options))
+        return cluster_options, (self._cluster_class, tuple(self._servers), _options_key(cluster_options))
 
     @override
     def get_client(self, key: str | None = None, *, write: bool = False) -> Any:
@@ -3977,7 +3996,11 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         with self._clusters_lock:
             cluster = self._clusters.get(cache_key)
             if cluster is None:
-                cluster = self._cluster.from_url(self._servers[0], **cluster_options)
+                cluster = self._cluster.from_url(
+                    self._servers[0],
+                    **cluster_options,
+                    **self._startup_nodes(self._lib.cluster.ClusterNode),
+                )
                 self._clusters[cache_key] = cluster
             return _install_error_translation(cluster)
 
@@ -3991,7 +4014,11 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         slot = _loop_slot(self._async_clusters, loop)
         cluster = slot.get(cache_key)
         if cluster is None:
-            cluster = self._async_cluster.from_url(self._servers[0], **cluster_options)
+            cluster = self._async_cluster.from_url(
+                self._servers[0],
+                **cluster_options,
+                **self._startup_nodes(self._lib.asyncio.cluster.ClusterNode),
+            )
             slot[cache_key] = cluster
         return _install_error_translation(cluster)
 
@@ -4305,7 +4332,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         """Close this adapter's async cluster client on this loop, and release those of closed loops.
 
         Only the client under this adapter's own registry key goes; an alias
-        with a different URL or options keeps its client, one configured
+        with a different LOCATION or options keeps its client, one configured
         identically shares this client and reconnects lazily on its next command.
         """
         cluster = _pop_loop_entry(self._async_clusters, asyncio.get_running_loop(), self._cluster_options()[1])
@@ -4343,12 +4370,12 @@ class ValkeyPyPipelineAdapter(RespPipelineProtocol):
     # Core lifecycle
     # -------------------------------------------------------------------------
 
-    def execute(self) -> list[Any]:
+    def execute(self, *, raise_on_error: bool = True) -> list[Any]:
         """Run all buffered commands and return their raw results."""
         # The driver pipeline is a fresh object with its own unpatched
         # ``execute_command``, so driver errors are translated here instead.
         with _errors_translated():
-            return cast("list[Any]", self._raw.execute())
+            return cast("list[Any]", self._raw.execute(raise_on_error=raise_on_error))
 
     def reset(self) -> None:
         """Discard any buffered commands without executing."""
@@ -4989,10 +5016,10 @@ class ValkeyPyAsyncPipelineAdapter(ValkeyPyPipelineAdapter, RespAsyncPipelinePro
     """
 
     @override
-    async def execute(self) -> list[Any]:  # type: ignore[override]
+    async def execute(self, *, raise_on_error: bool = True) -> list[Any]:  # type: ignore[override]
         """Run all buffered commands asynchronously and return their raw results."""
         with _errors_translated():
-            return cast("list[Any]", await self._raw.execute())
+            return cast("list[Any]", await self._raw.execute(raise_on_error=raise_on_error))
 
     @override
     async def reset(self) -> None:  # type: ignore[override]

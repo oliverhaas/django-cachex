@@ -15,7 +15,7 @@ Each adapter's ``RespAdapterProtocol.pipeline()`` factory constructs the right
 concrete pipeline adapter and the cache layer wraps it in a :class:`Pipeline`.
 """
 
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any, NoReturn, Self
 
 from django.core.cache.backends.base import DEFAULT_TIMEOUT
 
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from django_cachex.adapters.protocols import RespAsyncPipelineProtocol, RespPipelineProtocol
     from django_cachex.stampede import StampedeConfig
 
-from django_cachex.exceptions import NotSupportedError
+from django_cachex.exceptions import KeyNotFoundError, NotSupportedError, translate_server_error
 from django_cachex.script import ScriptHelpers, reject_stray_encoded
 from django_cachex.types import KeyType
 from django_cachex.utils import _validate_zadd_flags, _validate_zrange_limit
@@ -44,6 +44,30 @@ class _FixedResult:
 
     def __init__(self, value: Any) -> None:
         self.value = value
+
+
+class _ErrorAware:
+    """A queued step whose decoder receives its command's error instead of the pipeline raising it."""
+
+    __slots__ = ("decode",)
+
+    def __init__(self, decode: Callable[[Any], Any]) -> None:
+        self.decode = decode
+
+
+def _raise_translated(exc: Exception) -> NoReturn:
+    wrapped = translate_server_error(exc)
+    if wrapped is exc:
+        raise exc
+    raise wrapped from exc
+
+
+def _decode_reply(decoder: Callable[[Any], Any] | _ErrorAware, reply: Any) -> Any:
+    if isinstance(decoder, _ErrorAware):
+        return decoder.decode(reply)
+    if isinstance(reply, Exception):
+        _raise_translated(reply)
+    return decoder(reply)
 
 
 class Pipeline:
@@ -65,7 +89,7 @@ class Pipeline:
         self._adapter = cache.adapter
         self._pipeline_adapter = pipeline_adapter
         self._version = version
-        self._decoders: list[Callable[[Any], Any] | _FixedResult] = []
+        self._decoders: list[Callable[[Any], Any] | _FixedResult | _ErrorAware] = []
 
     def __enter__(self) -> Self:
         return self
@@ -78,7 +102,10 @@ class Pipeline:
         """Execute all queued commands and decode the results."""
         steps = self._decoders
         try:
-            results = self._pipeline_adapter.execute()
+            if any(isinstance(step, _ErrorAware) for step in steps):
+                results = self._pipeline_adapter.execute(raise_on_error=False)
+            else:
+                results = self._pipeline_adapter.execute()
         finally:
             # The driver pipeline discards its queue on error; stale decoders
             # would misalign against the next batch.
@@ -86,10 +113,16 @@ class Pipeline:
         return self._decode_steps(results, steps)
 
     @staticmethod
-    def _decode_steps(results: list[Any], steps: list[Callable[[Any], Any] | _FixedResult]) -> list[Any]:
-        """Pair each driver reply with the step that queued it, skipping fixed results."""
+    def _decode_steps(
+        results: list[Any],
+        steps: list[Callable[[Any], Any] | _FixedResult | _ErrorAware],
+    ) -> list[Any]:
+        """Pair each driver reply with the step that queued it, skipping fixed results.
+
+        A command's error raises in queue order, unless its step is :class:`_ErrorAware`.
+        """
         decoders = [step for step in steps if not isinstance(step, _FixedResult)]
-        decoded = iter([decoder(result) for result, decoder in zip(results, decoders, strict=True)])
+        decoded = iter([_decode_reply(decoder, result) for result, decoder in zip(results, decoders, strict=True)])
         return [step.value if isinstance(step, _FixedResult) else next(decoded) for step in steps]
 
     # -------------------------------------------------------------------------
@@ -179,6 +212,26 @@ class Pipeline:
     def _decode_zset_with_scores(self, value: list[tuple[bytes, float]]) -> list[tuple[Any, float]]:
         """Decode sorted set members with scores."""
         return [(self._cache.decode(member), score) for member, score in value]
+
+    def _decode_zpop(self, value: list[Any]) -> list[tuple[Any, float]]:
+        """Decode a ZPOPMIN / ZPOPMAX reply; over RESP3 a pop without a count is one flat ``[member, score]``."""
+        if value and not isinstance(value[0], list | tuple):
+            value = [value]
+        return self._decode_zset_with_scores(value)
+
+    def _make_rename_decoder(self, src: str, *, nx: bool) -> _ErrorAware:
+        """Map a missing ``src`` as the direct call does: RENAME raises KeyNotFoundError, RENAMENX is False."""
+
+        def decode(value: Any) -> bool:
+            if not isinstance(value, Exception):
+                return bool(value) if nx else self._decode_ok(value)
+            if "no such key" not in str(value).lower():
+                _raise_translated(value)
+            if nx:
+                return False
+            raise KeyNotFoundError(src) from value
+
+        return _ErrorAware(decode)
 
     def _decode_score(self, value: bytes | str | float | None) -> float | None:
         """Decode a ZADD INCR reply: the new score, or None when a flag blocked the update."""
@@ -545,7 +598,7 @@ class Pipeline:
         nsrc = self._make_key(src, src_ver)
         ndst = self._make_key(dst, dst_ver)
         self._pipeline_adapter.rename(nsrc, ndst)
-        self._decoders.append(self._decode_ok)
+        self._decoders.append(self._make_rename_decoder(nsrc, nx=False))
         return self
 
     def renamenx(
@@ -562,7 +615,7 @@ class Pipeline:
         nsrc = self._make_key(src, src_ver)
         ndst = self._make_key(dst, dst_ver)
         self._pipeline_adapter.renamenx(nsrc, ndst)
-        self._decoders.append(bool)
+        self._decoders.append(self._make_rename_decoder(nsrc, nx=True))
         return self
 
     # -------------------------------------------------------------------------
@@ -1424,7 +1477,7 @@ class Pipeline:
         """Queue ZPOPMAX command (pop highest scoring members)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.zpopmax(nkey, count)
-        self._decoders.append(self._decode_zset_with_scores)
+        self._decoders.append(self._decode_zpop)
         return self
 
     def zpopmin(
@@ -1436,7 +1489,7 @@ class Pipeline:
         """Queue ZPOPMIN command (pop lowest scoring members)."""
         nkey = self._make_key(key, version)
         self._pipeline_adapter.zpopmin(nkey, count)
-        self._decoders.append(self._decode_zset_with_scores)
+        self._decoders.append(self._decode_zpop)
         return self
 
     def zrange(
@@ -2054,7 +2107,10 @@ class AsyncPipeline(Pipeline):
         """Execute all queued commands asynchronously and decode the results."""
         steps = self._decoders
         try:
-            results = await self._pipeline_adapter.execute()
+            if any(isinstance(step, _ErrorAware) for step in steps):
+                results = await self._pipeline_adapter.execute(raise_on_error=False)
+            else:
+                results = await self._pipeline_adapter.execute()
         finally:
             # The driver pipeline discards its queue on error; stale decoders
             # would misalign against the next batch.

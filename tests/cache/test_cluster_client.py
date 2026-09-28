@@ -7,6 +7,8 @@ import weakref
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from django.core.cache import caches
+from django.test import override_settings
 from redis.cluster import RedisCluster
 
 from django_cachex.adapters import RedisPyClusterAdapter
@@ -404,3 +406,42 @@ class TestClusterVersionRename:
         cache = setup_cluster_cache()
         assert await cache.adecr_version("{user}:k", version=2) == 1
         cache.adapter.arename.assert_awaited_once_with(":2:{user}:k", ":1:{user}:k")
+
+
+CLUSTER_BACKENDS = ["django_cachex.cache.RedisClusterCache", "django_cachex.cache.ValkeyClusterCache"]
+
+
+@pytest.mark.parametrize("backend", CLUSTER_BACKENDS)
+def test_cluster_connects_through_a_later_location_url(
+    cluster_container: tuple[str, int],
+    unused_tcp_port: int,
+    backend: str,
+):
+    host, port = cluster_container
+    location = [f"redis://127.0.0.1:{unused_tcp_port}", f"redis://{host}:{port}"]
+
+    with override_settings(CACHES={"default": {"BACKEND": backend, "LOCATION": location}}):
+        cache = caches["default"]
+        cache.set("location-fallback", "value")
+
+        assert cache.get("location-fallback") == "value"
+        cache.delete("location-fallback")
+
+
+@pytest.mark.parametrize("backend", CLUSTER_BACKENDS)
+@pytest.mark.asyncio
+async def test_async_cluster_connects_through_a_later_location_url(
+    cluster_container: tuple[str, int],
+    unused_tcp_port: int,
+    backend: str,
+):
+    host, port = cluster_container
+    location = [f"redis://127.0.0.1:{unused_tcp_port}", f"redis://{host}:{port}"]
+
+    with override_settings(CACHES={"default": {"BACKEND": backend, "LOCATION": location}}):
+        cache = caches["default"]
+        await cache.aset("location-fallback", "value")
+
+        assert await cache.aget("location-fallback") == "value"
+        await cache.adelete("location-fallback")
+        await cache.aclose()

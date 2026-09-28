@@ -425,7 +425,9 @@ class RespPipelineProtocol(_RespPipelineCommandsProtocol, Protocol):
     in ``execute()``.
     """
 
-    def execute(self) -> list[Any]: ...
+    def execute(self, *, raise_on_error: bool = True) -> list[Any]:
+        """Run the queued commands; with ``raise_on_error=False`` a command's error is its result."""
+        ...
 
 
 @runtime_checkable
@@ -437,7 +439,7 @@ class RespAsyncPipelineProtocol(_RespPipelineCommandsProtocol, Protocol):
     coroutines. Chainable methods stay sync because queueing never performs I/O.
     """
 
-    async def execute(self) -> list[Any]: ...
+    async def execute(self, *, raise_on_error: bool = True) -> list[Any]: ...
     async def reset(self) -> None: ...  # type: ignore[override]
 
 

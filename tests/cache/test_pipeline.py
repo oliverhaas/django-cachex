@@ -10,7 +10,7 @@ import pytest
 
 from django_cachex.adapters.pipeline import AsyncPipeline, Pipeline
 from django_cachex.cache import RespCache
-from django_cachex.exceptions import NotSupportedError
+from django_cachex.exceptions import KeyNotFoundError, NotSupportedError
 from django_cachex.types import KeyType
 from tests.fixtures.cache import skip_below_server
 
@@ -1881,3 +1881,73 @@ class TestPipelineSignatureParity:
     def test_async_pipeline_inherits_the_same_surface(self):
         own = {name for name in vars(AsyncPipeline) if not name.startswith("_")}
         assert own == {"execute"}
+
+
+@pytest.mark.parametrize("transaction", [False, True], ids=["plain", "multi"])
+def test_pipeline_renamenx_missing_source_returns_false(cache: RespCache, client_class: str, transaction: bool):
+    if client_class == "cluster":
+        pytest.skip("renamenx blocked in cluster pipeline mode")
+    cache.set("{pipe_rnx}src", "value")
+    cache.set("{pipe_rnx}taken", "kept")
+
+    pipe = cache.pipeline(transaction=transaction)
+    pipe.set("{pipe_rnx}marker", 1)
+    pipe.renamenx("{pipe_rnx}missing", "{pipe_rnx}dst")
+    pipe.renamenx("{pipe_rnx}src", "{pipe_rnx}taken")
+    pipe.renamenx("{pipe_rnx}src", "{pipe_rnx}dst")
+    pipe.get("{pipe_rnx}dst")
+
+    assert pipe.execute() == [True, False, False, True, "value"]
+
+
+@pytest.mark.parametrize("transaction", [False, True], ids=["plain", "multi"])
+def test_pipeline_rename_missing_source_raises_key_not_found(cache: RespCache, client_class: str, transaction: bool):
+    if client_class == "cluster":
+        pytest.skip("rename blocked in cluster pipeline mode")
+    with pytest.raises(KeyNotFoundError) as direct:
+        cache.rename("{pipe_ren}missing", "{pipe_ren}dst")
+
+    pipe = cache.pipeline(transaction=transaction)
+    pipe.set("{pipe_ren}marker", "written")
+    pipe.rename("{pipe_ren}missing", "{pipe_ren}dst")
+    with pytest.raises(KeyNotFoundError) as piped:
+        pipe.execute()
+
+    assert str(piped.value) == str(direct.value)
+    assert cache.get("{pipe_ren}marker") == "written"
+
+
+@pytest.mark.asyncio
+async def test_apipeline_renamenx_missing_source_returns_false(cache: RespCache, client_class: str):
+    if client_class == "cluster":
+        pytest.skip("renamenx blocked in cluster pipeline mode")
+    pipe = await cache.apipeline()
+    pipe.set("{apipe_rnx}marker", 1)
+    pipe.renamenx("{apipe_rnx}missing", "{apipe_rnx}dst")
+
+    assert await pipe.execute() == [True, False]
+
+
+@pytest.mark.asyncio
+async def test_apipeline_rename_missing_source_raises_key_not_found(cache: RespCache, client_class: str):
+    if client_class == "cluster":
+        pytest.skip("rename blocked in cluster pipeline mode")
+    pipe = await cache.apipeline()
+    pipe.set("{apipe_ren}marker", "written")
+    pipe.rename("{apipe_ren}missing", "{apipe_ren}dst")
+    with pytest.raises(KeyNotFoundError):
+        await pipe.execute()
+
+    assert await cache.aget("{apipe_ren}marker") == "written"
+
+
+@pytest.mark.parametrize("method", ["zpopmin", "zpopmax"])
+def test_pipeline_zpop_decodes_the_flat_resp3_reply(cache: RespCache, method: str):
+    with cache.pipeline() as pipe:
+        getattr(pipe, method)("pipe_zpop_flat")
+        decode = pipe._decoders[-1]
+    member = cache.encode("a")
+
+    assert decode([member, 1.0]) == [("a", 1.0)]
+    assert decode([(member, 1.0), (member, 2.0)]) == [("a", 1.0), ("a", 2.0)]
+    assert decode([]) == []

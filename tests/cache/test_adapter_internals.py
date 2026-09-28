@@ -12,7 +12,7 @@ import pytest
 from django.core.exceptions import ImproperlyConfigured
 
 from django_cachex.adapters.protocols import Invalidation
-from django_cachex.adapters.redis_py import RedisPyAdapter, RedisPySentinelAdapter
+from django_cachex.adapters.redis_py import RedisPyAdapter, RedisPyClusterAdapter, RedisPySentinelAdapter
 from django_cachex.adapters.valkey_py import (
     _VALKEY_AVAILABLE,
     ValkeyPyAdapter,
@@ -120,6 +120,57 @@ class TestClusterClientConstruction:
         adapter = ValkeyPyClusterAdapter([SERVER_URL], socket_connect_timeout=3)
 
         assert adapter._cluster_options()[0] == {"socket_connect_timeout": 3}
+
+
+CLUSTER_LOCATION = ["redis://node-a:7000", "redis://node-b:7001/0", "redis://node-c:7002"]
+CLUSTER_ADAPTERS = [
+    pytest.param(ValkeyPyClusterAdapter, marks=requires_valkey, id="valkey-py"),
+    pytest.param(RedisPyClusterAdapter, id="redis-py"),
+]
+
+
+@pytest.mark.parametrize("adapter_class", CLUSTER_ADAPTERS)
+def test_cluster_get_client_seeds_every_location_url(mocker, adapter_class: Any):
+    cluster_class = mocker.patch.object(adapter_class, "_cluster_class")
+    mocker.patch.object(adapter_class, "_clusters", {})
+    adapter = adapter_class(CLUSTER_LOCATION, socket_timeout=5)
+
+    adapter.get_client()
+
+    (url,), kwargs = cluster_class.from_url.call_args
+    nodes = kwargs.pop("startup_nodes")
+    assert url == CLUSTER_LOCATION[0]
+    assert kwargs == {"socket_timeout": 5}
+    assert [(node.host, node.port) for node in nodes] == [("node-a", 7000), ("node-b", 7001), ("node-c", 7002)]
+    assert {type(node) for node in nodes} == {adapter._lib.cluster.ClusterNode}
+
+
+@pytest.mark.parametrize("adapter_class", CLUSTER_ADAPTERS)
+@pytest.mark.asyncio
+async def test_cluster_get_async_client_seeds_every_location_url(mocker, adapter_class: Any):
+    cluster_class = mocker.patch.object(adapter_class, "_async_cluster_class")
+    mocker.patch.object(adapter_class, "_async_clusters", weakref.WeakKeyDictionary())
+    adapter = adapter_class(CLUSTER_LOCATION, socket_timeout=5)
+
+    await adapter.get_async_client()
+
+    (url,), kwargs = cluster_class.from_url.call_args
+    nodes = kwargs.pop("startup_nodes")
+    assert url == CLUSTER_LOCATION[0]
+    assert kwargs == {"socket_timeout": 5}
+    assert [(node.host, node.port) for node in nodes] == [("node-a", 7000), ("node-b", 7001), ("node-c", 7002)]
+    assert {type(node) for node in nodes} == {adapter._lib.asyncio.cluster.ClusterNode}
+
+
+@requires_valkey
+def test_cluster_locations_sharing_a_first_url_get_separate_clients(mocker):
+    cluster_class = mocker.patch.object(ValkeyPyClusterAdapter, "_cluster_class")
+    mocker.patch.object(ValkeyPyClusterAdapter, "_clusters", {})
+
+    ValkeyPyClusterAdapter(["redis://node-a:7000", "redis://node-b:7001"]).get_client()
+    ValkeyPyClusterAdapter(["redis://node-a:7000", "redis://node-c:7002"]).get_client()
+
+    assert cluster_class.from_url.call_count == 2
 
 
 class TestSentinelAsyncPoolRegistry:
@@ -490,6 +541,33 @@ class TestCountFormPopMissingKey:
         assert await getattr(adapter, method)("key", count=2) == []
 
 
+@pytest.mark.parametrize("method", ["zpopmin", "zpopmax"])
+@pytest.mark.parametrize(
+    ("reply", "pairs"),
+    [
+        ([b"a", 1.5], [(b"a", 1.5)]),
+        ([[b"a", 1.5], [b"b", 2.0]], [(b"a", 1.5), (b"b", 2.0)]),
+        ([(b"a", 1.5)], [(b"a", 1.5)]),
+        ([], []),
+    ],
+    ids=["resp3-without-count", "resp3-with-count", "resp2", "missing-key"],
+)
+def test_zpop_reply_becomes_member_score_pairs(mocker, method: str, reply: list[Any], pairs: list[Any]):
+    client = mocker.Mock()
+    getattr(client, method).return_value = reply
+
+    assert getattr(_pop_adapter(client), method)("key") == pairs
+
+
+@pytest.mark.parametrize("method", ["zpopmin", "zpopmax"])
+@pytest.mark.asyncio
+async def test_async_zpop_resp3_reply_without_count_becomes_one_pair(mocker, method: str):
+    client = mocker.AsyncMock()
+    getattr(client, method).return_value = [b"a", 1.5]
+
+    assert await getattr(_pop_adapter(client), f"a{method}")("key") == [(b"a", 1.5)]
+
+
 class TestHmgetWithoutFields:
     """``HMGET key`` with no fields is a wire-level syntax error."""
 
@@ -659,7 +737,7 @@ class _WrongTypePipeline:
     def __init__(self, error: Exception | None = None) -> None:
         self._error = error or _ResponseError(self.ERROR)
 
-    def execute(self) -> Any:
+    def execute(self, raise_on_error: bool = True) -> Any:
         raise self._error
 
     def execute_command(self, *args: Any) -> Any:
@@ -667,7 +745,7 @@ class _WrongTypePipeline:
 
 
 class _AsyncWrongTypePipeline(_WrongTypePipeline):
-    async def execute(self) -> Any:  # type: ignore[override]
+    async def execute(self, raise_on_error: bool = True) -> Any:  # type: ignore[override]
         raise self._error
 
 
