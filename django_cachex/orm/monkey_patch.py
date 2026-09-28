@@ -67,30 +67,23 @@ def _execute(execute: Callable[[], Any]) -> tuple[Any, bool]:
     return result, True
 
 
-def _key_and_tables(compiler: Any, result_type: Any, store: Store | None) -> tuple[str, set[str]] | None:
-    """Return the cache key and the tables of the query, or None if its result is not cached."""
+def _read(compiler: Any, result_type: Any, execute: Callable[[], Any]) -> Any:
+    connection = compiler.connection
+    store = get_store(orm_settings.CACHE)
     if store is None:
-        return None
+        return execute()
     ttl = store.ttl(orm_settings.TIMEOUT)
     if ttl is not None and ttl <= 0:
-        return None
+        return execute()
     try:
         # A SINGLE and a MULTI query can share their SQL but not their result.
         query_key = f"{get_query_cache_key(compiler)}:{result_type}"
         # Compiled for its key, the query has joined the tables select_related() and the ordering need.
-        tables = _get_tables(compiler.connection.alias, compiler.query, compiler)
+        tables = _get_tables(connection.alias, compiler.query, compiler)
     except EmptyResultSet, UncachableQuery:
-        return None
-    return (query_key, tables) if tables else None
-
-
-def _read(compiler: Any, result_type: Any, execute: Callable[[], Any]) -> Any:
-    connection = compiler.connection
-    store = get_store(orm_settings.CACHE)
-    key_and_tables = _key_and_tables(compiler, result_type, store)
-    if store is None or key_and_tables is None:
+        tables = set()
+    if not tables:
         return execute()
-    query_key, tables = key_and_tables
     if transaction.in_transaction(connection):
         if transaction.isolation(connection) == transaction.SNAPSHOT:
             return _read_in_snapshot(connection, query_key, tables, execute)
