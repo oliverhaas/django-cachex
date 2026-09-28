@@ -127,16 +127,15 @@ class TestLocalBlockingAcquire:
             result["at"] = time.monotonic()
 
         t = threading.Thread(target=waiter)
-        # Read before the thread starts: a t0 taken inside the waiter can land
-        # after the release, so the measured wait would be near zero.
-        t0 = time.monotonic()
         t.start()
-        time.sleep(0.1)
+        _wait_for_waiters(sem_holder._state, 1)
+        assert result == {}
+        released_at = time.monotonic()
         sem_holder.release()
         t.join(timeout=3)
 
         assert result["ok"] is True
-        assert result["at"] - t0 >= 0.1
+        assert result["at"] >= released_at
         sem_waiter.release()
 
     def test_blocking_acquire_timeout_raises(self):
@@ -179,7 +178,8 @@ class TestLocalTimeoutOverride:
         t = threading.Thread(target=park)
         t.start()
         try:
-            time.sleep(0.3)  # 6x the instance timeout
+            _wait_for_waiters(holder._state, 1)
+            t.join(timeout=0.3)  # 6x the instance timeout
             assert result == {}, "explicit None did not override the instance timeout"
         finally:
             holder.release()
@@ -209,8 +209,9 @@ class TestLocalTimeoutOverride:
             waiter = Semaphore("atimeout_none", capacity=1, timeout=0.05)
             task = asyncio.create_task(waiter.aacquire(timeout=None))
             try:
-                await asyncio.sleep(0.3)  # 6x the instance timeout
-                assert not task.done(), "explicit None did not override the instance timeout"
+                await _await_waiters(holder._state, 1)
+                done, _ = await asyncio.wait({task}, timeout=0.3)  # 6x the instance timeout
+                assert not done, "explicit None did not override the instance timeout"
                 await holder.arelease()
                 assert await asyncio.wait_for(task, timeout=3) is True
                 await waiter.arelease()
@@ -231,6 +232,18 @@ def _wait_for_waiters(state, count, timeout=5.0):
         if queued >= count:
             return
         time.sleep(0.001)
+    msg = f"expected {count} queued waiter(s), saw {queued}"
+    raise AssertionError(msg)
+
+
+async def _await_waiters(state, count, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with state.lock:
+            queued = len(state.waiters)
+        if queued >= count:
+            return
+        await asyncio.sleep(0.001)
     msg = f"expected {count} queued waiter(s), saw {queued}"
     raise AssertionError(msg)
 
@@ -304,7 +317,7 @@ class TestLocalCascadeWake:
         threads = [threading.Thread(target=acquire, args=(i, w)) for i, w in enumerate(waiters)]
         for t in threads:
             t.start()
-        time.sleep(0.1)  # let all three enqueue before capacity frees
+        _wait_for_waiters(holder._state, 3)
 
         t0 = time.monotonic()
         holder.release()
@@ -342,16 +355,11 @@ class TestLocalAsyncSemaphore:
             await holder.aacquire(blocking=False)
 
             waiter = Semaphore("async_block", capacity=1)
-
-            async def release_soon():
-                await asyncio.sleep(0.05)
-                await holder.arelease()
-
-            async def wait():
-                return await waiter.aacquire(blocking=True, timeout=2)
-
-            results = await asyncio.gather(release_soon(), wait())
-            assert results[1] is True
+            task = asyncio.create_task(waiter.aacquire(blocking=True, timeout=2))
+            await _await_waiters(holder._state, 1)
+            assert not task.done()
+            await holder.arelease()
+            assert await task is True
             await waiter.arelease()
 
         asyncio.run(run())
@@ -388,7 +396,7 @@ class TestLocalCrossContext:
 
         t = threading.Thread(target=async_waiter_thread)
         t.start()
-        time.sleep(0.1)  # let the async waiter enqueue
+        _wait_for_waiters(holder._state, 1)
         holder.release()
         t.join(timeout=3)
 
@@ -448,7 +456,7 @@ class TestLocalCapacityChange:
 
         t = threading.Thread(target=park)
         t.start()
-        time.sleep(0.1)  # let the waiter park
+        _wait_for_waiters(holder._state, 1)
 
         started = time.monotonic()
         with warnings.catch_warnings():
@@ -523,7 +531,7 @@ class TestLocalAsyncCancellation:
 
             waiter = Semaphore("cancel_test", capacity=1)
             task = asyncio.create_task(waiter.aacquire(blocking=True, timeout=10))
-            await asyncio.sleep(0.05)  # let it enqueue
+            await _await_waiters(holder._state, 1)
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
@@ -535,6 +543,22 @@ class TestLocalAsyncCancellation:
             await fresh.arelease()
 
         asyncio.run(run())
+
+
+def test_interrupted_blocking_acquire_does_not_block_queue(mocker):
+    holder = Semaphore("interrupt_test", capacity=1)
+    assert holder.acquire(blocking=False) is True
+    waiter = Semaphore("interrupt_test", capacity=1)
+    mocker.patch.object(_Waiter, "wait_sync", side_effect=KeyboardInterrupt)
+    with pytest.raises(KeyboardInterrupt):
+        waiter.acquire(blocking=True, timeout=10)
+    mocker.stopall()
+
+    assert not holder._state.waiters
+    holder.release()
+    fresh = Semaphore("interrupt_test", capacity=1)
+    assert fresh.acquire(blocking=True, timeout=1) is True
+    fresh.release()
 
 
 class _RendezvousLock:
@@ -842,6 +866,7 @@ class TestRespQueueReap:
 
         holder = cache.semaphore("resp_live_waiter", capacity=1, lease=10)
         assert holder.acquire(blocking=False) is True
+        prefix = "{" + cache.make_and_validate_key("resp_live_waiter") + "}"
 
         result: dict[str, object] = {}
         may_release = threading.Event()
@@ -857,7 +882,7 @@ class TestRespQueueReap:
         t = threading.Thread(target=waiter_thread)
         t.start()
         try:
-            time.sleep(0.3)  # let the waiter enqueue and heartbeat
+            _wait_for_queue(cache, prefix, 1)
 
             jumper = cache.semaphore("resp_live_waiter", capacity=1, lease=10)
             holder.release()
@@ -1039,6 +1064,64 @@ class TestRespAcquireInterrupted:
         sem._adapter = cache.adapter
         assert sem.acquire(blocking=False) is True
         sem.release()
+
+
+def test_resp_second_interrupt_during_the_backoff_dequeue_drops_the_token(cache, mocker):
+    holder = cache.semaphore("resp_backoff_interrupt", capacity=1, lease=10)
+    assert holder.acquire(blocking=False) is True
+    waiter = cache.semaphore("resp_backoff_interrupt", capacity=1, lease=10)
+
+    def interrupt_dequeue(script, numkeys, *args):
+        if script == DEQUEUE_LUA:
+            raise KeyboardInterrupt
+        return cache.adapter.eval(script, numkeys, *args)
+
+    mocker.patch.object(waiter, "_adapter", mocker.Mock(eval=interrupt_dequeue))
+    mocker.patch("django_cachex.semaphore.time.sleep", side_effect=KeyboardInterrupt)
+    with pytest.raises(KeyboardInterrupt):
+        waiter.acquire(timeout=None)
+    mocker.stopall()
+
+    assert waiter._token is None
+    holder.release()
+
+
+@pytest.mark.asyncio
+async def test_resp_second_cancel_during_the_backoff_dequeue_drops_the_token(cache, mocker):
+    holder = await cache.asemaphore("aresp_backoff_cancel", capacity=1, lease=10)
+    assert await holder.aacquire(blocking=False) is True
+    waiter = await cache.asemaphore("aresp_backoff_cancel", capacity=1, lease=10)
+
+    async def cancel_dequeue(script, numkeys, *args):
+        if script == DEQUEUE_LUA:
+            raise asyncio.CancelledError
+        return await cache.adapter.aeval(script, numkeys, *args)
+
+    mocker.patch.object(waiter, "_adapter", mocker.Mock(aeval=cancel_dequeue))
+    mocker.patch("django_cachex.semaphore.asyncio.sleep", side_effect=asyncio.CancelledError)
+    with pytest.raises(asyncio.CancelledError):
+        await waiter.aacquire(timeout=None)
+    mocker.stopall()
+
+    assert waiter._token is None
+    await holder.arelease()
+
+
+def test_resp_acquire_rejects_a_nan_timeout(cache):
+    sem = cache.semaphore("resp_nan_timeout", capacity=1, lease=10)
+    with pytest.raises(ValueError, match="not NaN"):
+        sem.acquire(timeout=float("nan"))
+    assert sem.acquire(timeout=None) is True
+    sem.release()
+
+
+@pytest.mark.asyncio
+async def test_resp_aacquire_rejects_a_nan_timeout(cache):
+    sem = await cache.asemaphore("aresp_nan_timeout", capacity=1, lease=10)
+    with pytest.raises(ValueError, match="not NaN"):
+        await sem.aacquire(timeout=float("nan"))
+    assert await sem.aacquire(timeout=None) is True
+    await sem.arelease()
 
 
 class TestRespFifoFairness:

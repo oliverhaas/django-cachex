@@ -234,6 +234,12 @@ def _validate_extend(additional_seconds: float) -> None:
         raise ValueError(msg)
 
 
+def _validate_timeout(timeout: float | None) -> None:
+    if timeout is not None and math.isnan(timeout):
+        msg = "timeout must be a number of seconds or None, not NaN"
+        raise ValueError(msg)
+
+
 def _decode_status(result: object) -> str:
     """Lua returns bytes in some clients, str in others; coerce to str."""
     if isinstance(result, (list, tuple)) and result:
@@ -294,7 +300,7 @@ class Semaphore:
 
     # ------------------------------------------------------------------ sync
 
-    def acquire(
+    def acquire(  # noqa: C901
         self,
         *,
         blocking: bool = True,
@@ -351,11 +357,13 @@ class Semaphore:
                     self._remove_waiter_and_notify(waiter)
                     msg = f"semaphore {self.name!r} acquire timed out"
                     raise SemaphoreTimeoutError(msg)
-            # No try/except around event.wait() here: threads aren't
-            # cooperatively cancelled like coroutines, so there is no
-            # CancelledError analogue that could leave a phantom waiter
-            # behind. The async path needs that guard; the sync path doesn't.
-            waiter.wait_sync(remaining)
+            try:
+                waiter.wait_sync(remaining)
+            except BaseException:
+                # KeyboardInterrupt and signal handlers (SIGALRM, Celery's soft time limit)
+                # raise inside wait(); a dead waiter left at the head blocks every caller.
+                self._remove_waiter_and_notify(waiter)
+                raise
             waiter.clear_sync()
 
     def release(self) -> None:
@@ -601,7 +609,7 @@ class RespSemaphore:
 
     # ------------------------------------------------------------------ sync
 
-    def acquire(
+    def acquire(  # noqa: C901
         self,
         *,
         blocking: bool = True,
@@ -616,6 +624,7 @@ class RespSemaphore:
         from django_cachex.cache._semaphore_lua import ACQUIRE_LUA, DEQUEUE_LUA
 
         wait_timeout = self.timeout if isinstance(timeout, _DefaultTimeout) else timeout
+        _validate_timeout(wait_timeout)
         token = self._claim()
         lease_ms = self._lease_ms()
         deadline = None if wait_timeout is None else time.monotonic() + wait_timeout
@@ -626,6 +635,13 @@ class RespSemaphore:
             # because we may already be unwinding.
             with contextlib.suppress(Exception):
                 self._adapter.eval(DEQUEUE_LUA, 1, self._queue_key, token)
+
+        def _abandon() -> None:
+            # A second interrupt landing on the DEQUEUE round trip must not leave the token claimed.
+            try:
+                _dequeue_token()
+            finally:
+                self._clear_token(token)
 
         while True:
             try:
@@ -659,12 +675,10 @@ class RespSemaphore:
             if status == "acquired":
                 return True
             if not blocking:
-                _dequeue_token()
-                self._clear_token(token)
+                _abandon()
                 return False
             if deadline is not None and time.monotonic() >= deadline:
-                _dequeue_token()
-                self._clear_token(token)
+                _abandon()
                 msg = f"semaphore {self.name!r} acquire timed out"
                 raise SemaphoreTimeoutError(msg)
             # Jittered exponential backoff.
@@ -676,8 +690,7 @@ class RespSemaphore:
                 try:
                     time.sleep(sleep_s)
                 except BaseException:
-                    _dequeue_token()
-                    self._clear_token(token)
+                    _abandon()
                     raise
             backoff_ms = min(_MAX_BACKOFF_MS, int(backoff_ms * 1.5))
 
@@ -726,7 +739,7 @@ class RespSemaphore:
 
     # ----------------------------------------------------------------- async
 
-    async def aacquire(
+    async def aacquire(  # noqa: C901
         self,
         *,
         blocking: bool = True,
@@ -736,6 +749,7 @@ class RespSemaphore:
         from django_cachex.cache._semaphore_lua import ACQUIRE_LUA, DEQUEUE_LUA
 
         wait_timeout = self.timeout if isinstance(timeout, _DefaultTimeout) else timeout
+        _validate_timeout(wait_timeout)
         # ``_claim`` holds a plain lock across no awaits, so the sync and async
         # paths can share it without blocking the loop.
         token = self._claim()
@@ -750,6 +764,13 @@ class RespSemaphore:
             # we may already be unwinding for a different reason.
             with contextlib.suppress(Exception):
                 await self._adapter.aeval(DEQUEUE_LUA, 1, self._queue_key, token)
+
+        async def _abandon() -> None:
+            # A second cancel landing on the DEQUEUE round trip must not leave the token claimed.
+            try:
+                await _dequeue_token()
+            finally:
+                self._clear_token(token)
 
         while True:
             try:
@@ -781,12 +802,10 @@ class RespSemaphore:
             if status == "acquired":
                 return True
             if not blocking:
-                await _dequeue_token()
-                self._clear_token(token)
+                await _abandon()
                 return False
             if deadline is not None and loop.time() >= deadline:
-                await _dequeue_token()
-                self._clear_token(token)
+                await _abandon()
                 msg = f"semaphore {self.name!r} acquire timed out"
                 raise SemaphoreTimeoutError(msg)
             # Jittered exponential backoff.
@@ -798,8 +817,7 @@ class RespSemaphore:
                 try:
                     await asyncio.sleep(sleep_s)
                 except BaseException:
-                    await _dequeue_token()
-                    self._clear_token(token)
+                    await _abandon()
                     raise
             backoff_ms = min(_MAX_BACKOFF_MS, int(backoff_ms * 1.5))
 
