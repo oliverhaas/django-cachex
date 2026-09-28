@@ -9,7 +9,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from django.apps import AppConfig
+from django.apps import AppConfig, apps
 from django.conf import settings
 from django.core.checks import CheckMessage, Error, Tags, Warning, register  # noqa: A004
 from django.core.signals import setting_changed
@@ -165,6 +165,21 @@ def check_cache(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:  # noqa:
                 ),
             )
     return errors
+
+
+@register(Tags.models)
+def check_app_labels(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:  # noqa: ARG001
+    installed = {app_config.label for app_config in apps.get_app_configs()}
+    return [
+        Error(
+            f"`{SETTING_NAME}['{name}']` names {label!r}, which is not the label of an installed app.",
+            hint="An app's label is the last part of its name, unless its AppConfig sets `label`.",
+            id="cachex_orm.E006",
+        )
+        for name in ("ONLY_CACHABLE_APPS", "UNCACHABLE_APPS")
+        for label in user_settings().get(name, ())
+        if label not in installed
+    ]
 
 
 def _reload_settings(*, setting: str, **kwargs: Any) -> None:  # noqa: ARG001

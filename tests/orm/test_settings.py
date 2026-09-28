@@ -6,6 +6,7 @@ from time import sleep
 from unittest import skipIf
 from unittest.mock import MagicMock, patch
 
+from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.cache import DEFAULT_CACHE_ALIAS
@@ -328,6 +329,32 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
             self.assertListEqual(run_checks(tags=[Tags.compatibility]), [])
             with override_orm_settings(DATABASES=["default", "replica"]):
                 self.assertListEqual(run_checks(tags=[Tags.compatibility]), [warning006])
+
+    def test_app_labels(self):
+        through = TestChild.permissions.through._meta.db_table
+        with override_orm_settings(ONLY_CACHABLE_APPS=("ormtest",), UNCACHABLE_APPS=("auth",)):
+            self.assertIn(through, orm_settings.ONLY_CACHABLE_TABLES)
+            self.assertIn("auth_user_groups", orm_settings.UNCACHABLE_TABLES)
+            self.assertListEqual(run_checks(tags=[Tags.models], databases=[]), [])
+
+    def test_unknown_app_labels(self):
+        def error(name, label):
+            return Error(
+                f"`CACHEX_ORM['{name}']` names {label!r}, which is not the label of an installed app.",
+                hint="An app's label is the last part of its name, unless its AppConfig sets `label`.",
+                id="cachex_orm.E006",
+            )
+
+        with override_orm_settings(ONLY_CACHABLE_APPS=("ormtest", "ormtset"), UNCACHABLE_APPS=("tests.orm.app",)):
+            self.assertListEqual(
+                run_checks(tags=[Tags.models], databases=[]),
+                [error("ONLY_CACHABLE_APPS", "ormtset"), error("UNCACHABLE_APPS", "tests.orm.app")],
+            )
+            # The known label still counts, and the unknown ones are not
+            # added to the app registry.
+            self.assertIn("ormtest_test", orm_settings.ONLY_CACHABLE_TABLES)
+            self.assertEqual(orm_settings.UNCACHABLE_TABLES, frozenset({"django_migrations"}))
+            self.assertNotIn("ormtset", apps.all_models)
 
     def test_cache_checks(self):
         self.assertListEqual(run_checks(tags=[Tags.caches]), [])

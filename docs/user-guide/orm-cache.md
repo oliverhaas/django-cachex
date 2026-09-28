@@ -54,9 +54,9 @@ All settings live in the `CACHEX_ORM` dict. Keys are upper case; unknown keys ra
 | `CACHE_ITERATORS` | `True` | Cache the results of `iterator()`, which reads them into memory in full. |
 | `INVALIDATE_RAW` | `True` | Invalidate the tables raw SQL writes to (see [Limits](#limits)). |
 | `ONLY_CACHABLE_TABLES` | `()` | If set, only queries whose tables are all listed are cached. |
-| `ONLY_CACHABLE_APPS` | `()` | Adds the tables of these app labels to `ONLY_CACHABLE_TABLES`. |
+| `ONLY_CACHABLE_APPS` | `()` | Adds the tables of the apps with these labels, many-to-many tables included, to `ONLY_CACHABLE_TABLES`. |
 | `UNCACHABLE_TABLES` | `("django_migrations",)` | Queries reading one of these tables are not cached, and writes to them invalidate nothing. |
-| `UNCACHABLE_APPS` | `()` | Adds the tables of these app labels to `UNCACHABLE_TABLES`. |
+| `UNCACHABLE_APPS` | `()` | Adds the tables of the apps with these labels, many-to-many tables included, to `UNCACHABLE_TABLES`. |
 | `ADDITIONAL_TABLES` | `()` | Tables no model covers, to look for in raw SQL. |
 | `QUERY_KEYGEN` | `"django_cachex.orm.utils.get_query_cache_key"` | Callable, or its dotted path, building the key of a query from its SQL compiler. |
 | `TABLE_KEYGEN` | `"django_cachex.orm.utils.get_table_cache_key"` | Callable, or its dotted path, building the key of a table from a database alias and a table name. |
@@ -193,6 +193,7 @@ An unknown label is an error; an app without models invalidates nothing.
 | `cachex_orm.E003` | `CACHE` names an alias missing from `CACHES`. |
 | `cachex_orm.E004` | The cache's serializer does not bring query results back unchanged. |
 | `cachex_orm.E005` | The cache could not be loaded. |
+| `cachex_orm.E006` | `ONLY_CACHABLE_APPS` or `UNCACHABLE_APPS` names a label no installed app has. |
 
 ## Limits
 

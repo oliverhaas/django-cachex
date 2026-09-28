@@ -3,7 +3,6 @@
 # Derived from django-cachalot 2.9.1 (BSD-3-Clause, Copyright (c) 2014-2016
 # Bertrand Bordage); see the LICENSE file in this directory.
 
-from itertools import chain
 from typing import TYPE_CHECKING, Any
 
 from django.apps import apps
@@ -86,15 +85,16 @@ def _convert_databases(value: Any, _raw: dict[str, Any]) -> Any:
 
 
 def _tables_with_apps(value: Any, app_labels: Any) -> frozenset[str]:
-    if app_labels:
-        # ``all_models[label]`` so an app listed before its models are
-        # registered fails loudly instead of contributing nothing.
-        app_tables = tuple(
-            model._meta.db_table
-            for model in chain.from_iterable(apps.all_models[label].values() for label in app_labels)
-        )
-        return frozenset(tuple(value) + app_tables)
-    return frozenset(value)
+    # A label no installed app has adds nothing; the cachex_orm.E006 check
+    # reports it.
+    labels = set(app_labels)
+    app_tables = [
+        model._meta.db_table
+        for app_config in apps.get_app_configs()
+        if app_config.label in labels
+        for model in app_config.get_models(include_auto_created=True)
+    ]
+    return frozenset((*value, *app_tables))
 
 
 def _import_if_path(value: Any, _raw: dict[str, Any]) -> Any:
