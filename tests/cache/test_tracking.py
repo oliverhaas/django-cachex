@@ -1311,6 +1311,30 @@ class TestTrackingListenerLifecycle:
         assert isinstance(section["last_message_age_seconds"], float | type(None))
 
 
+@TTL_MODE
+def test_a_ttl_instance_inherited_across_a_fork_rebinds_its_state(tracking_cache, mocker):
+    tracking_cache.set("inherited", "parent")
+    assert tracking_cache.get("inherited") == "parent"
+    parent_state = tracking_cache._state
+    tracking_cache._transport.set("inherited", "child")
+    mocker.patch("django_cachex.cache.tracking.os.getpid", return_value=parent_state.pid + 1)
+    assert tracking_cache.get("inherited") == "child"
+    assert tracking_cache._state is not parent_state
+
+
+@TTL_MODE
+@pytest.mark.asyncio
+async def test_a_ttl_instance_inherited_across_a_fork_rebinds_its_state_on_aget(tracking_cache, mocker):
+    await tracking_cache.aset("inherited", "parent")
+    assert await tracking_cache.aget("inherited") == "parent"
+    parent_state = tracking_cache._state
+    await tracking_cache._transport.aset("inherited", "child")
+    # Only tracking's ``os``: glide's async client refuses to run when ``os.getpid()`` changes.
+    mocker.patch("django_cachex.cache.tracking.os", **{"getpid.return_value": parent_state.pid + 1})
+    assert await tracking_cache.aget("inherited") == "child"
+    assert tracking_cache._state is not parent_state
+
+
 class TestTrackingListenerLoop:
     """The listener loop and the state it keeps, driven without a server."""
 
@@ -1381,8 +1405,8 @@ class TestTrackingListenerLoop:
     def test_an_abandoned_listener_does_not_disconnect_its_replacement(self):
         state = _TrackingState({"MAX_ENTRIES": 10, "poll_timeout": 0.1, "coherence": "tracking"})
         abandoned, replacement = _StubListener(), _StubListener()
-        state.on_connect(abandoned, reconnect=False)
-        state.on_connect(replacement, reconnect=True)
+        state.on_connect(abandoned, threading.Event(), reconnect=False)
+        state.on_connect(replacement, threading.Event(), reconnect=True)
         state.store["k"] = (b"v", None, None)
 
         state.on_disconnect(abandoned)
@@ -1394,6 +1418,40 @@ class TestTrackingListenerLoop:
         assert state.connected is False
         assert state.listener is None
         assert state.store == {}
+
+
+def test_a_listener_abandoned_mid_connect_leaves_its_replacement_connected(mocker):
+    abandoned, replacement = _StubListener(), _StubListener()
+    connecting, release = threading.Event(), threading.Event()
+    calls = 0
+
+    def open_listener() -> _StubListener:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            msg = "transport still down"
+            raise ConnectionError(msg)
+        if calls == 2:
+            connecting.set()
+            release.wait(5.0)
+            return abandoned
+        return replacement
+
+    with _offline_cache(reconnect_delay=0.01, poll_timeout=0.01) as cache:
+        state = cache._state
+        mocker.patch.object(cache, "_open_listener", side_effect=open_listener)
+        mocker.patch("django_cachex.cache.tracking._LISTENER_TIMEOUT", 0.0)
+        cache._ensure_listener()
+        assert connecting.wait(5.0)
+        cache.shutdown()
+        cache._ensure_listener()
+        state.store["k"] = (b"v", None, None)
+        release.set()
+        assert _wait_for(lambda: abandoned.closed)
+        assert state.listener is replacement
+        assert state.connected is True
+        assert state.store == {"k": (b"v", None, None)}
+        assert state.reconnects == 0
 
 
 class TestTrackingLRU:

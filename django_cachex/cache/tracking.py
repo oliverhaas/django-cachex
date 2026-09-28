@@ -201,13 +201,17 @@ class _TrackingState:
                 self.invalidations += len(message.keys)
             self.last_message_time = time.time()
 
-    def on_connect(self, listener: InvalidationListenerProtocol, *, reconnect: bool) -> None:
+    def on_connect(self, listener: InvalidationListenerProtocol, stop_event: Event, *, reconnect: bool) -> bool:
+        """Install ``listener`` and return True, unless ``shutdown`` stopped its thread meanwhile."""
         with self.lock:
+            if stop_event.is_set():
+                return False
             self._clear()
             self.listener = listener
             self.connected = True
             if reconnect:
                 self.reconnects += 1
+            return True
 
     def on_disconnect(self, listener: InvalidationListenerProtocol | None = None) -> None:
         """Mark the state disconnected and drop the store.
@@ -435,8 +439,6 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
 
     def _ensure_listener(self) -> None:
         """Start (or restart) the listener thread with double-checked locking; TTL coherence has none."""
-        if self._coherence == "ttl":
-            return
         state = self._state
         if state.initialized and self._listener_alive():
             return
@@ -445,6 +447,8 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
             # prefork): drop the parent's store and start this process's
             # listener without reporting the parent's thread as dead.
             state = self._state = self._bind_state()
+        if self._coherence == "ttl":
+            return
         with state.start_lock:
             if state.initialized and self._listener_alive():
                 return
@@ -455,10 +459,10 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
 
     async def _aensure_listener(self) -> None:
         """Async twin of :meth:`_ensure_listener`; the first connect is blocking socket work."""
-        if self._coherence == "ttl":
-            return
         state = self._state
         if state.initialized and self._listener_alive():
+            return
+        if self._coherence == "ttl" and state.pid == os.getpid():
             return
         await asyncio.to_thread(self._ensure_listener)
 
@@ -482,9 +486,9 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
                 exc_info=True,
             )
             listener = None
-        if listener is not None:
-            state.on_connect(listener, reconnect=False)
         stop_event = Event()
+        if listener is not None:
+            state.on_connect(listener, stop_event, reconnect=False)
         state.stop_event = stop_event
         thread = Thread(
             target=self._listener_loop,
@@ -523,7 +527,9 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
                     outage_logged = True
                     continue
                 outage_logged = False
-                state.on_connect(listener, reconnect=True)
+                if not state.on_connect(listener, stop_event, reconnect=True):
+                    listener.close()
+                    break
                 logger.info("TrackingCache: invalidation listener for %s connected", self._storage_key)
             try:
                 self._serve(stop_event, listener)
