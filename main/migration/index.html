@@ -1639,7 +1639,7 @@ and pattern helpers and <code>cache.lock()</code>, you gain:</p>
 </tr>
 <tr>
 <td><code>CACHALOT_QUERY_KEYGEN</code>, <code>CACHALOT_TABLE_KEYGEN</code></td>
-<td>Removed. The keys go through the cache alias's <code>KEY_FUNCTION</code>, which can tell tenants apart.</td>
+<td>Removed. The keys go through the cache alias's <code>KEY_FUNCTION</code>, which can tell tenants apart. Table generations then differ per tenant too, so a write to a table the tenants share invalidates only the writing tenant's results: list shared tables in <code>UNCACHABLE_TABLES</code>.</td>
 </tr>
 <tr>
 <td><code>CACHALOT_USE_UNSUPPORTED_DATABASE</code>, <code>CACHALOT_ADDITIONAL_SUPPORTED_DATABASES</code></td>

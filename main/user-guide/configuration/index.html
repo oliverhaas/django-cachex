@@ -2117,11 +2117,12 @@ whole seconds. <code>pttl()</code>, <code>pexpire()</code>, <code>expireat()</co
 <code>pexpireat()</code>, <code>expiretime()</code> and the hash-field expiration family
 (<code>hexpire()</code>, <code>httl()</code>, <code>hsetex()</code>, <code>hgetex()</code> and their relatives) raise
 <code>NotSupportedError</code>, and so do <code>lock()</code>, <code>pipeline()</code>, <code>eval_script()</code>,
-<code>get_client()</code>, <code>rename()</code>, <code>renamenx()</code>, <code>slowlog_get()</code>, <code>slowlog_len()</code>,
-<code>memory_usage()</code>, <code>largest_keys()</code> (and their <code>a*</code> twins), the blocking list
-pops, and the cross-key store commands (<code>lmove()</code>, <code>smove()</code>, <code>sinterstore()</code>
-and friends). Streams are not implemented at all.</p>
-<p>What does work on both: the hash, list, set and sorted-set commands, <code>type()</code>,
+<code>get_client()</code>, <code>rename()</code>, <code>renamenx()</code>, <code>sscan()</code>, <code>sscan_iter()</code>,
+<code>clear_all_versions()</code>, <code>slowlog_get()</code>, <code>slowlog_len()</code>, <code>memory_usage()</code>,
+<code>largest_keys()</code> (and their <code>a*</code> twins), the blocking list pops, and the
+cross-key store commands (<code>lmove()</code>, <code>smove()</code>, <code>sinterstore()</code> and friends).
+Streams are not implemented at all.</p>
+<p>What does work on both: the other hash, list, set and sorted-set commands, <code>type()</code>,
 <code>touch()</code>, <code>info()</code>, key listing (<code>keys()</code>, <code>iter_keys()</code>, <code>scan()</code>,
 <code>delete_pattern()</code>) and the admin. Key patterns use Redis's glob dialect on
 both, and <code>DatabaseCache</code> matches case-sensitively on every database vendor.
@@ -2651,6 +2652,7 @@ than the composite one.</p>
 </span><span id="__span-25-17"><a id="__codelineno-25-17" name="__codelineno-25-17" href="#__codelineno-25-17"></a>    <span class="p">}</span>
 </span><span id="__span-25-18"><a id="__codelineno-25-18" name="__codelineno-25-18" href="#__codelineno-25-18"></a><span class="p">}</span>
 </span></code></pre></div>
+<p>To also cache ORM query results in this alias, add <code>"django_cachex.orm"</code> to <code>INSTALLED_APPS</code>, see <a href="../orm-cache/">ORM Cache</a>.</p>
 
 
 

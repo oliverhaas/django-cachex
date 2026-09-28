@@ -1245,7 +1245,7 @@
 <li>TTL and pattern helpers (<code>ttl()</code>, <code>expire()</code>, <code>keys()</code>, <code>delete_pattern()</code>).</li>
 <li>Distributed locks: <code>cache.lock()</code>.</li>
 <li>Weighted semaphores: <code>cache.semaphore()</code> for budget-based concurrency gating (counting and weighted, in-process and distributed).</li>
-<li>Lua scripting with automatic key prefixing and value encoding/decoding.</li>
+<li>Lua scripting via <code>eval_script()</code>, with optional hooks for key prefixing and value encoding/decoding.</li>
 <li>Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with fallback chains for safe migrations.</li>
 <li>Cache stampede prevention (TTL-based XFetch).</li>
 <li><code>TrackingCache</code>, a local read cache over a Redis/Valkey alias, invalidated by the server's <code>CLIENT TRACKING</code> or bounded by a local TTL.</li>
@@ -1299,11 +1299,20 @@ free-threaded wheels yet. Cluster is supported via
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="p">]</span>
 </span></code></pre></div>
 <h2 id="acknowledgments">Acknowledgments<a class="headerlink" href="#acknowledgments" title="Permanent link">&para;</a></h2>
-<p>This project started from <a href="https://github.com/jazzband/django-redis">django-redis</a> and Django's official <a href="https://docs.djangoproject.com/en/stable/topics/cache/#redis">Redis cache backend</a>. Some serializer and compressor utility code is derived from django-redis, licensed under BSD-3-Clause. The admin UI was inspired by <a href="https://github.com/ionelmc/django-redisboard">django-redisboard</a>. The ORM cache (<code>django_cachex.orm</code>) is derived from <a href="https://github.com/noripyt/django-cachalot">django-cachalot</a> 2.9.1 by Bertrand Bordage, licensed under BSD-3-Clause.</p>
+<p>This project started from <a href="https://github.com/jazzband/django-redis">django-redis</a> and Django's official <a href="https://docs.djangoproject.com/en/stable/topics/cache/#redis">Redis cache backend</a>. Some serializer, compressor and exception code is derived from django-redis, licensed under BSD-3-Clause. The admin UI was inspired by <a href="https://github.com/ionelmc/django-redisboard">django-redisboard</a>. The ORM cache (<code>django_cachex.orm</code>) is derived from <a href="https://github.com/noripyt/django-cachalot">django-cachalot</a> 2.9.1 by Bertrand Bordage, licensed under BSD-3-Clause.</p>
 <p>The ASGI benchmark follows the shape of <a href="https://gitlab.com/glitchtip/django-vcache">django-vcache</a>'s <code>bench_compare.py</code> (MIT, by David Burke / GlitchTip), so the numbers are directly comparable.</p>
 <p>See also <a href="https://github.com/django-commons/django-valkey">django-valkey</a> and <a href="https://github.com/yassi/dj-cache-panel">dj-cache-panel</a> for related projects with similar goals.</p>
 <h2 id="license">License<a class="headerlink" href="#license" title="Permanent link">&para;</a></h2>
-<p>MIT License. See <a href="https://github.com/oliverhaas/django-cachex/blob/main/LICENSE">LICENSE</a> for details.</p>
+<p>MIT, see <a href="https://github.com/oliverhaas/django-cachex/blob/main/LICENSE">LICENSE</a>, except for two parts under BSD-3-Clause
+(the package metadata declares <code>MIT AND BSD-3-Clause</code>):</p>
+<ul>
+<li>The ORM cache, <code>django_cachex/orm/</code>, derived from django-cachalot. See
+  <a href="https://github.com/oliverhaas/django-cachex/blob/main/django_cachex/orm/LICENSE">django_cachex/orm/LICENSE</a>.</li>
+<li>Parts of <code>django_cachex/serializers/</code>, <code>django_cachex/compressors/</code> and
+  <code>django_cachex/exceptions.py</code>, derived from django-redis (Copyright (c)
+  2011-2016 Andrey Antukh). Each derived file says so in its header. See
+  <a href="https://github.com/oliverhaas/django-cachex/blob/main/LICENSE.django-redis">LICENSE.django-redis</a>.</li>
+</ul>
 
 
 

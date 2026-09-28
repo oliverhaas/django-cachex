@@ -2913,6 +2913,7 @@ returned <code>bool</code>, leaving the claim held until its lease expires.</p>
 </span></code></pre></div>
 <p><code>apipeline()</code> is <code>async def</code> so adapters whose async-client construction is itself awaitable (e.g. valkey-glide) can resolve the client before returning the wrapper. Queueing methods stay synchronous; only <code>apipeline()</code> and <code>execute()</code> need to be awaited.</p>
 <p>Single-key commands are available on the pipeline: <code>get</code>, <code>set</code>, <code>delete</code>, <code>exists</code>, <code>incr</code>, <code>decr</code>, <code>type</code>, <code>rename</code>, <code>renamenx</code>, the TTL commands (<code>ttl</code>, <code>pttl</code>, <code>expire</code>, <code>pexpire</code>, <code>expireat</code>, <code>pexpireat</code>, <code>expiretime</code>, <code>persist</code>), <code>memory_usage</code>, <code>eval_script</code> and every non-blocking hash, list, set, sorted-set and stream command (<code>sscan</code> and the blocking pops <code>blpop</code>/<code>brpop</code>/<code>blmove</code> are not queueable). The multi-key helpers (<code>set_many</code>, <code>get_many</code>, <code>delete_many</code>), the read-modify-write helpers (<code>get_or_set</code>, <code>add</code>, <code>touch</code>, <code>has_key</code>), and the scanning helpers (<code>keys</code>, <code>scan</code>, <code>delete_pattern</code>, <code>clear</code>) are not: queue their underlying commands instead. Results are returned as a list in the same order as the commands.</p>
+<p>On <code>RedisClusterCache</code> and <code>ValkeyClusterCache</code>, queueing <code>rename</code>, <code>renamenx</code>, <code>smove</code>, <code>sdiff</code>, <code>sinter</code>, <code>sunion</code>, <code>sdiffstore</code>, <code>sinterstore</code> or <code>sunionstore</code> raises the driver's <code>RedisClusterException</code> or <code>ValkeyClusterException</code>: its cluster pipeline refuses these multi-key commands. Call them on the cache instead, with keys that share a hash tag (see <a href="../../user-guide/cluster/#hash-tags">Cluster</a>).</p>
 <p>The queueing methods take the same signatures and parameter names as the cache
 methods they queue, so a call reads the same either way: <code>smove(src, dst,
 member)</code>, <code>sunionstore(dest, keys)</code>, <code>zscore(key, member)</code>, <code>zincrby(key,
@@ -2954,7 +2955,7 @@ to the results:</p>
 </tr>
 </tbody>
 </table>
-<p><code>clear()</code> is safe when multiple apps share a Redis database. Use <code>flush_db()</code> only when you really want to flush the whole database and not the configured Django namespace.</p>
+<p><code>clear()</code> deletes every key under this cache's <code>KEY_PREFIX</code> and <code>VERSION</code>, so apps that share a database keep each other's keys only when each has its own <code>KEY_PREFIX</code>: two caches on the default empty prefix both write <code>:1:*</code> keys, and <code>clear()</code> on either deletes both. Use <code>flush_db()</code> only when you want to empty the whole database, not just the configured Django namespace.</p>
 <h2 id="settings-reference">Settings Reference<a class="headerlink" href="#settings-reference" title="Permanent link">&para;</a></h2>
 <h3 id="cache-options">Cache OPTIONS<a class="headerlink" href="#cache-options" title="Permanent link">&para;</a></h3>
 <table>
