@@ -135,3 +135,21 @@ def test_local_copy(cache: RespCache, store: RespStore):
     remote = store.lookup(DB, "query", TABLES)
     assert not remote.hit
     assert remote.token == miss.token
+
+
+def test_local_copies_keyed_like_the_server(cache: RespCache, mocker):
+    real = caches[DEFAULT_CACHE_ALIAS]
+    local = RespStore(real, _LocalResults(max_entries=10))
+    for tenant in ("a", "b"):
+        # A key prefix per tenant, whose separate generations happen to be equal.
+        mocker.patch.object(real, "key_prefix", tenant)
+        cache.eval_script(
+            "for _, key in ipairs(KEYS) do redis.call('SET', key, '1000') end",
+            keys=[f"orm:{{{DB}}}:g:{table}" for table in TABLES],
+            pre_hook=keys_only_pre,
+        )
+        miss = local.lookup(DB, "query", TABLES)
+        assert local.store(DB, "query", TABLES, miss.token, tenant, 60)
+
+    mocker.patch.object(real, "key_prefix", "a")
+    assert local.lookup(DB, "query", TABLES).value == "a"

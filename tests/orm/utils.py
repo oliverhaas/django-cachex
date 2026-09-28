@@ -111,5 +111,6 @@ def corrupt_entry(queryset: Any) -> None:
         pre_hook=keys_only_pre,
     )
     if store.local is not None:
-        generations, _ = store.local.entries[entry_key]
-        store.local.entries[entry_key] = (generations, b"garbage")
+        local_key = store.cache.make_key(entry_key)
+        generations, _ = store.local.entries[local_key]
+        store.local.entries[local_key] = (generations, b"garbage")

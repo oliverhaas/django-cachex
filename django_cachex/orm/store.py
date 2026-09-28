@@ -278,7 +278,9 @@ class RespStore:
 
     def lookup(self, db_alias: str, query_key: str, table_keys: Sequence[str]) -> Lookup:
         entry_key = _entry_key(db_alias, query_key)
-        local = self.local.get(entry_key) if self.local is not None else None
+        # As the server keys it, so a KEY_FUNCTION telling tenants apart keeps their local copies apart.
+        local_key = self.cache.make_key(entry_key)
+        local = self.local.get(local_key) if self.local is not None else None
         reply = self._eval(
             _LOOKUP,
             [entry_key, *self._table_keys(db_alias, table_keys)],
@@ -302,7 +304,7 @@ class RespStore:
             logger.warning("Ignoring an ORM cache entry that does not decode.", exc_info=True)
             return Lookup(token=generations)
         if status == 1 and self.local is not None:
-            self.local.put(entry_key, generations, payload)
+            self.local.put(local_key, generations, payload)
         return Lookup(hit=True, value=value)
 
     def store(
@@ -327,7 +329,7 @@ class RespStore:
             [str(len(table_keys)), token, payload, "0" if ttl is None else str(max(1, int(ttl * 1000)))],
         )
         if stored and self.local is not None:
-            self.local.put(entry_key, token, payload)
+            self.local.put(self.cache.make_key(entry_key), token, payload)
         return bool(stored)
 
     def begin_write(self, db_alias: str, table_keys: Sequence[str], token: str, lease_timeout: float) -> None:
