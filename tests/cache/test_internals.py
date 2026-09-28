@@ -210,7 +210,11 @@ class TestRedisAdapterMethods:
             cache.delete("wrongtype_pipeline")
 
     @pytest.mark.asyncio
-    async def test_async_pipeline_translates_wrongtype(self, cache: RespCache):
+    async def test_async_pipeline_translates_wrongtype(self, cache: RespCache, client_class: str, resp_adapter: str):
+        import redis
+
+        if client_class == "default" and resp_adapter == "redis-py" and redis.VERSION < (7, 1):
+            pytest.skip("redis-py before 7.1 drops the server's message from async pipeline errors")
         await cache.aset("wrongtype_apipeline", 1)
         try:
             pipe = await cache.apipeline()

@@ -80,6 +80,22 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: "1"
 
+      # Two of ci.yml's test-orm runs. tests/orm has its own settings module and runs
+      # in one process, since each xdist worker would start its own containers.
+      - name: Run ORM cache tests (SQLite, LocMemCache)
+        run: uv run pytest tests/orm --ds=tests.orm.settings
+        env:
+          CACHEX_ORM_TEST_DB: sqlite
+          CACHEX_ORM_TEST_CACHE: locmem
+          PYTHONDONTWRITEBYTECODE: "1"
+
+      - name: Run ORM cache tests (PostgreSQL, Redis)
+        run: uv run pytest tests/orm --ds=tests.orm.settings
+        env:
+          CACHEX_ORM_TEST_DB: postgresql
+          CACHEX_ORM_TEST_CACHE: redis
+          PYTHONDONTWRITEBYTECODE: "1"
+
   tag-and-trigger:
     needs: [check-version, test]
     if: needs.check-version.outputs.should_release == 'true'

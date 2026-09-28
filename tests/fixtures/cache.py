@@ -1,6 +1,7 @@
 """Cache fixture and configuration builders."""
 
 import zlib
+from os import environ
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -62,6 +63,8 @@ TEST_DEFAULT_TIMEOUT = 180
 
 # Adapters that accept ``pool_class`` / ``parser_class``; valkey-glide ignores both.
 POOL_OPTION_ADAPTERS = frozenset({"redis-py", "valkey-py"})
+
+RESP_PROTOCOL_OPTIONS = {"protocol": 3} if environ.get("CACHEX_TEST_RESP_PROTOCOL") == "3" else {}
 
 # Modules that poke redis-py's own objects; tests/conftest.py skips them on other adapters.
 REDIS_PY_INTERNALS_TEST_FILES = frozenset(
@@ -144,9 +147,9 @@ def _get_client_library_options(
     client_library: str,
     native_parser: bool = False,
 ) -> dict:
-    """Pool/parser options for the redis-py / valkey-py adapters."""
+    """Pool, parser and RESP protocol options for the redis-py / valkey-py adapters."""
     config = CLIENT_LIBRARY_CONFIGS[client_library]
-    options = {"pool_class": config["pool_class"]}
+    options = {"pool_class": config["pool_class"], **RESP_PROTOCOL_OPTIONS}
     options["parser_class"] = config["native_parser_class"] if native_parser else config["parser_class"]
     return options
 
@@ -248,7 +251,7 @@ def build_cluster_cache_config(
     with ``build_cache_config`` and otherwise ignored.
     """
     del native_parser
-    options: dict = {}
+    options: dict = dict(RESP_PROTOCOL_OPTIONS) if resp_adapter in POOL_OPTION_ADAPTERS else {}
     if compressor and compressor in COMPRESSORS:
         options["compressor"] = COMPRESSORS[compressor]
     if serializer and serializer in SERIALIZERS:

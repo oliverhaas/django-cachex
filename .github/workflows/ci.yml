@@ -45,6 +45,25 @@ jobs:
       - name: Run pre-commit hooks
         run: uv run --no-sync pre-commit run --all-files --show-diff-on-failure
 
+  docs:
+    name: Build the docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --group docs
+
+      # docs.yml deploys only from main and tags, so a broken link would surface there.
+      - name: Build the docs
+        run: uv run --no-sync mkdocs build --strict
+
   test-backend:
     runs-on: ubuntu-latest
     strategy:
@@ -63,6 +82,11 @@ jobs:
           - python-version: "3.14"
             django-version: "6.1"
             client-library-version: "dev"
+
+          # The oldest client libraries pyproject.toml allows
+          - python-version: "3.14"
+            django-version: "6.0"
+            client-library-version: "minimum"
 
           # Pre-release Django
           - python-version: "3.14"
@@ -94,6 +118,10 @@ jobs:
         run: |
           uv pip install "redis @ git+https://github.com/redis/redis-py.git@master"
           uv pip install "valkey @ git+https://github.com/valkey-io/valkey-py.git@main"
+
+      - name: Install minimum client libraries
+        if: matrix.client-library-version == 'minimum'
+        run: uv pip install "redis[hiredis]==6.0.0" "valkey[libvalkey]==6.1.0"
 
       # Without --no-sync, `uv run` would reinstall the locked Django over the
       # pinned one above (the "6.0" cell used to run 6.1 that way).
@@ -318,6 +346,28 @@ jobs:
         env:
           CACHEX_TEST_REDIS_IMAGE: "redis:6.2"
           CACHEX_TEST_VALKEY_IMAGE: "valkey/valkey:7.2"
+          PYTHONDONTWRITEBYTECODE: "1"
+
+  test-resp3:
+    name: Test over RESP3
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      # The other jobs speak RESP2, the redis-py and valkey-py default; glide always speaks RESP3.
+      - name: Run backend tests
+        run: uv run --no-sync pytest tests/cache/ -n auto
+        env:
+          CACHEX_TEST_RESP_PROTOCOL: "3"
           PYTHONDONTWRITEBYTECODE: "1"
 
   build-pure-wheel:
