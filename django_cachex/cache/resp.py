@@ -96,6 +96,25 @@ def _load_codec(config: str | type | Any) -> Any:
     return config
 
 
+# KEYS[1]: key. ARGV: value, timeout (-1 persists, 0 drops the key), stampede buffer.
+# A TTL inside the buffer is logically expired, so ``add()`` counts that key as absent.
+_STAMPEDE_ADD_LUA = """
+local ttl = redis.call('TTL', KEYS[1])
+if ttl == -1 or ttl > tonumber(ARGV[3]) then
+    return 0
+end
+local timeout = tonumber(ARGV[2])
+if timeout == 0 then
+    redis.call('UNLINK', KEYS[1])
+elseif timeout < 0 then
+    redis.call('SET', KEYS[1], ARGV[1])
+else
+    redis.call('SET', KEYS[1], ARGV[1], 'EX', timeout)
+end
+return 1
+"""
+
+
 def _validate_lock_lease(lease: float | None) -> None:
     """The drivers send ``PX int(lease * 1000)``; below 1 ms that is ``PX 0`` (or a bare ``PX`` on glide)."""
     if lease is not None and lease * 1000 < 1:
@@ -463,8 +482,18 @@ class RespCache(BaseCachex):
         *,
         stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
-        """Set a value only if the key doesn't exist."""
+        """Set a value only if the key doesn't exist.
+
+        With stampede prevention active, a key whose TTL is inside the buffer
+        is logically expired, so ``add()`` treats it as absent and overwrites
+        it. One script call checks and writes atomically.
+        """
         key = self.make_and_validate_key(key, version=version)
+        buffer_s = self._stampede_buffer(stampede_prevention)
+        if buffer_s:
+            timeout_s = self.adapter.get_timeout_with_buffer(self.get_backend_timeout(timeout), stampede_prevention)
+            timeout_arg = -1 if timeout_s is None else timeout_s
+            return bool(self.adapter.eval(_STAMPEDE_ADD_LUA, 1, key, self.encode(value), timeout_arg, buffer_s))
         return self.adapter.add(
             key,
             self.encode(value),
@@ -482,8 +511,13 @@ class RespCache(BaseCachex):
         *,
         stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
-        """Set a value only if the key doesn't exist, asynchronously."""
+        """Set a value only if the key doesn't exist, asynchronously. See :meth:`add`."""
         key = self.make_and_validate_key(key, version=version)
+        buffer_s = self._stampede_buffer(stampede_prevention)
+        if buffer_s:
+            timeout_s = self.adapter.get_timeout_with_buffer(self.get_backend_timeout(timeout), stampede_prevention)
+            timeout_arg = -1 if timeout_s is None else timeout_s
+            return bool(await self.adapter.aeval(_STAMPEDE_ADD_LUA, 1, key, self.encode(value), timeout_arg, buffer_s))
         return await self.adapter.aadd(
             key,
             self.encode(value),
@@ -739,7 +773,7 @@ class RespCache(BaseCachex):
                 # recomputed value actually overwrites the stale key.
                 self.set(key, default, timeout=timeout, version=version, stampede_prevention=stampede_prevention)
             else:
-                self.add(key, default, timeout=timeout, version=version)
+                self.add(key, default, timeout=timeout, version=version, stampede_prevention=stampede_prevention)
             # Fetch the value again to avoid a race condition if another caller
             # set between the first get() and the set/add() above.
             # Disable stampede here. We just wrote the value, don't re-trigger.
@@ -774,7 +808,7 @@ class RespCache(BaseCachex):
             if self.adapter.resolve_stampede(stampede_prevention):
                 await self.aset(key, default, timeout=timeout, version=version, stampede_prevention=stampede_prevention)
             else:
-                await self.aadd(key, default, timeout=timeout, version=version)
+                await self.aadd(key, default, timeout=timeout, version=version, stampede_prevention=stampede_prevention)
             # Fetch the value again to avoid a race condition if another caller
             # set between the first aget() and the aset/aadd() above.
             # Disable stampede here. We just wrote the value, don't re-trigger.
@@ -845,8 +879,8 @@ class RespCache(BaseCachex):
 
         Unlike Django's default ``RedisCache.clear()`` which calls ``FLUSHDB``
         and destroys *all* data in the Redis database, this only removes keys
-        belonging to this cache instance. Safe when multiple apps share a
-        Redis database.
+        belonging to this cache instance. On a shared database, other apps'
+        keys are spared only when each app has its own ``KEY_PREFIX``.
 
         To flush the entire database, use ``cache.flush_db()``.
         """
@@ -4047,11 +4081,11 @@ class RespCache(BaseCachex):
 
         Args:
             script: Lua script source code.
-            keys: KEYS to pass to the script.
+            keys: KEYS to pass to the script, unprefixed unless ``pre_hook`` prefixes them.
             args: ARGV to pass to the script.
             pre_hook: Pre-processing hook: ``(helpers, keys, args) -> (keys, args)``.
             post_hook: Post-processing hook: ``(helpers, result) -> result``.
-            version: Key version for prefixing.
+            version: Key version for a ``pre_hook`` that prefixes the keys.
         """
         helpers = self._create_script_helpers(version)
 
@@ -4082,11 +4116,11 @@ class RespCache(BaseCachex):
 
         Args:
             script: Lua script source code.
-            keys: KEYS to pass to the script.
+            keys: KEYS to pass to the script, unprefixed unless ``pre_hook`` prefixes them.
             args: ARGV to pass to the script.
             pre_hook: Pre-processing hook: ``(helpers, keys, args) -> (keys, args)``.
             post_hook: Post-processing hook: ``(helpers, result) -> result``.
-            version: Key version for prefixing.
+            version: Key version for a ``pre_hook`` that prefixes the keys.
         """
         helpers = self._create_script_helpers(version)
 

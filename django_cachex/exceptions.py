@@ -14,7 +14,7 @@ from typing import Any
 
 
 def _build_main_exceptions() -> tuple[type[Exception], ...]:
-    """Network/server-side errors the client layer treats as transient."""
+    """``socket.timeout`` and the connection, timeout, reply and cluster errors of redis-py and valkey-py."""
     # Built on first access: importing ``CachexError`` must not drag in a
     # driver that a LocMem or Database user never installed.
     found: list[type[Exception]] = [socket.timeout]
@@ -59,11 +59,19 @@ class CachexError(Exception):
 
 
 class CompressorError(CachexError):
-    """Raised when compression or decompression fails. Triggers the client's compressor fallback."""
+    """Raised when compression or decompression fails.
+
+    On read, ``RespCache`` then tries the next configured compressor, and when
+    none succeeds it hands the value to the serializers as stored.
+    """
 
 
 class SerializerError(CachexError):
-    """Raised when serialization or deserialization fails. Triggers the client's serializer fallback."""
+    """Raised when serialization or deserialization fails.
+
+    On read, ``RespCache`` then tries the next configured serializer, and when
+    none succeeds it raises the last one's error.
+    """
 
 
 class NotSupportedError(CachexError):

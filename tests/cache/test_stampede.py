@@ -856,3 +856,99 @@ class TestAsyncStampedeGetOrSetRecompute:
         )
         assert result == "fresh_async"
         assert await stampede_cache.aget("asp_gos_overwrite") == "fresh_async"
+
+
+def test_get_or_set_false_skips_the_buffer_on_a_miss(stampede_cache: RespCache):
+    stampede_cache.delete("sp_gos_off")
+    assert stampede_cache.get_or_set("sp_gos_off", "val", timeout=300, stampede_prevention=False) == "val"
+    ttl = stampede_cache.ttl("sp_gos_off", stampede_prevention=False)
+    assert ttl is not None
+    assert 290 < ttl <= 300
+
+
+@pytest.mark.asyncio
+async def test_aget_or_set_false_skips_the_buffer_on_a_miss(stampede_cache: RespCache):
+    await stampede_cache.adelete("asp_gos_off")
+    assert await stampede_cache.aget_or_set("asp_gos_off", "val", timeout=300, stampede_prevention=False) == "val"
+    ttl = await stampede_cache.attl("asp_gos_off", stampede_prevention=False)
+    assert ttl is not None
+    assert 290 < ttl <= 300
+
+
+def test_add_overwrites_a_logically_expired_key(stampede_cache: RespCache):
+    stampede_cache.set("sp_add_stale", "stale", timeout=300)
+    stampede_cache.expire("sp_add_stale", 50, stampede_prevention=False)
+
+    assert stampede_cache.add("sp_add_stale", "fresh", timeout=300) is True
+    assert stampede_cache.get("sp_add_stale") == "fresh"
+    ttl = stampede_cache.ttl("sp_add_stale", stampede_prevention=False)
+    assert ttl is not None
+    assert 300 < ttl <= 360
+
+
+def test_add_missing_key_stores_the_buffered_ttl(stampede_cache: RespCache):
+    stampede_cache.delete("sp_add_missing")
+    assert stampede_cache.add("sp_add_missing", "val", timeout=300) is True
+    ttl = stampede_cache.ttl("sp_add_missing", stampede_prevention=False)
+    assert ttl is not None
+    assert 300 < ttl <= 360
+
+
+def test_add_keeps_a_persistent_key(stampede_cache: RespCache):
+    stampede_cache.set("sp_add_forever", "original", timeout=None)
+    assert stampede_cache.add("sp_add_forever", "new", timeout=300) is False
+    assert stampede_cache.get("sp_add_forever") == "original"
+
+
+def test_add_timeout_none_replaces_a_logically_expired_key_with_a_persistent_one(stampede_cache: RespCache):
+    stampede_cache.set("sp_add_none", "stale", timeout=300)
+    stampede_cache.expire("sp_add_none", 50, stampede_prevention=False)
+
+    assert stampede_cache.add("sp_add_none", "fresh", timeout=None) is True
+    assert stampede_cache.get("sp_add_none") == "fresh"
+    assert stampede_cache.ttl("sp_add_none", stampede_prevention=False) is None
+
+
+def test_add_timeout_zero_drops_a_logically_expired_key(stampede_cache: RespCache):
+    stampede_cache.set("sp_add_zero", "stale", timeout=300)
+    stampede_cache.expire("sp_add_zero", 50, stampede_prevention=False)
+
+    assert stampede_cache.add("sp_add_zero", "fresh", timeout=0) is True
+    assert stampede_cache.keys("sp_add_zero") == []
+
+
+def test_add_timeout_zero_keeps_a_fresh_key(stampede_cache: RespCache):
+    stampede_cache.set("sp_add_zero_fresh", "original", timeout=300)
+    assert stampede_cache.add("sp_add_zero_fresh", "new", timeout=0) is False
+    assert stampede_cache.get("sp_add_zero_fresh") == "original"
+
+
+def test_add_without_stampede_keeps_a_short_ttl_key(cache: RespCache):
+    cache.set("sp_add_plain", "original", timeout=300)
+    cache.expire("sp_add_plain", 50)
+
+    assert cache.add("sp_add_plain", "new", timeout=300) is False
+    assert cache.get("sp_add_plain") == "original"
+
+
+@pytest.mark.asyncio
+async def test_aadd_overwrites_a_logically_expired_key(stampede_cache: RespCache):
+    await stampede_cache.aset("asp_add_stale", "stale", timeout=300)
+    await stampede_cache.aexpire("asp_add_stale", 50, stampede_prevention=False)
+
+    assert await stampede_cache.aadd("asp_add_stale", "fresh", timeout=300) is True
+    assert await stampede_cache.aget("asp_add_stale") == "fresh"
+    ttl = await stampede_cache.attl("asp_add_stale", stampede_prevention=False)
+    assert ttl is not None
+    assert 300 < ttl <= 360
+
+
+@pytest.mark.asyncio
+async def test_aadd_keeps_fresh_and_persistent_keys(stampede_cache: RespCache):
+    await stampede_cache.aset("asp_add_fresh", "original", timeout=300)
+    await stampede_cache.aset("asp_add_forever", "original", timeout=None)
+
+    assert await stampede_cache.aadd("asp_add_fresh", "new", timeout=300) is False
+    assert await stampede_cache.aadd("asp_add_forever", "new", timeout=300) is False
+    assert await stampede_cache.aget("asp_add_fresh") == "original"
+    assert await stampede_cache.aget("asp_add_forever") == "original"

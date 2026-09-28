@@ -145,6 +145,12 @@ class TestOrjsonSerializer:
             serializer.dumps({"x": object()})
 
 
+@pytest.mark.parametrize("serializer_class", [PickleSerializer, JsonSerializer, MsgpackSerializer, OrmsgpackSerializer])
+def test_loads_non_bytes_raises_serializer_error(serializer_class):
+    with pytest.raises(SerializerError, match="could not deserialize NoneType"):
+        serializer_class().loads(None)
+
+
 class Digits(IntEnum):
     ASCII_ZERO = 48
     ASCII_NINE = 57

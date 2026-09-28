@@ -28,7 +28,8 @@ class BaseSerializer:
         try:
             return self._loads(data)
         except Exception as e:
-            msg = f"{type(self).__name__} could not deserialize {len(data)} bytes: {e!r}"
+            received = f"{len(data)} bytes" if isinstance(data, bytes | bytearray | memoryview) else type(data).__name__
+            msg = f"{type(self).__name__} could not deserialize {received}: {e!r}"
             raise SerializerError(msg) from e
 
     def _dumps(self, obj: Any) -> bytes:

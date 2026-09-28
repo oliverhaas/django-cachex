@@ -35,7 +35,8 @@ class ScriptHelpers:
         return [self.encode(v) for v in values]
 
     def decode_values(self, values: Sequence[Any]) -> list[Any]:
-        return [self.decode(v) for v in values]
+        """Decode each value; a nil element (a missing key in an ``MGET`` reply) stays ``None``."""
+        return [None if v is None else self.decode(v) for v in values]
 
 
 @dataclass(frozen=True, slots=True)

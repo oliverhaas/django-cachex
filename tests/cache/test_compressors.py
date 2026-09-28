@@ -92,6 +92,11 @@ class TestDecompressErrors:
             compressor.decompress(b"this is not compressed data!!")
 
 
+def test_decompress_non_bytes_raises_compressor_error(compressor):
+    with pytest.raises(CompressorError, match="could not decompress object"):
+        compressor.decompress(object())
+
+
 class TestCompressionLevel:
     """Each compressor accepts a `level=` constructor arg."""
 

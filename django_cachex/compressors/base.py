@@ -32,7 +32,8 @@ class BaseCompressor:
         try:
             return self._decompress(data)
         except Exception as e:
-            msg = f"{type(self).__name__} could not decompress {len(data)} bytes: {e!r}"
+            received = f"{len(data)} bytes" if isinstance(data, bytes | bytearray | memoryview) else type(data).__name__
+            msg = f"{type(self).__name__} could not decompress {received}: {e!r}"
             raise CompressorError(msg) from e
 
     def _compress(self, data: bytes) -> bytes:

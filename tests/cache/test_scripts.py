@@ -522,3 +522,24 @@ class TestEncodedGuards:
     def test_pipeline_stray_encoded_raises(self, cache: RespCache):
         with pytest.raises(TypeError, match="encoded_pre"):
             cache.pipeline().eval_script(SET_AND_GET, keys=["k"], args=[Encoded("x")])
+
+
+def test_decode_list_post_keeps_nil_elements(cache: RespCache):
+    helpers = ScriptHelpers(
+        make_key=cache.make_and_validate_key,
+        encode=cache.encode,
+        decode=cache.decode,
+        version=1,
+    )
+    assert decode_list_post(helpers, [helpers.encode({"a": 1}), None]) == [{"a": 1}, None]
+
+
+def test_eval_script_mget_with_a_missing_key_returns_none_for_it(cache: RespCache):
+    cache.set("{mget}present", {"a": 1})
+    result = cache.eval_script(
+        "return redis.call('MGET', KEYS[1], KEYS[2])",
+        keys=["{mget}present", "{mget}missing"],
+        pre_hook=keys_only_pre,
+        post_hook=decode_list_post,
+    )
+    assert result == [{"a": 1}, None]
