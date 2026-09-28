@@ -226,8 +226,6 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
             self.assert_query_cached(qs, after=1)
 
     def test_django_migrations_never_cached(self):
-        # Raw SQL creating the table of the migration recorder, whose model is
-        # in no installed app, invalidates nothing.
         with override_orm_settings(UNCACHABLE_TABLES=("ormtest_test",)):
             self.assert_query_cached(MigrationRecorder(connection).migration_qs, after=1)
 
@@ -372,8 +370,7 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
                 run_checks(tags=[Tags.models], databases=[]),
                 [error("ONLY_CACHABLE_APPS", "ormtset"), error("UNCACHABLE_APPS", "tests.orm.app")],
             )
-            # The known label still counts, and the unknown ones are not
-            # added to the app registry.
+            # The known label still counts; the unknown ones stay out of the app registry.
             self.assertIn("ormtest_test", orm_settings.ONLY_CACHABLE_TABLES)
             self.assertEqual(orm_settings.UNCACHABLE_TABLES, frozenset({"django_migrations"}))
             self.assertNotIn("ormtset", apps.all_models)

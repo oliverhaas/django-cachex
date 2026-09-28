@@ -40,8 +40,7 @@ class SignalsTestCase(TransactionTestCase):
         post_invalidation.disconnect(receiver, sender=User._meta.db_table)
 
     def test_failing_receiver(self):
-        # A receiver's error is logged: the write happened already, and the
-        # other receivers still get the signal.
+        # Logged, as the write happened already; the other receivers still get the signal.
         received = []
 
         def failing(sender, **kwargs):

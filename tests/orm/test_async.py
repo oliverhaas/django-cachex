@@ -1,8 +1,8 @@
-"""The ORM cache under the async ORM API."""
+"""The ORM cache under the async ORM API.
 
-# The tests are synchronous and call the async API through async_to_sync, so
-# its queries run back on the test's thread, where assertNumQueries counts
-# them.
+The tests call the async API through async_to_sync, so its queries run back on the test's thread, where
+assertNumQueries counts them.
+"""
 
 import asyncio
 
@@ -64,8 +64,7 @@ class AsyncTestCase(TestUtilsMixin, TransactionTestCase):
             self.assertEqual(async_to_sync(acount)(), 1)
 
     def test_orm_cache_disabled_in_a_coroutine(self):
-        # It holds for the coroutine that entered it, across its awaits, and
-        # not for the coroutines running next to it.
+        # It holds for the coroutine that entered it, across awaits, not for those beside it.
         self.assertEqual(async_to_sync(acount)(), 1)
 
         async def disabled():

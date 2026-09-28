@@ -94,8 +94,7 @@ class WriteTestCase(TestUtilsMixin, FilteredTransactionTestCase):
             self.assertEqual(t.name, "test")
             self.assertEqual(t.public, False)
 
-        # The number of SQL queries doesn't decrease because update_or_create
-        # always calls an UPDATE, even when data wasn't changed.
+        # update_or_create() runs the UPDATE even when nothing changed.
         with self.assertNumQueries(2):
             t, created = Test.objects.update_or_create(name="test", defaults={"public": False})
             self.assertFalse(created)
@@ -917,8 +916,7 @@ class DatabaseCommandTestCase(TestUtilsMixin, TransactionTestCase):
             self.assertListEqual(list(Test.objects.all()), [])
 
     def test_migrate(self):
-        # A migrate that applied nothing invalidates nothing. One that applied
-        # a migration invalidates every model, many-to-many tables included.
+        # Only a migrate that applies a migration invalidates, many-to-many tables included.
         TestChild.objects.create(name="child").permissions.add(Permission.objects.first())
         permissions = TestChild.permissions.through.objects.all()
         with self.assertNumQueries(1):

@@ -43,8 +43,7 @@ class TestUtilsMixin:
         self.is_postgresql = connection.vendor == "postgresql"
         self.force_reopen_connection()
 
-    # The flush of a TransactionTestCase misses PostgresModel because of the
-    # schema in its table name (https://code.djangoproject.com/ticket/29494).
+    # The flush of TransactionTestCase misses PostgresModel: https://code.djangoproject.com/ticket/29494
     def tearDown(self):
         if connection.vendor == "postgresql":
             flush_sql_list = connection.ops.sql_flush(no_style(), (PostgresModel._meta.db_table,))

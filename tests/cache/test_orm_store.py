@@ -1,8 +1,8 @@
-"""The ORM cache's Lua scripts on every RESP adapter and topology."""
+"""The ORM cache's Lua scripts on every RESP adapter and topology.
 
-# tests/orm runs the ORM cache on redis-py only. Here its store runs on each
-# driver, standalone, Sentinel and Cluster, whose script replies come back in
-# the driver's own types.
+tests/orm runs the ORM cache on redis-py only. Here its store runs on each driver, standalone, Sentinel and
+Cluster, whose script replies come back in the driver's own types.
+"""
 
 from typing import TYPE_CHECKING
 
@@ -15,8 +15,7 @@ if TYPE_CHECKING:
     from django_cachex.cache import RespCache
 
 DB = "default"
-# Two tables, so the scripts touch several generation and lease keys. The
-# database alias is their hash tag, which keeps them in one cluster slot.
+# Several tables; the database alias, their hash tag, keeps their keys in one cluster slot.
 TABLES = ("shop_order", "shop_line")
 ENTRY = "orm:{default}:q:query"
 GENERATION = "orm:{default}:g:shop_order"
@@ -94,8 +93,7 @@ class TestOrmStore:
         assert store.generations(DB, TABLES) is not None
 
     def test_keys_without_expiry(self, cache: RespCache):
-        # The volatile-* eviction policies evict only results: generation and
-        # lease keys have no expiry, and a lease key goes with its last lease.
+        # volatile-* eviction takes only results: generation and lease keys never expire.
         store = _store()
         assert store.generations(DB, TABLES) is not None
         store.begin_write(DB, TABLES[:1], "writer", 60)
@@ -123,9 +121,7 @@ class TestOrmStore:
         miss = store.lookup(DB, "query", TABLES)
         assert store.store(DB, "query", TABLES, miss.token, {"a": 1}, 60)
 
-        # Replace the server's payload but not its generations: a lookup that
-        # sends the generations of the local copy is answered without the
-        # payload and serves the local copy.
+        # The server's payload changes but not its generations, so the local copy is served.
         cache.eval_script(
             "return redis.call('HSET', KEYS[1], 'v', ARGV[1])",
             keys=[ENTRY],
@@ -136,8 +132,7 @@ class TestOrmStore:
         assert hit.hit
         assert hit.value == {"a": 1}
 
-        # Without the local copy the payload is fetched, fails to decode and
-        # counts as a miss, so the query runs and stores its result again.
+        # Without the local copy, the broken payload is fetched and counts as a miss.
         remote = _store().lookup(DB, "query", TABLES)
         assert not remote.hit
         assert remote.token == miss.token

@@ -10,8 +10,6 @@ class PostgresRouter:
 
     def allow_migrate(self, db: str, app_label: str, model_name: str | None = None, **hints: Any) -> bool | None:
         if app_label == "ormtest" and model_name == "postgresmodel":
-            # Read the settings rather than `connections`: Django also asks about
-            # aliases outside DATABASES, like the `__no_db__` connection that
-            # creates the test database.
+            # Not `connections`, which fails on aliases outside DATABASES like `__no_db__`.
             return settings.DATABASES.get(db, {}).get("ENGINE") == "django.db.backends.postgresql"
         return None

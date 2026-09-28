@@ -61,8 +61,7 @@ def run_in_other_process(*args: str) -> str:
 
 class ClockSkewTestCase(TestUtilsMixin, TransactionTestCase):
     def test_reader_clock_ahead_of_writer(self):
-        # A process whose clock runs ahead caches a result, then a process with
-        # the right clock writes to the table.
+        # A process with a fast clock caches a result, then one with the right clock writes.
         with skewed_clock(60):
             self.assertIsNone(Test.objects.first())
         t = Test.objects.create(name="test")
@@ -70,8 +69,6 @@ class ClockSkewTestCase(TestUtilsMixin, TransactionTestCase):
         self.assertEqual(Test.objects.first(), t)
 
 
-# Processes share PostgreSQL and a Redis cache; SQLite in memory and LocMemCache
-# are private to each process.
 @skipUnless(
     connection.vendor == "postgresql"
     and settings.CACHES[DEFAULT_CACHE_ALIAS]["BACKEND"] != "django_cachex.cache.LocMemCache",

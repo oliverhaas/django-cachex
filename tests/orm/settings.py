@@ -1,11 +1,12 @@
-"""Django settings for the ORM cache tests: ``pytest tests/orm --ds=tests.orm.settings``."""
+"""Django settings for the ORM cache tests: ``pytest tests/orm --ds=tests.orm.settings``.
+
+CACHEX_ORM_TEST_DB picks the default database (sqlite or postgresql) and CACHEX_ORM_TEST_CACHE the cache
+backend (locmem, redis or tracking). tests/orm/conftest.py starts their containers.
+"""
 
 import os
 from typing import Any
 
-# The default database (sqlite or postgresql) and cache backend (locmem, redis or
-# tracking). tests/orm/conftest.py starts the containers and fills in their
-# addresses before the test databases are created.
 TEST_DB = os.environ.get("CACHEX_ORM_TEST_DB", "sqlite")
 TEST_CACHE = os.environ.get("CACHEX_ORM_TEST_CACHE", "locmem")
 

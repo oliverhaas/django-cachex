@@ -224,8 +224,7 @@ class ReadTestCase(TestUtilsMixin, FilteredTransactionTestCase):
 
     @all_final_sql_checks
     def test_distinct(self):
-        # Without distinct(), the query returns duplicate objects, as queries
-        # across many-to-many relations do.
+        # Across many-to-many relations, the query returns duplicates without distinct().
         qs = Test.objects.filter(owner__user_permissions__content_type__app_label="auth")
         self.assert_tables(qs, Test, User, User.user_permissions.through, Permission, ContentType)
         self.assert_query_cached(qs, [self.t1, self.t1, self.t1])
@@ -594,8 +593,7 @@ class ReadTestCase(TestUtilsMixin, FilteredTransactionTestCase):
         self.assertListEqual(permissions2, permissions1)
         self.assertListEqual(permissions2, self.user__permissions)
 
-        # Prefetch_related through a foreign key where exactly
-        # the same prefetch_related SQL request was executed before
+        # The prefetch query ran before, so only the main query runs.
         with self.assertNumQueries(1):
             data3 = list(Test.objects.select_related("owner").prefetch_related("owner__user_permissions"))
         with self.assertNumQueries(0):
@@ -606,8 +604,7 @@ class ReadTestCase(TestUtilsMixin, FilteredTransactionTestCase):
         self.assertListEqual(permissions4, permissions3)
         self.assertListEqual(permissions4, self.user__permissions)
 
-        # Prefetch_related through a foreign key where exactly
-        # the same prefetch_related SQL request was not fetched before
+        # The prefetch query, for one owner only, did not run before.
         with self.assertNumQueries(2):
             data5 = list(Test.objects.select_related("owner").prefetch_related("owner__user_permissions")[:1])
         with self.assertNumQueries(0):
@@ -987,8 +984,7 @@ class ReadTestCase(TestUtilsMixin, FilteredTransactionTestCase):
         self.assert_tables(qs, Test)
         self.assert_query_cached(qs)
 
-        # The generation comes back new, so the result cached under the old one
-        # is not served.
+        # The generation comes back new, so the old result is not served.
         evict_generation(connection.alias, Test._meta.db_table)
 
         self.assert_query_cached(qs)
@@ -1022,8 +1018,7 @@ class ReadTestCase(TestUtilsMixin, FilteredTransactionTestCase):
         with connection.cursor() as cursor:
             cursor.execute("CREATE TABLE %s (taste VARCHAR(20));" % table_name)
         qs = Test.objects.extra(tables=["Clémentine"], select={"taste": "%s.taste" % table_name})
-        # Named by extra(tables=...), so detected although Django does not
-        # know about it.
+        # Unknown to Django, but named by extra(tables=...).
         self.assert_tables(qs, Test, "Clémentine")
         self.assert_query_cached(qs)
         with connection.cursor() as cursor:
@@ -1082,8 +1077,7 @@ class ParameterTypeTestCase(TestUtilsMixin, TransactionTestCase):
 
         l.append(7)
         self.assert_tables(qs, Test)
-        # The queryset is not taking the new element into account because
-        # the list was copied during `.filter()`.
+        # filter() copied the list, so the new element changes nothing.
         self.assert_query_cached(qs, before=0)
 
         qs = Test.objects.filter(pk__in=l)
@@ -1112,8 +1106,7 @@ class ParameterTypeTestCase(TestUtilsMixin, TransactionTestCase):
         self.assert_query_cached(qs, after=1 if self.is_sqlite else 0)
 
     def test_long_parameters(self):
-        # psycopg shortens the repr of long Json, Jsonb and Binary values, so
-        # two of them sharing a prefix must still get their own cache keys.
+        # Long values sharing a prefix get their own keys, although psycopg shortens their repr.
         prefix = "x" * 60
         for n in (1, 2):
             Test.objects.create(name=f"test{n}", json={"key": prefix, "n": n}, bin=f"{prefix}{n}".encode())

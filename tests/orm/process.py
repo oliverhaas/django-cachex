@@ -10,8 +10,7 @@ def main(argv: list[str]) -> None:
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tests.orm.settings")
     from django.conf import settings
 
-    # Connect to the test database the parent process created, not the one the
-    # settings name.
+    # The test database the parent process created, not the one the settings name.
     settings.DATABASES["default"]["NAME"] = os.environ["CACHEX_ORM_TEST_DB_NAME"]
     django.setup()
 

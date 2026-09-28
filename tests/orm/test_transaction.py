@@ -29,8 +29,7 @@ class AtomicTestCase(TestUtilsMixin, FilteredTransactionTestCase):
                 pass
         self.assertListEqual(data1, [])
 
-        # The transaction read committed data, so the rollback leaves the
-        # result it cached valid.
+        # The transaction read committed data, so its cached result survives the rollback.
         with self.assertNumQueries(0):
             data2 = list(Test.objects.all())
         self.assertListEqual(data2, [])
@@ -176,8 +175,7 @@ class AtomicTestCase(TestUtilsMixin, FilteredTransactionTestCase):
                 cursor.execute(
                     "INSERT INTO example VALUES (1), (1);-- " + Test._meta.db_table,
                 )  # Should invalidate Test.
-        # PostgreSQL rejects the duplicate at COMMIT, after the ORM cache bumped
-        # the table. SQLite rejects it at the INSERT, so the transaction wrote
-        # nothing and the result it read stays valid.
+        # PostgreSQL rejects the duplicate at COMMIT, after the table was bumped;
+        # SQLite at the INSERT, so nothing was written and the cached result holds.
         with self.assertNumQueries(1 if self.is_postgresql else 0):
             self.assertListEqual(list(Test.objects.all()), [])

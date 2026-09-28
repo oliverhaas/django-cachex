@@ -124,8 +124,6 @@ class ThreadSafetyTestCase(TestUtilsMixin, FilteredTransactionTestCase):
             data = Test.objects.first()
         self.assertEqual(data, t)
 
-    # A read between the start of the write and its commit returns the old
-    # rows, which must not be cached.
     def test_concurrent_caching_during_autocommit_write(self):
         results = []
 
@@ -139,7 +137,6 @@ class ThreadSafetyTestCase(TestUtilsMixin, FilteredTransactionTestCase):
         self.assertListEqual(results, [None])
         self.assertEqual(Test.objects.first(), t)
 
-    # A result read before a concurrent write must not be cached after it.
     def test_concurrent_write_between_query_and_caching(self):
         created = []
 

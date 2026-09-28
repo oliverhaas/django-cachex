@@ -86,8 +86,7 @@ class StoreTestCase(TestCase):
 
     def test_write(self):
         self.assertTrue(self.store_result(self.lookup().token))
-        # A reader misses before the write begins, and stores what it read
-        # while the write runs, or once it is done.
+        # A reader misses before the write, then tries to store during it and after it.
         reader = self.store.lookup(DEFAULT_DB_ALIAS, f"{self.query}:reader", self.tables).token
         self.begin_write("writer")
         self.assertIs(self.lookup(), BYPASS)
@@ -365,8 +364,7 @@ class WriteTestCase(TestUtilsMixin, FilteredTransactionTestCase):
         self.assertListEqual(list(Test.objects.all()), [t])
 
     def test_failed_release(self):
-        # The lease outlives the write, so no result read before its commit is
-        # served or stored until it expires.
+        # The unreleased lease blocks serving and storing until it expires.
         with (
             override_orm_settings(LEASE_TIMEOUT=0.5),
             patch.object(type(orm_store()), "end_write", side_effect=ConnectionError("cache down")),
@@ -546,8 +544,7 @@ class SnapshotIsolationTestCase(TestUtilsMixin, FilteredTransactionTestCase):
         self.assertEqual(orm_transaction.isolation(connection), orm_transaction.SHARED)
 
     def test_isolation_of_one_transaction(self):
-        # Its isolation cannot be read back, so the connection is taken to read
-        # snapshots until it reconnects.
+        # Unreadable, so the connection counts as reading snapshots until it reconnects.
         with transaction.atomic():
             with connection.cursor() as cursor:
                 cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")

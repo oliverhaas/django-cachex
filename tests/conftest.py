@@ -33,8 +33,7 @@ from tests.fixtures.cache import REDIS_PY_INTERNALS_TEST_FILES
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-# The ORM cache tests need their own settings module (``--ds=tests.orm.settings``),
-# and the other tests can't run under it.
+# tests/orm runs under its own settings module, tests.orm.settings, and the rest can't.
 if os.environ.get("DJANGO_SETTINGS_MODULE") == "tests.orm.settings":
     collect_ignore = ["admin", "cache"]
 else:
