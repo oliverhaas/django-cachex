@@ -22,7 +22,7 @@ SETTING_NAME = "CACHEX_ORM"
 SUPPORTED_VENDORS = frozenset({"postgresql", "sqlite"})
 
 SUPPORTED_ONLY = "supported_only"
-ITERABLES = {tuple, list, frozenset, set}
+ITERABLES = frozenset({tuple, list, frozenset, set})
 
 DEFAULTS: dict[str, Any] = {
     "ENABLED": True,
@@ -141,6 +141,7 @@ class OrmSettings:
             setattr(self, name, value if converter is None else converter(value, raw))
 
         if not self.patched:
+            # Imported here because monkey_patch imports this module.
             from django_cachex.orm.monkey_patch import patch
 
             patch()
@@ -148,6 +149,7 @@ class OrmSettings:
 
     def unload(self) -> None:
         if self.patched:
+            # Imported here because monkey_patch imports this module.
             from django_cachex.orm.monkey_patch import unpatch
 
             unpatch()

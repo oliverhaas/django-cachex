@@ -6,6 +6,7 @@
 import datetime
 from decimal import Decimal
 from hashlib import sha1
+from ipaddress import IPv4Address, IPv6Address
 from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
@@ -87,8 +88,6 @@ def _json_key(name: str, dumps: Callable[[Any], Any], value: Any) -> str:
 
 
 def _psycopg_param_keys() -> dict[type, Callable[[Any], str]]:
-    from ipaddress import IPv4Address, IPv6Address
-
     from psycopg.dbapi20 import Binary
     from psycopg.types.json import Json, Jsonb
     from psycopg.types.numeric import Float4, Float8, Int2, Int4, Int8

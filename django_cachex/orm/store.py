@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from django.core.cache.backends.base import BaseCache
 
 
-logger = logging.getLogger("django_cachex.orm")
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)

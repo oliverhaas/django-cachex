@@ -14,6 +14,7 @@ from django.core.checks import Error, Tags, Warning, run_checks  # noqa: A004
 from django.db import DEFAULT_DB_ALIAS, connection
 from django.db.models.functions import Random
 from django.test import TransactionTestCase
+from django.test.utils import ignore_warnings
 
 from django_cachex.orm.api import invalidate
 from django_cachex.orm.settings import DEFAULTS, SUPPORTED_ONLY, database_vendor, orm_settings, supported_databases
@@ -97,6 +98,7 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
             with override_orm_settings(DATABASES=[DEFAULT_DB_ALIAS]):
                 self.assert_query_cached(qs)
 
+    @ignore_warnings(message="Overriding setting DATABASES", category=UserWarning)
     def test_database_vendor(self):
         self.assertEqual(database_vendor(DEFAULT_DB_ALIAS), connection.vendor)
         self.assertIsNone(database_vendor("undefined"))
@@ -238,6 +240,7 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
         ):
             self.assert_query_cached(qs, after=1)
 
+    @ignore_warnings(message="Overriding setting DATABASES", category=UserWarning)
     def test_database_compatibility(self):
         compatible_database = {
             "ENGINE": "django.db.backends.sqlite3",
@@ -314,6 +317,7 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
             errors = run_checks(tags=[Tags.compatibility])
             self.assertListEqual(errors, [error002])
 
+    @ignore_warnings(message="Overriding setting DATABASES", category=UserWarning)
     def test_replica(self):
         database = {"ENGINE": "django.db.backends.sqlite3", "NAME": "non_existent_db.sqlite3"}
         replica = {**database, "TEST": {"MIRROR": "default"}}

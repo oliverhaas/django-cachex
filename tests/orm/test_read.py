@@ -224,8 +224,8 @@ class ReadTestCase(TestUtilsMixin, FilteredTransactionTestCase):
 
     @all_final_sql_checks
     def test_distinct(self):
-        # We ensure that the query without distinct should return duplicate
-        # objects, in order to have a real-world example.
+        # Without distinct(), the query returns duplicate objects, as queries
+        # across many-to-many relations do.
         qs = Test.objects.filter(owner__user_permissions__content_type__app_label="auth")
         self.assert_tables(qs, Test, User, User.user_permissions.through, Permission, ContentType)
         self.assert_query_cached(qs, [self.t1, self.t1, self.t1])

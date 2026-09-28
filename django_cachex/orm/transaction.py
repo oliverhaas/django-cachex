@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
     from django.db.backends.base.base import BaseDatabaseWrapper
 
-logger = logging.getLogger("django_cachex.orm")
+logger = logging.getLogger(__name__)
 
 # Each statement of a transaction reads the data committed when it starts
 # (PostgreSQL READ COMMITTED, SQLite with a rollback journal). Queries on
@@ -171,6 +171,7 @@ def _read_isolation(connection: BaseDatabaseWrapper) -> str:
     raw: Any = connection.connection
     if connection.vendor == "postgresql":
         if "isolation_level" in connection.settings_dict["OPTIONS"]:
+            # Importable only with a PostgreSQL driver installed.
             from django.db.backends.postgresql.psycopg_any import IsolationLevel
 
             level = getattr(connection, "isolation_level", None)

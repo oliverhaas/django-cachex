@@ -22,7 +22,7 @@ from django_cachex.orm.utils import are_all_cachable, filter_cachable
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
-logger = logging.getLogger("django_cachex.orm")
+logger = logging.getLogger(__name__)
 
 LOCAL_STORAGE = Local()
 

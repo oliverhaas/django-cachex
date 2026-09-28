@@ -32,7 +32,7 @@ from django_cachex.orm.utils import (
     models_of_tables,
 )
 
-logger = logging.getLogger("django_cachex.orm")
+logger = logging.getLogger(__name__)
 
 WRITE_COMPILERS = (SQLInsertCompiler, SQLUpdateCompiler, SQLDeleteCompiler)
 

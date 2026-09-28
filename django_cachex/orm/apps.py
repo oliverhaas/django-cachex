@@ -25,6 +25,7 @@ from django_cachex.orm.settings import (
     replica_of,
     user_settings,
 )
+from django_cachex.orm.store import RespStore, get_store
 
 # Shaped like the rows a query returns, with the column types most databases have.
 _SAMPLE_RESULT = [
@@ -115,8 +116,6 @@ def check_databases_compatibility(app_configs: Any, **kwargs: Any) -> list[Check
 
 @register(Tags.caches)
 def check_cache(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:  # noqa: ARG001
-    from django_cachex.orm.store import RespStore, get_store
-
     errors: list[CheckMessage] = []
     unknown = sorted(set(user_settings()) - set(DEFAULTS))
     if unknown:
