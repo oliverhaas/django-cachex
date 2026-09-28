@@ -162,6 +162,23 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
             with self.assertNumQueries(1):
                 self.assertListEqual([test.owner.username for test in qs.all()], ["renamed"])
 
+    def test_table_keygen(self):
+        """Reads, writes and invalidate() key the generations of a table with TABLE_KEYGEN."""
+        keyed = set()
+
+        def table_keygen(db_alias, table):
+            keyed.add((db_alias, table))
+            return f"custom:{db_alias}:{table}"
+
+        qs = Test.objects.all()
+        with override_orm_settings(TABLE_KEYGEN=table_keygen):
+            self.assert_query_cached(qs)
+            Test.objects.create(name="test")
+            self.assert_query_cached(qs)
+            invalidate(Test)
+            self.assert_query_cached(qs)
+        self.assertIn((DEFAULT_DB_ALIAS, Test._meta.db_table), keyed)
+
     def test_invalidate_raw(self):
         with self.assertNumQueries(1):
             list(Test.objects.all())
