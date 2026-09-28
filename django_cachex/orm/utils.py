@@ -246,9 +246,8 @@ class _TableFinder:
         self.visit_ordering(query, ordering)
 
     def visit_ordering(self, query: Query, ordering: Sequence[Any]) -> None:
-        # ORDER BY compiles copies of the expressions it holds and of the
-        # unselected annotations it names, so the joins that the ordering of
-        # a subquery in them needs show in the final SQL only.
+        # ORDER BY compiles copies of its expressions and of the unselected annotations it names,
+        # so the joins a subquery in them needs for its ordering show in the final SQL only.
         subqueries = self.subqueries
         for item in ordering:
             if not isinstance(item, str):

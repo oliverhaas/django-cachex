@@ -175,7 +175,6 @@ class AtomicTestCase(TestUtilsMixin, FilteredTransactionTestCase):
                 cursor.execute(
                     "INSERT INTO example VALUES (1), (1);-- " + Test._meta.db_table,
                 )  # Should invalidate Test.
-        # PostgreSQL rejects the duplicate at COMMIT, after the table was bumped;
-        # SQLite at the INSERT, so nothing was written and the cached result holds.
+        # PostgreSQL rejects the duplicate at COMMIT, after the bump; SQLite at the INSERT, before any write.
         with self.assertNumQueries(1 if self.is_postgresql else 0):
             self.assertListEqual(list(Test.objects.all()), [])

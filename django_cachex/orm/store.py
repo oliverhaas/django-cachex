@@ -104,9 +104,8 @@ def _lease_key(db_alias: str, table_key: str) -> str:
     return f"orm:{{{db_alias}}}:l:{table_key}"
 
 
-# A new generation is the server clock in microseconds times 1000 and is only
-# incremented after that, so an evicted generation comes back higher than any
-# value it had (short of 1000 bumps a microsecond): older results never match.
+# A new generation is the server time in microseconds times 1000, then only incremented: an
+# evicted one comes back higher than it was (barring 1000 bumps a microsecond), so old results miss.
 _LUA_PRELUDE = """
 local function now_ms()
   local t = redis.call('TIME')
@@ -144,9 +143,8 @@ local function bump_existing(first, n)
 end
 """
 
-# KEYS: entry, generations, leases. ARGV: table count, generations of the local
-# copy ("" for none). Returns {0} while leased, {1, payload, generations} on a
-# hit, {2, generations} on a miss and {3} on a hit served by the local copy.
+# KEYS: entry, generations, leases. ARGV: table count, the local copy's generations or "".
+# Returns {0} while leased, {1, payload, generations} on a hit, {2, generations} on a miss, {3} on a local hit.
 _LOOKUP = (
     _LUA_PRELUDE
     + """
@@ -179,9 +177,8 @@ return 1
 """
 )
 
-# KEYS: generations, leases. ARGV: table count, lease token, lease milliseconds.
-# Lease keys never expire, so volatile-* eviction skips them: each lease holds
-# its own expiry as its score, and a key goes with its last lease.
+# KEYS: generations, leases. ARGV: table count, lease token, lease milliseconds. Lease keys
+# never expire, which keeps volatile-* eviction off them; each lease's score is its expiry.
 _BEGIN_WRITE = (
     _LUA_PRELUDE
     + """
@@ -351,9 +348,8 @@ class RespStore:
         return None if reply is None else [g.decode() if isinstance(g, bytes) else str(g) for g in reply]
 
 
-# Generations in a local memory cache are (epoch, count) pairs. A generation
-# that is created takes a new epoch, so it never matches a result stored
-# before the process last saw that table.
+# Generations in a local memory cache are (epoch, count) pairs. A new generation takes a new
+# epoch, so it never matches a result stored before the process last saw the table.
 _EPOCHS = itertools.count(1)
 
 
