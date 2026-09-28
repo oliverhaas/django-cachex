@@ -30,6 +30,15 @@ ITERABLES = frozenset({tuple, list, frozenset, set})
 # the new database lacks.
 ALWAYS_UNCACHABLE_TABLES = frozenset({"django_migrations"})
 
+# Settings holding table names or app labels.
+TABLE_SETTINGS = (
+    "ONLY_CACHABLE_TABLES",
+    "ONLY_CACHABLE_APPS",
+    "UNCACHABLE_TABLES",
+    "UNCACHABLE_APPS",
+    "ADDITIONAL_TABLES",
+)
+
 DEFAULTS: dict[str, Any] = {
     "ENABLED": True,
     "CACHE": DEFAULT_CACHE_ALIAS,
@@ -90,17 +99,23 @@ def _convert_databases(value: Any, _raw: dict[str, Any]) -> Any:
     return value
 
 
+def _items(value: Any) -> tuple[Any, ...]:
+    # A value of another type, like a string missing the comma of a one-item
+    # tuple, counts as empty; the cachex_orm.E007 check reports it.
+    return tuple(value) if value.__class__ in ITERABLES else ()
+
+
 def _tables_with_apps(value: Any, app_labels: Any) -> frozenset[str]:
     # A label no installed app has adds nothing; the cachex_orm.E006 check
     # reports it.
-    labels = set(app_labels)
+    labels = set(_items(app_labels))
     app_tables = [
         model._meta.db_table
         for app_config in apps.get_app_configs()
         if app_config.label in labels
         for model in app_config.get_models(include_auto_created=True)
     ]
-    return frozenset((*value, *app_tables))
+    return frozenset((*_items(value), *app_tables))
 
 
 def _import_if_path(value: Any, _raw: dict[str, Any]) -> Any:
@@ -111,7 +126,7 @@ CONVERTERS: dict[str, Callable[[Any, dict[str, Any]], Any]] = {
     "DATABASES": _convert_databases,
     "ONLY_CACHABLE_TABLES": lambda value, raw: _tables_with_apps(value, raw["ONLY_CACHABLE_APPS"]),
     "UNCACHABLE_TABLES": lambda value, raw: _tables_with_apps(value, raw["UNCACHABLE_APPS"]) | ALWAYS_UNCACHABLE_TABLES,
-    "ADDITIONAL_TABLES": lambda value, _raw: list(value),
+    "ADDITIONAL_TABLES": lambda value, _raw: list(_items(value)),
     "QUERY_KEYGEN": _import_if_path,
     "TABLE_KEYGEN": _import_if_path,
 }

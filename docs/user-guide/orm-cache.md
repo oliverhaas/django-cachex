@@ -204,6 +204,7 @@ An unknown label is an error; an app without models invalidates nothing.
 | `cachex_orm.E004` | The cache's serializer does not bring query results back unchanged. |
 | `cachex_orm.E005` | The cache could not be loaded. |
 | `cachex_orm.E006` | `ONLY_CACHABLE_APPS` or `UNCACHABLE_APPS` names a label no installed app has. |
+| `cachex_orm.E007` | A table or app setting is not a list, tuple or set, like `("django_session")` without its comma. The value counts as empty. |
 
 ## Limits
 

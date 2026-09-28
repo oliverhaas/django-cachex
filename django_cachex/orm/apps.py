@@ -20,6 +20,7 @@ from django_cachex.orm.settings import (
     SETTING_NAME,
     SUPPORTED_ONLY,
     SUPPORTED_VENDORS,
+    TABLE_SETTINGS,
     database_vendor,
     orm_settings,
     replica_of,
@@ -167,18 +168,30 @@ def check_cache(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:  # noqa:
 
 
 @register(Tags.models)
-def check_app_labels(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:  # noqa: ARG001
+def check_tables_and_apps(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:  # noqa: ARG001
+    errors: list[CheckMessage] = []
     installed = {app_config.label for app_config in apps.get_app_configs()}
-    return [
-        Error(
-            f"`{SETTING_NAME}['{name}']` names {label!r}, which is not the label of an installed app.",
-            hint="An app's label is the last part of its name, unless its AppConfig sets `label`.",
-            id="cachex_orm.E006",
-        )
-        for name in ("ONLY_CACHABLE_APPS", "UNCACHABLE_APPS")
-        for label in user_settings().get(name, ())
-        if label not in installed
-    ]
+    for name in TABLE_SETTINGS:
+        value = user_settings().get(name, ())
+        if value.__class__ not in ITERABLES:
+            errors.append(
+                Error(
+                    f"`{SETTING_NAME}['{name}']` must be a list, tuple, frozenset or set.",
+                    hint="A tuple of one item needs a trailing comma: ('name',).",
+                    id="cachex_orm.E007",
+                ),
+            )
+        elif name.endswith("_APPS"):
+            errors.extend(
+                Error(
+                    f"`{SETTING_NAME}['{name}']` names {label!r}, which is not the label of an installed app.",
+                    hint="An app's label is the last part of its name, unless its AppConfig sets `label`.",
+                    id="cachex_orm.E006",
+                )
+                for label in value
+                if label not in installed
+            )
+    return errors
 
 
 def _reload_settings(*, setting: str, **kwargs: Any) -> None:  # noqa: ARG001

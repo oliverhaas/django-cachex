@@ -384,6 +384,28 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
             self.assertEqual(orm_settings.UNCACHABLE_TABLES, frozenset({"django_migrations"}))
             self.assertNotIn("ormtset", apps.all_models)
 
+    def test_table_settings_of_another_type(self):
+        def error(name):
+            return Error(
+                f"`CACHEX_ORM['{name}']` must be a list, tuple, frozenset or set.",
+                hint="A tuple of one item needs a trailing comma: ('name',).",
+                id="cachex_orm.E007",
+            )
+
+        # ("django_session") is a string, not a tuple.
+        with override_orm_settings(
+            UNCACHABLE_TABLES="django_session",
+            UNCACHABLE_APPS="ormtest",
+            ADDITIONAL_TABLES=None,
+        ):
+            self.assertListEqual(
+                run_checks(tags=[Tags.models], databases=[]),
+                [error("UNCACHABLE_TABLES"), error("UNCACHABLE_APPS"), error("ADDITIONAL_TABLES")],
+            )
+            # Each counts as empty.
+            self.assertEqual(orm_settings.UNCACHABLE_TABLES, frozenset({"django_migrations"}))
+            self.assertListEqual(orm_settings.ADDITIONAL_TABLES, [])
+
     def test_cache_checks(self):
         self.assertListEqual(run_checks(tags=[Tags.caches]), [])
 
