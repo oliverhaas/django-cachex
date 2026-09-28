@@ -55,7 +55,7 @@ All settings live in the `CACHEX_ORM` dict. Keys are upper case; unknown keys ra
 | `INVALIDATE_RAW` | `True` | Invalidate the tables raw SQL writes to (see [Limits](#limits)). |
 | `ONLY_CACHABLE_TABLES` | `()` | If set, only queries whose tables are all listed are cached. |
 | `ONLY_CACHABLE_APPS` | `()` | Adds the tables of the apps with these labels, many-to-many tables included, to `ONLY_CACHABLE_TABLES`. |
-| `UNCACHABLE_TABLES` | `("django_migrations",)` | Queries reading one of these tables are not cached, and writes to them invalidate nothing. |
+| `UNCACHABLE_TABLES` | `()` | Queries reading one of these tables are not cached, and writes to them invalidate nothing. `django_migrations` is never cached. |
 | `UNCACHABLE_APPS` | `()` | Adds the tables of the apps with these labels, many-to-many tables included, to `UNCACHABLE_TABLES`. |
 | `ADDITIONAL_TABLES` | `()` | Tables no model covers, to look for in raw SQL. |
 | `QUERY_KEYGEN` | `"django_cachex.orm.utils.get_query_cache_key"` | Callable, or its dotted path, building the key of a query from its SQL compiler. |
@@ -76,7 +76,7 @@ Not cached:
 - Queries holding an expression that compiles to SQL the ORM cache cannot look into, one without `get_source_expressions()`.
 - Queries with a parameter of a type the cache key cannot represent faithfully. The standard scalar, date and time types, `Decimal`, `UUID`, containers of them and the PostgreSQL driver's types are fine.
 - Raw SQL: `cursor.execute()` and `Manager.raw()`.
-- Queries reading a table in `UNCACHABLE_TABLES` (`django_migrations` by default) or outside `ONLY_CACHABLE_TABLES`.
+- Queries reading `django_migrations`, a table in `UNCACHABLE_TABLES` or one outside `ONLY_CACHABLE_TABLES`.
 - Inside a transaction, queries reading a table the transaction has written.
 
 SQL you write yourself is not inspected for functions: a `RawSQL("now()")` or a `Func(function="NOW")` is cached like any other query. Run such queries inside [`orm_cache_disabled()`](#orm_cache_disabled).

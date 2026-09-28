@@ -24,6 +24,12 @@ SUPPORTED_VENDORS = frozenset({"postgresql", "sqlite"})
 SUPPORTED_ONLY = "supported_only"
 ITERABLES = frozenset({tuple, list, frozenset, set})
 
+# Never cached, whatever UNCACHABLE_TABLES says. The model of the migration
+# recorder is in no installed app, so creating its table afresh, as each test
+# run does, invalidates nothing, and a cached read of it would list migrations
+# the new database lacks.
+ALWAYS_UNCACHABLE_TABLES = frozenset({"django_migrations"})
+
 DEFAULTS: dict[str, Any] = {
     "ENABLED": True,
     "CACHE": DEFAULT_CACHE_ALIAS,
@@ -38,7 +44,7 @@ DEFAULTS: dict[str, Any] = {
     "INVALIDATE_RAW": True,
     "ONLY_CACHABLE_TABLES": (),
     "ONLY_CACHABLE_APPS": (),
-    "UNCACHABLE_TABLES": ("django_migrations",),
+    "UNCACHABLE_TABLES": (),
     "UNCACHABLE_APPS": (),
     "ADDITIONAL_TABLES": (),
     "QUERY_KEYGEN": "django_cachex.orm.utils.get_query_cache_key",
@@ -104,7 +110,7 @@ def _import_if_path(value: Any, _raw: dict[str, Any]) -> Any:
 CONVERTERS: dict[str, Callable[[Any, dict[str, Any]], Any]] = {
     "DATABASES": _convert_databases,
     "ONLY_CACHABLE_TABLES": lambda value, raw: _tables_with_apps(value, raw["ONLY_CACHABLE_APPS"]),
-    "UNCACHABLE_TABLES": lambda value, raw: _tables_with_apps(value, raw["UNCACHABLE_APPS"]),
+    "UNCACHABLE_TABLES": lambda value, raw: _tables_with_apps(value, raw["UNCACHABLE_APPS"]) | ALWAYS_UNCACHABLE_TABLES,
     "ADDITIONAL_TABLES": lambda value, _raw: list(value),
     "QUERY_KEYGEN": _import_if_path,
     "TABLE_KEYGEN": _import_if_path,

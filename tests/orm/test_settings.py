@@ -12,6 +12,7 @@ from django.contrib.auth.models import User
 from django.core.cache import DEFAULT_CACHE_ALIAS
 from django.core.checks import Error, Tags, Warning, run_checks  # noqa: A004
 from django.db import DEFAULT_DB_ALIAS, connection
+from django.db.migrations.recorder import MigrationRecorder
 from django.db.models.functions import Random
 from django.test import TransactionTestCase
 from django.test.utils import ignore_warnings
@@ -229,6 +230,12 @@ class SettingsTestCase(TestUtilsMixin, TransactionTestCase):
 
         with override_orm_settings(UNCACHABLE_TABLES=("ormtest_test",)):
             self.assert_query_cached(qs, after=1)
+
+    def test_django_migrations_never_cached(self):
+        # Raw SQL creating the table of the migration recorder, whose model is
+        # in no installed app, invalidates nothing.
+        with override_orm_settings(UNCACHABLE_TABLES=("ormtest_test",)):
+            self.assert_query_cached(MigrationRecorder(connection).migration_qs, after=1)
 
     @override_orm_settings(UNCACHABLE_APPS=("ormtest",))
     def test_uncachable_apps(self):

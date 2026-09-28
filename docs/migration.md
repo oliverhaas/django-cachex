@@ -159,13 +159,14 @@ CACHALOT_UNCACHABLE_TABLES = frozenset(("django_migrations", "django_session"))
 # After
 CACHEX_ORM = {
     "TIMEOUT": 3600,
-    "UNCACHABLE_TABLES": ("django_migrations", "django_session"),
+    "UNCACHABLE_TABLES": ("django_session",),
 }
 ```
 
 | django-cachalot | django-cachex |
 |-----------------|---------------|
-| `CACHALOT_ENABLED`, `CACHALOT_CACHE`, `CACHALOT_DATABASES`, `CACHALOT_CACHE_RANDOM`, `CACHALOT_CACHE_ITERATORS`, `CACHALOT_INVALIDATE_RAW`, `CACHALOT_ONLY_CACHABLE_TABLES`, `CACHALOT_ONLY_CACHABLE_APPS`, `CACHALOT_UNCACHABLE_TABLES`, `CACHALOT_UNCACHABLE_APPS`, `CACHALOT_ADDITIONAL_TABLES`, `CACHALOT_FINAL_SQL_CHECK` | The same key without the prefix |
+| `CACHALOT_ENABLED`, `CACHALOT_CACHE`, `CACHALOT_DATABASES`, `CACHALOT_CACHE_RANDOM`, `CACHALOT_CACHE_ITERATORS`, `CACHALOT_INVALIDATE_RAW`, `CACHALOT_ONLY_CACHABLE_TABLES`, `CACHALOT_ONLY_CACHABLE_APPS`, `CACHALOT_UNCACHABLE_APPS`, `CACHALOT_ADDITIONAL_TABLES`, `CACHALOT_FINAL_SQL_CHECK` | The same key without the prefix |
+| `CACHALOT_UNCACHABLE_TABLES` | `UNCACHABLE_TABLES`. `django_migrations` is never cached, so it can be left out. |
 | `CACHALOT_TIMEOUT` | `TIMEOUT`. The default is the cache's default timeout, not `None`. Either way a write leaves its tables' results in the cache until they expire or are evicted, see [Eviction](user-guide/orm-cache.md#eviction). |
 | `CACHALOT_QUERY_KEYGEN`, `CACHALOT_TABLE_KEYGEN` | `QUERY_KEYGEN`, `TABLE_KEYGEN`, with the same arguments. The defaults live in `django_cachex.orm.utils`. |
 | `CACHALOT_USE_UNSUPPORTED_DATABASE`, `CACHALOT_ADDITIONAL_SUPPORTED_DATABASES` | Removed. List the aliases of other vendors in `DATABASES` (warning `cachex_orm.W003`). |
